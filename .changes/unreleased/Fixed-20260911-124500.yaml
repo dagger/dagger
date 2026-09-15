@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  `dagger workspace migrate` and `dagger module migrate` no longer hang on an
+  interactive prompt when run by a coding agent. Like `dagger generate`, they
+  now require `-y`/`--auto-apply` or `--no-apply` in that case.
+time: 2026-09-11T12:45:00Z
+custom:
+  Author: shykes

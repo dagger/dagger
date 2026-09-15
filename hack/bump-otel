@@ -1,0 +1,37 @@
+#!/bin/bash
+
+set -e -u -x
+
+cd $(dirname $0)/..
+
+function bump() {
+  go get \
+    "$@" \
+    go.opentelemetry.io/otel@latest \
+    go.opentelemetry.io/otel/sdk/trace@latest \
+    go.opentelemetry.io/otel/sdk/metric@latest \
+    go.opentelemetry.io/otel/sdk/log@latest \
+    go.opentelemetry.io/otel/log@latest \
+    go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@latest \
+    go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@latest
+}
+
+function pin() {
+  ref=$(go mod graph | grep $1 | grep dagger.io/dagger | awk '{print $NF}')
+  go mod edit -replace=$1=$ref
+}
+
+bump
+bump -C ./sdk/go/
+
+for dir in . ./sdk/go/; do
+  pushd $dir
+    pin go.opentelemetry.io/otel/sdk/log
+    pin go.opentelemetry.io/otel/log
+    pin go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp
+    pin go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc
+  popd
+done
+
+go -C ./sdk/go/ mod tidy
+go mod tidy

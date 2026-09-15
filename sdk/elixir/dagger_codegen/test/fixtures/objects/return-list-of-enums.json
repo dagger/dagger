@@ -1,0 +1,35 @@
+{
+  "description": "Dagger.GhaSettings",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "",
+      "isDeprecated": false,
+      "name": "permissions",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "LIST",
+          "name": null,
+          "ofType": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "GhaPermission",
+              "ofType": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "GhaSettings",
+  "possibleTypes": []
+}

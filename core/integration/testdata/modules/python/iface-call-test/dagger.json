@@ -1,0 +1,11 @@
+{
+  "name": "test",
+  "sdk": "python",
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "mallard",
+      "source": "mallard"
+    }
+  ]
+}

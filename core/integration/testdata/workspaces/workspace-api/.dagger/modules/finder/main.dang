@@ -1,0 +1,8 @@
+type Finder {
+  pub result: String!
+
+  new(ws: Workspace!, name: String!, from: String!) {
+    self.result = ws.findUp(name: name, from: from) ?? ""
+    self
+  }
+}

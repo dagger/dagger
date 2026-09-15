@@ -1,0 +1,1464 @@
+package workspace
+
+import (
+	"fmt"
+	"path"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
+	toml "github.com/pelletier/go-toml"
+)
+
+// ConventionalSDKName derives the user-facing SDK command name from its
+// installed module name by removing the conventional "dagger-" prefix and
+// trailing "sdk" marker, along with adjacent separators.
+func ConventionalSDKName(moduleName string) string {
+	name := strings.TrimSpace(moduleName)
+	name = strings.TrimPrefix(name, sdkmeta.InstallNamePrefix)
+	name = strings.Trim(name, "-_")
+	name = strings.TrimSuffix(name, "sdk")
+	name = strings.Trim(name, "-_")
+	if name == "" {
+		return moduleName
+	}
+	return name
+}
+
+// ValidateSDKs ensures every SDK names an installed provider module and that a
+// module does not provide more than one named SDK.
+func ValidateSDKs(cfg *Config) error {
+	if cfg == nil || len(cfg.SDKs) == 0 {
+		return nil
+	}
+
+	sdkNames := make([]string, 0, len(cfg.SDKs))
+	for sdkName := range cfg.SDKs {
+		sdkNames = append(sdkNames, sdkName)
+	}
+	sort.Strings(sdkNames)
+
+	providers := map[string]string{}
+	lookupNames := map[string]string{}
+	for _, sdkName := range sdkNames {
+		if sdkName == "" {
+			return fmt.Errorf("SDK name must not be empty")
+		}
+		if strings.IndexFunc(sdkName, unicode.IsSpace) >= 0 {
+			return fmt.Errorf("SDK name %q must be a single command token", sdkName)
+		}
+		if strings.HasPrefix(sdkName, "-") {
+			return fmt.Errorf("SDK name %q must not start with '-'", sdkName)
+		}
+		sdk := cfg.SDKs[sdkName]
+		if sdk.Module == "" {
+			return fmt.Errorf("SDK %q has no provider module; set %s", sdkName, JoinConfigPath("sdks", sdkName, "module"))
+		}
+		if _, ok := cfg.Modules[sdk.Module]; !ok {
+			return fmt.Errorf("SDK %q references module %q, which is not installed", sdkName, sdk.Module)
+		}
+		if existing, ok := providers[sdk.Module]; ok {
+			return fmt.Errorf("module %q provides multiple SDKs: %q and %q", sdk.Module, existing, sdkName)
+		}
+		providers[sdk.Module] = sdkName
+
+		for _, lookupName := range []string{sdkName, sdk.Module} {
+			if existing, ok := lookupNames[lookupName]; ok && existing != sdkName {
+				return fmt.Errorf("SDK lookup name %q is ambiguous: SDKs %q and %q both resolve it", lookupName, existing, sdkName)
+			}
+			lookupNames[lookupName] = sdkName
+		}
+	}
+	return nil
+}
+
+// Config represents a parsed dagger.toml workspace configuration.
+type Config struct {
+	Modules            map[string]ModuleEntry `json:"modules,omitempty" toml:"modules"`
+	SDKs               map[string]SDKEntry    `json:"sdks,omitempty" toml:"sdks"`
+	Ignore             []string               `json:"ignore,omitempty" toml:"ignore"`
+	DefaultsFromDotEnv bool                   `json:"defaults_from_dotenv,omitempty" toml:"defaults_from_dotenv,omitempty"`
+	// CheckGenerated controls whether `dagger check` runs generate-as-checks,
+	// which fail when generated files are stale. Defaults to true; set false to
+	// skip them (like --no-generate). CLI flags override it.
+	CheckGenerated *bool                  `json:"check-generated,omitempty" toml:"check-generated,omitempty"`
+	Env            map[string]EnvOverlay  `json:"env,omitempty" toml:"env"`
+	Ports          map[string]PortMapping `json:"ports,omitempty" toml:"ports,omitempty"`
+}
+
+// PortMapping declares a host port that forwards to a workspace service.
+// The map key on Config.Ports is the host port (string for TOML key shape:
+// `[ports.3000]`). BackendService is the service path scoped under a workspace
+// module (e.g. "hello-with-services:web").
+type PortMapping struct {
+	BackendService string `json:"backendService" toml:"backendService"`
+	BackendPort    int    `json:"backendPort" toml:"backendPort"`
+}
+
+// ModuleEntry represents a single module entry in the workspace config.
+type ModuleEntry struct {
+	Source            string         `json:"source" toml:"source"`
+	Pin               string         `json:"pin,omitempty" toml:"pin,omitempty"`
+	Settings          map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
+	Entrypoint        bool           `json:"entrypoint,omitempty" toml:"entrypoint,omitempty"`
+	LegacyDefaultPath bool           `json:"legacy-default-path,omitempty" toml:"legacy-default-path,omitempty"`
+	Up                ModuleSkip     `json:"up,omitempty" toml:"up,omitempty"`
+	Generate          ModuleSkip     `json:"generate,omitempty" toml:"generate,omitempty"`
+	Check             ModuleSkip     `json:"check,omitempty" toml:"check,omitempty"`
+}
+
+// SDKEntry registers an installed module as a named SDK in this workspace.
+type SDKEntry struct {
+	Module string              `json:"module" toml:"module"`
+	Scopes map[string]SDKScope `json:"scopes,omitempty" toml:"scopes,omitempty"`
+}
+
+// SDKScope records one project root that an SDK module manages.
+//
+// The map key in SDKEntry.Scopes is the path, relative to the directory that
+// contains dagger.toml. A scope can contain a module, clients, or both.
+type SDKScope struct {
+	IsModule bool           `json:"is-module,omitempty" toml:"is-module,omitempty"`
+	Name     string         `json:"name,omitempty" toml:"name,omitempty"`
+	Clients  []string       `json:"clients,omitempty" toml:"clients,omitempty"`
+	Settings map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
+}
+
+// ModuleSkip carries the per-action skip patterns for a module entry.
+// Patterns may be exact names or globs and apply to the action's leaf nodes
+// scoped under the module (e.g. "redis", "infra:database", "other-generators:*").
+type ModuleSkip struct {
+	Skip []string `json:"skip,omitempty" toml:"skip,omitempty"`
+}
+
+// EnvOverlay is a named workspace environment overlay.
+// It intentionally supports only a constrained subset of the root schema.
+type EnvOverlay struct {
+	Modules map[string]EnvModuleOverlay `json:"modules,omitempty" toml:"modules"`
+}
+
+// EnvModuleOverlay is the environment-specific overlay for one module.
+//
+// An overlay may override the [modules.<name>.settings] of a module already
+// installed in the base config, and/or *add* a module that only exists in this
+// environment by giving it a Source (and optional Pin). An overlay that names a
+// module missing from the base config without a Source is an error.
+type EnvModuleOverlay struct {
+	// Source, when set, installs a module scoped to this environment. It mirrors
+	// [modules.<name>.source]: a workspace-relative path or a canonical ref.
+	Source string `json:"source,omitempty" toml:"source,omitempty"`
+	// Pin is the resolved version for Source, mirroring [modules.<name>.pin].
+	Pin      string         `json:"pin,omitempty" toml:"pin,omitempty"`
+	Settings map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
+}
+
+// ResolveModuleEntrySource converts a workspace-config module source into the
+// path that should actually be loaded or displayed from the workspace root.
+// Relative local sources are resolved from the config directory; absolute local
+// sources are preserved as-is.
+func ResolveModuleEntrySource(configDir, source string) string {
+	if source == "" || !IsLocalRef(source, "") {
+		return source
+	}
+	if filepath.IsAbs(source) {
+		return filepath.Clean(source)
+	}
+	if configDir == "" {
+		return filepath.Clean(source)
+	}
+	return filepath.Clean(filepath.Join(configDir, source))
+}
+
+// ResolveSDKManagedPath turns an SDK claim path into the workspace-relative path
+// the engine addresses modules and clients by, following the same rule as every
+// other path a workspace resolves: a leading "/" means the workspace root,
+// anything else is relative to the directory of the config that records it, and
+// escaping the root is refused. Unlike ResolveModuleEntrySource these entries
+// are always paths, never refs, so no ref classification happens here.
+func ResolveSDKManagedPath(configDir, p string) (string, error) {
+	// filepath.ToSlash is a no-op on the engine reading this, so a path spelled
+	// with Windows separators is normalized explicitly.
+	clean := path.Clean(strings.ReplaceAll(p, `\`, "/"))
+	var resolved string
+	if path.IsAbs(clean) {
+		resolved = strings.TrimPrefix(clean, "/")
+	} else {
+		resolved = path.Join(filepath.ToSlash(configDir), clean)
+	}
+	resolved = path.Clean(resolved)
+	if resolved == "" {
+		resolved = "."
+	}
+	if resolved != "." && !filepath.IsLocal(filepath.FromSlash(resolved)) {
+		return "", fmt.Errorf("%q escapes the workspace root", p)
+	}
+	return resolved, nil
+}
+
+// SDKManagedPathFor is the inverse of ResolveSDKManagedPath: it expresses a
+// workspace-relative path the way an SDK scope records it. A target outside
+// the config directory keeps a "../" prefix, as its install source would.
+func SDKManagedPathFor(configDir, workspacePath string) (string, error) {
+	if configDir == "" {
+		configDir = "."
+	}
+	if workspacePath == "" {
+		workspacePath = "."
+	}
+	rel, err := filepath.Rel(configDir, filepath.Clean(workspacePath))
+	if err != nil {
+		return "", fmt.Errorf("resolve %q from %q: %w", workspacePath, configDir, err)
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+// ParseConfig parses dagger.toml bytes into a workspace config.
+func ParseConfig(data []byte) (*Config, error) {
+	var cfg Config
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse dagger.toml: %w", err)
+	}
+	if err := ValidateSDKs(&cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// ApplyEnvOverlay returns a copy of cfg with the named environment overlay
+// applied on top of the base module config.
+//
+// Environments may override [modules.<name>.settings] and the as-sdk role of an
+// installed module. They may also add modules that only exist in the
+// environment by providing a source. Naming a module that is neither installed
+// in the base config nor given a source is an error.
+func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
+	if cfg == nil {
+		if envName == "" {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("workspace env %q requires dagger.toml", envName)
+	}
+
+	applied := cloneConfig(cfg)
+	if envName == "" {
+		return applied, nil
+	}
+
+	env, ok := cfg.Env[envName]
+	if !ok {
+		return nil, NewUndefinedEnvError(cfg, envName)
+	}
+
+	if err := applyModuleOverlays(applied, env.Modules, fmt.Sprintf("workspace env %q", envName)); err != nil {
+		return nil, err
+	}
+
+	return applied, nil
+}
+
+// applyModuleOverlays merges module overlays into applied in place. origin
+// names the overlay source ("workspace env %q", "user config") for errors.
+func applyModuleOverlays(applied *Config, overlays map[string]EnvModuleOverlay, origin string) error {
+	for moduleName, overlay := range overlays {
+		entry, ok := applied.Modules[moduleName]
+		if !ok {
+			if overlay.Source == "" {
+				return fmt.Errorf("%s references unknown module %q", origin, moduleName)
+			}
+			if applied.Modules == nil {
+				applied.Modules = map[string]ModuleEntry{}
+			}
+			entry = ModuleEntry{}
+		}
+		// A source replaces the base module's source and its pin travels with
+		// it; a lone pin updates the existing pin in place.
+		if overlay.Source != "" {
+			entry.Source = overlay.Source
+			entry.Pin = overlay.Pin
+		} else if overlay.Pin != "" {
+			entry.Pin = overlay.Pin
+		}
+		if entry.Settings == nil {
+			entry.Settings = map[string]any{}
+		}
+		for key, value := range overlay.Settings {
+			entry.Settings[key] = value
+		}
+		applied.Modules[moduleName] = entry
+	}
+	return nil
+}
+
+// UndefinedEnvError reports a selected env that has no env.<name>.* entry in
+// the config. Enumerating the defined envs is the actionable part: a missing
+// env is most often a typo, and the list is what disambiguates. No creation
+// hint — envs come into being through env-scoped writes, but we can't know
+// which write the user meant.
+type UndefinedEnvError struct {
+	Env     string
+	Defined []string
+}
+
+func NewUndefinedEnvError(cfg *Config, envName string) error {
+	return &UndefinedEnvError{Env: envName, Defined: EnvNames(cfg)}
+}
+
+func (e *UndefinedEnvError) Error() string {
+	return fmt.Sprintf(UndefinedEnvErrorPrefix+" (%s)", e.Env, definedEnvsFragment(e.Defined))
+}
+
+// Extensions marks the error for structured detection across the GraphQL
+// boundary: dagql attaches these to the error response for any error in the
+// wrap chain, so the CLI's create-on-write retry can match _type and env
+// instead of parsing the message.
+func (e *UndefinedEnvError) Extensions() map[string]any {
+	return map[string]any{
+		"_type": UndefinedEnvErrorType,
+		"env":   e.Env,
+	}
+}
+
+// UndefinedEnvErrorType is the _type extension value identifying an
+// UndefinedEnvError in a GraphQL error response.
+const UndefinedEnvErrorType = "UNDEFINED_ENV_ERROR"
+
+// UndefinedEnvErrorPrefix is the format string every "undefined env" error
+// message starts with. Clients that cannot see extensions (version-skewed
+// engines, non-GraphQL boundaries) match on it as a fallback.
+const UndefinedEnvErrorPrefix = "workspace env %q is not defined"
+
+func definedEnvsFragment(names []string) string {
+	if len(names) == 0 {
+		return "no envs defined"
+	}
+	return "defined envs: " + strings.Join(names, ", ")
+}
+
+// EnvNames returns the configured environment names in deterministic order.
+func EnvNames(cfg *Config) []string {
+	if cfg == nil || len(cfg.Env) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(cfg.Env))
+	for name := range cfg.Env {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// EnsureEnv makes sure the named environment exists.
+// It returns true when the config was changed.
+func EnsureEnv(cfg *Config, envName string) bool {
+	if cfg.Env == nil {
+		cfg.Env = map[string]EnvOverlay{}
+	}
+	if _, ok := cfg.Env[envName]; ok {
+		return false
+	}
+	cfg.Env[envName] = EnvOverlay{}
+	return true
+}
+
+// RemoveEnv removes the named environment from the config.
+func RemoveEnv(cfg *Config, envName string) error {
+	if cfg == nil || len(cfg.Env) == 0 {
+		return fmt.Errorf(UndefinedEnvErrorPrefix+" (%s)", envName, definedEnvsFragment(EnvNames(cfg)))
+	}
+	if _, ok := cfg.Env[envName]; !ok {
+		return fmt.Errorf(UndefinedEnvErrorPrefix+" (%s)", envName, definedEnvsFragment(EnvNames(cfg)))
+	}
+	delete(cfg.Env, envName)
+	if len(cfg.Env) == 0 {
+		cfg.Env = nil
+	}
+	return nil
+}
+
+// SerializeConfig serializes a workspace config into deterministic TOML.
+func SerializeConfig(cfg *Config) []byte {
+	var b strings.Builder
+
+	if len(cfg.Ignore) > 0 {
+		b.WriteString("ignore = [")
+		for i, pat := range cfg.Ignore {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "%q", pat)
+		}
+		b.WriteString("]\n\n")
+	}
+
+	if cfg.DefaultsFromDotEnv {
+		b.WriteString("defaults_from_dotenv = true\n\n")
+	}
+
+	if cfg.CheckGenerated != nil {
+		fmt.Fprintf(&b, "check-generated = %t\n\n", *cfg.CheckGenerated)
+	}
+
+	wrote := writeModuleEntries(&b, cfg.Modules)
+	if wrote && len(cfg.SDKs) > 0 {
+		b.WriteString("\n")
+	}
+	if writeSDKEntries(&b, cfg.SDKs) {
+		wrote = true
+	}
+	if wrote && len(cfg.Env) > 0 {
+		b.WriteString("\n")
+	}
+	if writeEnvEntries(&b, cfg.Env) {
+		wrote = true
+	}
+	if wrote && len(cfg.Ports) > 0 {
+		b.WriteString("\n")
+	}
+	writePortEntries(&b, cfg.Ports)
+
+	return []byte(b.String())
+}
+
+func cloneConfig(cfg *Config) *Config {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := &Config{
+		Ignore:             append([]string(nil), cfg.Ignore...),
+		DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
+	}
+	if cfg.CheckGenerated != nil {
+		checkGenerated := *cfg.CheckGenerated
+		cloned.CheckGenerated = &checkGenerated
+	}
+	if len(cfg.Modules) > 0 {
+		cloned.Modules = make(map[string]ModuleEntry, len(cfg.Modules))
+		for name, entry := range cfg.Modules {
+			cloned.Modules[name] = ModuleEntry{
+				Source:            entry.Source,
+				Pin:               entry.Pin,
+				Settings:          cloneConfigMap(entry.Settings),
+				Entrypoint:        entry.Entrypoint,
+				LegacyDefaultPath: entry.LegacyDefaultPath,
+				Up:                ModuleSkip{Skip: append([]string(nil), entry.Up.Skip...)},
+				Generate:          ModuleSkip{Skip: append([]string(nil), entry.Generate.Skip...)},
+				Check:             ModuleSkip{Skip: append([]string(nil), entry.Check.Skip...)},
+			}
+		}
+	}
+	if len(cfg.SDKs) > 0 {
+		cloned.SDKs = make(map[string]SDKEntry, len(cfg.SDKs))
+		for name, sdk := range cfg.SDKs {
+			clonedSDK := SDKEntry{Module: sdk.Module}
+			if len(sdk.Scopes) > 0 {
+				clonedSDK.Scopes = make(map[string]SDKScope, len(sdk.Scopes))
+				for scopePath, scope := range sdk.Scopes {
+					clonedSDK.Scopes[scopePath] = SDKScope{
+						IsModule: scope.IsModule,
+						Name:     scope.Name,
+						Clients:  append([]string(nil), scope.Clients...),
+						Settings: cloneConfigMap(scope.Settings),
+					}
+				}
+			}
+			cloned.SDKs[name] = clonedSDK
+		}
+	}
+	if len(cfg.Env) > 0 {
+		cloned.Env = make(map[string]EnvOverlay, len(cfg.Env))
+		for envName, env := range cfg.Env {
+			clonedEnv := EnvOverlay{}
+			if len(env.Modules) > 0 {
+				clonedEnv.Modules = make(map[string]EnvModuleOverlay, len(env.Modules))
+				for moduleName, overlay := range env.Modules {
+					clonedEnv.Modules[moduleName] = EnvModuleOverlay{
+						Source:   overlay.Source,
+						Pin:      overlay.Pin,
+						Settings: cloneConfigMap(overlay.Settings),
+					}
+				}
+			}
+			cloned.Env[envName] = clonedEnv
+		}
+	}
+	if len(cfg.Ports) > 0 {
+		cloned.Ports = make(map[string]PortMapping, len(cfg.Ports))
+		for host, pm := range cfg.Ports {
+			cloned.Ports[host] = pm
+		}
+	}
+	return cloned
+}
+
+func cloneConfigMap(config map[string]any) map[string]any {
+	if len(config) == 0 {
+		return nil
+	}
+	cloned := make(map[string]any, len(config))
+	for key, value := range config {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool {
+	if len(modules) == 0 {
+		return false
+	}
+
+	names := make([]string, 0, len(modules))
+	for name := range modules {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for i, name := range names {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+
+		entry := modules[name]
+		modulePath := "modules." + formatConfigPathSegment(name)
+		fmt.Fprintf(b, "[%s]\n", modulePath)
+		fmt.Fprintf(b, "source = %q\n", entry.Source)
+		if entry.Pin != "" {
+			fmt.Fprintf(b, "pin = %q\n", entry.Pin)
+		}
+		if entry.Entrypoint {
+			b.WriteString("entrypoint = true\n")
+		}
+		if entry.LegacyDefaultPath {
+			b.WriteString("legacy-default-path = true\n")
+		}
+		if len(entry.Up.Skip) > 0 {
+			fmt.Fprintf(b, "up.skip = %s\n", formatConfigValue(entry.Up.Skip))
+		}
+		if len(entry.Generate.Skip) > 0 {
+			fmt.Fprintf(b, "generate.skip = %s\n", formatConfigValue(entry.Generate.Skip))
+		}
+		if len(entry.Check.Skip) > 0 {
+			fmt.Fprintf(b, "check.skip = %s\n", formatConfigValue(entry.Check.Skip))
+		}
+		writeConfigTable(b, modulePath+".settings", entry.Settings, true)
+	}
+
+	return true
+}
+
+func writeSDKEntries(b *strings.Builder, sdks map[string]SDKEntry) bool {
+	if len(sdks) == 0 {
+		return false
+	}
+
+	names := make([]string, 0, len(sdks))
+	for name := range sdks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for i, name := range names {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		sdk := sdks[name]
+		sdkPath := "sdks." + formatConfigPathSegment(name)
+		fmt.Fprintf(b, "[%s]\n", sdkPath)
+		fmt.Fprintf(b, "module = %q\n", sdk.Module)
+		if len(sdk.Scopes) > 0 {
+			scopePaths := make([]string, 0, len(sdk.Scopes))
+			for scopePath := range sdk.Scopes {
+				scopePaths = append(scopePaths, scopePath)
+			}
+			sort.Strings(scopePaths)
+			for _, scopePath := range scopePaths {
+				scope := sdk.Scopes[scopePath]
+				b.WriteString("\n")
+				scopeConfigPath := sdkPath + ".scopes." + formatConfigPathSegment(scopePath)
+				fmt.Fprintf(b, "[%s]\n", scopeConfigPath)
+				if scope.IsModule {
+					b.WriteString("is-module = true\n")
+				}
+				if scope.Name != "" {
+					fmt.Fprintf(b, "name = %q\n", scope.Name)
+				}
+				if len(scope.Clients) > 0 {
+					b.WriteString("clients = [\n")
+					for _, target := range scope.Clients {
+						fmt.Fprintf(b, "  %q,\n", target)
+					}
+					b.WriteString("]\n")
+				}
+				writeConfigTable(b, scopeConfigPath+".settings", scope.Settings, true)
+			}
+		}
+	}
+	return true
+}
+
+func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
+	if len(envs) == 0 {
+		return false
+	}
+
+	names := make([]string, 0, len(envs))
+	for name := range envs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for i, name := range names {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+
+		env := envs[name]
+		if len(env.Modules) == 0 {
+			fmt.Fprintf(b, "[env.%s]\n", formatConfigPathSegment(name))
+			continue
+		}
+
+		moduleNames := make([]string, 0, len(env.Modules))
+		for moduleName := range env.Modules {
+			moduleNames = append(moduleNames, moduleName)
+		}
+		sort.Strings(moduleNames)
+
+		for j, moduleName := range moduleNames {
+			if j > 0 {
+				b.WriteString("\n")
+			}
+			overlay := env.Modules[moduleName]
+			modulePath := strings.Join([]string{
+				"env",
+				formatConfigPathSegment(name),
+				"modules",
+				formatConfigPathSegment(moduleName),
+			}, ".")
+			// A source-bearing overlay adds a module, so it renders its own
+			// [env.<name>.modules.<mod>] header with the source/pin scalars and
+			// a nested settings table. A settings-only overlay keeps the flat
+			// [env.<name>.modules.<mod>.settings] shape.
+			if overlay.Source != "" || overlay.Pin != "" {
+				fmt.Fprintf(b, "[%s]\n", modulePath)
+				if overlay.Source != "" {
+					fmt.Fprintf(b, "source = %q\n", overlay.Source)
+				}
+				if overlay.Pin != "" {
+					fmt.Fprintf(b, "pin = %q\n", overlay.Pin)
+				}
+				writeConfigTable(b, modulePath+".settings", overlay.Settings, true)
+			} else {
+				writeConfigTable(b, modulePath+".settings", overlay.Settings, false)
+			}
+		}
+	}
+
+	return true
+}
+
+func writePortEntries(b *strings.Builder, ports map[string]PortMapping) bool {
+	if len(ports) == 0 {
+		return false
+	}
+
+	hosts := make([]string, 0, len(ports))
+	for host := range ports {
+		hosts = append(hosts, host)
+	}
+	sort.Strings(hosts)
+
+	for i, host := range hosts {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		pm := ports[host]
+		fmt.Fprintf(b, "[ports.%s]\n", formatConfigPathSegment(host))
+		fmt.Fprintf(b, "backendService = %q\n", pm.BackendService)
+		fmt.Fprintf(b, "backendPort = %d\n", pm.BackendPort)
+	}
+
+	return true
+}
+
+func writeConfigTable(b *strings.Builder, tablePath string, config map[string]any, leadingBlankLine bool) {
+	if len(config) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(config))
+	for key := range config {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	if leadingBlankLine {
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(b, "[%s]\n", tablePath)
+	for _, key := range keys {
+		fmt.Fprintf(b, "%s = %s\n", formatConfigPathSegment(key), formatConfigValue(config[key]))
+	}
+}
+
+// ReadConfigValue reads a value from config TOML at the given dotted key.
+// When key is empty, it returns the full config contents.
+func ReadConfigValue(data []byte, key string) (string, error) {
+	if key == "" {
+		return string(data), nil
+	}
+
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return "", fmt.Errorf("parse config: %w", err)
+	}
+
+	parts, err := splitConfigPath(key)
+	if err != nil {
+		return "", err
+	}
+	value := tree.GetPath(parts)
+	if value == nil {
+		if defaultValue, ok := readMissingConfigDefault(tree, parts); ok {
+			return defaultValue, nil
+		}
+		return "", fmt.Errorf("key %q is not set", key)
+	}
+
+	switch v := value.(type) {
+	case *toml.Tree:
+		return flattenTOMLTree("", v), nil
+	default:
+		return formatScalarOutput(v), nil
+	}
+}
+
+func readMissingConfigDefault(tree *toml.Tree, parts []string) (string, bool) {
+	if len(parts) == 1 && parts[0] == "defaults_from_dotenv" {
+		return "false", true
+	}
+	if len(parts) == 1 && parts[0] == "check-generated" {
+		return "true", true
+	}
+	if len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path") {
+		if tree.GetPath(parts[:2]) != nil {
+			return "false", true
+		}
+	}
+	return "", false
+}
+
+// WriteConfigValue writes a typed value to config TOML at the given dotted key.
+func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte, error) {
+	return writeConfigValueAtKey(existingData, key, func(parts []string) any {
+		return parseValueString(parts, rawValue)
+	})
+}
+
+// WriteConfigValues writes a string-array value to config TOML at the given
+// dotted key. Elements are stored verbatim, with no comma-splitting or type
+// auto-detection.
+func WriteConfigValues(existingData []byte, key string, values []string) ([]byte, error) {
+	return writeConfigValueAtKey(existingData, key, func([]string) any {
+		return values
+	})
+}
+
+func writeConfigValueAtKey(existingData []byte, key string, valueFor func(parts []string) any) ([]byte, error) {
+	if key == "" {
+		return nil, fmt.Errorf("key is required for writing")
+	}
+	parts, err := splitConfigPath(key)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateConfigKeyParts(parts, key, "set"); err != nil {
+		return nil, err
+	}
+
+	cfg, err := ParseConfig(existingData)
+	if err != nil && len(existingData) > 0 {
+		return nil, fmt.Errorf("parse existing config: %w", err)
+	}
+	if cfg == nil {
+		cfg = &Config{}
+	}
+
+	value := valueFor(parts)
+	if err := setConfigValue(cfg, parts, value); err != nil {
+		return nil, err
+	}
+	if err := ValidateSDKs(cfg); err != nil {
+		return nil, err
+	}
+	// setConfigValue coerces schema fields such as ignore and skip to arrays,
+	// and sources to strings. Write the resulting typed value.
+	value, err = configValueAtPath(reflect.ValueOf(cfg), parts)
+	if err != nil {
+		return nil, err
+	}
+	// The requested key is explicit, even if its value equals an implicit
+	// default and therefore produces no difference between typed configs.
+	doc, err := parseConfigText(existingData)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := doc.set(parts, value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := ParseConfig(updated); err != nil {
+		return nil, fmt.Errorf("validate edited config: %w", err)
+	}
+	return updated, nil
+}
+
+func configValueAtPath(value reflect.Value, parts []string) (any, error) {
+	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
+		value = value.Elem()
+	}
+	if value.IsValid() {
+		if len(parts) == 0 {
+			return value.Interface(), nil
+		}
+		switch value.Kind() {
+		case reflect.Map:
+			return configValueAtPath(value.MapIndex(reflect.ValueOf(parts[0])), parts[1:])
+		case reflect.Struct:
+			for i := 0; i < value.NumField(); i++ {
+				name, _, _ := strings.Cut(value.Type().Field(i).Tag.Get("toml"), ",")
+				if name == parts[0] {
+					return configValueAtPath(value.Field(i), parts[1:])
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("config value %q was not set", JoinConfigPath(parts...))
+}
+
+// DeleteConfigValue removes the value at the given dotted key from config TOML.
+// It errors when the key is not currently set.
+//
+// Deletion works on the TOML document rather than the typed config, so any
+// valid config key is removable without per-field handling; only keys whose
+// removal would break the containing entry are refused.
+func DeleteConfigValue(existingData []byte, key string) ([]byte, error) {
+	if key == "" {
+		return nil, fmt.Errorf("key is required for unsetting")
+	}
+	parts, err := splitConfigPath(key)
+	if err != nil {
+		return nil, err
+	}
+	if len(parts) == 2 && parts[0] == "modules" {
+		return nil, fmt.Errorf("cannot unset %q directly; use dagger module uninstall to remove a module", key)
+	}
+	if len(parts) == 2 && parts[0] == "sdks" {
+		cfg, err := ParseConfig(existingData)
+		if err != nil {
+			return nil, fmt.Errorf("parse existing config: %w", err)
+		}
+		if _, ok := cfg.SDKs[parts[1]]; !ok {
+			return nil, fmt.Errorf("key %q is not set", key)
+		}
+		delete(cfg.SDKs, parts[1])
+		return UpdateConfigBytes(existingData, cfg)
+	}
+	if err := validateConfigKeyParts(parts, key, "unset"); err != nil {
+		return nil, err
+	}
+	if err := refuseProtectedConfigDelete(parts, key); err != nil {
+		return nil, err
+	}
+
+	// Presence is judged on the raw document rather than the parsed config:
+	// explicit zero values (`entrypoint = false`, `ignore = []`) are set keys
+	// even though they parse to Go zero values, matching how configRead sees
+	// them.
+	tree, err := toml.LoadBytes(existingData)
+	if err != nil {
+		return nil, fmt.Errorf("parse existing config: %w", err)
+	}
+	if tree.GetPath(parts) == nil {
+		return nil, fmt.Errorf("key %q is not set", key)
+	}
+
+	collapsed := collapseEmptiedConfigTables(tree, parts)
+
+	return deleteConfigDocumentPath(existingData, parts, collapsed)
+}
+
+// refuseProtectedConfigDelete rejects keys whose removal would break the
+// containing entry rather than merely unset a value.
+func refuseProtectedConfigDelete(parts []string, key string) error {
+	switch {
+	case parts[0] == "ports":
+		return fmt.Errorf("cannot unset %q; edit or remove the [ports.<host>] section in dagger.toml", key)
+	case parts[0] == "modules" && len(parts) >= 3 && parts[2] == "source":
+		return fmt.Errorf("cannot unset %s; module entries require a source", key)
+	case parts[0] == "modules" && len(parts) >= 3 && parts[2] == "as-sdk":
+		return fmt.Errorf("cannot unset %q; legacy SDK state is managed by dagger module commands", key)
+	case parts[0] == "sdks":
+		return fmt.Errorf("cannot unset %q directly; unset the containing SDK entry", key)
+	}
+	return nil
+}
+
+// collapseEmptiedConfigTables widens the deletion to the topmost table this
+// removal empties, so no dangling section headers are left behind. Module
+// entries and env definitions are never collapsed: removing a module is
+// uninstall's job, and an env must stay defined for --env selection.
+func collapseEmptiedConfigTables(tree *toml.Tree, parts []string) []string {
+	del := parts
+	for len(del) > 2 {
+		parent := del[:len(del)-1]
+		if len(parent) == 2 && (parent[0] == "modules" || parent[0] == "env") {
+			break
+		}
+		sub, ok := tree.GetPath(parent).(*toml.Tree)
+		if !ok || len(sub.Keys()) > 1 {
+			break
+		}
+		del = parent
+	}
+	return del
+}
+
+func flattenTOMLTree(prefix string, tree *toml.Tree) string {
+	var lines []string
+	for _, key := range tree.Keys() {
+		fullKey := formatConfigPathSegment(key)
+		if prefix != "" {
+			fullKey = prefix + "." + fullKey
+		}
+
+		switch value := tree.Get(key).(type) {
+		case *toml.Tree:
+			lines = append(lines, flattenTOMLTree(fullKey, value))
+		default:
+			lines = append(lines, fmt.Sprintf("%s = %s", fullKey, formatScalarTOML(value)))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatConfigValue(v any) string {
+	switch value := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", value)
+	case bool:
+		return strconv.FormatBool(value)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case int:
+		return strconv.Itoa(value)
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case []any:
+		parts := make([]string, len(value))
+		for i, item := range value {
+			parts[i] = formatConfigValue(item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []string:
+		parts := make([]string, len(value))
+		for i, item := range value {
+			parts[i] = fmt.Sprintf("%q", item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprintf("%q", fmt.Sprint(v))
+	}
+}
+
+func formatScalarOutput(v any) string {
+	switch value := v.(type) {
+	case string:
+		return value
+	case bool:
+		return strconv.FormatBool(value)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case []any:
+		parts := make([]string, len(value))
+		for i, item := range value {
+			parts[i] = formatScalarOutput(item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func formatScalarTOML(v any) string {
+	switch value := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", value)
+	case bool:
+		return strconv.FormatBool(value)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case []any:
+		parts := make([]string, len(value))
+		for i, item := range value {
+			parts[i] = formatScalarTOML(item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+// SplitConfigPath parses a TOML dotted key path into its logical path segments.
+func SplitConfigPath(key string) ([]string, error) {
+	return splitConfigPath(key)
+}
+
+func validateConfigKeyParts(parts []string, key, op string) error {
+	if len(parts) == 0 {
+		return fmt.Errorf("key is required")
+	}
+	return validateKeyAgainstType(parts, reflect.TypeOf(Config{}), key, op)
+}
+
+// JoinConfigPath formats logical path segments as a TOML dotted key path.
+func JoinConfigPath(parts ...string) string {
+	formatted := make([]string, len(parts))
+	for i, part := range parts {
+		formatted[i] = FormatConfigPathSegment(part)
+	}
+	return strings.Join(formatted, ".")
+}
+
+func splitConfigPath(key string) ([]string, error) {
+	if key == "" {
+		return nil, fmt.Errorf("key is required")
+	}
+
+	parts := []string{}
+	for i := 0; i < len(key); {
+		if key[i] == '.' {
+			return nil, fmt.Errorf("invalid key %q: empty path segment", key)
+		}
+
+		part, next, err := parseConfigPathSegment(key, i)
+		if err != nil {
+			return nil, err
+		}
+		if part == "" {
+			return nil, fmt.Errorf("invalid key %q: empty path segment", key)
+		}
+		parts = append(parts, part)
+		i = next
+
+		if i == len(key) {
+			break
+		}
+		if key[i] != '.' {
+			return nil, fmt.Errorf("invalid key %q: expected dot separator", key)
+		}
+		i++
+		if i == len(key) {
+			return nil, fmt.Errorf("invalid key %q: empty path segment", key)
+		}
+	}
+
+	return parts, nil
+}
+
+func parseConfigPathSegment(key string, start int) (string, int, error) {
+	switch key[start] {
+	case '"':
+		return parseBasicConfigPathSegment(key, start+1)
+	case '\'':
+		return parseLiteralConfigPathSegment(key, start+1)
+	default:
+		return parseBareConfigPathSegment(key, start)
+	}
+}
+
+func parseBasicConfigPathSegment(key string, start int) (string, int, error) {
+	var b strings.Builder
+	for i := start; i < len(key); {
+		ch := key[i]
+		i++
+		switch ch {
+		case '\\':
+			r, next, err := parseConfigPathEscape(key, i)
+			if err != nil {
+				return "", 0, err
+			}
+			b.WriteRune(r)
+			i = next
+		case '"':
+			return b.String(), i, nil
+		default:
+			if ch < 0x20 || ch == 0x7f {
+				return "", 0, fmt.Errorf("invalid key %q: unescaped control character in quoted path segment", key)
+			}
+			b.WriteByte(ch)
+		}
+	}
+	return "", 0, fmt.Errorf("invalid key %q: unterminated quoted path segment", key)
+}
+
+func parseConfigPathEscape(key string, start int) (rune, int, error) {
+	if start >= len(key) {
+		return 0, 0, fmt.Errorf("invalid key %q: trailing escape in quoted path segment", key)
+	}
+
+	escaped := key[start]
+	next := start + 1
+	switch escaped {
+	case 'b':
+		return '\b', next, nil
+	case 't':
+		return '\t', next, nil
+	case 'n':
+		return '\n', next, nil
+	case 'f':
+		return '\f', next, nil
+	case 'r':
+		return '\r', next, nil
+	case '"':
+		return '"', next, nil
+	case '\\':
+		return '\\', next, nil
+	case 'u', 'U':
+		digits := 4
+		if escaped == 'U' {
+			digits = 8
+		}
+		return parseConfigPathUnicodeEscape(key, next, digits)
+	default:
+		return 0, 0, fmt.Errorf("invalid key %q: invalid escape in quoted path segment", key)
+	}
+}
+
+func parseConfigPathUnicodeEscape(key string, start, digits int) (rune, int, error) {
+	if start+digits > len(key) {
+		return 0, 0, fmt.Errorf("invalid key %q: incomplete unicode escape in quoted path segment", key)
+	}
+	v, err := strconv.ParseInt(key[start:start+digits], 16, 32)
+	if err != nil || v > utf8.MaxRune || v >= 0xD800 && v <= 0xDFFF {
+		return 0, 0, fmt.Errorf("invalid key %q: invalid unicode escape in quoted path segment", key)
+	}
+	return rune(v), start + digits, nil
+}
+
+func parseLiteralConfigPathSegment(key string, start int) (string, int, error) {
+	i := start
+	for i < len(key) && key[i] != '\'' {
+		i++
+	}
+	if i >= len(key) {
+		return "", 0, fmt.Errorf("invalid key %q: unterminated quoted path segment", key)
+	}
+	return key[start:i], i + 1, nil
+}
+
+func parseBareConfigPathSegment(key string, start int) (string, int, error) {
+	i := start
+	for i < len(key) && key[i] != '.' {
+		i++
+	}
+	part := key[start:i]
+	if !isBareConfigPathSegment(part) {
+		return "", 0, fmt.Errorf("invalid key %q: path segment %q must be quoted", key, part)
+	}
+	return part, i, nil
+}
+
+func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:gocyclo
+	if len(parts) == 0 {
+		return fmt.Errorf("key is required")
+	}
+
+	switch parts[0] {
+	case "ignore":
+		if len(parts) != 1 {
+			return fmt.Errorf("invalid key %q; ignore does not have sub-keys", strings.Join(parts, "."))
+		}
+		switch v := value.(type) {
+		case []string:
+			cfg.Ignore = append([]string(nil), v...)
+		case []any:
+			cfg.Ignore = make([]string, 0, len(v))
+			for _, item := range v {
+				cfg.Ignore = append(cfg.Ignore, fmt.Sprint(item))
+			}
+		default:
+			cfg.Ignore = []string{fmt.Sprint(v)}
+		}
+		return nil
+	case "defaults_from_dotenv":
+		if len(parts) != 1 {
+			return fmt.Errorf("invalid key %q; defaults_from_dotenv does not have sub-keys", strings.Join(parts, "."))
+		}
+		boolValue, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("defaults_from_dotenv must be a boolean")
+		}
+		cfg.DefaultsFromDotEnv = boolValue
+		return nil
+	case "check-generated":
+		if len(parts) != 1 {
+			return fmt.Errorf("invalid key %q; check-generated does not have sub-keys", strings.Join(parts, "."))
+		}
+		boolValue, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("check-generated must be a boolean")
+		}
+		cfg.CheckGenerated = &boolValue
+		return nil
+	case "modules":
+		if len(parts) < 3 {
+			return fmt.Errorf("cannot set %q directly; specify a field like %s.settings", strings.Join(parts, "."), strings.Join(parts, "."))
+		}
+		if cfg.Modules == nil {
+			cfg.Modules = map[string]ModuleEntry{}
+		}
+		moduleName := parts[1]
+		entry := cfg.Modules[moduleName]
+		switch parts[2] {
+		case "source":
+			entry.Source = fmt.Sprint(value)
+		case "entrypoint":
+			boolValue, ok := value.(bool)
+			if !ok {
+				return fmt.Errorf("modules.%s.entrypoint must be a boolean", moduleName)
+			}
+			entry.Entrypoint = boolValue
+		case "legacy-default-path":
+			boolValue, ok := value.(bool)
+			if !ok {
+				return fmt.Errorf("modules.%s.legacy-default-path must be a boolean", moduleName)
+			}
+			entry.LegacyDefaultPath = boolValue
+		case "settings":
+			if len(parts) < 4 {
+				return fmt.Errorf("cannot set modules.%s.settings directly; specify a setting key", moduleName)
+			}
+			if entry.Settings == nil {
+				entry.Settings = map[string]any{}
+			}
+			entry.Settings[parts[3]] = value
+		case "up", "generate", "check":
+			if len(parts) != 4 || parts[3] != "skip" {
+				return fmt.Errorf("invalid key %q; expected modules.%s.%s.skip", strings.Join(parts, "."), moduleName, parts[2])
+			}
+			skip := []string{fmt.Sprint(value)}
+			if s, ok := value.([]string); ok {
+				skip = append([]string(nil), s...)
+			}
+			switch parts[2] {
+			case "up":
+				entry.Up.Skip = skip
+			case "generate":
+				entry.Generate.Skip = skip
+			case "check":
+				entry.Check.Skip = skip
+			}
+		case "as-sdk":
+			return fmt.Errorf("cannot set legacy SDK config %q; use dagger module commands", strings.Join(parts, "."))
+		default:
+			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+		}
+		cfg.Modules[moduleName] = entry
+		return nil
+	case "sdks":
+		if len(parts) != 3 || parts[2] != "module" {
+			return fmt.Errorf("invalid key %q; expected sdks.<name>.module", strings.Join(parts, "."))
+		}
+		if cfg.SDKs == nil {
+			cfg.SDKs = map[string]SDKEntry{}
+		}
+		sdk := cfg.SDKs[parts[1]]
+		sdk.Module = fmt.Sprint(value)
+		cfg.SDKs[parts[1]] = sdk
+		return nil
+	case "env":
+		if len(parts) < 5 || parts[2] != "modules" {
+			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+		}
+		if cfg.Env == nil {
+			cfg.Env = map[string]EnvOverlay{}
+		}
+		envName := parts[1]
+		env := cfg.Env[envName]
+		if env.Modules == nil {
+			env.Modules = map[string]EnvModuleOverlay{}
+		}
+		moduleName := parts[3]
+		module := env.Modules[moduleName]
+		switch {
+		case parts[4] == "source" && len(parts) == 5:
+			module.Source = fmt.Sprint(value)
+		case parts[4] == "pin" && len(parts) == 5:
+			module.Pin = fmt.Sprint(value)
+		case parts[4] == "settings" && len(parts) >= 6:
+			if module.Settings == nil {
+				module.Settings = map[string]any{}
+			}
+			module.Settings[parts[5]] = value
+		default:
+			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+		}
+		env.Modules[moduleName] = module
+		cfg.Env[envName] = env
+		return nil
+	case "ports":
+		if len(parts) != 3 {
+			return fmt.Errorf("invalid key %q; expected ports.<host>.backendService or ports.<host>.backendPort", strings.Join(parts, "."))
+		}
+		if cfg.Ports == nil {
+			cfg.Ports = map[string]PortMapping{}
+		}
+		host := parts[1]
+		pm := cfg.Ports[host]
+		switch parts[2] {
+		case "backendService":
+			pm.BackendService = fmt.Sprint(value)
+		case "backendPort":
+			port, ok := value.(int64)
+			if !ok {
+				return fmt.Errorf("ports.%s.backendPort must be an integer", host)
+			}
+			pm.BackendPort = int(port)
+		default:
+			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+		}
+		cfg.Ports[host] = pm
+		return nil
+	default:
+		return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+	}
+}
+
+func validateKeyAgainstType(parts []string, t reflect.Type, fullKey, op string) error {
+	if len(parts) == 0 {
+		return nil
+	}
+
+	field, ok := findTOMLField(t, parts[0])
+	if !ok {
+		return fmt.Errorf("unknown config key %q; valid fields at this level: %s",
+			fullKey, strings.Join(validTOMLFieldNames(t), ", "))
+	}
+
+	rest := parts[1:]
+	fieldType := field.Type
+	for fieldType.Kind() == reflect.Ptr {
+		fieldType = fieldType.Elem()
+	}
+
+	switch fieldType.Kind() {
+	case reflect.Map:
+		if len(rest) == 0 {
+			return fmt.Errorf("cannot %s %q directly; specify a sub-key", op, fullKey)
+		}
+
+		mapValueRest := rest[1:]
+		elemType := fieldType.Elem()
+		if elemType.Kind() == reflect.Struct {
+			if len(mapValueRest) == 0 {
+				return fmt.Errorf("cannot %s %q directly; specify a field like %s.%s",
+					op, fullKey, fullKey, preferredExampleFieldName(elemType))
+			}
+			return validateKeyAgainstType(mapValueRest, elemType, fullKey, op)
+		}
+		if len(mapValueRest) > 0 {
+			return fmt.Errorf("invalid key %q; config keys cannot be nested deeper", fullKey)
+		}
+		return nil
+	case reflect.Struct:
+		if len(rest) == 0 {
+			return fmt.Errorf("cannot %s %q directly; specify a field like %s.%s",
+				op, fullKey, fullKey, preferredExampleFieldName(fieldType))
+		}
+		return validateKeyAgainstType(rest, fieldType, fullKey, op)
+	default:
+		if len(rest) > 0 {
+			return fmt.Errorf("invalid key %q; %s does not have sub-keys", fullKey, parts[0])
+		}
+		return nil
+	}
+}
+
+func findTOMLField(t reflect.Type, name string) (reflect.StructField, bool) {
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tag := field.Tag.Get("toml")
+		tomlName := strings.Split(tag, ",")[0]
+		if tomlName == name {
+			return field, true
+		}
+	}
+	return reflect.StructField{}, false
+}
+
+func validTOMLFieldNames(t reflect.Type) []string {
+	var names []string
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("toml")
+		name := strings.Split(tag, ",")[0]
+		if name != "" && name != "-" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func preferredExampleFieldName(t reflect.Type) string {
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("toml")
+		name := strings.Split(tag, ",")[0]
+		if name == "settings" {
+			return name
+		}
+	}
+
+	names := validTOMLFieldNames(t)
+	if len(names) == 0 {
+		return "value"
+	}
+	return names[0]
+}
+
+func parseValueString(parts []string, rawValue string) any {
+	if (len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path")) ||
+		(len(parts) == 1 && (parts[0] == "defaults_from_dotenv" || parts[0] == "check-generated")) {
+		return rawValue == "true"
+	}
+
+	if rawValue == "true" || rawValue == "false" {
+		return rawValue == "true"
+	}
+	if value, err := strconv.ParseInt(rawValue, 10, 64); err == nil {
+		return value
+	}
+	if value, err := strconv.ParseFloat(rawValue, 64); err == nil {
+		return value
+	}
+	if strings.Contains(rawValue, ",") {
+		items := strings.Split(rawValue, ",")
+		values := make([]string, len(items))
+		for i, item := range items {
+			values[i] = strings.TrimSpace(item)
+		}
+		return values
+	}
+
+	return rawValue
+}

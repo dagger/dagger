@@ -1,0 +1,128 @@
+pub description = "Toolchain to develop the Dagger Go SDK"
+
+type GoClientDev {
+  """
+  Workspace with all the files needed to develop the SDK
+  """
+  pub workspaceDir: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "*",
+    "!sdk/go",
+    "!go.mod",
+    "!go.sum",
+    "!cmd/codegen",
+    "!engine/slog",
+    "!engine/distconsts",
+    "!internal/fsutil",
+  ])
+
+  """
+  Path of the Go SDK source within the workspace
+  """
+  pub sourcePath: String! = "sdk/go"
+
+  """
+  Workspace
+  """
+  let ws: Workspace!
+
+  """
+  Build a container to run the go toolchain
+  """
+  pub devContainer: Container! {
+    let ctr = go(ws: self.ws, source: workspaceDir)
+      .env
+      .withWorkdir(sourcePath)
+    # "sdk" is an arbitrary name for state persistence
+    let engine = engineDev(ws: self.ws)
+    engine.installClient(ctr, engine.service("sdk"))
+  }
+
+  pub source: Directory! {
+    workspaceDir.directory(sourcePath)
+  }
+
+  """
+  Test the Go SDK
+  """
+  pub test: Void {
+    devContainer
+      .withExec(["go", "test", "-v", "-skip=TestProvision", "./..."])
+      .sync
+
+    null
+  }
+
+  """
+  Regenerate the Go SDK API
+  """
+  pub generate: Changeset! @generate {
+    devContainer
+      .withExec(["go", "generate", "-v", "./..."])
+      .withExec(["go", "mod", "tidy"])
+      .directory("../..") # pop back to repo root
+      .changes(workspaceDir)
+  }
+
+  """
+  Check that releasing works, without actually releasing
+  """
+  pub releaseDryRun(
+    """
+    Git repository to fake-release
+    """
+    sourceRepo: GitRepository! @defaultPath(path: "/"),
+    """
+    Git tag to fake-release
+    """
+    sourceTag: String! = "HEAD",
+    """
+    Git remote to fake-release to
+    """
+    destRemote: String! = "https://github.com/dagger/dagger-go-sdk.git",
+    callback: File! @defaultPath(path: "./git-filter-callback.py"),
+  ): Void {
+    let version = sourceTag.trimPrefix(sourcePath)
+    gitReleaser.dryRun(
+      sourceRepo: sourceRepo,
+      sourceTag: sourceTag,
+      destRemote: destRemote,
+      destTag: version,
+      callback: callback,
+    )
+  }
+
+  """
+  Publish the Go SDK
+  """
+  pub release(
+    """
+    Source git repository to release
+    """
+    sourceRepo: GitRepository! @defaultPath(path: "/"),
+    """
+    Source git tag to release
+    """
+    sourceTag: String!,
+    """
+    Target git remote to release to
+    """
+    destRemote: String! = "https://github.com/dagger/dagger-go-sdk.git",
+    githubToken: Secret,
+    callback: File! @defaultPath(path: "./git-filter-callback.py"),
+  ): Void {
+    let version = sourceTag.trimPrefix(sourcePath)
+    gitReleaser.release(
+      sourceRepo: sourceRepo,
+      sourceTag: sourceTag,
+      destRemote: destRemote,
+      destTag: version,
+      sourcePath: sourcePath,
+      callback: callback,
+      githubToken: githubToken,
+    )
+  }
+
+  let versionFromTag(tag: String!): String! {
+    tag.trimPrefix(sourcePath.trimRight("/") + "/")
+  }
+}

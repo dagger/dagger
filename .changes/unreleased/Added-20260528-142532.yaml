@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Add `inheritOwner` to Container file and mount APIs so they can use the container's current user as the owner.
+time: 2026-05-28T14:25:32Z
+custom:
+  Author: dagger-codex[bot]
+  PR: 13250

@@ -1,0 +1,161 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+Dagger Functions are packaged, shared and reused using Dagger modules. A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+
+Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
+
+The default template from `dagger develop` creates the following structure:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```
+.
+├── LICENSE
+├── dagger.gen.go
+├── go.mod
+├── go.sum
+├── internal
+│   ├── dagger
+│   ├── querybuilder
+│   └── telemetry
+└── main.go
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `go.mod`/`go.sum` manage the Go module and its dependencies.
+- `main.go` is where your Dagger module code goes. It contains sample code to help you get started.
+- `internal` contains automatically-generated types and helpers needed to configure and run the module:
+    - `dagger` contains definitions for the Dagger API that's tied to the currently running Dagger Engine container.
+    - `querybuilder` has utilities for building GraphQL queries (used internally by the `dagger` package).
+    - `telemetry` has utilities for sending Dagger Engine telemetry.
+
+For examples of modules written in Go, see [Daggerverse Modules in Go](https://daggerverse.dev/search?sdk=go).
+
+</TabItem>
+<TabItem value="Python">
+
+```
+.
+├── LICENSE
+├── pyproject.toml
+├── uv.lock
+├── sdk
+├── src
+│   └── my_module
+│       ├── __init__.py
+│       └── main.py
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `pyproject.toml` manages the Python project configuration.
+- `uv.lock` manages the module's pinned dependencies.
+- `src/my_module/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the vendored Python SDK [client library](https://pypi.org/project/dagger-io/).
+
+:::info
+Placing the source code under a `src` directory follows a common Python convention. To know more, see [src layout vs flat layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/).
+:::
+
+For examples of modules written in Python, see [Daggerverse Modules in Python](https://daggerverse.dev/search?sdk=python).
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```
+.
+├── LICENSE
+├── package.json
+├── sdk
+├── src
+│   └── index.ts
+└── tsconfig.json
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `package.json` manages the module dependencies.
+- `src/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the TypeScript SDK.
+
+For examples of modules written in Typescript, see [Daggerverse Modules in Typescript](https://daggerverse.dev/search?sdk=typescript).
+
+</TabItem>
+<TabItem value="PHP">
+
+```
+.
+├── composer.json
+├── composer.lock
+├── dagger.json
+├── LICENSE
+├── README.md
+├── sdk
+├── src
+│    └── MyModule.php
+└── vendor
+```
+
+In this structure:
+
+- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `composer.json` manages the module dependencies.
+- `src/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the PHP SDK.
+
+For examples of modules written in PHP, see [Daggerverse Modules in PHP](https://daggerverse.dev/search?sdk=php).
+
+</TabItem>
+<TabItem value="Java">
+```
+.
+├── dagger.json
+├── pom.xml
+├── src
+│   └── main
+│       └── java
+│           └── io
+│               └── dagger
+│                   └── modules
+│                       └── mymodule
+│                           ├── MyModule.java
+│                           └── package-info.java
+└── target
+    └── generated-sources
+        ├── dagger-io
+        ├── dagger-module
+        └── entrypoint
+```
+
+In this structure:
+
+- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `pom.xml` manages the module dependencies.
+- `src/main/java/io/dagger/modules/mymodule/` is where your Dagger module code goes. It contains sample code to help you get started.
+    - `MyModule.java` is the main class that contains the Dagger Functions.
+    - `package-info.java` is the package information file and is the place to document the module.
+- `target/generated-sources/` contains the generated Dagger code:
+    - `dagger-io` contains the Java specific library for Dagger.
+    - `dagger-module` contains all the types generated by Dagger and accessible from the module.
+    - `entrypoint` contains the generated entrypoint for the module.
+
+The `target` folder is re-generated every time you run `dagger develop` and enables code completion
+and type hinting in the IDE.
+
+The `pom.xml` is configured to automatically set the generated entrypoint as the main class so the generated JAR
+can be easily run.
+</TabItem>
+</Tabs>
+
+:::note
+While you can use the utilities defined in the automatically-generated code above, you *cannot* edit these files. Even if you edit them locally, any changes will not be persisted when you run the module.
+:::

@@ -1,0 +1,1161 @@
+import enum
+import functools
+import itertools
+import logging
+import re
+import textwrap
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass, field
+from datetime import date, datetime, time
+from decimal import Decimal
+from functools import partial
+from itertools import chain, groupby
+from keyword import iskeyword
+from operator import itemgetter
+from typing import (
+    ClassVar,
+    Generic,
+    ParamSpec,
+    Protocol,
+    TypeAlias,
+    TypeGuard,
+    TypeVar,
+    cast,
+)
+
+import graphql
+from graphql import (
+    GraphQLArgument,
+    GraphQLEnumType,
+    GraphQLField,
+    GraphQLFieldMap,
+    GraphQLInputField,
+    GraphQLInputFieldMap,
+    GraphQLInputObjectType,
+    GraphQLInputType,
+    GraphQLInterfaceType,
+    GraphQLLeafType,
+    GraphQLList,
+    GraphQLNamedType,
+    GraphQLNonNull,
+    GraphQLObjectType,
+    GraphQLOutputType,
+    GraphQLScalarType,
+    GraphQLSchema,
+    GraphQLType,
+    GraphQLWrappingType,
+    Undefined,
+    get_named_type,
+    is_leaf_type,
+)
+from graphql.pyutils import camel_to_snake
+from graphql.type.schema import TypeMap
+
+ACRONYM_RE = re.compile(r"([A-Z\d]+)(?=[A-Z\d]|$)")
+"""Pattern for grouping initialisms."""
+
+DEPRECATION_RE = re.compile(r"`([a-zA-Z\d_]+)`")
+"""Pattern for extracting replaced references in deprecations."""
+
+logger = logging.getLogger(__name__)
+
+indent = partial(textwrap.indent, prefix=" " * 4)
+wrap = textwrap.wrap
+wrap_indent = partial(wrap, initial_indent=" " * 4, subsequent_indent=" " * 4)
+
+
+T_ParamSpec = ParamSpec("T_ParamSpec")
+
+# These alias types are used to make the code more self-documenting.
+IDName: TypeAlias = str
+TypeName: TypeAlias = str
+FieldName: TypeAlias = str
+PythonName: TypeAlias = str
+OutputTypeFormat: TypeAlias = str
+
+IDSet: TypeAlias = frozenset[IDName]
+
+
+def joiner(func: Callable[T_ParamSpec, Iterable[str]]) -> Callable[T_ParamSpec, str]:
+    """Join elements with a new line from an iterator."""
+
+    @functools.wraps(func)
+    def wrapper(*args: T_ParamSpec.args, **kwargs: T_ParamSpec.kwargs) -> str:
+        return "\n".join(func(*args, **kwargs))
+
+    return wrapper
+
+
+class Scalars(enum.Enum):
+    ID = str
+    Int = int
+    String = str  # noqa: PIE796
+    Float = float
+    Boolean = bool
+    Date = date
+    DateTime = datetime
+    Time = time
+    Decimal = Decimal
+
+    @classmethod
+    def from_type(cls, t: GraphQLScalarType) -> str:
+        try:
+            return cls[t.name].value.__name__
+        except KeyError:
+            return t.name
+
+
+@dataclass
+class Context:
+    """Shared state during execution."""
+
+    schema: GraphQLSchema = field(default_factory=GraphQLSchema)
+    """GraphQL schema."""
+
+    schema_version: str = ""
+    """Effective schema compatibility version."""
+
+    ids: frozenset[IDName] = field(default_factory=frozenset)
+    """Set of ID scalar names."""
+
+    defined: set[str] = field(default_factory=set)
+    """Types that have already been defined."""
+
+    remaining: set[str] = field(default_factory=set)
+    """Remaining type names that haven't been defined yet."""
+
+    @property
+    def legacy_sdk_compat(self) -> bool:
+        """Generate the pre-v0.21 ID/load helper source facade."""
+        return legacy_sdk_compat(self.schema_version)
+
+    @property
+    def supports_nullable_objects(self) -> bool:
+        """Expose nullable object fields as values that must be resolved."""
+        return supports_nullable_objects(self.schema_version)
+
+    def process_type(self, name: str):
+        # This is only needed to keep track of remaining types because
+        # of forward references.
+        self.remaining.remove(name)
+        self.defined.add(name)
+
+    def render_types(self, s: str) -> str:
+        """Render type names as forward references if they haven't been defined yet."""
+        if not self.remaining:
+            return s
+
+        # Add quotes to names that haven't been defined yet (forward references).
+        # Need to fix optionals because `"File" | None` is not a valid annotation.
+        # The whole annotation needs to be quoted (`"File | None"`).
+        s = re.sub(rf"\b({'|'.join(self.remaining)})\b", r'"\1"', s).replace(
+            '" | None',
+            ' | None"',
+        )
+        return re.sub(
+            rf'list\["({"|".join(self.remaining)})"\] \| None', r'"list[\1] | None"', s
+        )
+
+
+_H = TypeVar("_H", bound=GraphQLNamedType)
+"""Handler generic type"""
+
+
+Predicate: TypeAlias = Callable[..., bool]
+
+
+@dataclass
+class Handler(ABC, Generic[_H]):
+    ctx: Context
+    """Generation execution context."""
+
+    predicate: ClassVar[Predicate] = staticmethod(lambda _: False)
+    """Does this handler render the given type?"""
+
+    def supertype_name(self, t: _H) -> str:
+        return self.__class__.__name__
+
+    def type_name(self, t: _H) -> str:
+        return t.name
+
+    @joiner
+    def render(self, t: _H) -> Iterator[str]:
+        yield ""
+        yield self.render_head(t)
+        yield indent(self.render_body(t))
+        yield ""
+
+    def render_head(self, t: _H) -> str:
+        return f"class {self.type_name(t)}({self.supertype_name(t)}):"
+
+    @joiner
+    def render_body(self, t: _H) -> Iterator[str]:
+        if t.description:
+            yield from wrap(doc(t.description))
+
+
+@joiner
+def generate(schema: GraphQLSchema, schema_version: str = "") -> Iterator[str]:
+    """Code generation main function."""
+    yield textwrap.dedent(
+        """\
+        # Code generated by dagger. DO NOT EDIT.
+
+        import warnings  # noqa: F401
+        from collections.abc import Callable
+        from dataclasses import dataclass
+        from typing import Protocol, runtime_checkable
+
+        from typing_extensions import Self
+
+        from dagger.client._core import Arg
+        from dagger.client._guards import typecheck
+        from dagger.client.base import Enum, Input, Root, Scalar, Type
+        """,
+    )
+
+    # Pre-create handy maps to make handler code simpler.
+    ids = frozenset(n for n, t in schema.type_map.items() if is_id_type(t))
+
+    # shared state between all handler instances
+    ctx = Context(ids=ids, schema=schema, schema_version=schema_version)
+
+    handlers: tuple[Handler, ...] = (
+        Scalar(ctx),
+        Enum(ctx),
+        Input(ctx),
+        InterfaceProtocol(ctx),
+        Object(ctx),
+    )
+
+    if ctx.legacy_sdk_compat:
+        for type_name in legacy_id_names(schema):
+            yield legacy_id_class(type_name)
+            ctx.defined.add(type_name)
+
+    # Split into two iterators to update ctx.remaining.
+    types_n, types_g = itertools.tee(get_grouped_types(handlers, schema.type_map))
+
+    # Track types that haven't been defined yet, to format as a forward reference.
+    ctx.remaining.update(name for _, name, _ in types_n)
+
+    for handler, type_name, named_type in types_g:
+        yield handler.render(named_type)
+        ctx.process_type(type_name)
+
+    yield ""
+    yield ""
+    yield "class Client(Query):"
+    yield indent(
+        '"""The Dagger client.\n'
+        "\n"
+        "Inherits all Query API methods and adds connection management.\n"
+        '"""'
+    )
+    ctx.defined.add("Client")
+
+    yield ""
+    yield "dag = Client()"
+    yield '"""The global client instance."""'
+    ctx.defined.add("dag")
+
+    yield ""
+    yield "__all__ = ["
+    yield from (indent(f"{quote(name)},") for name in sorted(ctx.defined))
+    yield "]"
+
+
+def get_grouped_types(handlers: tuple[Handler, ...], type_map: TypeMap):
+    """Group types by handler and sorted by their name."""
+
+    def _filtered():
+        for n, t in type_map.items():
+            if n.startswith("_") or is_builtin_scalar_type(t):
+                continue
+            for i, handler in enumerate(handlers):
+                if handler.predicate(t):
+                    yield i, n
+
+    for _, items in groupby(sorted(_filtered()), itemgetter(0)):
+        for index, name in items:
+            named_type = type_map[name]
+            handler = handlers[index]
+            formatted_name = handler.type_name(named_type)
+            yield handler, formatted_name, named_type
+
+
+# TODO: these typeguards should be contributed upstream
+#        https://github.com/graphql-python/graphql-core/issues/183
+
+
+def is_required_type(t: GraphQLType) -> TypeGuard[GraphQLNonNull]:
+    return isinstance(t, GraphQLNonNull)
+
+
+def is_list_type(t: GraphQLType) -> TypeGuard[GraphQLList]:
+    if is_required_type(t):
+        t = t.of_type
+    return isinstance(t, GraphQLList)
+
+
+def is_list_of_objects_type(
+    t: GraphQLType,
+) -> TypeGuard[GraphQLList[GraphQLObjectType]]:
+    named = get_named_type(t)
+    return is_list_type(t) and (is_object_type(named) or is_interface_type(named))
+
+
+def is_wrapping_type(t: GraphQLType) -> TypeGuard[GraphQLWrappingType]:
+    return isinstance(t, GraphQLWrappingType)
+
+
+def is_scalar_type(t: GraphQLType) -> TypeGuard[GraphQLScalarType]:
+    return isinstance(t, GraphQLScalarType)
+
+
+def is_input_object_type(t: GraphQLType) -> TypeGuard[GraphQLInputObjectType]:
+    return isinstance(t, GraphQLInputObjectType)
+
+
+def is_object_type(t: GraphQLType) -> TypeGuard[GraphQLObjectType]:
+    return isinstance(t, GraphQLObjectType) and not isinstance(t, GraphQLInterfaceType)
+
+
+def is_interface_type(t: GraphQLType) -> TypeGuard[GraphQLInterfaceType]:
+    return isinstance(t, GraphQLInterfaceType)
+
+
+def is_output_leaf_type(t: GraphQLOutputType) -> TypeGuard[GraphQLLeafType]:
+    return is_leaf_type(get_named_type(t))
+
+
+def is_custom_scalar_type(t: GraphQLType) -> TypeGuard[GraphQLScalarType]:
+    t = get_named_type(t)
+    return is_scalar_type(t) and t.name not in Scalars.__members__
+
+
+def is_builtin_scalar_type(t: GraphQLNamedType) -> TypeGuard[GraphQLScalarType]:
+    return is_scalar_type(t) and not is_custom_scalar_type(t)
+
+
+def is_enum_type(t: GraphQLNamedType) -> TypeGuard[GraphQLEnumType]:
+    return isinstance(t, GraphQLEnumType)
+
+
+def is_self_chainable(t: GraphQLObjectType) -> bool:
+    """Checks if an object type has any fields that return that same type."""
+    return any(
+        f
+        for f in t.fields.values()
+        # Only consider fields that return a non-null object.
+        if is_required_type(f.type)
+        and is_object_type(f.type.of_type)
+        and f.type.of_type.name == t.name
+    )
+
+
+def is_id_type(
+    t: GraphQLType,
+) -> TypeGuard[GraphQLScalarType]:
+    t = get_named_type(t)
+    if not is_scalar_type(t):
+        return False
+    return t.name == "ID"
+
+
+def id_from_type(t: GraphQLType) -> IDName | None:
+    """Return the id type name for the given type name."""
+    return "ID" if is_id_type(t) else None
+
+
+LEGACY_SDK_COMPAT_CUTOVER = (0, 21, 0)
+NULLABLE_OBJECT_SDK_CUTOVER = (1, 0, 0, "beta", 10)
+
+
+def legacy_sdk_compat(schema_version: str) -> bool:
+    """Whether to render the pre-unified-ID Python SDK facade."""
+    version = parse_version(schema_version)
+    return version is not None and version < LEGACY_SDK_COMPAT_CUTOVER
+
+
+def parse_version(version: str) -> tuple[int, int, int] | None:
+    """Parse the numeric core of a Dagger semver string.
+
+    We only need the major/minor/patch floor for the compatibility cutover:
+    v0.20.x is legacy, while every v0.21.0 prerelease/dev build is modern.
+    """
+    match = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", version)
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def supports_nullable_objects(schema_version: str) -> bool:
+    """Whether nullable object fields use the new resolved return shape."""
+    if not schema_version:
+        return True
+
+    match = re.match(
+        r"^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+)(?:\.(\d+))?)?",
+        schema_version,
+    )
+    if match is None:
+        return True
+
+    core = tuple(int(part) for part in match.groups()[:3])
+    cutover_core = NULLABLE_OBJECT_SDK_CUTOVER[:3]
+    if core != cutover_core:
+        return core > cutover_core
+
+    prerelease, number = match.groups()[3:]
+    if prerelease is None:
+        return True
+    if prerelease == "beta" and number is not None:
+        return int(number) >= NULLABLE_OBJECT_SDK_CUTOVER[4]
+    return prerelease > NULLABLE_OBJECT_SDK_CUTOVER[3]
+
+
+def legacy_id_name(type_name: TypeName) -> IDName:
+    return f"{type_name}ID"
+
+
+def legacy_idable_types(
+    schema: GraphQLSchema,
+) -> list[GraphQLObjectType | GraphQLInterfaceType]:
+    types = []
+    for t in schema.type_map.values():
+        if not (is_object_type(t) or is_interface_type(t)):
+            continue
+        if t.name.startswith("_") or t.name == "Node":
+            continue
+        id_field = t.fields.get("id")
+        if id_field is None or not is_id_type(id_field.type):
+            continue
+        types.append(t)
+    return sorted(types, key=lambda t: t.name)
+
+
+def legacy_id_names(schema: GraphQLSchema) -> Iterator[IDName]:
+    for t in legacy_idable_types(schema):
+        name = legacy_id_name(t.name)
+        if schema.get_type(name) is None:
+            yield name
+
+
+def legacy_id_class(type_name: IDName) -> str:
+    return textwrap.dedent(
+        f'''\
+
+        class {type_name}(Scalar):
+            """Legacy typed ID alias for the unified ID scalar."""
+        '''
+    )
+
+
+def expected_type_name(
+    schema: GraphQLSchema,
+    node: graphql.language.ast.Node | None,
+) -> TypeName | None:
+    """Extract the type name from an @expectedType directive on a field or argument."""
+    if node is None:
+        return None
+    directive_def = schema.get_directive("expectedType")
+    if directive_def is None:
+        return None
+    args = graphql.get_directive_values(directive_def, node)
+    if args:
+        return args.get("name")
+    return None
+
+
+# Don't shadow builtins that can be used as types in function signatures.
+#
+# For example, if a method is called "str" and the next one returns the "str"
+# type, that method will actually return the method above, not the type.
+_reserved_builtins = frozenset(
+    [
+        "str",
+        "int",
+        "float",
+        "bool",
+        "list",
+        "type",
+    ]
+)
+
+
+def rewrite_notice(reason: str | None, prefix='"', suffix='"') -> str | None:
+    """Normalize deprecation/experimental messages and rewrite references."""
+    if reason is None:
+        return None
+
+    reason = reason.strip()
+
+    def _format_name(match: re.Match[str]) -> str:
+        name = format_name(match.group(1))
+        return f"{prefix}{name}{suffix}"
+
+    return DEPRECATION_RE.sub(_format_name, reason)
+
+
+def format_name(s: str) -> str:
+    """Format a GraphQL field or argument name into Python."""
+    # rewrite acronyms, initialisms and abbreviations
+    s = ACRONYM_RE.sub(lambda m: m.group(0).title(), s)
+    s = camel_to_snake(s)
+    if iskeyword(s) or s in _reserved_builtins:
+        s += "_"
+    return s
+
+
+def format_input_type(
+    t: GraphQLInputType,
+    convert_id=True,
+    expected_type: TypeName | None = None,
+    legacy_ids: bool = False,
+) -> str:
+    """May be used in an input object field or an object field parameter."""
+    if is_required_type(t):
+        t = t.of_type
+        fmt = "%s"
+    else:
+        fmt = "%s | None"
+
+    if is_list_type(t):
+        inner = format_input_type(t.of_type, convert_id, expected_type, legacy_ids)
+        return fmt % f"list[{inner}]"
+
+    if is_id_type(t):
+        if convert_id:
+            if expected_type is not None:
+                return fmt % expected_type
+            # Generic ID scalar — accept any Type (Dagger object)
+            return fmt % "Type"
+        if legacy_ids and expected_type is not None:
+            return fmt % legacy_id_name(expected_type)
+
+    return fmt % (Scalars.from_type(t) if is_scalar_type(t) else get_named_type(t).name)
+
+
+def format_output_type(
+    t: GraphQLOutputType,
+    expected_type: TypeName | None = None,
+    legacy_ids: bool = False,
+    nullable_objects: bool = True,
+) -> str:
+    """May be used as the output type of an object field."""
+    # Lists of objects already execute eagerly and keep their established
+    # return shape. A directly nullable object must expose None because its
+    # accessor now executes to determine whether the object exists.
+    if (
+        (
+            not nullable_objects
+            or not isinstance(t, (GraphQLObjectType, GraphQLInterfaceType))
+        )
+        and not is_output_leaf_type(t)
+        and not is_required_type(t)
+    ):
+        t = GraphQLNonNull(t)
+    return format_input_type(
+        cast(GraphQLInputType, t),
+        False,
+        expected_type,
+        legacy_ids,
+    )
+
+
+def output_type_description(t: GraphQLOutputType) -> str:
+    if is_wrapping_type(t):
+        return output_type_description(t.of_type)
+    if isinstance(t, GraphQLNamedType) and t.description:
+        return t.description
+    return ""
+
+
+def doc(s: str) -> str:
+    """Wrap string in docstring quotes."""
+    if "\n" in s:
+        s = f"{s}\n"
+    elif s.endswith('"'):
+        s += " "
+    return f'"""{s}"""'
+
+
+def quote(s: str) -> str:
+    """Wrap string in quotes."""
+    return f'"{s}"'
+
+
+class _InputField:
+    """Input object field or object field argument."""
+
+    def __init__(
+        self,
+        ctx: Context,
+        name: str,
+        graphql: GraphQLInputField | GraphQLArgument,
+        parent: "_ObjectField | None" = None,
+    ) -> None:
+        self.ctx = ctx
+        self.graphql_name = name
+        self.graphql = graphql
+
+        self.name = format_name(name)
+        self.named_type = get_named_type(graphql.type)
+        self.parent_return_type: TypeName | None = (
+            get_named_type(parent.graphql.type).name if parent else None
+        )
+        self.parent_object_name: TypeName | None = (
+            parent.parent_name if parent else None
+        )
+
+        # Read @expectedType directive from the argument's AST node. If an old
+        # schema view is being generated from the unified-ID schema and this is
+        # an `id` argument on a typed field, fall back to the field return type
+        # so the legacy signature can still use `FooID`.
+        self.expected_type = expected_type_name(ctx.schema, graphql.ast_node)
+        if (
+            self.expected_type is None
+            and ctx.legacy_sdk_compat
+            and name == "id"
+            and self.parent_return_type not in (None, "Node")
+        ):
+            self.expected_type = self.parent_return_type
+
+        # On object type fields, don't replace ID scalar with object
+        # only if field name is `id` and the expected type matches
+        # the output type (e.g., `file(id: ID! @expectedType(name: "File")) -> File`).
+        convert_id = not (
+            name == "id" and self.expected_type == self.parent_return_type
+        )
+
+        self.type = format_input_type(
+            graphql.type,
+            convert_id,
+            self.expected_type,
+            ctx.legacy_sdk_compat,
+        )
+        self.is_self = self.type == self.parent_object_name
+        self.description = graphql.description
+        self.has_default = graphql.default_value is not Undefined
+        reason = getattr(graphql, "deprecation_reason", None)
+        self.deprecated = rewrite_notice(reason, prefix="", suffix="")
+
+        default_value = graphql.default_value
+        self.default_is_mutable = isinstance(default_value, list)
+
+        if not is_required_type(graphql.type) and not self.has_default:
+            default_value = None
+            self.has_default = True
+
+        if default_value and is_enum_type(self.named_type):
+            if isinstance(default_value, list):
+                members = ", ".join(
+                    f"{self.named_type.name}.{v}" for v in default_value
+                )
+                self.default_value = f"[{members}]"
+            else:
+                self.default_value = f"{self.named_type.name}.{default_value}"
+        else:
+            self.default_value = repr(default_value)
+
+    @joiner
+    def __str__(self) -> Iterator[str]:
+        """Output for an InputObject field."""
+        yield ""
+        yield self.ctx.render_types(self.as_param())
+        doc_parts: list[str] = []
+        if self.description:
+            doc_parts.append(self.description)
+        if self.deprecated is not None:
+            directive = ".. deprecated::"
+            if self.deprecated:
+                directive = f"{directive} {self.deprecated}"
+            doc_parts.append(directive)
+
+        if doc_parts:
+            yield doc("\n\n".join(doc_parts))
+
+    def as_param(self) -> str:
+        """As a parameter in a function signature."""
+        type_ = "Self" if self.is_self else self.type
+        out = f"{self.name}: {type_}"
+        if self.default_is_mutable:
+            if not out.endswith("| None"):
+                out = f"{out} | None"
+            out = f"{out} = None"
+        elif self.has_default:
+            out = f"{out} = {self.default_value}"
+        return out
+
+    @joiner
+    def as_doc(self) -> Iterator[str]:
+        """As a part of a docstring."""
+        yield f"{self.name}:"
+        if self.description:
+            for line in self.description.split("\n"):
+                yield from wrap_indent(line)
+        if self.deprecated is not None:
+            directive = ".. deprecated::"
+            if self.deprecated:
+                directive = f"{directive} {self.deprecated}"
+            yield from wrap_indent(directive)
+
+    def as_arg(self) -> str:
+        """As a Arg object for the query builder."""
+        params = [quote(self.graphql_name), self.name]
+        if self.default_is_mutable:
+            params[1] = f"{self.default_value} if {self.name} is None else {self.name}"
+        if self.has_default:
+            params.append(self.default_value)
+        return f"Arg({', '.join(params)}),"
+
+
+class _ObjectField:
+    """Field of an object type."""
+
+    def __init__(
+        self,
+        ctx: Context,
+        name: str,
+        field: GraphQLField,
+        parent: GraphQLObjectType,
+    ) -> None:
+        self.ctx = ctx
+        self.graphql_name = name
+        self.graphql = field
+
+        self.name = format_name(name)
+        self.named_type = get_named_type(field.type)
+        self.parent_name = get_named_type(parent).name
+
+        self.required_args = []
+        self.default_args = []
+        for args in field.args.items():
+            arg = _InputField(ctx, *args, parent=self)
+            (self.default_args if arg.has_default else self.required_args).append(arg)
+        self.args = self.required_args + self.default_args
+        self.description = field.description
+
+        self.is_leaf = is_output_leaf_type(field.type)
+        self.is_list = is_list_of_objects_type(field.type)
+        self.is_nullable_object = (
+            ctx.supports_nullable_objects
+            and not self.is_leaf
+            and not self.is_list
+            and not is_required_type(field.type)
+        )
+        self.is_exec = self.is_leaf or self.is_list or self.is_nullable_object
+        self.is_void = self.is_leaf and self.named_type.name == "Void"
+
+        # Read @expectedType directive from the field's AST node.
+        self.expected_type = expected_type_name(ctx.schema, field.ast_node)
+        legacy_output_id_type = self.expected_type
+        if (
+            legacy_output_id_type is None
+            and ctx.legacy_sdk_compat
+            and name == "id"
+            and self.parent_name != "Node"
+        ):
+            legacy_output_id_type = self.parent_name
+        self.type = format_output_type(
+            field.type,
+            legacy_output_id_type,
+            ctx.legacy_sdk_compat,
+            ctx.supports_nullable_objects,
+        )
+
+        # Any field in the API that returns an ID with an @expectedType should
+        # return the binding for that object instead in the SDK to allow
+        # continued chaining, except if it's called "id".
+        #
+        # For example, the API `Service { start: ID! @expectedType(name: "Service") }`
+        # should produce the following binding signature:
+        # >>> class Service:
+        # ...     async def start(self) -> Self: ...
+        #
+        # and `LLM { spawn: ID! @expectedType(name: "Agent") }` produces:
+        # >>> class LLM:
+        # ...     async def spawn(self) -> Agent: ...
+        self.convert_id = False
+        if (
+            name != "id"
+            and is_id_type(field.type)
+            and self.is_leaf
+            and self.expected_type
+        ):
+            self.type = self.expected_type
+            self.convert_id = True
+
+        self.is_sync = self.convert_id and self.name == "sync"
+
+    @joiner
+    def __str__(self) -> Iterator[str]:
+        yield from (
+            "",
+            self.func_signature(),
+            indent(self.func_body()),
+        )
+
+        # convenience to await any object that has a sync method
+        # without having to call it explicitly
+        if self.is_sync:
+            yield from (
+                "",
+                "def __await__(self):",
+                indent("return self.sync().__await__()"),
+            )
+
+    def func_signature(self) -> str:
+        params = ", ".join(
+            chain(
+                ("self",),
+                (a.as_param() for a in self.required_args),
+                ("*",) if self.default_args else (),
+                (a.as_param() for a in self.default_args),
+            )
+        )
+        # arbitrary heuristic to force trailing comma in long signatures
+        if len(params) > 40:  # noqa: PLR2004
+            params = f"{params},"
+
+        ret_type = "Self" if self.type == self.parent_name else self.type
+        sig = self.ctx.render_types(f"def {self.name}({params}) -> {ret_type}:")
+        if self.is_exec:
+            sig = f"async {sig}"
+        return sig
+
+    @joiner
+    def func_body(self) -> Iterator[str]:
+        if docstring := self.func_doc():
+            yield doc(docstring)
+
+        if deprecated := self.deprecated():
+            msg = f'Method "{self.name}" is deprecated: {deprecated}'.replace(
+                '"', '\\"'
+            )
+            yield textwrap.dedent(
+                f"""\
+                warnings.warn(
+                    "{msg}",
+                    DeprecationWarning,
+                    stacklevel=4,
+                )\
+                """
+            )
+
+        if self.args:
+            yield "_args = ["
+            yield from (indent(arg.as_arg()) for arg in self.args)
+            yield "]"
+        else:
+            yield "_args: list[Arg] = []"
+
+        if self.convert_id:
+            args = ["self", f'"{self.graphql_name}"', "_args"]
+            if self.type != self.parent_name:
+                # Load another type's ID as that type, via its client
+                # class when the handle names an interface.
+                handle = self.ctx.schema.get_type(self.type)
+                args.append(
+                    f"_{self.type}Client" if is_interface_type(handle) else self.type
+                )
+            yield f"return await self._ctx.execute_sync({', '.join(args)})"
+            return
+
+        yield f'_ctx = self._select("{self.graphql_name}", _args)'
+
+        if not self.is_exec:
+            # Use the concrete client class for interface types
+            t = self._iface_client_name(self.type)
+            yield f"return {t}(_ctx)"
+        elif self.is_nullable_object:
+            t = self._iface_client_name(self.named_type.name)
+            yield f"return await _ctx.execute_object({t})"
+        elif self.is_list:
+            n = self.named_type.name
+            t = self._iface_client_name(n)
+            yield f"return await _ctx.execute_object_list({t})"
+        elif self.is_void:
+            yield "await _ctx.execute()"
+        else:
+            yield f"return await _ctx.execute({self.type})"
+
+    def _iface_client_name(self, name: str) -> str:
+        """Return concrete client class name for interface types."""
+        if is_interface_type(self.named_type):
+            return f"_{name}Client"
+        return name
+
+    def func_doc(self) -> str:
+        def _out():
+            if self.description:
+                yield (textwrap.fill(line) for line in self.description.splitlines())
+
+            if deprecated := self.deprecated(":py:meth:`", "`"):
+                yield chain(
+                    (".. deprecated::",),
+                    wrap_indent(deprecated),
+                )
+            if experimental := self.experimental(":py:meth:`", "`"):
+                yield chain(
+                    (".. caution::",),
+                    wrap_indent("Experimental: " + experimental),
+                )
+
+            if self.name == "id":
+                yield (
+                    "Note",
+                    "----",
+                    "This is lazily evaluated, no operation is actually run.",
+                )
+
+            if any(arg.description or arg.deprecated is not None for arg in self.args):
+                yield chain(
+                    (
+                        "Parameters",
+                        "----------",
+                    ),
+                    (arg.as_doc() for arg in self.args),
+                )
+
+            if self.is_leaf:
+                return_doc = output_type_description(self.graphql.type)
+                if not self.convert_id and return_doc:
+                    yield chain(
+                        (
+                            "Returns",
+                            "-------",
+                            self.type,
+                        ),
+                        wrap_indent(return_doc),
+                    )
+
+                yield chain(
+                    (
+                        "Raises",
+                        "------",
+                        "ExecuteTimeoutError",
+                    ),
+                    wrap_indent(
+                        "If the time to execute the query exceeds the "
+                        "configured timeout."
+                    ),
+                    (
+                        "QueryError",
+                        indent("If the API returns an error."),
+                    ),
+                )
+
+        return "\n\n".join("\n".join(section) for section in _out())
+
+    def deprecated(self, prefix='"', suffix='"') -> str | None:
+        return rewrite_notice(self.graphql.deprecation_reason, prefix, suffix)
+
+    def experimental(self, prefix='"', suffix='"') -> str:
+        reason = ""
+        if self.graphql.ast_node and (
+            directive := self.ctx.schema.get_directive("experimental")
+        ):
+            args = graphql.get_directive_values(directive, self.graphql.ast_node)
+            if args:
+                reason = args["reason"]
+        return rewrite_notice(reason, prefix, suffix)
+
+
+@dataclass
+class Scalar(Handler[GraphQLScalarType]):
+    predicate: ClassVar[Predicate] = staticmethod(is_custom_scalar_type)
+
+    def render_body(self, t: GraphQLScalarType) -> str:
+        return super().render_body(t) or "..."
+
+
+@dataclass
+class Enum(Handler[GraphQLEnumType]):
+    predicate: ClassVar[Predicate] = staticmethod(is_enum_type)
+
+    @joiner
+    def render_body(self, t: GraphQLEnumType) -> Iterable[str]:
+        if body := super().render_body(t):
+            yield body
+
+        by_value = defaultdict(list)
+        for name, value in t.values.items():
+            by_value[self._get_value(value)].append(name)
+
+        for val, names in sorted(by_value.items()):
+            yield ""
+
+            for name in names:
+                yield f"{name} = {val!r}"
+
+                member = t.values[name]
+                desc = member.description
+                reason = rewrite_notice(member.deprecation_reason)
+
+                doc_parts: list[str] = []
+                if desc:
+                    doc_parts.append(desc)
+                if reason is not None:
+                    directive = ".. deprecated::"
+                    if reason:
+                        directive = f"{directive} {reason}"
+                    doc_parts.append(directive)
+
+                if doc_parts:
+                    yield doc("\n\n".join(doc_parts))
+
+    def _get_value(self, value) -> str:
+        if value.ast_node and (directive := self.ctx.schema.get_directive("enumValue")):
+            args = graphql.get_directive_values(directive, value.ast_node)
+            if args:
+                return args["value"]
+        return value.value
+
+
+class Field(Protocol):
+    name: str
+    graphql_name: str
+
+    def __str__(self) -> str: ...
+
+
+_O = TypeVar("_O", GraphQLInputObjectType, GraphQLObjectType)
+"""Object handler generic type"""
+
+_F: TypeAlias = _InputField | _ObjectField
+
+
+class ObjectHandler(Handler[_O]):
+    @abstractmethod
+    def fields(self, t: _O) -> Iterator[_F]: ...
+
+    @joiner
+    def render_body(self, t: _O) -> Iterator[str]:
+        if body := super().render_body(t):
+            yield body
+
+        yield from (
+            str(field)
+            # Sorting by graphql name rather than python name for
+            # consistency with other SDKs.
+            for field in sorted(
+                self.fields(t),
+                key=lambda f: (getattr(f, "has_default", False), f.graphql_name),
+            )
+        )
+
+
+class Input(ObjectHandler[GraphQLInputObjectType]):
+    predicate: ClassVar[Predicate] = staticmethod(is_input_object_type)
+
+    def render_head(self, t: GraphQLInputObjectType) -> str:
+        return f"@typecheck\n@dataclass(slots=True)\n{super().render_head(t)}"
+
+    def fields(self, t: GraphQLInputObjectType) -> Iterator[_InputField]:
+        return (
+            _InputField(self.ctx, *args)
+            for args in cast(GraphQLInputFieldMap, t.fields).items()
+        )
+
+
+@dataclass
+class InterfaceProtocol(Handler[GraphQLInterfaceType]):
+    """Generate Protocol classes for GraphQL interfaces.
+
+    Generates @runtime_checkable Protocol classes and a concrete
+    _FooClient(Type) class for query builder instantiation.
+    """
+
+    predicate: ClassVar[Predicate] = staticmethod(is_interface_type)
+
+    def type_name(self, t: GraphQLInterfaceType) -> str:
+        return t.name
+
+    def render_head(self, t: GraphQLInterfaceType) -> str:
+        return f"@runtime_checkable\nclass {t.name}(Protocol):"
+
+    @joiner
+    def render(self, t: GraphQLInterfaceType) -> Iterator[str]:
+        # First: the Protocol class (for type annotations and isinstance checks)
+        yield ""
+        yield self.render_head(t)
+        yield indent(self.render_body(t))
+        yield ""
+
+        # Second: a concrete client class for query builder instantiation
+        client_name = f"_{t.name}Client"
+        yield ""
+        yield "@typecheck"
+        yield f"class {client_name}(Type):"
+        yield indent(f'"""Concrete client for {t.name} interface."""')
+        yield ""
+        # Override _graphql_name to return the interface name
+        yield indent("@classmethod")
+        yield indent("def _graphql_name(cls) -> str:")
+        yield indent(indent(f'return "{t.name}"'))
+
+        # Generate method implementations using the Object handler's field rendering
+        for name, ifield in sorted(t.fields.items()):
+            obj_field = _ObjectField(self.ctx, name, ifield, t)
+            yield indent(str(obj_field))
+
+        yield ""
+
+    @joiner
+    def render_body(self, t: GraphQLInterfaceType) -> Iterator[str]:
+        if t.description:
+            yield from wrap(doc(t.description))
+
+        for name, ifield in sorted(t.fields.items()):
+            if name == "id":
+                # id is available on all Type objects
+                continue
+
+            obj_field = _ObjectField(self.ctx, name, ifield, t)
+            sig = obj_field.func_signature()
+            yield ""
+            yield f"{sig}"
+            if obj_field.description:
+                yield indent(doc(obj_field.description))
+            else:
+                yield indent("...")
+
+
+class Object(ObjectHandler[GraphQLObjectType]):
+    predicate: ClassVar[Predicate] = staticmethod(is_object_type)
+
+    def supertype_name(self, t: GraphQLObjectType) -> str:
+        return "Root" if t.name == "Query" else "Type"
+
+    def type_name(self, t: GraphQLObjectType) -> str:
+        return super().type_name(t)
+
+    def fields(self, t: GraphQLObjectType) -> Iterator[_ObjectField]:
+        return (
+            _ObjectField(self.ctx, *args, t)
+            for args in cast(GraphQLFieldMap, t.fields).items()
+        )
+
+    def render_head(self, t: GraphQLObjectType) -> str:
+        return f"@typecheck\n{super().render_head(t)}"
+
+    @joiner
+    def render_body(self, t: GraphQLObjectType) -> Iterator[str]:
+        yield super().render_body(t)
+
+        if is_self_chainable(t):
+            self_name = self.type_name(t)
+            yield textwrap.dedent(
+                f'''
+                def with_(self, cb: Callable[["{self_name}"], "{self_name}"]) -> "{self_name}":
+                    """Call the provided callable with current {self_name}.
+
+                    This is useful for reusability and readability by not breaking the calling chain.
+                    """
+                    return cb(self)
+                '''  # noqa: E501
+            )

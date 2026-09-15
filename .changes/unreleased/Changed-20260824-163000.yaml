@@ -1,0 +1,17 @@
+kind: Changed
+body: |
+  `Workspace.withNewDirectory` now replaces whatever a path already held on
+  every kind of workspace, and the new `Workspace.withDirectory` merges into it
+  instead. Which of the two you got depended only on where the workspace came
+  from: a host-backed checkout replaced, while one loaded from a `Directory` or
+  from git merged.
+
+  Reach for `withDirectory` when the path's existing files have to survive —
+  scaffolding a module beside the config the engine just wrote, say — and for
+  `withNewDirectory` when the source is meant to become the path's entire
+  contents. Either one now reads the same against a local checkout as against a
+  git-loaded workspace.
+time: 2026-08-24T16:30:00Z
+custom:
+  Author: eunomie
+  PR: "13956"

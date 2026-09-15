@@ -1,0 +1,10 @@
+name = "test"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "go"
+
+[[dependencies]]
+name = "dep"
+source = "dep"

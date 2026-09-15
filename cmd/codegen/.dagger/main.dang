@@ -1,0 +1,19 @@
+type Codegen {
+  pub source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "*",
+    "!cmd/codegen",
+    "!go.mod",
+    "!go.sum",
+    "!**/*.go",
+    "!sdk/go",
+    "!**/*.graphql",
+    "!**/*.gtpl",
+    "!**/*.tmpl",
+  ])
+
+  let ws: Workspace!
+
+  pub binary: File! {
+    go(ws: self.ws, source: source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
+  }
+}

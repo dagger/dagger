@@ -1,0 +1,5 @@
+#!/bin/sh
+
+set -e -u -x
+
+env DAGGER_SESSION_TOKEN=daggerverse dagger listen --allow-cors

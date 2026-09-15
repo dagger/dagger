@@ -1,0 +1,37 @@
+
+<div class="doc-copy">
+  {{#if description}}
+    <div class="definition-description doc-copy-section">
+      <h5>Description</h5>
+      {{md (interpolateReferences description)}}
+    </div>
+  {{/if}}
+  {{#if fields}}
+    <div class="definition-properties definition-fields doc-copy-section">
+      <h5>Fields</h5>
+      {{>graphql/kinds/_fields .}}
+    </div>
+  {{/if}}
+  {{#if possibleTypes}}
+    <div class="definition-properties definition-possible-types doc-copy-section">
+      <h5>Possible Types</h5>
+      <table>
+        <thead>
+          <tr>
+            <th>{{name}} Types</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each possibleTypes}}
+            <tr>
+              {{! The INTERFACE Types column }}
+              <td>
+                {{md (mdTypeLink . codify=true) addClass=(ternary (and isDeprecated (not @root.info.x-hideIsDeprecated)) "definition-deprecated" false)}}
+              </td>
+            </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+  {{/if}}
+</div>

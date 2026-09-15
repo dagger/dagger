@@ -1,0 +1,1104 @@
+---
+slug: /extending/arguments
+description: Learn how to pass arguments to Dagger Functions, including string, boolean, integer, and directory arguments.
+---
+
+# Arguments
+
+Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which Dagger Functions can use for their arguments, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
+
+When calling a Dagger Function from the CLI, its arguments are exposed as command-line flags. How the flag is interpreted depends on the argument type.
+
+:::important
+Dagger Functions execute in containers and thus do not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
+- Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument.
+- Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME.
+- Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://HOST:PORT`.
+- Sockets: Dagger Functions that accept an argument of type `Socket` can be passed host sockets in the form `$SOCKET`.
+:::
+
+:::note
+When passing values to Dagger Functions within Dagger Shell, required arguments are positional, while flags can be placed anywhere.
+:::
+
+## String arguments
+
+Here is an example of a Dagger Function that accepts a string argument:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-string/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-string/python/main.py
+```
+
+Even though the Python runtime doesn't enforce [type annotations][typing] at runtime,
+it's important to define them with Dagger Functions. The Python SDK needs the
+typing information at runtime to correctly report to the API. It can't rely on
+[type inference][inference], which is only possible for external [static type
+checkers][type-checker].
+
+If a function doesn't have a return type annotation, it'll be declared as `None`,
+which translates to the [dagger.Void][void] type in the API:
+
+```python
+@function
+def hello(self):
+    return "Hello world!"
+
+# Error: cannot convert string to Void
+```
+
+It's fine however, when no value actually needs to be returned:
+
+```python
+@function
+def hello(self):
+    ...
+    # no return
+```
+
+[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
+[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
+[typing]: https://docs.python.org/3/library/typing.html
+[inference]: https://mypy.readthedocs.io/en/stable/type_inference_and_annotations.html
+[type-checker]: https://realpython.com/python-type-checking/#static-type-checking
+[void]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-string/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=./snippets/functions/arguments-string/php/src/MyModule.php
+```
+
+Even though PHP doesn't enforce [type annotations][typing] at runtime,
+it's important to define them with Dagger Functions. The PHP SDK needs the
+typing information at runtime to correctly report to the API.
+
+[typing]: https://www.php.net/manual/en/language.types.type-system.php
+
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=./snippets/functions/arguments-string/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'get-user male'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+get-user male
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call get-user --gender=male
+```
+</TabItem>
+</Tabs>
+
+The result will look something like this:
+
+```shell
+{
+  "title": "Mr",
+  "first": "Hans-Werner",
+  "last": "Thielen"
+}
+```
+
+To pass host environment variables as arguments when invoking a Dagger Function, use the standard shell convention of `$ENV_VAR_NAME`.
+
+Here is an example of passing a host environment variable containing a string value to a Dagger Function:
+
+```shell
+export GREETING=bonjour
+```
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREETING
+```
+</TabItem>
+</Tabs>
+
+## Boolean arguments
+
+Here is an example of a Dagger Function that accepts a Boolean argument:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-boolean/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-boolean/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-boolean/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=./snippets/functions/arguments-boolean/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+:::note
+You can either use the primitive `boolean` type or the boxed `java.lang.Boolean` type.
+:::
+
+```java file=./snippets/functions/arguments-boolean/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'hello true'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+hello true
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call hello --shout=true
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+HELLO, WORLD
+```
+
+:::note
+When passing optional boolean flags:
+- To set the argument to true: `--foo=true` or `--foo`
+- To set the argument to false: `--foo=false`
+:::
+
+## Integer arguments
+
+Here is an example of a Dagger function that accepts an integer argument:
+
+<Tabs groupId="language" queryString="sdk">
+
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-return-values-integer/go/main.go
+```
+</TabItem>
+
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-return-values-integer/python/main.py
+```
+</TabItem>
+
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-return-values-integer/typescript/index.ts
+```
+</TabItem>
+
+<TabItem value="php" label="PHP">
+```php file=./snippets/functions/arguments-return-values-integer/php/src/MyModule.php
+```
+</TabItem>
+
+<TabItem value="java" label="Java">
+:::note
+You can either use the primitive `int` type or the boxed `java.lang.Integer` type.
+:::
+
+```java file=./snippets/functions/arguments-return-values-integer/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'add-integer 1 2'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+add-integer 1 2
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call add-integer --a=1 --b=2
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+3
+```
+
+## Floating-point number arguments
+
+Here is an example of a Dagger function that accepts a floating-point number as argument:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-return-values-float/go/main.go
+```
+</TabItem>
+
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-return-values-float/python/main.py
+```
+</TabItem>
+
+<TabItem value="typescript" label="TypeScript">
+
+:::note
+There's no `float` type keyword in TypeScript because the type keyword `number` already supports floating point numbers.
+
+To declare a `float` argument on the function signature, import `float` from `@dagger.io/dagger` and use it as an argument's type.
+The imported `float` type is a `number` underneath, so you can use it as you would use a `number` inside your function.
+:::
+
+```typescript file=./snippets/functions/arguments-return-values-float/typescript/index.ts
+```
+</TabItem>
+
+<TabItem value="php" label="PHP">
+
+```php file=./snippets/functions/arguments-return-values-float/php/src/MyModule.php
+```
+</TabItem>
+
+<TabItem value="java" label="Java">
+:::note
+You can either use the primitive `float` type or the boxed `java.lang.Float` type.
+:::
+
+```java file=./snippets/functions/arguments-return-values-float/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'add-float 1.4 2.7'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+add-float 1.4 2.7
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call add-float --a=1.4 --b=2.7
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+4.1
+```
+
+## Array arguments
+
+To pass an array argument to a Dagger Function, use a comma-separated list of values.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-array/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-array/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-array/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+:::note
+Lists must have their subtype specified by adding the `#[ListOfType]` attribute to the relevant function argument.
+
+The PHP SDK needs the typing information at runtime to correctly report to the API.
+:::
+
+```php file=./snippets/functions/arguments-array/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+:::note
+You can also use the `java.util.List` interface to represent a list of values.
+For instance instead of the `String[] names` argument in the example, you can have `List<String> names`.
+:::
+
+```java file=./snippets/functions/arguments-array/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'hello John,Jane'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+hello John,Jane
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call hello --names=John,Jane
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+Hello John, Jane
+```
+
+## Directory arguments
+
+You can also pass a directory argument from the command-line. To do so, add the corresponding flag, followed by a local filesystem path or a [remote Git reference](./remote-repositories.mdx). In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
+
+Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, host directories need to be explicitly passed as arguments to Dagger Functions.
+
+Here's an example of a Dagger Function that accepts a `Directory` as argument. The Dagger Function returns a tree representation of the files and directories at that path.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-directory/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-directory/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-directory/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=./snippets/functions/arguments-directory/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=./snippets/functions/arguments-directory/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Here is an example of passing a local directory to this Dagger Function as argument:
+
+```shell
+mkdir -p mydir/mysubdir
+touch mydir/a mydir/b mydir/c mydir/mysubdir/y mydir/mysubdir/z
+```
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'tree mydir 2'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+tree mydir 2
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call tree --src=mydir --depth=2
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+.
+├── a
+├── b
+├── c
+└── mysubdir
+    ├── y
+    └── z
+
+2 directories, 5 files
+```
+
+Here is an example of passing a [remote repository](./remote-repositories.mdx) (Dagger's open-source repository) over HTTPS as a `Directory` argument:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from alpine:latest |
+  with-directory /src https://github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+container |
+  from alpine:latest |
+  with-directory /src https://github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger core \
+  container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=https://github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
+```
+</TabItem>
+</Tabs>
+
+The same repository can also be accessed using SSH. Note that this requires [SSH authentication to be properly configured](./remote-repositories.mdx#ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from alpine:latest |
+  with-directory /src ssh://git@github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+container |
+  from alpine:latest |
+  with-directory /src ssh://git@github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger core \
+  container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=ssh://git@github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
+```
+</TabItem>
+</Tabs>
+
+For more information, refer to the documentation on [remote repository access](./remote-repositories.mdx).
+
+:::note
+Dagger offers two important features for working with `Directory` arguments:
+- [Default paths](../../getting-started/types/directory.mdx#default-paths): Set a default directory path to use if no value is specified for the argument.
+- [Filters](../../getting-started/types/directory.mdx#filters): Control which files and directories are uploaded to a Dagger Function.
+:::
+
+## File arguments
+
+File arguments work in the same way as [directory arguments](#directory-arguments). To pass a file to a Dagger Function as an argument, add the corresponding flag, followed by a local filesystem path or a remote Git reference. In both cases, the CLI will convert it to an object referencing that filesystem path or Git repository location, and pass the resulting `File` object as argument to the Dagger Function.
+
+Here's an example of a Dagger Function that accepts a `File` as argument, reads it, and returns its contents:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-file/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-file/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-file/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=./snippets/functions/arguments-file/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=./snippets/functions/arguments-file/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Here is an example of passing a local file to this Dagger Function as argument:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'read-file /my/file/path/README.md'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+read-file /my/file/path/README.md
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call read-file --source=/my/file/path/README.md
+```
+</TabItem>
+</Tabs>
+
+And here is an example of passing a file from a remote Git repository as argument:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'read-file https://github.com/dagger/dagger.git#main:README.md'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+read-file https://github.com/dagger/dagger.git#main:README.md
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call read-file --source=https://github.com/dagger/dagger.git#main:README.md
+```
+</TabItem>
+</Tabs>
+
+For more information about remote repository access, refer to the documentation on [reference schemes](./remote-repositories.mdx) and [authentication methods](./remote-repositories.mdx#authentication-methods).
+
+:::note
+Dagger offers two important features for working with `File` arguments:
+- [Default paths](../../getting-started/types/directory.mdx#default-paths): Set a default directory path to use if no value is specified for the argument.
+- [Filters](../../getting-started/types/directory.mdx#filters): Control which files are uploaded to a Dagger Function.
+:::
+
+## Container arguments
+
+Just like directories, you can pass a container to a Dagger Function from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting `Container` object as argument to the Dagger Function.
+
+Here is an example of a Dagger Function that accepts a container image reference as an argument. The Dagger Function returns operating system information for the container.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-container/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-container/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-container/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=./snippets/functions/arguments-container/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=./snippets/functions/arguments-container/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+
+Here is an example of passing a container image reference to this Dagger Function as an argument.
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'os-info ubuntu:latest'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+os-info ubuntu:latest
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call os-info --ctr=ubuntu:latest
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+Linux dagger 6.1.0-22-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.94-1 (2024-06-21) x86_64 x86_64 x86_64 GNU/Linux
+```
+
+Here is another example of passing a container image reference to a Dagger Function as an argument. The Dagger Function scans the container using Trivy and reports any vulnerabilities found.
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github.com/jpadams/daggerverse/trivy@v0.3.0 | scan-container index.docker.io/alpine:latest'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github.com/jpadams/daggerverse/trivy@v0.3.0 | scan-container index.docker.io/alpine:latest
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr=index.docker.io/alpine:latest
+```
+</TabItem>
+</Tabs>
+
+## Secret arguments
+
+Dagger allows you to utilize confidential information, such as passwords, API keys, SSH keys and so on, in your Dagger [modules](../../introduction/features/reusability.mdx) and Dagger Functions, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache.
+
+Secrets can be passed to Dagger Functions as arguments using the `Secret` type. Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../cookbook/snippets/secret-variable/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../cookbook/snippets/secret-variable/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../cookbook/snippets/secret-variable/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../cookbook/snippets/secret-variable/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../../cookbook/snippets/secret-variable/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
+</Tabs>
+
+The result will be a JSON-formatted list of issues from Dagger's repository.
+
+When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from multiple providers. Dagger can read secrets from the host environment, the host filesystem, and the result of host command execution, as well as from external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
+
+### Host secret providers
+
+Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN` via the `env` provider:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api env://GITHUB_API_TOKEN'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github-api env://GITHUB_API_TOKEN
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call github-api --token=env://GITHUB_API_TOKEN
+```
+</TabItem>
+</Tabs>
+
+Secrets can also be passed from a host file using the `file` provider:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api file://./github.txt'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github-api file://./github.txt
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call github-api --token=file://./github.txt
+```
+</TabItem>
+</Tabs>
+
+...or as the result of executing a command on the host using the `cmd` provider:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api cmd://"gh auth token"'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github-api cmd://"gh auth token"
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call github-api --token=cmd://"gh auth token"
+```
+</TabItem>
+</Tabs>
+
+### External secret providers
+
+Secrets can also be sourced from external secret managers. Currently, Dagger supports 1Password and Vault.
+
+1Password requires creating a [service account](https://developer.1password.com/docs/service-accounts/get-started) and then setting the `OP_SERVICE_ACCOUNT_TOKEN` environment variable. Alternatively, if no `OP_SERVICE_ACCOUNT_TOKEN` is provided, the integration will attempt to execute the (official) `op` CLI if installed in the system.
+
+1Password [secret references](https://developer.1password.com/docs/cli/secret-references/), in the format `op://VAULT-NAME/ITEM-NAME/[SECTION-NAME/]FIELD-NAME` are supported. Here is an example:
+
+```shell
+export OP_SERVICE_ACCOUNT_TOKEN="mytoken"
+```
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api op://infra/github/credential'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github-api op://infra/github/credential
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call github-api --token=op://infra/github/credential
+```
+</TabItem>
+</Tabs>
+
+Vault can be authenticated with either token or AppRole methods. The Vault host can be specified by setting the environment variable `VAULT_ADDR`. For token authentication, set the environment variable `VAULT_TOKEN`. For AppRole authentication, set the environment variables `VAULT_APPROLE_ROLE_ID` and `VAULT_APPROLE_SECRET_ID`. Additional client configuration can be specified by the default environment variables accepted by Vault.
+
+Vault KvV2 secrets are accessed with the scheme `vault://PATH/TO/SECRET.ITEM`. If your KvV2 is not mounted at `/secret`, specify the mount location with the environment variable `VAULT_PATH_PREFIX`. Here is an example:
+
+```shell
+export VAULT_ADDR='https://example.com:8200'
+export VAULT_TOKEN=abcd_1234
+```
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api vault://infra/github.credential'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github-api vault://infra/github.credential
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call github-api --token=vault://infra/github.credential
+```
+</TabItem>
+</Tabs>
+
+### Caching
+
+When a `Secret` is included in other operations, the layer cache entries for those operations will be based on the plaintext value of the secret. If the same operation is run with a secret with the same plaintext value, that operation may be cached rather than re-executed. In the above example, the cache for the `withExec` will be based on the plaintext value of the secret. If two clients execute the container with a secret whose plaintext values are the same, the container execution may be cached. Otherwise, if the plaintext values of the secret are different, the container execution will not be cached.
+
+## Service arguments
+
+Host network services or sockets can be passed to Dagger Functions as arguments. To do so, add the corresponding flag, followed by a service or socket reference.
+
+### TCP and UDP services
+
+To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://HOST:PORT` or `udp://HOST:PORT`.
+
+Assume that you have a PostgresQL database running locally on port 5432, as with:
+
+```shell
+docker run --rm -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
+```
+
+Here is an example of passing this host service as argument to a PostgreSQL client Dagger Function, which drops you to a prompt from where you can execute SQL queries:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+github.com/kpenfound/dagger-modules/postgres@v0.1.0 |
+  client tcp://localhost:5432 postgres postgres postgres
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github.com/kpenfound/dagger-modules/postgres@v0.1.0 | client tcp://localhost:5432 postgres postgres postgres
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger -m github.com/kpenfound/dagger-modules/postgres@v0.1.0 call \
+  client --db=postgres --user=postgres --password=postgres --server=tcp://localhost:5432
+```
+</TabItem>
+</Tabs>
+
+### Unix sockets
+
+Similar to host TCP/UDP services, Dagger Functions can also be granted access to host Unix sockets when the client is running on Linux or MacOS.
+
+To pass host Unix sockets as arguments when invoking a Dagger Function, specify them by their path on the host.
+
+For example, assuming you have Docker on your host with the Docker daemon listening on a Unix socket at `/var/run/docker.sock`, you can pass this socket to a Docker client Dagger Function as follows:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github.com/sipsma/daggerverse/docker-client@v0.0.1 /var/run/docker.sock | version'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+github.com/sipsma/daggerverse/docker-client@v0.0.1 /var/run/docker.sock | version
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger -m github.com/sipsma/daggerverse/docker-client@v0.0.1 call \
+  --sock=/var/run/docker.sock version
+```
+</TabItem>
+</Tabs>
+
+## Optional arguments
+
+Function arguments can be marked as optional. In this case, the Dagger CLI will not display an error if the argument is omitted in the function call.
+
+Here's an example of a Dagger Function with an optional argument:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-optional/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-optional/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-optional/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+:::note
+The definition of optional varies between Dagger and PHP.
+
+An optional argument to PHP is one that has a default value.
+
+An optional argument to Dagger can be omitted entirely. It is truly optional.
+
+To specify a function argument as optional, simply make it nullable. When using the Dagger CLI, if the argument is omitted; the PHP SDK will treat this as receiving the value `null`.
+:::
+```php file=./snippets/functions/arguments-optional/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+:::note
+Because of the usage of `Optional`, primitive types can not be marked as optional. You have to use the boxed types like `Integer` or `Boolean`.
+
+When an argument is not set as optional, Dagger will ensure the value is not `null` by adding a call to `Objects.requireNonNull` against the argument.
+:::
+
+```java file=./snippets/functions/arguments-optional/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function, with the optional argument:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'hello --name=John'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+hello --name=John
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call hello --name=John
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+Hello, John
+```
+
+Here is an example call for this Dagger Function, without the optional argument:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c hello
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+hello
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call hello
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+Hello, world
+```
+
+## Default values
+
+Function arguments can define a default value if no value is supplied for them.
+
+Here's an example of a Dagger Function with a default value for a string argument:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/functions/arguments-default-string/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/functions/arguments-default-string/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/functions/arguments-default-string/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=./snippets/functions/arguments-default-string/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+:::note
+The default value provided must be a valid JSON string representation of the type.
+
+For instance if the argument is of type `Integer` and the default value is `123`, then the annotation must be `@Default("123")`.
+If the argument is of type `String` and the default value is `world`, then the annotation should be `@Default("\"world\"")`.
+In order to simplify this very specific case, if the argument is of type `String` and the value doesn't start with an escaped quote,
+then the SDK will automatically add the escaped quotes for you. That way you can simply write `@Default("world")`.
+:::
+
+```java file=./snippets/functions/arguments-default-string/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function, without the required argument:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c hello
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+hello
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call hello
+```
+</TabItem>
+</Tabs>
+
+The result will look like this:
+
+```shell
+Hello, world
+```
+
+Passing null to an optional argument signals that no default value should be used.
+
+:::note
+Dagger supports [default paths](../../getting-started/types/directory.mdx#default-paths) for `Directory` or `File` arguments. Dagger will automatically use this default path when no value is specified for the corresponding argument.
+:::

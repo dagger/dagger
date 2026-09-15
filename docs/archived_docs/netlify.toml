@@ -1,0 +1,12 @@
+[[redirects]]
+  # Embargoes compliance. DO NOT REMOVE
+  conditions = {Country = ["CU", "IR", "KP", "SY", "UA-43"]}
+  from = "/*"
+  to = "/restricted"
+  status = 302
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+  Referrer-policy = "no-referrer-when-downgrade"

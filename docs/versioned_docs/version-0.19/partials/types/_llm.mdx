@@ -1,0 +1,20 @@
+The `LLM` type initializes a Large Language Model (LLM).
+
+:::tip `ENV` TYPE
+You use an `LLM` in conjunction with `Env`. The `Env` type is used to represent the environment in which an LLM operates. It allows the LLM to interact with inputs and outputs, such as directories, containers, and custom modules.
+:::
+
+### Common operations
+
+Some of the common operations available on the `LLM` type include:
+
+| Field | Description |
+|-------|-------------|
+| `model` | Returns the model used by the LLM |
+| `lastReply` | Returns the last reply from the LLM |
+| `history` | Returns the LLM message history |
+| `withEnv` | Allows the LLM to interact with an environment |
+| `withPrompt` | Appends a prompt to the LLM context |
+| `withPromptFile` | Appends a prompt file to the LLM context |
+| `withPromptVar` | Adds a string variable to the LLM context |
+| `withModel` | Sets the model used by the LLM |

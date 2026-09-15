@@ -1,0 +1,1626 @@
+package daggercmd
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"iter"
+	"maps"
+	"net/http"
+	"net/url"
+	"os"
+	"os/signal"
+	"runtime/pprof"
+	runtimetrace "runtime/trace"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/google/shlex"
+	"github.com/mattn/go-isatty"
+	"github.com/muesli/reflow/indent"
+	"github.com/muesli/reflow/wordwrap"
+	"github.com/muesli/termenv"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/mod/semver"
+	"golang.org/x/term"
+	"mvdan.cc/sh/v3/interp"
+
+	"dagger.io/dagger/engineconn"
+	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/drivers"
+	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/cloud/auth"
+	telemetry "github.com/dagger/otel-go"
+)
+
+var (
+	cpuprofile = os.Getenv("CPUPROFILE")
+	pprofAddr  = os.Getenv("PPROF")
+
+	workdir      string
+	workspaceRef string
+	workspaceEnv string
+
+	silent                    = silentFromEnv()
+	verbose                   int
+	quiet, _                  = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	reveal                    = os.Getenv("DAGGER_REVEAL") != ""
+	expandCompleted           = os.Getenv("DAGGER_EXPAND_COMPLETED") != ""
+	debugFlag                 bool
+	progress                  string
+	shellOnError              bool
+	shellCommandOnError       string
+	shellCommandOnErrorParsed []string
+	web                       bool
+	noExit                    bool
+	xRelease                  string
+	autoApply                 bool
+	engineFlag                string
+	// cloudFlag backs the deprecated --cloud flag, an alias for --engine=cloud.
+	cloudFlag bool
+	// cloudEngineEnvSet records the deprecated DAGGER_CLOUD_ENGINE variable.
+	// Any value selects Dagger Cloud.
+	_, cloudEngineEnvSet = os.LookupEnv(cloudEngineEnv)
+	profileFlag          bool
+
+	dotOutputFilePath string
+	dotFocusField     string
+	dotShowInternal   bool
+
+	stdinIsTTY  = isatty.IsTerminal(os.Stdin.Fd())
+	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
+	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
+
+	hasTTY = stdoutIsTTY || stderrIsTTY
+
+	Frontend idtui.Frontend
+)
+
+const daggerXReleaseEnv = "DAGGER_X_RELEASE"
+
+var githubCommitAPI = "https://api.github.com/repos/dagger/dagger/commits/"
+
+func silentFromEnv() bool {
+	// DAGGER_SILENT is the environment equivalent of --silent.
+	silent, _ := strconv.ParseBool(os.Getenv("DAGGER_SILENT"))
+	return silent
+}
+
+func init() {
+	// allow user explicitly setting progress via env, but default it to "auto"
+	// otherwise
+	if progress == "" {
+		progress = "auto"
+	}
+}
+
+var (
+	stdin          io.Reader
+	stdout, stderr io.Writer
+)
+
+func logFileFromEnv(envName string) *os.File {
+	if logFileName := os.Getenv(envName); logFileName != "" {
+		f, err := os.Create(logFileName)
+		if err != nil {
+			panic(err)
+		}
+		return f
+	}
+	return nil
+}
+
+func maybeWrapReader(r io.Reader, envName string) io.Reader {
+	f := logFileFromEnv(envName)
+	if f == nil {
+		return r
+	}
+	return io.TeeReader(r, f)
+}
+
+func maybeWrapWriter(w io.Writer, envName string) io.Writer {
+	f := logFileFromEnv(envName)
+	if f == nil {
+		return w
+	}
+	return io.MultiWriter(w, f)
+}
+
+func init() {
+	// Disable logrus output, which only comes from the docker
+	// commandconn library that is used by buildkit's connhelper
+	// and prints unneeded warning logs.
+	logrus.StandardLogger().SetOutput(io.Discard)
+
+	stdin = maybeWrapReader(os.Stdin, "DAGGER_LOG_STDIN")
+	stdout = maybeWrapWriter(os.Stdout, "DAGGER_LOG_STDOUT")
+	stderr = maybeWrapWriter(os.Stderr, "DAGGER_LOG_STDERR")
+
+	// Visual grouping for `dagger --help`. Groups render in the order declared
+	// here, separated by blank lines. Titles are intentionally empty —
+	// readers parse the surface by visual chunking, not by section headers.
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "setup", Title: ""},
+		&cobra.Group{ID: "daily", Title: ""},
+		&cobra.Group{ID: "workspace", Title: ""},
+		&cobra.Group{ID: "toolbox", Title: ""},
+		&cobra.Group{ID: "utility", Title: ""},
+	)
+
+	// Assign each visible top-level command to its group.
+	initCmd.GroupID = "setup"
+
+	checksCmd.GroupID = "daily"
+	generateCmd.GroupID = "daily"
+	upCmd.GroupID = "daily"
+	shellCmd.GroupID = "daily"
+	agentCmd.GroupID = "daily"
+
+	moduleCmd.GroupID = "workspace"
+	sdkCmd.GroupID = "workspace"
+	installAliasCmd.GroupID = "workspace"
+	uninstallAliasCmd.GroupID = "workspace"
+	updateAliasCmd.GroupID = "workspace"
+	settingsAliasCmd.GroupID = "workspace"
+
+	apiCmd.GroupID = "toolbox"
+	cloudCmd.GroupID = "toolbox"
+	workspaceCmd.GroupID = "toolbox"
+
+	versionRoot := versionCmd()
+	versionRoot.GroupID = "utility"
+
+	// Cobra auto-creates the help command; assign it to the utility group too.
+	rootCmd.SetHelpCommandGroupID("utility")
+
+	rootCmd.AddCommand(
+		listenCmd,
+		versionRoot,
+		queryCmd,
+		apiCmd,
+		traceCmd,
+		checksCmd,
+		upCmd,
+		shellCmd,
+		agentCmd,
+		generateCmd,
+		workspaceCmd,
+		moduleCmd,
+		sdkCmd,
+		installAliasCmd,
+		uninstallAliasCmd,
+		updateAliasCmd,
+		settingsAliasCmd,
+		initCmd,
+		setupCmd,
+		callCoreCmd.Command(),
+		callModCmd.Command(),
+		functionsAliasCmd,
+		sessionAliasCmd,
+		scriptCmd,
+		mcpCmd,
+	)
+
+	rootCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name for Cloud-scoped commands")
+	rootCmd.PersistentFlags().Lookup("org").Hidden = true
+
+	cobra.AddTemplateFunc("isExperimental", isExperimental)
+	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
+	cobra.AddTemplateFunc("availableFlags", availableFlagsForCommand)
+	cobra.AddTemplateFunc("inheritedFlags", inheritedFlags)
+	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
+	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
+	cobra.AddTemplateFunc("groupFlags", groupFlags)
+	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
+	cobra.AddTemplateFunc("cmdShortWrappedListByGroups", cmdShortWrappedListByGroups)
+	cobra.AddTemplateFunc("availableSubcommandsTitle", availableSubcommandsTitle)
+	cobra.AddTemplateFunc("noAvailableSubcommands", noAvailableSubcommands)
+	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
+	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
+	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
+	cobra.AddTemplateFunc("indent", indent.String)
+	rootCmd.SetUsageTemplate(usageTemplate)
+
+	// hide the help flag as it's ubiquitous and thus noisy
+	// we'll add it in the last line of the usage template
+	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
+	rootCmd.PersistentFlags().Lookup("help").Hidden = true
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
+
+	disableFlagsInUseLine(rootCmd)
+}
+
+var rootCmd = &cobra.Command{
+	// Parse each parent's flags before entering a child command. SDK settings
+	// can then use the same name as a module-init flag without replacing it.
+	TraverseChildren:      true,
+	Use:                   "dagger [options] [subcommand | file...]",
+	Short:                 "A tool to run composable workflows in containers",
+	SilenceErrors:         true, // handled in func main() instead
+	DisableFlagsInUseLine: true,
+	Args:                  cobra.ArbitraryArgs,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// if we got this far, CLI parsing worked just fine; no
+		// need to show usage for runtime errors
+		cmd.SilenceUsage = true
+		if restore := hideUnavailableCompletionFlags(cmd, args); restore != nil {
+			cobra.OnFinalize(restore)
+		}
+		applyCommandProgressDefaults(cmd)
+
+		if cpuprofile != "" {
+			profF, err := os.Create(cpuprofile)
+			if err != nil {
+				return fmt.Errorf("create profile: %w", err)
+			}
+
+			pprof.StartCPUProfile(profF)
+
+			tracePath := cpuprofile + ".trace"
+
+			traceF, err := os.Create(tracePath)
+			if err != nil {
+				return fmt.Errorf("create trace: %w", err)
+			}
+			if err := runtimetrace.Start(traceF); err != nil {
+				return fmt.Errorf("start trace: %w", err)
+			}
+
+			cobra.OnFinalize(func() {
+				pprof.StopCPUProfile()
+				profF.Close()
+				runtimetrace.Stop()
+				traceF.Close()
+			})
+		}
+
+		if pprofAddr != "" {
+			if err := setupDebugHandlers(pprofAddr); err != nil {
+				return fmt.Errorf("start pprof: %w", err)
+			}
+		}
+		if err := validateWorkspaceFlagPolicy(cmd, args); err != nil {
+			return err
+		}
+
+		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
+		t := analytics.New(analytics.DefaultConfig(labels))
+		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
+		cobra.OnFinalize(func() {
+			t.Close()
+		})
+
+		// Keep subscription OAuth tokens fresh for as long as this command
+		// runs: `dagger script`/`agent` sessions outlive an hour-long access
+		// token, and refreshing ahead of expiry keeps the round-trip off the
+		// critical path. No-op unless a subscription provider is configured;
+		// the on-demand refresher hook stays the fallback.
+		cobra.OnFinalize(startOAuthTokenRefresher(cmd.Context()))
+
+		checkForUpdates(cmd.Context(), cmd.ErrOrStderr())
+
+		if err := checkCloudToken(cmd.Context(), cmd.OutOrStdout()); err != nil {
+			return err
+		}
+
+		t.Capture(cmd.Context(), "cli_command", map[string]string{
+			"name": commandName(cmd),
+		})
+
+		return nil
+	},
+	RunE: runRoot,
+}
+
+func runRoot(cmd *cobra.Command, args []string) error {
+	// Bare `dagger` prints regular CLI usage. Explicit script invocations
+	// (`dagger -c ...` and `dagger file.dsh`) use the hidden script command.
+	if len(args) == 0 && !hasChangedRootShellFlag(cmd) {
+		return cmd.Usage()
+	}
+	if len(args) > 0 && !isFile(args[0]) {
+		return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+	}
+	cmd.SetArgs(append([]string{"script"}, args...))
+	return cmd.Execute()
+}
+
+func hasChangedRootShellFlag(cmd *cobra.Command) bool {
+	// Cobra stores parsed persistent and local flags together in cmd.Flags().
+	// Only root-local flags signal an explicit shell-style invocation; global
+	// flags like `--debug` should not keep the old shell fallback.
+	changed := false
+	persistent := cmd.PersistentFlags()
+	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		if persistent.Lookup(flag.Name) == nil {
+			changed = true
+		}
+	})
+	return changed
+}
+
+func isFile(name string) bool {
+	info, err := os.Stat(name)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func findSuggestions(c *cobra.Command, arg string) string {
+	if c.DisableSuggestions {
+		return ""
+	}
+	if c.SuggestionsMinimumDistance <= 0 {
+		c.SuggestionsMinimumDistance = 2
+	}
+	var sb strings.Builder
+	if suggestions := c.SuggestionsFor(arg); len(suggestions) > 0 {
+		sb.WriteString("\n\nDid you mean this?\n")
+		for _, s := range suggestions {
+			_, _ = fmt.Fprintf(&sb, "\t%v\n", s)
+		}
+	}
+	return sb.String()
+}
+
+func checkForUpdates(ctx context.Context, w io.Writer) {
+	if os.Getenv("DAGGER_NO_UPDATE_CHECK") != "" {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	updateCh := make(chan string)
+	go func() {
+		defer close(updateCh)
+
+		updateAvailable, err := updateAvailable(ctx)
+		if err != nil {
+			// Silently ignore the error -- it's already being caught by OTEL
+			return
+		}
+
+		updateCh <- updateAvailable
+	}()
+
+	cobra.OnFinalize(func() {
+		select {
+		case updateAvailable := <-updateCh:
+			if updateAvailable == "" {
+				return
+			}
+			versionNag(w, updateAvailable)
+		default:
+			// If we didn't have enough time to check for updates,
+			// cancel the update check.
+			cancel()
+		}
+	})
+}
+
+// checkCloudToken triggers the Login flow if an invalid credentials file is detected.
+func checkCloudToken(ctx context.Context, w io.Writer) error {
+	_, err := auth.Token(ctx)
+	var se *json.SyntaxError
+	if errors.As(err, &se) {
+		fmt.Fprint(w, "invalid credentials file, signing in...\n")
+		return auth.Login(ctx, w)
+	}
+	return nil
+}
+
+func installGlobalFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
+	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
+	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
+	flags.Lookup("x-release").Hidden = true
+
+	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
+	setFlagCapabilities(flags.Lookup("workspace"), maySelectWorkspace)
+	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
+	flags.Lookup("env").Hidden = true
+	setFlagAnyCapabilities(flags.Lookup("env"), mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
+
+	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when an output is returned")
+	setFlagCapabilities(flags.Lookup("auto-apply"), mayProduceOutput)
+
+	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Enable engine and trace diagnostics")
+	setFlagAnyCapabilities(flags.Lookup("debug"), mayCallEngine, mayRenderPipeline)
+
+	installMayCallEngineFlags(flags)
+	installMayRenderPipelineFlags(flags)
+
+	if err := flags.MarkHidden("workdir"); err != nil {
+		fmt.Fprintln(stdout, "Error hiding flag: workdir", err)
+		os.Exit(1)
+	}
+}
+
+// defaultShellCommandOnError is the command --shell-on-error runs in the
+// failed container.
+const defaultShellCommandOnError = "/bin/sh"
+
+// engineFlagUsage names the value space on one line and sends the reader to
+// the help topic for the rest. The full catalog is too long to repeat in the
+// usage message of every command that can call the engine.
+var engineFlagUsage = fmt.Sprintf(
+	"Select the engine: %s (or set %s; run 'dagger help engine' for details)",
+	drivers.SchemeSummary(), engineEnv,
+)
+
+func installMayCallEngineFlags(flags *pflag.FlagSet) {
+	engineFlags := pflag.NewFlagSet(string(mayCallEngine), pflag.ContinueOnError)
+	engineFlags.StringVar(&engineFlag, "engine", "", engineFlagUsage)
+	engineFlags.BoolVar(&cloudFlag, "cloud", false, "")
+	_ = engineFlags.MarkDeprecated("cloud", "use --engine=cloud instead")
+	engineFlags.Lookup("cloud").Hidden = true
+	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails (needs an interactive terminal)")
+	engineFlags.BoolVar(&shellOnError, "interactive", false, "")
+	_ = engineFlags.MarkDeprecated("interactive", "use --shell-on-error (-i) instead")
+	engineFlags.StringVar(&shellCommandOnError, "shell-command-on-error", defaultShellCommandOnError, "Command to run when --shell-on-error opens a shell")
+	engineFlags.Lookup("shell-command-on-error").Hidden = true
+	engineFlags.StringVar(&shellCommandOnError, "interactive-command", defaultShellCommandOnError, "")
+	_ = engineFlags.MarkDeprecated("interactive-command", "use --shell-command-on-error instead")
+	engineFlags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
+	engineFlags.Lookup("profile").Hidden = true
+	setFlagSetCapabilities(engineFlags, mayCallEngine)
+	flags.AddFlagSet(engineFlags)
+}
+
+func installMayRenderPipelineFlags(flags *pflag.FlagSet) {
+	renderFlags := pflag.NewFlagSet(string(mayRenderPipeline), pflag.ContinueOnError)
+	renderFlags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
+	renderFlags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
+	renderFlags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs, report)")
+	renderFlags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
+	renderFlags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
+
+	hiddenFlags := pflag.NewFlagSet("hidden", pflag.ContinueOnError)
+	hiddenFlags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
+	hiddenFlags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
+	hiddenFlags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
+	hiddenFlags.VisitAll(func(flag *pflag.Flag) {
+		flag.Hidden = true
+	})
+
+	renderFlags.AddFlagSet(hiddenFlags)
+	setFlagSetCapabilities(renderFlags, mayRenderPipeline)
+	flags.AddFlagSet(renderFlags)
+}
+
+// disableFlagsInUseLine disables the automatic addition of [flags]
+// when calling UseLine.
+func disableFlagsInUseLine(cmd *cobra.Command) {
+	for _, c := range cmd.Commands() {
+		c.DisableFlagsInUseLine = true
+		disableFlagsInUseLine(c)
+	}
+}
+
+func execXRelease(ctx context.Context) error {
+	if xRelease == "" {
+		return nil
+	}
+	ref := strings.TrimSpace(xRelease)
+	downloadRef, engineRef, release := xReleaseReleaseRef(ref)
+	resolved := false
+	if !release {
+		commit, wasResolved, err := resolveXReleaseRef(ctx, ref)
+		if err != nil {
+			return fmt.Errorf("resolve experimental release %q: %w", ref, err)
+		}
+		downloadRef = commit
+		engineRef = commit
+		resolved = wasResolved
+	}
+
+	downloader := engineconn.CLIDownloader{
+		Ref:       downloadRef,
+		Release:   release,
+		LogOutput: stderr,
+	}
+	binPath, err := downloader.Download(ctx)
+	if err != nil {
+		return fmt.Errorf("download experimental release CLI: %w", err)
+	}
+
+	msg := fmt.Sprintf("running dagger from %s", ref)
+	if release {
+		msg += fmt.Sprintf("; using release %s", engineRef)
+	} else if resolved {
+		msg += fmt.Sprintf("; resolved to %s; pin with %s=%s or --x-release=%s", downloadRef, daggerXReleaseEnv, downloadRef, downloadRef)
+	}
+	fmt.Fprintln(stderr, xReleaseLogLine(msg))
+
+	if shouldCleanupOldEngines() {
+		_ = drivers.CleanupOldEngines(ctx, []string{
+			engineVersion(engine.Tag),
+			engineVersion(engineRef),
+		})
+	}
+
+	args := xReleaseProcessArgs(os.Args[1:])
+	env, engineEnvs := xReleaseProcessEnv(os.Environ())
+	if len(engineEnvs) > 0 {
+		fmt.Fprintln(stderr, xReleaseLogLine(fmt.Sprintf(
+			"warning: --x-release or %s is being used with %s",
+			daggerXReleaseEnv,
+			strings.Join(engineEnvs, " and "),
+		)))
+	}
+	execArgs := append([]string{binPath}, args...)
+	if err := execCLI(binPath, execArgs, env); err != nil {
+		return fmt.Errorf("exec experimental release CLI: %w", err)
+	}
+	return errors.New("internal error: experimental release exec returned without replacing the current process")
+}
+
+func xReleaseReleaseRef(ref string) (downloadRef string, engineRef string, ok bool) {
+	maybeTag := strings.TrimPrefix(ref, "v")
+	if !semver.IsValid("v" + maybeTag) {
+		return "", "", false
+	}
+	return maybeTag, "v" + maybeTag, true
+}
+
+func resolveXReleaseRef(ctx context.Context, ref string) (string, bool, error) {
+	if ref == "" {
+		return "", false, fmt.Errorf("ref must not be empty")
+	}
+	if len(ref) == 40 {
+		return strings.ToLower(ref), false, nil
+	}
+
+	commitURL := githubCommitAPI + url.PathEscape(ref)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, commitURL, nil)
+	if err != nil {
+		return "", false, fmt.Errorf("create GitHub commit request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve git ref from GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return "", false, fmt.Errorf("resolve git ref from GitHub: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var commit struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&commit); err != nil {
+		return "", false, fmt.Errorf("decode GitHub commit response: %w", err)
+	}
+	return strings.ToLower(commit.SHA), true, nil
+}
+
+func xReleaseProcessArgs(args []string) []string {
+	rewritten := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			return append(rewritten, args[i:]...)
+		}
+		switch {
+		case arg == "--x-release":
+			if i+1 < len(args) {
+				i++
+			}
+		case strings.HasPrefix(arg, "--x-release="):
+		default:
+			rewritten = append(rewritten, arg)
+		}
+	}
+	return rewritten
+}
+
+// xReleaseProcessEnv returns the environment for the downloaded CLI, and the
+// names of the variables in it that select an engine. That engine may not
+// match the downloaded version, so the caller warns about them.
+func xReleaseProcessEnv(environ []string) (env []string, engineEnvs []string) {
+	env = make([]string, 0, len(environ)+1)
+	hasLeaveOldEngine := false
+	for _, kv := range environ {
+		key, _, _ := strings.Cut(kv, "=")
+		switch key {
+		case daggerXReleaseEnv, RunnerImageLoaderEnv:
+			continue
+		case engineEnv, RunnerHostEnv:
+			engineEnvs = append(engineEnvs, key)
+		}
+		if key == "DAGGER_LEAVE_OLD_ENGINE" {
+			hasLeaveOldEngine = true
+		}
+		env = append(env, kv)
+	}
+	if !hasLeaveOldEngine {
+		env = append(env, "DAGGER_LEAVE_OLD_ENGINE=1")
+	}
+	return env, engineEnvs
+}
+
+func shouldCleanupOldEngines() bool {
+	val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE")
+	if !ok {
+		return true
+	}
+	leaveOldEngine, _ := strconv.ParseBool(val)
+	return !leaveOldEngine
+}
+
+// A command can share a global flag's value under its long name while using
+// the global shorthand for another flag. Such aliases still need early parsing.
+const globalFlagAliasAnnotation = "dagger.io/global-flag-alias"
+
+// Apply the command's normal flag error handler during the early parsing
+// passes too. ExitError means that handler already printed the diagnostic.
+func commandFlagErrorStatus(cmd *cobra.Command, err error, prefix string) int {
+	if cmd != nil {
+		err = cmd.FlagErrorFunc()(cmd, err)
+	}
+	var exit idtui.ExitError
+	if errors.As(err, &exit) {
+		return exit.Code()
+	}
+	if prefix != "" {
+		fmt.Fprint(stderr, prefix, " ")
+	}
+	fmt.Fprintln(stderr, err)
+	return 1
+}
+
+func parseGlobalFlags(root *cobra.Command, args []string) []string {
+	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if _, ok := flag.Value.(interface{ replay() }); ok || flag.Name == "help" {
+			return
+		}
+		value := &parsedGlobalFlagValue{Value: flag.Value}
+		if slice, ok := flag.Value.(pflag.SliceValue); ok {
+			flag.Value = &parsedGlobalSliceFlagValue{parsedGlobalFlagValue: value, SliceValue: slice}
+		} else {
+			flag.Value = value
+		}
+	})
+	cmd, commandArgs := resolveCommand(root, args)
+	if cmd == nil {
+		return args
+	}
+
+	flags := copyCommandFlags(cmd, "global")
+	flags.Usage = func() {}
+	flags.VisitAll(func(flag *pflag.Flag) {
+		// Cobra owns --help. The clones share the real flag values, so applying
+		// it here would set it before Cobra runs the command. Cobra reads the
+		// value even when a command disables flag parsing, so a dynamic command
+		// such as `dagger call` would print its static usage instead of loading
+		// the module and rendering its functions.
+		if flag.Name == "help" {
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+			return
+		}
+		global := root.PersistentFlags().Lookup(flag.Name)
+		selected := cmd.Flags().Lookup(flag.Name)
+		if global != nil && selected != nil && len(selected.Annotations[globalFlagAliasAnnotation]) > 0 {
+			flag.Value = global.Value
+			return
+		}
+		if global == nil || selected != global {
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+		}
+	})
+	if err := flags.Parse(commandArgs); err != nil && !errors.Is(err, pflag.ErrHelp) {
+		os.Exit(commandFlagErrorStatus(cmd, err, ""))
+	}
+	globalXRelease := root.PersistentFlags().Lookup("x-release")
+	if globalXRelease == nil || cmd.Flags().Lookup("x-release") != globalXRelease || !flags.Changed("x-release") {
+		xRelease = os.Getenv(daggerXReleaseEnv)
+	}
+	xRelease = strings.TrimSpace(xRelease)
+	// Dynamic SDK command registration needs the command path as well as its
+	// positional arguments. resolveCommand removed that path before parsing.
+	return append(strings.Fields(commandName(cmd)), flags.Args()...)
+}
+
+// replayGlobalFlags skips the occurrences already applied during setup. Later
+// occurrences, such as a global flag after a dynamic function, still apply.
+func replayGlobalFlags(root *cobra.Command) {
+	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if value, ok := flag.Value.(interface{ replay() }); ok {
+			value.replay()
+		}
+	})
+}
+
+type parsedGlobalFlagValue struct {
+	pflag.Value
+	values    []string
+	replaying bool
+}
+
+func (value *parsedGlobalFlagValue) Set(arg string) error {
+	if value.replaying && len(value.values) > 0 && value.values[0] == arg {
+		value.values = value.values[1:]
+		return nil
+	}
+	if err := value.Value.Set(arg); err != nil {
+		return err
+	}
+	if !value.replaying {
+		value.values = append(value.values, arg)
+	}
+	return nil
+}
+
+func (value *parsedGlobalFlagValue) replay() {
+	value.replaying = true
+}
+
+type parsedGlobalSliceFlagValue struct {
+	*parsedGlobalFlagValue
+	pflag.SliceValue
+}
+
+// parseCommandFlagsWithoutGlobals adds module constructor flags to a dynamic
+// command. Its globals were already parsed before loading the module.
+func parseCommandFlagsWithoutGlobals(cmd *cobra.Command, args []string) error {
+	values := map[*pflag.Flag]pflag.Value{}
+	cmd.Root().PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Name != "help" {
+			values[flag] = flag.Value
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+		}
+	})
+	defer func() {
+		for flag, value := range values {
+			flag.Value = value
+		}
+	}()
+	return cmd.ParseFlags(args)
+}
+
+func xReleaseLogLine(msg string) string {
+	line := "[dagger x-release] " + msg
+	if stderrIsTTY {
+		return idtui.NewOutput(stderr).String(line).Bold().Foreground(termenv.ANSIYellow).String()
+	}
+	return line
+}
+
+func setWorkspaceFlagPolicy(cmd *cobra.Command) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[workspaceFlagPolicyAnnotation] = workspaceFlagPolicyLocalOnly
+}
+
+func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
+	if workspaceRef == "" {
+		return nil
+	}
+
+	switch workspaceFlagPolicy(cmd, args) {
+	case workspaceFlagPolicyDisallow:
+		return fmt.Errorf("--workspace is not supported for %q", cmd.CommandPath())
+	case workspaceFlagPolicyLocalOnly:
+		if isObviouslyRemoteWorkspaceRef(workspaceRef) {
+			return fmt.Errorf("--workspace must be a local path for %q", cmd.CommandPath())
+		}
+	}
+
+	return nil
+}
+
+func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
+	// Writes to the repository's workspace config need a local workspace.
+	// --global writes target the user-level config file instead, which is
+	// always local to the caller, so a remote workspace stays selectable as
+	// the key/introspection target.
+	if isWorkspaceConfigCommand(cmd) && len(args) == 2 && !workspaceConfigGlobal {
+		return workspaceFlagPolicyLocalOnly
+	}
+	if isWorkspaceSettingsWriteCommand(cmd, args) && !workspaceSettingsGlobal {
+		return workspaceFlagPolicyLocalOnly
+	}
+	if commandName(cmd) == "workspace entrypoint" && (len(args) == 1 || workspaceEntrypointUnset) {
+		return workspaceFlagPolicyLocalOnly
+	}
+
+	for c := cmd; c != nil; c = c.Parent() {
+		if policy := c.Annotations[workspaceFlagPolicyAnnotation]; policy != "" {
+			return policy
+		}
+	}
+
+	return ""
+}
+
+func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
+	switch commandName(cmd) {
+	case "config", "workspace config":
+		return true
+	default:
+		return false
+	}
+}
+
+func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
+	switch commandName(cmd) {
+	case "settings", "workspace settings", "module settings":
+		return len(args) >= 3
+	default:
+		return false
+	}
+}
+
+func isObviouslyRemoteWorkspaceRef(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	if strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "../") || strings.HasPrefix(ref, "/") {
+		return false
+	}
+	if strings.Contains(ref, "://") || strings.HasPrefix(ref, "git@") {
+		return true
+	}
+
+	if abs, err := pathutil.Abs(ref); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			return false
+		} else if !os.IsNotExist(err) {
+			return false
+		}
+	}
+
+	// A single dotted token ("my.dir") is far more likely a directory that does
+	// not exist yet than a host, so stay conservative and require a path.
+	_, _, hasSlash := strings.Cut(ref, "/")
+	return hasSlash && !workspace.IsLocalRef(ref, "")
+}
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/cli")
+}
+
+func Resource(ctx context.Context) *resource.Resource {
+	attrs := []attribute.KeyValue{
+		semconv.ServiceName("dagger-cli"),
+		semconv.ServiceVersion(engine.Version),
+	}
+	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version).AsMap() {
+		attrs = append(attrs, attribute.String(k, v))
+	}
+	res, err := resource.New(ctx,
+		resource.WithSchemaURL(semconv.SchemaURL),
+		resource.WithAttributes(attrs...),
+		resource.WithFromEnv(),
+		resource.WithOSType(),
+		resource.WithContainer(),
+		resource.WithProcessCommandArgs(),
+	)
+	if err != nil {
+		slog.Warn("failed to set up OTel resource", "error", err)
+	}
+	return res
+}
+
+const InstrumentationLibrary = "dagger.io/cli"
+
+var opts dagui.FrontendOpts
+
+const (
+	workspaceFlagPolicyAnnotation = "workspaceFlagPolicy"
+	workspaceFlagPolicyDisallow   = "disallow"
+	workspaceFlagPolicyLocalOnly  = "local-only"
+
+	showFinalProgressKey = "showFinalProgress"
+
+	// progressDefaultKey annotates a command with the progress mode it should
+	// default to when none is chosen explicitly (flag or DAGGER_PROGRESS),
+	// letting commands with machine consumers opt out of the report default.
+	progressDefaultKey = "progressDefault"
+)
+
+func commandShowsFinalProgress(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Annotations[showFinalProgressKey] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+// commandProgressDefault returns the progressDefault annotation of the
+// command os.Args points at, resolving it the way cobra will (global flags
+// may appear before the subcommand, and the command may be nested, e.g.
+// `dagger api session`). Empty when unresolvable or unannotated; a resolution
+// error just means cobra will reject the command line later anyway.
+func commandProgressDefault(args []string) string {
+	cmd, _, err := rootCmd.Find(args)
+	if err != nil || cmd == nil {
+		return ""
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		if v := c.Annotations[progressDefaultKey]; v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func applyCommandProgressDefaults(cmd *cobra.Command) {
+	verbosity := dagui.HideCompletedVerbosity
+	if commandShowsFinalProgress(cmd) {
+		verbosity = dagui.ShowCompletedVerbosity
+	}
+	verbosity += verbose
+	verbosity -= quiet
+	opts.Verbosity = verbosity
+}
+
+// canOpenShellOnError reports whether the CLI can hand the terminal to a shell
+// in a failed container: only the pretty TUI can run one, and it needs a
+// terminal to read keys from. The check runs before the command, so a
+// non-interactive caller -- a script, or an AI agent, which gets the report
+// frontend -- fails fast instead of hanging in a shell it cannot exit.
+func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
+	return progress == "tty" && stdinIsTTY
+}
+
+func Main() {
+	installRootGlobalFlags()
+	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
+		cmd, _ := resolveCommand(rootCmd, os.Args[1:])
+		os.Exit(commandFlagErrorStatus(cmd, err, rootCmd.ErrPrefix()))
+	}
+
+	// Some global flags affect how the client connects, so read them before
+	// Cobra executes the command tree. Cobra still does the normal parse later.
+	commandArgs := parseGlobalFlags(rootCmd, os.Args[1:])
+	invocationDir, err := pathutil.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
+	resolvedWorkdir, err := NormalizeWorkdir(workdir)
+	if err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
+	if err := os.Chdir(resolvedWorkdir); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), fmt.Errorf("change workdir: %w", err))
+		os.Exit(1)
+	}
+	workdir = resolvedWorkdir
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	exitWithCode := func(code int) {
+		stop()
+		os.Exit(code)
+	}
+	if err := execXRelease(ctx); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	if err := prepareModuleSDKCommands(ctx, rootCmd, commandArgs, invocationDir, registerModuleSDKCommands); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	// A trailing inherited --x-release is known only after SDK discovery.
+	if err := execXRelease(ctx); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	replayGlobalFlags(rootCmd)
+	opts.Silent = silent                   // show no progress
+	opts.Debug = debugFlag                 // show everything
+	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
+	opts.ExpandCompleted = expandCompleted // leave things expanded as they complete
+	opts.OpenWeb = web
+	opts.NoExit = noExit
+	opts.DotOutputFilePath = dotOutputFilePath
+	opts.DotFocusField = dotFocusField
+	opts.DotShowInternal = dotShowInternal
+	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
+	if progress == "auto" {
+		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
+			progress = env
+		} else if def := commandProgressDefault(os.Args[1:]); def != "" {
+			// The command declares its own default (e.g. `dagger session`
+			// keeps plain progress for its SDK consumers). Checked before
+			// RunningInAgent: an agent-driven SDK program needs the stream
+			// just as much.
+			progress = def
+		} else if idtui.RunningInAgent() {
+			// An AI agent consumes the output as text; the report frontend's
+			// single final render suits it better than the live TUI.
+			progress = "report"
+		} else if hasTTY {
+			progress = "tty"
+		} else {
+			progress = "report"
+		}
+	}
+	if silent {
+		// if silent, don't even bother with the pretty frontend
+		progress = "plain"
+	}
+	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
+	// force it regardless of progress mode / tty (it doesn't need one).
+	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
+		progress = "tty"
+		hasTTY = true
+	}
+	switch progress {
+	case "plain":
+		Frontend = idtui.NewPlain(stderr)
+	case "tty":
+		if !hasTTY {
+			fmt.Fprintf(stderr, "no tty available for progress %q\n", progress)
+			exitWithCode(1)
+		}
+		Frontend = idtui.NewPretty(stderr)
+	case "dots":
+		Frontend = idtui.NewDots(stderr)
+	case "logs":
+		Frontend = idtui.NewLogs(stderr)
+	case "report":
+		Frontend = idtui.NewReporter(stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown progress type %q\n", progress)
+		exitWithCode(1)
+	}
+
+	if shellOnError && !canOpenShellOnError(progress, stdinIsTTY) {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(),
+			"--shell-on-error needs an interactive terminal, but none is available")
+		exitWithCode(1)
+	}
+
+	// Parse the shell command to support shell-like syntax.
+	parsedCommand, err := shlex.Split(shellCommandOnError)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot parse --shell-command-on-error: %s", err)
+		exitWithCode(1)
+	}
+	shellCommandOnErrorParsed = parsedCommand
+
+	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
+	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		var exit idtui.ExitError
+		switch {
+		case errors.As(err, &exit):
+			exitWithCode(exit.Code())
+		case errors.Is(err, idtui.ErrShellExited):
+			exitWithCode(0)
+		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
+			exitWithCode(2)
+		default:
+			// Strip [traceparent:...] error-origin markers — they are span
+			// attribution plumbing for the TUI, not part of the message.
+			msg := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(err.Error(), ""))
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), msg)
+			var es interp.ExitStatus
+			if errors.As(err, &es) {
+				exitWithCode(int(es))
+			}
+			exitWithCode(1)
+		}
+	}
+	stop()
+}
+
+// RootCommand returns the fully-assembled CLI command tree, ready for
+// documentation generation. It installs global flags so the reference includes
+// them, matching what Main does before Execute.
+func RootCommand() *cobra.Command {
+	installRootGlobalFlags()
+	return rootCmd
+}
+
+// installRootGlobalFlags installs the global flags on the root command and
+// registers the completions that need a command, not just a flag set.
+func installRootGlobalFlags() {
+	installGlobalFlags(rootCmd.PersistentFlags())
+	if err := rootCmd.RegisterFlagCompletionFunc("engine", completeEngineFlag); err != nil {
+		fmt.Fprintln(stderr, "Error registering completion: engine", err)
+		os.Exit(1)
+	}
+}
+
+// completeEngineFlag offers every non-deprecated engine selector prefix. The
+// values end in "://", so completion must not append a space after them.
+func completeEngineFlag(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	return drivers.SchemeCompletions(), cobra.ShellCompDirectiveNoSpace | cobra.ShellCompDirectiveNoFileComp
+}
+
+// IsExperimental reports whether cmd (or any ancestor) is marked experimental.
+func IsExperimental(cmd *cobra.Command) bool {
+	return isExperimental(cmd)
+}
+
+func NormalizeWorkdir(workdir string) (string, error) {
+	if workdir == "" {
+		workdir = os.Getenv("DAGGER_WORKDIR")
+	}
+
+	if workdir == "" {
+		var err error
+		workdir, err = pathutil.Getwd()
+		if err != nil {
+			return "", err
+		}
+	}
+	workdir, err := pathutil.Abs(workdir)
+	if err != nil {
+		return "", err
+	}
+
+	return workdir, nil
+}
+
+func commandName(cmd *cobra.Command) string {
+	name := []string{}
+	for c := cmd; c.Parent() != nil; c = c.Parent() {
+		name = append([]string{c.Name()}, name...)
+	}
+	return strings.Join(name, " ")
+}
+
+func isExperimental(cmd *cobra.Command) bool {
+	if _, ok := cmd.Annotations["experimental"]; ok {
+		return true
+	}
+	var experimental bool
+	cmd.VisitParents(func(cmd *cobra.Command) {
+		if _, ok := cmd.Annotations["experimental"]; ok {
+			experimental = true
+			return
+		}
+	})
+	return experimental
+}
+
+func inheritedFlags(cmd *cobra.Command) *pflag.FlagSet {
+	if val, ok := cmd.Annotations["help:hideInherited"]; ok && val == "true" {
+		return pflag.NewFlagSet("inherited", pflag.ContinueOnError)
+	}
+	return availableFlagsForCommand(cmd, cmd.InheritedFlags())
+}
+
+// getViewWidth returns the width of the terminal, or 80 if it cannot be determined.
+func getViewWidth() int {
+	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		width = 80
+	}
+	return width - 1
+}
+
+// flagUsagesWrapped returns the usage string for all flags in the given FlagSet
+// wrapped to the width of the terminal.
+func flagUsagesWrapped(flags *pflag.FlagSet) string {
+	return flags.FlagUsagesWrapped(getViewWidth())
+}
+
+const visibleAliasesAnnotation = "help:visibleAliases"
+const hiddenAliasesAnnotation = "help:hiddenAliases"
+const availableSubcommandsTitleAnnotation = "help:availableSubcommandsTitle"
+const noAvailableSubcommandsAnnotation = "help:noAvailableSubcommands"
+
+func availableSubcommandsTitle(cmd *cobra.Command) string {
+	title := "AVAILABLE COMMANDS"
+	if cmd.Annotations != nil && cmd.Annotations[availableSubcommandsTitleAnnotation] != "" {
+		title = cmd.Annotations[availableSubcommandsTitleAnnotation]
+	}
+	return termenv.String(title).Bold().String()
+}
+
+func noAvailableSubcommands(cmd *cobra.Command) string {
+	if cmd.HasAvailableSubCommands() || cmd.Annotations == nil {
+		return ""
+	}
+	return cmd.Annotations[noAvailableSubcommandsAnnotation]
+}
+
+func wrapCmdDescription(name, short string, padding int) string {
+	width := getViewWidth()
+
+	// Produce the same string length for all sibling commands by padding to
+	// the right based on the longest name. Add two extra spaces to the left
+	// of the screen, and three extra spaces before the description.
+	nameFormat := fmt.Sprintf("  %%-%ds   ", padding)
+	name = fmt.Sprintf(nameFormat, name)
+	if len(name)+len(short) >= width {
+		wrapped := wordwrap.String(short, width-len(name))
+		indented := indent.String(wrapped, uint(len(name)))
+		// first line shouldn't be indented since we're going to prepend the name
+		short = strings.TrimLeftFunc(indented, unicode.IsSpace)
+	}
+	return name + short
+}
+
+// cmdShortWrappedListByGroups renders the AVAILABLE COMMANDS section for a
+// parent command. When the parent has registered cobra groups (rootCmd
+// does; subcommands don't), commands render in group order with blank
+// lines between groups. Otherwise, fall back to the original leaf-then-
+// parent rendering so subcommand help (`dagger module --help`, etc.) is
+// unchanged.
+func cmdShortWrappedListByGroups(cmd *cobra.Command) string {
+	cmds := cmd.Commands()
+
+	// No groups → preserve the prior shape: leaves first, then parents.
+	if len(cmd.Groups()) == 0 {
+		out := cmdShortWrappedList(cmds, false)
+		if hasParentCommands(cmds) {
+			if out != "" {
+				out += "\n\n"
+			}
+			out += cmdShortWrappedList(cmds, true)
+		}
+		return out
+	}
+
+	// Compute display padding across every visible command so columns
+	// align across groups.
+	padding := 0
+	for _, c := range cmds {
+		if !isHelpOrAvailableCommand(c) {
+			continue
+		}
+		if n := len(cmdDisplayName(c)); n > padding {
+			padding = n
+		}
+	}
+
+	var sections []string
+	for _, group := range cmd.Groups() {
+		var lines []string
+		for _, c := range cmds {
+			if c.GroupID != group.ID || !isHelpOrAvailableCommand(c) {
+				continue
+			}
+			lines = append(lines, wrapCmdDescription(cmdDisplayName(c), c.Short, padding))
+		}
+		if len(lines) > 0 {
+			sections = append(sections, strings.Join(lines, "\n"))
+		}
+	}
+
+	// Render any ungrouped (but available) commands last. Keeps stragglers
+	// visible if a future cmd forgot to set GroupID — better than dropping
+	// them silently.
+	var ungrouped []string
+	for _, c := range cmds {
+		if c.GroupID != "" || !isHelpOrAvailableCommand(c) {
+			continue
+		}
+		ungrouped = append(ungrouped, wrapCmdDescription(cmdDisplayName(c), c.Short, padding))
+	}
+	if len(ungrouped) > 0 {
+		sections = append(sections, strings.Join(ungrouped, "\n"))
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+func cmdShortWrappedList(cmds []*cobra.Command, parents bool) string {
+	var available []*cobra.Command
+	padding := 0
+	for _, cmd := range cmds {
+		if parents != isParentCommand(cmd) {
+			continue
+		}
+		if !isHelpOrAvailableCommand(cmd) {
+			continue
+		}
+		available = append(available, cmd)
+		padding = max(padding, len(cmdDisplayName(cmd)))
+	}
+
+	var builder strings.Builder
+	for i, cmd := range available {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString(wrapCmdDescription(cmdDisplayName(cmd), cmd.Short, padding))
+	}
+	return builder.String()
+}
+
+func cmdDisplayName(cmd *cobra.Command) string {
+	aliases := visibleAliases(cmd)
+	if len(aliases) == 0 {
+		return cmd.Name()
+	}
+	return cmd.Name() + ", " + strings.Join(aliases, ", ")
+}
+
+func visibleAliases(cmd *cobra.Command) []string {
+	if cmd.Annotations == nil {
+		return nil
+	}
+	raw := cmd.Annotations[visibleAliasesAnnotation]
+	if raw == "" {
+		return nil
+	}
+
+	var aliases []string
+	for _, alias := range strings.Split(raw, ",") {
+		alias = strings.TrimSpace(alias)
+		if alias != "" {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func hiddenAliases(cmd *cobra.Command) map[string]struct{} {
+	if cmd.Annotations == nil {
+		return nil
+	}
+	raw := cmd.Annotations[hiddenAliasesAnnotation]
+	if raw == "" {
+		return nil
+	}
+
+	hidden := map[string]struct{}{}
+	for _, alias := range strings.Split(raw, ",") {
+		alias = strings.TrimSpace(alias)
+		if alias != "" {
+			hidden[alias] = struct{}{}
+		}
+	}
+	return hidden
+}
+
+func helpAliases(cmd *cobra.Command) []string {
+	hidden := hiddenAliases(cmd)
+	if len(hidden) == 0 {
+		return cmd.Aliases
+	}
+
+	aliases := make([]string, 0, len(cmd.Aliases))
+	for _, alias := range cmd.Aliases {
+		if _, ok := hidden[alias]; !ok {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func hasHelpAliases(cmd *cobra.Command) bool {
+	return len(helpAliases(cmd)) > 0
+}
+
+func nameAndHelpAliases(cmd *cobra.Command) string {
+	return strings.Join(append([]string{cmd.Name()}, helpAliases(cmd)...), ", ")
+}
+
+func isParentCommand(cmd *cobra.Command) bool {
+	if !isHelpOrAvailableCommand(cmd) {
+		return false
+	}
+	return cmd.HasAvailableSubCommands()
+}
+
+func hasParentCommands(cmds []*cobra.Command) bool {
+	for _, cmd := range cmds {
+		if isParentCommand(cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHelpOrAvailableCommand(cmd *cobra.Command) bool {
+	return cmd.IsAvailableCommand() || cmd.Name() == "help"
+}
+
+func nameShortWrapped[S ~[]E, E any](s S, f func(e E) (string, string)) string {
+	return nameShortWrappedIter(func(yield func(string, string) bool) {
+		for _, v := range s {
+			if !yield(f(v)) {
+				return
+			}
+		}
+	})
+}
+
+func nameShortWrappedIter(s iter.Seq2[string, string]) string {
+	minPadding := 11
+	maxLen := 0
+	lines := []string{}
+
+	for name, short := range Sorted2(s) {
+		nameLen := len(name)
+		if nameLen > maxLen {
+			maxLen = nameLen
+		}
+		// This special character will be replaced with spacing once the
+		// correct alignment is calculated
+		lines = append(lines, fmt.Sprintf("%s\x00%s", name, short))
+	}
+
+	padding := max(minPadding, maxLen)
+
+	sb := new(strings.Builder)
+	for _, line := range lines {
+		s := strings.SplitN(line, "\x00", 2)
+		sb.WriteString(wrapCmdDescription(s[0], s[1], padding))
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// Sorted2 returns a new Seq2 iterator ordered by the first element.
+func Sorted2[K cmp.Ordered, V any](x iter.Seq2[K, V]) iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		m := maps.Collect(x)
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			if !yield(k, m[k]) {
+				return
+			}
+		}
+	}
+}
+
+// toUpperBold returns the given string in uppercase and bold.
+func toUpperBold(s string) string {
+	upperCase := strings.ToUpper(s)
+	return termenv.String(upperCase).Bold().String()
+}
+
+// sortRequiredFlags separates optional flags from required flags.
+func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
+	mergedFlags := pflag.NewFlagSet("merged", pflag.ContinueOnError)
+	mergedFlags.SortFlags = false
+
+	optionalFlags := pflag.NewFlagSet("optional", pflag.ContinueOnError)
+
+	// separate optional flags from required flags
+	originalFlags.VisitAll(func(flag *pflag.Flag) {
+		// Append [required] and show required flags first
+		requiredAnnotation, found := flag.Annotations[cobra.BashCompOneRequiredFlag]
+		if found && requiredAnnotation[0] == "true" {
+			flag.Usage = strings.TrimSpace(flag.Usage + " [required]")
+			mergedFlags.AddFlag(flag)
+		} else {
+			optionalFlags.AddFlag(flag)
+		}
+	})
+
+	// Add optional flags back, after all required flags
+	mergedFlags.AddFlagSet(optionalFlags)
+
+	return mergedFlags
+}
+
+type FlagGroup struct {
+	Title string
+	Flags *pflag.FlagSet
+}
+
+func groupFlags(flags *pflag.FlagSet) string {
+	grouped := make(map[string]*pflag.FlagSet)
+	defaultGroup := "Options"
+
+	flags.VisitAll(func(flag *pflag.Flag) {
+		group := defaultGroup
+		value, found := flag.Annotations["help:group"]
+		if found {
+			group = strings.Join(value, " ")
+		}
+		if _, ok := grouped[group]; !ok {
+			grouped[group] = pflag.NewFlagSet(group, pflag.ContinueOnError)
+		}
+		grouped[group].AddFlag(flag)
+	})
+
+	groups := make([]FlagGroup, 0, len(grouped))
+	for k, v := range grouped {
+		groups = append(groups, FlagGroup{k, v})
+	}
+
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].Title < groups[j].Title
+	})
+
+	var builder strings.Builder
+	for _, group := range groups {
+		builder.WriteString(toUpperBold(group.Title))
+		builder.WriteString("\n")
+		builder.WriteString(flagUsagesWrapped(sortRequiredFlags(group.Flags)))
+		builder.WriteString("\n")
+	}
+
+	return builder.String()
+}
+
+const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
+  {{.UseLine}}{{ end }}
+
+{{- if hasHelpAliases .}}
+
+{{ "Aliases" | toUpperBold }}
+  {{nameAndHelpAliases .}}
+
+{{- end}}
+
+{{- if isExperimental .}}
+
+{{ "EXPERIMENTAL" | toUpperBold }}
+  {{.CommandPath}} is currently under development and may change in the future.
+
+{{- end}}
+
+{{- if .HasExample}}
+
+{{ "Examples" | toUpperBold }}
+{{ indent .Example 2 }}
+
+{{- end}}
+
+{{- if .HasAvailableSubCommands}}
+
+{{ availableSubcommandsTitle . }}
+{{cmdShortWrappedListByGroups .}}
+{{- end}}{{/* if .HasAvailableSubCommands */}}
+
+{{- if noAvailableSubcommands .}}
+
+{{ noAvailableSubcommands . }}
+{{- end}}
+
+{{- $localFlags := availableFlags . .LocalFlags}}
+{{- if $localFlags.HasAvailableFlags}}
+
+{{ groupFlags $localFlags | trimTrailingWhitespaces }}
+
+{{- end}}
+
+{{- $inheritedFlags := inheritedFlags .}}
+{{- if $inheritedFlags.HasAvailableFlags}}
+
+{{ "Inherited Options" | toUpperBold }}
+{{ flagUsagesWrapped $inheritedFlags | trimTrailingWhitespaces }}
+
+{{- end}}
+
+{{- if .HasHelpSubCommands}}
+
+{{ "Additional help topics" | toUpperBold }}
+{{- range .Commands}}
+{{- if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}
+{{- end}}
+{{- end}}
+
+{{- end}}{{/* if .HasHelpSubCommands */}}
+
+{{- if .HasAvailableSubCommands }}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.
+{{- end}}
+`

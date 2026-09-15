@@ -1,0 +1,96 @@
+---
+title: "Quickstart"
+slug: /getting-started/quickstart
+description: "Configure Dagger in your project"
+---
+
+# Quickstart
+
+In this guide, you will create a basic Dagger configuration for your project, and run your first Checks locally.
+
+Complete [Try Dagger](./try-dagger.mdx) before you start.
+
+Dagger configures the project that you run it in. Run every command in this guide from your project root.
+
+## Install modules
+
+Initialize the workspace:
+
+```shell
+dagger init
+```
+
+This creates an empty `dagger.toml`, or uses the existing file. This file holds the workspace configuration for everyone who uses the repository.
+
+In interactive mode, follow the optional setup prompts. Select modules that match your project. Then select **Install selected**.
+
+In non-interactive mode, `init` prints commands to run in order:
+
+```shell
+#!/bin/sh
+
+# 1. Find and install recommended modules.
+dagger module recommend
+
+# 2. Enable Cloud checks (optional).
+dagger cloud checks on
+```
+
+If `init` detects a legacy workspace, it stops without changing files. Run `dagger workspace migrate` to review the migration. After migration, Dagger offers the same next steps.
+
+Migration includes installed local modules. Other module candidates are optional and can include fixtures. Non-interactive migration skips these candidates, including with `--auto-apply`. To migrate one explicitly, run `dagger module migrate PATH`.
+
+### If no modules are recommended
+
+If Dagger reports `No recommendations`, search for a module by the name of a tool in your project. For example, if the project uses ESLint:
+
+```shell
+dagger module search eslint
+dagger module install dagger.io/js/eslint
+```
+
+## Configure modules
+
+Most modules use suitable default settings. List the available settings:
+
+```shell
+dagger module settings
+```
+
+Change a setting when the default does not match the project. For example, if you installed ESLint and the project uses Yarn:
+
+```shell
+dagger module settings eslint packageManager yarn
+```
+
+Settings are stored in `dagger.toml`, so they apply to all users of the workspace.
+
+## Run Generators and Checks
+
+List the workspace Generators:
+
+```shell
+dagger generate -l
+```
+
+If the list is not empty, run them:
+
+```shell
+dagger generate
+```
+
+Review the changes. Apply them when requested.
+
+List the Checks:
+
+```shell
+dagger check -l
+```
+
+If no Check validates your project, install another suitable module. If at least one does, run the Checks:
+
+```shell
+dagger check
+```
+
+You are done when at least one Check runs and all Checks pass.

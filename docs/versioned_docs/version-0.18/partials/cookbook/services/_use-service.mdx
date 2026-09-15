@@ -1,0 +1,47 @@
+
+### Bind and use services in Dagger Functions
+
+The first Dagger Function below creates and returns an HTTP service. This service is bound and used from a different Dagger Function, via a service binding using an alias like `www`.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../extending/modules/snippets/services/bind-services/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../extending/modules/snippets/services/bind-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../extending/modules/snippets/services/bind-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Send a request from one Dagger Function to a bound HTTP service instantiated by a different Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c get
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+get
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call get
+```
+</TabItem>
+</Tabs>

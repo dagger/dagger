@@ -1,0 +1,12 @@
+[package]
+name = "axum-backend"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = "0.7.5"
+eyre = "0.6.12"
+serde = { version = "1.0.197", features = ["derive"] }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }

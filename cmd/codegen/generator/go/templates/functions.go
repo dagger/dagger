@@ -1,0 +1,894 @@
+package templates
+
+import (
+	"bytes"
+	"cmp"
+	"context"
+	"encoding/json"
+	"fmt"
+	"go/token"
+	"go/types"
+	"regexp"
+	"slices"
+	"strings"
+	"text/template"
+
+	"github.com/iancoleman/strcase"
+	"golang.org/x/tools/go/packages"
+
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
+)
+
+// ModuleIntrospectionEmitter produces the module's own types as
+// introspection JSON, for merging into the dependency schema.
+type ModuleIntrospectionEmitter interface {
+	ModuleIntrospectionJSON(moduleName string) ([]byte, error)
+}
+
+func GoTemplateFuncs(
+	ctx context.Context,
+	schema *introspection.Schema,
+	fullSchema *introspection.Schema,
+	schemaVersion string,
+	cfg generator.Config,
+	pkg *packages.Package,
+	fset *token.FileSet,
+	pass int,
+) template.FuncMap {
+	if fullSchema == nil {
+		fullSchema = schema
+	}
+	return goTemplateFuncs{
+		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
+		ctx:             ctx,
+		cfg:             cfg,
+		modulePkg:       pkg,
+		moduleFset:      fset,
+		schema:          schema,
+		fullSchema:      fullSchema,
+		schemaVersion:   schemaVersion,
+		pass:            pass,
+	}.FuncMap()
+}
+
+// NewModuleIntrospectionEmitter constructs a minimal emitter suitable for
+// calling ModuleIntrospectionJSON. The schema and schemaVersion are the current
+// (deps) schema; pkg and fset are from packages.Load on the module source.
+func NewModuleIntrospectionEmitter(
+	ctx context.Context,
+	schema *introspection.Schema,
+	schemaVersion string,
+	cfg generator.Config,
+	pkg *packages.Package,
+	fset *token.FileSet,
+) ModuleIntrospectionEmitter {
+	return goTemplateFuncs{
+		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
+		ctx:             ctx,
+		cfg:             cfg,
+		modulePkg:       pkg,
+		moduleFset:      fset,
+		schema:          schema,
+		fullSchema:      schema,
+		schemaVersion:   schemaVersion,
+		pass:            1,
+	}
+}
+
+type goTemplateFuncs struct {
+	*generator.CommonFunctions
+	ctx        context.Context
+	cfg        generator.Config
+	modulePkg  *packages.Package
+	moduleFset *token.FileSet
+	schema     *introspection.Schema
+	// fullSchema is the complete schema including all dependency types. It is
+	// used for type lookups (e.g. resolving dep-contributed enums in module
+	// code) while schema may be a filtered subset used for code rendering.
+	fullSchema    *introspection.Schema
+	schemaVersion string
+	pass          int
+}
+
+func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
+	return template.FuncMap{
+		// common
+		"FormatReturnType":          funcs.FormatReturnType,
+		"IDHandleType":              funcs.IDHandleType,
+		"IDHandleClient":            funcs.idHandleClient,
+		"FormatInputType":           funcs.FormatInputType,
+		"FormatOutputType":          funcs.FormatOutputType,
+		"FormatFieldOutputType":     funcs.FormatFieldOutputType,
+		"GetArrayField":             funcs.GetArrayField,
+		"IsListOfObject":            funcs.IsListOfObject,
+		"ToLowerCase":               funcs.ToLowerCase,
+		"ToUpperCase":               funcs.ToUpperCase,
+		"ConvertID":                 funcs.ConvertID,
+		"IsSelfChainable":           funcs.IsSelfChainable,
+		"IsIDableObject":            funcs.IsIDableObject,
+		"InnerType":                 funcs.InnerType,
+		"ObjectName":                funcs.ObjectName,
+		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
+		"LegacyGoSDKCompat":         funcs.legacyGoSDKCompat,
+
+		// interface support
+		"IsInterfaceType":          funcs.isInterfaceType,
+		"IsInterfaceRef":           funcs.isInterfaceRef,
+		"IsNullableObject":         funcs.isNullableObject,
+		"IsListOfInterface":        funcs.isListOfInterface,
+		"InterfaceClientName":      funcs.interfaceClientName,
+		"InterfaceReturnType":      funcs.interfaceReturnType,
+		"InterfaceListResultType":  funcs.interfaceListResultType,
+		"PossibleTypes":            funcs.possibleTypes,
+		"ImplementedInterfaces":    funcs.implementedInterfaces,
+		"InterfaceMethodSignature": funcs.interfaceMethodSignature,
+		"InterfaceClientMethod":    funcs.interfaceClientMethod,
+
+		// go specific
+		"Comment":                 funcs.comment,
+		"FormatDeprecation":       funcs.formatDeprecation,
+		"FormatExperimental":      funcs.formatExperimental,
+		"FormatName":              formatName,
+		"FormatParamName":         formatParamName,
+		"FormatEnum":              funcs.formatEnum,
+		"SortEnumFields":          funcs.sortEnumFields,
+		"GroupEnumByValue":        funcs.groupEnumByValue,
+		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
+		"FieldFunction":           funcs.fieldFunction,
+		"IsArgOptional":           funcs.isArgOptional,
+		"HasOptionals":            funcs.hasOptionals,
+		"IsEnum":                  funcs.isEnum,
+		"IsPointer":               funcs.isPointer,
+		"FormatArrayField":        funcs.formatArrayField,
+		"FormatArrayToSingleType": funcs.formatArrayToSingleType,
+		"IsPartial":               funcs.isPartial,
+		"IsModuleCode":            funcs.isModuleCode,
+		"IsStandaloneClient":      funcs.isStandaloneClient,
+		"ModuleMainSrc":           funcs.moduleMainSrc,
+		"ModuleRelPath":           funcs.moduleRelPath,
+		"Dependencies":            funcs.Dependencies,
+		"HasLocalDependencies":    funcs.HasLocalDependencies,
+		"IsExtendableType":        funcs.isExtendableType,
+		"FullSchemaTypes":         funcs.fullSchemaTypes,
+		"HasIDField":              funcs.hasIDField,
+		"IsLegacyIDAlias":         funcs.isLegacyIDAlias,
+		"json":                    funcs.json,
+	}
+}
+
+// legacyGoSDKCompatCutoverVersion is the first engine version whose Go SDK
+// surface is generated with unified ID-only re-entry and first-class interface
+// client types. The -0 prerelease floor intentionally treats v0.21.0 dev
+// builds as post-cutover while keeping all v0.20.x modules in legacy mode.
+const legacyGoSDKCompatCutoverVersion = "v0.21.0-0"
+
+func (funcs goTemplateFuncs) legacyGoSDKCompat() bool {
+	if funcs.schemaVersion == "" || funcs.CommonFunctions == nil {
+		return false
+	}
+	return !funcs.CheckVersionCompatibility(legacyGoSDKCompatCutoverVersion)
+}
+
+func (funcs goTemplateFuncs) supportsNullableObjects() bool {
+	return generator.SupportsNullableObjects(funcs.schemaVersion)
+}
+
+// fullSchemaTypes returns all types from the full schema, including dependency
+// types. Unlike .Types (which is bound to the filtered core schema), this
+// includes types contributed by dependency modules.
+func (funcs goTemplateFuncs) fullSchemaTypes() []*introspection.Type {
+	return funcs.fullSchema.Visit()
+}
+
+func (goTemplateFuncs) isExtendableType(t introspection.Type) bool {
+	return slices.Contains(introspection.ExtendableTypes, t.Name)
+}
+
+func (goTemplateFuncs) hasIDField(t introspection.Type) bool {
+	for _, field := range t.Fields {
+		if field.Name == "id" && field.TypeRef.IsScalar() {
+			return true
+		}
+	}
+	return false
+}
+
+func (goTemplateFuncs) json(v any) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
+}
+
+// comments out a string
+// Example: `hello\nworld` -> `// hello\n// world\n`
+func (funcs goTemplateFuncs) comment(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	lines := strings.Split(s, "\n")
+
+	for i, l := range lines {
+		lines[i] = "// " + l
+	}
+	return strings.Join(lines, "\n")
+}
+
+// format the deprecation reason
+// Example: `Replaced by @foo.` -> `// Replaced by Foo\n`
+func (funcs goTemplateFuncs) formatDeprecation(s string) string {
+	return funcs.formatHelper("Deprecated", s)
+}
+
+func (funcs goTemplateFuncs) formatExperimental(s string) string {
+	return funcs.formatHelper("Experimental", s)
+}
+
+func (funcs goTemplateFuncs) formatHelper(name string, s string) string {
+	r := regexp.MustCompile("`[a-zA-Z0-9_]+`")
+	matches := r.FindAllString(s, -1)
+	for _, match := range matches {
+		replacement := strings.TrimPrefix(match, "`")
+		replacement = strings.TrimSuffix(replacement, "`")
+		replacement = formatName(replacement)
+		s = strings.ReplaceAll(s, match, replacement)
+	}
+	return funcs.comment(name + ": " + s)
+}
+
+func (funcs goTemplateFuncs) isEnum(t introspection.Type) bool {
+	return t.Kind == introspection.TypeKindEnum &&
+		// We ignore the internal GraphQL enums
+		!strings.HasPrefix(t.Name, "_")
+}
+
+// isPointer returns true if value is a pointer.
+func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) (bool, error) {
+	// Ignore id since it's converted to special ID type later.
+	if t.Name == "id" {
+		return false, nil
+	}
+
+	// Convert to a string representation to avoid code repetition.
+	representation, err := funcs.FormatInputType(t)
+	return strings.Index(representation, "*") == 0, err
+}
+
+// formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent
+// Example: `fooId` -> `FooID`
+func formatName(s string) string {
+	if len(s) > 0 {
+		s = strings.ToUpper(string(s[0])) + s[1:]
+	}
+	return lintName(s)
+}
+
+// formatParamName formats a GraphQL argument or field name into a Go
+// identifier: keywords don't parse, and predeclared identifiers
+// (types.Universe) would shadow types referenced in the generated body —
+// an argument named "string" breaks `var response string`. Reserved names
+// get a trailing underscore; the GraphQL wire name (q.Arg) keeps the
+// original.
+//
+// "error" is exempt: generated bodies never reference the error type
+// (signature types resolve in the enclosing scope), and the core API
+// already ships a parameter named "error" (FunctionCall.returnError) —
+// escaping it would churn every generated client.
+func formatParamName(s string) string {
+	if s == "error" {
+		return s
+	}
+	if token.IsKeyword(s) || types.Universe.Lookup(s) != nil {
+		return s + "_"
+	}
+	return s
+}
+
+// formatEnum formats a GraphQL Enum value into a Go equivalent
+// Example: `FOO_VALUE` -> `FooValue`, `FooValue` -> `FooValue`
+func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
+	if parent == "" {
+		// legacy path - terrible, removes all the casing :(
+		s = strings.ToLower(s)
+	}
+	s = strcase.ToCamel(s)
+	return parent + s
+}
+
+func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
+	s = slices.Clone(s)
+	slices.SortStableFunc(s, func(x, y introspection.EnumValue) int {
+		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
+	})
+	s = slices.CompactFunc(s, func(x, y introspection.EnumValue) bool {
+		return strcase.ToCamel(x.Name) == strcase.ToCamel(y.Name)
+	})
+	return s
+}
+
+// groupEnumByValue returns a list of lists of enums, grouped by similar enum value.
+//
+// Additionally, enum names within a single value are removed (which would
+// result in duplicate codegen).
+func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
+	m := map[string][]introspection.EnumValue{}
+	for _, v := range s {
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
+		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
+			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
+		}) {
+			m[value] = append(m[value], v)
+		}
+	}
+
+	var result [][]introspection.EnumValue
+	for _, v := range s {
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
+		if res, ok := m[value]; ok {
+			result = append(result, res)
+			delete(m, value)
+		}
+	}
+	return result
+}
+
+func (funcs goTemplateFuncs) formatArrayField(fields []*introspection.Field) string {
+	result := []string{}
+
+	for _, f := range fields {
+		result = append(result, fmt.Sprintf("%s: &fields[i].%s", f.Name, funcs.ToUpperCase(f.Name)))
+	}
+
+	return strings.Join(result, ", ")
+}
+
+func (funcs goTemplateFuncs) formatArrayToSingleType(arrType string) string {
+	return arrType[2:]
+}
+
+// fieldOptionsStructName returns the options struct name for a given field
+func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field, scopes ...string) string {
+	// Exception: `Query` option structs are not prefixed by `Query`.
+	// This is just so that they're nicer to work with, e.g.
+	// `ContainerOpts` rather than `QueryContainerOpts`
+	// The structure name will not clash with others since everybody else
+	// is prefixed by object name.
+	scope := strings.Join(scopes, "")
+	if scope != "" {
+		scope += "."
+	}
+	if f.ParentObject.Name == generator.QueryStructName {
+		return scope + formatName(f.Name) + "Opts"
+	}
+	return scope + formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
+}
+
+// hasOptionals returns true if a field has optional arguments
+//
+// Note: This is only necessary to simplify backwards compatibility of a breaking change.
+func (funcs goTemplateFuncs) hasOptionals(i introspection.InputValues) bool {
+	if funcs.CheckVersionCompatibility("v0.13.0") {
+		return i.HasOptionals()
+	}
+	return slices.ContainsFunc(i, funcs.isArgOptional)
+}
+
+// isArgOptional returns true if a field argument is optional
+//
+// Note: This is only necessary to simplify backwards compatibility of a breaking change.
+func (funcs goTemplateFuncs) isArgOptional(arg introspection.InputValue) bool {
+	if funcs.CheckVersionCompatibility("v0.13.0") {
+		return arg.IsOptional()
+	}
+	return arg.TypeRef.IsOptional()
+}
+
+// fieldFunction converts a field into a function signature
+// Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
+func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool, supportsVoid bool, scopes ...string) (string, error) {
+	// don't create methods on query for the env itself,
+	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
+	// TODO(vito): still needed? we codegen against the module's schema view,
+	// which shouldn't include the module itself, only its dependencies. or is
+	// this because of universe?
+	// if moduleName := funcs.moduleName; moduleName != "" {
+	// 	if f.ParentObject.Name == generator.QueryStructName && f.Name == moduleName {
+	// 		return ""
+	// 	}
+	// }
+
+	structName := formatName(f.ParentObject.Name)
+	signature := "func "
+	if !topLevel {
+		signature += `(r *` + structName + `) `
+	}
+	signature += formatName(f.Name)
+
+	// Generate arguments
+	args := []string{}
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() || funcs.isNullableObject(f.TypeRef) {
+		args = append(args, "ctx context.Context")
+	}
+	for _, arg := range f.Args {
+		if funcs.isArgOptional(arg) {
+			continue
+		}
+
+		// For node(id:) on Query, keep the arg as the raw ID type.
+		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
+			outType, err := funcs.FormatOutputType(arg.TypeRef, scopes...)
+			if err != nil {
+				return "", err
+			}
+			args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), outType))
+		} else {
+			inType, err := funcs.FormatInputType(arg, scopes...)
+			if err != nil {
+				return "", err
+			}
+			args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
+		}
+	}
+
+	// Options (e.g. DirectoryContentsOptions -> <Object><Field>Options)
+	if funcs.hasOptionals(f.Args) {
+		args = append(
+			args,
+			fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f, scopes...)),
+		)
+	}
+	signature += "(" + strings.Join(args, ", ") + ")"
+
+	retType, err := funcs.FormatReturnType(f, scopes...)
+	if err != nil {
+		return "", err
+	}
+	if funcs.legacyGoSDKCompat() && funcs.isListOfInterface(f.TypeRef) {
+		retType, err = funcs.interfaceListResultType(f.TypeRef, scopes...)
+		if err != nil {
+			return "", err
+		}
+	}
+	convertID := funcs.ConvertID(f)
+	switch {
+	case supportsVoid && f.TypeRef.IsVoid():
+		retType = "error"
+	case convertID:
+		retType, err = funcs.idHandleReturnType(f, scopes...)
+		if err != nil {
+			return "", err
+		}
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
+		retType = fmt.Sprintf("(%s, error)", retType)
+	case funcs.isNullableObject(f.TypeRef):
+		if funcs.isInterfaceRef(f.TypeRef) {
+			retType = fmt.Sprintf("(%s, error)", retType)
+		} else {
+			retType = fmt.Sprintf("(*%s, error)", retType)
+		}
+	case funcs.isInterfaceRef(f.TypeRef):
+		retType, err = funcs.interfaceReturnType(funcs.InnerType(f.TypeRef).Name, scopes...)
+		if err != nil {
+			return "", err
+		}
+	default:
+		retType = "*" + retType
+	}
+	signature += " " + retType
+
+	return signature, nil
+}
+
+// isInterfaceType returns true if the given introspection type is an INTERFACE.
+func (funcs goTemplateFuncs) isInterfaceType(t introspection.Type) bool {
+	return t.Kind == introspection.TypeKindInterface
+}
+
+// isInterfaceRef returns true if the given type ref points to a single INTERFACE kind
+// type (not a list of interfaces). Only unwraps NonNull wrappers.
+func (funcs goTemplateFuncs) isInterfaceRef(t *introspection.TypeRef) bool {
+	ref := t
+	for ref != nil {
+		switch ref.Kind {
+		case introspection.TypeKindNonNull:
+			ref = ref.OfType
+		case introspection.TypeKindInterface:
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+func (funcs goTemplateFuncs) isNullableObject(t *introspection.TypeRef) bool {
+	return funcs.supportsNullableObjects() && t != nil && t.IsOptional() && (t.IsObject() || funcs.isInterfaceRef(t))
+}
+
+// isListOfInterface returns true if the type ref is a list whose element is an interface.
+func (funcs goTemplateFuncs) isListOfInterface(t *introspection.TypeRef) bool {
+	// Unwrap NonNull -> List -> NonNull? -> Interface
+	ref := t
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	if ref.Kind != introspection.TypeKindList {
+		return false
+	}
+	ref = ref.OfType
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	return ref.Kind == introspection.TypeKindInterface
+}
+
+// interfaceClientName returns the query-builder struct name for an interface.
+// e.g. "Duck" -> "DuckClient". In legacy Go SDK compatibility mode,
+// non-Node interfaces use the pre-cutover wrapper struct name directly.
+func (funcs goTemplateFuncs) interfaceClientName(name string) string {
+	if funcs.legacyGoSDKCompat() && name != "Node" {
+		return formatName(name)
+	}
+	return formatName(name) + "Client"
+}
+
+// isInterfaceHandle reports whether an ID-handle field loads an interface
+// rather than an object. The parent is consulted first so interface methods
+// resolve even when the interface is not registered in the render schema.
+func (funcs goTemplateFuncs) isInterfaceHandle(f introspection.Field) bool {
+	handle := funcs.IDHandleType(f)
+	if f.ParentObject != nil && handle == f.ParentObject.Name {
+		return f.ParentObject.Kind == introspection.TypeKindInterface
+	}
+	t := funcs.fullSchema.Types.Get(handle)
+	return t != nil && t.Kind == introspection.TypeKindInterface
+}
+
+// idHandleClient is the Go type an ID-handle field instantiates: the loaded
+// object, or the interface's client struct for interface handles.
+func (funcs goTemplateFuncs) idHandleClient(f introspection.Field) string {
+	handle := funcs.IDHandleType(f)
+	if funcs.isInterfaceHandle(f) {
+		return funcs.interfaceClientName(handle)
+	}
+	return formatName(handle)
+}
+
+// idHandleReturnType formats the (result, error) return of an ID-handle
+// field: a pointer to the loaded object, or the interface type for
+// interface handles.
+func (funcs goTemplateFuncs) idHandleReturnType(f introspection.Field, scopes ...string) (string, error) {
+	if funcs.isInterfaceHandle(f) {
+		retType, err := funcs.interfaceReturnType(funcs.IDHandleType(f), scopes...)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("(%s, error)", retType), nil
+	}
+	retType, err := funcs.FormatReturnType(f, scopes...)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("(*%s, error)", retType), nil
+}
+
+func (funcs goTemplateFuncs) interfaceReturnType(name string, scopes ...string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("missing interface name")
+	}
+	scope := strings.Join(scopes, "")
+	if scope != "" {
+		scope += "."
+	}
+	if funcs.legacyGoSDKCompat() && name != "Node" {
+		return "*" + scope + formatName(name), nil
+	}
+	return scope + formatName(name), nil
+}
+
+func (funcs goTemplateFuncs) interfaceListResultType(t *introspection.TypeRef, scopes ...string) (string, error) {
+	if funcs.legacyGoSDKCompat() && funcs.isListOfInterface(t) {
+		inner := funcs.InnerType(t)
+		if inner.Name != "Node" {
+			scope := strings.Join(scopes, "")
+			if scope != "" {
+				scope += "."
+			}
+			return "[]*" + scope + formatName(inner.Name), nil
+		}
+	}
+	return funcs.FormatOutputType(t, scopes...)
+}
+
+// possibleTypes returns the possible concrete types for an interface type,
+// filtering out interface entries so that only object types are returned.
+// Interfaces may appear in PossibleTypes due to interface-extends-interface
+// registrations, but codegen (e.g. Concrete() switch) only needs objects.
+func (funcs goTemplateFuncs) possibleTypes(t introspection.Type) []*introspection.Type {
+	var result []*introspection.Type
+	for _, pt := range t.PossibleTypes {
+		if pt.Kind == introspection.TypeKindInterface {
+			continue
+		}
+		result = append(result, pt)
+	}
+	return result
+}
+
+// implementedInterfaces returns the interfaces that an object type implements,
+// filtered to only include non-built-in interfaces (i.e. not "Object").
+func (funcs goTemplateFuncs) implementedInterfaces(t introspection.Type) []*introspection.Type {
+	var result []*introspection.Type
+	for _, iface := range t.Interfaces {
+		if iface.Name == "Object" {
+			continue
+		}
+		result = append(result, iface)
+	}
+	return result
+}
+
+// interfaceMethodSignature generates a Go interface method signature for a field.
+// e.g. "Quack(ctx context.Context) (string, error)"
+func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (string, error) {
+	sig := formatName(f.Name)
+
+	args := []string{}
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() || funcs.isNullableObject(f.TypeRef) {
+		args = append(args, "ctx context.Context")
+	}
+	for _, arg := range f.Args {
+		if funcs.isArgOptional(arg) {
+			continue
+		}
+		inType, err := funcs.FormatInputType(arg)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
+	}
+	if funcs.hasOptionals(f.Args) {
+		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))
+	}
+	sig += "(" + strings.Join(args, ", ") + ")"
+
+	retType, err := funcs.FormatReturnType(f)
+	if err != nil {
+		return "", err
+	}
+	if funcs.legacyGoSDKCompat() && funcs.isListOfInterface(f.TypeRef) {
+		retType, err = funcs.interfaceListResultType(f.TypeRef)
+		if err != nil {
+			return "", err
+		}
+	}
+	supportsVoid := funcs.CheckVersionCompatibility("v0.12.0")
+	convertID := funcs.ConvertID(f)
+	switch {
+	case supportsVoid && f.TypeRef.IsVoid():
+		sig += " error"
+	case convertID:
+		retType, err = funcs.idHandleReturnType(f)
+		if err != nil {
+			return "", err
+		}
+		sig += " " + retType
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
+		sig += fmt.Sprintf(" (%s, error)", retType)
+	case funcs.isNullableObject(f.TypeRef):
+		if funcs.isInterfaceRef(f.TypeRef) {
+			sig += fmt.Sprintf(" (%s, error)", retType)
+		} else {
+			sig += fmt.Sprintf(" (*%s, error)", retType)
+		}
+	case funcs.isInterfaceRef(f.TypeRef):
+		retType, err = funcs.interfaceReturnType(funcs.InnerType(f.TypeRef).Name)
+		if err != nil {
+			return "", err
+		}
+		sig += " " + retType
+	default:
+		sig += " *" + retType
+	}
+	return sig, nil
+}
+
+// interfaceClientMethod generates a method signature for the interface's
+// query-builder struct. e.g.:
+//
+//	func (r *duckClient) Quack(ctx context.Context) (string, error)
+func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspection.Field) (string, error) {
+	clientName := funcs.interfaceClientName(ifaceName)
+	sig := "func (r *" + clientName + ") " + formatName(f.Name)
+
+	args := []string{}
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() || funcs.isNullableObject(f.TypeRef) {
+		args = append(args, "ctx context.Context")
+	}
+	for _, arg := range f.Args {
+		if funcs.isArgOptional(arg) {
+			continue
+		}
+		inType, err := funcs.FormatInputType(arg)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
+	}
+	if funcs.hasOptionals(f.Args) {
+		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))
+	}
+	sig += "(" + strings.Join(args, ", ") + ")"
+
+	retType, err := funcs.FormatReturnType(f)
+	if err != nil {
+		return "", err
+	}
+	if funcs.legacyGoSDKCompat() && funcs.isListOfInterface(f.TypeRef) {
+		retType, err = funcs.interfaceListResultType(f.TypeRef)
+		if err != nil {
+			return "", err
+		}
+	}
+	supportsVoid := funcs.CheckVersionCompatibility("v0.12.0")
+	convertID := funcs.ConvertID(f)
+	switch {
+	case supportsVoid && f.TypeRef.IsVoid():
+		sig += " error"
+	case convertID:
+		retType, err = funcs.idHandleReturnType(f)
+		if err != nil {
+			return "", err
+		}
+		sig += " " + retType
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
+		sig += fmt.Sprintf(" (%s, error)", retType)
+	case funcs.isNullableObject(f.TypeRef):
+		if funcs.isInterfaceRef(f.TypeRef) {
+			sig += fmt.Sprintf(" (%s, error)", retType)
+		} else {
+			sig += fmt.Sprintf(" (*%s, error)", retType)
+		}
+	case funcs.isInterfaceRef(f.TypeRef):
+		retType, err = funcs.interfaceReturnType(funcs.InnerType(f.TypeRef).Name)
+		if err != nil {
+			return "", err
+		}
+		sig += " " + retType
+	default:
+		sig += " *" + retType
+	}
+	return sig, nil
+}
+
+// FormatInputType formats an input value's type, using @expectedType on ID
+// inputs to recover the expected object or interface type.
+func (funcs goTemplateFuncs) FormatInputType(arg introspection.InputValue, scopes ...string) (string, error) {
+	expectedType := arg.Directives.ExpectedType()
+	if expectedType != "" {
+		// This is an ID arg with an @expectedType directive.
+		// Format it as the expected type (pointer for objects, value for interfaces).
+		scope := strings.Join(scopes, "")
+		if scope != "" {
+			scope += "."
+		}
+		var baseType string
+		schema := generator.GetSchema()
+		if schema != nil {
+			schemaType := schema.Types.Get(expectedType)
+			if schemaType != nil && schemaType.Kind == introspection.TypeKindInterface {
+				if funcs.legacyGoSDKCompat() && expectedType != "Node" {
+					baseType = "*" + scope + formatName(expectedType)
+				} else {
+					baseType = scope + formatName(expectedType)
+				}
+			}
+		}
+		if baseType == "" {
+			baseType = "*" + scope + formatName(expectedType)
+		}
+		if arg.TypeRef != nil && arg.TypeRef.IsList() {
+			return "[]" + baseType, nil
+		}
+		return baseType, nil
+	}
+	return funcs.CommonFunctions.FormatInputType(arg.TypeRef, scopes...)
+}
+
+// isPartial determines if we are in a first-pass or not
+func (funcs goTemplateFuncs) isPartial() bool {
+	return funcs.pass == 0
+}
+
+// legacyIDName returns the Go identifier for the per-type ID name
+// (e.g. "ContainerID") used by pre-cutover Go SDK code.
+func (funcs goTemplateFuncs) legacyIDName(typeName string) string {
+	return formatName(typeName + "ID")
+}
+
+// isLegacyIDAlias returns true when a scalar should be emitted as a Go
+// alias for the unified ID type (`type FooID = ID`) rather than as its
+// own distinct string type. This applies to legacy-view per-type ID
+// scalars whose name is the parent object's name with an "ID" suffix
+// — making typed-ID methods (Container.ID returning ContainerID)
+// still satisfy interfaces declared in terms of the plain ID type.
+func (funcs goTemplateFuncs) isLegacyIDAlias(t introspection.Type) bool {
+	if !funcs.legacyGoSDKCompat() {
+		return false
+	}
+	if !strings.HasSuffix(t.Name, "ID") || t.Name == "ID" {
+		return false
+	}
+	base := strings.TrimSuffix(t.Name, "ID")
+	schema := generator.GetSchema()
+	if schema == nil {
+		return false
+	}
+	parent := schema.Types.Get(base)
+	if parent == nil {
+		return false
+	}
+	return parent.Kind == introspection.TypeKindObject || parent.Kind == introspection.TypeKindInterface
+}
+
+// fieldExpectedIDType returns the @expectedType target for a scalar
+// ID field — or the parent object name for the field literally named
+// "id". Returns "" when no legacy substitution applies.
+func (funcs goTemplateFuncs) fieldExpectedIDType(field introspection.Field) string {
+	if !field.TypeRef.IsScalar() {
+		return ""
+	}
+	ref := field.TypeRef
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	if ref.Kind != introspection.TypeKindScalar || ref.Name != "ID" {
+		return ""
+	}
+	if expectedType := field.Directives.ExpectedType(); expectedType != "" && expectedType != "Node" && expectedType != generator.QueryStructName && !strings.HasPrefix(expectedType, "_") {
+		return expectedType
+	}
+	if field.Name == "id" && field.ParentObject != nil && field.ParentObject.Name != "Node" && field.ParentObject.Name != generator.QueryStructName && !strings.HasPrefix(field.ParentObject.Name, "_") {
+		return field.ParentObject.Name
+	}
+	return ""
+}
+
+// FormatReturnType overrides the common formatter so legacy-mode ID
+// fields with @expectedType return the per-type FooID alias instead of
+// the unified ID scalar.
+func (funcs goTemplateFuncs) FormatReturnType(f introspection.Field, scopes ...string) (string, error) {
+	if !funcs.CommonFunctions.ConvertID(f) && funcs.legacyGoSDKCompat() {
+		if expected := funcs.fieldExpectedIDType(f); expected != "" {
+			scope := strings.Join(scopes, "")
+			if scope != "" {
+				scope += "."
+			}
+			return scope + funcs.legacyIDName(expected), nil
+		}
+	}
+	return funcs.CommonFunctions.FormatReturnType(f, scopes...)
+}
+
+// FormatFieldOutputType is a field-aware variant of FormatOutputType
+// that applies the legacy FooID substitution. Used in template
+// positions where a field's response type and cache field type need to
+// match its method's return type.
+func (funcs goTemplateFuncs) FormatFieldOutputType(f introspection.Field, scopes ...string) (string, error) {
+	if funcs.legacyGoSDKCompat() {
+		if expected := funcs.fieldExpectedIDType(f); expected != "" {
+			scope := strings.Join(scopes, "")
+			if scope != "" {
+				scope += "."
+			}
+			return scope + funcs.legacyIDName(expected), nil
+		}
+	}
+	return funcs.CommonFunctions.FormatOutputType(f.TypeRef, scopes...)
+}

@@ -1,0 +1,7 @@
+{
+  "name": "defaults",
+  "engineVersion": "v0.16.3-010101000000-dev-43f71432100c",
+  "sdk": {
+    "source": "../../sdk/java"
+  }
+}

@@ -1,0 +1,5 @@
+type WorkspaceArg {
+  pub read(ws: Dagger.Workspace!): String! {
+    ws.file("/marker.txt").contents
+  }
+}

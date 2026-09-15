@@ -1,0 +1,7 @@
+#!/usr/bin/env dagger
+
+## The notify module is vendored from github.com/gerhard/daggerverse
+## All credits to Gerhard Lazu
+## Run this script to update the vendored directory
+
+address https://github.com/gerhard/daggerverse#main:notify | directory | export .

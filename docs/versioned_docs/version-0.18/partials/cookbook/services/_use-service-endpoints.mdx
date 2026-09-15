@@ -1,0 +1,46 @@
+### Use service endpoints
+
+The following Dagger Function starts a service manually, then retrieves its endpoint and sends a request. This example uses a NGINX HTTP service running on host port 80.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../extending/modules/snippets/services/use-endpoint/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../extending/modules/snippets/services/use-endpoint/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../extending/modules/snippets/services/use-endpoint/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Send a query to the HTTP service listening on host port 80 and return the result as a string:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c get
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+get
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call get
+```
+</TabItem>
+</Tabs>

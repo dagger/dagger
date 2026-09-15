@@ -1,0 +1,8 @@
+{
+  "name": "built-in-to-dagger",
+  "engineVersion": "v0.17.0",
+  "sdk": {
+    "source": "../../../sdk/php"
+  },
+  "source": "."
+}

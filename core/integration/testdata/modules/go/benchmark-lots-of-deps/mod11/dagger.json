@@ -1,0 +1,25 @@
+{
+  "name": "mod11",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "mod6",
+      "source": "../mod6"
+    },
+    {
+      "name": "mod7",
+      "source": "../mod7"
+    },
+    {
+      "name": "mod8",
+      "source": "../mod8"
+    },
+    {
+      "name": "mod9",
+      "source": "../mod9"
+    }
+  ]
+}

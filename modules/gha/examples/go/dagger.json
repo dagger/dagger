@@ -1,0 +1,17 @@
+{
+  "name": "examples",
+  "engineVersion": "v0.21.9",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "gha",
+      "source": "../.."
+    }
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
+}

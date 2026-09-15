@@ -1,0 +1,19 @@
+type Foo {
+  file: File
+  secret: Secret
+  note: String
+}
+
+type Producer {
+  make(
+    file: File = null,
+    secret: Secret = null,
+    note: String = null,
+  ): Foo! {
+    Foo(file, secret, note)
+  }
+
+  use(foo: Foo!): String! {
+    "ok"
+  }
+}

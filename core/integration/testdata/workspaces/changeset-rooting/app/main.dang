@@ -1,0 +1,5 @@
+type App {
+  pub hello: String! {
+    "hello"
+  }
+}

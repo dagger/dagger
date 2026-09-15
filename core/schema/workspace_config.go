@@ -1,0 +1,324 @@
+package schema
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/engineutil"
+)
+
+const initialWorkspaceConfig = `# Dagger workspace configuration
+# Install modules with: dagger module install <module>
+# Example:
+#   dagger module install github.com/dagger/dagger/modules/wolfi
+
+[modules]
+`
+
+func workspaceBuildkit(ctx context.Context) (*engineutil.Client, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("engine client: %w", err)
+	}
+	return bk, nil
+}
+
+func workspaceConfigDirectoryForWrite(ws *core.Workspace, here bool) string {
+	if here {
+		return cleanWorkspaceRelPath(ws.Cwd)
+	}
+	if ws.ConfigFile != "" {
+		return filepath.Dir(cleanWorkspaceRelPath(ws.ConfigFile))
+	}
+	return "."
+}
+
+func workspaceConfigDirectory(ws *core.Workspace) (string, error) {
+	configFile, err := workspaceConfigFile(ws)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(configFile), nil
+}
+
+func workspaceConfigFile(ws *core.Workspace) (string, error) {
+	if ws.ConfigFile == "" {
+		return "", fmt.Errorf("no dagger.toml found in workspace")
+	}
+	return cleanWorkspaceRelPath(ws.ConfigFile), nil
+}
+
+func workspaceSameConfigDirectory(ws *core.Workspace, configDir string) bool {
+	selectedDir, err := workspaceConfigDirectory(ws)
+	if err != nil {
+		return false
+	}
+	return selectedDir == cleanWorkspaceRelPath(configDir)
+}
+
+func setWorkspaceConfigSelection(ws *core.Workspace, configDir string) {
+	configDir = cleanWorkspaceRelPath(configDir)
+	configFile := cleanWorkspaceRelPath(filepath.Join(configDir, workspace.ConfigFileName))
+	ws.LockFile = cleanWorkspaceRelPath(filepath.Join(configDir, workspace.LockFileName))
+	ws.ConfigFile = configFile
+}
+
+func cleanWorkspaceRelPath(p string) string {
+	if p == "" || p == "." {
+		return "."
+	}
+	return filepath.Clean(p)
+}
+
+func workspaceHostPath(ws *core.Workspace, rel ...string) (string, error) {
+	if ws == nil {
+		return "", fmt.Errorf("workspace is required")
+	}
+	if err := requireLocalWorkspace(ws, "workspace host access"); err != nil {
+		return "", err
+	}
+
+	parts := append([]string{ws.HostPath()}, rel...)
+	return filepath.Join(parts...), nil
+}
+
+func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
+	configFile, err := workspaceConfigFile(ws)
+	if err != nil {
+		return nil, err
+	}
+
+	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
+		data, err := core.DirectoryReadFile(ctx, rootfs, configFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading config: %w", err)
+		}
+		return data, nil
+	}
+
+	if ws.HostPath() != "" {
+		// Host overlay edits to the config live only in the changeset's delta
+		// side (host overlays store no full read root — see overlayEdit);
+		// untouched configs read straight from the host file below.
+		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok && ws.OverlayPathTouched(configFile) {
+			data, err := core.DirectoryReadFile(ctx, deltaRoot, configFile)
+			if err != nil {
+				return nil, fmt.Errorf("reading config: %w", err)
+			}
+			return data, nil
+		}
+
+		ctx, err = withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+		configPath, err := workspaceHostPath(ws, configFile)
+		if err != nil {
+			return nil, err
+		}
+		bk, err := workspaceBuildkit(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		data, err := bk.ReadCallerHostFile(ctx, configPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading config: %w", err)
+		}
+		return data, nil
+	}
+
+	rootfs := ws.Rootfs()
+	if rootfs.Self() == nil {
+		return nil, fmt.Errorf("workspace has no host path or rootfs")
+	}
+	data, err := core.DirectoryReadFile(ctx, rootfs, configFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	return data, nil
+}
+
+func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Config, error) {
+	data, err := readConfigBytes(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := workspace.ParseConfigAt(ctx, data, filepath.Dir(ws.ConfigFile))
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Modules == nil {
+		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	return cfg, nil
+}
+
+type configReadArgs struct {
+	Key string `default:""`
+}
+
+func (s *workspaceSchema) configRead(
+	ctx context.Context,
+	parent *core.Workspace,
+	args configReadArgs,
+) (dagql.String, error) {
+	if parent.ConfigFile == "" {
+		if envName, ok := selectedWorkspaceEnv(ctx, parent); ok {
+			return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
+		}
+		result, err := workspace.ReadConfigValue(nil, args.Key)
+		if err != nil {
+			return "", err
+		}
+		return dagql.String(result), nil
+	}
+
+	envName, envSelected := selectedWorkspaceEnv(ctx, parent)
+	overlay := parent.UserConfigOverlay()
+	switch {
+	case envSelected && !isExplicitEnvConfigKey(args.Key):
+		// Env-scoped reads return the effective active config: base values
+		// with the user-level overlay and the selected env applied, env
+		// tables hidden.
+		cfg, err := readWorkspaceConfig(ctx, parent)
+		if err != nil {
+			return "", err
+		}
+
+		effective, err := effectiveWorkspaceConfigBytes(parent, cfg, envName)
+		if err != nil {
+			return "", err
+		}
+
+		result, err := workspace.ReadConfigValue(effective, args.Key)
+		if err != nil {
+			return "", err
+		}
+		return dagql.String(result), nil
+
+	case overlay != nil:
+		// User-level overrides merge over the repo config for reads; env
+		// tables stay visible (including user-added envs) since no env is
+		// being applied here.
+		cfg, err := readWorkspaceConfig(ctx, parent)
+		if err != nil {
+			return "", err
+		}
+		merged, err := workspace.ApplyUserOverlay(cfg, overlay)
+		if err != nil {
+			return "", err
+		}
+
+		result, err := workspace.ReadConfigValue(workspace.SerializeConfig(merged), args.Key)
+		if err != nil {
+			return "", err
+		}
+		return dagql.String(result), nil
+	}
+
+	data, err := readConfigBytes(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := workspace.ReadConfigValue(data, args.Key)
+	if err != nil {
+		return "", err
+	}
+	return dagql.String(result), nil
+}
+
+type workspaceConfigValueArgs struct {
+	Key    string
+	Value  string
+	Values dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Here   bool `default:"false"`
+}
+
+type workspaceConfigKeyArgs struct {
+	Key  string
+	Here bool `default:"false"`
+}
+
+func selectedWorkspaceEnv(ctx context.Context, ws *core.Workspace) (string, bool) {
+	if ws != nil && ws.IsValueWorkspace() {
+		return ws.SelectedEnv(), ws.SelectedEnv() != ""
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err == nil && clientMetadata.WorkspaceEnv != nil && *clientMetadata.WorkspaceEnv != "" {
+		return *clientMetadata.WorkspaceEnv, true
+	}
+	if ws != nil && ws.SelectedEnv() != "" {
+		return ws.SelectedEnv(), true
+	}
+	return "", false
+}
+
+func isExplicitEnvConfigKey(key string) bool {
+	return key == "env" || strings.HasPrefix(key, "env.")
+}
+
+// effectiveWorkspaceConfigBytes serializes cfg with the workspace's user-level
+// overlay and the selected env overlay (when envName is non-empty) applied.
+// The merge order matches module loading: base config, then user-level
+// overrides, then the selected environment.
+func effectiveWorkspaceConfigBytes(ws *core.Workspace, cfg *workspace.Config, envName string) ([]byte, error) {
+	applied, err := workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	if err != nil {
+		return nil, err
+	}
+	applied, err = workspace.ApplyEnvOverlay(applied, envName)
+	if err != nil {
+		return nil, err
+	}
+	applied.Env = nil
+	return workspace.SerializeConfig(applied), nil
+}
+
+// envScopedConfigKey maps a modules.<name>.settings.* key into the selected
+// env's overlay storage. Under workspaceConfigInitIfMissing a missing env is
+// created by the write (writing a setting is the gesture that creates an env);
+// under workspaceConfigMustExist a missing env is rejected, so unsets keep
+// requiring the env to exist.
+func envScopedConfigKey(cfg *workspace.Config, envName, key string, policy workspaceConfigMutationPolicy) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
+	}
+	if _, ok := cfg.Env[envName]; !ok && policy == workspaceConfigMustExist {
+		return "", workspace.NewUndefinedEnvError(cfg, envName)
+	}
+
+	parts, err := workspace.SplitConfigPath(key)
+	if err != nil {
+		return "", err
+	}
+	if len(parts) < 4 || parts[0] != "modules" || parts[2] != "settings" {
+		return "", fmt.Errorf("key %q cannot be set in env %q; only modules.<name>.settings.* is supported", key, envName)
+	}
+
+	moduleName := parts[1]
+	if _, ok := cfg.Modules[moduleName]; !ok {
+		// The module may be one the env itself adds, which only exists in the
+		// overlay.
+		if _, ok := cfg.Env[envName].Modules[moduleName]; !ok {
+			return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+		}
+	}
+
+	return workspace.JoinConfigPath(append([]string{"env", envName}, parts...)...), nil
+}

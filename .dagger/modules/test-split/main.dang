@@ -1,0 +1,185 @@
+"""
+Test suites to run
+"""
+type TestSplit {
+  """
+  Workspace
+  """
+  let ws: Workspace!
+
+  """
+  Lower-level API for running specific tests
+  """
+  pub testSpecific(
+    run: [String!]!,
+    ebpfProgs: [String!],
+    pkg: String! = "./core/integration",
+    race: Boolean,
+  ): Void {
+    engineDev(ws: self.ws).test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+  }
+
+  let testCliEngineSpecific(
+    run: [String!]!,
+    ebpfProgs: [String!],
+    pkg: String! = "./core/integration",
+    race: Boolean,
+  ): Void {
+    engineDev(ws: self.ws)
+      .withEngineConfig("worker.oci", [
+        "minFreeSpace = \"30%\"",
+        "maxUsedSpace = \"50%\"",
+      ].join("\n"))
+      .test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+  }
+
+  let testSkip(
+    skip: [String!]!,
+    ebpfProgs: [String!],
+    pkg: String! = "./core/integration",
+    race: Boolean,
+  ): Void {
+    engineDev(ws: self.ws).test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+  }
+
+  """
+  Test Base
+  """
+  pub testBase: Void @check {
+    testSkip(
+      # Keep this list exact so similarly named unit tests outside the integration
+      # package remain in the base shard.
+      skip: [
+        "^TestCLI$",
+        "^TestCachePersistence$",
+        "^TestCall$",
+        "^TestClientGenerator$",
+        "^TestContainer$",
+        "^TestDaggerCMD$",
+        "^TestDockerfile$",
+        "^TestElixir$",
+        "^TestEngine$",
+        "^TestGo$",
+        "^TestInterface$",
+        "^TestJava$",
+        "^TestLLM$",
+        "^TestLocalCache$",
+        "^TestModule$",
+        "^TestModuleConfig$",
+        "^TestModuleLoading$",
+        "^TestPHP$",
+        "^TestProvision$",
+        "^TestPython$",
+        "^TestShell$",
+        "^TestTelemetry$",
+        "^TestTypescript$",
+        "^TestWorkspace$",
+        "^TestWorkspaceAPI$",
+        "^TestWorkspaceCompat$",
+        "^TestWorkspaceLegacyDefaultPath$",
+        "^TestWorkspaceMigration$",
+        "^TestWorkspaceModules$",
+        "^TestWorkspaceSelection$",
+      ],
+      pkg: "./...",
+      race: true,
+    )
+  }
+
+  """
+  Test Provision
+  """
+  pub testProvision: Void @check {
+    testSpecific(["TestProvision"])
+  }
+
+  """
+  Test Telemetry
+  """
+  pub testTelemetry: Void @check {
+    testSpecific(["^TestTelemetry$"], pkg: "./dagql/idtui")
+    testSpecific(["^TestTelemetry$"])
+
+    null
+  }
+
+  """
+  Test Call and Shell
+  """
+  pub testCallAndShell: Void @check {
+    testSpecific(["^TestCall$", "^TestShell$"])
+    testSpecific(["^TestDaggerCMD$"], pkg: "./internal/cmd/dagger")
+
+    null
+  }
+
+  """
+  Test CLI Engine
+  """
+  pub testCliEngine: Void @check {
+    testCliEngineSpecific(["TestCLI", "TestEngine"])
+  }
+
+  """
+  Test cache persistence
+  """
+  pub testCachePersistence: Void @check {
+    testCliEngineSpecific(["TestCachePersistence"])
+  }
+
+  """
+  Test local cache
+  """
+  pub testLocalCache: Void @check {
+    testCliEngineSpecific(["TestLocalCache"])
+  }
+
+  """
+  Test Client Generator
+  """
+  pub testClientGenerator: Void @check {
+    testSpecific(["TestClientGenerator"])
+  }
+
+  """
+  Test Container
+  """
+  pub testContainer: Void @check {
+    testSpecific(["TestContainer", "TestDockerfile"])
+  }
+
+  """
+  Test Interface
+  """
+  pub testInterface: Void @check {
+    testSpecific(["TestInterface"])
+  }
+
+  """
+  Test LLM
+  """
+  pub testLlm: Void @check {
+    testSpecific(["TestLLM"])
+  }
+
+  """
+  Test Module Runtimes
+  """
+  pub testModuleRuntimes: Void @check {
+    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
+  }
+
+  """
+  Test Modules
+  """
+  pub testModules: Void @check {
+    testSpecific(["TestModule"])
+  }
+
+  """
+  Test Workspaces
+  """
+  pub testWorkspaces: Void @check {
+    testSpecific(["TestWorkspace"])
+  }
+}

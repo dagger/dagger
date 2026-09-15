@@ -1,0 +1,7 @@
+{
+  "name": "container-provider",
+  "engineVersion": "v1.0.0",
+  "sdk": {
+    "source": "go"
+  }
+}

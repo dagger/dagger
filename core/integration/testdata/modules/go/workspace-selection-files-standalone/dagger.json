@@ -1,0 +1,7 @@
+{
+  "name": "files",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

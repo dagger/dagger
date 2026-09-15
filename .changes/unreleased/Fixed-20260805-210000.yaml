@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Go SDK generation now removes obsolete per-dependency binding files when a
+  dependency is removed or replaced.
+time: 2026-08-05T21:00:00Z
+custom:
+  Author: dagger-codex[bot]
+  PR: 13847

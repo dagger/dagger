@@ -1,0 +1,21 @@
+type Test {
+  pub local: String! {
+    "local"
+  }
+
+  pub viaGo: String! {
+    gochild.value
+  }
+
+  pub viaPython: String! {
+    pychild.value
+  }
+
+  pub viaTypescript: String! {
+    tschild.value
+  }
+
+  pub viaDang: String! {
+    dangchild.value
+  }
+}

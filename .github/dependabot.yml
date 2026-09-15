@@ -1,0 +1,175 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directories:
+      - "/"
+      - "/sdk/go"
+    exclude-paths:
+      - "**/examples/**"
+      - "**/snippets/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/engine"
+      - "area/cli"
+      - "area/sdk/go"
+    ignore:
+      # these are fiddly, we want to do them manually
+      - dependency-name: "go.opentelemetry.io/*"
+      - dependency-name: "github.com/dagger/*"
+      - dependency-name: "github.com/tonistiigi/fsutil"
+      - dependency-name: "github.com/vito/midterm"
+      # stargz-snapshotter requires containerd/v2, we're not using that
+      - dependency-name: "github.com/containerd/stargz-snapshotter"
+    groups:
+      engine:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/sdk/typescript"
+    exclude-paths:
+      - "**/examples/**"
+      - "**/snippets/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/typescript"
+    groups:
+      sdk-typescript:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/sdk/rust"
+    exclude-paths:
+      - "**/examples/**"
+      - "**/snippets/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/typescript"
+    groups:
+      sdk-rust:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/docs"
+    exclude-paths:
+      - "**/examples/**"
+      - "**/snippets/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/documentation"
+    groups:
+      docs:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/sdk/python"
+    exclude-paths:
+      - "**/examples/**"
+      - "**/snippets/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/python"
+    groups:
+      sdk-python:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/sdk/python/runtime"
+      - "/modules/ruff/build"
+    exclude-paths:
+      - "**/examples/**"
+      - "**/snippets/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/python"
+    ignore:
+      # python needs to be manually bumped
+      - dependency-name: "python"
+        update-types:
+          ["version-update:semver-major", "version-update:semver-minor"]
+    groups:
+      sdk-python-docker:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "maven"
+    directory: "/sdk/java"
+    exclude-paths:
+      - "**/examples/**"
+      - "**/snippets/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/java"
+    ignore:
+      # ignore maven dependencies (API, plugins, etc)
+      - dependency-name: "org.apache.maven*"
+    groups:
+      sdk-java:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "mix"
+    directory: "/sdk/elixir"
+    exclude-paths:
+      - "**/examples/**"
+      - "**/snippets/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/elixir"
+    groups:
+      sdk-elixir:
+        applies-to: version-updates
+        patterns:
+          - "*"

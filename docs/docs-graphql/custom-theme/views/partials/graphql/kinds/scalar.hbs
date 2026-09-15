@@ -1,0 +1,8 @@
+<div class="doc-copy">
+  {{#if description}}
+    <div class="definition-description doc-copy-section">
+      <h5>Description</h5>
+      {{md (interpolateReferences description)}}
+    </div>
+  {{/if}}
+</div>

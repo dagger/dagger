@@ -1,0 +1,2 @@
+kind: Added
+body: Add `dagger shell` and its `dagger sh` alias to list and open shells from workspace modules.

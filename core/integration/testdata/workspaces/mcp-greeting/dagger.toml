@@ -1,0 +1,3 @@
+[modules.test]
+source = ".dagger/modules/test"
+entrypoint = true

@@ -1,0 +1,7 @@
+{
+  "name": "objdoc",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

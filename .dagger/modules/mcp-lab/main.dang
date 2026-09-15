@@ -1,0 +1,240 @@
+# mcp-lab: be the model. Drive the LLM-facing MCP surface of a from-source
+# dagger CLI/engine and read the verbatim tool results a model would receive.
+#
+# QA'ing what an LLM experiences — especially when a service it started
+# CRASHES — requires seeing exactly what the model sees: raw MCP tool results,
+# not a TUI rendering and not this agent's own (differently composed) session.
+# `dagger mcp` serves precisely that surface over stdio: the workspace
+# module's methods as tools, plus the builtins (ReadLogs, ListServices, ...).
+#
+# A stdio session must outlive individual tool calls (a service started by one
+# call has to still be running for the next), so `dagger mcp` runs under a
+# small HTTP<->stdio bridge (bridge/main.go, built from the workspace's own Go
+# module so it shares the CLI's mcp-go version) held as a Service — the same
+# session-state pattern as modules/tui-qa/main.dang:
+#
+#   - `start`: build CLI + bridge from the workspace, mount a fixture
+#     workspace (fixtures/<name>), run `dagger mcp` under the bridge —
+#     attached to an engine-lab engine via `engine`, or to this session's
+#     own engine via nesting by default.
+#   - `tools`: tools/list verbatim — names, descriptions, input schemas.
+#   - `call`: tools/call — the raw result text the model would receive,
+#     with isError surfaced as a marker instead of raised.
+#
+# fixtures/crasher provides the crash scenarios as MCP tools: startCrasher
+# (healthy, then dies), startDoomed (dies before healthcheck), poke (probe a
+# service URL).
+
+let defaultWorkdir = "/work"
+let defaultPort = 7788
+
+type McpLab {
+  # ---- session state (private so it isn't exposed as tools; persists across
+  # tool calls the same way tui-qa's `client`/`service` do) ------------------
+
+  # a minimal curl container bound to the running bridge service
+  let client: Container! = container
+  # the started bridge service (kept so `stop` can tear it down)
+  let service: Service = null
+  # base URL of the bridge inside the client container
+  let url: String! = ""
+
+  # Skills shipped alongside this module, discovered via ListSkills/ReadSkill
+  # instead of polluting context with a static system prompt.
+  let skills: Directory! = currentModule.source.directory("skills")
+
+  """
+  Compose the MCP-lab tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSkills(skills)
+  }
+
+  """
+  Start a live `dagger mcp` session (from-source CLI) and expose it for QA.
+
+  The fixture workspace's module methods are served as MCP tools alongside the
+  builtins (ReadLogs, ListServices, ...) — afterwards, `tools` lists them and
+  `call` invokes them, returning the verbatim results a model would receive.
+
+  With `engine` set (the engine-lab endpoint), the session runs against THAT
+  from-source engine — the mode for QA'ing engine changes: restart engine-lab
+  after edits, then start a fresh MCP session against it. With `engine` empty
+  the session nests against this session's own engine.
+  """
+  start(
+    source: Workspace!,
+    """
+    Address of a running engine to attach to — e.g. the tcp://<host>:1234
+    endpoint printed by the engine-lab start tool. Empty attaches to this
+    session's own engine via nesting.
+    """
+    engine: String! = "",
+    """
+    Fixture workspace to serve, a directory under this module's fixtures/.
+    `crasher` provides startCrasher/startDoomed/poke for crash scenarios.
+    """
+    fixture: String! = "crasher",
+    """
+    Extra flags for `dagger mcp`, e.g. ["--env-privileged"].
+    """
+    extraArgs: [String!]! = [],
+    """
+    Port the bridge's HTTP server listens on inside the container.
+    """
+    port: Int! = defaultPort,
+  ): McpLab! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): starting a service is a side effect that must actually run
+    # every invocation, not be served stale from the dagql session cache.
+    if (service != null) {
+      service.stop
+      print("Stopped previous MCP session")
+    }
+
+    let srcDir = source.directory("/")
+
+    # build the dagger CLI from source
+    let cli = cliDev(ws: source, source: srcDir).binary
+
+    # Build the HTTP<->stdio bridge from the workspace tree: it lives in the
+    # repo's root Go module, so it compiles against the exact mcp-go version
+    # the CLI serves.
+    let bridgeBin = engineDev(ws: source)
+      .goContainer
+      .withEnvVariable("GOMODCACHE", "/go/pkg/mod")
+      .withEnvVariable("GOCACHE", "/root/.cache/go-build")
+      .withMountedCache("/go/pkg/mod", cacheVolume("mcp-lab-gomod"))
+      .withMountedCache("/root/.cache/go-build", cacheVolume("mcp-lab-gobuild"))
+      .withMountedDirectory("/src", srcDir)
+      .withWorkdir("/src")
+      .withExec(["go", "build", "-o", "/out/mcp-bridge", "./.dagger/modules/mcp-lab/bridge"])
+      .file("/out/mcp-bridge")
+
+    # Default: nest against this session's own engine. With `engine`: point
+    # the CLI at the existing engine by address — reachable with no service
+    # binding because engine-lab starts its service under the session DNS
+    # domain.
+    let nesting = engine == ""
+    let lean = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "git"])
+    let base = if (nesting) {
+      lean
+    } else {
+      lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine)
+    }
+
+    let runner = base
+      .withFile("/usr/local/bin/dagger", cli)
+      .withFile("/usr/local/bin/mcp-bridge", bridgeBin)
+      .withDirectory(defaultWorkdir, currentModule.source.directory("fixtures/" + fixture))
+      .withWorkdir(defaultWorkdir)
+      # dagger workspaces want a real repository around them
+      .withExec([
+        "sh", "-c",
+        "git init -q -b main && git add -A && git " + "-c user.email=mcp-lab@localhost -c user.name=mcp-lab " + "commit -qm 'fixture snapshot'",
+      ])
+      .withExposedPort(port)
+
+    let svc = runner
+      .asService(
+        args: [
+          "mcp-bridge",
+          "-port", toString(port),
+          "-workdir", defaultWorkdir,
+          "--",
+          "--progress=plain", "mcp",
+        ] + extraArgs,
+        experimentalPrivilegedNesting: nesting,
+      )
+      .start
+
+    self.client = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl"])
+      .withServiceBinding("mcp-lab", svc)
+    self.service = svc
+    self.url = "http://mcp-lab:" + toString(port)
+    if (engine != "") {
+      print("Attached to engine at " + engine)
+    }
+    print("MCP session starting. The `tools` tool blocks until `dagger mcp` finishes initializing — the first run may build SDKs, so give it time.")
+    self
+  }
+
+  # NOTE: every tool that talks to the live session MUST be
+  # @cache(policy: FunctionCachePolicy.Never), and the nonce env var busts the
+  # exec cache underneath — same reasoning as tui-qa.
+  """
+  List the MCP session's tools exactly as a model would see them: names,
+  descriptions, and input schemas, verbatim from tools/list.
+  """
+  tools: String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/tools")
+  }
+
+  """
+  Call an MCP tool and return the raw result text the model would receive.
+  isError results come back prefixed with a marker instead of raising, so
+  failure UX is observable too. `argsJson` is the arguments object as JSON,
+  e.g. `{"delaySeconds": 60}` or `{"span": "<hex>"}`.
+  """
+  call(
+    name: String!,
+    argsJson: String! = "{}",
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/call", "{\"name\":\"" + name + "\",\"arguments\":" + argsJson + "}")
+  }
+
+  # A self-call (`mcpLab`) yields the module's own type as it lives in the
+  # runtime schema — a Dagger.McpLab, which carries a GraphQL id and
+  # implements Node.
+  """
+  Stop the MCP session and release the underlying service.
+  """
+  stop: Dagger.McpLab! @cache(policy: FunctionCachePolicy.Never) {
+    if (service != null) {
+      service.stop
+      print("Stopped MCP session")
+    }
+    mcpLab
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  let get(path: String!): String! {
+    if (url == "") {
+      return "No active MCP session. Call the mcp-lab start tool first."
+    }
+    client
+      # bust Dagger's exec cache so each call hits the live session
+      .withEnvVariable("MCP_LAB_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
+        # generous: /tools blocks on first-run SDK builds
+        "--max-time", "900",
+        url + path,
+      ])
+      .stdout
+  }
+
+  let post(path: String!, body: String!): String! {
+    if (url == "") {
+      return "No active MCP session. Call the mcp-lab start tool first."
+    }
+    client
+      .withEnvVariable("MCP_LAB_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
+        # generous: tool calls may pull images / build modules
+        "--max-time", "900",
+        "--data-binary", body,
+        url + path,
+      ])
+      .stdout
+  }
+}

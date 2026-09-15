@@ -1,0 +1,43 @@
+{
+  "description": "Doc contains \" and \\",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Function doc contains \" and \\",
+      "isDeprecated": false,
+      "name": "doc_single_line",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "ENUM",
+          "name": "TypeDefKind",
+          "ofType": null
+        }
+      }
+    },
+{
+      "args": [],
+      "deprecationReason": null,
+      "description": "Function doc multiple line \ncontains \" and \\",
+      "isDeprecated": false,
+      "name": "doc_multi_line",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "ENUM",
+          "name": "TypeDefKind",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "Doc",
+  "possibleTypes": []
+}

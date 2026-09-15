@@ -1,0 +1,36 @@
+name: Trace GitHub Actions Workflows
+
+on:
+  workflow_run:
+    workflows:
+      - "Alternative CI Runners 1"
+      - "Benchmark"
+      - "daggerverse-preview"
+      - "docs"
+      - "Engine & CLI"
+      - "evals"
+      - "Github"
+      - "Helm"
+      - "Publish"
+      - "Publish Rust SDK"
+      - "SDKs"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Export '${{ github.event_name }}' workflow trace
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'dagger/dagger' }}
+    steps:
+      - name: Export Workflow Trace
+        uses: inception-health/otel-export-trace-action@latest
+        with:
+          otlpEndpoint: grpc://api.honeycomb.io:443/
+          otlpHeaders: ${{ secrets.HONEYCOMB_GITHUB_ACTIONS_WORKFLOWS }}
+          otelServiceName: dagger-dagger-github-actions
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          runId: ${{ github.event.workflow_run.id }}

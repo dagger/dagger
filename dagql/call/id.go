@@ -1,0 +1,1134 @@
+package call
+
+import (
+	"encoding/base64"
+	"fmt"
+	"slices"
+	"strings"
+	"sync"
+
+	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/util/hashutil"
+)
+
+var marshalBufPool = &sync.Pool{New: func() any {
+	b := make([]byte, 0, 1024)
+	return &b
+}}
+
+func New() *ID {
+	// we start with nil so there's always a nil parent at the bottom
+	return nil
+}
+
+/*
+ID represents a boundary GraphQL ID value.
+
+It is either:
+- a recipe-form constructor-addressed DAG of Calls
+- a handle-form opaque engine-local reference to a cached result
+
+It may be binary=>base64-encoded to be used as a GraphQL ID value for
+objects. Alternatively it may be stored in a database and referred to via an
+RFC-6920 ni://sha-256;... URI.
+
+This type wraps the underlying proto DAG+Call types in order to enforce immutability
+of its fields and give it a name more appropriate for how it's used in the
+context of dagql + the engine.
+
+IDs are immutable from the consumer's perspective.
+
+Recipe-form IDs support the historical recipe-manipulation operations such as
+Append and With.
+
+Handle-form IDs are opaque top-level references only. Recipe-manipulation
+operations on handle-form IDs panic rather than faking recipe structure.
+*/
+type ID struct {
+	mode idMode
+
+	pb *callpbv1.Call
+
+	// Wrappers around the various proto types in ID.pb
+	receiver       *ID
+	args           []*Argument
+	implicitInputs []*Argument
+	module         *Module
+	typ            *Type
+	engineResultID uint64
+}
+
+type idMode uint8
+
+const (
+	idModeRecipe idMode = iota
+	idModeHandle
+)
+
+const (
+	ExtraDigestLabelContent = "content"
+)
+
+type ExtraDigest struct {
+	Digest digest.Digest
+	Label  string
+}
+
+type View string
+
+func (v View) String() string {
+	return string(v)
+}
+
+func NewEngineResultID(resultID uint64, typ *Type) *ID {
+	if typ == nil {
+		panic("call.ID handle-form requires non-nil type")
+	}
+	return &ID{
+		mode:           idModeHandle,
+		typ:            typ,
+		engineResultID: resultID,
+	}
+}
+
+func (id *ID) IsHandle() bool {
+	return id != nil && id.mode == idModeHandle
+}
+
+func (id *ID) EngineResultID() uint64 {
+	if id == nil {
+		return 0
+	}
+	id.mustBeHandle("EngineResultID")
+	return id.engineResultID
+}
+
+func (id *ID) mustBeRecipe(op string) {
+	if id != nil && id.mode == idModeHandle {
+		panic(fmt.Sprintf("call.ID.%s is not valid for handle-form IDs", op))
+	}
+}
+
+func (id *ID) mustBeHandle(op string) {
+	if id == nil || id.mode != idModeHandle {
+		panic(fmt.Sprintf("call.ID.%s requires a handle-form ID", op))
+	}
+}
+
+// The ID of the object that the field selection will be evaluated against.
+//
+// If nil, the root Query object is implied.
+func (id *ID) Receiver() *ID {
+	if id == nil {
+		return nil
+	}
+	id.mustBeRecipe("Receiver")
+	return id.receiver
+}
+
+// The root Call of the ID, with its Digest set. Exposed so that Calls can be
+// streamed over the wire one-by-one, rather than emitting full DAGs, which
+// would involve a ton of duplication.
+//
+// WARRANTY VOID IF MUTATIONS ARE MADE TO THE INNER PROTOBUF. Perform a
+// proto.Clone before mutating.
+func (id *ID) Call() *callpbv1.Call {
+	id.mustBeRecipe("Call")
+	return id.pb
+}
+
+// The GraphQL type of the value.
+func (id *ID) Type() *Type {
+	return id.typ
+}
+
+// GraphQL field name.
+func (id *ID) Field() string {
+	id.mustBeRecipe("Field")
+	return id.pb.Field
+}
+
+// GraphQL view.
+func (id *ID) View() View {
+	id.mustBeRecipe("View")
+	return View(id.pb.View)
+}
+
+// GraphQL field arguments, always in alphabetical order.
+// NOTE: use with caution, any inplace writes to elements of the returned slice
+// can corrupt the ID
+func (id *ID) Args() []*Argument {
+	id.mustBeRecipe("Args")
+	return id.args
+}
+
+// ImplicitInputs are inputs to the call that are computed by the engine rather
+// than explicitly set by a GraphQL caller.
+//
+// NOTE: use with caution, any inplace writes to elements of the returned slice
+// can corrupt the ID
+func (id *ID) ImplicitInputs() []*Argument {
+	id.mustBeRecipe("ImplicitInputs")
+	return id.implicitInputs
+}
+
+func (id *ID) Arg(name string) *Argument {
+	id.mustBeRecipe("Arg")
+	for _, arg := range id.args {
+		if arg.pb.Name == name {
+			return arg
+		}
+	}
+	return nil
+}
+
+// If the field returns a list, this is the index of the element to select.
+// Note that this defaults to zero, which means there is no selection of
+// an element in the list. Non-zero indexes are 1-based.
+func (id *ID) Nth() int64 {
+	id.mustBeRecipe("Nth")
+	return id.pb.Nth
+}
+
+// The module that provides the implementation of the field, if any.
+func (id *ID) Module() *Module {
+	id.mustBeRecipe("Module")
+	return id.module
+}
+
+// Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
+// first.
+func (id *ID) Digest() digest.Digest {
+	if id == nil {
+		return ""
+	}
+	id.mustBeRecipe("Digest")
+	return digest.Digest(id.pb.Digest)
+}
+
+func (id *ID) ContentDigest() digest.Digest {
+	id.mustBeRecipe("ContentDigest")
+	if id == nil {
+		return ""
+	}
+	var last digest.Digest
+	for _, extra := range id.pb.ExtraDigests {
+		if extra == nil || extra.Label != ExtraDigestLabelContent || extra.Digest == "" {
+			continue
+		}
+		last = digest.Digest(extra.Digest)
+	}
+	return last
+}
+
+func (id *ID) ExtraDigests() []ExtraDigest {
+	id.mustBeRecipe("ExtraDigests")
+	if id == nil || len(id.pb.ExtraDigests) == 0 {
+		return nil
+	}
+	out := make([]ExtraDigest, 0, len(id.pb.ExtraDigests))
+	for _, extra := range id.pb.ExtraDigests {
+		if extra == nil || extra.Digest == "" {
+			continue
+		}
+		out = append(out, ExtraDigest{
+			Digest: digest.Digest(extra.Digest),
+			Label:  extra.Label,
+		})
+	}
+	return out
+}
+
+// EffectIDs returns the effect IDs directly attached to this call.
+func (id *ID) EffectIDs() []string {
+	id.mustBeRecipe("EffectIDs")
+	if id == nil {
+		return nil
+	}
+	return slices.Clone(id.pb.EffectIds)
+}
+
+// Inputs returns the ID digests referenced by this ID, starting with the
+// receiver, if any.
+func (id *ID) Inputs() ([]digest.Digest, error) {
+	id.mustBeRecipe("Inputs")
+	seen := map[digest.Digest]struct{}{}
+	var inputs []digest.Digest
+	see := func(dig digest.Digest) {
+		if _, ok := seen[dig]; !ok {
+			seen[dig] = struct{}{}
+			inputs = append(inputs, dig)
+		}
+	}
+	if id.Receiver() != nil {
+		see(id.Receiver().Digest())
+	}
+	for _, arg := range id.args {
+		ins, err := arg.value.Inputs()
+		if err != nil {
+			return nil, err
+		}
+		for _, in := range ins {
+			see(in)
+		}
+	}
+	for _, arg := range id.implicitInputs {
+		ins, err := arg.value.Inputs()
+		if err != nil {
+			return nil, err
+		}
+		for _, in := range ins {
+			see(in)
+		}
+	}
+	return inputs, nil
+}
+
+func (id *ID) Modules() []*Module {
+	id.mustBeRecipe("Modules")
+	if id == nil {
+		return nil
+	}
+
+	seenIDDigests := map[digest.Digest]struct{}{}
+	seenModuleDigests := map[digest.Digest]struct{}{}
+	mods := []*Module{}
+
+	addModule := func(mod *Module) {
+		if mod == nil || mod.id == nil {
+			return
+		}
+		dig := mod.id.Digest()
+		if _, ok := seenModuleDigests[dig]; ok {
+			return
+		}
+		seenModuleDigests[dig] = struct{}{}
+		mods = append(mods, mod)
+	}
+
+	var walkLiteral func(Literal)
+	var walkID func(*ID)
+
+	walkLiteral = func(lit Literal) {
+		switch v := lit.(type) {
+		case nil:
+			return
+		case *LiteralID:
+			walkID(v.id)
+		case *LiteralList:
+			for _, elem := range v.values {
+				walkLiteral(elem)
+			}
+		case *LiteralObject:
+			for _, arg := range v.values {
+				if arg == nil {
+					continue
+				}
+				walkLiteral(arg.value)
+			}
+		default:
+			// No nested IDs/modules in primitive literals.
+		}
+	}
+
+	walkID = func(cur *ID) {
+		if cur == nil {
+			return
+		}
+
+		if dg := cur.Digest(); dg != "" {
+			if _, ok := seenIDDigests[dg]; ok {
+				return
+			}
+			seenIDDigests[dg] = struct{}{}
+		}
+
+		addModule(cur.module)
+
+		for _, arg := range cur.args {
+			if arg == nil {
+				continue
+			}
+			walkLiteral(arg.value)
+		}
+		for _, input := range cur.implicitInputs {
+			if input == nil {
+				continue
+			}
+			walkLiteral(input.value)
+		}
+
+		walkID(cur.receiver)
+	}
+
+	walkID(id)
+	return mods
+}
+
+// NOTE: Path can be very expensive, do not use in hot paths
+func (id *ID) Path() string {
+	if id != nil && id.mode == idModeHandle {
+		return fmt.Sprintf("engineResult(%d)", id.engineResultID)
+	}
+	buf := new(strings.Builder)
+	if id.receiver != nil {
+		fmt.Fprintf(buf, "%s.", id.receiver.Path())
+	}
+	fmt.Fprint(buf, id.DisplaySelf())
+	return buf.String()
+}
+
+// NOTE: DisplaySelf can be very expensive, do not use in hot paths
+func (id *ID) DisplaySelf() string {
+	id.mustBeRecipe("DisplaySelf")
+	buf := new(strings.Builder)
+	fmt.Fprintf(buf, "%s", id.pb.Field)
+	displayArgs := make([]*Argument, 0, len(id.args))
+	for _, arg := range id.args {
+		arg = redactedArgForID(arg)
+		if arg == nil {
+			continue
+		}
+		displayArgs = append(displayArgs, arg)
+	}
+	for ai, arg := range displayArgs {
+		if ai == 0 {
+			fmt.Fprintf(buf, "(")
+		} else {
+			fmt.Fprintf(buf, ", ")
+		}
+		fmt.Fprintf(buf, "%s: %s", arg.pb.Name, arg.value.Display())
+		if ai == len(displayArgs)-1 {
+			fmt.Fprintf(buf, ")")
+		}
+	}
+	if id.pb.Nth != 0 {
+		fmt.Fprintf(buf, "#%d", id.pb.Nth)
+	}
+	return buf.String()
+}
+
+func (id *ID) Display() string {
+	if id == nil {
+		return "<nil>"
+	}
+	if id.mode == idModeHandle {
+		return fmt.Sprintf("engineResult(%d): %s", id.engineResultID, id.typ.ToAST())
+	}
+	return fmt.Sprintf("%s: %s", id.Path(), id.typ.ToAST())
+}
+
+func (id *ID) Name() string {
+	if id != nil && id.mode == idModeHandle {
+		return fmt.Sprintf("engineResult(%d)", id.engineResultID)
+	}
+	name := id.pb.Field
+	if id.receiver != nil {
+		name = id.receiver.typ.NamedType() + "." + name
+	}
+	return name
+}
+
+type IDOpt func(*ID)
+
+func WithModule(mod *Module) IDOpt {
+	return func(id *ID) {
+		id.mustBeRecipe("WithModule")
+		if mod != nil {
+			id.module = mod
+			id.pb.Module = mod.pb
+		} else {
+			id.module = nil
+			id.pb.Module = nil
+		}
+	}
+}
+
+func WithNth(n int) IDOpt {
+	return func(id *ID) {
+		id.mustBeRecipe("WithNth")
+		id.pb.Nth = int64(n)
+	}
+}
+
+func WithView(view View) IDOpt {
+	return func(id *ID) {
+		id.mustBeRecipe("WithView")
+		id.pb.View = view.String()
+	}
+}
+
+func WithContentDigest(dig digest.Digest) IDOpt {
+	return func(id *ID) {
+		id.mustBeRecipe("WithContentDigest")
+		if dig != "" {
+			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), ExtraDigestLabelContent)
+		} else {
+			id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, ExtraDigestLabelContent)
+		}
+	}
+}
+
+func WithExtraDigest(extra ExtraDigest) IDOpt {
+	return func(id *ID) {
+		id.mustBeRecipe("WithExtraDigest")
+		if extra.Digest == "" {
+			return
+		}
+		id.pb.ExtraDigests = appendExtraDigest(
+			id.pb.ExtraDigests,
+			extra.Digest.String(),
+			extra.Label,
+		)
+	}
+}
+
+func WithEffectIDs(effectIDs []string) IDOpt {
+	return func(id *ID) {
+		id.mustBeRecipe("WithEffectIDs")
+		id.pb.EffectIds = slices.Clone(effectIDs)
+	}
+}
+
+func WithArgs(args ...*Argument) IDOpt {
+	return func(id *ID) {
+		id.mustBeRecipe("WithArgs")
+		id.args = args
+		id.pb.Args = make([]*callpbv1.Argument, 0, len(args))
+		for _, arg := range args {
+			if redactedArg := redactedArgForID(arg); redactedArg != nil {
+				id.pb.Args = append(id.pb.Args, redactedArg.pb)
+			}
+		}
+	}
+}
+
+func WithImplicitInputs(inputs ...*Argument) IDOpt {
+	return func(id *ID) {
+		id.mustBeRecipe("WithImplicitInputs")
+		id.implicitInputs = inputs
+		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(inputs))
+		for _, input := range inputs {
+			if redactedInput := redactedArgForID(input); redactedInput != nil {
+				id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, redactedInput.pb)
+			}
+		}
+	}
+}
+
+func redactedArgForID(arg *Argument) *Argument {
+	if arg == nil {
+		return nil
+	}
+	if !arg.isSensitive {
+		return arg
+	}
+	return NewArgument(
+		arg.Name(),
+		NewLiteralString("***"),
+		false,
+	)
+}
+
+func (id *ID) With(opts ...IDOpt) *ID {
+	id.mustBeRecipe("With")
+	return id.shallowClone().apply(opts...)
+}
+
+func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
+	if id != nil {
+		id.mustBeRecipe("Append")
+	}
+	typ := NewType(ret)
+	newID := &ID{
+		mode: idModeRecipe,
+		pb: &callpbv1.Call{
+			Type:           typ.pb,
+			ReceiverDigest: id.Digest().String(),
+			Field:          field,
+		},
+		receiver: id,
+		typ:      typ,
+	}
+	return newID.apply(opts...)
+}
+
+func (id *ID) Encode() (string, error) {
+	if id == nil {
+		return "", nil
+	}
+	dagPB, err := id.ToProto()
+	if err != nil {
+		return "", fmt.Errorf("failed to convert ID to proto: %w", err)
+	}
+
+	buf := *(marshalBufPool.Get().(*[]byte))
+	buf = buf[:0]
+	defer marshalBufPool.Put(&buf)
+	// Deterministic is strictly needed so the CallsByDigest map is sorted in the serialized proto
+	proto, err := proto.MarshalOptions{Deterministic: true}.MarshalAppend(buf, dagPB)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
+	}
+
+	return base64.StdEncoding.EncodeToString(proto), nil
+}
+
+func (id *ID) MarshalJSON() ([]byte, error) {
+	enc, err := id.Encode()
+	if err != nil {
+		return nil, err
+	}
+	return []byte(`"` + enc + `"`), nil
+}
+
+func (id *ID) UnmarshalJSON(data []byte) error {
+	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
+		return fmt.Errorf("invalid JSON string")
+	}
+	enc := string(data[1 : len(data)-1])
+	return id.Decode(enc)
+}
+
+// NOTE: use with caution, any mutations to the returned proto can corrupt the ID
+func (id *ID) ToProto() (*callpbv1.DAG, error) {
+	if id == nil {
+		return &callpbv1.DAG{}, nil
+	}
+	if id.mode == idModeHandle {
+		if id.typ == nil {
+			return nil, fmt.Errorf("handle-form ID missing type")
+		}
+		return &callpbv1.DAG{
+			Value: &callpbv1.DAG_EngineResult{
+				EngineResult: &callpbv1.EngineResultRef{
+					ResultID: id.engineResultID,
+					RootType: id.typ.pb,
+				},
+			},
+		}, nil
+	}
+	recipePB := &callpbv1.RecipeDAG{
+		CallsByDigest: map[string]*callpbv1.Call{},
+	}
+	id.gatherCalls(recipePB.CallsByDigest)
+	recipePB.RootDigest = id.pb.Digest
+	return &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{
+			Recipe: recipePB,
+		},
+	}, nil
+}
+
+func (id *ID) FromProto(dagPB *callpbv1.DAG) error {
+	if id == nil {
+		return fmt.Errorf("cannot decode into nil ID")
+	}
+	*id = ID{}
+	switch v := dagPB.GetValue().(type) {
+	case nil:
+		return nil
+	case *callpbv1.DAG_Recipe:
+		if v.Recipe == nil {
+			return nil
+		}
+		if err := id.decode(v.Recipe.RootDigest, v.Recipe.CallsByDigest, map[string]*ID{}); err != nil {
+			return fmt.Errorf("failed to decode DAG: %w", err)
+		}
+		return nil
+	case *callpbv1.DAG_EngineResult:
+		if v.EngineResult == nil {
+			return nil
+		}
+		id.mode = idModeHandle
+		id.engineResultID = v.EngineResult.ResultID
+		if v.EngineResult.RootType != nil {
+			id.typ = &Type{pb: v.EngineResult.RootType}
+		}
+		if id.typ == nil {
+			return fmt.Errorf("handle-form DAG missing root type")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown DAG value type %T", v)
+	}
+}
+
+func (id *ID) shallowClone() *ID {
+	id.mustBeRecipe("shallowClone")
+	cp := &ID{
+		mode:           id.mode,
+		receiver:       id.receiver,
+		args:           id.args,
+		implicitInputs: id.implicitInputs,
+		module:         id.module,
+		typ:            id.typ,
+		engineResultID: id.engineResultID,
+	}
+	// NB: this is finnicky, but shouldn't change much, seems worth avoiding
+	// reflection in proto.CloneOf
+	cp.pb = &callpbv1.Call{
+		ReceiverDigest: id.pb.ReceiverDigest,
+		Type:           id.pb.Type,
+		Field:          id.pb.Field,
+		Args:           id.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
+		ImplicitInputs: id.pb.ImplicitInputs,
+		Nth:            id.pb.Nth,
+		Module:         id.pb.Module,
+		Digest:         id.pb.Digest,
+		View:           id.pb.View,
+		EffectIds:      id.pb.EffectIds,
+		ExtraDigests:   cloneExtraDigests(id.pb.ExtraDigests),
+	}
+	return cp
+}
+
+func (id *ID) apply(opts ...IDOpt) *ID {
+	id.mustBeRecipe("apply")
+	for _, opt := range opts {
+		opt(id)
+	}
+
+	// recompute recipe digest
+	var err error
+	id.pb.Digest, err = id.calcDigest()
+	if err != nil {
+		// something has to be deeply wrong if we can't
+		// marshal proto and hash the bytes
+		panic(err)
+	}
+
+	return id
+}
+
+func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
+	id.mustBeRecipe("gatherCalls")
+	if id == nil {
+		return
+	}
+
+	if existing, ok := callsByDigest[id.pb.Digest]; ok {
+		existing.EffectIds = mergeEffectIDs(existing.EffectIds, id.pb.EffectIds)
+		existing.ExtraDigests = mergeExtraDigests(existing.ExtraDigests, id.pb.ExtraDigests)
+		return
+	}
+	id.pb.ExtraDigests = normalizedExtraDigests(id.pb.ExtraDigests)
+	callsByDigest[id.pb.Digest] = id.pb
+	id.receiver.gatherCalls(callsByDigest)
+	id.module.gatherCalls(callsByDigest)
+	for _, arg := range id.args {
+		arg.gatherCalls(callsByDigest)
+	}
+	for _, input := range id.implicitInputs {
+		input.gatherCalls(callsByDigest)
+	}
+}
+
+func (id *ID) Decode(str string) error {
+	bytes, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		return fmt.Errorf("failed to decode base64: %w", err)
+	}
+	var dagPB callpbv1.DAG
+	if err := proto.Unmarshal(bytes, &dagPB); err != nil {
+		return fmt.Errorf("failed to unmarshal proto: %w", err)
+	}
+
+	return id.FromProto(&dagPB)
+}
+
+func (id *ID) decode(
+	dgst string,
+	callsByDigest map[string]*callpbv1.Call,
+	memo map[string]*ID,
+) error {
+	if id == nil {
+		return fmt.Errorf("cannot decode into nil ID")
+	}
+	*id = ID{}
+
+	if existingID, ok := memo[dgst]; ok {
+		id.mode = existingID.mode
+		id.pb = existingID.pb
+		id.receiver = existingID.receiver
+		id.args = existingID.args
+		id.implicitInputs = existingID.implicitInputs
+		id.module = existingID.module
+		id.typ = existingID.typ
+		id.engineResultID = existingID.engineResultID
+		return nil
+	}
+	memo[dgst] = id
+
+	pb, ok := callsByDigest[dgst]
+	if !ok {
+		return fmt.Errorf("call digest %q not found", dgst)
+	}
+	if dgst != pb.Digest {
+		// should never happen, just out of caution
+		return fmt.Errorf("call digest mismatch %q != %q", dgst, pb.Digest)
+	}
+	id.mode = idModeRecipe
+	id.pb = pb
+
+	if id.pb.ReceiverDigest != "" {
+		id.receiver = new(ID)
+		if err := id.receiver.decode(id.pb.ReceiverDigest, callsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode receiver Call: %w", err)
+		}
+	}
+	if id.pb.Module != nil {
+		id.module = new(Module)
+		if err := id.module.decode(id.pb.Module, callsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode module: %w", err)
+		}
+	}
+	for _, arg := range id.pb.Args {
+		if arg == nil {
+			continue
+		}
+		decodedArg := new(Argument)
+		if err := decodedArg.decode(arg, callsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode argument: %w", err)
+		}
+		id.args = append(id.args, decodedArg)
+	}
+	for _, input := range id.pb.ImplicitInputs {
+		if input == nil {
+			continue
+		}
+		decodedInput := new(Argument)
+		if err := decodedInput.decode(input, callsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode implicit input: %w", err)
+		}
+		id.implicitInputs = append(id.implicitInputs, decodedInput)
+	}
+	if id.pb.Type != nil {
+		id.typ = &Type{pb: id.pb.Type}
+	}
+
+	return nil
+}
+
+// calcDigest calculates the recipe digest for the ID.
+//
+// It includes recipe data for this call shape, explicit/implicit recipe inputs,
+// and module recipe identity.
+func (id *ID) calcDigest() (string, error) {
+	id.mustBeRecipe("calcDigest")
+	if id == nil {
+		return "", nil
+	}
+
+	var err error
+
+	h := hashutil.NewHasher()
+
+	// ReceiverDigest (recipe identity only)
+	if id.receiver != nil {
+		h = h.WithString(id.receiver.Digest().String())
+	}
+	h = h.WithDelim()
+
+	// Type
+	var curType *callpbv1.Type
+	for curType = id.pb.Type; curType != nil; curType = curType.Elem {
+		h = h.WithString(curType.NamedType)
+		if curType.NonNull {
+			h = h.WithByte(2)
+		} else {
+			h = h.WithByte(1)
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	// Field
+	h = h.WithString(id.pb.Field).
+		WithDelim()
+
+	// Args
+	for _, arg := range id.args {
+		arg = redactedArgForID(arg)
+		if arg == nil {
+			continue
+		}
+		h, err = AppendArgumentBytes(arg, h)
+		if err != nil {
+			h.Close()
+			return "", err
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	// Implicit inputs
+	for _, input := range id.implicitInputs {
+		input = redactedArgForID(input)
+		if input == nil {
+			continue
+		}
+		h, err = AppendArgumentBytes(input, h)
+		if err != nil {
+			h.Close()
+			return "", err
+		}
+		h = h.WithDelim()
+	}
+
+	// End implicit input section.
+	h = h.WithDelim()
+
+	// Module recipe digest
+	if id.module != nil {
+		h = h.WithString(id.module.ID().Digest().String())
+	}
+	h = h.WithDelim()
+
+	// Nth
+	h = h.WithInt64(id.pb.Nth).
+		WithDelim()
+
+	// View
+	h = h.WithString(id.pb.View).
+		WithDelim()
+
+	return h.DigestAndClose(), nil
+}
+
+// AppendArgumentBytes appends a binary representation of the given argument to the given byte slice.
+func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
+	h = h.WithString(arg.pb.Name)
+
+	h, err := appendLiteralBytes(arg.value, h)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
+	}
+
+	return h, nil
+}
+
+// appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
+//
+// This is symmetric with ResultCall literal hashing; sharing would mean sprinkling branches that change the ID-digest semantics we audit.
+func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
+	var err error
+	// we use a unique prefix byte for each type to avoid collisions
+	switch v := lit.(type) {
+	case *LiteralID:
+		const prefix = '0'
+		h = h.WithByte(prefix).
+			WithString(v.id.Digest().String())
+	case *LiteralNull:
+		const prefix = '1'
+		h = h.WithByte(prefix)
+		if v.pbVal.Null {
+			h = h.WithByte(1)
+		} else {
+			h = h.WithByte(2)
+		}
+	case *LiteralBool:
+		const prefix = '2'
+		h = h.WithByte(prefix)
+		if v.pbVal.Bool {
+			h = h.WithByte(1)
+		} else {
+			h = h.WithByte(2)
+		}
+	case *LiteralEnum:
+		const prefix = '3'
+		h = h.WithByte(prefix).
+			WithString(v.pbVal.Enum)
+	case *LiteralInt:
+		const prefix = '4'
+		h = h.WithByte(prefix).
+			WithInt64(v.pbVal.Int)
+	case *LiteralFloat:
+		const prefix = '5'
+		h = h.WithByte(prefix).
+			WithFloat64(v.pbVal.Float)
+	case *LiteralString:
+		const prefix = '6'
+		h = h.WithByte(prefix).
+			WithString(v.pbVal.String_)
+	case *LiteralList:
+		const prefix = '7'
+		h = h.WithByte(prefix)
+		for _, elem := range v.values {
+			h, err = appendLiteralBytes(elem, h)
+			if err != nil {
+				return nil, err
+			}
+		}
+	case *LiteralObject:
+		const prefix = '8'
+		h = h.WithByte(prefix)
+		for _, arg := range v.values {
+			h, err = AppendArgumentBytes(arg, h)
+			if err != nil {
+				return nil, err
+			}
+			h = h.WithDelim()
+		}
+	case *LiteralDigestedString:
+		const prefix = '9'
+		h = h.WithByte(prefix)
+		if v.digest != "" {
+			h = h.WithString(v.digest.String())
+		}
+	case *LiteralBytes:
+		const prefix = 'A'
+		h = h.WithByte(prefix).
+			WithBytes(v.value...)
+	default:
+		return nil, fmt.Errorf("unknown literal type %T", v)
+	}
+	h = h.WithDelim()
+	return h, nil
+}
+
+func mergeEffectIDs(existing []string, extra []string) []string {
+	if len(existing) == 0 && len(extra) == 0 {
+		return nil
+	}
+	merged := make([]string, 0, len(existing)+len(extra))
+	seen := make(map[string]struct{}, len(existing)+len(extra))
+	for _, id := range existing {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		merged = append(merged, id)
+	}
+	for _, id := range extra {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		merged = append(merged, id)
+	}
+	return merged
+}
+
+func cloneExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*callpbv1.ExtraDigest, 0, len(in))
+	for _, extra := range in {
+		if extra == nil {
+			continue
+		}
+		out = append(out, &callpbv1.ExtraDigest{
+			Digest: extra.Digest,
+			Label:  extra.Label,
+		})
+	}
+	return out
+}
+
+func appendExtraDigest(existing []*callpbv1.ExtraDigest, dig, label string) []*callpbv1.ExtraDigest {
+	if dig == "" {
+		return existing
+	}
+	for _, existingExtra := range existing {
+		if existingExtra == nil {
+			continue
+		}
+		if existingExtra.Digest == dig && existingExtra.Label == label {
+			return existing
+		}
+	}
+	return append(existing, &callpbv1.ExtraDigest{
+		Digest: dig,
+		Label:  label,
+	})
+}
+
+func removeExtraDigestsByLabel(existing []*callpbv1.ExtraDigest, label string) []*callpbv1.ExtraDigest {
+	if len(existing) == 0 {
+		return nil
+	}
+	out := make([]*callpbv1.ExtraDigest, 0, len(existing))
+	for _, extra := range existing {
+		if extra == nil || extra.Digest == "" {
+			continue
+		}
+		if extra.Label == label {
+			continue
+		}
+		out = append(out, &callpbv1.ExtraDigest{
+			Digest: extra.Digest,
+			Label:  extra.Label,
+		})
+	}
+	return out
+}
+
+func mergeExtraDigests(existing []*callpbv1.ExtraDigest, extra []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest {
+	// NOTE: this is currently O(n^2) in the number of combined extras because
+	// appendExtraDigest scans linearly for de-duplication. That's fine for today's
+	// small lists; revisit if extra-digest cardinality grows substantially.
+	merged := cloneExtraDigests(existing)
+	for _, x := range extra {
+		if x == nil {
+			continue
+		}
+		merged = appendExtraDigest(merged, x.Digest, x.Label)
+	}
+	return normalizedExtraDigests(merged)
+}
+
+func normalizedExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest {
+	if len(in) == 0 {
+		return nil
+	}
+	type key struct {
+		digest string
+		label  string
+	}
+	set := make(map[key]struct{}, len(in))
+	for _, extra := range in {
+		if extra == nil || extra.Digest == "" {
+			continue
+		}
+		set[key{
+			digest: extra.Digest,
+			label:  extra.Label,
+		}] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	keys := make([]key, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	slices.SortFunc(keys, func(a, b key) int {
+		if a.digest < b.digest {
+			return -1
+		}
+		if a.digest > b.digest {
+			return 1
+		}
+		if a.label < b.label {
+			return -1
+		}
+		if a.label > b.label {
+			return 1
+		}
+		return 0
+	})
+	out := make([]*callpbv1.ExtraDigest, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, &callpbv1.ExtraDigest{
+			Digest: k.digest,
+			Label:  k.label,
+		})
+	}
+	return out
+}

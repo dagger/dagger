@@ -1,0 +1,13 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Parameter \#1 \$iterator of class RecursiveIteratorIterator constructor expects RecursiveArrayIterator\<\(int\|string\), bool\|float\|int\|string\|null\>, RecursiveArrayIterator\<\(int\|string\), bool\|float\|int\|string\|null\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Client/AbstractClient.php
+
+		-
+			message: '#^Argument of an invalid type \$this\(Dagger\\Client\\AbstractInputObject\) supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: src/Client/AbstractInputObject.php

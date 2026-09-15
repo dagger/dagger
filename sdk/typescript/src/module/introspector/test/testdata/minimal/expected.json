@@ -1,0 +1,221 @@
+{
+  "name": "Minimal",
+  "objects": {
+    "Minimal": {
+      "name": "Minimal",
+      "description": "This is the Minimal object",
+      "methods": {
+        "hello": {
+          "name": "hello",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "echo": {
+          "name": "echo",
+          "description": "",
+          "arguments": {
+            "msg": {
+              "name": "msg",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "echoOpts": {
+          "name": "echoOpts",
+          "description": "EchoOpts does some opts things",
+          "arguments": {
+            "msg": {
+              "name": "msg",
+              "description": "the message to echo",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "suffix": {
+              "name": "suffix",
+              "description": "String to append to the echoed message",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": ""
+            },
+            "times": {
+              "name": "times",
+              "description": "number of times to repeat the message",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": 1
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "echoMaybe": {
+          "name": "echoMaybe",
+          "description": "",
+          "arguments": {
+            "msg": {
+              "name": "msg",
+              "description": "the message to echo",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "isQuestion": {
+              "name": "isQuestion",
+              "description": "set to true to add a question mark.",
+              "type": {
+                "kind": "BOOLEAN_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "echoOptional": {
+          "name": "echoOptional",
+          "description": "",
+          "arguments": {
+            "msg": {
+              "name": "msg",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "default"
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "echoOptionalSlice": {
+          "name": "echoOptionalSlice",
+          "description": "",
+          "arguments": {
+            "msg": {
+              "name": "msg",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": [
+                "foobar"
+              ]
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "echoes": {
+          "name": "echoes",
+          "description": "",
+          "arguments": {
+            "msgs": {
+              "name": "msgs",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "STRING_KIND"
+            }
+          }
+        },
+        "echoesVariadic": {
+          "name": "echoesVariadic",
+          "description": "",
+          "arguments": {
+            "msgs": {
+              "name": "msgs",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": true,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "helloVoid": {
+          "name": "helloVoid",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "VOID_KIND"
+          }
+        }
+      },
+      "properties": {
+        "foo": {
+          "name": "foo",
+          "description": "This is a field",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      }
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}

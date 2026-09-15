@@ -1,0 +1,704 @@
+package core
+
+import (
+	"context"
+	"fmt"
+	"path"
+	"slices"
+	"strconv"
+	"strings"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
+)
+
+// StripErrorOrigins removes [traceparent:...] error-origin markers from a
+// message destined for human-readable output — logs, composed summaries —
+// where the span-attribution plumbing is noise.
+func StripErrorOrigins(msg string) string {
+	return strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(msg, ""))
+}
+
+var _ dagql.AroundFunc = AroundFunc
+
+func AroundFunc(
+	ctx context.Context,
+	req *dagql.CallRequest,
+) (
+	context.Context,
+	func(res dagql.AnyResult, cached bool, rerr *error),
+) {
+	if req == nil || req.ResultCall == nil {
+		return ctx, dagql.NoopDone
+	}
+	// Static, debug-independent profiling-skip classification, SEPARATE from the
+	// introspectionInfo UI decision below. Stamp it onto the call frame BEFORE the
+	// IsSkipped early return so inherited-skip descendants (under a typedef-loading
+	// hideCtx) are still classified by their OWN recipe: a reflection-receiver call
+	// is skipped, while real shared work (clone / dep-load, whose receiver is NOT a
+	// reflection type) stays profiled. The bit homes on the frame so it travels
+	// through clone()/fork()/persistence; only cache.go's OTel emit gates read it
+	// (native wcprof keeps full detail). ReceiverTypeName was stamped lookup-free at
+	// the object call site.
+	req.ResultCall.ProfileSkip = profileSkip(req.ReceiverTypeName, req.Field)
+	if dagql.IsSkipped(ctx) {
+		return ctx, dagql.NoopDone
+	}
+	introspection, receiver := introspectionInfo(ctx, req.ResultCall)
+	if introspection {
+		return dagql.WithSkip(ctx), dagql.NoopDone
+	}
+	if isMeta(ctx, req.ResultCall) {
+		// introspection+meta are very uninteresting spans
+		// dagops are all self calls, no need to emit additional spans here
+		return ctx, dagql.NoopDone
+	}
+
+	base := "Unknown"
+	if receiver != nil && receiver.Type != nil {
+		base = receiver.Type.NamedType
+	} else if req.Receiver == nil {
+		base = "Query"
+	}
+	spanName := fmt.Sprintf("%s.%s", base, req.Field)
+
+	callDigest, err := req.RecipeDigest(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to derive call digest", "field", spanName, "err", err)
+		return ctx, dagql.NoopDone
+	}
+	var q *Query
+	var payloadKeys dagql.TelemetrySeenKeyStore
+	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
+		q = currentQuery
+		// Payload delivery is scoped per route, unlike the session-wide span
+		// dedupe below. Resolve the route first so a sibling client still receives
+		// exact call data even when another client already spent the presentation
+		// span for this digest.
+		if store, payloadKeysErr := q.CallPayloadSeenKeyStore(ctx); payloadKeysErr == nil {
+			payloadKeys = store
+		}
+		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
+			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
+				recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall, false)
+				return ctx, dagql.NoopDone
+			}
+		}
+	}
+
+	slog.InfoContext(ctx, "start call",
+		"field", spanName,
+		"digest", callDigest.String(),
+	)
+
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.DagDigestAttr, callDigest.String()),
+	}
+	callPayloadOnSpan := false
+
+	// Also carry this frame's payload on the span itself. Newer clients rebuild
+	// IDs from the call-payload log records published below, but older CLIs
+	// only read DagCallAttr and, without it, fall back to walking creator
+	// spans -- which self-reference for object results and recurse forever.
+	// Keep the legacy attribute until those CLIs are out of circulation.
+	if callPB, err := req.ResultCall.CallPB(ctx); err != nil {
+		slog.WarnContext(ctx, "failed to build call payload", "field", spanName, "err", err)
+	} else if callAttr, err := callPB.Encode(); err != nil {
+		slog.WarnContext(ctx, "failed to encode call", "field", spanName, "err", err)
+	} else {
+		attrs = append(attrs, attribute.String(telemetry.DagCallAttr, callAttr))
+		callPayloadOnSpan = true
+	}
+
+	// if inside a module call, add call trace metadata. this is useful
+	// since within a single span, we can correlate the caller's and callee's
+	// module and functions calls
+	if req.Module != nil && q != nil {
+		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, req.ResultCall)
+
+		if callerRef != nil && calleeRef != nil {
+			var callerRefAttr string
+			if len(callerRef.ref) > 0 {
+				callerRefAttr = fmt.Sprintf("%s@%s", callerRef.ref, callerRef.version)
+			}
+
+			callerFn := callerRef.functionName
+			calleeFn := calleeRef.functionName
+
+			if callerRef.typeName != "" {
+				callerFn = fmt.Sprintf("%s.%s", callerRef.typeName, callerRef.functionName)
+			}
+
+			if calleeRef.typeName != "" {
+				calleeFn = fmt.Sprintf("%s.%s", calleeRef.typeName, calleeRef.functionName)
+			}
+			attrs = append(attrs,
+				attribute.String(telemetry.ModuleRefAttr, fmt.Sprintf("%s@%s", calleeRef.ref, calleeRef.version)),
+				attribute.String(telemetry.ModuleFunctionCallNameAttr, calleeFn),
+				attribute.String(telemetry.ModuleCallerRefAttr, callerRefAttr),
+				attribute.String(telemetry.ModuleCallerFunctionCallNameAttr, callerFn),
+			)
+		}
+	}
+
+	if callInputs, err := req.ResultCall.Inputs(ctx); err != nil {
+		slog.WarnContext(ctx, "failed to compute inputs(call)", "field", spanName, "err", err)
+	} else {
+		inputs := make([]string, len(callInputs))
+		for i, input := range callInputs {
+			inputs[i] = input.String()
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
+	}
+
+	// Getter accessors are real calls, so retain their trace metadata, but mark
+	// them as internal machinery rather than presenting them as work.
+	if dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) {
+		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
+	}
+	if req.PassthroughTelemetry {
+		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
+	}
+
+	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
+	initCacheEvidence(span, req)
+
+	// Fill any gaps in this call's recipe closure over the log channel. A
+	// recording span already carries its own frame for legacy consumers, so
+	// claim that payload before the closure walk and emit logs only for frames
+	// that have not crossed this delivery domain by either transport.
+	recordCallPayloadsForSpan(ctx, payloadKeys, callDigest.String(), req.ResultCall,
+		callPayloadOnSpan && span.IsRecording())
+
+	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
+		slog.InfoContext(ctx, "end call",
+			"field", spanName,
+			"cached", cached,
+			"digest", callDigest.String(),
+		)
+
+		defer telemetry.EndWithCause(span, err)
+		recordStatus(ctx, res, span, cached, req.ResultCall)
+		recordPending(res, span)
+		recordCacheEvidence(span, req.CacheEvidence, res)
+		logResult(ctx, res, req.ResultCall)
+	}
+}
+
+// initCacheEvidence arms the request's cache-evidence carrier
+// (dagql.CacheDecision) exactly when this call's span records and the call is
+// not ProfileSkip-classified — the same volume class the OTel profiling source
+// uses — so suppressed/deduplicated/introspection/profile-skipped calls record
+// nothing and dagql needs no gating logic of its own (nil carrier ⇒ no-op).
+func initCacheEvidence(span trace.Span, req *dagql.CallRequest) {
+	if span == nil || !span.IsRecording() {
+		return
+	}
+	if req == nil || req.ResultCall == nil || req.ResultCall.ProfileSkip {
+		return
+	}
+	req.CacheEvidence = dagql.NewCacheDecision()
+}
+
+// recordCacheEvidence maps a populated cache-evidence carrier onto the call's
+// span as the dagger.io/cache.* contract (engine/telemetryattrs). Best-effort
+// like recordStatus: it stamps only facts that were recorded and never fails
+// the call. An empty Outcome means the invocation never reached a cache
+// decision (validation/derivation error) — nothing is stamped then, so the
+// contract marker never rides a fact-free span.
+func recordCacheEvidence(span trace.Span, ev *dagql.CacheDecision, res dagql.AnyResult) {
+	if ev == nil || ev.Outcome == "" {
+		return
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetryattrs.CacheContractAttr, telemetryattrs.CacheContractV1),
+		attribute.String(telemetryattrs.CacheOutcomeAttr, string(ev.Outcome)),
+	}
+	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRoute != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRouteAttr, string(ev.HitRoute)))
+	}
+	if ev.Outcome == dagql.CacheOutcomeExecuted {
+		// Miss facts describe why the executed call's lookup found nothing
+		// reusable; emitted as "true"/index only when recorded, absent
+		// otherwise. Joined calls deliberately stamp none of these: their
+		// pre-join probe is not the decision that held.
+		if ev.MissIncompatibleCandidates {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissIncompatibleCandidatesAttr, "true"))
+		}
+		if ev.MissSawExpired {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissSawExpiredAttr, "true"))
+		}
+		if ev.MissUnknownInputIndex >= 0 {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissUnknownInputAttr, strconv.Itoa(ev.MissUnknownInputIndex)))
+		}
+	}
+	if ev.SelfDigest != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheSelfDigestAttr, ev.SelfDigest.String()))
+		// Native string-slice value: order is the contract (the miss
+		// unknown-input index points into it), and an EMPTY list is a recorded
+		// fact ("this call keys on no structural inputs"), distinct from the
+		// attribute being absent (no structural identity stamped at all).
+		inputs := make([]string, len(ev.StructuralInputs))
+		for i, dig := range ev.StructuralInputs {
+			inputs[i] = dig.String()
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetryattrs.CacheStructuralInputsAttr, inputs))
+		if ev.PairingDigest != "" {
+			attrs = append(attrs, attribute.String(telemetryattrs.CachePairingDigestAttr, ev.PairingDigest.String()))
+		}
+	}
+	if res != nil {
+		// The recorded output content identity: the authoritative frame's last
+		// content-labeled extra digest at completion (never the derived
+		// content-preferred digest). Errors reading the frame just drop the
+		// optional fact.
+		if frame, frameErr := res.ResultCall(); frameErr == nil {
+			if contentDig := frame.ContentDigest(); contentDig != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheOutputContentDigestAttr, contentDig.String()))
+			}
+		}
+	}
+	span.SetAttributes(attrs...)
+}
+
+type moduleCallRef struct {
+	ref          string
+	version      string
+	functionName string
+	typeName     string
+}
+
+func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCall) (*moduleCallRef, *moduleCallRef) {
+	if frame == nil || frame.Module == nil {
+		return nil, nil
+	}
+	cm, _ := q.MainClientCallerMetadata(ctx)
+	fc, _ := q.CurrentFunctionCall(ctx)
+	m, _ := q.CurrentModule(ctx)
+	sd, _ := q.CurrentServedDeps(ctx)
+
+	callerRef, calleeRef := &moduleCallRef{}, &moduleCallRef{}
+	// there's a caller
+
+	var ms *ModuleSource
+	if m.Self() != nil {
+		ms = m.Self().GetSource()
+	} else if m, ok := sd.Lookup(frame.Module.Name); ok {
+		ms = m.GetSource()
+	}
+
+	if ms == nil {
+		return nil, nil
+	}
+
+	if fc != nil {
+		callerRef.functionName = fc.Name
+		callerRef.typeName = fc.ParentName
+		if ms.Git != nil {
+			callerRef.ref = GitRefString(ms.Git.CloneRef, ms.SourceRootSubpath, "")
+			callerRef.version = ms.Git.VersionQuery
+			if callerRef.version == "" {
+				callerRef.version = ms.Git.Version
+			}
+		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+			callerRef.ref = path.Join(gremote, ms.SourceRootSubpath)
+			if gref, ok := cm.Labels["dagger.io/git.ref"]; ok {
+				callerRef.version = gref
+			}
+		} else {
+			// we don't a way to identify the caller ref and version. this could happen
+			// when calling local modules outside a git repo for example
+			return nil, nil
+		}
+	}
+
+	callerRef.ref = normalizeRef(callerRef.ref)
+
+	calleeRef.functionName = frame.Field
+	calleeRef.version = frame.Module.Pin
+	calleeRef.ref = normalizeRef(frame.Module.Ref)
+
+	var voidType Void
+	if receiver, err := frame.ReceiverCall(ctx); err == nil && receiver != nil && receiver.Type != nil {
+		calleeRef.typeName = receiver.Type.NamedType
+	} else if frame.Type != nil && frame.Type.NamedType == voidType.TypeName() {
+		// it's a top level module function call so set the ParentName as the callee type
+		calleeRef.typeName = callerRef.typeName
+	}
+
+	// if it doesn't have a pin, it's a local callee module
+	if calleeRef.version == "" {
+		if ms.Git != nil {
+			subPath := ms.SourceRootSubpath
+			calleeRef.ref = path.Join(calleeRef.ref, subPath)
+		} else {
+			if ms.Local != nil {
+				calleeRef.ref = strings.ReplaceAll(calleeRef.ref, ms.Local.ContextDirectoryPath, "")
+				if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+					calleeRef.ref = path.Join(gremote, calleeRef.ref)
+				} else {
+					return nil, nil
+				}
+			} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+				subPath := ms.SourceRootSubpath
+				calleeRef.ref = path.Join(gremote, subPath)
+			} else {
+				return nil, nil
+			}
+		}
+
+		// if not within a function and a local call, use the git ref as the version
+		if gr, ok := cm.Labels["dagger.io/git.ref"]; fc == nil && ok {
+			calleeRef.version = gr
+		} else {
+			calleeRef.version = callerRef.version
+		}
+	}
+	return callerRef, calleeRef
+}
+
+func normalizeRef(ref string) string {
+	if strings.HasPrefix(ref, "git@") {
+		if strings.Count(ref, "@") > 1 {
+			ref = ref[:strings.LastIndex(ref, "@")]
+		}
+		ref = strings.ReplaceAll(strings.TrimPrefix(ref, "git@"), ":", "/")
+	} else {
+		ref, _, _ = strings.Cut(ref, "@")
+		ref = strings.TrimSuffix(ref, "/.")
+	}
+	return ref
+}
+
+// recordStatus records the status of a call on a span.
+func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, frame *dagql.ResultCall) {
+	if cached && !dagql.HasPendingLazyEvaluation(res) {
+		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
+	}
+
+	if ctx.Err() != nil {
+		// If the request was canceled, reflect it on the span.
+		span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+	}
+
+	// Record an object result as an output of this call.
+	//
+	// This allows the UI to "simplify" the returned object's ID back to the
+	// current call's ID, so we can show the user myMod().unit().stdout()
+	// instead of container().from().[...].stdout().
+	if obj, ok := dagql.UnwrapAs[dagql.AnyResult](res); ok {
+		// Don't consider node(id:) to be a 'creator' as that would only
+		// obfuscate the real ID.
+		//
+		// NB: so long as the simplifying process rejects larger IDs, this
+		// shouldn't be necessary, but it seems like a good idea to just never even
+		// consider it.
+		field := ""
+		if frame != nil {
+			field = frame.Field
+		}
+		isLoader := field == "node"
+		if !isLoader {
+			if objDig, err := obj.RecipeDigest(ctx); err == nil && objDig != "" {
+				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDig.String()))
+			}
+		}
+	}
+}
+
+func recordPending(res dagql.AnyResult, span trace.Span) {
+	if dagql.HasPendingLazyEvaluation(res) {
+		span.SetAttributes(attribute.Bool(telemetry.PendingAttr, true))
+	}
+}
+
+// logResult prints the result of a call to the span's stdout.
+func logResult(ctx context.Context, res dagql.AnyResult, frame *dagql.ResultCall) {
+	var output string
+	if str, ok := dagql.UnwrapAs[dagql.String](res); ok {
+		output = string(str)
+	} else if _, ok := dagql.UnwrapAs[dagql.IDType](res); ok {
+		// Don't print IDs; they can get quite large.
+		return
+	} else if lit, ok := dagql.UnwrapAs[call.Literate](res); ok {
+		output = lit.ToLiteral().Display()
+	} else {
+		return
+	}
+
+	fieldSpec, ok := fieldSpecForCall(ctx, frame)
+	if !ok {
+		return
+	}
+	if fieldSpec.Sensitive {
+		// Take care not to print any sensitive values.
+		return
+	}
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
+	defer stdio.Close()
+	fmt.Fprint(stdio.Stdout, output)
+}
+
+func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.FieldSpec, bool) {
+	srv := dagql.CurrentDagqlServer(ctx)
+	if srv == nil || frame == nil || frame.Field == "" {
+		return dagql.FieldSpec{}, false
+	}
+
+	parentTypeName := srv.Root().Type().Name()
+	if receiver, err := frame.ReceiverCall(ctx); err == nil && receiver != nil && receiver.Type != nil {
+		parentTypeName = receiver.Type.NamedType
+	}
+
+	parentType, ok := srv.ObjectType(parentTypeName)
+	if !ok {
+		return dagql.FieldSpec{}, false
+	}
+	return parentType.FieldSpec(frame.Field, frame.View)
+}
+
+// isIntrospection detects whether an ID is an introspection query.
+//
+// These queries tend to be very large and are not interesting for users to
+// see.
+func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
+	introspection, _ := introspectionInfo(ctx, frame)
+	return introspection
+}
+
+// introspectionRootFields are the Query-level root fields that begin an
+// introspection / schema-reflection query. Extracted to a shared constant so the
+// UI suppression decision (introspectionInfo) and the profiling decision
+// (profileSkip) can never diverge on the root set.
+var introspectionRootFields = map[string]struct{}{
+	"__schema":            {},
+	"__schemaJSONFile":    {},
+	"__schemaVersion":     {},
+	"currentTypeDefs":     {},
+	"currentModule":       {},
+	"currentFunctionCall": {},
+	"function":            {},
+	"typeDef":             {},
+	"sourceMap":           {},
+	"__loadInputTypeDef":  {},
+	"__function":          {},
+	"__functionArg":       {},
+	"__functionArgExact":  {},
+	"__fieldTypeDef":      {},
+	"__fieldTypeDefExact": {},
+	"__enumMemberTypeDef": {},
+	"__enumValueTypeDef":  {},
+	"__listTypeDef":       {},
+	"__objectTypeDef":     {},
+	"__interfaceTypeDef":  {},
+	"__inputTypeDef":      {},
+	"__scalarTypeDef":     {},
+	"__enumTypeDef":       {},
+}
+
+// reflectionTypeNames are the GraphQL type-system reflection object types. EVERY
+// field on these is type-system metadata — accessors (as*/args/typeDef/functions/
+// fields/returnType/elementTypeDef/members), builders (with*), and internal (__*)
+// — none does container/exec/module-load work (audited against
+// core/schema/module.go). The slow part of module *loading* lives on non-reflection
+// receivers (Query.moduleSource, ModuleSource.asModule) and stays profiled.
+//
+// These are SCHEMA type names — what r.class.inner.Type().Name() reports at the
+// call site, which is what ReceiverTypeName carries. That matters for the enum
+// member type: its Go type is *core.EnumMemberTypeDef, but its schema name is the
+// legacy "EnumValueTypeDef" (core/typedef.go EnumMemberTypeDef.Type(): a preserved
+// legacy name since types can't be renamed). We list BOTH so the predicate is
+// robust to either surfacing; the live schema name is EnumValueTypeDef.
+//
+// NAME TRAP — deliberately NOT here: FunctionCall (returnValue/returnError are real
+// DoNotCache work; profiling it is correct), SourceMap, and FunctionCallArgValue.
+// Skipping FunctionCall by name would silently coarsen real work.
+var reflectionTypeNames = map[string]struct{}{
+	"Function":          {},
+	"FunctionArg":       {},
+	"TypeDef":           {},
+	"ObjectTypeDef":     {},
+	"InterfaceTypeDef":  {},
+	"InputTypeDef":      {},
+	"FieldTypeDef":      {},
+	"ListTypeDef":       {},
+	"ScalarTypeDef":     {},
+	"EnumTypeDef":       {},
+	"EnumMemberTypeDef": {}, // Go type name (defensive; not the live schema name)
+	"EnumValueTypeDef":  {}, // legacy schema name actually surfaced for enum members
+}
+
+// profileSkip reports whether the wcprof OTel second source must skip profiling
+// this call. Native wcprof is opt-in / dev-only, off the volume-constrained
+// always-on path, and its value is full detail — so it keeps profiling this class
+// and is NOT gated by this predicate. It targets the reflection / schema-walk class
+// that normal telemetry already hides and that, when profiled by the OTel source,
+// emits a call_exec + publishResult pair per cache miss, dominating OTel volume on
+// a module-load workload (the regression that overflows the BatchSpanProcessor and
+// drops the parent/target spans the offline analyzer's structural gate hard-fails on).
+//
+// It is a pure function of the recipe (immediate receiver type name + field, both
+// in the call digest), so a call and any caller that singleflights it agree by
+// construction — which is what lets the loader/replay stay UNCHANGED (no inference;
+// the engine just emits a smaller, self-consistent graph). The decision is stamped
+// onto the call frame (ResultCall.ProfileSkip) and travels with it through
+// clone/fork/persistence, so derived (nth-element), adopted, copied and imported
+// results carry it without a per-site provenance audit.
+//
+// It is deliberately:
+//   - DEBUG-INDEPENDENT (unlike introspectionInfo's debug-gated receiver-type
+//     cases), so the volume amplifier never returns in the very mode used to
+//     capture a trace for debugging; and
+//   - SEPARATE from introspectionInfo (the UI/normal-telemetry decision), which is
+//     left untouched. The OTel profiler may therefore skip MORE than the UI
+//     suppresses: a directly-called reflection accessor (outside a typedef-loading
+//     hideCtx) keeps its normal dag.call UI span — which the OTel loader classifies
+//     as a coarse "call" op — while the OTel source skips only its call_exec. That
+//     is correct and by design: the profiler ADDS spans and never SUBTRACTS UI
+//     spans. Native keeps the full op, so this is NOT source-parity and isn't meant
+//     to be — the cross-source oracle compares only the non-reflection classes
+//     (native carries reflection detail the OTel source intentionally lacks). In
+//     practice these accessors are ~always under a hideCtx (no dag.call op at all),
+//     so the divergence is empirically nil.
+func profileSkip(receiverTypeName, field string) bool {
+	if _, ok := reflectionTypeNames[receiverTypeName]; ok {
+		return true
+	}
+	// Root introspection entry points live on Query (receiverTypeName == "Query");
+	// "" defensively covers a receiver-less synthetic root frame.
+	if receiverTypeName == "Query" || receiverTypeName == "" {
+		if _, ok := introspectionRootFields[field]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dagql.ResultCall) {
+	if frame == nil {
+		return false, nil
+	}
+
+	cur := frame
+	var immediateReceiver *dagql.ResultCall
+	for cur != nil {
+		if cur.Receiver == nil {
+			if _, ok := introspectionRootFields[cur.Field]; ok {
+				return true, immediateReceiver
+			}
+			return false, immediateReceiver
+		}
+
+		receiver, err := cur.ReceiverCall(ctx)
+		if err != nil || receiver == nil {
+			return false, immediateReceiver
+		}
+		if cur == frame {
+			immediateReceiver = receiver
+		}
+
+		// disable these unless debug is set in OTEL baggage
+		if !slog.IsDebug(ctx) && receiver.Type != nil {
+			switch receiver.Type.NamedType {
+			case "Function":
+				switch cur.Field {
+				case "withCachePolicy",
+					"withArg",
+					"withSourceMap",
+					"withDescription":
+					return true, immediateReceiver
+				}
+				if strings.HasPrefix(cur.Field, "__") {
+					return true, immediateReceiver
+				}
+			case "TypeDef":
+				switch cur.Field {
+				case "withOptional",
+					"withKind",
+					"withScalar",
+					"withListOf",
+					"withObject",
+					"withInterface",
+					"withObjectField",
+					"withFunction",
+					"withObjectConstructor",
+					"withEnum",
+					"withEnumValue",
+					"withEnumMember":
+					return true, immediateReceiver
+				}
+				if strings.HasPrefix(cur.Field, "__") {
+					return true, immediateReceiver
+				}
+			case "FunctionArg",
+				"ObjectTypeDef",
+				"InterfaceTypeDef",
+				"InputTypeDef",
+				"FieldTypeDef",
+				"ListTypeDef",
+				"EnumTypeDef",
+				"EnumMemberTypeDef":
+				if strings.HasPrefix(cur.Field, "__") {
+					return true, immediateReceiver
+				}
+			}
+		}
+
+		cur = receiver
+	}
+
+	return false, immediateReceiver
+}
+
+// isMeta returns true if any type in the ID is "too meta" to show to the user,
+// for example span and error APIs.
+func isMeta(ctx context.Context, frame *dagql.ResultCall) bool {
+	if frame == nil {
+		return false
+	}
+	if anyReturns(ctx, frame, "Error") {
+		return true
+	}
+	switch frame.Field {
+	case
+		// Seeing node(id:) is only really interesting if it actually
+		// resulted in evaluating the ID, so we don't need to give it its own
+		// span.
+		"node",
+		// We also don't care about seeing the id field selection itself,
+		// since it's more noisy and confusing than helpful. We'll still show
+		// all the spans leading up to it, just not the ID selection.
+		"id",
+		// We don't care about seeing the sync span itself - all relevant
+		// info should show up somewhere more familiar.
+		"sync":
+		return true
+	default:
+		return false
+	}
+}
+
+// anyReturns returns true if the call or any of its ancestors return any of
+// the given types.
+func anyReturns(ctx context.Context, frame *dagql.ResultCall, types ...string) bool {
+	if frame == nil || frame.Type == nil {
+		return false
+	}
+	ret := frame.Type.NamedType
+	if slices.Contains(types, ret) {
+		return true
+	}
+	receiver, err := frame.ReceiverCall(ctx)
+	if err != nil || receiver == nil {
+		return false
+	}
+	return anyReturns(ctx, receiver, types...)
+}

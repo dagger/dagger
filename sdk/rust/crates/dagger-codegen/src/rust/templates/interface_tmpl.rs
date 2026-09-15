@@ -1,0 +1,384 @@
+use dagger_sdk::core::introspection::{FullType, FullTypeFields};
+use genco::prelude::rust;
+use genco::quote;
+
+use crate::functions::{CommonFunctions, TypeRefExt};
+use crate::rust::functions::{
+    format_name, format_struct_comment, format_struct_name, id_handle_struct, render_required_args,
+};
+use crate::utility::OptionExt;
+
+use super::object_tmpl::{render_loadable_impl, render_object_without_loadable};
+
+/// Render an interface type as:
+///   1. A Rust trait with async method signatures
+///   2. A concrete `FooClient` struct (same shape as objects) for query-building
+///   3. `impl Foo for FooClient`
+pub fn render_interface(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust::Tokens> {
+    let trait_tokens = render_trait(funcs, t);
+
+    // Rename the type to FooClient for the struct, so it doesn't
+    // collide with the trait name.
+    let original_graphql_name = t.name.as_deref().unwrap_or_default();
+    let client_name = t.name.as_ref().map(|n| format!("{n}Client"));
+    let mut client_type = t.clone();
+    client_type.name = client_name;
+    // Also patch parent_type on fields so Opts structs get the right prefix.
+    let parent_snapshot = client_type.clone();
+    if let Some(fields) = client_type.fields.as_mut() {
+        for field in fields.iter_mut() {
+            field.parent_type = Some(parent_snapshot.clone());
+        }
+    }
+    let client_tokens = render_object_without_loadable(funcs, &client_type)?;
+
+    // Override the GraphQL name for Loadable: the Rust struct is
+    // NodeClient but the GraphQL type is Node.
+    let loadable_tokens = render_loadable_impl(&client_type, Some(original_graphql_name));
+
+    let trait_impl_tokens = render_trait_impl_for_client(funcs, t);
+
+    Ok(quote! {
+        $trait_tokens
+
+        $client_tokens
+
+        $loadable_tokens
+
+        $trait_impl_tokens
+    })
+}
+
+/// Generate `pub trait Foo { async fn id(&self) -> Result<Id, DaggerError>; ... }`
+fn render_trait(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
+    let trait_name = t.name.pipe(|s| format_name(s)).unwrap_or_default();
+    let dagger_error = rust::import("crate::errors", "DaggerError");
+
+    let methods = t
+        .fields
+        .as_ref()
+        .map(|fields| render_trait_methods(funcs, fields, &dagger_error))
+        .unwrap_or_default();
+
+    quote! {
+        $(t.description.pipe(|d| format_struct_comment(d)))
+        pub trait $(&trait_name) {
+            $methods
+        }
+    }
+}
+
+/// Generate trait method signatures from interface fields.
+fn render_trait_methods(
+    funcs: &CommonFunctions,
+    fields: &[FullTypeFields],
+    dagger_error: &rust::Import,
+) -> rust::Tokens {
+    let methods: Vec<rust::Tokens> = fields
+        .iter()
+        .filter_map(|f| render_trait_method(funcs, f, dagger_error))
+        .collect();
+
+    quote! {
+        $(for m in methods join ($['\r']) => $m)
+    }
+}
+
+/// Generate a single trait method signature.
+fn render_trait_method(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+    dagger_error: &rust::Import,
+) -> Option<rust::Tokens> {
+    let name = field.name.as_ref()?;
+    let fn_name = format_struct_name(name);
+    let type_ref = &field.type_.as_ref()?.type_ref;
+    let output_type = funcs.format_output_type(type_ref);
+
+    let is_object = type_ref.is_object() || type_ref.is_list_of_objects();
+
+    // Build argument list (required args only for trait signatures)
+    let args = render_trait_method_args(funcs, field);
+
+    if let Some(handle) = id_handle_struct(funcs, field) {
+        // A handle naming the interface itself is `Self`, so every
+        // implementation returns its own type, as the GraphQL schema does.
+        // Returning Self by value needs the Sized bound.
+        let (output, bound) = if is_self_handle(funcs, field) {
+            (quote! { Self }, Some(quote! { where Self: Sized }))
+        } else {
+            (quote! { $handle }, None)
+        };
+        Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<$output, $dagger_error>> + Send$(if let Some(b) = &bound => $[' ']$b);
+        })
+    } else if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
+        Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<Option<$output_type>, $dagger_error>> + Send;
+        })
+    } else if is_object {
+        Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> $output_type;
+        })
+    } else {
+        Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<$output_type, $dagger_error>> + Send;
+        })
+    }
+}
+
+/// Render required argument list for a trait method signature.
+fn render_trait_method_args(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<rust::Tokens> {
+    let args = field.args.as_ref()?;
+    let required: Vec<rust::Tokens> = args
+        .iter()
+        .filter_map(|a| {
+            let a = a.as_ref()?;
+            if a.input_value.type_.is_optional() {
+                return None;
+            }
+            let n = format_struct_name(&a.input_value.name);
+            let t = funcs.format_input_type(&a.input_value.type_);
+
+            if a.input_value.type_.is_id() {
+                let into_id = rust::import("crate::id", "IntoID");
+                Some(quote! { $n: impl $into_id<$t> })
+            } else {
+                Some(quote! { $n: $t })
+            }
+        })
+        .collect();
+
+    if required.is_empty() {
+        None
+    } else {
+        Some(quote! {
+            $(for arg in required join (, ) => $arg)
+        })
+    }
+}
+
+/// Whether an ID-handle field loads the interface it is declared on. Such a
+/// field is rendered as returning `Self`, so each implementation loads its
+/// own type.
+fn is_self_handle(funcs: &CommonFunctions, field: &FullTypeFields) -> bool {
+    let parent = field.parent_type.as_ref().and_then(|p| p.name.as_deref());
+    funcs.id_handle_type(field).as_deref() == parent
+}
+
+/// Generate `impl Foo for FooClient { ... }`.
+fn render_trait_impl_for_client(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
+    let iface_name = t.name.pipe(|s| format_name(s)).unwrap_or_default();
+    let client_name = format!("{}Client", &iface_name);
+    let graphql_name = t.name.as_deref().unwrap_or_default();
+
+    let methods = t
+        .fields
+        .as_ref()
+        .map(|fields| render_trait_impl_methods(funcs, fields, graphql_name))
+        .unwrap_or_default();
+
+    quote! {
+        impl $(&iface_name) for $client_name {
+            $methods
+        }
+    }
+}
+
+/// Generate methods for `impl Foo for FooClient`.
+/// Generate the methods of a trait implementation for the type whose GraphQL
+/// name is `self_graphql_name`.
+fn render_trait_impl_methods(
+    funcs: &CommonFunctions,
+    fields: &[FullTypeFields],
+    self_graphql_name: &str,
+) -> rust::Tokens {
+    let methods: Vec<rust::Tokens> = fields
+        .iter()
+        .filter_map(|f| render_trait_impl_method(funcs, f, self_graphql_name))
+        .collect();
+
+    quote! {
+        $(for m in methods join ($['\r']) => $m)
+    }
+}
+
+/// Generate a single trait implementation method.
+fn render_trait_impl_method(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+    self_graphql_name: &str,
+) -> Option<rust::Tokens> {
+    let name = field.name.as_ref()?;
+    let fn_name = format_struct_name(name);
+    let type_ref = &field.type_.as_ref()?.type_ref;
+    let output_type = funcs.format_output_type(type_ref);
+    let dagger_error = rust::import("crate::errors", "DaggerError");
+
+    let is_object = type_ref.is_object() || type_ref.is_list_of_objects();
+
+    let (arg_sig, _arg_pass) = render_trait_impl_arg_parts(funcs, field);
+
+    if let Some(graphql_name) = funcs.id_handle_type(field) {
+        // An ID handle: resolve the ID, then load the object it names. A
+        // handle naming the interface itself loads `Self`, addressed by the
+        // implementing type's own GraphQL name.
+        let (output, fragment) = if is_self_handle(funcs, field) {
+            (quote! { Self }, self_graphql_name.to_string())
+        } else {
+            let handle = id_handle_struct(funcs, field).unwrap_or_default();
+            (quote! { $handle }, graphql_name)
+        };
+        Some(quote! {
+            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<$(&output), $dagger_error>> + Send {
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
+                let proc = self.proc.clone();
+                let graphql_client = self.graphql_client.clone();
+                async move {
+                    let id: Id = query.execute(graphql_client.clone()).await?;
+                    Ok($(&output) {
+                        proc,
+                        selection: query.root().select("node").arg("id", &id.0).inline_fragment($(genco::tokens::quoted(&fragment))),
+                        graphql_client,
+                    })
+                }
+            }
+        })
+    } else if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
+        let graphql_name = type_ref.get_non_null().name.clone().unwrap_or_default();
+        Some(quote! {
+            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<Option<$(&output_type)>, $dagger_error>> + Send {
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
+                let query = query.select("id");
+                let proc = self.proc.clone();
+                let graphql_client = self.graphql_client.clone();
+                async move {
+                    let id: Option<Id> = query.execute(graphql_client.clone()).await?;
+                    Ok(id.map(|id| $(&output_type) {
+                        proc,
+                        selection: query.root().select("node").arg("id", &id.0).inline_fragment($(genco::tokens::quoted(graphql_name))),
+                        graphql_client,
+                    }))
+                }
+            }
+        })
+    } else if is_object {
+        Some(quote! {
+            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> $(&output_type) {
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
+                $(&output_type) {
+                    proc: self.proc.clone(),
+                    selection: query,
+                    graphql_client: self.graphql_client.clone(),
+                }
+            }
+        })
+    } else {
+        Some(quote! {
+            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<$output_type, $dagger_error>> + Send {
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
+                let graphql_client = self.graphql_client.clone();
+                async move {
+                    query.execute(graphql_client).await
+                }
+            }
+        })
+    }
+}
+
+/// Split args into (signature tokens, pass-through tokens) for trait impl.
+fn render_trait_impl_arg_parts(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> (Option<rust::Tokens>, Option<rust::Tokens>) {
+    let args = match field.args.as_ref() {
+        Some(a) => a,
+        None => return (None, None),
+    };
+
+    let required: Vec<(rust::Tokens, rust::Tokens)> = args
+        .iter()
+        .filter_map(|a| {
+            let a = a.as_ref()?;
+            if a.input_value.type_.is_optional() {
+                return None;
+            }
+            let n = format_struct_name(&a.input_value.name);
+            let t = funcs.format_input_type(&a.input_value.type_);
+
+            let sig = if a.input_value.type_.is_id() {
+                let into_id = rust::import("crate::id", "IntoID");
+                quote! { $(&n): impl $into_id<$t> }
+            } else {
+                quote! { $(&n): $t }
+            };
+            let pass = quote! { $(&n) };
+            Some((sig, pass))
+        })
+        .collect();
+
+    if required.is_empty() {
+        (None, None)
+    } else {
+        let sigs: Vec<rust::Tokens> = required.iter().map(|(s, _)| s.clone()).collect();
+        let passes: Vec<rust::Tokens> = required.iter().map(|(_, p)| p.clone()).collect();
+        (
+            Some(quote! { $(for s in sigs join (, ) => $s) }),
+            Some(quote! { $(for p in passes join (, ) => $p) }),
+        )
+    }
+}
+
+/// Generate `impl InterfaceName for ObjectName { ... }` for an object
+/// that declares an interface.
+pub fn render_interface_impl_for_object(
+    funcs: &CommonFunctions,
+    object_type: &FullType,
+    iface_type: &FullType,
+) -> rust::Tokens {
+    let object_name = object_type
+        .name
+        .pipe(|s| format_name(s))
+        .unwrap_or_default();
+    let object_graphql_name = object_type.name.as_deref().unwrap_or_default();
+    let iface_name = iface_type.name.pipe(|s| format_name(s)).unwrap_or_default();
+
+    let methods = iface_type
+        .fields
+        .as_ref()
+        .map(|fields| render_trait_impl_methods_for_object(funcs, fields, object_graphql_name))
+        .unwrap_or_default();
+
+    quote! {
+        impl $iface_name for $object_name {
+            $methods
+        }
+    }
+}
+
+/// Generate methods for `impl Interface for Object`.
+fn render_trait_impl_methods_for_object(
+    funcs: &CommonFunctions,
+    fields: &[FullTypeFields],
+    object_graphql_name: &str,
+) -> rust::Tokens {
+    let methods: Vec<rust::Tokens> = fields
+        .iter()
+        .filter_map(|f| render_trait_impl_method(funcs, f, object_graphql_name))
+        .collect();
+
+    quote! {
+        $(for m in methods join ($['\r']) => $m)
+    }
+}

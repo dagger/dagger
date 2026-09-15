@@ -1,0 +1,7 @@
+{
+  "name": "playground",
+  "sdk": {
+    "source": "go"
+  },
+  "source": "."
+}

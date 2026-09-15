@@ -1,0 +1,9 @@
+kind: Added
+body: |
+  `dagger agent` now accepts `--resume`/`-r` to restore a previously saved
+  session before dropping into the prompt. A bare `-r` opens the interactive
+  session picker, while `-r <session>` resumes that session directly.
+time: 2026-07-22T00:00:00Z
+custom:
+  Author: vito
+  PR: ""

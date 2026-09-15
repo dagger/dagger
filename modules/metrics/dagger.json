@@ -1,0 +1,16 @@
+{
+  "name": "metrics",
+  "engineVersion": "v0.21.9",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dagger-engine",
+      "source": "../../.dagger/modules/engine-dev"
+    }
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
+}

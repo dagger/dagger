@@ -1,0 +1,16 @@
+# .readthedocs.yaml
+# Read the Docs configuration file
+# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
+
+version: 2
+
+sphinx:
+  configuration: sdk/python/docs/conf.py
+
+build:
+  os: ubuntu-22.04
+  commands:
+    - asdf plugin add uv
+    - asdf install uv latest
+    - asdf global uv latest
+    - cd sdk/python && uv run python -m sphinx -T -b html -d docs/_build/doctrees -D language=en docs $READTHEDOCS_OUTPUT/html

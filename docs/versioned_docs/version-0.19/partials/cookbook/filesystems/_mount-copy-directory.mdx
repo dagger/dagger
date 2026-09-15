@@ -1,0 +1,239 @@
+
+### Mount or copy a directory or remote repository to a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../../../extending/modules/remote-repositories.mdx). It mounts the specified directory to the `/src` path in a container and returns the modified container.
+
+:::note
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../../../extending/modules/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+:::
+
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/mount-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/mount-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/mount-dir/typescript/index.ts
+```
+
+</TabItem>
+
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/mount-dir/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+An alternative option is to copy the target directory in the container. The difference between these two approaches is that mounts only take effect within your workflow invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+
+:::tip
+Besides helping with the final image size, mounts are more performant and resource-efficient. The rule of thumb should be to always use mounts where possible.
+:::
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/copy-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/copy-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/copy-dir/typescript/index.ts
+```
+
+</TabItem>
+
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/copy-dir/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+**Examples**
+
+- Mount the `/myapp` host directory to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-directory ./myapp/'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-directory ./myapp/
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-directory --source=./myapp/
+    ```
+    </TabItem>
+    </Tabs>
+
+- Mount the public `dagger/dagger` GitHub repository to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-directory https://github.com/dagger/dagger#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-directory https://github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-directory --source=https://github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    </Tabs>
+
+- Mount the private `user/foo` GitHub repository to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-directory ssh://git@github.com/user/foo#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-directory ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-directory --source=ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    </Tabs>
+
+- Mount the public `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-directory https://github.com/dagger/dagger#main | directory /src | entries'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-directory https://github.com/dagger/dagger#main | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      mount-directory --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
+
+- Copy the `/myapp` host directory to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory ./myapp/'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory ./myapp/
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-directory --source=./myapp/
+    ```
+    </TabItem>
+    </Tabs>
+
+- Copy the public `dagger/dagger` GitHub repository to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory https://github.com/dagger/dagger#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory https://github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-directory --source=https://github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    </Tabs>
+
+- Copy the private `user/foo` GitHub repository to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory ssh://git@github.com/user/foo#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-directory --source=ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    </Tabs>
+
+- Copy the public `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory https://github.com/dagger/dagger#main | directory /src | entries'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory https://github.com/dagger/dagger#main | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-directory --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>

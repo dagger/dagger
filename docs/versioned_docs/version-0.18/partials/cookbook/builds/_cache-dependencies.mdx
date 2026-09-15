@@ -1,0 +1,56 @@
+### Cache application dependencies
+
+The following Dagger Function uses a cache volume for application dependencies. This enables Dagger to reuse the contents of the cache across Dagger Function runs and reduce execution time.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/cache-dependencies/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+:::note
+The default location for the cache directory depends on the package manager (`~/.cache/pip` for `pip` or `~/.cache/pypoetry` for `poetry`).
+:::
+
+```python file=../../../cookbook/snippets/cache-dependencies/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/cache-dependencies/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/cache-dependencies/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Build an application using cached dependencies:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build .'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build .
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build --source=.
+    ```
+    </TabItem>
+    </Tabs>

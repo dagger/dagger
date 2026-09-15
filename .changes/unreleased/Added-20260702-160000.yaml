@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  Contextual `GitRepository`/`GitRef` arguments now work from submodule and
+  git-worktree checkouts. Such checkouts have a `.git` pointer file whose
+  target lives outside the synced context; the engine now resolves the pointer
+  on the client host, loads the real git directory (and the shared common
+  directory for worktrees, including bare-repo layouts), and flattens it into
+  a standalone repository in the snapshot.
+time: 2026-07-02T16:00:00Z
+custom:
+  Author: vito
+  PR: 13577

@@ -1,0 +1,6 @@
+toosoon=hello $animal
+animal=dog
+message=hello, nice ${animal}
+story="once upon a time, there was a man who said $message"
+meta='this file sets $toosoon, $animal, $message and $story'
+quotes="Double quotes (\") and single quotes (\')"

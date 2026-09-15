@@ -1,0 +1,1254 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/util/gitutil"
+	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
+
+	"github.com/dagger/dagger/dagql"
+)
+
+type GitRepository struct {
+	URL      dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
+	Backend  GitRepositoryBackend
+	Remote   *gitutil.Remote
+	remoteMu sync.Mutex
+
+	DiscardGitDir bool
+}
+
+type GitRepositoryBackend interface {
+	// Remote returns information about the git remote.
+	Remote(ctx context.Context) (*gitutil.Remote, error)
+	// Get returns a reference to a specific git ref (branch, tag, or commit).
+	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
+
+	// Dirty returns a Directory representing the repository in it's current state.
+	Dirty(ctx context.Context) (dagql.ObjectResult[*Directory], error)
+	// Cleaned returns a Directory representing the repository with all uncommitted changes discarded.
+	Cleaned(ctx context.Context) (dagql.ObjectResult[*Directory], error)
+
+	// mount mounts the repository with the provided refs and executes the given function.
+	mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
+}
+
+type GitRef struct {
+	Repo    dagql.ObjectResult[*GitRepository]
+	Backend GitRefBackend
+	Ref     *gitutil.Ref
+}
+
+type GitCommit struct {
+	Repo     dagql.ObjectResult[*GitRepository]
+	Backend  GitRefBackend
+	Ref      *gitutil.Ref
+	FetchRef *gitutil.Ref
+
+	metadataMu sync.Mutex
+	metadata   *GitCommitMetadata
+}
+
+type GitCommitMetadata struct {
+	SHA            string
+	ShortSHA       string
+	AuthoredDate   string
+	CommittedDate  string
+	AuthorName     string
+	AuthorEmail    string
+	CommitterName  string
+	CommitterEmail string
+	Message        string
+	ParentSHAs     []string
+}
+
+type GitRefBackend interface {
+	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool) (checkout *Directory, err error)
+
+	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
+}
+
+// SelectLatestGitRef selects the greatest stable release tag in remote after
+// normalizing optional v prefixes, incomplete versions, and zero-padded numeric
+// components. It falls back to HEAD when no eligible release tag exists.
+func SelectLatestGitRef(remote *gitutil.Remote) (*gitutil.Ref, error) {
+	return SelectGitRefWithVersionQuery(remote, "", "")
+}
+
+// SelectLatestGitRefWithTagPrefix selects the greatest normalized stable
+// release tag below tagPrefix. If no matching prefixed release exists,
+// repository-wide release tags are considered before falling back to HEAD.
+func SelectLatestGitRefWithTagPrefix(
+	remote *gitutil.Remote,
+	tagPrefix string,
+) (*gitutil.Ref, error) {
+	return SelectGitRefWithVersionQuery(remote, tagPrefix, "")
+}
+
+// SelectGitRefWithVersionQuery selects the greatest release ref that matches
+// versionQuery. Tags take priority over branches. An empty query selects the
+// latest stable tag and falls back to HEAD when no release exists.
+func SelectGitRefWithVersionQuery(
+	remote *gitutil.Remote,
+	tagPrefix string,
+	versionQuery string,
+) (*gitutil.Ref, error) {
+	if remote == nil {
+		return nil, fmt.Errorf("select git ref: nil remote")
+	}
+
+	tagPrefix = strings.Trim(tagPrefix, "/")
+	if tagPrefix != "" {
+		tagPrefix += "/"
+	}
+
+	bestRef, err := selectGitRelease(remote.Tags(), tagPrefix, versionQuery)
+	if err != nil {
+		return nil, err
+	}
+	if bestRef == "" && tagPrefix != "" {
+		bestRef, err = selectGitRelease(remote.Tags(), "", versionQuery)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if bestRef == "" && versionQuery != "" {
+		bestRef, err = selectGitRelease(remote.Branches(), tagPrefix, versionQuery)
+		if err != nil {
+			return nil, err
+		}
+		if bestRef == "" && tagPrefix != "" {
+			bestRef, err = selectGitRelease(remote.Branches(), "", versionQuery)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if bestRef == "" {
+		if versionQuery != "" {
+			return nil, fmt.Errorf("no Git ref matches version query %q", versionQuery)
+		}
+		ref, err := remote.Lookup("HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("resolve git remote HEAD: %w", err)
+		}
+		return ref, nil
+	}
+
+	ref, err := remote.Lookup(bestRef)
+	if err != nil {
+		return nil, fmt.Errorf("resolve latest git release %q: %w", bestRef, err)
+	}
+	return ref, nil
+}
+
+func selectGitRelease(
+	remote *gitutil.Remote,
+	tagPrefix string,
+	versionQuery string,
+) (string, error) {
+	candidates := make([]releaseTagCandidate, 0, len(remote.Refs))
+	refs := map[string]string{}
+	for _, ref := range remote.Refs {
+		version := ref.ShortName()
+		if tagPrefix != "" {
+			var ok bool
+			version, ok = strings.CutPrefix(version, tagPrefix)
+			if !ok {
+				continue
+			}
+		}
+		original := ref.ShortName()
+		candidates = append(candidates, releaseTagCandidate{
+			Name:    original,
+			Version: version,
+			Target:  ref.SHA,
+		})
+		refs[original] = ref.Name
+	}
+	selected, found, err := selectReleaseTag(candidates, versionQuery)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", nil
+	}
+	return refs[selected.Name], nil
+}
+
+// ValidateGitLatestRef validates a ref selected by git-latest.
+func ValidateGitLatestRef(refName string, tagPrefix string) error {
+	return ValidateGitVersionRef(refName, tagPrefix, "")
+}
+
+// ValidateGitVersionRef validates a ref selected for versionQuery.
+func ValidateGitVersionRef(refName string, tagPrefix string, versionQuery string) error {
+	if tag, ok := strings.CutPrefix(refName, "refs/tags/"); ok {
+		return validateGitVersionName("tag", tag, tagPrefix, versionQuery)
+	}
+
+	if branch, ok := strings.CutPrefix(refName, "refs/heads/"); ok && branch != "" {
+		if versionQuery == "" {
+			return nil
+		}
+		return validateGitVersionName("branch", branch, tagPrefix, versionQuery)
+	}
+	return fmt.Errorf("invalid git-latest ref %q", refName)
+}
+
+func validateGitVersionName(kind, name, tagPrefix, versionQuery string) error {
+	version := name
+	tagPrefix = strings.Trim(tagPrefix, "/")
+	if tagPrefix != "" {
+		version, _ = strings.CutPrefix(version, tagPrefix+"/")
+	}
+	parsed, ok := parseReleaseTag(releaseTagCandidate{Name: name, Version: version})
+	if !ok {
+		return fmt.Errorf("invalid git-latest %s %q: not a semantic version", kind, name)
+	}
+	query, err := parseReleaseVersionQuery(versionQuery)
+	if err != nil {
+		return err
+	}
+	if versionQuery == "" && parsed.Semver.Prerelease != "" {
+		return fmt.Errorf("invalid git-latest %s %q: prerelease tags are not supported", kind, name)
+	}
+	if !query.matches(parsed) {
+		return fmt.Errorf("invalid git-latest %s %q: does not match version query %q", kind, name, versionQuery)
+	}
+	return nil
+}
+
+var _ dagql.PersistedObject = (*GitRepository)(nil)
+var _ dagql.PersistedObjectDecoder = (*GitRepository)(nil)
+var _ dagql.OnReleaser = (*GitRepository)(nil)
+var _ dagql.HasDependencyResults = (*GitRepository)(nil)
+var _ dagql.PersistedObject = (*GitRef)(nil)
+var _ dagql.PersistedObjectDecoder = (*GitRef)(nil)
+var _ dagql.HasDependencyResults = (*GitRef)(nil)
+var _ dagql.PersistedObject = (*GitCommit)(nil)
+var _ dagql.PersistedObjectDecoder = (*GitCommit)(nil)
+var _ dagql.HasDependencyResults = (*GitCommit)(nil)
+
+func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
+	repo := &GitRepository{
+		Backend: backend,
+	}
+
+	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
+		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
+		repo.Remote = &gitutil.Remote{}
+		return repo, nil
+	}
+
+	_, err := repo.LoadRemote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return repo, nil
+}
+
+// LoadRemote returns remote metadata, loading it once when a resolver needs it.
+// Lazy loading allows frozen lock lookups to use pins without network access.
+func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, error) {
+	repo.remoteMu.Lock()
+	defer repo.remoteMu.Unlock()
+
+	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) {
+		return repo.Remote, nil
+	}
+
+	var head *gitutil.Ref
+	if repo.Remote != nil {
+		head = repo.Remote.Head
+	}
+	remote, err := repo.Backend.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if head != nil {
+		remote.Head = head
+	}
+	repo.Remote = remote
+	return remote, nil
+}
+
+// CloneWithBackend returns a repository with fresh remote metadata state. This
+// is used when changing authentication so metadata loaded with one credential
+// set cannot be reused with another.
+func (repo *GitRepository) CloneWithBackend(backend GitRepositoryBackend) *GitRepository {
+	repo.remoteMu.Lock()
+	defer repo.remoteMu.Unlock()
+
+	clone := &GitRepository{
+		URL:           repo.URL,
+		Backend:       backend,
+		Remote:        &gitutil.Remote{},
+		DiscardGitDir: repo.DiscardGitDir,
+	}
+	if repo.Remote != nil && repo.Remote.Head != nil {
+		head := *repo.Remote.Head
+		clone.Remote.Head = &head
+	}
+	return clone
+}
+
+func (*GitRepository) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "GitRepository",
+		NonNull:   true,
+	}
+}
+
+func (*GitRepository) TypeDescription() string {
+	return "A git repository."
+}
+
+func (*GitRef) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "GitRef",
+		NonNull:   true,
+	}
+}
+
+func (*GitRef) TypeDescription() string {
+	return "A git ref (tag, branch, or commit)."
+}
+
+func (*GitCommit) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "GitCommit",
+		NonNull:   true,
+	}
+}
+
+func (*GitCommit) TypeDescription() string {
+	return "An immutable git commit."
+}
+
+func (repo *GitRepository) OnRelease(ctx context.Context) error {
+	_ = ctx
+	return nil
+}
+
+func (repo *GitRepository) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	return nil
+}
+
+func (repo *GitRepository) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if repo == nil {
+		return nil, nil
+	}
+
+	var owned []dagql.AnyResult
+	switch backend := repo.Backend.(type) {
+	case *LocalGitRepository:
+		if backend.Directory.Self() != nil {
+			attached, err := attach(backend.Directory)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository directory: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository directory: unexpected result %T", attached)
+			}
+			backend.Directory = typed
+			owned = append(owned, typed)
+		}
+	case *RemoteGitRepository:
+		if backend.Mirror.Self() != nil {
+			attached, err := attach(backend.Mirror)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository remote mirror: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*RemoteGitMirror])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository remote mirror: unexpected result %T", attached)
+			}
+			backend.Mirror = typed
+			owned = append(owned, typed)
+		}
+		if backend.SSHAuthSocket.Self() != nil {
+			attached, err := attach(backend.SSHAuthSocket)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository ssh auth socket: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Socket])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository ssh auth socket: unexpected result %T", attached)
+			}
+			backend.SSHAuthSocket = typed
+			owned = append(owned, typed)
+		}
+		if backend.AuthToken.Self() != nil {
+			attached, err := attach(backend.AuthToken)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository auth token: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Secret])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository auth token: unexpected result %T", attached)
+			}
+			backend.AuthToken = typed
+			owned = append(owned, typed)
+		}
+		if backend.AuthHeader.Self() != nil {
+			attached, err := attach(backend.AuthHeader)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository auth header: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Secret])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository auth header: unexpected result %T", attached)
+			}
+			backend.AuthHeader = typed
+			owned = append(owned, typed)
+		}
+		for i := range backend.Services {
+			if backend.Services[i].Service.Self() == nil {
+				continue
+			}
+			attached, err := attach(backend.Services[i].Service)
+			if err != nil {
+				return nil, fmt.Errorf("attach git repository service binding %q: %w", backend.Services[i].Hostname, err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Service])
+			if !ok {
+				return nil, fmt.Errorf("attach git repository service binding %q: unexpected result %T", backend.Services[i].Hostname, attached)
+			}
+			backend.Services[i].Service = typed
+			owned = append(owned, typed)
+		}
+	}
+
+	return owned, nil
+}
+
+func (ref *GitRef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if ref == nil {
+		return nil, nil
+	}
+	return attachGitObjectRepo(&ref.Repo, "git ref", attach)
+}
+
+func (commit *GitCommit) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if commit == nil {
+		return nil, nil
+	}
+	return attachGitObjectRepo(&commit.Repo, "git commit", attach)
+}
+
+func attachGitObjectRepo(
+	repo *dagql.ObjectResult[*GitRepository],
+	label string,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if repo == nil || repo.Self() == nil {
+		return nil, nil
+	}
+	attached, err := attach(*repo)
+	if err != nil {
+		return nil, fmt.Errorf("attach %s repo: %w", label, err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*GitRepository])
+	if !ok {
+		return nil, fmt.Errorf("attach %s repo: unexpected result %T", label, attached)
+	}
+	*repo = typed
+	return []dagql.AnyResult{typed}, nil
+}
+
+const (
+	persistedGitRepositoryFormLocal  = "local"
+	persistedGitRepositoryFormRemote = "remote"
+)
+
+type persistedGitRepositoryPayload struct {
+	Form          string          `json:"form"`
+	URL           string          `json:"url,omitempty"`
+	DiscardGitDir bool            `json:"discardGitDir,omitempty"`
+	RemoteJSON    json.RawMessage `json:"remoteJson,omitempty"`
+
+	Local  *persistedLocalGitRepositoryPayload  `json:"local,omitempty"`
+	Remote *persistedRemoteGitRepositoryPayload `json:"remote,omitempty"`
+}
+
+type persistedLocalGitRepositoryPayload struct {
+	DirectoryResultID uint64 `json:"directoryResultID"`
+}
+
+type persistedRemoteGitRepositoryPayload struct {
+	URL           string   `json:"url"`
+	SSHKnownHosts string   `json:"sshKnownHosts,omitempty"`
+	AuthUsername  string   `json:"authUsername,omitempty"`
+	Platform      Platform `json:"platform"`
+}
+
+func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	if repo == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: nil repository")
+	}
+	remoteJSON, err := json.Marshal(repo.Remote)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git repository remote: %w", err)
+	}
+	payload := persistedGitRepositoryPayload{
+		DiscardGitDir: repo.DiscardGitDir,
+		RemoteJSON:    remoteJSON,
+	}
+	if repo.URL.Valid {
+		payload.URL = repo.URL.Value.String()
+	}
+	switch backend := repo.Backend.(type) {
+	case *LocalGitRepository:
+		dirID, err := encodePersistedObjectRef(cache, backend.Directory, "git repository directory")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.Form = persistedGitRepositoryFormLocal
+		payload.Local = &persistedLocalGitRepositoryPayload{
+			DirectoryResultID: dirID,
+		}
+	case *RemoteGitRepository:
+		if backend.URL == nil {
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: remote backend missing URL")
+		}
+		payload.Form = persistedGitRepositoryFormRemote
+		payload.Remote = &persistedRemoteGitRepositoryPayload{
+			URL:           backend.URL.String(),
+			SSHKnownHosts: backend.SSHKnownHosts,
+			AuthUsername:  backend.AuthUsername,
+			Platform:      backend.Platform,
+		}
+	default:
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: unsupported backend %T", repo.Backend)
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git repository payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(payloadJSON), nil
+}
+
+func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedGitRepositoryPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted git repository payload: %w", err)
+	}
+	var remote gitutil.Remote
+	if len(persisted.RemoteJSON) > 0 && string(persisted.RemoteJSON) != "null" {
+		if err := json.Unmarshal(persisted.RemoteJSON, &remote); err != nil {
+			return nil, fmt.Errorf("decode persisted git repository remote: %w", err)
+		}
+	}
+
+	repo := &GitRepository{
+		Remote:        &remote,
+		DiscardGitDir: persisted.DiscardGitDir,
+	}
+	if persisted.URL != "" {
+		repo.URL = dagql.NonNull(dagql.String(persisted.URL))
+	}
+	switch persisted.Form {
+	case persistedGitRepositoryFormLocal:
+		if persisted.Local == nil {
+			return nil, fmt.Errorf("decode persisted git repository: missing local payload")
+		}
+		dir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.Local.DirectoryResultID, "git repository directory")
+		if err != nil {
+			return nil, err
+		}
+		repo.Backend = &LocalGitRepository{Directory: dir}
+	case persistedGitRepositoryFormRemote:
+		if persisted.Remote == nil {
+			return nil, fmt.Errorf("decode persisted git repository: missing remote payload")
+		}
+		parsedURL, err := gitutil.ParseURL(persisted.Remote.URL)
+		if err != nil {
+			return nil, fmt.Errorf("decode persisted git repository URL: %w", err)
+		}
+		backend := &RemoteGitRepository{
+			URL:           parsedURL,
+			SSHKnownHosts: persisted.Remote.SSHKnownHosts,
+			AuthUsername:  persisted.Remote.AuthUsername,
+			Platform:      persisted.Remote.Platform,
+		}
+		var mirror dagql.ObjectResult[*RemoteGitMirror]
+		if err := dag.Select(ctx, dag.Root(), &mirror, dagql.Selector{
+			Field: "_remoteGitMirror",
+			Args: []dagql.NamedInput{
+				{Name: "remoteURL", Value: dagql.String(parsedURL.Remote())},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("decode persisted git repository remote mirror: %w", err)
+		}
+		backend.Mirror = mirror
+		repo.Backend = backend
+		repo.URL = dagql.NonNull(dagql.String(parsedURL.String()))
+	default:
+		return nil, fmt.Errorf("decode persisted git repository: unsupported form %q", persisted.Form)
+	}
+	return repo, nil
+}
+
+type persistedGitRefPayload struct {
+	RepoResultID uint64 `json:"repoResultID"`
+	Name         string `json:"name,omitempty"`
+	SHA          string `json:"sha"`
+}
+
+func (ref *GitRef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	if ref == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git ref: nil ref")
+	}
+	if ref.Ref == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git ref: missing ref")
+	}
+	repoID, err := encodePersistedObjectRef(cache, ref.Repo, "git ref repo")
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	payloadJSON, err := json.Marshal(persistedGitRefPayload{
+		RepoResultID: repoID,
+		Name:         ref.Ref.Name,
+		SHA:          ref.Ref.SHA,
+	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git ref payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(payloadJSON), nil
+}
+
+func (*GitRef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedGitRefPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted git ref payload: %w", err)
+	}
+	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dag, persisted.RepoResultID, "git ref repo")
+	if err != nil {
+		return nil, err
+	}
+	ref := &gitutil.Ref{
+		Name: persisted.Name,
+		SHA:  persisted.SHA,
+	}
+	backend, err := repo.Self().Backend.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return &GitRef{
+		Repo:    repo,
+		Backend: backend,
+		Ref:     ref,
+	}, nil
+}
+
+type persistedGitCommitPayload struct {
+	RepoResultID uint64 `json:"repoResultID"`
+	SHA          string `json:"sha"`
+	FetchName    string `json:"fetchName,omitempty"`
+}
+
+func (commit *GitCommit) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	if commit == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git commit: nil commit")
+	}
+	if commit.Ref == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git commit: missing ref")
+	}
+	if commit.Ref.SHA == "" {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git commit: missing commit SHA")
+	}
+	repoID, err := encodePersistedObjectRef(cache, commit.Repo, "git commit repo")
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	fetchName := ""
+	if commit.FetchRef != nil {
+		fetchName = commit.FetchRef.Name
+	}
+	payloadJSON, err := json.Marshal(persistedGitCommitPayload{
+		RepoResultID: repoID,
+		SHA:          commit.Ref.SHA,
+		FetchName:    fetchName,
+	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git commit payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(payloadJSON), nil
+}
+
+func (*GitCommit) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedGitCommitPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted git commit payload: %w", err)
+	}
+	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dag, persisted.RepoResultID, "git commit repo")
+	if err != nil {
+		return nil, err
+	}
+	ref := &gitutil.Ref{SHA: persisted.SHA}
+	fetchRef := ref
+	if persisted.FetchName != "" {
+		fetchRef = &gitutil.Ref{
+			Name: persisted.FetchName,
+			SHA:  persisted.SHA,
+		}
+	}
+	backend, err := repo.Self().Backend.Get(ctx, fetchRef)
+	if err != nil {
+		return nil, err
+	}
+	return &GitCommit{
+		Repo:     repo,
+		Backend:  backend,
+		Ref:      ref,
+		FetchRef: fetchRef,
+	}, nil
+}
+
+func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
+	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
+}
+
+func (commit *GitCommit) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
+	if commit == nil || commit.Ref == nil {
+		return nil, fmt.Errorf("git commit tree: missing commit")
+	}
+	if err := commit.prefetch(ctx, depth, includeTags); err != nil {
+		return nil, err
+	}
+	backend, err := commit.Repo.Self().Backend.Get(ctx, commit.Ref)
+	if err != nil {
+		return nil, err
+	}
+	return backend.Tree(ctx, srv, commit.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
+}
+
+func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, error) {
+	if commit == nil || commit.Ref == nil {
+		return nil, fmt.Errorf("git commit metadata: missing commit")
+	}
+	if commit.Ref.SHA == "" {
+		return nil, fmt.Errorf("git commit metadata: missing commit SHA")
+	}
+	if commit.Backend == nil {
+		return nil, fmt.Errorf("git commit metadata: missing backend")
+	}
+
+	commit.metadataMu.Lock()
+	defer commit.metadataMu.Unlock()
+	if commit.metadata != nil {
+		return commit.metadata, nil
+	}
+
+	var out []byte
+	err := commit.Backend.mount(ctx, 1, false, func(git *gitutil.GitCLI) error {
+		var err error
+		out, err = git.Run(ctx, "cat-file", "commit", commit.Ref.SHA)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read git commit metadata for %s: %w", commit.Ref.SHA, err)
+	}
+
+	meta, err := parseGitCommitMetadata(commit.Ref.SHA, string(out))
+	if err != nil {
+		return nil, fmt.Errorf("read git commit metadata for %s: %w", commit.Ref.SHA, err)
+	}
+	commit.metadata = meta
+	return meta, nil
+}
+
+// PrefillMetadata seeds the commit's cached metadata, so that reading its
+// fields doesn't have to mount the repository again. Metadata that has already
+// been read wins; it was read from the same commit object either way.
+func (commit *GitCommit) PrefillMetadata(meta *GitCommitMetadata) {
+	if commit == nil || meta == nil {
+		return
+	}
+	commit.metadataMu.Lock()
+	defer commit.metadataMu.Unlock()
+	if commit.metadata == nil {
+		commit.metadata = meta
+	}
+}
+
+func (commit *GitCommit) prefetch(ctx context.Context, depth int, includeTags bool) error {
+	return commit.Mount(ctx, depth, includeTags, func(*gitutil.GitCLI) error {
+		return nil
+	})
+}
+
+// Mount mounts the commit's repository with this commit available at the requested depth.
+func (commit *GitCommit) Mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+	if commit == nil || commit.Backend == nil {
+		return fmt.Errorf("git commit: missing backend")
+	}
+	if fn == nil {
+		fn = func(*gitutil.GitCLI) error { return nil }
+	}
+	return commit.Backend.mount(ctx, depth, includeTags, fn)
+}
+
+func (commit *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
+	meta, err := commit.Metadata(ctx)
+	if err != nil {
+		return "", err
+	}
+	headline, _, _ := strings.Cut(meta.Message, "\n")
+	return headline, nil
+}
+
+func (commit *GitCommit) MessageBody(ctx context.Context) (string, error) {
+	meta, err := commit.Metadata(ctx)
+	if err != nil {
+		return "", err
+	}
+	_, body, ok := strings.Cut(meta.Message, "\n")
+	if !ok {
+		return "", nil
+	}
+	return strings.TrimPrefix(body, "\n"), nil
+}
+
+func parseGitCommitMetadata(sha string, raw string) (*GitCommitMetadata, error) {
+	headers, message, _ := strings.Cut(raw, "\n\n")
+	meta := &GitCommitMetadata{
+		SHA:      sha,
+		ShortSHA: sha,
+		Message:  strings.TrimSuffix(message, "\n"),
+	}
+	if len(sha) > 7 {
+		meta.ShortSHA = sha[:7]
+	}
+
+	for _, line := range strings.Split(headers, "\n") {
+		key, value, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "parent":
+			meta.ParentSHAs = append(meta.ParentSHAs, value)
+		case "author":
+			sig, err := parseGitCommitSignature(value)
+			if err != nil {
+				return nil, fmt.Errorf("parse author: %w", err)
+			}
+			meta.AuthorName = sig.Name
+			meta.AuthorEmail = sig.Email
+			meta.AuthoredDate = sig.Date
+		case "committer":
+			sig, err := parseGitCommitSignature(value)
+			if err != nil {
+				return nil, fmt.Errorf("parse committer: %w", err)
+			}
+			meta.CommitterName = sig.Name
+			meta.CommitterEmail = sig.Email
+			meta.CommittedDate = sig.Date
+		}
+	}
+
+	if meta.AuthorName == "" || meta.AuthorEmail == "" || meta.AuthoredDate == "" {
+		return nil, fmt.Errorf("missing author metadata")
+	}
+	if meta.CommitterName == "" || meta.CommitterEmail == "" || meta.CommittedDate == "" {
+		return nil, fmt.Errorf("missing committer metadata")
+	}
+	return meta, nil
+}
+
+type gitCommitSignature struct {
+	Name  string
+	Email string
+	Date  string
+}
+
+func parseGitCommitSignature(raw string) (gitCommitSignature, error) {
+	nameEnd := strings.LastIndex(raw, " <")
+	emailEnd := strings.LastIndex(raw, "> ")
+	if nameEnd < 0 || emailEnd < nameEnd {
+		return gitCommitSignature{}, fmt.Errorf("invalid signature %q", raw)
+	}
+	name := raw[:nameEnd]
+	email := raw[nameEnd+2 : emailEnd]
+	dateParts := strings.Fields(raw[emailEnd+2:])
+	if len(dateParts) != 2 {
+		return gitCommitSignature{}, fmt.Errorf("invalid signature date %q", raw)
+	}
+	seconds, err := strconv.ParseInt(dateParts[0], 10, 64)
+	if err != nil {
+		return gitCommitSignature{}, fmt.Errorf("parse timestamp: %w", err)
+	}
+	// git tolerates malformed and oversized timezone offsets in commit
+	// objects, and imported history commonly has them; the timestamp itself
+	// is still exact, so degrade to UTC rather than failing the commit (and
+	// with it any log containing the commit)
+	loc := time.UTC
+	if offset, ok := parseGitTimezoneOffset(dateParts[1]); ok {
+		loc = time.FixedZone(dateParts[1], offset)
+	}
+	return gitCommitSignature{
+		Name:  name,
+		Email: email,
+		Date:  time.Unix(seconds, 0).In(loc).Format(time.RFC3339),
+	}, nil
+}
+
+// parseGitTimezoneOffset parses a timezone offset the way git does: a sign
+// followed by decimal digits interpreted as hours*100+minutes, so oversized
+// forms like +051800 (git renders it as +518:00) are accepted. Offsets that
+// RFC3339 cannot represent (beyond +/-23:59) report !ok so the caller can
+// fall back to UTC.
+func parseGitTimezoneOffset(raw string) (int, bool) {
+	if len(raw) < 2 || (raw[0] != '+' && raw[0] != '-') {
+		return 0, false
+	}
+	n, err := strconv.Atoi(raw[1:])
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	offset := ((n/100)*60 + n%100) * 60
+	if raw[0] == '-' {
+		offset = -offset
+	}
+	if offset <= -24*60*60 || offset >= 24*60*60 {
+		return 0, false
+	}
+	return offset, true
+}
+
+// doGitCheckout performs a git checkout using the given git helper.
+//
+// The provided git dir should *always* be empty.
+func doGitCheckout(
+	ctx context.Context,
+	checkoutGit *gitutil.GitCLI,
+	remoteURL string,
+	cloneURL string,
+	ref *gitutil.Ref,
+	depth int,
+	discardGitDir bool,
+) error {
+	checkoutDirGit, err := checkoutGit.GitDir(ctx)
+	if err != nil {
+		return fmt.Errorf("could not find git dir: %w", err)
+	}
+
+	_, err = checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	if err != nil {
+		return err
+	}
+
+	tmpref := "refs/dagger.tmp/" + identity.NewID()
+
+	// TODO: maybe this should use --no-tags by default, but that's a breaking change :(
+	// also, we currently don't do any special work to ensure that the fetched
+	// tags are consistent with the GitRepository.Remote (oops)
+	args := []string{"fetch", "-u"}
+	if depth > 0 {
+		args = append(args, fmt.Sprintf("--depth=%d", depth))
+	}
+	args = append(args, cloneURL)
+	args = append(args, ref.SHA+":"+tmpref)
+	_, err = checkoutGit.Run(ctx, args...)
+	if err != nil {
+		return err
+	}
+	if ref.Name == "" {
+		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
+		if err != nil {
+			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
+		}
+	} else {
+		_, err = checkoutGit.Run(ctx, "update-ref", ref.Name, ref.SHA)
+		if err != nil {
+			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
+		}
+		_, err = checkoutGit.Run(ctx, "checkout", strings.TrimPrefix(ref.Name, "refs/heads/"))
+		if err != nil {
+			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
+		}
+		_, err = checkoutGit.Run(ctx, "reset", "--hard", ref.SHA)
+		if err != nil {
+			return fmt.Errorf("failed to reset ref: %w", err)
+		}
+	}
+	if remoteURL != "" {
+		_, err = checkoutGit.Run(ctx, "remote", "add", "origin", remoteURL)
+		if err != nil {
+			return fmt.Errorf("failed to set remote origin to %s: %w", remoteURL, err)
+		}
+	}
+	_, err = checkoutGit.Run(ctx, "update-ref", "-d", tmpref)
+	if err != nil {
+		return fmt.Errorf("failed to delete tmp ref: %w", err)
+	}
+	_, err = checkoutGit.Run(ctx, "reflog", "expire", "--all", "--expire=now")
+	if err != nil {
+		return fmt.Errorf("failed to expire reflog: %w", err)
+	}
+
+	if err := os.Remove(filepath.Join(checkoutDirGit, "FETCH_HEAD")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to remove FETCH_HEAD: %w", err)
+	}
+
+	// TODO: this feels completely out-of-sync from how we do the rest
+	// of the clone - caching will not be as great here
+	subArgs := []string{"submodule", "update", "--init", "--recursive", "--depth=1"}
+	if _, err := checkoutGit.Run(ctx, subArgs...); err != nil {
+		if errors.Is(err, gitutil.ErrShallowNotSupported) {
+			subArgs = slices.DeleteFunc(subArgs, func(s string) bool {
+				return strings.HasPrefix(s, "--depth")
+			})
+			_, err = checkoutGit.Run(ctx, subArgs...)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update submodules: %w", err)
+		}
+	}
+
+	if !discardGitDir {
+		if _, err := checkoutGit.Run(ctx, "read-tree", "HEAD"); err != nil {
+			return fmt.Errorf("failed to normalize git index: %w", err)
+		}
+	}
+
+	if discardGitDir {
+		if err := os.RemoveAll(checkoutDirGit); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to remove .git: %w", err)
+		}
+	}
+
+	checkoutDir, err := checkoutGit.WorkTree(ctx)
+	if err != nil {
+		return fmt.Errorf("could not find worktree: %w", err)
+	}
+	// Use a deterministic non-zero timestamp. Some build tools treat missing
+	// outputs as epoch and skip initial copies when sources are also epoch.
+	normalizedTime := []unix.Timespec{{Sec: 1}, {Sec: 1}}
+	if err := filepath.WalkDir(checkoutDir, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return unix.UtimesNanoAt(unix.AT_FDCWD, path, normalizedTime, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return fmt.Errorf("failed to normalize checkout timestamps: %w", err)
+	}
+
+	return nil
+}
+
+// mountRefs mounts the given refs with their full history and calls fn with a
+// GitCLI positioned in a repository containing all of them, along with their
+// resolved commit SHAs (in the same order as refs).
+//
+// Refs sharing a repository are mounted together; refs from different
+// repositories are joined into a temporary repository via refJoin.
+func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI, shas []string) error) error {
+	if len(refs) == 0 {
+		return fmt.Errorf("mount refs: no refs given")
+	}
+
+	shas := make([]string, len(refs))
+	backends := make([]GitRefBackend, len(refs))
+	sameRepo := true
+	var repoDgst digest.Digest
+	for i, ref := range refs {
+		shas[i] = ref.Ref.SHA
+		backends[i] = ref.Backend
+
+		dgst, err := ref.Repo.RecipeDigest(ctx)
+		if err != nil {
+			return fmt.Errorf("mount refs: ref %d repo ID: %w", i+1, err)
+		}
+		if i == 0 {
+			repoDgst = dgst
+		} else if dgst != repoDgst {
+			sameRepo = false
+		}
+	}
+
+	if sameRepo { // fast-path, just grab all the refs from the same repo
+		// depth 0 = full fetch, so that history is available
+		return refs[0].Repo.Self().Backend.mount(ctx, 0, false, backends, func(git *gitutil.GitCLI) error {
+			return fn(git, shas)
+		})
+	}
+
+	git, shas, cleanup, err := refJoin(ctx, refs)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	return fn(git, shas)
+}
+
+func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
+	var mergeBase string
+	err := mountRefs(ctx, []*GitRef{ref1, ref2}, func(git *gitutil.GitCLI, shas []string) error {
+		out, err := git.Run(ctx, append([]string{"merge-base"}, shas...)...)
+		if err != nil {
+			return fmt.Errorf("git merge-base failed: %w", err)
+		}
+		mergeBase = strings.TrimSpace(string(out))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ref := &gitutil.Ref{SHA: mergeBase}
+	backend, err := ref1.Repo.Self().Backend.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return &GitRef{Repo: ref1.Repo, Backend: backend, Ref: ref}, nil
+}
+
+type GitLogOptions struct {
+	// Limit is the maximum number of commits to return. Must be at least 1.
+	Limit int
+	// Paths restricts the log to commits touching any of these repo-root-relative
+	// paths.
+	Paths []string
+	// Base excludes commits reachable from this ref, i.e. base..ref.
+	Base *GitRef
+}
+
+// Log returns metadata for the commits reachable from the ref, newest first,
+// starting with the ref's own commit.
+func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMetadata, error) {
+	if ref == nil || ref.Ref == nil {
+		return nil, fmt.Errorf("git log: missing ref")
+	}
+	if opts.Limit < 1 {
+		return nil, fmt.Errorf("git log: limit must be at least 1, got %d", opts.Limit)
+	}
+
+	refs := []*GitRef{ref}
+	if opts.Base != nil {
+		refs = append(refs, opts.Base)
+	}
+
+	var commits []*GitCommitMetadata
+	err := mountRefs(ctx, refs, func(git *gitutil.GitCLI, shas []string) error {
+		args := []string{"rev-list", "-n", strconv.Itoa(opts.Limit), shas[0]}
+		if len(shas) > 1 {
+			args = append(args, "^"+shas[1])
+		}
+		if len(opts.Paths) > 0 {
+			args = append(args, "--")
+			args = append(args, opts.Paths...)
+		}
+		out, err := git.Run(ctx, args...)
+		if err != nil {
+			return fmt.Errorf("git rev-list failed: %w", err)
+		}
+
+		// read every commit while the repo is still mounted, rather than leaving
+		// each one to mount again on demand
+		for _, sha := range strings.Fields(string(out)) {
+			raw, err := git.Run(ctx, "cat-file", "commit", sha)
+			if err != nil {
+				return fmt.Errorf("read git commit metadata for %s: %w", sha, err)
+			}
+			meta, err := parseGitCommitMetadata(sha, string(raw))
+			if err != nil {
+				return fmt.Errorf("read git commit metadata for %s: %w", sha, err)
+			}
+			commits = append(commits, meta)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return commits, nil
+}
+
+// refJoin creates a temporary git repository, adds the given refs as remotes,
+// fetches them, and returns a GitCLI instance.
+func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string, _ func() error, rerr error) {
+	tmpDir, err := os.MkdirTemp("", "dagger-mergebase")
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	cleanup := func() error {
+		return os.RemoveAll(tmpDir)
+	}
+	defer func() {
+		if rerr != nil {
+			cleanup()
+		}
+	}()
+	git := gitutil.NewGitCLI(
+		gitutil.WithDir(tmpDir),
+		gitutil.WithGitDir(filepath.Join(tmpDir, ".git")),
+	)
+	if _, err := git.Run(ctx, "-c", "init.defaultBranch=main", "init"); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to init temp repo: %w", err)
+	}
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	mu := sync.Mutex{} // cannot simultaneously add+fetch remotes
+	commits := make([]string, len(refs))
+
+	for i, ref := range refs {
+		eg.Go(func() error {
+			commits[i] = ref.Ref.SHA
+			return ref.Backend.mount(egCtx, 0, false, func(gitN *gitutil.GitCLI) error {
+				remoteURL, err := gitN.URL(egCtx)
+				if err != nil {
+					return err
+				}
+				remoteName := fmt.Sprintf("origin%d", i+1)
+				mu.Lock()
+				defer mu.Unlock()
+				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
+					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
+				}
+				if _, err := git.Run(egCtx, "fetch", "--no-tags", remoteName, ref.Ref.SHA); err != nil {
+					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
+				}
+				return nil
+			})
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, nil, nil, err
+	}
+	return git, commits, cleanup, nil
+}

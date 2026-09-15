@@ -1,0 +1,13 @@
+{
+  "name": "hoster",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "caller",
+      "source": "caller"
+    }
+  ]
+}

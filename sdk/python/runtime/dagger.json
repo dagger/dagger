@@ -1,0 +1,10 @@
+{
+  "name": "python-sdk",
+  "engineVersion": "v0.21.9",
+  "sdk": {
+    "source": "go"
+  },
+  "codegen": {
+    "automaticGitignore": false
+  }
+}

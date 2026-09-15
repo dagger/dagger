@@ -1,0 +1,10 @@
+{
+  "name": "test",
+  "engineVersion": "latest",
+  "dependencies": [
+    {
+      "name": "nosdk",
+      "source": "nosdk"
+    }
+  ]
+}

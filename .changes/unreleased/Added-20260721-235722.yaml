@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  `Workspace.git` now works from git-worktree and submodule checkouts. Such
+  checkouts have a `.git` pointer file whose target lives outside the workspace
+  boundary; the engine now follows the pointer against the host, pulls in the
+  shared common directory for worktrees, and flattens everything into a
+  standalone repository so `Workspace.git` behaves as it does in a plain clone.
+time: 2026-07-21T23:57:22Z
+custom:
+  Author: vito
+  PR: ""

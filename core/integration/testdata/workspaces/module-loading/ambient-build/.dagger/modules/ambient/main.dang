@@ -1,0 +1,5 @@
+type Ambient {
+  pub build: String! {
+    "ambient build"
+  }
+}

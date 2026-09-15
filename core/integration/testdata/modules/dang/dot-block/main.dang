@@ -1,0 +1,20 @@
+"""
+Module exercising Dang v2 semantics, which apply to modules with
+engineVersion >= v0.21.5: `.{ }` is dot-block application (piping) and
+`.{{ }}` is GraphQL selection.
+"""
+type DotBlock {
+  pub double(n: Int!): Int! {
+    n.{ _ * 2 }
+  }
+
+  pub contents: String! {
+    let info = Dagger.directory.withNewFile("hello.txt", "new syntax").file("hello.txt").{{contents, size}}
+    info.contents
+  }
+
+  pub size: Int! {
+    let info = Dagger.directory.withNewFile("hello.txt", "new syntax").file("hello.txt").{{contents, size}}
+    info.size
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "foo",
+  "engineVersion": "v0.16.2",
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": "github.com/dagger/dagger-test-modules"
+    }
+  }
+}

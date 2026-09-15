@@ -1,0 +1,7 @@
+parameters:
+    level: 5
+    tmpDir: .cache/phpstan
+    paths:
+        - src
+includes:
+    - phpstan-baseline.neon

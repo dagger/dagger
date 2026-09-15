@@ -1,0 +1,72 @@
+package clientdb
+
+import "database/sql"
+
+type Log struct {
+	ID                   int64
+	TraceID              sql.NullString
+	SpanID               sql.NullString
+	Timestamp            int64
+	SeverityNumber       int64
+	SeverityText         string
+	Body                 []byte
+	Attributes           []byte
+	InstrumentationScope []byte
+	Resource             []byte
+	ResourceSchemaURL    string
+}
+
+type Metric struct {
+	ID   int64
+	Data []byte
+}
+
+type Span struct {
+	ID                     int64
+	TraceID                string
+	SpanID                 string
+	TraceState             string
+	ParentSpanID           sql.NullString
+	Flags                  int64
+	Name                   string
+	Kind                   string
+	StartTime              int64
+	EndTime                sql.NullInt64
+	Attributes             []byte
+	DroppedAttributesCount int64
+	Events                 []byte
+	DroppedEventsCount     int64
+	Links                  []byte
+	DroppedLinksCount      int64
+	StatusCode             int64
+	StatusMessage          string
+	InstrumentationScope   []byte
+	Resource               []byte
+	ResourceSchemaURL      string
+}
+
+type SelectLogsBeneathSpanParams struct {
+	SpanID sql.NullString
+	ID     int64
+	Limit  int64
+}
+
+type SelectLogsSinceParams struct {
+	ID    int64
+	Limit int64
+}
+
+type SelectMetricsSinceParams struct {
+	ID    int64
+	Limit int64
+}
+
+type SelectSpanParams struct {
+	TraceID string
+	SpanID  string
+}
+
+type SelectSpansSinceParams struct {
+	ID    int64
+	Limit int64
+}

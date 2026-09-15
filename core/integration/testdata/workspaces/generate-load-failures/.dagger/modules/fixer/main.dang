@@ -1,0 +1,12 @@
+type Fixer {
+  """
+  Rewrite the fixable module's source so it compiles, standing in for a run
+  that regenerates what a module needs to build.
+  """
+  pub generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
+    workdir.withNewFile(
+      ".dagger/modules/fixable/main.go",
+      "package main\n\n// Fixable compiles once the fixer generator has rewritten it.\ntype Fixable struct{}\n\nfunc (m *Fixable) Hello() string {\n\treturn \"fixed\"\n}\n",
+    ).changes(workdir)
+  }
+}

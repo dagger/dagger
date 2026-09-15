@@ -1,0 +1,3 @@
+[modules.ambient]
+source = ".dagger/modules/ambient"
+entrypoint = true

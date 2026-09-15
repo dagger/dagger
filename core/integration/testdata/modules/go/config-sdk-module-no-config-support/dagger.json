@@ -1,0 +1,7 @@
+{
+  "name": "foo",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "coolsdk"
+  }
+}

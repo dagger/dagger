@@ -1,0 +1,38 @@
+// Test interface with deprecated method
+type TestFooer struct {
+	query *querybuilder.Selection
+
+	foo *string
+}
+
+func (r *TestFooer) WithGraphQLQuery(q *querybuilder.Selection) *TestFooer {
+	return &TestFooer{
+		query: q,
+	}
+}
+
+// TestFooerFooOpts contains options for TestFooer.Foo
+type TestFooerFooOpts struct {
+
+	// Deprecated: Not needed anymore.
+	Bar int
+}
+
+// Deprecated: Use Bar instead.
+func (r *TestFooer) Foo(ctx context.Context, opts ...TestFooerFooOpts) (string, error) {
+	if r.foo != nil {
+		return *r.foo, nil
+	}
+	q := r.query.Select("foo")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `bar` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Bar) {
+			q = q.Arg("bar", opts[i].Bar)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}

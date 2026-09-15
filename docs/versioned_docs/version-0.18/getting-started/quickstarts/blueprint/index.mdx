@@ -1,0 +1,114 @@
+---
+title: "Use a Blueprint Module"
+slug: "/getting-started/quickstarts/blueprint"
+description: "Use a Blueprint Module"
+keywords: ["quickstart", "ci", "dagger", "blueprint"]
+---
+
+# Use a Blueprint Module
+
+A Dagger module may reference another module as its blueprint.
+
+Using a module as a blueprint means that your module will automatically have the functions of the blueprint module directly callable. This is great for platform teams daggerizing many software components with identical stacks because each project does not need to reimplement the same code in every project, they simply install the blueprint.
+
+When you use a blueprint module, the [context directory](../../types/directory.mdx#git-repositories) will automatically be your repository rather than the blueprint's repository.
+
+This quickstart will guide you through using a blueprint module in an example application.
+
+## Requirements
+
+This quickstart will take you approximately 5 minutes to complete.
+
+Before beginning, ensure that:
+- you have [installed the Dagger CLI](../../installation.mdx).
+- you know [the basics of Dagger](../basics/index.mdx).
+- you have [Git](https://git-scm.com/downloads) and a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](../../../reference/container-runtimes/podman.mdx), [nerdctl](../../../reference/container-runtimes/nerdctl.mdx), [Apple Container](../../../reference/container-runtimes/apple-container.mdx), or other Docker-like systems.
+- you have a GitHub account (optional, only if configuring Dagger Cloud)
+
+## Get the example application
+
+The example application is a skeleton Vue framework application that returns a "Hello from Dagger!" welcome page. Create a Github repository from the [hello-dagger-template](https://github.com/dagger/hello-dagger-template) and set it as the current working directory:
+
+In the GitHub UI:
+
+![Create a repo from the hello-dagger-template repository](/img/current_docs/getting-started/quickstarts/ci/template.png)
+
+Clone your new repository and set it as the current working directory.
+
+Or with the `gh` CLI:
+```shell
+gh repo create hello-dagger --template dagger/hello-dagger-template --public --clone
+cd hello-dagger
+```
+
+## Configure Dagger Cloud (optional)
+
+:::important
+This step is optional and will create a [Dagger Cloud](https://dagger.io/cloud) account, which is free of charge for a single user. If you prefer not to sign up for Dagger Cloud, you can skip this section.
+:::
+
+Dagger Cloud is an online visualization tool for Dagger workflows. It provides a web interface to visualize each step of your workflow, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
+
+Create a new Dagger Cloud account by running `dagger login`:
+
+```shell
+dagger login
+```
+
+The Dagger CLI will invite you to authenticate your device by displaying a link containing a unique key. Click the link in your browser, and verify that you see the same key in the Dagger Cloud Web interface.
+
+```shell
+$ dagger login
+Browser opened to: https://auth.dagger.cloud/activate?user_code=FCNP-SRLM
+Confirmation code: FCNP-SRLM
+```
+
+Once you confirm your authentication code, your Dagger CLI will be authenticated and you will get redirected to your newly created Dagger Cloud organization.
+
+After successfully creating your organization, all future Dagger workflows can be inspected in Dagger Cloud.
+
+## Initialize a Dagger module with a blueprint
+
+Create a new Dagger module using `dagger init`, but using an existing module as a blueprint.
+
+```shell
+dagger init --blueprint=github.com/kpenfound/blueprints/hello-dagger
+```
+
+The `--blueprint` flag means the new module will use the Dagger module at [github.com/kpenfound/blueprints/hello-dagger](https://github.com/kpenfound/blueprints/tree/main/hello-dagger) as a blueprint, meaning I can use that module directly with `dagger call`.
+
+See what tools have been installed:
+
+```shell
+dagger functions
+```
+
+You will see:
+
+```
+dagger functions
+▶ connect 0.2s
+▶ load module: . 1.0s
+
+Name        Description
+build       Build the application container
+build-env   Build a ready-to-use development environment
+publish     Publish the application container after building and testing it on-the-fly
+test        Return the result of running unit tests
+```
+
+So the functions in the `github.com/kpenfound/blueprints/hello-dagger` module are now available to be used!
+
+Try running the test function:
+
+```shell
+dagger call test
+```
+
+## Next steps
+
+Congratulations! You've installed your first blueprint module with Dagger.
+
+Now you have the tools to successfully take the next step: [adopting Dagger in your project](../../../reference/best-practices/adopting.mdx).
+
+In the meantime, we encourage you to [join our awesome community on Discord](https://discord.gg/dagger-io) to introduce yourself and ask questions. And [starring our GitHub repository](https://github.com/dagger/dagger) is always appreciated!

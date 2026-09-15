@@ -1,0 +1,9 @@
+type Entry {
+  """
+  A trivial entrypoint function, proxied onto the Query root. Used to prove
+  the entrypoint module loaded when it is the first `dagger call` argument.
+  """
+  pub greet: String! {
+    "hello from entrypoint"
+  }
+}

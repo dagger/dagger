@@ -1,0 +1,1542 @@
+package daggercmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"dagger.io/dagger"
+	"github.com/spf13/cobra"
+
+	"github.com/dagger/dagger/core/gitref"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/client"
+	cloudapi "github.com/dagger/dagger/internal/cloud"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
+	"github.com/dagger/dagger/util/gitutil"
+)
+
+var workspaceCmd = &cobra.Command{
+	Use:     "workspace",
+	Aliases: []string{"ws"},
+	Short:   "Inspect or configure your workspace (cwd, remotes, config, etc.)",
+	Long: `Inspect or configure your workspace.
+
+A workspace is a project configured to use Dagger — a directory holding
+a dagger.toml that records installed modules, environment overlays, and
+settings. Most commands (install, check, generate, up, settings, ...)
+operate on the workspace reachable from the current directory. The -W
+flag selects a different workspace (local path or git ref); dagger.toml is
+the source of truth.`,
+	Annotations: map[string]string{
+		visibleAliasesAnnotation: "ws",
+	},
+	Args: cobra.NoArgs,
+}
+
+var workspaceRootCmd = &cobra.Command{
+	Use:   "root",
+	Short: "Print the workspace root",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			ws := engineClient.Dagger().CurrentWorkspace()
+			address, err := ws.Address(ctx)
+			if err != nil {
+				return fmt.Errorf("load workspace address: %w", err)
+			}
+			cwd, err := ws.Cwd(ctx)
+			if err != nil {
+				return fmt.Errorf("load workspace cwd: %w", err)
+			}
+			root, err := workspaceRootFromAddress(address, cwd)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), root)
+			return err
+		})
+	},
+}
+
+var workspaceCwdCmd = &cobra.Command{
+	Use:   "cwd",
+	Short: "Print the workspace cwd",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			cwd, err := engineClient.Dagger().CurrentWorkspace().Cwd(ctx)
+			if err != nil {
+				return fmt.Errorf("load workspace cwd: %w", err)
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), cwd)
+			return err
+		})
+	},
+}
+
+var workspaceLsCmd = &cobra.Command{
+	Use:   "ls [PATH...]",
+	Short: "List directories or files in the selected workspace",
+	Long: `List directories or files in the selected workspace, one entry per line.
+
+PATH defaults to the workspace's current directory. Relative paths start
+at that directory. Absolute paths start at the workspace root.
+
+Directory listings include hidden entries and end directory names with /.
+For a file, print the supplied path.
+With multiple paths, list targets in argument order and label directories.`,
+	Args: cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			args = []string{"."}
+		}
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			ws := engineClient.Dagger().CurrentWorkspace()
+			var errs []error
+			var printed bool
+			for _, target := range args {
+				entries, err := ws.Directory(target, dagger.WorkspaceDirectoryOpts{
+					Include: []string{"*"},
+					Exclude: []string{"*/*"},
+				}).Entries(ctx)
+				isDir := err == nil
+				if err != nil {
+					// A file cannot be listed as a directory. Validate it before
+					// printing its path, retaining the directory error if both fail.
+					if _, fileErr := ws.File(target).Sync(ctx); fileErr != nil {
+						errs = append(errs, fmt.Errorf("list workspace path %q: %w", target, err))
+						continue
+					}
+					entries = []string{target}
+				}
+				if len(args) > 1 {
+					if printed {
+						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+							return err
+						}
+					}
+					if isDir {
+						if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s:\n", target); err != nil {
+							return err
+						}
+					}
+					printed = true
+				}
+				for _, entry := range entries {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), entry); err != nil {
+						return err
+					}
+				}
+			}
+			return errors.Join(errs...)
+		})
+	},
+}
+
+var workspaceCatCmd = &cobra.Command{
+	Use:   "cat PATH [PATH...]",
+	Short: "Print files from the selected workspace",
+	Long: `Print file contents from the selected workspace in argument order.
+
+Relative paths start at the workspace's current directory.
+Absolute paths start at the workspace root.
+
+The output preserves line endings and does not add a final newline.`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			ws := engineClient.Dagger().CurrentWorkspace()
+			var errs []error
+			for _, target := range args {
+				contents, err := ws.File(target).Contents(ctx)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("read workspace file %q: %w", target, err))
+					continue
+				}
+				if _, err := io.WriteString(cmd.OutOrStdout(), contents); err != nil {
+					return err
+				}
+			}
+			return errors.Join(errs...)
+		})
+	},
+}
+
+var workspaceConfigFileCmd = &cobra.Command{
+	Use:   "config-file",
+	Short: "Print the selected workspace config file",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			configFile, err := engineClient.Dagger().CurrentWorkspace().ConfigFile(ctx)
+			if err != nil {
+				return fmt.Errorf("load workspace config file: %w", err)
+			}
+			if configFile == "" {
+				configFile = "none"
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), configFile)
+			return err
+		})
+	},
+}
+
+var workspaceConfigCmd = &cobra.Command{
+	Use:   "config [key] [value]",
+	Short: "Get or set workspace configuration",
+	Long: `Get or set workspace configuration values in dagger.toml.
+
+With no arguments, prints the full configuration.
+With one argument, prints the value at the given key.
+With two arguments, sets the value at the given key.
+With one argument and --unset, removes the value at the given key.
+
+Explicit env.* keys address raw overlay storage.
+
+Local module source values are stored relative to dagger.toml.`,
+	Args: cobra.MaximumNArgs(2),
+	RunE: runWorkspaceConfig,
+}
+
+var workspaceRemotesCmd = &cobra.Command{
+	Use:   "remotes",
+	Short: "List selectable remote workspace addresses",
+	Args:  cobra.NoArgs,
+	RunE:  WorkspaceRemotes,
+}
+
+var workspaceRemoteCmd = &cobra.Command{
+	Use:   "remote",
+	Short: "Print the selectable remote address for the current workspace",
+	Args:  cobra.NoArgs,
+	RunE:  WorkspaceRemote,
+}
+
+// activityCmd is the top-level activity command (hoisted from what was
+// `dagger workspace activity`).
+var activityCmd = &cobra.Command{
+	Use:   "activity",
+	Short: "Show recent activity (runs, traces, etc.) for this workspace",
+	Args:  cobra.NoArgs,
+	RunE:  WorkspaceActivity,
+}
+
+var workspaceActivityAll bool
+
+var (
+	workspaceConfigUnset  bool
+	workspaceConfigGlobal bool
+)
+
+func init() {
+	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigUnset, "unset", "u", false, "Remove the value at the given key")
+	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigGlobal, "global", "g", false, "Write to user-level config instead of the repository, keyed by the workspace's git remote")
+
+	workspaceUpdateCmd := newWorkspaceUpdateCmd(false)
+	workspaceUpdateCmd.Short = "Refresh all workspace lockfile state"
+	workspaceUpdateCmd.Long = "Refresh all installed-module, client-target, and runtime entries in dagger.lock. Regenerate SDK client scopes unless --no-generate is set."
+	workspaceUpdateCmd.Example = `"dagger workspace update"`
+
+	workspaceCmd.AddCommand(activityCmd)
+	workspaceCmd.AddCommand(workspaceUpdateCmd)
+	workspaceCmd.AddCommand(workspaceConfigCmd)
+	workspaceCmd.AddCommand(workspaceConfigFileCmd)
+	workspaceCmd.AddCommand(workspaceCwdCmd)
+	workspaceCmd.AddCommand(workspaceExecCmd)
+	workspaceCmd.AddCommand(workspaceExportCmd)
+	workspaceCmd.AddCommand(workspaceFindCmd)
+	workspaceCmd.AddCommand(workspaceLsCmd)
+	workspaceCmd.AddCommand(workspaceCatCmd)
+	workspaceCmd.AddCommand(workspaceGitCmd)
+	workspaceCmd.AddCommand(workspaceGrepCmd)
+	workspaceCmd.AddCommand(workspaceRemoteCmd)
+	workspaceCmd.AddCommand(workspaceRemotesCmd)
+	workspaceCmd.AddCommand(workspaceRootCmd)
+
+	addWorkspaceHereFlag(workspaceConfigCmd)
+	activityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
+}
+
+func addWorkspaceHereFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&workspaceHere, "here", false, "Write workspace config at the selected workspace cwd")
+}
+
+func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
+	if workspaceConfigUnset && len(args) != 1 {
+		return fmt.Errorf("--unset requires a KEY argument")
+	}
+	if workspaceConfigGlobal {
+		ctx := cmd.Context()
+		if workspaceConfigUnset {
+			return unsetUserConfigValue(ctx, userScopedConfigKey(args[0]))
+		}
+		if len(args) != 2 {
+			return fmt.Errorf("--global writes to user-level config; pass KEY VALUE to set or --unset KEY (reads always show the effective merged config)")
+		}
+		return writeUserConfigValue(ctx, userScopedConfigKey(args[0]), args[1], nil)
+	}
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		ws := engineClient.Dagger().CurrentWorkspace()
+
+		if workspaceConfigUnset {
+			return ws.WithoutConfigValue(args[0], dagger.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).Export(ctx)
+		}
+
+		switch len(args) {
+		case 0:
+			return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, "")
+		case 1:
+			return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0])
+		case 2:
+			return writeWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0], args[1])
+		default:
+			return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
+		}
+	})
+}
+
+func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key string) error {
+	value, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{Key: key})
+	if err != nil {
+		return err
+	}
+
+	value = strings.TrimRight(value, "\n")
+	if key == "" && value == "" {
+		return nil
+	}
+
+	_, err = fmt.Fprintln(out, value)
+	return err
+}
+
+func writeWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key, value string) error {
+	envName := writtenConfigEnvName(key)
+	target := ws
+	creates := false
+	if envName != "" {
+		var err error
+		creates, target, err = workspaceEnvWriteCreates(ctx, ws, envName, workspaceHere)
+		if err != nil {
+			return err
+		}
+	}
+	if err := target.WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).Export(ctx); err != nil {
+		return err
+	}
+	if creates {
+		fmt.Fprintf(out, "Created env %q\n", envName)
+	}
+	return nil
+}
+
+// writtenConfigEnvName returns the env a config write lands in: the env named
+// by an explicit env.<name>.* key (which always addresses raw overlay storage,
+// even under --env), or the --env selection for other keys.
+func writtenConfigEnvName(key string) string {
+	if strings.HasPrefix(key, "env.") {
+		if parts, err := workspacepkg.SplitConfigPath(key); err == nil && len(parts) >= 2 {
+			return parts[1]
+		}
+		return ""
+	}
+	if key != "env" {
+		return workspaceEnv
+	}
+	return ""
+}
+
+// workspaceEnvWriteCreates reports whether writing to env `name` will create it,
+// and returns the workspace the write should chain onto (with the env staged so
+// creation stays explicit). Detection is here-aware by comparing config
+// directories, not by trusting EnvList alone: workspace detection selects the
+// nearest dagger.toml walking up from the cwd, so a --here write whose cwd isn't
+// the selected config's own directory targets a directory that has no config of
+// its own — it always writes a fresh config there, hence a new env. When the
+// --here target and the selected config share a directory (or --here is off),
+// the write lands in the selected config, where the env is new iff EnvList (read
+// from that same config) doesn't already list it.
+func workspaceEnvWriteCreates(ctx context.Context, ws *dagger.Workspace, name string, here bool) (bool, *dagger.Workspace, error) {
+	staged := ws.WithConfigEnv(name, dagger.WorkspaceWithConfigEnvOpts{Here: here})
+	if here {
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return false, nil, err
+		}
+		if configFile == "" {
+			// No selected config: --here writes a fresh dagger.toml at the cwd.
+			return true, staged, nil
+		}
+		// configFile is cwd-relative, so the selected config lives in the
+		// --here target (the cwd) exactly when its directory is ".".
+		if path.Dir(configFile) != "." {
+			return true, staged, nil
+		}
+	}
+	// Probe the repository config file itself: every read through the API is
+	// user-overlay-effective, and an env defined only in the user-level
+	// config must not suppress the notice for the repo-side env section this
+	// write creates. Env-scoped writes are host-local by definition, so the
+	// selected config file is readable directly.
+	configFile, err := ws.ConfigFile(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	if configFile == "" {
+		// No repo config at all yet; the write creates it and the env.
+		return true, staged, nil
+	}
+	configPath, err := workspaceConfigHostPath(ctx, ws)
+	if err != nil {
+		return false, nil, err
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, staged, nil
+		}
+		return false, nil, err
+	}
+	cfg, err := workspacepkg.ParseConfig(data)
+	if err != nil {
+		return false, nil, err
+	}
+	_, defined := cfg.Env[name]
+	return !defined, staged, nil
+}
+
+func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string, here bool) error {
+	current := dag.CurrentWorkspace()
+	previousConfig, err := current.ConfigFile(ctx)
+	if err != nil {
+		return err
+	}
+	target := current
+	createsEnv := false
+	if workspaceEnv != "" {
+		// An env-scoped install is a write, so a missing env is created by it.
+		// Chaining the write on the env-staged workspace also keeps the
+		// before/after module diff below usable when the env didn't exist yet.
+		createsEnv, target, err = workspaceEnvWriteCreates(ctx, current, workspaceEnv, here)
+		if err != nil {
+			return err
+		}
+	}
+	updated, err := materializeWorkspace(ctx, dag, target.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: name, Here: here}))
+	if err != nil {
+		return err
+	}
+	resolvedName, err := workspaceInstalledModuleName(ctx, target, updated, ref, name)
+	if err != nil {
+		return err
+	}
+	configPath, err := workspaceConfigHostPath(ctx, updated)
+	if err != nil {
+		return err
+	}
+	updatedConfig, err := updated.ConfigFile(ctx)
+	if err != nil {
+		return err
+	}
+	// The workspace config may be above the current directory. Use the workspace
+	// root so changes() includes it.
+	isEmpty, err := updated.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: target}).IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	// Shadowing a module that already resolved to another source (base
+	// config, or another overlay) is intentional — pointing an env at a fork
+	// — but must be visible at install time. Compare before exporting: the
+	// pre-write chain re-resolves from the host, so after export it would
+	// already see the new env entry.
+	overridesFrom := ""
+	if workspaceEnv != "" && !isEmpty {
+		if before, err := target.Module(resolvedName).Source(ctx); err == nil && before != "" {
+			if after, err := updated.Module(resolvedName).Source(ctx); err == nil && after != before {
+				overridesFrom = before
+			}
+		}
+	}
+	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	if isEmpty {
+		if workspaceEnv != "" {
+			_, err = fmt.Fprintf(out, "Module %q is already installed in env %q\n", resolvedName, workspaceEnv)
+			return err
+		}
+		_, err = fmt.Fprintf(out, "Module %q is already installed\n", resolvedName)
+		return err
+	}
+	if previousConfig != updatedConfig {
+		if _, err := fmt.Fprintf(out, "Created workspace config in %s\n", filepath.Dir(configPath)); err != nil {
+			return err
+		}
+	}
+	if createsEnv {
+		if _, err := fmt.Fprintf(out, "Created env %q\n", workspaceEnv); err != nil {
+			return err
+		}
+	}
+	if workspaceEnv != "" {
+		if _, err := fmt.Fprintf(out, "Installed module %q into env %q in %s\n", resolvedName, workspaceEnv, configPath); err != nil {
+			return err
+		}
+		if overridesFrom != "" {
+			if _, err := fmt.Fprintf(out, "Module %q in env %q overrides source %q\n", resolvedName, workspaceEnv, overridesFrom); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	_, err = fmt.Fprintf(out, "Installed module %q in %s\n", resolvedName, configPath)
+	return err
+}
+
+func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.Workspace, ref, requestedName string) (string, error) {
+	if requestedName != "" {
+		return requestedName, nil
+	}
+	before, err := current.Modules(ctx)
+	if err != nil {
+		return "", err
+	}
+	beforeNames := make(map[string]struct{}, len(before))
+	for _, module := range before {
+		name, err := module.Name(ctx)
+		if err != nil {
+			return "", err
+		}
+		beforeNames[name] = struct{}{}
+	}
+
+	modules, err := updated.Modules(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, module := range modules {
+		name, err := module.Name(ctx)
+		if err != nil {
+			return "", err
+		}
+		if _, existed := beforeNames[name]; !existed {
+			return name, nil
+		}
+	}
+
+	comparisonRef := ref
+	if !workspacepkg.IsLocalRef(ref, "") {
+		comparisonRef = filepath.ToSlash(ref)
+	} else if !filepath.IsAbs(ref) {
+		cwd, err := current.Cwd(ctx)
+		if err != nil {
+			return "", err
+		}
+		comparisonRef = path.Clean(path.Join(strings.TrimPrefix(filepath.ToSlash(cwd), "/"), filepath.ToSlash(ref)))
+	}
+	installedSources := map[string]workspacepkg.ModuleEntry{}
+	for _, module := range modules {
+		source, err := module.Source(ctx)
+		if err != nil {
+			return "", err
+		}
+		if filepath.ToSlash(source) == comparisonRef {
+			return module.Name(ctx)
+		}
+		name, err := module.Name(ctx)
+		if err != nil {
+			return "", err
+		}
+		installedSources[name] = workspacepkg.ModuleEntry{Source: source}
+	}
+	if selection, err := workspacepkg.SelectModule(installedSources, ".", ".", comparisonRef, true); err == nil {
+		return selection.Name, nil
+	}
+	refWithoutVersion, _, _ := strings.Cut(ref, "@")
+	name := path.Base(filepath.ToSlash(refWithoutVersion))
+	if name == "." || name == "/" || name == "" {
+		name = ref
+	}
+	return name, nil
+}
+
+func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
+	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutModule(name, dagger.WorkspaceWithoutModuleOpts{Here: here}))
+	if err != nil {
+		return err
+	}
+	configPath, err := workspaceConfigHostPath(ctx, updated)
+	if err != nil {
+		return err
+	}
+	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	if workspaceEnv != "" {
+		_, err = fmt.Fprintf(out, "Uninstalled module %q from env %q in %s\n", name, workspaceEnv, configPath)
+		return err
+	}
+	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)
+	return err
+}
+
+func workspaceConfigHostPath(ctx context.Context, ws *dagger.Workspace) (string, error) {
+	configFile, err := ws.ConfigFile(ctx)
+	if err != nil {
+		return "", fmt.Errorf("workspace config file: %w", err)
+	}
+	if configFile == "" {
+		return "", fmt.Errorf("workspace config file is not selected")
+	}
+	cwd, err := ws.Cwd(ctx)
+	if err != nil {
+		return "", fmt.Errorf("workspace cwd: %w", err)
+	}
+	configFile, err = workspaceConfigRootPathFromCwd(configFile, cwd)
+	if err != nil {
+		return "", err
+	}
+	root, err := currentWorkspaceExportPath(ctx, ws)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, filepath.FromSlash(configFile)), nil
+}
+
+func workspaceConfigRootPathFromCwd(configFile, cwd string) (string, error) {
+	cwd, err := workspaceRelativeCwd(cwd)
+	if err != nil {
+		return "", err
+	}
+	configFile = filepath.Clean(filepath.Join(cwd, filepath.FromSlash(configFile)))
+	if filepath.IsAbs(configFile) || configFile == ".." || strings.HasPrefix(configFile, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("workspace config file %q escapes workspace root", configFile)
+	}
+	return configFile, nil
+}
+
+func workspaceRootFromAddress(address, cwd string) (string, error) {
+	cwd, err := workspaceRelativeCwd(cwd)
+	if err != nil {
+		return "", err
+	}
+	if cwd == "" {
+		return fileURLPathOrAddress(address), nil
+	}
+
+	if parsed, err := url.Parse(address); err == nil && parsed.Scheme == "file" {
+		root, ok := stripWorkspaceCwdSuffix(filepath.Clean(parsed.Path), cwd)
+		if !ok {
+			return "", fmt.Errorf("workspace address %q is not within workspace cwd %q", address, cwd)
+		}
+		return root, nil
+	}
+
+	version := ""
+	base := address
+	if idx := strings.LastIndex(address, "@"); idx > strings.LastIndex(address, "/") {
+		base = address[:idx]
+		version = address[idx:]
+	}
+	root, ok := stripWorkspaceCwdSlashSuffix(filepath.ToSlash(base), filepath.ToSlash(filepath.Clean(cwd)))
+	if !ok {
+		return "", fmt.Errorf("workspace address %q is not within workspace cwd %q", address, cwd)
+	}
+	return root + version, nil
+}
+
+func stripWorkspaceCwdSuffix(base, cwd string) (string, bool) {
+	base = filepath.Clean(base)
+	cwd = filepath.Clean(cwd)
+	suffix := string(filepath.Separator) + cwd
+	if !strings.HasSuffix(base, suffix) {
+		return "", false
+	}
+	root := strings.TrimSuffix(base, suffix)
+	if root == "" {
+		root = string(filepath.Separator)
+	}
+	return root, true
+}
+
+func stripWorkspaceCwdSlashSuffix(base, cwd string) (string, bool) {
+	base = path.Clean(base)
+	cwd = path.Clean(cwd)
+	suffix := "/" + cwd
+	if !strings.HasSuffix(base, suffix) {
+		return "", false
+	}
+	root := strings.TrimSuffix(base, suffix)
+	if root == "" {
+		root = "/"
+	}
+	return root, true
+}
+
+func workspaceRelativeCwd(cwd string) (string, error) {
+	if cwd == "" || cwd == "." || cwd == "/" {
+		return "", nil
+	}
+	raw := filepath.ToSlash(cwd)
+	if strings.HasPrefix(raw, "/") {
+		raw = strings.TrimLeft(raw, "/")
+	}
+	cleaned := path.Clean(raw)
+	if cleaned == "." {
+		return "", nil
+	}
+	if path.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("workspace cwd %q escapes workspace root", cwd)
+	}
+	return filepath.FromSlash(cleaned), nil
+}
+
+func fileURLPathOrAddress(address string) string {
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Scheme != "file" {
+		return address
+	}
+	return parsed.Path
+}
+
+func WorkspaceRemote(cmd *cobra.Command, _ []string) error {
+	address, ok, err := currentWorkspaceRemoteAddress(cmd.Context())
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), address)
+	return err
+}
+
+func WorkspaceRemotes(cmd *cobra.Command, _ []string) error {
+	remote, _, err := selectedRemoteWorkspaceAddress(cmd.Context(), "workspace remotes")
+	if err != nil {
+		return err
+	}
+	return withEngineSilent(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+		dag := engineClient.Dagger()
+		rows, err := loadWorkspaceRemoteRows(ctx, dag, remote)
+		if err != nil {
+			return err
+		}
+		if err := annotateWorkspaceRemoteRows(ctx, rows); err != nil {
+			if !errors.Is(err, errCloudNotAuthenticated) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Cloud check annotation failed: %v\n", err)
+			}
+		}
+		renderWorkspaceRemoteRows(cmd, rows)
+		return nil
+	})
+}
+
+func WorkspaceActivity(cmd *cobra.Command, _ []string) error {
+	remote, address, err := selectedRemoteWorkspaceAddress(cmd.Context(), "workspace activity")
+	if err != nil {
+		return err
+	}
+	if workspaceActivityAll {
+		address = remote.BaseAddress
+	}
+	rows, err := cloudCLI.loadCloudCheckRowsForWorkspace(cmd.Context(), address, nil, true)
+	if errors.Is(err, errCloudNotAuthenticated) {
+		return fmt.Errorf("not authenticated; run 'dagger login' to view workspace activity")
+	}
+	if err != nil {
+		return err
+	}
+	activityRows := workspaceActivityRows(rows)
+	if len(activityRows) == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "No Cloud activity found for %s.\n", address)
+		return nil
+	}
+	renderWorkspaceActivityRows(cmd, activityRows)
+	return nil
+}
+
+// userConfigWorkspaceKey resolves the selected workspace's user-level config
+// key: the normalized git remote of the -W target, or of the local checkout's
+// origin. Workspaces without a usable remote have no key and cannot store
+// user-level overrides.
+func userConfigWorkspaceKey(ctx context.Context) (string, error) {
+	address := strings.TrimSpace(workspaceRef)
+	if address != "" {
+		remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			if key := workspacepkg.NormalizeGitRemote(remote.CloneRef); key != "" {
+				return key, nil
+			}
+			return "", fmt.Errorf("workspace remote %q has no stable identity for user-level config", remote.CloneRef)
+		}
+	}
+	info, err := localWorkspaceRemoteInfoForAddress(ctx, address)
+	if err != nil {
+		return "", fmt.Errorf("user-level config is keyed by the workspace's git remote: %w", err)
+	}
+	key := workspacepkg.NormalizeGitRemote(info.cloneRef)
+	if key == "" {
+		return "", fmt.Errorf("workspace git origin %q has no stable identity for user-level config", info.cloneRef)
+	}
+	return key, nil
+}
+
+// userScopedConfigKey mirrors the repository write path's env scoping for
+// user-level writes: with --env selected, non-explicit keys target that
+// environment's overlay.
+func userScopedConfigKey(key string) string {
+	if workspaceEnv == "" || key == "env" || strings.HasPrefix(key, "env.") {
+		return key
+	}
+	return workspacepkg.JoinConfigPath("env", workspaceEnv) + "." + key
+}
+
+// writeUserConfigValue stores a config value for the current workspace in the
+// user-level config file, under the cross-process lock.
+func writeUserConfigValue(ctx context.Context, key, value string, values []string) error {
+	workspaceKey, err := userConfigWorkspaceKey(ctx)
+	if err != nil {
+		return err
+	}
+	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		return workspacepkg.WriteUserConfigValue(existing, workspaceKey, key, value, values)
+	})
+}
+
+// unsetUserConfigValue removes a config value for the current workspace from
+// the user-level config file, under the cross-process lock.
+func unsetUserConfigValue(ctx context.Context, key string) error {
+	workspaceKey, err := userConfigWorkspaceKey(ctx)
+	if err != nil {
+		return err
+	}
+	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		return workspacepkg.DeleteUserConfigValue(existing, workspaceKey, key)
+	})
+}
+
+func currentWorkspaceRemoteAddress(ctx context.Context) (string, bool, error) {
+	address := strings.TrimSpace(workspaceRef)
+	if address != "" {
+		_, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+		if err != nil {
+			return "", false, err
+		}
+		if ok {
+			return address, true, nil
+		}
+	}
+
+	_, inferred, err := inferLocalWorkspaceRemoteAddress(ctx, address)
+	if err != nil {
+		// Inference failures are not propagated: callers treat the empty
+		// result as "no remote workspace selected".
+		return "", false, nil //nolint:nilerr
+	}
+	return inferred, true, nil
+}
+
+func selectedRemoteWorkspaceAddress(ctx context.Context, command string) (workspaceRemoteAddress, string, error) {
+	address := strings.TrimSpace(workspaceRef)
+	if address != "" {
+		remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+		if err != nil {
+			return workspaceRemoteAddress{}, "", err
+		}
+		if ok {
+			return remote, address, nil
+		}
+	}
+
+	remote, inferred, err := inferLocalWorkspaceRemoteAddress(ctx, address)
+	if err != nil {
+		if address == "" {
+			return workspaceRemoteAddress{}, "", fmt.Errorf("%s requires a remote workspace selected with -W or a local workspace with git origin: %w", command, err)
+		}
+		return workspaceRemoteAddress{}, "", fmt.Errorf("%s only supports remote workspaces or local git workspaces; selected workspace is %s: %w", command, address, err)
+	}
+	return remote, inferred, nil
+}
+
+type localWorkspaceRemoteInfo struct {
+	repoRoot      string
+	cloneRef      string
+	workspacePath string
+}
+
+func localWorkspaceRemoteInfoForAddress(ctx context.Context, address string) (localWorkspaceRemoteInfo, error) {
+	localPath := address
+	if localPath == "" {
+		localPath = "."
+	}
+	if parsed, err := url.Parse(localPath); err == nil && parsed.Scheme == "file" {
+		localPath = parsed.Path
+	}
+	absPath, err := filepath.Abs(localPath)
+	if err != nil {
+		return localWorkspaceRemoteInfo{}, fmt.Errorf("resolve local workspace path: %w", err)
+	}
+	if stat, err := os.Stat(absPath); err == nil && !stat.IsDir() {
+		absPath = filepath.Dir(absPath)
+	}
+
+	repoRoot, err := gitOutput(ctx, absPath, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return localWorkspaceRemoteInfo{}, fmt.Errorf("find git root: %w", err)
+	}
+	origin, err := gitOutput(ctx, repoRoot, "config", "--get", "remote.origin.url")
+	if err != nil {
+		return localWorkspaceRemoteInfo{}, fmt.Errorf("find git origin: %w", err)
+	}
+
+	detected, err := workspacepkg.DetectInRoot(ctx, localPathExists, absPath, repoRoot)
+	if err != nil {
+		return localWorkspaceRemoteInfo{}, err
+	}
+	workspaceDir := repoRoot
+	if detected.ConfigFile != "" {
+		workspaceDir = filepath.Join(repoRoot, filepath.Dir(detected.ConfigFile))
+	}
+	workspacePath, err := filepath.Rel(repoRoot, workspaceDir)
+	if err != nil {
+		return localWorkspaceRemoteInfo{}, fmt.Errorf("resolve workspace subdir: %w", err)
+	}
+	workspacePath = cleanWorkspaceRemoteSubdir(filepath.ToSlash(workspacePath))
+
+	return localWorkspaceRemoteInfo{
+		repoRoot:      repoRoot,
+		cloneRef:      normalizeWorkspaceGitOrigin(origin),
+		workspacePath: workspacePath,
+	}, nil
+}
+
+func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (workspaceRemoteAddress, string, error) {
+	info, err := localWorkspaceRemoteInfoForAddress(ctx, address)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", err
+	}
+	version, err := currentGitRef(ctx, info.repoRoot)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", err
+	}
+
+	inferred := gitref.RefString(info.cloneRef, info.workspacePath, version)
+	remote, ok, err := parseWorkspaceRemoteAddress(ctx, inferred)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", err
+	}
+	if !ok {
+		return workspaceRemoteAddress{}, "", fmt.Errorf("inferred git origin %q is not a remote workspace address", info.cloneRef)
+	}
+	return remote, inferred, nil
+}
+
+func inferCleanLocalWorkspaceRemoteAddress(ctx context.Context, address string) (workspaceRemoteAddress, string, bool, error) {
+	info, err := localWorkspaceRemoteInfoForAddress(ctx, address)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", false, err
+	}
+	dirty, err := gitWorktreeDirty(ctx, info.repoRoot)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", false, err
+	}
+	if dirty {
+		return workspaceRemoteAddress{}, "", true, nil
+	}
+	commit, err := currentGitCommit(ctx, info.repoRoot)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", false, err
+	}
+
+	inferred := gitref.RefString(info.cloneRef, info.workspacePath, commit)
+	remote, ok, err := parseWorkspaceRemoteAddress(ctx, inferred)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", false, err
+	}
+	if !ok {
+		return workspaceRemoteAddress{}, "", false, fmt.Errorf("inferred git origin %q is not a remote workspace address", info.cloneRef)
+	}
+	return remote, inferred, false, nil
+}
+
+// This is intentionally narrower than the workspace-git API: it only projects
+// a local checkout into a copy/pasteable remote workspace address, without
+// starting the engine or modeling full Git state.
+func currentGitRef(ctx context.Context, repoRoot string) (string, error) {
+	ref, err := gitOutput(ctx, repoRoot, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err == nil && ref != "" {
+		return ref, nil
+	}
+	sha, err := gitOutput(ctx, repoRoot, "rev-parse", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("find git ref: %w", err)
+	}
+	return sha, nil
+}
+
+func currentGitCommit(ctx context.Context, repoRoot string) (string, error) {
+	sha, err := gitOutput(ctx, repoRoot, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("find git commit: %w", err)
+	}
+	return sha, nil
+}
+
+func gitWorktreeDirty(ctx context.Context, repoRoot string) (bool, error) {
+	status, err := gitOutput(ctx, repoRoot, "status", "--porcelain")
+	if err != nil {
+		return false, fmt.Errorf("check git status: %w", err)
+	}
+	return status != "", nil
+}
+
+func localPathExists(_ context.Context, path string) (string, bool, error) {
+	info, err := os.Stat(path)
+	if err == nil {
+		parent := filepath.Dir(path)
+		if info.IsDir() {
+			parent = filepath.Dir(filepath.Clean(path))
+		}
+		return parent, true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return filepath.Dir(path), false, nil
+	}
+	return "", false, err
+}
+
+func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			msg := strings.TrimSpace(string(exitErr.Stderr))
+			if msg != "" {
+				return "", fmt.Errorf("%s", msg)
+			}
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func normalizeWorkspaceGitOrigin(origin string) string {
+	origin = strings.TrimSpace(origin)
+	gitURL, err := gitutil.ParseURL(origin)
+	if err != nil {
+		return strings.TrimSuffix(origin, ".git")
+	}
+
+	path := strings.TrimPrefix(gitURL.Path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	if gitURL.Host == "github.com" {
+		return "github.com/" + path
+	}
+
+	if parsed, err := url.Parse(origin); err == nil && parsed.Host != "" {
+		parsed.Path = "/" + path
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return parsed.String()
+	}
+	return strings.TrimSuffix(origin, ".git")
+}
+
+func withEngineSilent(ctx context.Context, params client.Params, fn runClientCallback) error {
+	oldFrontend := Frontend
+	oldOpts := opts
+	oldSkip := skipSharedTelemetryExporters
+	Frontend = idtui.NewPlain(io.Discard)
+	opts.Silent = true
+	// This is an internal plumbing session (e.g. the pre-command dynamic SDK-init
+	// registration). Keep it out of the process-wide OTLP exporter singletons so
+	// it doesn't shut them down for the real command that follows in the same
+	// process. See engineTelemetryConfig.
+	skipSharedTelemetryExporters = true
+	defer func() {
+		Frontend = oldFrontend
+		opts = oldOpts
+		skipSharedTelemetryExporters = oldSkip
+	}()
+	return withEngine(ctx, params, fn)
+}
+
+type workspaceRemoteAddress struct {
+	CloneRef    string
+	Path        string
+	Version     string
+	BaseAddress string
+}
+
+func workspaceAddressLooksRemote(address string) bool {
+	address = strings.TrimSpace(address)
+	if address == "" || strings.HasPrefix(address, "file://") {
+		return false
+	}
+	return !workspacepkg.IsLocalRef(address, "")
+}
+
+func parseWorkspaceRemoteAddress(ctx context.Context, address string) (workspaceRemoteAddress, bool, error) {
+	if !workspaceAddressLooksRemote(address) {
+		return workspaceRemoteAddress{}, false, nil
+	}
+	if strings.Contains(address, "#") {
+		gitURL, err := gitutil.ParseURL(address)
+		if err != nil {
+			return workspaceRemoteAddress{}, false, fmt.Errorf("parse remote workspace address %q: %w", address, err)
+		}
+		version := ""
+		workspacePath := "."
+		if gitURL.Fragment != nil {
+			version = gitURL.Fragment.Ref
+			workspacePath = cleanWorkspaceRemoteSubdir(gitURL.Fragment.Subdir)
+		}
+		cloneRef := gitURL.Remote()
+		return workspaceRemoteAddress{
+			CloneRef:    cloneRef,
+			Path:        workspacePath,
+			Version:     version,
+			BaseAddress: gitref.RefString(cloneRef, workspacePath, ""),
+		}, true, nil
+	}
+	parsed, err := gitref.Parse(ctx, address)
+	if err != nil {
+		return workspaceRemoteAddress{}, false, fmt.Errorf("parse remote workspace address %q: %w", address, err)
+	}
+	workspacePath := parsed.RepoRootSubdir
+	if workspacePath == "" || workspacePath == "/" {
+		workspacePath = "."
+	}
+	return workspaceRemoteAddress{
+		CloneRef:    parsed.SourceCloneRef,
+		Path:        workspacePath,
+		Version:     parsed.ModVersion,
+		BaseAddress: gitref.RefString(parsed.SourceCloneRef, workspacePath, ""),
+	}, true, nil
+}
+
+func cleanWorkspaceRemoteSubdir(subdir string) string {
+	if subdir == "" {
+		return "."
+	}
+	subdir = filepath.Clean(subdir)
+	subdir = strings.TrimPrefix(subdir, string(filepath.Separator))
+	if subdir == "" || subdir == "." {
+		return "."
+	}
+	return subdir
+}
+
+type workspaceRemoteRow struct {
+	Kind      string
+	Address   string
+	Autocheck string
+	Checks    string
+}
+
+func loadWorkspaceRemoteRows(ctx context.Context, dag *dagger.Client, remote workspaceRemoteAddress) ([]*workspaceRemoteRow, error) {
+	repo := dag.Git(remote.CloneRef)
+	branches, err := repo.Branches(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list branches for %s: %w", remote.CloneRef, err)
+	}
+	tags, err := repo.Tags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list tags for %s: %w", remote.CloneRef, err)
+	}
+
+	sort.Strings(branches)
+	sort.Strings(tags)
+
+	rows := make([]*workspaceRemoteRow, 0, len(branches)+len(tags)+1)
+	seen := map[string]struct{}{}
+	add := func(kind, version string) {
+		if version == "" {
+			return
+		}
+		address := gitref.RefString(remote.CloneRef, remote.Path, version)
+		if _, ok := seen[address]; ok {
+			return
+		}
+		seen[address] = struct{}{}
+		rows = append(rows, &workspaceRemoteRow{
+			Kind:      kind,
+			Address:   address,
+			Autocheck: "-",
+			Checks:    "-",
+		})
+	}
+
+	for _, branch := range branches {
+		add("branch", branch)
+	}
+	for _, tag := range tags {
+		add("tag", tag)
+	}
+	if remote.Version != "" {
+		add(workspaceRemoteVersionKind(remote.Version), remote.Version)
+	}
+	return rows, nil
+}
+
+func workspaceRemoteVersionKind(version string) string {
+	if cloudPullRequestNumber(version) != "" {
+		return "pr"
+	}
+	if looksLikeGitSHA(version) {
+		return "sha"
+	}
+	return "ref"
+}
+
+func looksLikeGitSHA(s string) bool {
+	if len(s) < 7 || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func annotateWorkspaceRemoteRows(ctx context.Context, rows []*workspaceRemoteRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	remote, ok, err := parseWorkspaceRemoteAddress(ctx, rows[0].Address)
+	if err != nil || !ok {
+		return err
+	}
+	if state, ok, err := loadWorkspaceAutocheckState(ctx, remote); err != nil {
+		return err
+	} else if ok {
+		for _, row := range rows {
+			row.Autocheck = workspaceAutocheckStateString(state)
+		}
+	}
+	allCheckRows, err := cloudCLI.loadCloudCheckRowsAcrossUserOrgs(ctx, cloudCheckSelectorFlags{
+		GitHubRepo: []string{remote.CloneRef},
+		Workspace:  []string{remote.BaseAddress},
+	}, false)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		checkRows, err := cloudRowsForWorkspaceAddress(ctx, allCheckRows, row.Address, nil)
+		if err != nil {
+			continue
+		}
+		row.Checks = cloudChecksSummary(checkRows)
+	}
+	return nil
+}
+
+func renderWorkspaceRemoteRows(cmd *cobra.Command, rows []*workspaceRemoteRow) {
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "KIND\tADDRESS\tAUTOCHECK\tCHECKS")
+	for _, row := range rows {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.Kind, row.Address, row.Autocheck, row.Checks)
+	}
+	_ = tw.Flush()
+}
+
+type workspaceAutocheckState struct {
+	Repo           string
+	Enabled        bool
+	IsPublic       bool
+	InstallationID string
+	SourceMode     string
+	SelectedRepos  []string
+}
+
+var errCloudSourceNotConfigured = errors.New("no Cloud source mapping found")
+
+func loadWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddress) (workspaceAutocheckState, bool, error) {
+	client, err := workspaceAutocheckClient(ctx, false)
+	if err != nil {
+		return workspaceAutocheckState{}, false, err
+	}
+	return findWorkspaceAutocheckState(ctx, client, remote.CloneRef)
+}
+
+func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddress, enabled bool) (workspaceAutocheckState, error) {
+	client, err := workspaceAutocheckClient(ctx, true)
+	if err != nil {
+		return workspaceAutocheckState{}, err
+	}
+	current, ok, err := findWorkspaceAutocheckState(ctx, client, remote.CloneRef)
+	if err != nil {
+		return workspaceAutocheckState{}, err
+	}
+	if !ok || current.InstallationID == "" {
+		// the repo isn't tracked yet, fall back to locating its installation by owner
+		// among the user's sources
+		current, err = workspaceAutocheckStateFromSource(ctx, client, remote.CloneRef)
+		if err != nil {
+			return workspaceAutocheckState{}, err
+		}
+	}
+	if current.Enabled == enabled {
+		return current, nil
+	}
+	selected := setWorkspaceAutocheckRepoSelected(current.SelectedRepos, current.Repo, enabled)
+	if _, err := client.ConfigureSource(ctx, current.InstallationID, "SELECTED", selected); err != nil {
+		return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
+	}
+	current.Enabled = enabled
+	current.SelectedRepos = selected
+	return current, nil
+}
+
+// workspaceAutocheckStateFromSource locates the installation backing repo by
+// matching its owner against the user's Cloud sources.
+func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Client, repo string) (workspaceAutocheckState, error) {
+	repo = "github.com/" + normalizeGitHubRepo(repo)
+	sources, err := client.Sources(ctx)
+	if err != nil {
+		return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud sources: %w", err)
+	}
+	source, ok := workspaceSourceForRepo(sources, repo)
+	if !ok || source.OrgName == nil {
+		return workspaceAutocheckState{}, fmt.Errorf("%w for %s", errCloudSourceNotConfigured, repo)
+	}
+	mappedSources, err := client.OrgMappedSources(ctx, *source.OrgName)
+	if err != nil {
+		return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud mapped sources for org %q: %w", *source.OrgName, err)
+	}
+	mapped, ok := workspaceMappedSourceByInstallation(mappedSources, source.ID)
+	if !ok {
+		return workspaceAutocheckState{}, fmt.Errorf("%w for %s", errCloudSourceNotConfigured, repo)
+	}
+	selected, enabled := workspaceSelectedRepos(mapped.Repositories, repo)
+	return workspaceAutocheckState{
+		Repo:           repo,
+		Enabled:        enabled,
+		InstallationID: source.ID,
+		SourceMode:     "SELECTED",
+		SelectedRepos:  selected,
+	}, nil
+}
+
+func workspaceSourceForRepo(sources []cloudapi.Source, repo string) (cloudapi.Source, bool) {
+	owner, _, ok := strings.Cut(normalizeGitHubRepo(repo), "/")
+	if !ok {
+		return cloudapi.Source{}, false
+	}
+	for _, source := range sources {
+		if strings.EqualFold(source.Name, owner) {
+			return source, true
+		}
+	}
+	return cloudapi.Source{}, false
+}
+
+func workspaceMappedSourceByInstallation(sources []cloudapi.MappedSource, installationID string) (cloudapi.MappedSource, bool) {
+	for _, source := range sources {
+		if source.InstallationID == installationID {
+			return source, true
+		}
+	}
+	return cloudapi.MappedSource{}, false
+}
+
+func workspaceAutocheckClient(ctx context.Context, login bool) (*cloudapi.Client, error) {
+	client, _, err := cloudCLI.cloudClientWithLogin(ctx, login)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, repo string) (workspaceAutocheckState, bool, error) {
+	repo = "github.com/" + normalizeGitHubRepo(repo)
+	repositories, err := client.UserRepositories(ctx, repo)
+	if err != nil {
+		return workspaceAutocheckState{}, false, fmt.Errorf("lookup Cloud repository %s: %w", repo, err)
+	}
+	repository, ok := workspaceRepositoryForRef(repositories, repo)
+	if !ok {
+		return workspaceAutocheckState{}, false, nil
+	}
+	state := workspaceAutocheckState{
+		Repo:     repo,
+		IsPublic: workspaceRepoIsPublic(repository.Settings),
+	}
+	if mapped := repository.MappedSource; mapped != nil {
+		state.InstallationID = mapped.InstallationID
+		state.SourceMode = mapped.Mode
+		state.SelectedRepos, state.Enabled = workspaceSelectedRepos(mapped.Repositories, repo)
+	}
+	return state, true, nil
+}
+
+func workspaceRepositoryForRef(repositories []cloudapi.Repository, repo string) (cloudapi.Repository, bool) {
+	repo = normalizeGitHubRepo(repo)
+	for _, repository := range repositories {
+		if normalizeGitHubRepo(repository.Ref) == repo {
+			return repository, true
+		}
+	}
+	return cloudapi.Repository{}, false
+}
+
+func workspaceSelectedRepos(repos []string, repo string) ([]string, bool) {
+	repo = normalizeGitHubRepo(repo)
+	selected := make([]string, 0, len(repos))
+	enabled := false
+	for _, candidate := range repos {
+		selected = append(selected, "github.com/"+normalizeGitHubRepo(candidate))
+		if normalizeGitHubRepo(candidate) == repo {
+			enabled = true
+		}
+	}
+	return selected, enabled
+}
+
+func workspaceRepoIsPublic(setting *cloudapi.RepoSetting) bool {
+	if setting != nil {
+		return setting.IsPublic
+	}
+	return false
+}
+
+func setWorkspaceAutocheckRepoSelected(selected []string, repo string, enabled bool) []string {
+	repo = "github.com/" + normalizeGitHubRepo(repo)
+	out := make([]string, 0, len(selected)+1)
+	found := false
+	for _, candidate := range selected {
+		candidate = "github.com/" + normalizeGitHubRepo(candidate)
+		if normalizeGitHubRepo(candidate) == normalizeGitHubRepo(repo) {
+			found = true
+			if !enabled {
+				continue
+			}
+		}
+		out = append(out, candidate)
+	}
+	if enabled && !found {
+		out = append(out, repo)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func workspaceAutocheckStateString(state workspaceAutocheckState) string {
+	return onOff(state.Enabled)
+}
+
+type workspaceActivityRow struct {
+	UpdatedAt   time.Time
+	Address     string
+	URL         string
+	Description string
+	Checks      string
+}
+
+func workspaceActivityRows(rows []cloudCheckRow) []workspaceActivityRow {
+	groups := map[string][]cloudCheckRow{}
+	order := []string{}
+	for _, row := range rows {
+		kind, address := cloudCheckWorkspaceAddress(row)
+		if address == "" {
+			continue
+		}
+		key := row.Commit.CommitSHA + "\x00" + kind + "\x00" + address
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], row)
+	}
+
+	out := make([]workspaceActivityRow, 0, len(order))
+	for _, key := range order {
+		group := groups[key]
+		_, address := cloudCheckWorkspaceAddress(group[0])
+		out = append(out, workspaceActivityRow{
+			UpdatedAt:   latestCloudRowTime(group),
+			Address:     address,
+			URL:         firstNonEmptyCloudDimension(group, "url"),
+			Description: workspaceActivityDescription(group),
+			Checks:      cloudChecksEmojiSummary(group),
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+	return out
+}
+
+func renderWorkspaceActivityRows(cmd *cobra.Command, rows []workspaceActivityRow) {
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TIME\tADDRESS\tURL\tDESCRIPTION\tCHECKS")
+	for _, row := range rows {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", relativeTime(row.UpdatedAt), row.Address, row.URL, row.Description, row.Checks)
+	}
+	_ = tw.Flush()
+}
+
+func firstNonEmptyCloudDimension(rows []cloudCheckRow, dim string) string {
+	for _, row := range rows {
+		if value := row.Dimensions[dim]; value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func workspaceActivityDescription(rows []cloudCheckRow) string {
+	if description := firstNonEmptyCloudDimension(rows, "description"); description != "" {
+		return description
+	}
+	for _, row := range rows {
+		if summary := firstCommitMessageLine(row.Commit.CommitMessage); summary != "" {
+			return summary
+		}
+	}
+	return ""
+}
+
+func firstCommitMessageLine(message string) string {
+	for _, line := range strings.Split(message, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}

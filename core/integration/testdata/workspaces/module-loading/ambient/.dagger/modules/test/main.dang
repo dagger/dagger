@@ -1,0 +1,5 @@
+type Test {
+  pub run: String! {
+    "tests passed"
+  }
+}

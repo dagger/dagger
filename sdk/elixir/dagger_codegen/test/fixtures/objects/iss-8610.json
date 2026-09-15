@@ -1,0 +1,148 @@
+{
+  "description": "A directory.",
+  "directives": [],
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [
+        {
+          "defaultValue": null,
+          "deprecationReason": null,
+          "description": "Location of the written directory (e.g., \"/src/\").",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "path",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "defaultValue": null,
+          "deprecationReason": null,
+          "description": "Identifier of the directory to copy.",
+          "directives": [
+            {
+              "args": [
+                {
+                  "name": "name",
+                  "value": "\"Directory\""
+                }
+              ],
+              "name": "expectedType"
+            }
+          ],
+          "isDeprecated": false,
+          "name": "source",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "defaultValue": "[]",
+          "deprecationReason": null,
+          "description": "Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "exclude",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        },
+        {
+          "defaultValue": "[]",
+          "deprecationReason": null,
+          "description": "Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"]).",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "include",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        },
+        {
+          "defaultValue": "false",
+          "deprecationReason": null,
+          "description": "Apply .gitignore filter rules inside the directory",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "gitignore",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "defaultValue": "\"\"",
+          "deprecationReason": null,
+          "description": "A user:group to set for the copied directory and its contents.\n\nThe user and group must be an ID (1000:1000), not a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user.",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "owner",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "Return a snapshot with a directory added",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "withDirectory",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Directory",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
+  "kind": "OBJECT",
+  "name": "Directory",
+  "possibleTypes": []
+}

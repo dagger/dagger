@@ -1,0 +1,16 @@
+kind: Fixed
+body: |
+  Loading a module whose runtime, or whose workspace SDK, is a remote git ref no
+  longer pays a fixed 10 second timeout on every `dagger generate`. Deciding
+  whether a ref string such as `github.com/org/repo` is a local directory
+  requires a host filesystem, and the code generator runs in a nested client
+  that has none; the engine waited for that client instead of failing at once.
+
+  The check for whether a git remote is public is now answered once per session
+  rather than once per client, so a command that reaches the same repository
+  from the CLI and from a module's dependency resolution makes one request
+  instead of two. It also appears in traces as `git remote visibility`.
+time: 2026-09-07T16:32:11Z
+custom:
+  Author: eunomie
+  PR: "14015"

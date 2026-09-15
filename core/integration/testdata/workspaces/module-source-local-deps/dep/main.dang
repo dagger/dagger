@@ -1,0 +1,5 @@
+type Dep {
+  pub hello: String! {
+    "hello from dep"
+  }
+}

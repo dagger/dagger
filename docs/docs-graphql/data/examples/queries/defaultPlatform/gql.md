@@ -1,0 +1,5 @@
+```gql
+query {
+  defaultPlatform
+}
+```

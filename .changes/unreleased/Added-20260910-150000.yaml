@@ -1,0 +1,6 @@
+kind: Added
+body: Add `dagger workspace find [PATH...]` to find files and directories in the selected workspace. Use repeatable `--name GLOB` options to match base names. The command also works through the `ws` alias.
+time: 2026-09-10T15:00:00-07:00
+custom:
+  Author: shykes
+  PR: "14108"

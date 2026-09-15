@@ -1,0 +1,7 @@
+{
+  "name": "bare",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "foo-bar"
+  }
+}

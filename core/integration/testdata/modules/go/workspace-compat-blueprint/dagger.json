@@ -1,0 +1,7 @@
+{
+  "name": "hello",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

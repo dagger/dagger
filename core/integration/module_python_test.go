@@ -1,0 +1,1911 @@
+package core
+
+// These tests cover modules authored with the Python SDK. They verify `dagger
+// module init`, generated Python bindings, and executing Python module
+// functions.
+//
+// See also:
+// - module_definition_test.go: SDK-neutral module API definition behavior.
+// - module_type_test.go: cross-SDK custom type behavior.
+
+import (
+	"context"
+	"fmt"
+	"path"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+
+	"dagger.io/dagger"
+)
+
+// Group all tests that are specific to Python only.
+type PythonSuite struct{}
+
+func TestPython(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(PythonSuite{})
+}
+
+func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
+	// NB: This is testing uv integration with different build backends,
+	// **not** different package managers.
+
+	testCases := []struct {
+		name string
+		path string
+		conf string
+	}{
+		{
+			name: "uv",
+			path: "src/test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+`,
+		},
+		{
+			name: "uv",
+			path: "test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+`,
+		},
+		{
+			name: "setuptools",
+			path: "src/test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+`,
+		},
+		{
+			name: "setuptools",
+			path: "src/main.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+`,
+		},
+		{
+			name: "setuptools",
+			path: "test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[tool.setuptools]
+packages = ["test"]
+`,
+		},
+		{
+			name: "setuptools",
+			path: "main.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[tool.setuptools]
+py-modules = ["main"]
+`,
+		},
+		{
+			name: "hatch",
+			path: "src/test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`,
+		},
+		{
+			name: "hatch",
+			path: "src/main.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/main.py"]
+`,
+		},
+		{
+			name: "hatch",
+			path: "test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["test"]
+`,
+		},
+		{
+			name: "hatch",
+			path: "main.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["main.py"]
+`,
+		},
+		{
+			name: "poetry",
+			path: "src/test/__init__.py",
+			conf: `
+[tool.poetry]
+name = "test"
+version = "0.0.0"
+authors = []
+description = ""
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+`,
+		},
+		{
+			name: "poetry",
+			path: "src/main.py",
+			conf: `
+[tool.poetry]
+name = "test"
+version = "0.0.0"
+authors = []
+description = ""
+packages = [{include = "main.py", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+`,
+		},
+		{
+			name: "poetry",
+			path: "test/__init__.py",
+			conf: `
+[tool.poetry]
+name = "test"
+version = "0.0.0"
+authors = []
+description = ""
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+`,
+		},
+		{
+			name: "poetry",
+			path: "main.py",
+			conf: `
+[tool.poetry]
+name = "test"
+version = "0.0.0"
+authors = []
+description = ""
+packages = [{include = "main.py"}]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"python"}}`)).
+				With(fileContents(tc.path, fmt.Sprintf(`
+import anyio
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def whoami(self) -> str:
+        path = await anyio.Path(__file__).absolute()
+        return f"%s: {path}"
+`, tc.name),
+				)).
+				With(fileContents("pyproject.toml", tc.conf+"\n# "+tc.path)).
+				With(func(ctr *dagger.Container) *dagger.Container {
+					// For poetry projects, uv will fail to build due to missing
+					// [project] table in pyproject.toml. Support is possible
+					// via `uv pip` and requirements.lock though.
+					if tc.name == "poetry" {
+						return pipLockMod(t, c, []string{"requirements.lock"})(ctr)
+					}
+					return ctr
+				}).
+				With(daggerCallAt(".", "whoami")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, tc.name)
+			require.Contains(t, out, tc.path)
+		})
+	}
+}
+
+func (PythonSuite) TestVersion(ctx context.Context, t *testctx.T) {
+	// NB: All "pinned" and "relaxed" tests intentionally choose patch versions that
+	// are not the latest, and major versions that aren't the default in the runtime.
+
+	source := pythonSource(`
+import sys
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def pinned(self) -> str:
+        v = sys.version_info
+        return f"{v.major}.{v.minor}.{v.micro}"
+
+    @dagger.function
+    def relaxed(self) -> str:
+        v = sys.version_info
+        return f"{v.major}.{v.minor}"
+`,
+	)
+
+	t.Run("relaxed requires-python", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(pyprojectExtra(nil, `requires-python = ">=3.11"`)).
+			With(source).
+			With(daggerCallAt(".", "relaxed")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.11", out)
+	})
+
+	t.Run("pinned requires-python", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			// Space after `==` is intentional.
+			With(pyprojectExtra(nil, `requires-python = "== 3.11.6"`)).
+			With(source).
+			With(daggerCallAt(".", "pinned")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.11.6", out)
+	})
+
+	t.Run("relaxed .python-version", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(source).
+			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
+			With(fileContents(".python-version", "3.11")).
+			With(daggerCallAt(".", "relaxed")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.11", out)
+	})
+
+	t.Run("pinned .python-version", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
+			With(fileContents(".python-version", "3.13.1")).
+			With(source).
+			With(daggerCallAt(".", "pinned")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.13.1", out)
+	})
+
+	t.Run(".python-version takes precedence", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
+			With(fileContents(".python-version", "3.11")).
+			With(source).
+			With(daggerCallAt(".", "relaxed")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.11", out)
+	})
+
+	t.Run("pinned base image", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			// base image takes precedence over .python-version
+			// warning: uv will fail if these don't match, just testing the
+			// the runtime's version discovery
+			With(fileContents(".python-version", "3.12.2")).
+			With(pyprojectExtra(nil, `
+                [tool.dagger]
+                use-uv = false
+                base-image = "python:3.12.1-slim@sha256:a64ac5be6928c6a94f00b16e09cdf3ba3edd44452d10ffa4516a58004873573e"
+            `)).
+			With(source).
+			With(daggerCallAt(".", "pinned")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.12.1", out)
+	})
+
+	t.Run("default", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(source).
+			With(daggerCallAt(".", "relaxed")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.14", out)
+	})
+}
+
+func (PythonSuite) TestAltRuntime(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	runtimeSrcPath, err := filepath.Abs("../../sdk/python/runtime")
+	require.NoError(t, err)
+
+	extSrcPath, err := filepath.Abs("./testdata/modules/python/extended")
+	require.NoError(t, err)
+
+	moduleSrcPath, err := filepath.Abs("./testdata/modules/python/git-dep")
+	require.NoError(t, err)
+
+	base := goGitBase(t, c).
+		WithMountedDirectory("/work/runtime", c.Host().Directory(runtimeSrcPath)).
+		WithMountedDirectory("/work/extended", c.Host().Directory(extSrcPath)).
+		WithExec([]string{"sed", "-i", "s#../../../../../sdk/python/##", "/work/extended/dagger.json"})
+
+	t.Run("git dependency", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			WithMountedDirectory("/work/git-dep", c.Host().Directory(moduleSrcPath)).
+			WithWorkdir("/work/git-dep").
+			With(daggerCallAt(".", "hello")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "git version")
+	})
+
+	t.Run("disabled custom config", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			WithWorkdir("/work/test").
+			With(withPythonModule(t, c, "python/base-test")).
+			With(pyprojectExtra(nil, `
+requires-python = ">=3.11"
+
+[tool.dagger]
+use-uv = false
+`)).
+			With(pythonSource(`
+import sys
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def version(self) -> str:
+        v = sys.version_info
+        return f"{v.major}.{v.minor}"
+`,
+			)).
+			With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"../extended"},"source":"."}`)).
+			// The target module's custom config should be ignored by the extended SDK.
+			With(daggerCallAt(".", "version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.14", out)
+	})
+}
+
+func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
+	t.Run("disabled", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(pyprojectExtra(nil, `
+                [tool.dagger]
+                use-uv = false
+            `)).
+			// Only uv creates a lock
+			WithExec([]string{"test", "!", "-f", "uv.lock"}).
+			WithExec([]string{"test", "!", "-f", "requirements.lock"}).
+			Sync(ctx)
+
+		require.NoError(t, err)
+
+		// Should still work with pip though
+		out, err := ctr.
+			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
+	t.Run("disabled, check pip install", func(ctx context.Context, t *testctx.T) {
+		// `pip check` fails if Requires-Python doesn't match the
+		// Python version in the container
+
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(pyprojectExtra(nil, `
+                requires-python = "<3.11"
+
+                [tool.dagger]
+                use-uv = false
+            `)).
+			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
+			Stdout(ctx)
+
+		t.Logf("out: %s", out)
+		requireErrOut(t, err, "pip is looking at multiple versions of test")
+		requireErrOut(t, err, "requires a different Python")
+	})
+
+	t.Run("pinned version", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		source := pythonSource(`
+import anyio
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def version(self) -> str:
+        try:
+            r = await anyio.run_process(["uv", "version"])
+        except FileNotFoundError:
+            return "n/d"
+
+        # example output: uv 0.4.7 (a178051e8 2024-09-07)
+        parts = r.stdout.decode().split(" ")
+        return parts[1].strip()
+`,
+		)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			// Intentionally using a version that's older than the runtime's default.
+			// Can't lag too far behind because the runtime may depend on some
+			// newer feature.
+			With(pyprojectExtra(nil, `
+                [tool.dagger]
+                uv-version = "0.7.13"
+            `)).
+			With(source).
+			With(daggerCallAt(".", "version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "0.7.13", out)
+	})
+
+	t.Run("index-url", func(ctx context.Context, t *testctx.T) {
+		source := pythonSource(`
+import contextlib
+import os
+
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def urls(self) -> list[str]:
+        res = []
+        with contextlib.suppress(KeyError):
+            res.append(os.environ["UV_INDEX_URL"])
+        with contextlib.suppress(KeyError):
+            res.append(os.environ["UV_EXTRA_INDEX_URL"])
+        return res
+`,
+		)
+
+		t.Run("with", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(withPythonModule(t, c, "python/base-test")).
+				With(source).
+				With(pyprojectExtra(nil, `
+                    [[tool.uv.index]]
+                    url = "https://test.pypi.org/simple"
+                    default = true
+
+                    [[tool.uv.index]]
+                    url = "https://pypi.org/simple"
+                `)).
+				With(daggerCallAt(".", "urls")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "https://test.pypi.org/simple\nhttps://pypi.org/simple\n", out)
+		})
+
+		t.Run("without", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(withPythonModule(t, c, "python/base-test")).
+				With(source).
+				With(daggerCallAt(".", "urls", "--json")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.JSONEq(t, "[]", out)
+		})
+
+		t.Run("error", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			_, err := daggerCliBase(t, c).
+				With(withPythonModule(t, c, "python/base-test")).
+				With(source).
+				With(pyprojectExtra(nil, `
+                    [[tool.uv.index]]
+                    url = "https://pypi.example.com/simple"
+                    default = true
+                `)).
+				With(daggerCallAt(".", "urls")).
+				Sync(ctx)
+
+			requireErrOut(t, err, "Failed to fetch: `https://pypi.example.com/simple")
+		})
+	})
+}
+
+func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := daggerCliBase(t, c).
+		With(pipLockMod(t, c, nil)).
+		With(daggerCallAt(".")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Query\n", out)
+}
+
+func (PythonSuite) TestSignatures(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+        from collections.abc import Sequence
+        from typing import Optional
+
+        from dagger import field, function, object_type
+
+        @object_type
+        class Test:
+            @function
+            def hello(self) -> str:
+                return "hello"
+
+            @function
+            def hello_none(self) -> None:
+                ...
+
+            @function
+            def hello_void(self):
+                ...
+
+            @function
+            def echo(self, msg: str) -> str:
+                return msg
+
+            @function
+            def echo_default(self, msg: str = "hello") -> str:
+                return msg
+
+            @function
+            def echo_old_optional(self, msg: Optional[str] = None) -> str:
+                return "hello" if msg is None else msg
+
+            @function
+            def echo_optional(self, msg: str | None = None) -> str:
+                return "hello" if msg is None else msg
+
+            @function
+            def echo_sequence(self, msg: Sequence[str]) -> str:
+               return self.echo("+".join(msg))
+
+            @function
+            def echo_tuple(self, msg: tuple[str, ...]) -> str:
+                return self.echo_sequence(msg)
+
+            @function
+            def echo_list(self, msg: list[str]) -> str:
+                return self.echo_sequence(msg)
+
+            @function
+            def echo_opts(self, msg: str, suffix: str = "", times: int = 1) -> str:
+                return (msg + suffix) * times
+    `)
+
+	for _, tc := range []struct {
+		name     string
+		query    string
+		expected string
+	}{
+		{
+			name:     "def () -> str",
+			query:    `{hello}`,
+			expected: `{"hello":"hello"}`,
+		},
+		{
+			name:     "def () -> None",
+			query:    `{helloNone}`,
+			expected: `{"helloNone":null}`,
+		},
+		{
+			name:     "def ()",
+			query:    `{helloVoid}`,
+			expected: `{"helloVoid":null}`,
+		},
+		{
+			name:     "def (str) -> str",
+			query:    `{echo(msg:"world")}`,
+			expected: `{"echo":"world"}`,
+		},
+		{
+			name:     "def (str = 'hello') -> str",
+			query:    `{echoDefault}`,
+			expected: `{"echoDefault":"hello"}`,
+		},
+		{
+			name:     "def (str = 'hello') -> str: (bonjour)",
+			query:    `{echoDefault(msg:"bonjour")}`,
+			expected: `{"echoDefault":"bonjour"}`,
+		},
+		{
+			name:     "def (str | None = None) -> str",
+			query:    `{echoOptional}`,
+			expected: `{"echoOptional":"hello"}`,
+		},
+		{
+			name:     "def (Optional[str] = None) -> str",
+			query:    `{echoOldOptional}`,
+			expected: `{"echoOldOptional":"hello"}`,
+		},
+		{
+			name:     "def (str | None = None) -> str: (bonjour)",
+			query:    `{echoOptional(msg:"bonjour")}`,
+			expected: `{"echoOptional":"bonjour"}`,
+		},
+		{
+			name:     "sequence abc",
+			query:    `{echoSequence(msg:["a", "b", "c"])}`,
+			expected: `{"echoSequence":"a+b+c"}`,
+		},
+		{
+			name:     "tuple",
+			query:    `{echoTuple(msg:["a", "b", "c"])}`,
+			expected: `{"echoTuple":"a+b+c"}`,
+		},
+		{
+			name:     "list",
+			query:    `{echoList(msg:["a", "b", "c"])}`,
+			expected: `{"echoList":"a+b+c"}`,
+		},
+		{
+			name:     "def (str, str, int) -> str",
+			query:    `{echoOpts(msg:"hello", suffix:"!", times:3)}`,
+			expected: `{"echoOpts":"hello!hello!hello!"}`,
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerQueryAt(".", tc.query)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expected, out)
+		})
+	}
+}
+
+func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+        import dagger
+        from dagger import field, function, object_type
+
+        @object_type
+        class Test:
+            @function
+            async def read(self, dir: dagger.Directory) -> str:
+                return await dir.file("foo").contents()
+
+            @function
+            async def read_list(self, dir: list[dagger.Directory]) -> str:
+                return await dir[0].file("foo").contents()
+
+            @function
+            async def read_optional(self, dir: dagger.Directory | None = None) -> str:
+                return "" if dir is None else await dir.file("foo").contents()
+    `)
+
+	out, err := modGen.With(daggerQueryAt(".", `{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	dirID := gjson.Get(out, "directory.withNewFile.id").String()
+
+	for _, tc := range []struct {
+		name     string
+		query    string
+		expected string
+	}{
+		{
+			name:     "read",
+			query:    fmt.Sprintf(`{read(dir: %q)}`, dirID),
+			expected: `{"read":"bar"}`,
+		},
+		{
+			name:     "read list",
+			query:    fmt.Sprintf(`{readList(dir: [%q])}`, dirID),
+			expected: `{"readList":"bar"}`,
+		},
+		{
+			name:     "read optional",
+			query:    fmt.Sprintf(`{readOptional(dir: %q)}`, dirID),
+			expected: `{"readOptional":"bar"}`,
+		},
+		{
+			name:     "read optional (default)",
+			query:    `{readOptional}`,
+			expected: `{"readOptional":""}`,
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerQueryAt(".", tc.query)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expected, out)
+		})
+	}
+}
+
+func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            from typing import Annotated
+
+            from dagger import Doc, function, object_type
+
+            @object_type
+            class Test:
+                """Object docstring.
+
+                Multiline.
+                """
+
+                @function
+                def undoc(self, msg: str) -> str:
+                    return msg
+
+                @function
+                def echo(self, msg: Annotated[str, Doc("the message to echo")] = "marco") -> str:
+                    """Function docstring.
+
+                    Multiline.
+                    """
+                    return msg
+
+                @function(doc="overridden description")
+                def over(self) -> str:
+                    """Code-only docstring."""
+                    return ""
+        `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("0")
+
+		// NB: Should not end in a new line.
+		require.Equal(t, "Object docstring.\n\nMultiline.", obj.Get("description").String())
+
+		// test undocumented function
+		undoc := obj.Get("functions.#(name=undoc)")
+		require.Empty(t, undoc.Get("description").String())
+		require.Empty(t, undoc.Get("args.0.description").String())
+		require.Empty(t, undoc.Get("args.0.defaultValue").String())
+
+		// test documented function
+		echo := obj.Get("functions.#(name=echo)")
+		require.Equal(t, "Function docstring.\n\nMultiline.", echo.Get("description").String())
+		require.Equal(t, "msg", echo.Get("args.0.name").String())
+		require.Equal(t, "the message to echo", echo.Get("args.0.description").String())
+		require.Equal(t, "marco", echo.Get("args.0.defaultValue.@fromstr").String())
+
+		// test function description override
+		over := obj.Get("functions.#(name=over)")
+		require.Equal(t, "overridden description", over.Get("description").String())
+	})
+
+	t.Run("autogenerated constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            from dataclasses import field as datafield
+            from typing import Annotated
+
+            from dagger import Doc, function, object_type, field
+
+            @object_type
+            class Test:
+                """Object docstring."""
+                undoc: str = field(default="")
+                private: str = datafield(default=True, init=False)
+                exposed: Annotated[str, Doc("field and init")] = field(default="hello")
+                only_field: Annotated[bool, Doc("only field")] = field(default=True, init=False)
+                only_init: Annotated[bool, Doc("only init")] = True
+        `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("0")
+
+		expectedFields := []any{"undoc", "exposed", "onlyField"}
+		expectedInitArgs := []any{"undoc", "exposed", "onlyInit"}
+
+		require.EqualValues(t, expectedFields, obj.Get("fields.#.name").Value())
+		require.EqualValues(t, expectedInitArgs, obj.Get("constructor.args.#.name").Value())
+
+		require.Equal(t, "Object docstring.", obj.Get("description").String())
+		require.Equal(t, "Object docstring.", obj.Get("constructor.description").String())
+
+		require.Empty(t, obj.Get("fields.#(name=undoc).description").String())
+		require.Empty(t, obj.Get("constructor.args.#(name=undoc).description").String())
+
+		require.Equal(t, "field and init", obj.Get("fields.#(name=exposed).description").String())
+		require.Equal(t, "field and init", obj.Get("constructor.args.#(name=exposed).description").String())
+		require.Equal(t, "hello", obj.Get("constructor.args.#(name=exposed).defaultValue.@fromstr").String())
+
+		require.Equal(t, "only field", obj.Get("fields.#(name=onlyField).description").String())
+		require.Equal(t, "only init", obj.Get("constructor.args.#(name=onlyInit).description").String())
+
+		require.True(t, obj.Get("constructor.args.#(name=onlyInit).defaultValue").Bool())
+	})
+
+	t.Run("InitVar", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            import dataclasses
+            from typing import Annotated
+            from typing_extensions import Doc
+
+            import dagger
+
+
+            @dagger.object_type
+            class Test:
+                com_url: dataclasses.InitVar[Annotated[str, Doc("A .com URL")]] = "https://example.com"
+                org_url: dataclasses.InitVar[Annotated[str, Doc("A .org URL")]] = "https://example.org"
+
+                # NB: not a dagger.field() to force serialization/deserialization in urls function
+                saved_urls: Annotated[list[str], Doc("List of URLs")] = dataclasses.field(init=False)
+
+                def __post_init__(self, com_url: str, org_url: str):
+                    self.saved_urls = [com_url, org_url]
+
+                @dagger.function
+                def urls(self) -> list[str]:
+                    return self.saved_urls
+        `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("0")
+
+		require.EqualValues(t, []any{"comUrl", "orgUrl"}, obj.Get("constructor.args.#.name").Value())
+		require.Equal(t, "A .com URL", obj.Get("constructor.args.#(name=comUrl).description").String())
+		require.Equal(t, "A .org URL", obj.Get("constructor.args.#(name=orgUrl).description").String())
+
+		require.Equal(t, "https://example.com", obj.Get("constructor.args.#(name=comUrl).defaultValue.@fromstr").String())
+		require.Equal(t, "https://example.org", obj.Get("constructor.args.#(name=orgUrl).defaultValue.@fromstr").String())
+
+		// Sanity check
+		out, err := modGen.With(daggerCallAt(".", "urls", "--json")).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `["https://example.com", "https://example.org"]`, out)
+	})
+
+	t.Run("wrong InitVar syntax", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            import dataclasses
+            from typing import Annotated
+            from typing_extensions import Doc
+
+            import dagger
+
+
+            @dagger.object_type
+            class Test:
+                url: Annotated[dataclasses.InitVar[str], Doc("A URL")] = "https://example.com"
+
+                def __post_init__(self, url: str):
+                    ...
+        `)
+
+		_, err := modGen.With(daggerCallAt(".", "--help")).Sync(ctx)
+		requireErrOut(t, err, "InitVar[typing.Annotated[str, Doc('A URL')]]")
+	})
+
+	t.Run("alternative constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            from typing import Annotated, Self
+
+            from dagger import Doc, function, object_type
+
+            @object_type
+            class Test:
+                """the main object"""
+                foo: str = ""
+
+                @classmethod
+                def create(cls, bar: Annotated[str, Doc("not foo")]) -> Self:
+                    """factory constructor"""
+                    return cls(foo=bar)
+        `)
+
+		cns := inspectModuleObjects(ctx, t, modGen).Get("0.constructor")
+
+		require.EqualValues(t, []any{"bar"}, cns.Get("args.#.name").Value())
+		require.Equal(t, "not foo", cns.Get("args.0.description").String())
+		require.Equal(t, "factory constructor", cns.Get("description").String())
+	})
+
+	t.Run("external constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            from typing import Annotated, Self
+
+            from dagger import Doc, function, object_type
+
+            @object_type
+            class External:
+                """external docstring"""
+
+                foo: Annotated[str, Doc("a foo walks into a bar")] = "bar"
+
+                @function
+                def bar(self) -> str:
+                    return self.foo
+
+            @object_type
+            class Test:
+                external = function(External)
+                alternative = function(doc="still external")(External)
+        `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		require.Equal(t, "external docstring", obj.Get("functions.#(name=external).description").String())
+		require.Equal(t, "still external", obj.Get("functions.#(name=alternative).description").String())
+
+		// all functions point to the same constructor, with the same arguments
+		obj.Get("functions.#.args|@flatten").ForEach(func(key, value gjson.Result) bool {
+			require.Equal(t, "foo", value.Get("name").String())
+			require.Equal(t, "a foo walks into a bar", value.Get("description").String())
+			require.Equal(t, "bar", value.Get("defaultValue.@fromstr").String())
+			return true
+		})
+	})
+
+	t.Run("external alternative constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            from typing import Annotated, Self
+
+            from dagger import Doc, function, object_type
+
+            @object_type
+            class External:
+                """an object"""
+
+                @classmethod
+                def create(cls) -> Self:
+                    """factory constructor"""
+                    return cls()
+
+            @object_type
+            class Test:
+                external = function(External)
+            `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		require.Equal(t, "factory constructor", obj.Get("functions.#(name=external).description").String())
+	})
+
+	t.Run("interface", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            import typing
+
+            import dagger
+            from dagger import Doc
+
+            @dagger.interface
+            class Duck(typing.Protocol):
+                """A simple Duck interface"""
+
+                @dagger.function
+                def quack(self, word: typing.Annotated[str, Doc("A word for the duck to speak")] = "") -> str:
+                    """A quack sound"""
+
+            @dagger.object_type
+            class Test:
+                @dagger.function
+                def duck_quack(self, duck: Duck) -> str:
+                    return duck.quack("quack")
+        `)
+
+		o := inspectModuleInterfaces(ctx, t, modGen).Get("#(name=TestDuck)")
+		f := o.Get("functions.#(name=quack)")
+		a := f.Get("args.#(name=word)")
+
+		require.Equal(t, "A simple Duck interface", o.Get("description").String())
+		require.Equal(t, "A quack sound", f.Get("description").String())
+		require.Equal(t, "A word for the duck to speak", a.Get("description").String())
+	})
+}
+
+func (PythonSuite) TestInheritance(ctx context.Context, t *testctx.T) {
+	t.Run("inherited create constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            from typing import Annotated, Self
+
+            from dagger import Doc, function, object_type
+
+            class Base:
+                """What's the object-oriented way to become wealthy?"""
+
+                @classmethod
+                def create(cls) -> Self:
+                    """Inheritance."""
+                    return cls()
+
+            @object_type
+            class Test(Base):
+                ...
+        `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		require.Equal(t, "Inheritance.", obj.Get("constructor.description").String())
+	})
+
+	t.Run("inherited functions", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+from typing import Annotated, Self
+
+from dagger import Doc, function, object_type
+
+class Base:
+    """Base class with inherited @function methods."""
+
+    @function
+    def with_component(self, name: Annotated[str, Doc("component name")]) -> Self:
+        """Inherited function that should be visible."""
+        return self
+
+    @function
+    async def with_context(self) -> Self:
+        """Another inherited function that should be visible."""
+        return self
+
+@object_type
+class Test(Base):
+    @function
+    def my_own_function(self) -> str:
+        """This function IS visible."""
+        return "ok"
+`)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		require.ElementsMatch(t,
+			[]any{"myOwnFunction", "withComponent", "withContext"},
+			obj.Get("functions.#.name").Value(),
+		)
+
+		require.Equal(t,
+			"Inherited function that should be visible.",
+			obj.Get("functions.#(name=withComponent).description").String(),
+		)
+		require.Equal(t,
+			"Another inherited function that should be visible.",
+			obj.Get("functions.#(name=withContext).description").String(),
+		)
+		require.Equal(t,
+			"component name",
+			obj.Get("functions.#(name=withComponent).args.0.description").String(),
+		)
+	})
+}
+
+// TestASTFollowUp exercises Python patterns the AST analyzer used to drop
+// silently or mishandle. Each subtest invokes “dagger call“ end-to-end so
+// the AST analyzer's schema, the engine's validation, and the runtime's
+// dispatch all have to agree — anything that survives an integration run
+// here matches what a real user would see.
+func (PythonSuite) TestASTFollowUp(ctx context.Context, t *testctx.T) {
+	t.Run("aliased dagger module and decorators", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// ``import dagger as d`` plus ``from dagger import object_type as ot,
+		// function as fn`` — the decorator name allow-list used to miss
+		// every aliased form.
+		modGen := pythonModInit(t, c, `
+import dagger as d
+from dagger import object_type as ot, function as fn, field as fld
+
+@ot
+class Test:
+    name: str = fld(default="aliased")
+
+    @fn
+    def hello(self, msg: str = "world") -> str:
+        return self.name + ":" + msg
+
+    @d.function
+    def echo(self, msg: str) -> str:
+        return msg
+`)
+		out, err := modGen.With(daggerCallAt(".", "hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "aliased:world", out)
+
+		out, err = modGen.With(daggerCallAt(".", "echo", "--msg=hi")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi", out)
+	})
+
+	t.Run("inherited @function across MRO", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// ``@function`` methods on an undecorated base flow through to
+		// ``Test`` via Python MRO. Fields on the same base do *not*
+		// (the runtime's ``dataclasses.fields(cls)`` only walks
+		// dataclass parents) — that's why ``Base`` here doesn't
+		// declare a field.
+		modGen := pythonModInit(t, c, `
+from typing import Self
+
+import dagger
+from dagger import function, object_type
+
+class Base:
+    @function
+    def shout(self, msg: str) -> str:
+        return msg.upper()
+
+@object_type
+class Test(Base):
+    @function
+    def whisper(self, msg: str) -> str:
+        return msg.lower()
+`)
+		// Inherited from Base.
+		out, err := modGen.With(daggerCallAt(".", "shout", "--msg=hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "HELLO", out)
+
+		// Defined on Test.
+		out, err = modGen.With(daggerCallAt(".", "whisper", "--msg=Loud")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "loud", out)
+	})
+
+	t.Run("@staticmethod first parameter survives", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// @staticmethod has no implicit receiver — pre-fix the first
+		// argument was dropped as if it were ``self``.
+		modGen := pythonModInit(t, c, `
+import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @staticmethod
+    @function
+    def shout(msg: str) -> str:
+        return msg.upper()
+`)
+		out, err := modGen.With(daggerCallAt(".", "shout", "--msg=hi")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "HI", out)
+	})
+
+	t.Run("class-body constants used as defaults", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// ``DEFAULT = "x"`` declared inside the class body was silently
+		// recorded as the literal name string before the class-scope
+		// constant resolution work.
+		modGen := pythonModInit(t, c, `
+import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    DEFAULT = "fallback"
+
+    @function
+    def hello(self, msg: str = DEFAULT) -> str:
+        return msg
+`)
+		out, err := modGen.With(daggerCallAt(".", "hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "fallback", out)
+	})
+
+	t.Run("IntEnum with explicit integer values", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// IntEnum values stored as their string form ("1", "100") so
+		// the engine can carry them through the API. Engine then
+		// resolves the value back to the enum at runtime when the
+		// caller passes ``HIGH``.
+		modGen := pythonModInit(t, c, `
+from enum import IntEnum
+
+import dagger
+from dagger import function, object_type
+
+@dagger.enum_type
+class Priority(IntEnum):
+    LOW = 1
+    HIGH = 100
+
+@object_type
+class Test:
+    @function
+    def name_of(self, p: Priority) -> str:
+        return p.name
+`)
+		out, err := modGen.With(daggerCallAt(".", "name-of", "--p=HIGH")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "HIGH", out)
+	})
+
+	t.Run("multi-file: cross-file constant default", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// ``from .helpers import DEFAULT_NAME`` then used as a parameter
+		// default. Pre-fix the analyzer recorded the literal name string
+		// ``"DEFAULT_NAME"`` instead of the value.
+		modGen := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(fileContents("src/test/helpers.py", `
+DEFAULT_NAME = "from-helpers"
+`)).
+			With(fileContents("src/test/__init__.py", `
+import dagger
+from dagger import function, object_type
+
+from .helpers import DEFAULT_NAME
+
+@object_type
+class Test:
+    @function
+    def hello(self, name: str = DEFAULT_NAME) -> str:
+        return name
+`))
+		out, err := modGen.With(daggerCallAt(".", "hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "from-helpers", out)
+	})
+
+	t.Run("rejected: Literal fails registration", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// ``Literal[…]`` has no Dagger representation. The analyzer
+		// rejects it at registration time. The actual error message
+		// (``Literal[...] is not a Dagger type``) is asserted in the
+		// unit suite — here we just verify that any function call
+		// against a module using ``Literal`` fails rather than
+		// producing a broken schema the engine would later choke on.
+		modGen := pythonModInit(t, c, `
+from typing import Literal
+
+import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    def env(self, kind: Literal["dev", "prod"]) -> str:
+        return kind
+`)
+		_, err := modGen.With(daggerCallAt(".", "env", "--kind=dev")).Stdout(ctx)
+		require.Error(t, err)
+	})
+}
+
+func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+        from dagger import field, function, object_type
+
+        @object_type
+        class Test:
+            from_: str = field(default="")
+
+            @function
+            def pass_(self, import_: str = "") -> str:
+                return import_
+        `)
+
+	out, err := modGen.With(daggerCallAt(".", "--from=foo", "from")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", out)
+
+	out, err = modGen.With(daggerCallAt(".", "pass", "--import=bar")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar", out)
+}
+
+func (PythonSuite) TestNameOverrides(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+        from typing import Annotated
+
+        from dagger import Name, field, function, object_type
+
+        @object_type
+        class Test:
+            field_: str = field(name="field")
+
+            @function(name="func")
+            def func_(self, arg_: Annotated[str, Name(name="arg")] = "") -> str:
+                return ""
+        `)
+
+	obj := inspectModuleObjects(ctx, t, modGen).Get("0")
+
+	require.Equal(t, "field", obj.Get("fields.0.name").String())
+	require.Equal(t, "func", obj.Get("functions.0.name").String())
+	require.Equal(t, "arg", obj.Get("functions.0.args.0.name").String())
+	require.Equal(t, "field", obj.Get("constructor.args.0.name").String())
+}
+
+func (PythonSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := pythonModInit(t, c, `
+        from typing import Self
+
+        from dagger import field, function, object_type
+
+        @object_type
+        class Test:
+            message: str = field(default="")
+
+            @function
+            def foo(self) -> Self:
+                self.message = "bar"
+                return self
+        `).
+		With(daggerQueryAt(".", `{foo{message}}`)).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"message":"bar"}}`, out)
+}
+
+func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work/dep").
+		With(withPythonModule(t, c, "python/base-dep")).
+		With(fileContents("src/dep/__init__.py", `
+            import dagger
+
+            @dagger.object_type
+            class Obj:
+                foo: str = dagger.field()
+
+            @dagger.object_type
+            class Dep:
+                @dagger.function
+                def fn(self) -> Obj:
+                    return Obj(foo="foo")
+		`)).
+		WithWorkdir("/work/test").
+		With(withPythonModule(t, c, "python/base-test")).
+		With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"python"},"dependencies":[{"name":"dep","source":"../dep"}]}`))
+
+	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.
+				With(pythonSource(`
+                    import dagger
+
+                    @dagger.object_type
+                    class Test:
+                        @dagger.function
+                        def fn(self) -> dagger.DepObj:
+                            ...
+                `)).
+				With(daggerFunctions("-m", ".")).
+				Sync(ctx)
+			requireErrOut(t, err, fmt.Sprintf(
+				"object %q function %q cannot return external type from dependency module %q",
+				"Test", "fn", "dep",
+			))
+		})
+
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.
+				With(pythonSource(`
+                    import dagger
+
+                    @dagger.object_type
+                    class Test:
+                        @dagger.function
+                        def fn(self) -> list[dagger.DepObj]:
+                            ...
+                `)).
+				With(daggerFunctions("-m", ".")).
+				Sync(ctx)
+			requireErrOut(t, err, fmt.Sprintf(
+				"object %q function %q cannot return external type from dependency module %q",
+				"Test", "fn", "dep",
+			))
+		})
+	})
+
+	t.Run("arg as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.With(pythonSource(`
+                import dagger
+
+                @dagger.object_type
+                class Test:
+                    @dagger.function
+                    def fn(self, obj: dagger.DepObj):
+                        ...
+                `)).
+				With(daggerFunctions("-m", ".")).
+				Sync(ctx)
+			requireErrOut(t, err, fmt.Sprintf(
+				"object %q function %q arg %q cannot reference external type from dependency module %q",
+				"Test", "fn", "obj", "dep",
+			))
+		})
+
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.With(pythonSource(`
+                import dagger
+
+                @dagger.object_type
+                class Test:
+                    @dagger.function
+                    def fn(self, obj: list[dagger.DepObj]):
+                        ...
+                `)).
+				With(daggerFunctions("-m", ".")).
+				Sync(ctx)
+			requireErrOut(t, err, fmt.Sprintf(
+				"object %q function %q arg %q cannot reference external type from dependency module %q",
+				"Test", "fn", "obj", "dep",
+			))
+		})
+	})
+
+	t.Run("field as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.
+				With(pythonSource(`
+                    import dagger
+
+                    @dagger.object_type
+                    class Obj:
+                        foo: dagger.DepObj = dagger.field()
+
+                    @dagger.object_type
+                    class Test:
+                        @dagger.function
+                        def fn(self) -> Obj:
+                            ...
+                `)).
+				With(daggerFunctions("-m", ".")).
+				Sync(ctx)
+			requireErrOut(t, err, fmt.Sprintf(
+				"object %q field %q cannot reference external type from dependency module %q",
+				"Obj", "foo", "dep",
+			))
+		})
+
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.
+				With(pythonSource(`
+                    import dagger
+
+                    @dagger.object_type
+                    class Obj:
+                        foo: list[dagger.DepObj] = dagger.field()
+
+                    @dagger.object_type
+                    class Test:
+                        @dagger.function
+                        def fn(self) -> list[Obj]:
+                            ...
+                `)).
+				With(daggerFunctions("-m", ".")).
+				Sync(ctx)
+			requireErrOut(t, err, fmt.Sprintf(
+				"object %q field %q cannot reference external type from dependency module %q",
+				"Obj", "foo", "dep",
+			))
+		})
+	})
+}
+
+func (PythonSuite) TestIgnoreConstructorArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := pythonModInit(t, c, `
+        from typing import Annotated
+        import dagger
+
+        @dagger.object_type
+        class Test:
+            source: Annotated[
+                dagger.Directory,
+                dagger.DefaultPath("/"),
+                dagger.Ignore([".venv"]),
+            ] = dagger.field()
+        `).
+		With(daggerCallAt(".", "source", "entries", "--json")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Contains(t, gjson.Parse(out).Value(), "dagger.json")
+}
+
+func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work/dep").
+		With(withPythonModule(t, c, "python/base-dep")).
+		With(fileContents("src/dep/__init__.py", fmt.Sprintf(`
+            import dagger
+            from dagger import dag
+
+            @dagger.object_type
+            class Dep:
+                @dagger.function
+                async def exec_(self) -> str:
+                    return await (
+                        dag.container()
+                        .from_("%s")
+                        .with_exec(["sh", "-c", ">&2 echo 'oh noes'; exit 5"])
+                        .stdout()
+                    )
+		`, alpineImage))).
+		WithWorkdir("/work/test").
+		With(withPythonModule(t, c, "python/base-test")).
+		With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"python"},"dependencies":[{"name":"dep","source":"../dep"}]}`)).
+		With(pythonSource(`
+			import dagger
+			from dagger import dag
+
+			@dagger.object_type
+			class Test:
+				@dagger.function
+				async def error_extensions(self) -> str:
+					try:
+						return await dag.dep().exec()
+					except dagger.ExecError as e:
+						# If the SDK didn't properly propagate the error
+						# extensions this would be a dagger.QueryError instead,
+						# so not caught.
+						assert e.exit_code == 5
+						return f"error: {e.stderr}"
+
+				@dagger.function
+				def coro(self) -> str:
+					# Should fail because dag.version() returns a coroutine
+					# and this isn't an async function
+					return dag.version()
+
+				@dagger.function
+				async def nowait(self) -> str:
+					# Should fail because of missing await
+					return dag.version()
+
+				@dagger.function
+				def unhandled(self) -> str:
+					raise ValueError("a foo bubbles up to bar")
+		`))
+
+	t.Run("error extensions", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCallAt(".", "error-extensions")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "error: oh noes", out)
+	})
+
+	t.Run("sync calls async", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCallAt(".", "coro")).Sync(ctx)
+		requireErrOut(t, err, "Did you forget to add 'async'")
+	})
+
+	t.Run("async without await", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCallAt(".", "nowait")).Sync(ctx)
+		requireErrOut(t, err, "Did you forget to add an 'await'")
+	})
+
+	t.Run("unhandled", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCallAt(".", "unhandled")).Sync(ctx)
+		var exerr *dagger.ExecError
+		require.ErrorAs(t, err, &exerr)
+		require.Contains(t, exerr.Stderr, "Unhandled exception while executing function")
+		require.Contains(t, exerr.Stderr, "ValueError: a foo bubbles up to bar")
+	})
+}
+
+func pythonSource(contents string) dagger.WithContainerFunc {
+	return pythonSourceAt("", contents)
+}
+
+func pythonSourceAt(modPath, contents string) dagger.WithContainerFunc {
+	return fileContents(path.Join(modPath, "src/test/__init__.py"), contents)
+}
+
+func pythonModInit(t testing.TB, c *dagger.Client, source string) *dagger.Container {
+	t.Helper()
+	return daggerCliBase(t, c).
+		With(withPythonModule(t, c, "python/base-test")).
+		With(pythonSource(source))
+}
+
+func withPythonModule(t testing.TB, c *dagger.Client, fixture string) dagger.WithContainerFunc {
+	t.Helper()
+	return withModuleFixture(t, c, ".", fixture)
+}
+
+func pyprojectExtra(dependencies []string, contents string) dagger.WithContainerFunc {
+	dependencies = append([]string{"dagger-io"}, dependencies...)
+	depLine := `dependencies = ["` + strings.Join(dependencies, `", "`) + `"]`
+	base := `
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[project]
+name = "test"
+version = "0.0.0"
+`
+	return fileContents("pyproject.toml", base+depLine+"\n"+contents)
+}
+
+func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) dagger.WithContainerFunc {
+	t.Helper()
+	modSrc, err := filepath.Abs("./testdata/modules/python/pip-lock")
+	require.NoError(t, err)
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithDirectory("", c.Host().Directory(modSrc, dagger.HostDirectoryOpts{
+			Include: inc,
+		}))
+	}
+}
+
+func (PythonSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+from typing import Annotated
+import dataclasses
+import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    async def version(
+        self,
+        ctr: Annotated[dagger.Container, dagger.DefaultAddress("alpine:3.19")],
+    ) -> str:
+        return await ctr.with_exec(["cat", "/etc/alpine-release"]).stdout()
+`)
+
+	out, err := modGen.With(daggerCallAt(".", "version")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "3.19") // Alpine version contains "3.19.0"
+
+	// Test that we can override the default via constructor
+	out2, err := modGen.With(daggerCallAt(".", "version", "--ctr=alpine:3.18")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out2, "3.18")
+}
+
+// TestEnumDefaultValue verifies that an enum used as a default for a
+// function argument is honored both at call time and in the --help text.
+//
+// Regression test: the --help output used to drop the default for enum-typed
+// args because the engine reconstructed the Query type's typedef from GraphQL
+// introspection, which prints enum defaults as bare identifiers (e.g. RED)
+// rather than JSON strings (e.g. "RED"). The CLI couldn't parse the bare
+// identifier as JSON, so it silently fell back to "no default".
+func (PythonSuite) TestEnumDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+import enum
+import dagger
+
+@dagger.enum_type
+class Color(enum.Enum):
+    RED = "RED"
+    BLUE = "BLUE"
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def pick(self, color: Color = Color.RED) -> str:
+        return color.value
+`)
+
+	t.Run("default value applied at call time", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(".", "pick")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "RED", out)
+	})
+
+	t.Run("explicit value overrides default", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(".", "pick", "--color", "BLUE")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "BLUE", out)
+	})
+
+	t.Run("default shown in --help output", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(".", "pick", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "default RED",
+			"--help should display the enum default value")
+	})
+
+	t.Run("default registered in module schema", func(ctx context.Context, t *testctx.T) {
+		schema := inspectModule(ctx, t, modGen)
+		got := schema.Get(`objects.#.asObject|#(name=Test).functions.#(name=pick).args.#(name=color).defaultValue`).String()
+		require.Equal(t, `"RED"`, got,
+			"defaultValue must be a JSON-encoded string, not a bare identifier")
+	})
+}

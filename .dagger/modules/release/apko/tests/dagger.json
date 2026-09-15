@@ -1,0 +1,23 @@
+{
+  "name": "tests",
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "!../../.direnv",
+    "!../../.devenv",
+    "!../../go.work",
+    "!../../go.work.sum"
+  ],
+  "dependencies": [
+    {
+      "name": "apko",
+      "source": ".."
+    }
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
+}

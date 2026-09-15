@@ -1,0 +1,1295 @@
+package idtui
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/alecthomas/chroma/v2/quick"
+	"github.com/charmbracelet/bubbles/key"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/dustin/go-humanize"
+	"github.com/iancoleman/strcase"
+	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
+	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"golang.org/x/term"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
+)
+
+type (
+	cmdContextKey struct{}
+	cmdContext    struct {
+		printTraceLink bool
+	}
+)
+
+// WithPrintTraceLink is used for enabling printing the trace link
+// for the selected commands.
+func WithPrintTraceLink(ctx context.Context, printTraceLink bool) context.Context {
+	return context.WithValue(ctx, cmdContextKey{}, &cmdContext{printTraceLink: printTraceLink})
+}
+
+func FromCmdContext(ctx context.Context) (*cmdContext, bool) {
+	value, ok := ctx.Value(cmdContextKey{}).(*cmdContext)
+	if ok {
+		return value, true
+	}
+
+	return nil, false
+}
+
+// ExecCommand is a command that can be executed in a blocking fashion,
+// taking over the terminal. Replaces tea.ExecCommand.
+type ExecCommand interface {
+	Run() error
+	SetStdin(io.Reader)
+	SetStdout(io.Writer)
+	SetStderr(io.Writer)
+}
+
+var SkipLoggedOutTraceMsgEnvs = []string{
+	"DAGGER_NO_NAG",
+
+	// old envs kept for backwards compat
+	"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT",
+}
+
+// NOTE: keep this to one line, and 80 characters max
+var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide set %s=1", SkipLoggedOutTraceMsgEnvs[0])
+
+//go:generate go run github.com/matryer/moq -out frontend_mock.go . Frontend
+
+type Frontend interface {
+	// Run starts a frontend, and runs the target function.
+	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error
+
+	// Opts returns the opts of the currently running frontend.
+	Opts() *dagui.FrontendOpts
+	SetVerbosity(n int)
+	// SetTelemetryError records an error from the OTel telemetry pipeline.
+	SetTelemetryError(error)
+
+	// SetPrimary tells the frontend which span should be treated like the focal
+	// point of the command. Its output will be displayed at the end, and its
+	// children will be promoted to the "top-level" of the TUI.
+	SetPrimary(spanID dagui.SpanID)
+	Background(cmd ExecCommand, raw bool) error
+	// RevealAllSpans tells the frontend to show all spans, not just
+	// the spans beneath the primary span.
+	RevealAllSpans()
+
+	// Can consume otel spans, logs and metrics.
+	SpanExporter() sdktrace.SpanExporter
+	LogExporter() sdklog.Exporter
+	MetricExporter() sdkmetric.Exporter
+
+	// SetCloudURL is called after the CLI checks auth and sets the cloud URL.
+	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
+
+	// SetClient is called to notify the frontend of a created dagger client.
+	// This can be used to make requests to the engine for more information.
+	SetClient(*dagger.Client)
+
+	// Shell is called when the CLI enters interactive mode.
+	Shell(ctx context.Context, handler ShellHandler)
+
+	// Populate the sidebar with content.
+	SetSidebarContent(SidebarSection)
+
+	// SetStatusLine updates the compact status line with LLM
+	// token/cost/context data.
+	SetStatusLine(StatusLineData)
+
+	// GetLLMTokenMetrics returns aggregated LLM token metrics across all spans.
+	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
+
+	prompt.PromptHandler
+}
+
+// CommandFrontend is implemented by frontends that can host a command-owned
+// Tuist screen. Commands should treat this as an optional capability and keep
+// a plain-output fallback for streaming frontends.
+type CommandFrontend interface {
+	SetView(ViewFactory) ViewHandle
+	Live() bool
+}
+
+// ViewFactory constructs a command screen using services owned by the pretty
+// frontend. It is invoked on the Tuist event loop.
+type ViewFactory func(ViewContext) CommandView
+
+// CommandView is the body of a command-owned pretty TUI. SetFinal switches the
+// view from transient progress to durable terminal output.
+type CommandView interface {
+	tuist.Component
+	Update()
+	SetFinal(bool)
+}
+
+// ViewContext provides reusable trace-backed components. The trace state is
+// intentionally not mutable by commands.
+type ViewContext interface {
+	SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView
+}
+
+// ViewHandle serializes command model mutations with rendering.
+type ViewHandle interface {
+	Update(func())
+}
+
+// TraceFrontend is the optional interface 'dagger trace' drives for
+// incremental loading and report zooming: snapshot import, lazy span/log
+// providers, surfaced-failure prefetch, and name-based zoom targets. Only the
+// pretty frontend implements it; other frontends receive a plain OTLP
+// span/log stream instead.
+type TraceFrontend interface {
+	// SetTraceID lets the frontend point surfaced failure logs at
+	// 'dagger cloud logs <trace> <span>' for the full output.
+	SetTraceID(string)
+	// ImportSnapshots folds Cloud span snapshots (carrying ChildCount and
+	// Partial, which OTLP drops) into the frontend's DB.
+	ImportSnapshots([]dagui.SpanSnapshot)
+	// SetLogProvider/SetSpanProvider register the lazy fetchers fired when a
+	// span is expanded or a failure is surfaced.
+	SetLogProvider(func(id dagui.SpanID, descendants bool))
+	SetSpanProvider(func(id dagui.SpanID))
+	// SurfacedFailedCheckSpans lists the failed checks' and generators' spans
+	// (plus their error origins and links) whose subtrees the report needs
+	// prefetched.
+	SurfacedFailedCheckSpans() []dagui.SpanID
+	// RequestSurfacedLogs makes the frontend request logs for the failures it
+	// surfaces, so a single final report render includes their detail.
+	RequestSurfacedLogs()
+	// SetFetchWaiter lets the console block a request on in-flight fetches.
+	SetFetchWaiter(func())
+	// SetCIContext records the trace's source commit so the report can
+	// suggest commit-scoped re-run commands.
+	SetCIContext(commit string, isNativeCI bool)
+	// ResolveSpanTarget resolves a --check/--test name against the loaded
+	// view, matching the selection rules the report rendered with.
+	ResolveSpanTarget(check, test string) (dagui.SpanID, bool)
+	// ZoomToSpan scopes the view to a span; RequestZoomLogs fetches the
+	// logs the zoomed report will render.
+	ZoomToSpan(dagui.SpanID)
+	RequestZoomLogs(id dagui.SpanID, descendants bool)
+}
+
+// The pretty frontend must keep satisfying the trace capabilities --
+// a signature drift here would otherwise silently disable them.
+var _ TraceFrontend = (*frontendPretty)(nil)
+
+// AgentRestorer is the optional interface `dagger agent --trace` drives to
+// read a restore plan out of the frontend's DB
+// (hack/designs/resume-from-trace.md §5.1, "Reading the DB back").
+//
+// Both calls are reads OF the frontend's DB, which the frontend owns
+// single-threaded while the import that filled it is still landing, so
+// neither can be a direct db access from the run goroutine. That is the whole
+// reason this is a frontend seam rather than a *dagui.DB passed around: the
+// lock is the frontend's, and only the frontend can take it.
+//
+// Only the pretty frontend implements it; a plain/dots/logs frontend holds no
+// span DB to restore from, so `--trace` fails there rather than silently
+// restoring nothing.
+type AgentRestorer interface {
+	// AgentRestorePlan projects the imported trace's agents into what the
+	// restore needs to re-hydrate them, live-session agents excluded
+	// (dagui.DB.RestorePlan).
+	AgentRestorePlan() []dagui.AgentRestore
+	// EncodedIDForCallDigest rebuilds the ID of the call with the given
+	// digest from the call payloads the frontend has ingested, and encodes
+	// it. This is how a restore anchor becomes a conversation to re-hydrate
+	// from; it fails loudly, naming the frame whose payload never arrived,
+	// which §5.3.3 turns into a failed restore.
+	EncodedIDForCallDigest(digest string) (string, error)
+}
+
+// The pretty frontend is the one that can restore -- as with the trace
+// capabilities, a signature drift here would silently disable it.
+var _ AgentRestorer = (*frontendPretty)(nil)
+
+type extendedError interface {
+	error
+	Extensions() map[string]any
+}
+
+func quietErrorMessage(err error) (string, int, bool) {
+	if err == nil {
+		return "", 0, false
+	}
+
+	var extErr extendedError
+	if !errors.As(err, &extErr) {
+		return "", 0, false
+	}
+
+	ext := extErr.Extensions()
+	quiet, _ := ext["_quiet"].(bool)
+	if !quiet {
+		return "", 0, false
+	}
+
+	msg, _ := ext["_message"].(string)
+	if msg == "" {
+		msg = extErr.Error()
+	}
+
+	exitCode := 1
+	if code, ok := ext["_exitCode"].(float64); ok {
+		exitCode = int(code)
+	}
+
+	return msg, exitCode, true
+}
+
+func renderQuietError(w io.Writer, err error) (int, bool) {
+	msg, exitCode, ok := quietErrorMessage(err)
+	if !ok {
+		return 0, false
+	}
+	fmt.Fprintln(w, msg)
+	return exitCode, true
+}
+
+// normalizeFrontendExit ensures a frontend does not report success when the
+// primary command span itself ended in a failed state.
+func normalizeFrontendExit(err error, db *dagui.DB) error {
+	if _, exitCode, ok := quietErrorMessage(err); ok {
+		return ExitError{OriginalCode: exitCode, Original: err}
+	}
+	if err != nil || db == nil || !db.PrimarySpan.IsValid() {
+		return err
+	}
+
+	span, ok := db.Spans.Map[db.PrimarySpan]
+	if !ok || span == nil || !span.IsFailedOrCausedFailure() {
+		return err
+	}
+
+	return ExitError{OriginalCode: 1}
+}
+
+type SidebarSection struct {
+	// A heading to show for the content, if any. If empty, the content will be
+	// placed in the topmost portion of the sidebar.
+	Title string
+	// The content to display.
+	Content string
+	// The content to display, for a given width.
+	ContentFunc func(int) string
+	// Keymap associated with this section
+	KeyMap []key.Binding
+}
+
+func (sec SidebarSection) Body(width int) string {
+	if sec.Content != "" {
+		return sec.Content
+	}
+	if sec.ContentFunc != nil {
+		return sec.ContentFunc(width)
+	}
+	return ""
+}
+
+// ShellHandler defines the interface for handling shell interactions.
+// All methods are called on the UI goroutine unless noted otherwise.
+// BranchSummary controls how the conversation is summarized when branching.
+type BranchSummary struct {
+	// Summarize indicates whether to summarize the old conversation.
+	Summarize bool
+	// CustomPrompt is an optional custom summarization prompt. Only used
+	// when Summarize is true. If empty, the default summarization prompt
+	// is used.
+	CustomPrompt string
+}
+
+type ShellHandler interface {
+	// Handle processes submitted shell input.
+	Handle(ctx context.Context, input string) error
+
+	// AutoComplete provides completions for the current input.
+	// Uses tuist's completion types directly.
+	AutoComplete(input string, cursorPos int) tuist.CompletionResult
+
+	// IsComplete determines if the current input is a complete command.
+	// Used to decide whether Enter submits or inserts a newline.
+	IsComplete(input string) bool
+
+	// Prompt generates the shell prompt string based on current state.
+	// Returns the prompt string and an optional async function for
+	// lazy initialization (e.g. LLM setup). The caller runs the async
+	// function in a goroutine and refreshes the prompt when it returns.
+	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) (string, func())
+
+	// KeyBindings returns the keys displayed in the keymap when editing.
+	KeyBindings(out TermOutput) []key.Binding
+
+	// ReactToInput allows reacting to live input before it's submitted.
+	// Returns nil if the key was not handled. If handled, returns a
+	// function that performs any async work (may be nil if no async work
+	// is needed). The caller runs the async function in a goroutine.
+	//
+	// inputValue is the current text in the input field. editing is true
+	// when the input field is focused (editing mode vs navigation mode).
+	ReactToInput(ctx context.Context, ev uv.KeyPressEvent, inputValue string, editing bool) func()
+
+	// EncodeHistory encodes a history entry for persistence.
+	EncodeHistory(entry string) string
+	// DecodeHistory decodes a persisted history entry.
+	// May update internal state (e.g. mode) based on the entry prefix.
+	DecodeHistory(entry string) string
+	// SaveBeforeHistory saves the current mode before history navigation.
+	SaveBeforeHistory()
+	// RestoreAfterHistory restores the mode saved before history navigation.
+	RestoreAfterHistory()
+
+	// BranchFromID branches the LLM conversation from the state identified by
+	// the encoded DAG ID, optionally summarizing the abandoned branch first.
+	// It returns an async function that performs the branch (may be nil), to
+	// be run by the caller in a goroutine.
+	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
+
+	// EditFromID interrupts the focused conversation and rewinds it to the
+	// encoded pre-prompt LLM state. The returned operation runs asynchronously;
+	// a nil error means the frontend may load the original prompt for editing.
+	EditFromID(ctx context.Context, encodedID string) func() error
+}
+
+type Dump struct {
+	Newline string
+	Prefix  string
+}
+
+func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
+	if id.Receiver() != nil {
+		if err := d.DumpID(out, id.Receiver()); err != nil {
+			return err
+		}
+	}
+	dag, err := id.ToProto()
+	if err != nil {
+		return err
+	}
+
+	db := dagui.NewDB()
+	if recipe := dag.GetRecipe(); recipe != nil {
+		maps.Copy(db.Calls, recipe.CallsByDigest)
+	}
+	r := newRenderer(db, -1, dagui.FrontendOpts{}, true)
+	if d.Newline != "" {
+		r.newline = d.Newline
+	}
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, nil, false)
+	fmt.Fprint(out, r.newline)
+	return err
+}
+
+type renderer struct {
+	dagui.FrontendOpts
+
+	now           time.Time
+	newline       string
+	db            *dagui.DB
+	maxLiteralLen int
+	rendering     map[string]bool
+	final         bool
+	omitNulls     bool
+	compactIDs    bool
+	maxWidth      int
+	widthOffset   int
+
+	// indentFunc, when set, may override fancyIndent. Returns true if it
+	// handled the indent, false to fall through to the default parent-chain
+	// walk. This is used by the tree-based renderer (SpanTreeView) which
+	// pre-computes indentation for its own span but falls through for
+	// synthetic rows (e.g., error cause rendering).
+	indentFunc func(out TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) bool
+}
+
+func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts, final bool) *renderer {
+	return &renderer{
+		FrontendOpts:  fe,
+		now:           time.Now(),
+		db:            db,
+		maxLiteralLen: maxLiteralLen,
+		rendering:     map[string]bool{},
+		newline:       "\n",
+		final:         final,
+	}
+}
+
+// enableCallSimplification configures the compact TUI call presentation. Tree
+// indentation remains independent so wrapped arguments keep their row guides.
+func (r *renderer) enableCallSimplification(maxWidth int) {
+	r.omitNulls = true
+	r.compactIDs = true
+	r.maxWidth = maxWidth
+}
+
+const (
+	kwColor     = termenv.ANSICyan
+	faintColor  = termenv.ANSIBrightBlack
+	moduleColor = termenv.ANSIMagenta
+
+	// filesync upload colors
+	bytesColor = termenv.ANSIGreen
+	kbColor    = bytesColor
+	mbColor    = termenv.ANSIYellow
+	bigColor   = termenv.ANSIRed
+)
+
+func (r *renderer) indent(out TermOutput, depth int) {
+	fmt.Fprint(out, out.String(strings.Repeat(VertDash3+" ", depth)).
+		Foreground(termenv.ANSIBrightBlack).
+		Faint())
+}
+
+func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) {
+	if r.indentFunc != nil && r.indentFunc(out, row, selfBar, selfHoriz) {
+		return
+	}
+
+	// like indent, but render tree-style prefixes with status-colored symbols
+	// ◐ for running, ● for completed/successful, ◯ for pending/failed
+	// ├─ for intermediate children, └─ for last child
+
+	// Collect parent spans and their tree context from root to current
+	var parentRows []*dagui.TraceRow
+	current := row.Parent
+	for current != nil {
+		parentRows = append(parentRows, current)
+		current = current.Parent
+	}
+
+	// Print tree symbols from root to current (reverse order)
+	for i := len(parentRows) - 1; i >= 0; i-- {
+		parent := parentRows[i]
+		var nextChild *dagui.TraceRow
+		if i > 0 {
+			nextChild = parentRows[i-1]
+		} else {
+			nextChild = row
+		}
+		span := parent.Span
+		color := restrainedStatusColor(span)
+
+		var prefix string
+		if i == 0 && selfHoriz && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
+			if row.Next != nil {
+				prefix = VertRightBar + HorizHalfLeftBar
+			} else {
+				prefix = CornerBottomLeft + HorizHalfLeftBar
+			}
+		} else if nextChild.Next != nil && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
+			prefix = VertBar + " "
+		} else {
+			prefix = "  "
+		}
+
+		fmt.Fprint(out, out.String(prefix).
+			Foreground(color).
+			Faint())
+	}
+
+	if selfBar {
+		span := row.Span
+		color := restrainedStatusColor(span)
+
+		var symbol string
+		if row.ShowingChildren && !row.Span.Reveal {
+			symbol = VertBar
+		} else {
+			symbol = " "
+		}
+		fmt.Fprint(out, out.String(symbol+" ").
+			Foreground(color).
+			Faint())
+	}
+}
+
+func isNullLiteral(lit *callpbv1.Literal) bool {
+	if lit == nil {
+		return false
+	}
+	_, ok := lit.GetValue().(*callpbv1.Literal_Null)
+	return ok
+}
+
+func (r *renderer) visibleArgs(args []*callpbv1.Argument, elide map[string]struct{}) []*callpbv1.Argument {
+	visible := make([]*callpbv1.Argument, 0, len(args))
+	for _, arg := range args {
+		if _, elided := elide[arg.GetName()]; elided {
+			continue
+		}
+		if r.omitNulls && isNullLiteral(arg.GetValue()) {
+			continue
+		}
+		visible = append(visible, arg)
+	}
+	return visible
+}
+
+func (r *renderer) compactRenderedLen(
+	span *dagui.Span,
+	call *callpbv1.Call,
+	prefix string,
+	chained bool,
+	depth int,
+	internal bool,
+	row *dagui.TraceRow,
+	abridged bool,
+) int {
+	var buf strings.Builder
+	probe := newRenderer(r.db, -1, r.FrontendOpts, r.final)
+	probe.omitNulls = r.omitNulls
+	probe.compactIDs = r.compactIDs
+	probe.newline = r.newline
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	if err := probe.renderCall(out, span, call, prefix, chained, depth, internal, row, abridged); err != nil {
+		return r.maxWidth + 1
+	}
+	return ansi.StringWidth(buf.String())
+}
+
+func (r *renderer) renderIDBase(out TermOutput, call *callpbv1.Call) {
+	typeName := call.Type.ToAST().Name()
+	parent := out.String(typeName)
+	if call.Module != nil {
+		parent = parent.Foreground(moduleColor)
+	}
+	fmt.Fprint(out, parent.String())
+	if r.Verbosity > dagui.ShowDigestsVerbosity && call.ReceiverDigest != "" {
+		fmt.Fprint(out, out.String(fmt.Sprintf("@%s", call.ReceiverDigest)).Foreground(faintColor))
+	}
+}
+
+func (r *renderer) renderCall( //nolint: gocyclo
+	out TermOutput,
+	span *dagui.Span,
+	call *callpbv1.Call,
+	prefix string,
+	chained bool,
+	depth int,
+	internal bool,
+	row *dagui.TraceRow,
+	abridged bool,
+) error {
+	if r.rendering[call.Digest] {
+		fmt.Fprintf(out, "<cycle detected: %s>", call.Digest)
+		return nil
+	}
+	r.rendering[call.Digest] = true
+	defer func() { delete(r.rendering, call.Digest) }()
+
+	var specialTitle bool
+	var elideArgs map[string]struct{}
+	if r.Verbosity < dagui.ShowDigestsVerbosity {
+		// Use the DSL to render field calls
+		if title, elidedArgs, isSpecial := r.renderFieldCall(call, out, prefix, depth); isSpecial {
+			fmt.Fprint(out, title)
+			specialTitle = isSpecial
+			elideArgs = elidedArgs
+		}
+	}
+
+	if !specialTitle {
+		if call.ReceiverDigest != "" {
+			if !chained {
+				if span != nil {
+					if base := span.Base(); base != nil {
+						r.renderIDBase(out, base)
+					} else {
+						r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+					}
+				} else {
+					r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+				}
+			}
+			fmt.Fprint(out, out.String("."))
+		}
+
+		fmt.Fprint(out, out.String(call.Field).Bold())
+	}
+
+	visibleArgs := r.visibleArgs(call.Args, elideArgs)
+	hasArgs := len(visibleArgs) > 0
+	if hasArgs {
+		if specialTitle {
+			fmt.Fprint(out, " ")
+		}
+		fmt.Fprint(out, out.String("("))
+		var needIndent bool
+		if r.compactIDs {
+			needIndent = r.maxWidth > 0 && r.widthOffset+r.compactRenderedLen(
+				span, call, prefix, chained, depth, internal, row, abridged,
+			) > r.maxWidth
+		} else {
+			for _, arg := range visibleArgs {
+				if arg.GetValue().GetCallDigest() != "" {
+					needIndent = true
+					break
+				}
+				if r.maxLiteralLen > 0 && r.renderedLen(arg.GetValue()) > r.maxLiteralLen {
+					needIndent = true
+					break
+				}
+			}
+		}
+		if needIndent {
+			fmt.Fprint(out, r.newline)
+			depth++
+			depth++
+			for _, arg := range visibleArgs {
+				fmt.Fprint(out, prefix)
+				indentLevel := depth
+				if row != nil {
+					r.fancyIndent(out, row, true, false)
+					indentLevel -= row.Depth
+					indentLevel -= 1
+				}
+				if !r.final {
+					// extra space to account for togglers only visible while interactive
+					fmt.Fprint(out, "  ")
+				}
+				r.indent(out, indentLevel)
+				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
+				val := arg.GetValue()
+				fmt.Fprint(out, out.String(" "))
+				if argDig := val.GetCallDigest(); argDig != "" {
+					forceSimplify := false
+					argSpan := r.db.MostInterestingSpan(argDig)
+					if argSpan != nil {
+						forceSimplify = argSpan.Internal && !internal // only for the first internal call (not it's children)
+						internal = internal || argSpan.Internal
+						if span == nil {
+							argSpan = nil
+						}
+					}
+					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
+					widthOffset := r.widthOffset
+					if r.compactIDs {
+						r.widthOffset = ansi.StringWidth(prefix) + indentLevel*2 + ansi.StringWidth(arg.GetName()) + 2
+					}
+					err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row, abridged)
+					r.widthOffset = widthOffset
+					if err != nil {
+						return err
+					}
+				} else {
+					r.renderLiteral(out, arg.GetValue())
+				}
+				fmt.Fprint(out, r.newline)
+			}
+			depth--
+			fmt.Fprint(out, prefix)
+			indentLevel := depth
+			if row != nil {
+				r.fancyIndent(out, row, true, false)
+				indentLevel -= row.Depth
+				indentLevel -= 1
+			}
+			if !r.final {
+				// extra space to account for togglers only visible while interactive
+				fmt.Fprint(out, "  ")
+			}
+			r.indent(out, indentLevel)
+			depth-- //nolint:ineffassign
+		} else {
+			printed := 0
+			for _, arg := range visibleArgs {
+				if printed > 0 {
+					fmt.Fprint(out, out.String(", "))
+				}
+				printed++
+				fmt.Fprintf(out, out.String("%s: ").Foreground(kwColor).String(), arg.GetName())
+				if argDig := arg.GetValue().GetCallDigest(); r.compactIDs && argDig != "" {
+					argCall := r.db.Simplify(r.db.MustCall(argDig), false)
+					maxWidth := r.maxWidth
+					r.maxWidth = 0
+					err := r.renderCall(out, nil, argCall, prefix, false, depth, internal, row, abridged)
+					r.maxWidth = maxWidth
+					if err != nil {
+						return err
+					}
+				} else {
+					r.renderLiteral(out, arg.GetValue())
+				}
+			}
+		}
+		fmt.Fprint(out, out.String(")"))
+	}
+
+	if call.Type != nil && !specialTitle && !abridged {
+		typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
+		fmt.Fprint(out, typeStr)
+	}
+
+	if r.Verbosity > dagui.ShowDigestsVerbosity {
+		fmt.Fprint(out, out.String(fmt.Sprintf(" = %s", call.Digest)).Foreground(faintColor))
+	}
+
+	return nil
+}
+
+func (r *renderer) renderedLen(lit *callpbv1.Literal) int {
+	var buf strings.Builder
+	r.renderLiteral(
+		termenv.NewOutput(&buf,
+			// no colors, so we can more accurately estimate size without ANSI sequences in the way
+			termenv.WithProfile(termenv.Ascii)),
+		lit)
+	return buf.Len()
+}
+
+func (r *renderer) renderSpan(
+	out TermOutput,
+	span *dagui.Span,
+	name string,
+) error {
+	if name == "" {
+		return nil
+	}
+
+	var contentType string
+	if span != nil {
+		contentType = span.ContentType
+		if span.LLMTool != "" {
+			if span.LLMToolServer != "" {
+				fmt.Fprint(out,
+					out.String(strcase.ToLowerCamel(span.LLMToolServer)).
+						Foreground(termenv.ANSIBrightMagenta))
+				fmt.Fprint(out, " ")
+			}
+			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
+			// For recognized tools, render a styled summary of the meaningful
+			// args (paths in cyan, descriptions/content faint). Fall back to
+			// dumping the first arg for tools we don't recognize.
+			if !renderToolArgsSummary(out, span.LLMTool, span) {
+				if len(span.LLMToolArgValues) > 0 {
+					// for now, only print the first arg, the rest are likely to be noisy.
+					// Show only its first line so a large multiline value (e.g. a
+					// commit message body) doesn't dominate the row.
+					fmt.Fprint(out, "(", sanitizeSummary(firstLine(span.LLMToolArgValues[0])), ")")
+				}
+			}
+			return nil
+		}
+	}
+
+	switch contentType {
+	case "text/x-shellscript":
+		quick.Highlight(out, name, "bash", "terminal16", highlightStyle())
+	case "text/markdown":
+		quick.Highlight(out, name, "markdown", "terminal16", highlightStyle())
+	default:
+		label := out.String(name)
+		var isEffect bool
+		if span != nil {
+			for range span.CausalSpans {
+				isEffect = true
+				break
+			}
+		}
+		if isEffect {
+			label = label.Italic()
+		}
+		fmt.Fprint(out, label)
+	}
+
+	return nil
+}
+
+func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
+	switch val := lit.GetValue().(type) {
+	case *callpbv1.Literal_Bool:
+		fmt.Fprint(out, out.String(fmt.Sprintf("%v", val.Bool)).Foreground(termenv.ANSIRed))
+	case *callpbv1.Literal_Int:
+		fmt.Fprint(out, out.String(fmt.Sprintf("%d", val.Int)).Foreground(termenv.ANSIRed))
+	case *callpbv1.Literal_Float:
+		fmt.Fprint(out, out.String(fmt.Sprintf("%f", val.Float)).Foreground(termenv.ANSIRed))
+	case *callpbv1.Literal_String_:
+		fmt.Fprint(out, out.String(fmt.Sprintf("%q", val.String_)).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_Bytes:
+		fmt.Fprint(out, out.String(call.DisplayBytes(val.Bytes)).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_DigestedString:
+		fmt.Fprint(out, out.String(call.DisplayDigestedString(
+			val.DigestedString.GetValue(),
+			digest.Digest(val.DigestedString.GetDigest()),
+		)).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_CallDigest:
+		fmt.Fprint(out, out.String(val.CallDigest).Foreground(termenv.ANSIMagenta))
+	case *callpbv1.Literal_Enum:
+		fmt.Fprint(out, out.String(val.Enum).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_Null:
+		fmt.Fprint(out, out.String("null").Foreground(termenv.ANSIBrightBlack))
+	case *callpbv1.Literal_List:
+		fmt.Fprint(out, out.String("["))
+		for i, item := range val.List.GetValues() {
+			if i > 0 {
+				fmt.Fprint(out, out.String(", "))
+			}
+			r.renderLiteral(out, item)
+		}
+		fmt.Fprint(out, out.String("]"))
+	case *callpbv1.Literal_Object:
+		fmt.Fprint(out, out.String("{"))
+		printed := 0
+		for _, item := range val.Object.GetValues() {
+			if r.omitNulls && isNullLiteral(item.GetValue()) {
+				continue
+			}
+			if printed > 0 {
+				fmt.Fprint(out, out.String(", "))
+			}
+			printed++
+			fmt.Fprintf(out, out.String("%s: ").String(), item.GetName())
+			r.renderLiteral(out, item.GetValue())
+		}
+		fmt.Fprint(out, out.String("}"))
+	}
+}
+
+func statusColor(span *dagui.Span) termenv.Color {
+	switch {
+	case span.IsRunningOrEffectsRunning():
+		return termenv.ANSIYellow
+	case span.IsCached():
+		return termenv.ANSIBlue
+	case span.IsCanceled():
+		return termenv.ANSIBrightBlack
+	case span.IsFailedOrCausedFailure():
+		return termenv.ANSIRed
+	case span.IsPending():
+		return termenv.ANSIBrightBlack
+	default:
+		return termenv.ANSIGreen
+	}
+}
+
+func restrainedStatusColor(span *dagui.Span) termenv.Color {
+	switch {
+	case span.IsRunningOrEffectsRunning():
+		return termenv.ANSIYellow
+	case span.IsFailedOrCausedFailure():
+		return termenv.ANSIRed
+	default:
+		return termenv.ANSIBrightBlack
+	}
+}
+
+func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) {
+	if space {
+		fmt.Fprint(out, out.String(" "))
+	}
+	renderSpanDuration(out, span, r.now, r.final)
+}
+
+// renderSpanDuration writes a span's duration—self time rather than
+// wall-clock when the row provably spent material time blocked on other
+// ops—plus a "waiting on X" suffix while the row is blocked right now. It is
+// shared by the static renderer and the live, self-updating DurationView so
+// running rows tell the same story as completed ones.
+func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final bool) {
+	// When a row spent material time provably blocked on other ops, show
+	// the time it actually spent executing, not the wall-clock it was
+	// blocked or dormant for.
+	hb := span.TimeBreakdown(now)
+	// "Blocked right now" only means something while the run is still going:
+	// a final render has no "now", and a failed or canceled row's story is
+	// its error, not whatever it was waiting on when things went wrong.
+	var blocked dagui.TimeSegment
+	var blockedNow bool
+	if !final && !span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		blocked, blockedNow = hb.BlockedNow(now)
+	}
+	shown := span.Activity.Duration(now)
+	if hb.Material || blockedNow {
+		shown = hb.Self
+	}
+	duration := out.String(dagui.FormatDuration(shown))
+	if span.IsRunningOrEffectsRunning() {
+		duration = duration.Foreground(termenv.ANSIYellow)
+	} else {
+		duration = duration.Faint()
+	}
+	fmt.Fprint(out, duration)
+	// While the row is blocked, say on what; once it is done waiting there
+	// is nothing extra to show.
+	if blockedNow && blocked.Label != "" {
+		fmt.Fprint(out, out.String(" ⋯ waiting on "+blocked.Label).Faint())
+	}
+}
+
+var metricsVerbosity = map[string]int{
+	telemetry.IOStatDiskReadBytes:      3,
+	telemetry.IOStatDiskWriteBytes:     3,
+	telemetry.IOStatPressureSomeTotal:  3,
+	telemetry.CPUStatPressureSomeTotal: 3,
+	telemetry.CPUStatPressureFullTotal: 3,
+	telemetry.MemoryCurrentBytes:       3,
+	telemetry.MemoryPeakBytes:          3,
+	telemetry.NetstatRxBytes:           3,
+	telemetry.NetstatTxBytes:           3,
+	telemetry.NetstatRxDropped:         3,
+	telemetry.NetstatTxDropped:         3,
+	telemetry.NetstatRxPackets:         3,
+	telemetry.NetstatTxPackets:         3,
+	telemetry.LLMInputTokens:           1,
+	telemetry.LLMOutputTokens:          1,
+	telemetry.FilesyncWrittenBytes:     3,
+}
+
+func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
+	if span.CallDigest != "" {
+		if metricsByName := r.db.MetricsByCall[span.CallDigest]; metricsByName != nil {
+			// IO Stats
+			r.renderMetric(out, metricsByName, telemetry.IOStatDiskReadBytes, "Disk Read", humanizeBytes)
+			r.renderMetric(out, metricsByName, telemetry.IOStatDiskWriteBytes, "Disk Write", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.IOStatPressureSomeTotal, "IO Pressure", durationString)
+
+			// CPU Stats
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
+
+			// Memory Stats
+			r.renderMetric(out, metricsByName, telemetry.MemoryCurrentBytes, "Memory Bytes (current)", humanizeBytes)
+			r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
+
+			// Network Stats
+			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
+			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+		}
+	}
+
+	if metricsByName := r.db.MetricsBySpan[span.ID]; metricsByName != nil {
+		// LLM Stats
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "Input Tokens", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "Output Tokens", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheReads, "Token Cache Reads", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheWrites, "Token Cache Writes", humanizeTokens)
+
+		// Filesync Stats
+		r.renderMetric(out, metricsByName, telemetry.FilesyncWrittenBytes, "Written Bytes", colorizeBytes)
+	}
+}
+
+// renderToolResultTokens flags, inline on a tool-call row, how many tokens the
+// tool's result added to the model's context. A tool result is usually the
+// biggest driver of context growth, so surfacing its size makes an inordinate
+// one easy to spot while scanning a conversation. The count is an estimate (see
+// LLMToolResultTokensAttr) and is colored by magnitude so large results stand
+// out; small ones stay faint to keep the transcript quiet.
+func (r renderer) renderToolResultTokens(out TermOutput, span *dagui.Span) {
+	if span == nil || span.LLMTool == "" || span.LLMToolResultTokens <= 0 {
+		return
+	}
+	tokens := span.LLMToolResultTokens
+	badge := out.String(fmt.Sprintf("~%s tok", fmtTokens(tokens)))
+	switch color := tokenSizeColor(tokens); color {
+	case faintColor:
+		badge = badge.Foreground(color).Faint()
+	default:
+		badge = badge.Foreground(color)
+	}
+	fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
+	fmt.Fprint(out, badge)
+}
+
+// renderServiceURLs shows, inline on a service's display row, the local URLs
+// where the service is reachable (ServiceURLs, stamped by core's PrepareUp
+// once the health check passes). The chip makes a collapsed service row
+// self-sufficient: no need to expand it to find where to point a browser.
+// Only display rows chip — the engine's service-instance span carries no
+// URLs, and the `ready <url>` marker (no service name) already says its URL
+// in its own name.
+func (r renderer) renderServiceURLs(out TermOutput, span *dagui.Span) {
+	if span == nil || span.ServiceName == "" || span.Service || len(span.ServiceURLs) == 0 {
+		return
+	}
+	fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
+	for i, url := range span.ServiceURLs {
+		if i > 0 {
+			fmt.Fprint(out, " ")
+		}
+		fmt.Fprint(out, out.String(url).Foreground(termenv.ANSICyan))
+	}
+}
+
+// tokenSizeColor grades a token count so a context-bloating tool result reads as
+// a warning: small results stay faint, a few thousand tokens turn yellow, and
+// tens of thousands turn red.
+func tokenSizeColor(tokens int64) termenv.Color {
+	switch {
+	case tokens >= 10_000:
+		return bigColor
+	case tokens >= 2_000:
+		return mbColor
+	default:
+		return faintColor
+	}
+}
+
+// fmtTokens renders a token count compactly (532, 1.2k, 45.2k, 1.2M) so it fits
+// inline on a row without dominating it.
+func fmtTokens(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
+}
+
+func (r renderer) renderMetric(
+	out TermOutput,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+	metricName string, label string,
+	formatValue func(int64) string,
+) {
+	if v, ok := metricsVerbosity[metricName]; ok && v > r.Verbosity {
+		return
+	}
+	if dataPoints := metricsByName[metricName]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
+		displayMetric := out.String(fmt.Sprintf("%s: %s", label, formatValue(lastPoint.Value)))
+		displayMetric = displayMetric.Foreground(termenv.ANSIBrightBlack)
+		fmt.Fprint(out, displayMetric)
+	}
+}
+
+func (r renderer) renderMetricIfNonzero(
+	out TermOutput,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+	metricName string, label string,
+	formatValue func(int64) string,
+) {
+	if dataPoints := metricsByName[metricName]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		if lastPoint.Value == 0 {
+			return
+		}
+		r.renderMetric(out, metricsByName, metricName, label, formatValue)
+	}
+}
+
+func (r renderer) renderNetworkMetric(
+	out TermOutput,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+	bytesMetric, droppedMetric, packetsMetric, label string,
+) {
+	r.renderMetricIfNonzero(out, metricsByName, bytesMetric, label, humanizeBytes)
+	if dataPoints := metricsByName[bytesMetric]; len(dataPoints) > 0 {
+		renderPacketLoss(out, metricsByName, droppedMetric, packetsMetric)
+	}
+}
+
+func renderPacketLoss(
+	out TermOutput,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+	droppedMetric, packetsMetric string,
+) {
+	if drops := metricsByName[droppedMetric]; len(drops) > 0 {
+		if packets := metricsByName[packetsMetric]; len(packets) > 0 {
+			lastDrops := drops[len(drops)-1]
+			lastPackets := packets[len(packets)-1]
+			if lastDrops.Value > 0 && lastPackets.Value > 0 {
+				droppedPercent := (float64(lastDrops.Value) / float64(lastPackets.Value)) * 100
+				if droppedPercent > 0 {
+					displaydropped := out.String(fmt.Sprintf(" (%.3g%% dropped)", droppedPercent))
+					displaydropped = displaydropped.Foreground(termenv.ANSIRed)
+					fmt.Fprint(out, displaydropped)
+				}
+			}
+		}
+	}
+}
+
+func durationString(microseconds int64) string {
+	duration := time.Duration(microseconds) * time.Microsecond
+	return duration.String()
+}
+
+func humanizeBytes(v int64) string {
+	return humanize.Bytes(uint64(v))
+}
+
+func colorizeBytes(v int64) string {
+	vh := humanizeBytes(v)
+	vs := strings.Split(vh, " ")
+	if len(vs) != 2 {
+		return vh
+	}
+	switch vs[1] {
+	case "B", "kB":
+		return termenv.String(vh).Foreground(kbColor).String()
+	case "MB":
+		return termenv.String(vh).Foreground(mbColor).String()
+	default:
+		return termenv.String(vh).Foreground(bigColor).String()
+	}
+}
+
+func humanizeTokens(v int64) string {
+	return humanize.Commaf(float64(v))
+}
+
+// var (
+// 	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
+// )
+
+// func (r *renderer) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
+// 	tasks := r.db.Tasks[span.SpanContext().SpanID()]
+// 	if len(tasks) == 0 {
+// 		return nil
+// 	}
+// 	var spaced bool
+// 	for _, t := range tasks {
+// 		var sym termenv.Style
+// 		if t.Total != 0 {
+// 			percent := int(100 * (float64(t.Current) / float64(t.Total)))
+// 			idx := (len(progChars) - 1) * percent / 100
+// 			chr := progChars[idx]
+// 			sym = out.String(chr)
+// 		} else {
+// 			// TODO: don't bother printing non-progress-bar tasks for now
+// 			// else if t.Completed != nil {
+// 			// sym = out.String(IconSuccess)
+// 			// } else if t.Started != nil {
+// 			// sym = out.String(DotFilled)
+// 			// }
+// 			continue
+// 		}
+// 		if t.Completed.IsZero() {
+// 			sym = sym.Foreground(termenv.ANSIYellow)
+// 		} else {
+// 			sym = sym.Foreground(termenv.ANSIGreen)
+// 		}
+// 		if !spaced {
+// 			fmt.Fprint(out, " ")
+// 			spaced = true
+// 		}
+// 		fmt.Fprint(out, sym)
+// 	}
+// 	return nil
+// }
+
+func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
+	return renderPrimaryOutputFor(w, db, db.PrimarySpan)
+}
+
+// renderPrimaryOutputFor is renderPrimaryOutput for an explicit primary span,
+// so a scoped report can replay ITS root's output without the DB's global
+// primary span having to be mutated to point at it.
+func renderPrimaryOutputFor(w io.Writer, db *dagui.DB, primary dagui.SpanID) error {
+	return replayPrimaryOutput(w, db, primary, true)
+}
+
+// replayPrimaryOutput replays the primary span's log records to the CLI's
+// stdout/stderr. With includeStderr false only the stdout stream is replayed:
+// report mode uses this for failed runs, whose stderr stream carries the
+// engine-wrapped failure output the rendered report already covers, while
+// stdout still carries the command's own results (e.g. a shell script's
+// output from before it failed).
+func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includeStderr bool) error {
+	logs := db.PrimaryLogs[primary]
+	if !includeStderr {
+		var stdout []sdklog.Record
+		for _, l := range logs {
+			if primaryLogStream(l) == 1 {
+				stdout = append(stdout, l)
+			}
+		}
+		logs = stdout
+	}
+	if len(logs) == 0 {
+		return nil
+	}
+
+	fmt.Fprintln(w)
+
+	var lastBody string
+	for _, l := range logs {
+		data, ok := dagui.LogBodyString(l)
+		if !ok {
+			continue
+		}
+		lastBody = data
+		switch primaryLogStream(l) {
+		case 1: // stdout
+			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
+				return err
+			}
+		case 2: // stderr
+			fallthrough
+		default:
+			if _, err := fmt.Fprint(w, data); err != nil {
+				return err
+			}
+		}
+	}
+
+	trailingLn := strings.HasSuffix(lastBody, "\n")
+	if !trailingLn && term.IsTerminal(int(os.Stdout.Fd())) {
+		// NB: ensure there's a trailing newline if stdout is a TTY, so we don't
+		// encourage module authors to add one of their own
+		fmt.Fprintln(os.Stdout)
+	}
+	return nil
+}
+
+// primaryLogStream returns the stdio stream a primary log record was written
+// to: 1 for stdout, 2 for stderr, 0 when unmarked.
+func primaryLogStream(l sdklog.Record) int {
+	var stream int
+	l.WalkAttributes(func(attr log.KeyValue) bool {
+		if attr.Key == telemetry.StdioStreamAttr {
+			if value, ok := dagui.LogValueInt64(attr.Value); ok {
+				stream = int(value)
+			}
+			return false
+		}
+		return true
+	})
+	return stream
+}
+
+func skipLoggedOutTraceMsg() bool {
+	for _, env := range SkipLoggedOutTraceMsgEnvs {
+		if os.Getenv(env) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// displayDuration is the duration a row should report: its self time when
+// it spent material time blocked on other ops, its activity time otherwise.
+func displayDuration(span *dagui.Span, now time.Time) time.Duration {
+	hb := span.TimeBreakdown(now)
+	if _, blockedNow := hb.BlockedNow(now); hb.Material || blockedNow {
+		return hb.Self
+	}
+	return span.Activity.Duration(now)
+}

@@ -1,0 +1,8 @@
+type Globber {
+  pub results: [String!]!
+
+  new(ws: Workspace!, pattern: String!) {
+    self.results = ws.glob(pattern)
+    self
+  }
+}

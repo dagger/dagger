@@ -1,0 +1,854 @@
+package dagui
+
+import (
+	"context"
+	"reflect"
+	"testing"
+	"time"
+	"unsafe"
+
+	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
+
+	telemetry "github.com/dagger/otel-go"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
+)
+
+func newTestLogRecord(traceID trace.TraceID, spanID trace.SpanID, body string, attrs ...otellog.KeyValue) sdklog.Record {
+	r := new(sdklog.Record)
+
+	rf := reflect.ValueOf(r).Elem()
+	attrCountLimit := rf.FieldByName("attributeCountLimit")
+	attrCountLimit = reflect.NewAt(attrCountLimit.Type(), unsafe.Pointer(attrCountLimit.UnsafeAddr())).Elem()
+	attrCountLimit.SetInt(-1)
+
+	attrValueLengthLimit := rf.FieldByName("attributeValueLengthLimit")
+	attrValueLengthLimit = reflect.NewAt(attrValueLengthLimit.Type(), unsafe.Pointer(attrValueLengthLimit.UnsafeAddr())).Elem()
+	attrValueLengthLimit.SetInt(-1)
+
+	r.SetTraceID(traceID)
+	r.SetSpanID(spanID)
+	r.SetBody(otellog.StringValue(body))
+	r.SetAttributes(attrs...)
+
+	return *r
+}
+
+func TestProcessAttributeLLMToolResultTokens(t *testing.T) {
+	// The live SDK path delivers an int64.
+	var snapshot SpanSnapshot
+	snapshot.ProcessAttribute(telemetryattrs.LLMToolResultTokensAttr, int64(12345))
+	if snapshot.LLMToolResultTokens != 12345 {
+		t.Fatalf("LLMToolResultTokens = %d, want 12345", snapshot.LLMToolResultTokens)
+	}
+
+	// A value that round-tripped through a JSON number arrives as float64.
+	var fromJSON SpanSnapshot
+	fromJSON.ProcessAttribute(telemetryattrs.LLMToolResultTokensAttr, float64(678))
+	if fromJSON.LLMToolResultTokens != 678 {
+		t.Fatalf("LLMToolResultTokens (float64) = %d, want 678", fromJSON.LLMToolResultTokens)
+	}
+}
+
+// TestProcessAttributeLLMMessageOrigin covers the ingestion of the
+// dagger.io/llm.origin.* vocabulary: the recorded provenance of a message
+// that arrived through an agent mailbox lands on the snapshot's LLMOrigin*
+// fields, and the kind predicates read it back.
+func TestProcessAttributeLLMMessageOrigin(t *testing.T) {
+	var snapshot SpanSnapshot
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginKindAttr, telemetryattrs.LLMMessageOriginKindAgent)
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginAgentNameAttr, "scout")
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginRefAttr, "#3")
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginReplyToAttr, "#2")
+
+	if snapshot.LLMOriginKind != "AGENT" ||
+		snapshot.LLMOriginAgentName != "scout" ||
+		snapshot.LLMOriginRef != "#3" ||
+		snapshot.LLMOriginReplyTo != "#2" {
+		t.Fatalf("origin attrs not ingested: %+v", snapshot)
+	}
+	if !snapshot.LLMAgentOriginMessage() || snapshot.LLMEventOriginMessage() {
+		t.Fatal("kind predicates disagree with an AGENT origin")
+	}
+
+	var event SpanSnapshot
+	event.ProcessAttribute(telemetryattrs.LLMMessageOriginKindAttr, telemetryattrs.LLMMessageOriginKindEvent)
+	if !event.LLMEventOriginMessage() || event.LLMAgentOriginMessage() {
+		t.Fatal("kind predicates disagree with an EVENT origin")
+	}
+
+	var plain SpanSnapshot
+	if plain.LLMAgentOriginMessage() || plain.LLMEventOriginMessage() {
+		t.Fatal("an unmarked message must not read as origin-carrying")
+	}
+}
+
+func TestSpanNameLogUpdatesLiveSpan(t *testing.T) {
+	db := NewDB()
+	spanID := SpanID{SpanID: trace.SpanID{1}}
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: spanID, Name: "starting name", StartTime: start, EndTime: start.Add(-time.Second)},
+	})
+	db.SetPrimarySpan(spanID)
+
+	record := newTestLogRecord(
+		trace.TraceID{1},
+		spanID.SpanID,
+		"live name",
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+	)
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
+		t.Fatalf("export name record: %v", err)
+	}
+
+	span := db.Spans.Map[spanID]
+	if span.Name != "live name" {
+		t.Fatalf("span name = %q, want %q", span.Name, "live name")
+	}
+	if span.HasLogs {
+		t.Fatal("span-name metadata was marked as ordinary log output")
+	}
+	if len(db.PrimaryLogs[spanID]) != 0 {
+		t.Fatal("span-name metadata was buffered as primary output")
+	}
+
+	// A repeated in-flight ExportSpans heartbeat still carries the name captured
+	// at span start. It must not roll back the newer log-carried name.
+	heartbeat := tracetest.SpanStub{
+		Name: "starting name",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{1},
+			SpanID:  spanID.SpanID,
+		}),
+		StartTime: start,
+		EndTime:   start.Add(-time.Second),
+	}.Snapshot()
+	if err := db.ExportSpans(context.Background(), []sdktrace.ReadOnlySpan{heartbeat}); err != nil {
+		t.Fatalf("export frozen span heartbeat: %v", err)
+	}
+	if span.Name != "live name" {
+		t.Fatalf("frozen heartbeat rolled span name back to %q", span.Name)
+	}
+
+	// Snapshot imports use the same protection for recorded/live trace loading.
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: spanID, Name: "starting name", StartTime: start, EndTime: start.Add(-time.Second)},
+	})
+	if span.Name != "live name" {
+		t.Fatalf("frozen snapshot rolled span name back to %q", span.Name)
+	}
+
+	final := tracetest.SpanStub{
+		Name:        "final name",
+		SpanContext: heartbeat.SpanContext(),
+		StartTime:   start,
+		EndTime:     start.Add(time.Second),
+	}.Snapshot()
+	if err := db.ExportSpans(context.Background(), []sdktrace.ReadOnlySpan{final}); err != nil {
+		t.Fatalf("export final span: %v", err)
+	}
+	if span.Name != "final name" {
+		t.Fatalf("final span name = %q, want final name", span.Name)
+	}
+}
+
+func TestSpanNameLogBeforeSpanSnapshot(t *testing.T) {
+	db := NewDB()
+	spanID := SpanID{SpanID: trace.SpanID{1}}
+	record := newTestLogRecord(
+		trace.TraceID{1},
+		spanID.SpanID,
+		"early name",
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+	)
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
+		t.Fatalf("export name record: %v", err)
+	}
+
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: spanID, Name: "starting name", StartTime: start, EndTime: start.Add(-time.Second)},
+	})
+	if got := db.Spans.Map[spanID].Name; got != "early name" {
+		t.Fatalf("span name = %q, want early log-carried name", got)
+	}
+}
+
+// TestRollUpStateIncremental verifies that rollup state updates are incremental
+// and correct across various state transitions
+func TestRollUpStateIncremental(t *testing.T) {
+	db := NewDB()
+
+	// Create a parent span that will track rollup state
+	parentID := SpanID{trace.SpanID{1}}
+	parent := db.newSpan(parentID)
+	parent.Received = true
+	parent.RollUpSpans = true
+	parent.StartTime = time.Now()
+	parent.EndTime = parent.StartTime.Add(-1) // running
+	db.Spans.Add(parent)
+	db.integrateSpan(parent)
+
+	// Helper to create a child span
+	createChild := func(id byte) *Span {
+		childID := SpanID{trace.SpanID{id}}
+		child := db.newSpan(childID)
+		child.Received = true
+		child.ParentID = parentID
+		child.ParentSpan = parent
+		child.StartTime = time.Now()
+		child.EndTime = child.StartTime.Add(-1) // running by default
+		db.Spans.Add(child)
+		db.integrateSpan(child)
+		return child
+	}
+
+	// Helper to transition a span to a specific state
+	transitionTo := func(span *Span, state string) {
+		now := time.Now()
+		switch state {
+		case "completed":
+			span.EndTime = now
+			span.Status = sdktrace.Status{Code: codes.Ok}
+		case "failed":
+			span.EndTime = now
+			span.Status = sdktrace.Status{Code: codes.Error}
+		case "cached":
+			span.EndTime = now
+			span.Status = sdktrace.Status{Code: codes.Ok}
+			span.Cached = true
+		case "canceled":
+			span.EndTime = now
+			span.Canceled = true
+		case "pending":
+			span.EndTime = now
+			span.Status = sdktrace.Status{Code: codes.Ok}
+			span.Pending = true
+		}
+		span.PropagateStatusToParentsAndLinks()
+	}
+
+	// Test 1: Initial state - parent should be running
+	if parent.rollUpState == nil {
+		parent.rollUpState = &RollUpState{}
+	}
+	if parent.rollUpState.RunningCount != 0 {
+		t.Errorf("Expected parent RunningCount=0, got %d", parent.rollUpState.RunningCount)
+	}
+
+	// Test 2: Add a running child
+	child1 := createChild(2)
+	child1.PropagateStatusToParentsAndLinks()
+
+	if parent.rollUpState.RunningCount != 1 {
+		t.Errorf("Expected parent RunningCount=1 after adding running child, got %d", parent.rollUpState.RunningCount)
+	}
+
+	// Test 3: Add more running children
+	child2 := createChild(3)
+	child2.PropagateStatusToParentsAndLinks()
+
+	child3 := createChild(4)
+	child3.PropagateStatusToParentsAndLinks()
+
+	if parent.rollUpState.RunningCount != 3 {
+		t.Errorf("Expected parent RunningCount=3, got %d", parent.rollUpState.RunningCount)
+	}
+
+	// Test 4: Transition child1 to completed
+	transitionTo(child1, "completed")
+
+	if parent.rollUpState.RunningCount != 2 {
+		t.Errorf("Expected parent RunningCount=2 after child1 completed, got %d", parent.rollUpState.RunningCount)
+	}
+	if parent.rollUpState.SuccessCount != 1 {
+		t.Errorf("Expected parent SuccessCount=1 after child1 completed, got %d", parent.rollUpState.SuccessCount)
+	}
+
+	// Test 5: Transition child2 to failed
+	transitionTo(child2, "failed")
+
+	if parent.rollUpState.RunningCount != 1 {
+		t.Errorf("Expected parent RunningCount=1 after child2 failed, got %d", parent.rollUpState.RunningCount)
+	}
+	if parent.rollUpState.FailedCount != 1 {
+		t.Errorf("Expected parent FailedCount=1 after child2 failed, got %d", parent.rollUpState.FailedCount)
+	}
+
+	// Test 6: Transition child3 to cached
+	transitionTo(child3, "cached")
+
+	if parent.rollUpState.RunningCount != 0 {
+		t.Errorf("Expected parent RunningCount=0 after all children finished, got %d", parent.rollUpState.RunningCount)
+	}
+	if parent.rollUpState.CachedCount != 1 {
+		t.Errorf("Expected parent CachedCount=1 after child3 cached, got %d", parent.rollUpState.CachedCount)
+	}
+
+	// Test 7: Add a canceled child
+	child4 := createChild(5)
+	transitionTo(child4, "canceled")
+
+	if parent.rollUpState.CanceledCount != 1 {
+		t.Errorf("Expected parent CanceledCount=1, got %d", parent.rollUpState.CanceledCount)
+	}
+
+	// Test 8: Add a pending child
+	child5 := createChild(6)
+	transitionTo(child5, "pending")
+
+	if parent.rollUpState.PendingCount != 1 {
+		t.Errorf("Expected parent PendingCount=1, got %d", parent.rollUpState.PendingCount)
+	}
+
+	// Final verification: total counts
+	total := parent.rollUpState.RunningCount +
+		parent.rollUpState.PendingCount +
+		parent.rollUpState.CachedCount +
+		parent.rollUpState.SuccessCount +
+		parent.rollUpState.FailedCount +
+		parent.rollUpState.CanceledCount
+
+	if total != 5 {
+		t.Errorf("Expected total count=5, got %d (running=%d, pending=%d, cached=%d, success=%d, failed=%d, canceled=%d)",
+			total,
+			parent.rollUpState.RunningCount,
+			parent.rollUpState.PendingCount,
+			parent.rollUpState.CachedCount,
+			parent.rollUpState.SuccessCount,
+			parent.rollUpState.FailedCount,
+			parent.rollUpState.CanceledCount,
+		)
+	}
+}
+
+func TestLogTargetSpanIDUsesCreatorFromSameTrace(t *testing.T) {
+	db := NewDB()
+
+	warmTraceID := TraceID{TraceID: trace.TraceID{1}}
+	liveTraceID := TraceID{TraceID: trace.TraceID{2}}
+	outputDig := "xxh3:service-output"
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         SpanID{SpanID: trace.SpanID{1}},
+			TraceID:    warmTraceID,
+			StartTime:  time.Unix(1, 0),
+			EndTime:    time.Unix(2, 0),
+			CallDigest: "xxh3:warm-call",
+			Output:     outputDig,
+		},
+		{
+			ID:         SpanID{SpanID: trace.SpanID{2}},
+			TraceID:    liveTraceID,
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: "xxh3:live-call",
+			Output:     outputDig,
+		},
+	})
+
+	record := newTestLogRecord(
+		liveTraceID.TraceID,
+		trace.SpanID{9},
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	spanID := db.LogTargetSpanID(record)
+	if spanID != (SpanID{SpanID: trace.SpanID{2}}) {
+		t.Fatalf("expected live creator span, got %s", spanID)
+	}
+}
+
+func TestLogTargetSpanIDWaitsForMatchingTraceCreator(t *testing.T) {
+	db := NewDB()
+
+	outputDig := "xxh3:service-output"
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         SpanID{SpanID: trace.SpanID{1}},
+			TraceID:    TraceID{TraceID: trace.TraceID{1}},
+			StartTime:  time.Unix(1, 0),
+			EndTime:    time.Unix(2, 0),
+			CallDigest: "xxh3:warm-call",
+			Output:     outputDig,
+		},
+	})
+
+	record := newTestLogRecord(
+		trace.TraceID{2},
+		trace.SpanID{9},
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	spanID := db.LogTargetSpanID(record)
+	if spanID.IsValid() {
+		t.Fatalf("expected unresolved span target, got %s", spanID)
+	}
+}
+
+// TestLogTargetSpanIDFallsBackToServiceSpan covers the warm-trace routing
+// gap: a running service's stdio names the call that created it (its
+// DagDigestAttr), but a fully cached trace never emits that call's span, so
+// no creator would ever arrive to claim parked lines. When the record's own
+// span is the service's long-lived exec span, the stream attaches there
+// instead of parking forever; a non-service span still parks awaiting its
+// creator.
+func TestLogTargetSpanIDFallsBackToServiceSpan(t *testing.T) {
+	db := NewDB()
+
+	traceID := trace.TraceID{2}
+	execID := trace.SpanID{9}
+	plainID := trace.SpanID{10}
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:          SpanID{SpanID: execID},
+			TraceID:     TraceID{TraceID: traceID},
+			Name:        "exec nginx",
+			Service:     true,
+			ServiceName: "web.dagger.local",
+			Passthrough: true,
+			StartTime:   time.Unix(1, 0),
+		},
+		{
+			ID:        SpanID{SpanID: plainID},
+			TraceID:   TraceID{TraceID: traceID},
+			Name:      "exec build",
+			StartTime: time.Unix(1, 0),
+		},
+	})
+
+	record := newTestLogRecord(
+		traceID,
+		execID,
+		"nginx: ready",
+		otellog.String(telemetry.DagDigestAttr, "xxh3:never-created"),
+	)
+	if got := db.LogTargetSpanID(record); got != (SpanID{SpanID: execID}) {
+		t.Fatalf("expected the service exec span fallback, got %s", got)
+	}
+
+	other := newTestLogRecord(
+		traceID,
+		plainID,
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, "xxh3:never-created"),
+	)
+	if got := db.LogTargetSpanID(other); got.IsValid() {
+		t.Fatalf("expected unresolved target for non-service span, got %s", got)
+	}
+}
+
+// TestPendingDigestLogsResolveWhenServiceSpanArrives covers the other half
+// of the warm-trace routing gap: the service's stdio can arrive BEFORE its
+// exec span snapshot does. routeLog then finds neither a creator span nor a
+// known Service span, so the record parks under its digest — and on a fully
+// cached trace no creator will ever arrive to claim it. When the exec span
+// shows up flagged as a Service, it must claim its own parked records.
+func TestPendingDigestLogsResolveWhenServiceSpanArrives(t *testing.T) {
+	db := NewDB()
+
+	traceID := trace.TraceID{2}
+	execID := SpanID{SpanID: trace.SpanID{9}}
+	otherID := trace.SpanID{10}
+	outputDig := "xxh3:never-created"
+
+	record := newTestLogRecord(
+		traceID,
+		execID.SpanID,
+		"nginx: ready",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+	// a record from a different span sharing the digest must stay parked
+	other := newTestLogRecord(
+		traceID,
+		otherID,
+		"unrelated",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record, other}); err != nil {
+		t.Fatalf("export logs: %v", err)
+	}
+
+	if got := db.DrainResolvedLogs(execID); len(got) != 0 {
+		t.Fatalf("expected no resolved logs before exec span, got %d", len(got))
+	}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:          execID,
+			TraceID:     TraceID{TraceID: traceID},
+			Name:        "exec nginx",
+			Service:     true,
+			ServiceName: "web.dagger.local",
+			Passthrough: true,
+			StartTime:   time.Unix(1, 0),
+		},
+	})
+
+	resolved := db.DrainResolvedLogs(execID)
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved log, got %d", len(resolved))
+	}
+	if resolved[0].Body().AsString() != "nginx: ready" {
+		t.Fatalf("expected resolved log body %q, got %q", "nginx: ready", resolved[0].Body().AsString())
+	}
+
+	exec := db.Spans.Map[execID]
+	if exec == nil {
+		t.Fatal("expected exec span")
+	}
+	if !exec.HasLogs {
+		t.Fatal("expected exec span to have logs")
+	}
+
+	// the other span's record still awaits its creator
+	creatorID := SpanID{SpanID: trace.SpanID{3}}
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         creatorID,
+			TraceID:    TraceID{TraceID: traceID},
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: "xxh3:live-call",
+			Output:     outputDig,
+		},
+	})
+	remaining := db.DrainResolvedLogs(creatorID)
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 log resolved to creator, got %d", len(remaining))
+	}
+	if remaining[0].Body().AsString() != "unrelated" {
+		t.Fatalf("expected creator-resolved log body %q, got %q", "unrelated", remaining[0].Body().AsString())
+	}
+}
+
+func TestPendingDigestLogsResolveWhenCreatorArrives(t *testing.T) {
+	db := NewDB()
+
+	traceID := trace.TraceID{2}
+	outputDig := "xxh3:service-output"
+	creatorID := SpanID{SpanID: trace.SpanID{3}}
+
+	record := newTestLogRecord(
+		traceID,
+		trace.SpanID{9},
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
+		t.Fatalf("export logs: %v", err)
+	}
+
+	if got := db.DrainResolvedLogs(creatorID); len(got) != 0 {
+		t.Fatalf("expected no resolved logs before creator, got %d", len(got))
+	}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         creatorID,
+			TraceID:    TraceID{TraceID: traceID},
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: "xxh3:live-call",
+			Output:     outputDig,
+		},
+	})
+
+	resolved := db.DrainResolvedLogs(creatorID)
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved log, got %d", len(resolved))
+	}
+	if resolved[0].Body().AsString() != "hello" {
+		t.Fatalf("expected resolved log body %q, got %q", "hello", resolved[0].Body().AsString())
+	}
+
+	creator := db.Spans.Map[creatorID]
+	if creator == nil {
+		t.Fatal("expected creator span")
+	}
+	if !creator.HasLogs {
+		t.Fatal("expected creator span to have logs")
+	}
+}
+
+func TestResumeOutputReparentsRuntimeSpanUnderCreator(t *testing.T) {
+	db := NewDB()
+
+	traceID := TraceID{TraceID: trace.TraceID{1}}
+	withExecID := SpanID{SpanID: trace.SpanID{1}}
+	runtimeID := SpanID{SpanID: trace.SpanID{2}}
+	asServiceID := SpanID{SpanID: trace.SpanID{3}}
+	outputDig := "xxh3:service-output"
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:        withExecID,
+			TraceID:   traceID,
+			StartTime: time.Unix(1, 0),
+			EndTime:   time.Unix(2, 0),
+			Name:      "withExec redis-cli -h redis ping",
+		},
+		{
+			ID:           runtimeID,
+			TraceID:      traceID,
+			ParentID:     withExecID,
+			StartTime:    time.Unix(3, 0),
+			EndTime:      time.Unix(4, 0),
+			Name:         "exec docker-entrypoint.sh redis-server",
+			ResumeOutput: outputDig,
+		},
+		{
+			ID:         asServiceID,
+			TraceID:    traceID,
+			StartTime:  time.Unix(5, 0),
+			EndTime:    time.Unix(6, 0),
+			Name:       "Container.asService",
+			CallDigest: "xxh3:as-service",
+			Output:     outputDig,
+		},
+	})
+
+	runtime := db.Spans.Map[runtimeID]
+	if runtime == nil {
+		t.Fatal("expected runtime span")
+	}
+	if runtime.ParentSpan == nil || runtime.ParentSpan.ID != withExecID {
+		t.Fatalf("expected actual parent to remain withExec, got %v", runtime.ParentSpan)
+	}
+
+	asService := db.Spans.Map[asServiceID]
+	if asService == nil {
+		t.Fatal("expected asService span")
+	}
+	if _, ok := asService.ChildSpans.Map[runtimeID]; !ok {
+		t.Fatal("expected creator span to include runtime child")
+	}
+	if _, ok := runtime.causesViaLinks.Map[asServiceID]; !ok {
+		t.Fatal("expected runtime span to causally resume under creator")
+	}
+
+	rowsView := db.RowsView(FrontendOpts{})
+	runtimeTree := rowsView.BySpan[runtimeID]
+	if runtimeTree == nil {
+		t.Fatal("expected runtime tree")
+	}
+	if runtimeTree.Parent == nil || runtimeTree.Parent.Span.ID != asServiceID {
+		t.Fatalf("expected runtime span to be displayed under asService, got %+v", runtimeTree.Parent)
+	}
+}
+
+func TestPendingClearsAndPropagatesThroughCausalContinuation(t *testing.T) {
+	db := NewDB()
+
+	origID := SpanID{trace.SpanID{1}}
+	orig := db.newSpan(origID)
+	orig.Received = true
+	orig.Name = "original"
+	orig.Pending = true
+	orig.StartTime = time.Now()
+	orig.EndTime = orig.StartTime.Add(time.Millisecond)
+	db.Spans.Add(orig)
+	db.integrateSpan(orig)
+	orig.PropagateStatusToParentsAndLinks()
+
+	if !orig.IsPending() {
+		t.Fatal("expected original span to start pending")
+	}
+
+	resumeID := SpanID{trace.SpanID{2}}
+	resume := db.newSpan(resumeID)
+	resume.Received = true
+	resume.Name = "resume"
+	resume.StartTime = time.Now()
+	resume.EndTime = resume.StartTime.Add(-time.Millisecond)
+	resume.Links = []SpanLink{{
+		SpanContext: SpanContext{
+			SpanID: origID,
+		},
+	}}
+	db.Spans.Add(resume)
+	db.integrateSpan(resume)
+	resume.PropagateStatusToParentsAndLinks()
+
+	if orig.IsPending() {
+		t.Fatal("expected causal continuation to clear pending state")
+	}
+	if !orig.IsRunningOrEffectsRunning() {
+		t.Fatal("expected original span to inherit running state from continuation")
+	}
+
+	resume.EndTime = time.Now()
+	resume.Status = sdktrace.Status{Code: codes.Error}
+	resume.PropagateStatusToParentsAndLinks()
+
+	if !orig.IsFailedOrCausedFailure() {
+		t.Fatal("expected original span to inherit failure from continuation")
+	}
+}
+
+// TestRollUpStateMultiLevel verifies that rollup state propagates correctly
+// through multiple levels of the span hierarchy
+func TestRollUpStateMultiLevel(t *testing.T) {
+	db := NewDB()
+
+	// Create a three-level hierarchy:
+	// grandparent -> parent -> child
+	grandparentID := SpanID{trace.SpanID{1}}
+	grandparent := db.newSpan(grandparentID)
+	grandparent.Received = true
+	grandparent.RollUpSpans = true
+	grandparent.StartTime = time.Now()
+	grandparent.EndTime = grandparent.StartTime.Add(-1)
+	db.Spans.Add(grandparent)
+	db.integrateSpan(grandparent)
+
+	parentID := SpanID{trace.SpanID{2}}
+	parent := db.newSpan(parentID)
+	parent.Received = true
+	parent.ParentID = grandparentID
+	parent.ParentSpan = grandparent
+	parent.RollUpSpans = true
+	parent.StartTime = time.Now()
+	parent.EndTime = parent.StartTime.Add(-1)
+	db.Spans.Add(parent)
+	db.integrateSpan(parent)
+
+	childID := SpanID{trace.SpanID{3}}
+	child := db.newSpan(childID)
+	child.Received = true
+	child.ParentID = parentID
+	child.ParentSpan = parent
+	child.StartTime = time.Now()
+	child.EndTime = child.StartTime.Add(-1)
+	db.Spans.Add(child)
+	db.integrateSpan(child)
+
+	// Ensure rollup states are initialized
+	if grandparent.rollUpState == nil {
+		grandparent.rollUpState = &RollUpState{}
+	}
+	if parent.rollUpState == nil {
+		parent.rollUpState = &RollUpState{}
+	}
+
+	// Propagate child's state
+	child.PropagateStatusToParentsAndLinks()
+
+	// Both parent and grandparent should count the running child
+	if parent.rollUpState.RunningCount != 1 {
+		t.Errorf("Expected parent RunningCount=1, got %d", parent.rollUpState.RunningCount)
+	}
+	if grandparent.rollUpState.RunningCount != 1 {
+		t.Errorf("Expected grandparent RunningCount=1, got %d", grandparent.rollUpState.RunningCount)
+	}
+
+	// Complete the child
+	child.EndTime = time.Now()
+	child.Status = sdktrace.Status{Code: codes.Ok}
+	child.PropagateStatusToParentsAndLinks()
+
+	// Both ancestors should reflect the change
+	if parent.rollUpState.RunningCount != 0 {
+		t.Errorf("Expected parent RunningCount=0 after child completed, got %d", parent.rollUpState.RunningCount)
+	}
+	if parent.rollUpState.SuccessCount != 1 {
+		t.Errorf("Expected parent SuccessCount=1 after child completed, got %d", parent.rollUpState.SuccessCount)
+	}
+
+	if grandparent.rollUpState.RunningCount != 0 {
+		t.Errorf("Expected grandparent RunningCount=0 after child completed, got %d", grandparent.rollUpState.RunningCount)
+	}
+	if grandparent.rollUpState.SuccessCount != 1 {
+		t.Errorf("Expected grandparent SuccessCount=1 after child completed, got %d", grandparent.rollUpState.SuccessCount)
+	}
+}
+
+// TestRollUpStateWorksForAllSpans verifies that rollup state tracking works
+// for all spans, not just those marked with RollUpSpans=true
+func TestRollUpStateWorksForAllSpans(t *testing.T) {
+	db := NewDB()
+
+	// Create a parent span WITHOUT RollUpSpans flag
+	parentID := SpanID{trace.SpanID{1}}
+	parent := db.newSpan(parentID)
+	parent.Received = true
+	parent.RollUpSpans = false // explicitly not a rollup span
+	parent.StartTime = time.Now()
+	parent.EndTime = parent.StartTime.Add(-1)
+	db.Spans.Add(parent)
+	db.integrateSpan(parent)
+
+	// Ensure rollup state is initialized
+	if parent.rollUpState == nil {
+		parent.rollUpState = &RollUpState{}
+	}
+
+	// Create a child
+	childID := SpanID{trace.SpanID{2}}
+	child := db.newSpan(childID)
+	child.Received = true
+	child.ParentID = parentID
+	child.ParentSpan = parent
+	child.StartTime = time.Now()
+	child.EndTime = child.StartTime.Add(-1)
+	db.Spans.Add(child)
+	db.integrateSpan(child)
+	child.PropagateStatusToParentsAndLinks()
+
+	// Even though parent is not marked as RollUpSpans, it should still track counts
+	if parent.rollUpState.RunningCount != 1 {
+		t.Errorf("Expected parent RunningCount=1 even without RollUpSpans flag, got %d", parent.rollUpState.RunningCount)
+	}
+
+	// This allows any span to be used for rollup rendering if needed
+	state := parent.RollUpState()
+	if state == nil {
+		t.Error("Expected non-nil rollup state for non-rollup span")
+	}
+}
+
+func TestMostInterestingSpanPrefersEarliestNonCachedSpan(t *testing.T) {
+	db := NewDB()
+
+	dig := "xxh3:shared-call"
+	cachedID := SpanID{SpanID: trace.SpanID{1}}
+	liveID := SpanID{SpanID: trace.SpanID{2}}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         cachedID,
+			TraceID:    TraceID{TraceID: trace.TraceID{1}},
+			StartTime:  time.Unix(1, 0),
+			EndTime:    time.Unix(2, 0),
+			CallDigest: dig,
+			Cached:     true,
+		},
+		{
+			ID:         liveID,
+			TraceID:    TraceID{TraceID: trace.TraceID{1}},
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: dig,
+		},
+	})
+
+	got := db.MostInterestingSpan(dig)
+	if got == nil {
+		t.Fatal("expected span")
+	}
+	if got.ID != liveID {
+		t.Fatalf("expected non-cached span %s, got %s", liveID, got.ID)
+	}
+}

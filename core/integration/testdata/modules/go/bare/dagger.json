@@ -1,0 +1,5 @@
+{
+  "name": "bare",
+  "sdk": "go",
+  "source": "."
+}

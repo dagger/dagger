@@ -1,0 +1,14 @@
+{
+  "name": "coding-agent",
+  "engineVersion": "v0.17.0",
+  "sdk": {
+    "source": "python"
+  },
+  "dependencies": [
+    {
+      "name": "toy-workspace",
+      "source": "github.com/shykes/toy-programmer/toy-workspace",
+      "pin": "672f09ff9ad3ba8c709c7d10757cd09d410b9b68"
+    }
+  ]
+}

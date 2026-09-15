@@ -1,0 +1,2639 @@
+package core
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/dagger/dagger/util/hashutil"
+	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/dagger/dagger/core/gitref"
+	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/slog"
+)
+
+type quietCLIError struct {
+	message string
+}
+
+func (e quietCLIError) Error() string {
+	return e.message
+}
+
+func (e quietCLIError) Extensions() map[string]any {
+	return map[string]any{
+		"_quiet":    true,
+		"_message":  e.message,
+		"_exitCode": 1,
+	}
+}
+
+type ModuleSourceKind string
+
+var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
+
+var (
+	ModuleSourceKindLocal = ModuleSourceKindEnum.Register("LOCAL_SOURCE")
+	_                     = ModuleSourceKindEnum.AliasView("LOCAL", "LOCAL_SOURCE", enumView)
+	ModuleSourceKindGit   = ModuleSourceKindEnum.Register("GIT_SOURCE")
+	_                     = ModuleSourceKindEnum.AliasView("GIT", "GIT_SOURCE", enumView)
+	ModuleSourceKindDir   = ModuleSourceKindEnum.Register("DIR_SOURCE")
+	_                     = ModuleSourceKindEnum.AliasView("DIR", "DIR_SOURCE", enumView)
+)
+
+func (proto ModuleSourceKind) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleSourceKind",
+		NonNull:   true,
+	}
+}
+
+// ModuleRelationType distinguishes between dependencies and toolchains in error
+// messages and field access for ModuleSource authoring mutations.
+type ModuleRelationType int
+
+const (
+	ModuleRelationTypeDependency ModuleRelationType = iota
+	ModuleRelationTypeToolchain
+)
+
+func (t ModuleRelationType) String() string {
+	switch t {
+	case ModuleRelationTypeDependency:
+		return "dependency"
+	case ModuleRelationTypeToolchain:
+		return "toolchain"
+	default:
+		return "unknown"
+	}
+}
+
+func (t ModuleRelationType) Plural() string {
+	switch t {
+	case ModuleRelationTypeDependency:
+		return "dependencies"
+	case ModuleRelationTypeToolchain:
+		return "toolchains"
+	default:
+		return "unknowns"
+	}
+}
+
+func (proto ModuleSourceKind) TypeDescription() string {
+	return "The kind of module source."
+}
+
+func (proto ModuleSourceKind) Decoder() dagql.InputDecoder {
+	return ModuleSourceKindEnum
+}
+
+func (proto ModuleSourceKind) ToLiteral() call.Literal {
+	return ModuleSourceKindEnum.Literal(proto)
+}
+
+func (proto ModuleSourceKind) HumanString() string {
+	switch proto {
+	case ModuleSourceKindLocal:
+		return "local"
+	case ModuleSourceKindGit:
+		return "git"
+	case ModuleSourceKindDir:
+		return "directory"
+	default:
+		return string(proto)
+	}
+}
+
+type SDKConfig struct {
+	Source       string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Debug        bool   `field:"true" name:"debug" doc:"Whether to start the SDK runtime in debug mode with an interactive terminal."`
+	Config       map[string]any
+	Experimental map[string]bool
+}
+
+func (*SDKConfig) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "SDKConfig",
+		NonNull:   false,
+	}
+}
+
+func (*SDKConfig) TypeDescription() string {
+	return "The SDK config of the module."
+}
+
+func (sdk SDKConfig) Clone() *SDKConfig {
+	cp := sdk
+	return &cp
+}
+
+func (sdk *SDKConfig) ExperimentalFeatureEnabled(feature ModuleSourceExperimentalFeature) bool {
+	if sdk.Experimental == nil {
+		return false
+	}
+	return sdk.Experimental[feature.String()]
+}
+
+// selfCallsAlwaysEnabler is implemented by SDKs that always require self calls,
+// independent of the SELF_CALLS experimental flag — e.g. the interpreted Dang
+// SDK, which resolves its own types by name against the runtime schema.
+type selfCallsAlwaysEnabler interface {
+	AlwaysEnablesSelfCalls() bool
+}
+
+// SelfCallsEnabled reports whether self calls are enabled for this source,
+// either via the SELF_CALLS experimental flag or because the SDK always
+// requires them. All call sites must use this rather than checking the flag
+// directly, so the two enablement paths stay consistent (an inconsistency
+// causes a module's own types to be both installed and rejected as duplicates).
+func (src *ModuleSource) SelfCallsEnabled() bool {
+	if src.SDK != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
+		return true
+	}
+	if sc, ok := src.SDKImpl.(selfCallsAlwaysEnabler); ok && sc.AlwaysEnablesSelfCalls() {
+		return true
+	}
+	return false
+}
+
+type ModuleSource struct {
+	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
+	ConfigFilename                string
+	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
+	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
+	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
+	CodegenConfig                 *modules.ModuleCodegenConfig
+	ModuleConfigUserFields        modules.ModuleConfigUserFields
+	DisableDefaultFunctionCaching bool
+
+	// The SDK configuration of the module as read from the module config or set by withSDK
+	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
+	// The implementation of the SDK with codegen and related operations. Reloaded when SDK changes.
+	SDKImpl SDK
+
+	// IncludePaths are the includes as read from the module config.
+	IncludePaths []string
+	// RebasedIncludePaths are the include paths with the source root subpath prepended
+	RebasedIncludePaths []string
+
+	// ConfigDependencies are the dependencies as read from the module config
+	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
+	ConfigDependencies []*modules.ModuleConfigDependency
+
+	// Dependencies are the loaded sources for the module's dependencies
+	Dependencies dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
+
+	// Blueprint (from legacy dagger.json)
+	ConfigBlueprint *modules.ModuleConfigDependency
+	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source." deprecated:"Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead."`
+
+	// Toolchains (from legacy dagger.json)
+	ConfigToolchains []*modules.ModuleConfigDependency
+	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source." deprecated:"Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead."`
+
+	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
+	// Clients are the clients generated for the module.
+	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
+
+	// SourceRootSubpath is the relative path from the context dir to the dir containing the module config.
+	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"The path, relative to the context directory, that contains the module config."`
+	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code
+	SourceSubpath string
+
+	// OriginalRefString is the exact ref string used to instantiate this module
+	// source. Internal only, used for user-facing follow-up commands.
+	OriginalRefString string
+
+	OriginalSubpath string
+
+	ContextDirectory dagql.ObjectResult[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
+
+	// Workspace is the originating workspace for sources loaded through
+	// Workspace.moduleSource. It preserves the workspace's backing source,
+	// pending overlay, and owner route without flattening the workspace into a
+	// Directory. SourceRootSubpath remains workspace-root-relative.
+	Workspace dagql.ObjectResult[*Workspace] `json:"-"`
+
+	Kind   ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
+	Local  *LocalModuleSource
+	Git    *GitModuleSource
+	DirSrc *DirModuleSource
+}
+
+var moduleSourceSDKLoader func(context.Context, *Query, *SDKConfig, *ModuleSource) (SDK, error)
+
+func SetModuleSourceSDKLoader(loader func(context.Context, *Query, *SDKConfig, *ModuleSource) (SDK, error)) {
+	moduleSourceSDKLoader = loader
+}
+
+func (src *ModuleSource) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleSource",
+		NonNull:   true,
+	}
+}
+
+func (src *ModuleSource) TypeDescription() string {
+	return "The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc."
+}
+
+var _ dagql.HasDependencyResults = (*ModuleSource)(nil)
+var _ dagql.PersistedObject = (*ModuleSource)(nil)
+var _ dagql.PersistedObjectDecoder = (*ModuleSource)(nil)
+
+func (src ModuleSource) Clone() *ModuleSource {
+	if src.CodegenConfig != nil {
+		src.CodegenConfig = src.CodegenConfig.Clone()
+	}
+
+	if src.SDK != nil {
+		src.SDK = src.SDK.Clone()
+	}
+
+	origIncludePaths := src.IncludePaths
+	src.IncludePaths = make([]string, len(origIncludePaths))
+	copy(src.IncludePaths, origIncludePaths)
+	origFullIncludePaths := src.RebasedIncludePaths
+	src.RebasedIncludePaths = make([]string, len(origFullIncludePaths))
+	copy(src.RebasedIncludePaths, origFullIncludePaths)
+
+	origConfigDependencies := src.ConfigDependencies
+	src.ConfigDependencies = make([]*modules.ModuleConfigDependency, len(origConfigDependencies))
+	copy(src.ConfigDependencies, origConfigDependencies)
+	origDependencies := src.Dependencies
+	src.Dependencies = make([]dagql.ObjectResult[*ModuleSource], len(origDependencies))
+	copy(src.Dependencies, origDependencies)
+	origConfigToolchains := src.ConfigToolchains
+	src.ConfigToolchains = make([]*modules.ModuleConfigDependency, len(origConfigToolchains))
+	copy(src.ConfigToolchains, origConfigToolchains)
+	origToolchains := src.Toolchains
+	src.Toolchains = make([]dagql.ObjectResult[*ModuleSource], len(origToolchains))
+	copy(src.Toolchains, origToolchains)
+
+	if src.Local != nil {
+		src.Local = src.Local.Clone()
+	}
+
+	if src.Git != nil {
+		src.Git = src.Git.Clone()
+	}
+
+	oriConfigClients := src.ConfigClients
+	src.ConfigClients = make([]*modules.ModuleConfigClient, len(oriConfigClients))
+	copy(src.ConfigClients, oriConfigClients)
+
+	if src.SDKImpl != nil {
+		src.SDKImpl = src.SDKImpl.CloneForModuleSource(&src)
+	}
+
+	return &src
+}
+
+func (src *ModuleSource) Evaluate(context.Context) error {
+	return nil
+}
+
+func (src *ModuleSource) Sync(ctx context.Context) error {
+	return src.Evaluate(ctx)
+}
+
+func (src *ModuleSource) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if src == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 5+len(src.Dependencies)+len(src.Toolchains))
+
+	if src.Workspace.Self() != nil {
+		attached, err := attach(src.Workspace)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source workspace: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach module source workspace: unexpected result %T", attached)
+		}
+		src.Workspace = typed
+		owned = append(owned, typed)
+	}
+
+	if src.ContextDirectory.Self() != nil {
+		attached, err := attach(src.ContextDirectory)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source context directory: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach module source context directory: unexpected result %T", attached)
+		}
+		src.ContextDirectory = typed
+		owned = append(owned, typed)
+	}
+
+	if src.SDKImpl != nil {
+		sdkDeps, err := src.SDKImpl.AttachDependencyResults(ctx, attach)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source sdk implementation: %w", err)
+		}
+		owned = append(owned, sdkDeps...)
+	}
+
+	for i, dep := range src.Dependencies {
+		if dep.Self() == nil {
+			continue
+		}
+		attached, err := attach(dep)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source dependency %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module source dependency %d: unexpected result %T", i, attached)
+		}
+		src.Dependencies[i] = typed
+		owned = append(owned, typed)
+	}
+
+	if src.Blueprint.Self() != nil {
+		attached, err := attach(src.Blueprint)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source blueprint: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module source blueprint: unexpected result %T", attached)
+		}
+		src.Blueprint = typed
+		owned = append(owned, typed)
+	}
+
+	for i, toolchain := range src.Toolchains {
+		if toolchain.Self() == nil {
+			continue
+		}
+		attached, err := attach(toolchain)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source toolchain %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module source toolchain %d: unexpected result %T", i, attached)
+		}
+		src.Toolchains[i] = typed
+		owned = append(owned, typed)
+	}
+
+	if src.Git != nil && src.Git.UnfilteredContextDir.Self() != nil {
+		attached, err := attach(src.Git.UnfilteredContextDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source git unfiltered context dir: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach module source git unfiltered context dir: unexpected result %T", attached)
+		}
+		src.Git.UnfilteredContextDir = typed
+		owned = append(owned, typed)
+	}
+
+	if src.DirSrc != nil && src.DirSrc.OriginalContextDir.Self() != nil {
+		attached, err := attach(src.DirSrc.OriginalContextDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source dir original context dir: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach module source dir original context dir: unexpected result %T", attached)
+		}
+		src.DirSrc.OriginalContextDir = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
+
+type persistedGitModuleSourcePayload struct {
+	CloneRef         string              `json:"cloneRef,omitempty"`
+	ResolvedCloneRef string              `json:"resolvedCloneRef,omitempty"`
+	Symbolic         string              `json:"symbolic,omitempty"`
+	HTMLRepoURL      string              `json:"htmlRepoURL,omitempty"`
+	HTMLURL          string              `json:"htmlURL,omitempty"`
+	RepoRootPath     string              `json:"repoRootPath,omitempty"`
+	Version          string              `json:"version,omitempty"`
+	VersionQuery     string              `json:"versionQuery,omitempty"`
+	Selector         gitref.SelectorType `json:"selector,omitempty"`
+	Commit           string              `json:"commit,omitempty"`
+	Ref              string              `json:"ref,omitempty"`
+}
+
+type persistedDirModuleSourcePayload struct {
+	OriginalSourceRootSubpath  string `json:"originalSourceRootSubpath,omitempty"`
+	OriginalContextDirResultID uint64 `json:"originalContextDirResultID,omitempty"`
+}
+
+type persistedModuleSourceSDKCapabilities struct {
+	Runtime           bool `json:"runtime,omitempty"`
+	ModuleTypes       bool `json:"moduleTypes,omitempty"`
+	CodeGenerator     bool `json:"codeGenerator,omitempty"`
+	ClientGenerator   bool `json:"clientGenerator,omitempty"`
+	SelfCallsAlways   bool `json:"selfCallsAlways,omitempty"`
+	ModuleInitializer bool `json:"moduleInitializer,omitempty"`
+	ClientInitializer bool `json:"clientInitializer,omitempty"`
+	RuntimeTarget     bool `json:"runtimeTarget,omitempty"`
+}
+
+type persistedModuleSourcePayload struct {
+	ConfigExists                    bool                                  `json:"configExists,omitempty"`
+	ConfigFilename                  string                                `json:"configFilename,omitempty"`
+	ModuleName                      string                                `json:"moduleName,omitempty"`
+	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
+	EngineVersion                   string                                `json:"engineVersion,omitempty"`
+	CodegenConfig                   *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
+	ModuleConfigUserFields          modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
+	DisableDefaultFunctionCaching   bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
+	SDK                             *SDKConfig                            `json:"sdk,omitempty"`
+	IncludePaths                    []string                              `json:"includePaths,omitempty"`
+	RebasedIncludePaths             []string                              `json:"rebasedIncludePaths,omitempty"`
+	ConfigDependencies              []*modules.ModuleConfigDependency     `json:"configDependencies,omitempty"`
+	DependencyResultIDs             []uint64                              `json:"dependencyResultIDs,omitempty"`
+	ConfigBlueprint                 *modules.ModuleConfigDependency       `json:"configBlueprint,omitempty"`
+	BlueprintResultID               uint64                                `json:"blueprintResultID,omitempty"`
+	ConfigToolchains                []*modules.ModuleConfigDependency     `json:"configToolchains,omitempty"`
+	ToolchainResultIDs              []uint64                              `json:"toolchainResultIDs,omitempty"`
+	UserDefaults                    *EnvFile                              `json:"userDefaults,omitempty"`
+	ConfigClients                   []*modules.ModuleConfigClient         `json:"configClients,omitempty"`
+	SourceRootSubpath               string                                `json:"sourceRootSubpath,omitempty"`
+	SourceSubpath                   string                                `json:"sourceSubpath,omitempty"`
+	OriginalSubpath                 string                                `json:"originalSubpath,omitempty"`
+	ContextDirectoryResultID        uint64                                `json:"contextDirectoryResultID,omitempty"`
+	WorkspaceResultID               uint64                                `json:"workspaceResultID,omitempty"`
+	Kind                            ModuleSourceKind                      `json:"kind"`
+	Local                           *LocalModuleSource                    `json:"local,omitempty"`
+	Git                             *persistedGitModuleSourcePayload      `json:"git,omitempty"`
+	DirSrc                          *persistedDirModuleSourcePayload      `json:"dirSrc,omitempty"`
+	GitUnfilteredContextDirResultID uint64                                `json:"gitUnfilteredContextDirResultID,omitempty"`
+	SDKCapabilities                 *persistedModuleSourceSDKCapabilities `json:"sdkCapabilities,omitempty"`
+}
+
+type persistedModuleSourceLazySDK struct {
+	config       *SDKConfig
+	src          *ModuleSource
+	capabilities persistedModuleSourceSDKCapabilities
+}
+
+var _ SDK = (*persistedModuleSourceLazySDK)(nil)
+var _ selfCallsAlwaysEnabler = (*persistedModuleSourceLazySDK)(nil)
+
+func (sdk *persistedModuleSourceLazySDK) CloneForModuleSource(src *ModuleSource) SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	if sdk.config != nil {
+		cp.config = sdk.config.Clone()
+	}
+	cp.src = src
+	return &cp
+}
+
+func (sdk *persistedModuleSourceLazySDK) AlwaysEnablesSelfCalls() bool {
+	return sdk != nil && sdk.capabilities.SelfCallsAlways
+}
+
+func (sdk *persistedModuleSourceLazySDK) load(ctx context.Context) (SDK, error) {
+	if sdk == nil || sdk.config == nil {
+		return nil, fmt.Errorf("load persisted module source sdk: missing sdk config")
+	}
+
+	if moduleSourceSDKLoader == nil {
+		return nil, fmt.Errorf("load persisted module source sdk: sdk loader is not configured")
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load persisted module source sdk query: %w", err)
+	}
+	loaded, err := moduleSourceSDKLoader(ctx, query, sdk.config, sdk.src)
+	if err != nil {
+		return nil, fmt.Errorf("load persisted module source sdk: %w", err)
+	}
+
+	return loaded, nil
+}
+
+func (sdk *persistedModuleSourceLazySDK) AttachDependencyResults(
+	context.Context,
+	func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsRuntime() (Runtime, bool) {
+	if sdk == nil || !sdk.capabilities.Runtime {
+		return nil, false
+	}
+	return persistedModuleSourceLazyRuntime{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsModuleTypes() (ModuleTypes, bool) {
+	if sdk == nil || !sdk.capabilities.ModuleTypes {
+		return nil, false
+	}
+	return persistedModuleSourceLazyModuleTypes{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsCodeGenerator() (CodeGenerator, bool) {
+	if sdk == nil || !sdk.capabilities.CodeGenerator {
+		return nil, false
+	}
+	return persistedModuleSourceLazyCodeGenerator{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsClientGenerator() (ClientGenerator, bool) {
+	if sdk == nil || !sdk.capabilities.ClientGenerator {
+		return nil, false
+	}
+	return persistedModuleSourceLazyClientGenerator{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsModuleInitializer() (ModuleInitializer, bool) {
+	if sdk == nil || !sdk.capabilities.ModuleInitializer {
+		return nil, false
+	}
+	return persistedModuleSourceLazyModuleInitializer{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsClientInitializer() (ClientInitializer, bool) {
+	if sdk == nil || !sdk.capabilities.ClientInitializer {
+		return nil, false
+	}
+	return persistedModuleSourceLazyClientInitializer{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsRuntimeTarget() (RuntimeTarget, bool) {
+	if sdk == nil || !sdk.capabilities.RuntimeTarget {
+		return nil, false
+	}
+	return persistedModuleSourceLazyRuntimeTarget{sdk: sdk}, true
+}
+
+// AsModule reports no module. Every other capability is a behavior this wrapper
+// can defer behind a recorded flag; a module result is a value, so handing one
+// back would mean loading the SDK eagerly and defeating the laziness. Callers
+// that need the SDK's own module (workspace init's scoped generation) hold a
+// freshly loaded SDK, never a rehydrated one.
+func (sdk *persistedModuleSourceLazySDK) AsModule() (dagql.ObjectResult[*Module], bool) {
+	return dagql.ObjectResult[*Module]{}, false
+}
+
+type persistedModuleSourceLazyRuntime struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ Runtime = persistedModuleSourceLazyRuntime{}
+
+func (sdk persistedModuleSourceLazyRuntime) Runtime(
+	ctx context.Context,
+	deps *SchemaBuilder,
+	src dagql.ObjectResult[*ModuleSource],
+) (ModuleRuntime, error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	runtimeSDK, ok := loaded.AsRuntime()
+	if !ok {
+		return nil, fmt.Errorf("persisted module source sdk does not implement runtime")
+	}
+	return runtimeSDK.Runtime(ctx, deps, src)
+}
+
+type persistedModuleSourceLazyModuleTypes struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ ModuleTypes = persistedModuleSourceLazyModuleTypes{}
+
+// ErrStaleSDKCapability signals that a persisted module source recorded an SDK
+// capability the freshly loaded SDK no longer implements — e.g. sources
+// persisted before the Go SDK dropped moduleTypes. Callers should fall back to
+// the path they would take had the capability never been recorded.
+var ErrStaleSDKCapability = errors.New("persisted sdk capability no longer implemented")
+
+func (sdk persistedModuleSourceLazyModuleTypes) ModuleTypes(
+	ctx context.Context,
+	deps *SchemaBuilder,
+	src dagql.ObjectResult[*ModuleSource],
+	mod *Module,
+) (dagql.ObjectResult[*Module], error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Module]{}, err
+	}
+	moduleTypesSDK, ok := loaded.AsModuleTypes()
+	if !ok {
+		return dagql.ObjectResult[*Module]{}, fmt.Errorf("persisted module source sdk does not implement module types: %w", ErrStaleSDKCapability)
+	}
+	return moduleTypesSDK.ModuleTypes(ctx, deps, src, mod)
+}
+
+type persistedModuleSourceLazyCodeGenerator struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ CodeGenerator = persistedModuleSourceLazyCodeGenerator{}
+
+func (sdk persistedModuleSourceLazyCodeGenerator) Codegen(
+	ctx context.Context,
+	deps *SchemaBuilder,
+	src dagql.ObjectResult[*ModuleSource],
+) (*GeneratedCode, error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	codegenSDK, ok := loaded.AsCodeGenerator()
+	if !ok {
+		return nil, fmt.Errorf("persisted module source sdk does not implement code generator")
+	}
+	return codegenSDK.Codegen(ctx, deps, src)
+}
+
+type persistedModuleSourceLazyClientGenerator struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ ClientGenerator = persistedModuleSourceLazyClientGenerator{}
+
+func (sdk persistedModuleSourceLazyClientGenerator) RequiredClientGenerationFiles(
+	ctx context.Context,
+) (dagql.Array[dagql.String], error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clientSDK, ok := loaded.AsClientGenerator()
+	if !ok {
+		return nil, fmt.Errorf("persisted module source sdk does not implement client generator")
+	}
+	return clientSDK.RequiredClientGenerationFiles(ctx)
+}
+
+func (sdk persistedModuleSourceLazyClientGenerator) GenerateClient(
+	ctx context.Context,
+	modSource dagql.ObjectResult[*ModuleSource],
+	schemaJSONFile dagql.Result[*File],
+	outputDir string,
+) (dagql.ObjectResult[*Directory], error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	clientSDK, ok := loaded.AsClientGenerator()
+	if !ok {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("persisted module source sdk does not implement client generator")
+	}
+	return clientSDK.GenerateClient(ctx, modSource, schemaJSONFile, outputDir)
+}
+
+type persistedModuleSourceLazyModuleInitializer struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ ModuleInitializer = persistedModuleSourceLazyModuleInitializer{}
+
+func (sdk persistedModuleSourceLazyModuleInitializer) InitModule(
+	ctx context.Context,
+	workspace dagql.ObjectResult[*Workspace],
+	name string,
+	path string,
+	args map[string]any,
+) (dagql.ObjectResult[*Changeset], error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Changeset]{}, err
+	}
+	initSDK, ok := loaded.AsModuleInitializer()
+	if !ok {
+		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("persisted module source sdk does not implement module init")
+	}
+	return initSDK.InitModule(ctx, workspace, name, path, args)
+}
+
+type persistedModuleSourceLazyClientInitializer struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ ClientInitializer = persistedModuleSourceLazyClientInitializer{}
+
+func (sdk persistedModuleSourceLazyClientInitializer) InitClient(
+	ctx context.Context,
+	workspace dagql.ObjectResult[*Workspace],
+	path string,
+	module string,
+	args map[string]any,
+) (dagql.ObjectResult[*Changeset], error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Changeset]{}, err
+	}
+	initSDK, ok := loaded.AsClientInitializer()
+	if !ok {
+		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("persisted module source sdk does not implement client init")
+	}
+	return initSDK.InitClient(ctx, workspace, path, module, args)
+}
+
+type persistedModuleSourceLazyRuntimeTarget struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ RuntimeTarget = persistedModuleSourceLazyRuntimeTarget{}
+
+func (sdk persistedModuleSourceLazyRuntimeTarget) TargetRuntime(ctx context.Context) (string, error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return "", err
+	}
+	targetSDK, ok := loaded.AsRuntimeTarget()
+	if !ok {
+		return "", fmt.Errorf("persisted module source sdk does not implement runtime target")
+	}
+	return targetSDK.TargetRuntime(ctx)
+}
+
+func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	if src == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: nil module source")
+	}
+	payload := persistedModuleSourcePayload{
+		ConfigExists:                  src.ConfigExists,
+		ConfigFilename:                src.ConfigFilename,
+		ModuleName:                    src.ModuleName,
+		ModuleOriginalName:            src.ModuleOriginalName,
+		EngineVersion:                 src.EngineVersion,
+		CodegenConfig:                 src.CodegenConfig,
+		ModuleConfigUserFields:        src.ModuleConfigUserFields,
+		DisableDefaultFunctionCaching: src.DisableDefaultFunctionCaching,
+		SDK:                           src.SDK,
+		IncludePaths:                  slices.Clone(src.IncludePaths),
+		RebasedIncludePaths:           slices.Clone(src.RebasedIncludePaths),
+		ConfigDependencies:            slices.Clone(src.ConfigDependencies),
+		ConfigBlueprint:               src.ConfigBlueprint,
+		ConfigToolchains:              slices.Clone(src.ConfigToolchains),
+		UserDefaults:                  src.UserDefaults,
+		ConfigClients:                 slices.Clone(src.ConfigClients),
+		SourceRootSubpath:             src.SourceRootSubpath,
+		SourceSubpath:                 src.SourceSubpath,
+		OriginalSubpath:               src.OriginalSubpath,
+		Kind:                          src.Kind,
+		Local:                         src.Local,
+	}
+	if src.SDK != nil {
+		if src.SDKImpl == nil {
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
+		}
+		_, hasRuntime := src.SDKImpl.AsRuntime()
+		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
+		_, hasCodeGenerator := src.SDKImpl.AsCodeGenerator()
+		_, hasClientGenerator := src.SDKImpl.AsClientGenerator()
+		selfCallsAlways := false
+		if sc, ok := src.SDKImpl.(selfCallsAlwaysEnabler); ok && sc.AlwaysEnablesSelfCalls() {
+			selfCallsAlways = true
+		}
+		_, hasModuleInitializer := src.SDKImpl.AsModuleInitializer()
+		_, hasClientInitializer := src.SDKImpl.AsClientInitializer()
+		_, hasRuntimeTarget := src.SDKImpl.AsRuntimeTarget()
+		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
+			Runtime:           hasRuntime,
+			ModuleTypes:       hasModuleTypes,
+			CodeGenerator:     hasCodeGenerator,
+			ClientGenerator:   hasClientGenerator,
+			SelfCallsAlways:   selfCallsAlways,
+			ModuleInitializer: hasModuleInitializer,
+			ClientInitializer: hasClientInitializer,
+			RuntimeTarget:     hasRuntimeTarget,
+		}
+	}
+	if src.ContextDirectory.Self() != nil {
+		contextDirID, err := encodePersistedObjectRef(cache, src.ContextDirectory, "module source context directory")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.ContextDirectoryResultID = contextDirID
+	}
+	if src.Workspace.Self() != nil {
+		workspaceID, err := encodePersistedObjectRef(cache, src.Workspace, "module source workspace")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.WorkspaceResultID = workspaceID
+	}
+	payload.DependencyResultIDs = make([]uint64, 0, len(src.Dependencies))
+	for _, dep := range src.Dependencies {
+		if dep.Self() == nil {
+			continue
+		}
+		depID, err := encodePersistedObjectRef(cache, dep, "module source dependency")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.DependencyResultIDs = append(payload.DependencyResultIDs, depID)
+	}
+	if src.Blueprint.Self() != nil {
+		blueprintID, err := encodePersistedObjectRef(cache, src.Blueprint, "module source blueprint")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.BlueprintResultID = blueprintID
+	}
+	payload.ToolchainResultIDs = make([]uint64, 0, len(src.Toolchains))
+	for _, toolchain := range src.Toolchains {
+		if toolchain.Self() == nil {
+			continue
+		}
+		toolchainID, err := encodePersistedObjectRef(cache, toolchain, "module source toolchain")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.ToolchainResultIDs = append(payload.ToolchainResultIDs, toolchainID)
+	}
+	if src.Git != nil {
+		payload.Git = &persistedGitModuleSourcePayload{
+			CloneRef:         src.Git.CloneRef,
+			ResolvedCloneRef: src.Git.ResolvedCloneRef,
+			Symbolic:         src.Git.Symbolic,
+			HTMLRepoURL:      src.Git.HTMLRepoURL,
+			HTMLURL:          src.Git.HTMLURL,
+			RepoRootPath:     src.Git.RepoRootPath,
+			Version:          src.Git.Version,
+			VersionQuery:     src.Git.VersionQuery,
+			Selector:         src.Git.Selector,
+			Commit:           src.Git.Commit,
+			Ref:              src.Git.Ref,
+		}
+		if src.Git.UnfilteredContextDir.Self() != nil {
+			unfilteredID, err := encodePersistedObjectRef(cache, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.GitUnfilteredContextDirResultID = unfilteredID
+		}
+	}
+	if src.DirSrc != nil {
+		payload.DirSrc = &persistedDirModuleSourcePayload{
+			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
+		}
+		if src.DirSrc.OriginalContextDir.Self() != nil {
+			originalContextDirID, err := encodePersistedObjectRef(cache, src.DirSrc.OriginalContextDir, "module source dir original context dir")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.DirSrc.OriginalContextDirResultID = originalContextDirID
+		}
+	}
+	return encodePersistedObjectPayload(payload)
+}
+
+func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedModuleSourcePayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted module source payload: %w", err)
+	}
+	contextDirectory, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ContextDirectoryResultID, "module source context directory")
+	if err != nil {
+		return nil, err
+	}
+	workspace, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.WorkspaceResultID, "module source workspace")
+	if err != nil {
+		return nil, err
+	}
+	dependencies := make([]dagql.ObjectResult[*ModuleSource], 0, len(persisted.DependencyResultIDs))
+	for _, depID := range persisted.DependencyResultIDs {
+		depRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, depID, "module source dependency")
+		if err != nil {
+			return nil, err
+		}
+		dependencies = append(dependencies, depRes)
+	}
+	blueprint, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.BlueprintResultID, "module source blueprint")
+	if err != nil {
+		return nil, err
+	}
+	toolchains := make([]dagql.ObjectResult[*ModuleSource], 0, len(persisted.ToolchainResultIDs))
+	for _, toolchainID := range persisted.ToolchainResultIDs {
+		toolchainRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, toolchainID, "module source toolchain")
+		if err != nil {
+			return nil, err
+		}
+		toolchains = append(toolchains, toolchainRes)
+	}
+	src := &ModuleSource{
+		ConfigExists:                  persisted.ConfigExists,
+		ConfigFilename:                persisted.ConfigFilename,
+		ModuleName:                    persisted.ModuleName,
+		ModuleOriginalName:            persisted.ModuleOriginalName,
+		EngineVersion:                 persisted.EngineVersion,
+		CodegenConfig:                 persisted.CodegenConfig,
+		ModuleConfigUserFields:        persisted.ModuleConfigUserFields,
+		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
+		SDK:                           persisted.SDK,
+		IncludePaths:                  slices.Clone(persisted.IncludePaths),
+		RebasedIncludePaths:           slices.Clone(persisted.RebasedIncludePaths),
+		ConfigDependencies:            slices.Clone(persisted.ConfigDependencies),
+		Dependencies:                  dependencies,
+		ConfigBlueprint:               persisted.ConfigBlueprint,
+		Blueprint:                     blueprint,
+		ConfigToolchains:              slices.Clone(persisted.ConfigToolchains),
+		Toolchains:                    toolchains,
+		UserDefaults:                  persisted.UserDefaults,
+		ConfigClients:                 slices.Clone(persisted.ConfigClients),
+		SourceRootSubpath:             persisted.SourceRootSubpath,
+		SourceSubpath:                 persisted.SourceSubpath,
+		OriginalSubpath:               persisted.OriginalSubpath,
+		ContextDirectory:              contextDirectory,
+		Workspace:                     workspace,
+		Kind:                          persisted.Kind,
+		Local:                         persisted.Local,
+	}
+	if persisted.Git != nil {
+		src.Git = &GitModuleSource{
+			CloneRef:         persisted.Git.CloneRef,
+			ResolvedCloneRef: persisted.Git.ResolvedCloneRef,
+			Symbolic:         persisted.Git.Symbolic,
+			HTMLRepoURL:      persisted.Git.HTMLRepoURL,
+			HTMLURL:          persisted.Git.HTMLURL,
+			RepoRootPath:     persisted.Git.RepoRootPath,
+			Version:          persisted.Git.Version,
+			VersionQuery:     persisted.Git.VersionQuery,
+			Selector:         persisted.Git.Selector,
+			Commit:           persisted.Git.Commit,
+			Ref:              persisted.Git.Ref,
+		}
+		if persisted.GitUnfilteredContextDirResultID != 0 {
+			unfilteredContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.GitUnfilteredContextDirResultID, "module source git unfiltered context directory")
+			if err != nil {
+				return nil, err
+			}
+			src.Git.UnfilteredContextDir = unfilteredContextDir
+		}
+	}
+	if persisted.DirSrc != nil {
+		src.DirSrc = &DirModuleSource{
+			OriginalSourceRootSubpath: persisted.DirSrc.OriginalSourceRootSubpath,
+		}
+		if persisted.DirSrc.OriginalContextDirResultID != 0 {
+			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
+			if err != nil {
+				return nil, err
+			}
+			src.DirSrc.OriginalContextDir = originalContextDir
+		}
+	}
+	if src.SDK != nil {
+		if persisted.SDKCapabilities == nil {
+			return nil, fmt.Errorf("decode persisted module source: missing persisted sdk capabilities")
+		}
+		src.SDKImpl = &persistedModuleSourceLazySDK{
+			config:       src.SDK,
+			src:          src,
+			capabilities: *persisted.SDKCapabilities,
+		}
+	}
+	return src, nil
+}
+
+func (src *ModuleSource) AsString() string {
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		return filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
+
+	case ModuleSourceKindGit:
+		version := src.Git.VersionQuery
+		if version == "" {
+			version = src.Git.Version
+		}
+		if src.Git.Selector == gitref.GitRefSelector {
+			return gitref.GitURLRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
+		}
+		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
+
+	default:
+		return ""
+	}
+}
+
+func (src *ModuleSource) Pin() string {
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		return ""
+	case ModuleSourceKindGit:
+		return src.Git.Commit
+	default:
+		return ""
+	}
+}
+
+// GetRelatedModules returns the related modules (dependencies or toolchains)
+// based on the type.
+func (src *ModuleSource) GetRelatedModules(typ ModuleRelationType) []dagql.ObjectResult[*ModuleSource] {
+	if typ == ModuleRelationTypeDependency {
+		return src.Dependencies
+	}
+	return src.Toolchains
+}
+
+// SetRelatedModules sets the related modules (dependencies or toolchains)
+// based on the type.
+func (src *ModuleSource) SetRelatedModules(typ ModuleRelationType, modules []dagql.ObjectResult[*ModuleSource]) {
+	if typ == ModuleRelationTypeDependency {
+		src.Dependencies = modules
+	} else {
+		src.Toolchains = modules
+	}
+}
+
+// LegacyWorkspaceFieldNames returns the legacy workspace-only dagger.json fields
+// currently stored on this module source.
+func (src *ModuleSource) LegacyWorkspaceFieldNames() []string {
+	var fields []string
+	if src != nil && src.ConfigBlueprint != nil {
+		fields = append(fields, "blueprint")
+	}
+	if src != nil && len(src.ConfigToolchains) > 0 {
+		fields = append(fields, "toolchains")
+	}
+	return fields
+}
+
+// UsesLegacyWorkspaceFields reports whether this module source still carries
+// legacy workspace-only dagger.json fields.
+func (src *ModuleSource) UsesLegacyWorkspaceFields() bool {
+	return len(src.LegacyWorkspaceFieldNames()) > 0
+}
+
+// StripLegacyWorkspaceFields clones the module source and removes any legacy
+// workspace-only dagger.json fields from the clone.
+func (src *ModuleSource) StripLegacyWorkspaceFields() *ModuleSource {
+	if src == nil {
+		return nil
+	}
+	stripped := src.Clone()
+	stripped.ConfigBlueprint = nil
+	stripped.Blueprint = dagql.ObjectResult[*ModuleSource]{}
+	stripped.ConfigToolchains = nil
+	stripped.Toolchains = nil
+	return stripped
+}
+
+// DirectLegacyWorkspaceLoadError returns the direct-load error for a module
+// source that still carries legacy workspace-only dagger.json fields.
+func (src *ModuleSource) DirectLegacyWorkspaceLoadError() error {
+	ref := src.OriginalRefString
+	if ref == "" {
+		ref = src.AsString()
+	}
+	return quietCLIError{
+		message: fmt.Sprintf("This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W %s\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces", ref),
+	}
+}
+
+// NestedLegacyWorkspaceLoadError returns the workspace-load error for a module
+// source that still points at a legacy workspace rather than a plain module.
+func (src *ModuleSource) NestedLegacyWorkspaceLoadError() error {
+	fields := strings.Join(src.LegacyWorkspaceFieldNames(), ", ")
+	ref := src.AsString()
+	if src.Kind == ModuleSourceKindLocal {
+		return fmt.Errorf(
+			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger workspace migrate` in %q, then update this source to point at one of the migrated modules under %q",
+			ref,
+			fields,
+			ref,
+			filepath.Join(ref, ".dagger", "modules"),
+		)
+	}
+	return fmt.Errorf(
+		"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
+		ref,
+		fields,
+	)
+}
+
+func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, error) {
+	// We only allow loading an env file from local modules, for safety
+	if src.Kind != ModuleSourceKindLocal {
+		return nil, "", nil
+	}
+
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if src.Workspace.Self() != nil {
+		envFilePath := path.Join("/", src.SourceRootSubpath, ".env")
+		var envFile *EnvFile
+		if err := dag.Select(ctx, src.Workspace, &envFile,
+			dagql.Selector{
+				Field: "file",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(envFilePath)}},
+			},
+			dagql.Selector{
+				Field: "asEnvFile",
+				Args: []dagql.NamedInput{
+					{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
+				},
+			},
+		); status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
+			return nil, "", nil
+		} else if err != nil {
+			return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", envFilePath, err)
+		}
+		return envFile, envFilePath, nil
+	}
+
+	// FIXME: .env must be at the root of the module directory
+	// If the user calls dagger from a subdirectory of the module, and that subdirectory contains a more
+	//  specialized .env, that will be ignored. To fix this, we need access to current workdir on the host,
+	// so that we can findup from there.
+	moduleDirPath := path.Join(
+		src.Local.ContextDirectoryPath, // path of the module's git root, on the host
+		src.SourceRootSubpath,          // path of the module directory, relative to its git root
+	)
+	// Check if the env file exists
+	var envFileExists bool
+	if err := dag.Select(ctx, dag.Root(), &envFileExists,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(moduleDirPath)},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{".env"}},
+			},
+		},
+		dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".env")},
+				{Name: "expectedType", Value: dagql.Opt(ExistsTypeRegular)},
+			},
+		},
+	); status.Code(err) == codes.NotFound {
+		// It's possible that the module directory *doesn't exist yet*
+		// (ie. we are called from `dagger init ./FOO` and `FOO` will be populated after we return)
+		// Therefore: if parent directory doesn't exist, just return "no result" without error
+		return nil, "", nil
+	} else if err != nil {
+		return nil, "", fmt.Errorf("failed to check for inner env file in %s: %w",
+			moduleDirPath, err)
+	}
+	if !envFileExists {
+		return nil, "", nil
+	}
+	envFilePath := path.Join(moduleDirPath, ".env")
+	var envFile *EnvFile
+	if err := dag.Select(ctx, dag.Root(), &envFile,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(envFilePath)},
+			},
+		},
+		dagql.Selector{
+			Field: "asEnvFile",
+			Args: []dagql.NamedInput{
+				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
+			},
+		},
+	); err != nil {
+		return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", moduleDirPath, err)
+	}
+	return envFile, envFilePath, nil
+}
+
+// runningInsideModule reports whether the caller is module code rather than a
+// client that owns a host session, by comparing the current client against the
+// nearest non-module ancestor.
+func runningInsideModule(ctx context.Context) (bool, error) {
+	current, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	parent, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return false, err
+	}
+	return current.ClientID != parent.ClientID, nil
+}
+
+func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, error) {
+	// The outer env file is the caller's own .env, found by walking their host.
+	// Module code has no host session, so this lookup can only block until the
+	// context deadline.
+	//
+	// This only reaches dir- and git-kind sources: LoadUserDefaults swaps in the
+	// non-module parent's client metadata for local sources before getting here,
+	// so those still resolve against the caller's host as they always have.
+	// Extending that to dir/git would be a wider grant — it would hand a module
+	// the caller's .env for any module source it can synthesize — so they get an
+	// empty one instead. innerEnvFile already refuses non-local sources "for
+	// safety"; this is the same restriction from the other direction.
+	//
+	// core/schema/git.go runs the same check for host git credentials and pairs
+	// it with an IsModuleDependencyResolution escape hatch. There is nothing to
+	// escape to here: findUp from a nested client only ever timed out, so there
+	// is no working behavior to preserve.
+	inModule, err := runningInsideModule(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if inModule {
+		return &EnvFile{}, "", nil
+	}
+
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	var envFilePath dagql.String
+	if err := dag.Select(ctx, dag.Root(), &envFilePath,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "findUp",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString(".env")},
+			},
+		},
+	); err != nil {
+		return nil, "", fmt.Errorf("failed to find-up outer .env: %s", err.Error())
+	}
+	if envFilePath == "" {
+		return &EnvFile{}, "", nil
+	}
+	// Check if the found .env path is a regular file (not a directory)
+	envFileDir := path.Dir(envFilePath.String())
+	envFileName := path.Base(envFilePath.String())
+	var isRegularFile bool
+	if err := dag.Select(ctx, dag.Root(), &isRegularFile,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(envFileDir)},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(envFileName)}},
+			},
+		},
+		dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(envFileName)},
+				{Name: "expectedType", Value: dagql.Opt(ExistsTypeRegular)},
+			},
+		},
+	); err != nil {
+		return nil, "", fmt.Errorf("failed to check outer env file type at %q: %w", envFilePath.String(), err)
+	}
+	if !isRegularFile {
+		return &EnvFile{}, "", nil
+	}
+	var envFile *EnvFile
+	if err := dag.Select(ctx, dag.Root(), &envFile,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: envFilePath},
+			},
+		},
+		dagql.Selector{
+			Field: "asEnvFile",
+			Args: []dagql.NamedInput{
+				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
+			},
+		},
+	); err != nil {
+		return nil, envFilePath.String(), fmt.Errorf("failed to load outer env file from %q: %s", envFilePath.String(), err.Error())
+	}
+	return envFile, envFilePath.String(), nil
+}
+
+// LoadUserDefaults loads and merges environment files for local module defaults.
+// It combines the inner .env file (from the module's source root) with relevant
+// entries from the outer .env file (found via find-up from the host), filtered
+// by the module name and original module name as prefixes.
+//
+// Example:
+// Inner .env (mymodule/.env): FOO=bar
+// Outer .env (found via find-up): MYMODULE_BAZ=qux, OTHER_VAR=ignored
+// Result: FOO=bar, BAZ=qux (prefix "MYMODULE_" removed from outer entries)
+func (src *ModuleSource) LoadUserDefaults(ctx context.Context) (rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "loading user defaults", telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+	// For local module sources, ensure we have the right client context for filesystem access.
+	// Modules run as their own clients, but need access to the original caller's filesystem.
+	// NonModuleParentClientMetadata is idempotent, so this is safe to call multiple times.
+	if src.Kind == ModuleSourceKindLocal {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get current query: %w", err)
+		}
+		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+	}
+	innerEnvFile, _, err := src.innerEnvFile(ctx)
+	if err != nil {
+		return err
+	}
+	outerEnvFile, _, err := src.outerEnvFile(ctx)
+	if err != nil {
+		return err
+	}
+	outerForName, err := outerEnvFile.Namespace(ctx, src.ModuleName)
+	if err != nil {
+		return err
+	}
+	outerForOriginalName, err := outerEnvFile.Namespace(ctx, src.ModuleOriginalName)
+	if err != nil {
+		return err
+	}
+	src.UserDefaults = NewEnvFile(true).WithEnvFiles(innerEnvFile, outerForName, outerForOriginalName)
+	return nil
+}
+
+// we mix this into digest hashes to ensure they don't accidentally collide
+// with any others
+const moduleSourceHashMix = "moduleSource"
+
+// SourceImplementationDigest calculates a content-hash of the module source's
+// implementation. Two module sources with the same digest should share
+// implementation-scoped cache identity for SDK operations and module function
+// calls even if they came from different client-specific sources.
+func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest.Digest, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	var contextDigest string
+	if err := dag.Select(ctx, src.ContextDirectory, &contextDigest, dagql.Selector{Field: "digest"}); err != nil {
+		return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
+	}
+
+	inputs := []string{
+		moduleSourceHashMix,
+		src.ModuleOriginalName,
+		src.SourceRootSubpath,
+		src.SourceSubpath,
+		contextDigest,
+	}
+
+	if src.SDK != nil && src.SDK.Debug {
+		inputs = append(inputs, rand.Text())
+	}
+
+	// Include user defaults in digest so changes to env files invalidate cache
+	if src.UserDefaults != nil {
+		vars, err := src.UserDefaults.Variables(ctx, false)
+		if err != nil {
+			// If user defaults fail to load, log the error and skip them from digest calculation
+			// FIXME: change the signature to bubble up the error?
+			slog.Error("failed to load user defaults for module source",
+				"module_name", src.ModuleName,
+				"error", err,
+			)
+		} else {
+			// Sort by variable name for better digest stability
+			sort.Slice(vars, func(i, j int) bool {
+				return vars[i].Name < vars[j].Name
+			})
+			for _, v := range vars {
+				inputs = append(inputs, fmt.Sprintf("env:%s=%s", v.Name, v.Value))
+			}
+		}
+	}
+
+	if src.SDK != nil {
+		inputs = append(inputs, src.SDK.Source)
+	}
+
+	inputs = append(inputs, src.IncludePaths...)
+
+	for _, dep := range src.Dependencies {
+		if dep.Self() == nil {
+			continue
+		}
+		var depDigest string
+		if err := dag.Select(ctx, dep, &depDigest, dagql.Selector{Field: "digest"}); err != nil {
+			return "", fmt.Errorf("failed to get dependency digest: %w", err)
+		}
+		inputs = append(inputs, depDigest)
+	}
+
+	if src.Blueprint.Self() != nil {
+		var blueprintDigest string
+		if err := dag.Select(ctx, src.Blueprint, &blueprintDigest, dagql.Selector{Field: "digest"}); err != nil {
+			return "", fmt.Errorf("failed to get blueprint digest: %w", err)
+		}
+		inputs = append(inputs, "blueprint:"+blueprintDigest)
+	}
+
+	for _, toolchain := range src.Toolchains {
+		if toolchain.Self() == nil {
+			continue
+		}
+		var toolchainDigest string
+		if err := dag.Select(ctx, toolchain, &toolchainDigest, dagql.Selector{Field: "digest"}); err != nil {
+			return "", fmt.Errorf("failed to get toolchain digest: %w", err)
+		}
+		inputs = append(inputs, "toolchain:"+toolchainDigest)
+	}
+
+	for _, client := range src.ConfigClients {
+		inputs = append(inputs, client.Generator, client.Directory)
+	}
+
+	return hashutil.HashStrings(inputs...), nil
+}
+
+func ImplementationScopedModuleSource(
+	ctx context.Context,
+	src dagql.ObjectResult[*ModuleSource],
+) (dagql.ObjectResult[*ModuleSource], error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*ModuleSource]{}, fmt.Errorf("implementation-scoped module source: current dagql server: %w", err)
+	}
+
+	var scoped dagql.ObjectResult[*ModuleSource]
+	if err := dag.Select(ctx, src, &scoped, dagql.Selector{Field: "_implementationScoped"}); err != nil {
+		return dagql.ObjectResult[*ModuleSource]{}, fmt.Errorf("implementation-scoped module source: select field: %w", err)
+	}
+	return scoped, nil
+}
+
+// LoadContextDir loads addition files+directories from the module source's context, including those that
+// may have not been included in the original module source load.
+func (src *ModuleSource) LoadContextDir(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+	filter CopyFilter,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	filterInputs := copyFilterInputs(filter)
+
+	// Determine the context for defaultPath arguments, in priority order:
+	//
+	//   1. a Workspace explicitly bound into the context (an LLM bound via
+	//      withWorkspace), so the agent's defaultPath args resolve against its
+	//      own (possibly overlaid) workspace;
+	//   2. otherwise the module source itself.
+	//
+	// NOTE: this applies unilaterally, whether the module was loaded from Host,
+	// Git, or a Directory.
+	if ws, ok := WorkspaceFromContext(ctx); ok {
+		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
+	} else {
+		inst, err = NewModuleSourceFS(nil, src).directory(ctx, dag, path, filterInputs)
+	}
+	if err != nil {
+		return inst, err
+	}
+	instID, err := inst.ID()
+	if err != nil {
+		return inst, fmt.Errorf("context directory ID: %w", err)
+	}
+	instCall, err := inst.ResultCall()
+	if err != nil {
+		return inst, fmt.Errorf("context directory call: %w", err)
+	}
+	if instID != nil && instCall.ContentDigest() == "" {
+		snapshot, err := inst.Self().Snapshot.GetOrEval(ctx, inst.Result)
+		if err != nil {
+			return inst, fmt.Errorf("context directory snapshot: %w", err)
+		}
+		dirPath, err := inst.Self().Dir.GetOrEval(ctx, inst.Result)
+		if err != nil {
+			return inst, fmt.Errorf("context directory path: %w", err)
+		}
+		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+		if err != nil {
+			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
+		}
+		inst, err = inst.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set contextual directory content digest: %w", err)
+		}
+	}
+
+	return inst, nil
+}
+
+func copyFilterInputs(filter CopyFilter) []dagql.NamedInput {
+	var inputs []dagql.NamedInput
+	if len(filter.Include) > 0 {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "include",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...)),
+		})
+	}
+	if len(filter.Exclude) > 0 {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "exclude",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...)),
+		})
+	}
+	if filter.Gitignore {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "gitignore",
+			Value: dagql.NewBoolean(true),
+		})
+	}
+	return inputs
+}
+
+func (src *ModuleSource) loadContextFromWorkspace(
+	ctx context.Context,
+	dag *dagql.Server,
+	ws dagql.ObjectResult[*Workspace],
+	path string,
+	filterInputs []dagql.NamedInput,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	// Workspace.directory resolves relative paths against the workspace cwd, but
+	// the contextual path is relative to the workspace (context) root — so
+	// anchor it as an absolute path (see workspaceContextDirPath). The filters
+	// fold directly into the directory selector's native include/exclude/
+	// gitignore args, collapsing the Env path's separate .filter step.
+	dirArgs := append([]dagql.NamedInput{
+		{Name: "path", Value: dagql.String(workspaceContextDirPath(src.SourceRootSubpath, path))},
+	}, filterInputs...)
+	err = dag.Select(ctx, ws, &inst, dagql.Selector{
+		Field: "directory",
+		Args:  dirArgs,
+	})
+	if err != nil {
+		return inst, fmt.Errorf("failed to select workspace directory: %w", err)
+	}
+	return inst, nil
+}
+
+// workspaceContextDirPath computes the workspace-root-relative path for a
+// module's contextual (+defaultPath) argument. A relative defaultPath is taken
+// relative to the module root (sourceRootSubpath); an absolute defaultPath is
+// taken relative to the context/workspace root. The result is always an
+// absolute (root-anchored) path: Workspace.directory resolves relative paths
+// against the workspace cwd but absolute paths against the workspace root, and
+// the context path is always root-relative.
+func workspaceContextDirPath(sourceRootSubpath, defaultPath string) string {
+	p := defaultPath
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(sourceRootSubpath, p)
+	}
+	return filepath.Join("/", p)
+}
+
+func (src *ModuleSource) loadContextFromSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+	filterInputs []dagql.NamedInput,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+
+		// Retrieve the absolute path to the context directory (.git or module config)
+		// and the module root directory (module config)
+		ctxPath := src.Local.ContextDirectoryPath
+		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
+
+		// If path is not absolute, it's relative to the module root directory.
+		// If path is absolute, it's relative to the context directory.
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(modPath, path)
+		} else {
+			path = filepath.Join(ctxPath, path)
+		}
+
+		// We just check if the path is relative to the context directory,
+		// if not, that means it's a path that target an outside directory
+		// which is not allowed.
+		relativePathToCtx, err := filepath.Rel(ctxPath, path)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get relative path to context: %w", err)
+		}
+
+		// If the relative path is outisde of the context directory, throw an error.
+		if strings.HasPrefix(relativePathToCtx, "..") {
+			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
+		}
+
+		err = dag.Select(localSourceCtx, dag.Root(), &inst,
+			dagql.Selector{
+				Field: "host",
+			},
+			dagql.Selector{
+				Field: "directory",
+				Args: append([]dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+					{Name: "noCache", Value: dagql.Boolean(true)},
+				}, filterInputs...),
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select host directory: %w", err)
+		}
+
+		// The checkout's dangling .git pointer file (worktree/submodule) only
+		// sits at the context root; the engine never interprets it (git-ness
+		// comes canonically via MaterializeHostGitCheckout), so drop it here.
+		// Loading a subdir whose root has its own .git file would be a nested
+		// submodule checkout -- leave those untouched.
+		if path == ctxPath {
+			inst, err = DropRootGitPointerFile(localSourceCtx, dag, inst)
+			if err != nil {
+				return inst, fmt.Errorf("failed to drop root .git pointer file: %w", err)
+			}
+		}
+
+	case ModuleSourceKindGit:
+		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
+
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
+
+		// Use the Git context directory without module config includes applied.
+		ctxDir := src.Git.UnfilteredContextDir
+
+		if path != "/" {
+			if err := dag.Select(ctx, ctxDir, &ctxDir,
+				dagql.Selector{
+					Field: "directory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(path)},
+					},
+				},
+			); err != nil {
+				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+			}
+		}
+
+		if len(filterInputs) > 0 {
+			ctxDirID, err := ctxDir.ID()
+			if err != nil {
+				return inst, fmt.Errorf("context directory ID for filtering: %w", err)
+			}
+			if err := dag.Select(ctx, dag.Root(), &ctxDir,
+				dagql.Selector{
+					Field: "directory",
+				},
+				dagql.Selector{
+					Field: "withDirectory",
+					Args: append([]dagql.NamedInput{
+						{Name: "path", Value: dagql.String("/")},
+						{Name: "source", Value: dagql.NewID[*Directory](ctxDirID)},
+					}, filterInputs...),
+				},
+			); err != nil {
+				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+			}
+		}
+
+		inst = ctxDir
+
+	case ModuleSourceKindDir:
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
+
+		// Use the Dir context directory.
+		ctxDir := src.ContextDirectory
+
+		if path != "/" {
+			if err := dag.Select(ctx, ctxDir, &ctxDir,
+				dagql.Selector{
+					Field: "directory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(path)},
+					},
+				},
+			); err != nil {
+				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+			}
+		}
+
+		if len(filterInputs) > 0 {
+			ctxDirID, err := ctxDir.ID()
+			if err != nil {
+				return inst, fmt.Errorf("context directory ID for filtering: %w", err)
+			}
+			if err := dag.Select(ctx, dag.Root(), &ctxDir,
+				dagql.Selector{
+					Field: "directory",
+				},
+				dagql.Selector{
+					Field: "withDirectory",
+					Args: append([]dagql.NamedInput{
+						{Name: "path", Value: dagql.String("/")},
+						{Name: "source", Value: dagql.NewID[*Directory](ctxDirID)},
+					}, filterInputs...),
+				},
+			); err != nil {
+				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+			}
+		}
+
+		snapshot, err := ctxDir.Self().Snapshot.GetOrEval(ctx, ctxDir.Result)
+		if err != nil {
+			return inst, fmt.Errorf("context directory snapshot: %w", err)
+		}
+		dirPath, err := ctxDir.Self().Dir.GetOrEval(ctx, ctxDir.Result)
+		if err != nil {
+			return inst, fmt.Errorf("context directory path: %w", err)
+		}
+		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+		if err != nil {
+			return inst, err
+		}
+		inst, err = ctxDir.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set contextual directory content digest: %w", err)
+		}
+
+	default:
+		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+	}
+
+	return inst, nil
+}
+
+func (src *ModuleSource) LoadContextFile(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+) (inst dagql.ObjectResult[*File], err error) {
+	if src.Workspace.Self() != nil {
+		workspacePath := workspaceContextDirPath(src.SourceRootSubpath, path)
+		if err := dag.Select(ctx, src.Workspace, &inst, dagql.Selector{
+			Field: "file",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(workspacePath)}},
+		}); err != nil {
+			return inst, fmt.Errorf("failed to select workspace file: %w", err)
+		}
+		return inst, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+
+		// Retrieve the absolute path to the context directory (.git or module config)
+		// and the module root directory (module config)
+		ctxPath := src.Local.ContextDirectoryPath
+		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
+
+		// If path is not absolute, it's relative to the module root directory.
+		// If path is absolute, it's relative to the context directory.
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(modPath, path)
+		} else {
+			path = filepath.Join(ctxPath, path)
+		}
+
+		// We just check if the path is relative to the context directory,
+		// if not, that means it's a path that target an outside directory
+		// which is not allowed.
+		relativePathToCtx, err := filepath.Rel(ctxPath, path)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get relative path to context: %w", err)
+		}
+
+		// If the relative path is outisde of the context directory, throw an error.
+		if strings.HasPrefix(relativePathToCtx, "..") {
+			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
+		}
+
+		err = dag.Select(localSourceCtx, dag.Root(), &inst,
+			dagql.Selector{
+				Field: "host",
+			},
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+					{Name: "noCache", Value: dagql.Boolean(true)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select file: %w", err)
+		}
+
+	case ModuleSourceKindGit:
+		slog.Debug("moduleSource.LoadContext: loading contextual file from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
+
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
+
+		// Use the Git context directory without module config includes applied.
+		ctxDir := src.Git.UnfilteredContextDir
+		if err := dag.Select(ctx, ctxDir, &inst,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+				},
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+		}
+
+	case ModuleSourceKindDir:
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
+
+		// Use the Dir context directory.
+		ctxDir := src.ContextDirectory
+
+		if err := dag.Select(ctx, ctxDir, &inst,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+				},
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+		}
+
+	default:
+		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+	}
+
+	return inst, nil
+}
+
+func (src *ModuleSource) LoadContextGit(
+	ctx context.Context,
+	dag *dagql.Server,
+) (inst dagql.ObjectResult[*GitRepository], err error) {
+	if src.Kind == ModuleSourceKindGit && src.Workspace.Self() != nil {
+		ref, ok := src.Workspace.Self().SourceGitRef()
+		if !ok || ref.Self().Repo.Self() == nil {
+			return inst, fmt.Errorf("git workspace module source has no backing repository")
+		}
+		// A Git workspace deliberately keeps its checkout tree free of .git and
+		// retains the selected GitRef as separate source provenance. Derive a
+		// repository from that exact ref so contextual GitRepository/GitRef
+		// arguments keep the original credentials and service bindings while HEAD
+		// remains pinned to the workspace ref.
+		refID, err := ref.ID()
+		if err != nil {
+			return inst, fmt.Errorf("git workspace source ref ID: %w", err)
+		}
+		if err := dag.Select(ctx, ref.Self().Repo, &inst, dagql.Selector{
+			Field: "__withHead",
+			Args:  []dagql.NamedInput{{Name: "ref", Value: dagql.NewID[*GitRef](refID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("pin git workspace source repository: %w", err)
+		}
+		return inst, nil
+	}
+
+	if src.Kind == ModuleSourceKindGit {
+		// easy, we're running a git repo
+		err := dag.Select(ctx, dag.Root(), &inst,
+			dagql.Selector{
+				Field: "git",
+				Args: []dagql.NamedInput{
+					{Name: "url", Value: dagql.String(src.Git.CloneRef)},
+					// NOTE: pin HEAD to the module's git commit and ref
+					// this matches the behavior of calling a checked out local source module
+					{Name: "commit", Value: dagql.String(src.Git.Commit)},
+					{Name: "ref", Value: dagql.String(src.Git.Ref)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
+		}
+		return inst, nil
+	}
+
+	// bit harder, this is actually a local directory
+	dir, err := src.LoadContextDir(ctx, dag, "/", CopyFilter{
+		Gitignore: true,
+	})
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git: %w", err)
+	}
+
+	if src.Kind == ModuleSourceKindLocal {
+		// The engine never interprets the host checkout's raw git layout
+		// (worktree/submodule pointer files, commondirs, separate git dirs):
+		// replace whatever .git the synced tree carries with a canonical
+		// reconstruction of the checkout's repository, packed by the client's
+		// own git. Route through the owning client, as loading host paths does.
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return inst, err
+		}
+		md, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		clientCtx := engine.ContextWithClientMetadata(ctx, md)
+		// Empty cacheKey: a module context is resolved fresh per load, so key
+		// the reconstruction to the checkout's live ref state.
+		dir, err = MaterializeHostGitCheckout(clientCtx, dag, dir, src.Local.ContextDirectoryPath, "")
+		if err != nil {
+			// Propagate ErrNoGitContext unchanged: callers degrade optional
+			// contextual git args to null on it.
+			return inst, err
+		}
+	}
+
+	// Whatever .git the tree now carries decides git-ness: a canonical .git
+	// (just reconstructed), a plain .git directory (a Dir source, or a client
+	// that could not pack its checkout), or none at all. Absence is the
+	// degradable "no git checkout" state -- checked here so it holds even when
+	// the client cannot pack, matching pre-reconstruction behavior. A .git
+	// that exists but cannot be used as a repository fails downstream in asGit
+	// with git's own diagnostics.
+	if _, err := dir.Self().Stat(ctx, dir, dag, ".git", true); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return inst, ErrNoGitContext
+		}
+		return inst, err
+	}
+
+	err = dag.Select(ctx, dir, &inst,
+		dagql.Selector{
+			Field: "asGit",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
+	}
+
+	return inst, nil
+}
+
+type LocalModuleSource struct {
+	ContextDirectoryPath string
+}
+
+func (src LocalModuleSource) Clone() *LocalModuleSource {
+	return &src
+}
+
+type GitModuleSource struct {
+	// The ref to clone the root of the git repo from
+	CloneRef string
+
+	// The URL after Git transport selection. Kept separately from the user's
+	// spelling so reports do not need another lookup or invent a protocol.
+	ResolvedCloneRef string
+
+	// Symbolic is the CloneRef plus the SourceRootSubpath (no version)
+	Symbolic string
+
+	// The URL to the source's git repo in a web browser, at the root of the repo
+	HTMLRepoURL string
+
+	// The URL to the source's git repo in a web browser, including to the source root subpath
+	HTMLURL string
+
+	// The import path corresponding to the root of the git repo this source points to
+	RepoRootPath string
+
+	// The version of the source; may be a branch, tag, or commit hash
+	Version string
+
+	// The version query used to select Version.
+	VersionQuery string
+
+	// Selector preserves whether the source used @ version-query semantics or
+	// literal #ref:subpath Git URL semantics.
+	Selector gitref.SelectorType
+
+	// The resolved commit hash of the source
+	Commit string
+	// The fully resolved git ref string of the source
+	Ref string
+
+	// The full git repo for the module source without any include filtering
+	UnfilteredContextDir dagql.ObjectResult[*Directory]
+}
+
+func (src GitModuleSource) Link(filepath string, line int, column int) (string, error) {
+	parsedURL, err := url.Parse(src.HTMLRepoURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse git repo URL %q: %w", src.HTMLRepoURL, err)
+	}
+
+	switch parsedURL.Host {
+	case "github.com", "gitlab.com":
+		result := src.HTMLRepoURL + path.Join("/tree", src.Commit, filepath)
+		if line > 0 {
+			result += fmt.Sprintf("#L%d", line)
+		}
+		return result, nil
+	case "dev.azure.com":
+		result := src.HTMLRepoURL + path.Join("/commit", src.Commit)
+		if filepath != "." {
+			result += "?path=/" + filepath
+		}
+		return result, nil
+	default:
+		return src.HTMLRepoURL + path.Join("/src", src.Commit, filepath), nil
+	}
+}
+
+func (src GitModuleSource) Clone() *GitModuleSource {
+	return &src
+}
+
+type DirModuleSource struct {
+	// the original dir that AsModuleSource was called on
+	OriginalContextDir dagql.ObjectResult[*Directory]
+	// the original source root subpath provided to AsModuleSource
+	OriginalSourceRootSubpath string
+}
+
+type moduleDependencyResolutionKey struct{}
+
+// WithModuleDependencyResolution marks ctx as resolving a module's declared
+// dependency or SDK source. This is trusted resolution performed on the user's
+// behalf (the refs come from a module's dagger.json), so the git resolver is
+// permitted to fall back to the session's originating client credentials when
+// the immediate caller is a nested client that doesn't hold them (e.g. a codegen
+// exec during `dagger generate`). It does NOT loosen credential handling for
+// arbitrary git access from module runtime code.
+func WithModuleDependencyResolution(ctx context.Context) context.Context {
+	return context.WithValue(ctx, moduleDependencyResolutionKey{}, true)
+}
+
+// IsModuleDependencyResolution reports whether ctx is resolving a module's
+// declared dependency or SDK source. See WithModuleDependencyResolution.
+func IsModuleDependencyResolution(ctx context.Context) bool {
+	allowed, _ := ctx.Value(moduleDependencyResolutionKey{}).(bool)
+	return allowed
+}
+
+// ResolveDepToSource given a parent module source, load a dependency of it
+// from the given depSrcRef, depPin and depName.
+func ResolveDepToSource(
+	ctx context.Context,
+	bk *engineutil.Client,
+	dag *dagql.Server,
+	parentSrc *ModuleSource,
+	depSrcRef string,
+	depPin string,
+	depName string,
+) (inst dagql.ObjectResult[*ModuleSource], err error) {
+	// sanity checks
+	if parentSrc != nil {
+		if parentSrc.SourceRootSubpath == "" {
+			return inst, fmt.Errorf("source root path must be set")
+		}
+		if parentSrc.ModuleName == "" {
+			return inst, fmt.Errorf("module name must be set")
+		}
+	}
+
+	parsedDepRef, err := ParseRefString(
+		ctx,
+		NewModuleSourceFS(bk, parentSrc),
+		depSrcRef,
+		depPin,
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to parse dep ref string: %w", err)
+	}
+
+	switch parsedDepRef.Kind {
+	case ModuleSourceKindLocal:
+		if parentSrc == nil {
+			// it's okay if there's no parent when the dep is git, but we can't find a local dep relative to nothing
+			return inst, fmt.Errorf("local module dep source path %q must be relative to a parent module", depSrcRef)
+		}
+
+		if filepath.IsAbs(depSrcRef) {
+			// they need to be relative to the parent module's source root
+			return inst, fmt.Errorf("local module dep source path %q is absolute", depSrcRef)
+		}
+		if parentSrc.Workspace.Self() != nil {
+			depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
+			if !filepath.IsLocal(depPath) {
+				return inst, fmt.Errorf("local module dep source path %q escapes workspace", depSrcRef)
+			}
+			selectors := []dagql.Selector{{
+				Field: "moduleSource",
+				// depPath is workspace-root relative, so anchor it: a relative
+				// path would resolve against the workspace cwd, which sits at
+				// the module's scope while an SDK generates that scope.
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(filepath.ToSlash(filepath.Join("/", depPath)))},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			if err := dag.Select(ctx, parentSrc.Workspace, &inst, selectors...); err != nil {
+				if errors.Is(err, dagql.ErrCacheRecursiveCall) {
+					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
+				}
+				return inst, err
+			}
+			return inst, nil
+		}
+
+		switch parentSrc.Kind {
+		case ModuleSourceKindLocal:
+			// parent=local, dep=local
+			// load the dep relative to the parent's source root, from the caller's filesystem
+			depPath := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath, depSrcRef)
+			depRelPath, err := pathutil.LexicalRelativePath(parentSrc.Local.ContextDirectoryPath, depPath)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get relative path from context to dep: %w", err)
+			}
+			if !filepath.IsLocal(depRelPath) {
+				return inst, fmt.Errorf("local module dep source path %q escapes context %q", depRelPath, parentSrc.Local.ContextDirectoryPath)
+			}
+
+			selectors := []dagql.Selector{{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(depPath)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err = dag.Select(ctx, dag.Root(), &inst, selectors...)
+			if err != nil {
+				if errors.Is(err, dagql.ErrCacheRecursiveCall) {
+					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
+				}
+				return inst, err
+			}
+			return inst, nil
+
+		case ModuleSourceKindGit:
+			// parent=git, dep=local
+			// load the dep relative to the parent's source root, from the parent source's git repo
+			refString := GitRefString(
+				parentSrc.Git.CloneRef,
+				filepath.Join(parentSrc.SourceRootSubpath, depSrcRef),
+				parentSrc.Git.Version,
+			)
+			selectors := []dagql.Selector{{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(refString)},
+					{Name: "refPin", Value: dagql.String(parentSrc.Git.Commit)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err := dag.Select(ctx, dag.Root(), &inst, selectors...)
+			if err != nil {
+				return inst, err
+			}
+			return inst, nil
+
+		case ModuleSourceKindDir:
+			// parent=dir, dep=local
+			depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
+			selectors := []dagql.Selector{{
+				Field: "asModuleSource",
+				Args: []dagql.NamedInput{
+					{Name: "sourceRootPath", Value: dagql.String(depPath)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err := dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
+			if err != nil {
+				return inst, err
+			}
+			return inst, nil
+
+		default:
+			return inst, fmt.Errorf("unsupported parent module source kind: %s", parentSrc.Kind)
+		}
+
+	case ModuleSourceKindGit:
+		// parent=*, dep=git
+		// Mark this as trusted module dependency/SDK resolution. A module's git
+		// dependencies and git-based SDK are declared in its (trusted) dagger.json
+		// and resolved on the user's behalf, but codegen can run under a nested
+		// client (e.g. a git-less codegen exec during `dagger generate`) that does
+		// not itself hold the user's git credentials. This marker lets the git
+		// resolver fall back to the originating client's credentials (see
+		// core/schema/git.go); without it the resolver only authenticates for the
+		// main client and private dependency resolution fails.
+		ctx = WithModuleDependencyResolution(ctx)
+
+		selectors := []dagql.Selector{{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(depSrcRef)},
+				{Name: "refPin", Value: dagql.String(depPin)},
+			},
+		}}
+		if depName != "" {
+			selectors = append(selectors, dagql.Selector{
+				Field: "withName",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(depName)},
+				},
+			})
+		}
+		err := dag.Select(ctx, dag.Root(), &inst, selectors...)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load git dep: %w", err)
+		}
+		return inst, nil
+
+	default:
+		return inst, fmt.Errorf("unsupported module source kind: %s", parsedDepRef.Kind)
+	}
+}
+
+type StatFS interface {
+	Stat(ctx context.Context, path string) (string, *Stat, error)
+}
+
+type ExistsFS interface {
+	Exists(ctx context.Context, path string) (string, bool, error)
+}
+
+type StatFSFunc func(ctx context.Context, path string) (string, *Stat, error)
+
+func (f StatFSFunc) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	return f(ctx, path)
+}
+
+func StatFSExists(ctx context.Context, statFS StatFS, path string) (string, bool, error) {
+	if existsFS, ok := statFS.(ExistsFS); ok {
+		return existsFS.Exists(ctx, path)
+	}
+
+	dirName, _, err := statFS.Stat(ctx, path)
+	switch {
+	case err == nil:
+		return dirName, true, nil
+	case errors.Is(err, os.ErrNotExist):
+		return "", false, nil
+	default:
+		return "", false, err
+	}
+}
+
+type CallerStatFS struct {
+	bk *engineutil.Client
+}
+
+func NewCallerStatFS(bk *engineutil.Client) *CallerStatFS {
+	return &CallerStatFS{bk}
+}
+
+func (csfs CallerStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	bkStat, err := csfs.bk.StatCallerHostPath(ctx, path, true)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return "", nil, os.ErrNotExist
+		}
+		return "", nil, err
+	}
+
+	// Note that the mkstat func (from fsutils) returns a relative path; however, the Stat
+	// struct only stores the basename, so we also return the relative dir path.
+	pathDir := filepath.Dir(bkStat.Path)
+	pathBase := filepath.Base(bkStat.Path)
+
+	fileMode := fs.FileMode(bkStat.Mode)
+	return pathDir, &Stat{
+		Name:        pathBase,
+		Size:        int(bkStat.Size_),
+		Permissions: int(fileMode.Perm()),
+		FileType:    FileModeToFileType(fileMode),
+	}, nil
+}
+
+func (csfs CallerStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	dirName, _, err := csfs.Stat(ctx, path)
+	switch {
+	case err == nil:
+		return dirName, true, nil
+	case errors.Is(err, os.ErrNotExist):
+		return "", false, nil
+	default:
+		return "", false, err
+	}
+}
+
+// ModuleSourceFS provides filesystem access through a ModuleSource's backing
+// source, including a retained Workspace when present.
+type ModuleSourceFS struct {
+	bk  *engineutil.Client
+	src *ModuleSource
+}
+
+func NewModuleSourceFS(bk *engineutil.Client, src *ModuleSource) *ModuleSourceFS {
+	return &ModuleSourceFS{bk: bk, src: src}
+}
+
+// ContextDirectory loads the source's context root. Filter patterns are
+// context-root-relative, matching ModuleSource.ContextDirectory semantics.
+func (fs ModuleSourceFS) ContextDirectory(ctx context.Context, filter CopyFilter) (dagql.ObjectResult[*Directory], error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	return fs.directory(ctx, dag, "/", copyFilterInputs(filter))
+}
+
+func (fs ModuleSourceFS) directory(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+	filterInputs []dagql.NamedInput,
+) (dagql.ObjectResult[*Directory], error) {
+	if fs.src == nil {
+		return dagql.ObjectResult[*Directory]{}, os.ErrNotExist
+	}
+	if fs.src.Workspace.Self() != nil {
+		return fs.src.loadContextFromWorkspace(ctx, dag, fs.src.Workspace, path, filterInputs)
+	}
+	return fs.src.loadContextFromSource(ctx, dag, path, filterInputs)
+}
+
+func CallDirExists(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) (string, bool, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", false, err
+	}
+
+	var exists dagql.Boolean
+	err = dag.Select(ctx, dir, &exists,
+		dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		},
+	)
+	if err != nil {
+		return "", false, err
+	}
+	return filepath.Dir(path), exists.Bool(), nil
+}
+
+func CallDirStat(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) (string, *Stat, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+
+	var info *Stat
+	err = dag.Select(ctx, dir, &info,
+		dagql.Selector{
+			Field: "stat",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		},
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	return filepath.Dir(path), info, nil
+}
+
+// DirectoryStatFS implements StatFS over a dagql Directory.
+type DirectoryStatFS struct {
+	Dir dagql.ObjectResult[*Directory]
+}
+
+func (dfs *DirectoryStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	return CallDirStat(ctx, dfs.Dir, path)
+}
+
+func (dfs *DirectoryStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	return CallDirExists(ctx, dfs.Dir, path)
+}
+
+// DirectoryReadFile reads file contents from a dagql Directory.
+func DirectoryReadFile(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) ([]byte, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var contents dagql.String
+	err = dag.Select(ctx, dir, &contents,
+		dagql.Selector{Field: "file", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(path)}}},
+		dagql.Selector{Field: "contents"},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(contents), nil
+}
+
+func (fs ModuleSourceFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	if fs.src == nil {
+		return "", nil, os.ErrNotExist
+	}
+	if fs.src.Workspace.Self() != nil {
+		dir, basename, err := fs.workspaceEntry(ctx, path)
+		if err != nil {
+			return "", nil, err
+		}
+		return CallDirStat(ctx, dir, basename)
+	}
+
+	switch fs.src.Kind {
+	case ModuleSourceKindLocal:
+		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		return CallerStatFS{fs.bk}.Stat(ctx, path)
+	case ModuleSourceKindGit:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CallDirStat(ctx, fs.src.Git.UnfilteredContextDir, path)
+	case ModuleSourceKindDir:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CallDirStat(ctx, fs.src.ContextDirectory, path)
+	default:
+		return "", nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+	}
+}
+
+func (fs ModuleSourceFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	if fs.src == nil {
+		return "", false, nil
+	}
+	if fs.src.Workspace.Self() != nil {
+		dir, basename, err := fs.workspaceEntry(ctx, path)
+		if errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound {
+			return filepath.Dir(path), false, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		return CallDirExists(ctx, dir, basename)
+	}
+
+	switch fs.src.Kind {
+	case ModuleSourceKindLocal:
+		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		return CallerStatFS{fs.bk}.Exists(ctx, path)
+	case ModuleSourceKindGit:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CallDirExists(ctx, fs.src.Git.UnfilteredContextDir, path)
+	case ModuleSourceKindDir:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CallDirExists(ctx, fs.src.ContextDirectory, path)
+	default:
+		return "", false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+	}
+}
+
+func (fs ModuleSourceFS) workspaceEntry(ctx context.Context, path string) (dagql.ObjectResult[*Directory], string, error) {
+	var dir dagql.ObjectResult[*Directory]
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dir, "", err
+	}
+	workspacePath := filepath.Join("/", fs.src.SourceRootSubpath, path)
+	parentPath := filepath.Dir(workspacePath)
+	basename := filepath.Base(workspacePath)
+	if err := dag.Select(ctx, fs.src.Workspace, &dir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(parentPath)},
+			{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(basename)}},
+		},
+	}); err != nil {
+		return dir, "", err
+	}
+	return dir, basename, nil
+}
+
+func (fs ModuleSourceFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file, err := fs.src.LoadContextFile(ctx, dag, path)
+	if err != nil {
+		return nil, err
+	}
+	var contents dagql.String
+	if err := dag.Select(ctx, file, &contents, dagql.Selector{Field: "contents"}); err != nil {
+		return nil, err
+	}
+	return []byte(contents), nil
+}
+
+type ModuleSourceExperimentalFeature string
+
+func (f ModuleSourceExperimentalFeature) String() string { return string(f) }
+
+var ModuleSourceExperimentalFeatures = dagql.NewEnum[ModuleSourceExperimentalFeature]()
+
+var ModuleSourceExperimentalFeatureSelfCalls = ModuleSourceExperimentalFeatures.Register("SELF_CALLS", "Self calls")
+
+func (f ModuleSourceExperimentalFeature) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleSourceExperimentalFeature",
+		NonNull:   true,
+	}
+}
+
+func (f ModuleSourceExperimentalFeature) TypeDescription() string {
+	return `Experimental features of a module`
+}
+
+func (f ModuleSourceExperimentalFeature) Decoder() dagql.InputDecoder {
+	return ModuleSourceExperimentalFeatures
+}
+
+func (f ModuleSourceExperimentalFeature) ToLiteral() call.Literal {
+	return ModuleSourceExperimentalFeatures.Literal(f)
+}

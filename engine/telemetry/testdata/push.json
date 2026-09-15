@@ -1,0 +1,311 @@
+{
+  "ref": "refs/heads/main",
+  "before": "09c4f0b57259751c2b6fe25a1bc728d4080be2e6",
+  "after": "2baf7884d80a783bb936c1c9501e18682c32876f",
+  "repository": {
+    "id": 379138786,
+    "node_id": "MDEwOlJlcG9zaXRvcnkzNzkxMzg3ODY=",
+    "name": "bass",
+    "full_name": "vito/bass",
+    "private": false,
+    "owner": {
+      "name": "vito",
+      "email": "suraci.alex@gmail.com",
+      "login": "vito",
+      "id": 1880,
+      "node_id": "MDQ6VXNlcjE4ODA=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1880?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/vito",
+      "html_url": "https://github.com/vito",
+      "followers_url": "https://api.github.com/users/vito/followers",
+      "following_url": "https://api.github.com/users/vito/following{/other_user}",
+      "gists_url": "https://api.github.com/users/vito/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/vito/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/vito/subscriptions",
+      "organizations_url": "https://api.github.com/users/vito/orgs",
+      "repos_url": "https://api.github.com/users/vito/repos",
+      "events_url": "https://api.github.com/users/vito/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/vito/received_events",
+      "type": "User",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/vito/bass",
+    "description": "a low fidelity scripting language for project infrastructure",
+    "fork": false,
+    "url": "https://github.com/vito/bass",
+    "forks_url": "https://api.github.com/repos/vito/bass/forks",
+    "keys_url": "https://api.github.com/repos/vito/bass/keys{/key_id}",
+    "collaborators_url": "https://api.github.com/repos/vito/bass/collaborators{/collaborator}",
+    "teams_url": "https://api.github.com/repos/vito/bass/teams",
+    "hooks_url": "https://api.github.com/repos/vito/bass/hooks",
+    "issue_events_url": "https://api.github.com/repos/vito/bass/issues/events{/number}",
+    "events_url": "https://api.github.com/repos/vito/bass/events",
+    "assignees_url": "https://api.github.com/repos/vito/bass/assignees{/user}",
+    "branches_url": "https://api.github.com/repos/vito/bass/branches{/branch}",
+    "tags_url": "https://api.github.com/repos/vito/bass/tags",
+    "blobs_url": "https://api.github.com/repos/vito/bass/git/blobs{/sha}",
+    "git_tags_url": "https://api.github.com/repos/vito/bass/git/tags{/sha}",
+    "git_refs_url": "https://api.github.com/repos/vito/bass/git/refs{/sha}",
+    "trees_url": "https://api.github.com/repos/vito/bass/git/trees{/sha}",
+    "statuses_url": "https://api.github.com/repos/vito/bass/statuses/{sha}",
+    "languages_url": "https://api.github.com/repos/vito/bass/languages",
+    "stargazers_url": "https://api.github.com/repos/vito/bass/stargazers",
+    "contributors_url": "https://api.github.com/repos/vito/bass/contributors",
+    "subscribers_url": "https://api.github.com/repos/vito/bass/subscribers",
+    "subscription_url": "https://api.github.com/repos/vito/bass/subscription",
+    "commits_url": "https://api.github.com/repos/vito/bass/commits{/sha}",
+    "git_commits_url": "https://api.github.com/repos/vito/bass/git/commits{/sha}",
+    "comments_url": "https://api.github.com/repos/vito/bass/comments{/number}",
+    "issue_comment_url": "https://api.github.com/repos/vito/bass/issues/comments{/number}",
+    "contents_url": "https://api.github.com/repos/vito/bass/contents/{+path}",
+    "compare_url": "https://api.github.com/repos/vito/bass/compare/{base}...{head}",
+    "merges_url": "https://api.github.com/repos/vito/bass/merges",
+    "archive_url": "https://api.github.com/repos/vito/bass/{archive_format}{/ref}",
+    "downloads_url": "https://api.github.com/repos/vito/bass/downloads",
+    "issues_url": "https://api.github.com/repos/vito/bass/issues{/number}",
+    "pulls_url": "https://api.github.com/repos/vito/bass/pulls{/number}",
+    "milestones_url": "https://api.github.com/repos/vito/bass/milestones{/number}",
+    "notifications_url": "https://api.github.com/repos/vito/bass/notifications{?since,all,participating}",
+    "labels_url": "https://api.github.com/repos/vito/bass/labels{/name}",
+    "releases_url": "https://api.github.com/repos/vito/bass/releases{/id}",
+    "deployments_url": "https://api.github.com/repos/vito/bass/deployments",
+    "created_at": 1624335301,
+    "updated_at": "2023-03-21T21:56:00Z",
+    "pushed_at": 1679854570,
+    "git_url": "git://github.com/vito/bass.git",
+    "ssh_url": "git@github.com:vito/bass.git",
+    "clone_url": "https://github.com/vito/bass.git",
+    "svn_url": "https://github.com/vito/bass",
+    "homepage": "https://bass-lang.org",
+    "size": 29569,
+    "stargazers_count": 274,
+    "watchers_count": 274,
+    "language": "Go",
+    "has_issues": true,
+    "has_projects": true,
+    "has_downloads": true,
+    "has_wiki": false,
+    "has_pages": true,
+    "has_discussions": true,
+    "forks_count": 8,
+    "mirror_url": null,
+    "archived": false,
+    "disabled": false,
+    "open_issues_count": 21,
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "allow_forking": true,
+    "is_template": false,
+    "web_commit_signoff_required": false,
+    "topics": [
+      "build",
+      "buildkit",
+      "language",
+      "lisp"
+    ],
+    "visibility": "public",
+    "forks": 8,
+    "open_issues": 21,
+    "watchers": 274,
+    "default_branch": "main",
+    "stargazers": 274,
+    "master_branch": "main"
+  },
+  "pusher": {
+    "name": "vito",
+    "email": "suraci.alex@gmail.com"
+  },
+  "sender": {
+    "login": "vito",
+    "id": 1880,
+    "node_id": "MDQ6VXNlcjE4ODA=",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1880?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/vito",
+    "html_url": "https://github.com/vito",
+    "followers_url": "https://api.github.com/users/vito/followers",
+    "following_url": "https://api.github.com/users/vito/following{/other_user}",
+    "gists_url": "https://api.github.com/users/vito/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/vito/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/vito/subscriptions",
+    "organizations_url": "https://api.github.com/users/vito/orgs",
+    "repos_url": "https://api.github.com/users/vito/repos",
+    "events_url": "https://api.github.com/users/vito/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/vito/received_events",
+    "type": "User",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 25352135,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uMjUzNTIxMzU="
+  },
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "base_ref": null,
+  "compare": "https://github.com/vito/bass/compare/09c4f0b57259...2baf7884d80a",
+  "commits": [
+    {
+      "id": "1b75faa6357fe3f8ea32209fc0bac9300aa442e9",
+      "tree_id": "fa9bd52841773ff75a1018997b6835a57fba9283",
+      "distinct": true,
+      "message": "don't require secrets in args to be safe\n\npassing secrets in command args is never a good idea. they show up in\nthe process tree and get saved into shell history. no point in trying to\npretend this is safe.\n\nbut really, Dagger doesn't support it, and I think that's OK, so let's\njust relax the test a bit.",
+      "timestamp": "2023-03-26T11:21:24-04:00",
+      "url": "https://github.com/vito/bass/commit/1b75faa6357fe3f8ea32209fc0bac9300aa442e9",
+      "author": {
+        "name": "Alex Suraci",
+        "email": "suraci.alex@gmail.com",
+        "username": "vito"
+      },
+      "committer": {
+        "name": "Alex Suraci",
+        "email": "suraci.alex@gmail.com",
+        "username": "vito"
+      },
+      "added": [
+
+      ],
+      "removed": [
+
+      ],
+      "modified": [
+        "pkg/runtimes/suite.go",
+        "pkg/runtimes/testdata/secrets.bass"
+      ]
+    },
+    {
+      "id": "5c8a25163600986a068edd6f7572b5a762fcef24",
+      "tree_id": "dd46d0fd3f606656bc06688c9d3af9de32e7997e",
+      "distinct": true,
+      "message": "Dagger: support secrets in mounts + env",
+      "timestamp": "2023-03-26T11:53:01-04:00",
+      "url": "https://github.com/vito/bass/commit/5c8a25163600986a068edd6f7572b5a762fcef24",
+      "author": {
+        "name": "Alex Suraci",
+        "email": "suraci.alex@gmail.com",
+        "username": "vito"
+      },
+      "committer": {
+        "name": "Alex Suraci",
+        "email": "suraci.alex@gmail.com",
+        "username": "vito"
+      },
+      "added": [
+
+      ],
+      "removed": [
+
+      ],
+      "modified": [
+        "go.mod",
+        "go.sum",
+        "pkg/runtimes/buildkit.go",
+        "pkg/runtimes/command.go",
+        "pkg/runtimes/dagger.go",
+        "pkg/runtimes/suite.go",
+        "pkg/runtimes/testdata/secrets.bass"
+      ]
+    },
+    {
+      "id": "f1d7936162b4605b37a1989c234be2e516fb661a",
+      "tree_id": "b5d903558f33a46b5b4c0b01076878d6aa7d8211",
+      "distinct": true,
+      "message": "bump nix vendorsha",
+      "timestamp": "2023-03-26T11:58:03-04:00",
+      "url": "https://github.com/vito/bass/commit/f1d7936162b4605b37a1989c234be2e516fb661a",
+      "author": {
+        "name": "Alex Suraci",
+        "email": "suraci.alex@gmail.com",
+        "username": "vito"
+      },
+      "committer": {
+        "name": "Alex Suraci",
+        "email": "suraci.alex@gmail.com",
+        "username": "vito"
+      },
+      "added": [
+
+      ],
+      "removed": [
+
+      ],
+      "modified": [
+        "nix/vendorSha256.txt"
+      ]
+    },
+    {
+      "id": "2baf7884d80a783bb936c1c9501e18682c32876f",
+      "tree_id": "b5d903558f33a46b5b4c0b01076878d6aa7d8211",
+      "distinct": true,
+      "message": "Merge pull request #269 from vito/dagger-secrets\n\nDagger secrets",
+      "timestamp": "2023-03-26T14:16:09-04:00",
+      "url": "https://github.com/vito/bass/commit/2baf7884d80a783bb936c1c9501e18682c32876f",
+      "author": {
+        "name": "Alex Suraci",
+        "email": "suraci.alex@gmail.com",
+        "username": "vito"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "username": "web-flow"
+      },
+      "added": [
+
+      ],
+      "removed": [
+
+      ],
+      "modified": [
+        "go.mod",
+        "go.sum",
+        "nix/vendorSha256.txt",
+        "pkg/runtimes/buildkit.go",
+        "pkg/runtimes/command.go",
+        "pkg/runtimes/dagger.go",
+        "pkg/runtimes/suite.go",
+        "pkg/runtimes/testdata/secrets.bass"
+      ]
+    }
+  ],
+  "head_commit": {
+    "id": "2baf7884d80a783bb936c1c9501e18682c32876f",
+    "tree_id": "b5d903558f33a46b5b4c0b01076878d6aa7d8211",
+    "distinct": true,
+    "message": "Merge pull request #269 from vito/dagger-secrets\n\nDagger secrets",
+    "timestamp": "2023-03-26T14:16:09-04:00",
+    "url": "https://github.com/vito/bass/commit/2baf7884d80a783bb936c1c9501e18682c32876f",
+    "author": {
+      "name": "Alex Suraci",
+      "email": "suraci.alex@gmail.com",
+      "username": "vito"
+    },
+    "committer": {
+      "name": "GitHub",
+      "email": "noreply@github.com",
+      "username": "web-flow"
+    },
+    "added": [
+
+    ],
+    "removed": [
+
+    ],
+    "modified": [
+      "go.mod",
+      "go.sum",
+      "nix/vendorSha256.txt",
+      "pkg/runtimes/buildkit.go",
+      "pkg/runtimes/command.go",
+      "pkg/runtimes/dagger.go",
+      "pkg/runtimes/suite.go",
+      "pkg/runtimes/testdata/secrets.bass"
+    ]
+  }
+}

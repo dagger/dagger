@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Add a `schema` API to load a GraphQL introspection schema, merge a module's introspection-shaped types into it, and serialize it back to JSON. It gives every SDK's codegen a single engine-side implementation for merging module types into the schema.
+time: 2026-07-01T12:16:05Z
+custom:
+  Author: eunomie
+  PR: 13547

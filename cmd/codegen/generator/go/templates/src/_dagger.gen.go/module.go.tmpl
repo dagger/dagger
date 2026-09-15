@@ -1,0 +1,97 @@
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"github.com/vektah/gqlparser/v2/gqlerror"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	telemetry "github.com/dagger/otel-go"
+
+	"{{.PackageImport}}/internal/dagger"
+
+
+	"github.com/dagger/querybuilder"
+)
+
+var dag = dagger.Connect()
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/sdk.go")
+}
+
+// used for local MarshalJSON implementations
+var marshalCtx = context.Background()
+
+// called by main()
+func setMarshalContext(ctx context.Context) {
+	marshalCtx = ctx
+	dagger.SetMarshalContext(ctx)
+}
+
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
+
+type ExecError = dagger.ExecError
+
+{{/* module aliases have been removed in v0.12.0 */}}
+{{ if not (CheckVersionCompatibility "v0.12.0") }}
+{{ range FullSchemaTypes }}
+{{ $name := .Name | FormatName }}
+
+{{ .Description | Comment }}
+type {{ $name }} = dagger.{{ $name }}
+
+{{ if or (eq .Kind "OBJECT") (eq .Kind "INTERFACE") }}
+{{- if . | IsSelfChainable }}
+type With{{ $name }}Func = dagger.With{{ $name }}Func
+{{ end }}
+{{ range $field := .Fields }}
+{{- if $field.Args.HasOptionals }}
+// {{ $field | FieldOptionsStructName }} contains options for {{ $name }}.{{ $field.Name | FormatName }}
+type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStructName }}
+{{ end }}
+{{ end }}
+{{- end }}
+
+{{ if eq .Kind "ENUM" }}
+{{- $enumName := .Name }}
+const (
+	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{- $scopedName := $field.Name | FormatEnum $enumName }}
+	{{- $unscopedName := $field.Name | FormatEnum "" }}
+	{{ $field.Description | Comment }}
+	{{ $scopedName }} {{ $enumName }} = dagger.{{ $scopedName }}
+	{{- if ne $unscopedName $scopedName }}
+	{{ $unscopedName }} {{ $enumName }} = dagger.{{ $unscopedName }}
+	{{- end }}
+	{{ end }}
+)
+{{- end }}
+{{ end }}
+{{ end }}
+
+{{ if and IsModuleCode (not IsPartial) }}
+// ptr returns a pointer to the given value.
+func ptr[T any](v T) *T {
+	return &v
+}
+
+// convertSlice converts a slice of one type to a slice of another type using a
+// converter function
+func convertSlice[I any, O any](in []I, f func(I) O) []O {
+  out := make([]O, len(in))
+  for i, v := range in {
+    out[i] = f(v)
+  }
+  return out
+}
+
+{{ ModuleMainSrc }}
+{{ end }}

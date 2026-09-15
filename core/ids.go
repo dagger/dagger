@@ -1,0 +1,74 @@
+package core
+
+import (
+	"github.com/dagger/dagger/dagql"
+)
+
+type JSONValueID = dagql.ID[*JSONValue]
+
+type AddressID = dagql.ID[*Address]
+
+type ContainerID = dagql.ID[*Container]
+
+type ServiceID = dagql.ID[*Service]
+
+type CacheVolumeID = dagql.ID[*CacheVolume]
+
+type VolumeID = dagql.ID[*Volume]
+
+type DirectoryID = dagql.ID[*Directory]
+
+type FileID = dagql.ID[*File]
+
+type SecretID = dagql.ID[*Secret]
+
+type ModuleID = dagql.ID[*Module]
+
+type ModuleSourceID = dagql.ID[*ModuleSource]
+
+type FunctionID = dagql.ID[*Function]
+
+type FunctionArgID = dagql.ID[*FunctionArg]
+
+type TypeDefID = dagql.ID[*TypeDef]
+
+type ListTypeDefID = dagql.ID[*ListTypeDef]
+
+type ObjectTypeDefID = dagql.ID[*ObjectTypeDef]
+
+type InterfaceTypeDefID = dagql.ID[*InterfaceTypeDef]
+
+type InputTypeDefID = dagql.ID[*InputTypeDef]
+
+type ScalarTypeDefID = dagql.ID[*ScalarTypeDef]
+
+type EnumTypeDefID = dagql.ID[*EnumTypeDef]
+
+type FieldTypeDefID = dagql.ID[*FieldTypeDef]
+
+type EnumMemberTypeDefID = dagql.ID[*EnumMemberTypeDef]
+
+type SourceMapID = dagql.ID[*SourceMap]
+
+type GeneratedCodeID = dagql.ID[*GeneratedCode]
+
+type GitBundleID = dagql.ID[*GitBundle]
+
+type GitRepositoryID = dagql.ID[*GitRepository]
+
+type GitRefID = dagql.ID[*GitRef]
+
+type GitCommitID = dagql.ID[*GitCommit]
+
+type SocketID = dagql.ID[*Socket]
+
+type LLMID = dagql.ID[*LLM]
+
+type AgentID = dagql.ID[*Agent]
+
+type AgentMessageID = dagql.ID[*AgentMessage]
+
+type EnvFileID = dagql.ID[*EnvFile]
+
+// ID is an alias for dagql.AnyID — a generic object identifier.
+type ID = dagql.AnyID

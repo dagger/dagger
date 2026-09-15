@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: dagger-in-argo-
+spec:
+  entrypoint: dagger-workflow
+  volumes:
+    - name: dagger-socket
+      emptyDir: {}
+    - name: dagger-storage
+      emptyDir: {}
+  templates:
+    - name: dagger-workflow
+      sidecars:
+        - name: dagger-engine
+          # replace with the latest available version of Dagger for your platform
+          image: registry.dagger.io/engine:v{{ version }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - ALL
+          readinessProbe:
+            exec:
+              command: ["dagger", "core", "version"]
+          volumeMounts:
+            - mountPath: /var/run/buildkit
+              name: dagger-socket
+            - mountPath: /var/lib/dagger
+              name: dagger-storage
+      inputs:
+        artifacts:
+          - name: project-source
+            path: /work
+            git:
+              # replace with your repository URL
+              repo: https://github.com/kpenfound/greetings-api.git
+              revision: "main"
+          - name: dagger-cli
+            path: /usr/local/bin
+            mode: 0755
+            http:
+              # replace with the latest available version of Dagger for your platform
+              url: https://github.com/dagger/dagger/releases/download/v{{ version }}/dagger_v{{ version }}_linux_amd64.tar.gz
+      container:
+        image: alpine:latest
+        command: ["sh", "-c"]
+        # modify to use different function(s) as needed
+        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=."]
+        workingDir: /work
+        env:
+        - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+          value: "unix:///var/run/dagger/buildkitd.sock"
+          # assumes the Dagger Cloud token is
+          # in a Kubernetes secret named dagger-cloud
+        - name: "DAGGER_CLOUD_TOKEN"
+          valueFrom:
+            secretKeyRef:
+              name: dagger-cloud
+              key: token
+        volumeMounts:
+          - mountPath: /var/run/dagger
+            name: dagger-socket

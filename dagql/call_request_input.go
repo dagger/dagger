@@ -1,0 +1,509 @@
+package dagql
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
+)
+
+type resultCallOptionalInput interface {
+	resultCallOptionalValue() (Input, bool)
+}
+
+type resultCallArrayInput interface {
+	resultCallArrayValues() []Input
+}
+
+type resultCallInputObject interface {
+	resultCallInputObjectFields() []inputObjectField
+}
+
+func idInputDebugString(id *call.ID) string {
+	if id == nil {
+		return "<nil>"
+	}
+	if id.IsHandle() {
+		return id.Display()
+	}
+	return string(id.Digest())
+}
+
+func resultCallRefFromResult(ctx context.Context, res AnyResult) (*ResultCallRef, error) {
+	if res == nil {
+		return nil, fmt.Errorf("nil result")
+	}
+	if typ := res.Type(); typ != nil && typ.Name() == "Query" {
+		return nil, nil
+	}
+	shared := res.cacheSharedResult()
+	var frame *ResultCall
+	if shared != nil {
+		frame = shared.loadResultCall()
+	}
+	if shared == nil || frame == nil {
+		if cache, err := EngineCache(ctx); err == nil {
+			reason := "missing_shared_result"
+			if shared != nil {
+				reason = "missing_result_call_frame"
+			}
+			cache.traceResultCallRefFromResultFailed(ctx, res, reason)
+		}
+		return nil, fmt.Errorf("result %T has no call frame", res)
+	}
+	if shared.id == 0 {
+		return &ResultCallRef{Call: frame.clone()}, nil
+	}
+	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
+}
+
+// recipeCallMemo deduplicates recipe-ID expansion within a single top-level
+// decode. Call IDs are content-addressed and acyclic, and a given digest always
+// denotes the exact same recipe, so the expanded *ResultCall for a digest can be
+// shared across every reference to it within one build: frames are treated as
+// frozen provenance (cloned/forked before any mutation), so sharing is safe and
+// collapses a heavily-shared ID DAG back into a DAG instead of unrolling it into
+// an exponentially larger tree. Without it, resuming a long agent/LLM session —
+// whose accumulated state is one big DAG with a base object referenced by a long
+// receiver chain and many args — expands to ~10^8 frames and tens of GB. The memo
+// is created fresh per top-level decode and used single-threaded down the
+// synchronous expansion, matching the plain visiting maps already threaded
+// through the digest helpers (e.g. recipeDigestWithVisiting).
+type recipeCallMemo map[digest.Digest]*ResultCall
+
+func resultCallRefFromIDInput(ctx context.Context, id *call.ID, memo recipeCallMemo) (*ResultCallRef, error) {
+	if id == nil {
+		return nil, fmt.Errorf("nil ID input")
+	}
+	if memo == nil {
+		memo = recipeCallMemo{}
+	}
+	if !id.IsHandle() {
+		// A recipe (inline) ID inlines its entire sub-DAG. Without memoization a
+		// shared node (a base object reached via a long receiver chain and many
+		// args) is re-expanded once per path, unrolling the DAG into a tree. Expand
+		// each distinct recipe digest once and share the resulting frame.
+		dig := id.Digest()
+		if frame, ok := memo[dig]; ok {
+			if frame == nil {
+				return nil, nil
+			}
+			return &ResultCallRef{Call: frame}, nil
+		}
+		frame, err := resultCallFromRecipeIDInput(ctx, id, memo)
+		if err != nil {
+			return nil, err
+		}
+		memo[dig] = frame
+		if frame == nil {
+			return nil, nil
+		}
+		return &ResultCallRef{Call: frame}, nil
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ID input %q: current client metadata: %w", idInputDebugString(id), err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("resolve ID input %q: empty session ID", idInputDebugString(id))
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ID input %q: current dagql cache: %w", idInputDebugString(id), err)
+	}
+	ref, err := cache.resultCallRefByResultID(ctx, clientMetadata.SessionID, id.EngineResultID())
+	if err != nil {
+		return nil, fmt.Errorf("resolve ID input %q: %w", idInputDebugString(id), err)
+	}
+	return ref, nil
+}
+
+func resultCallFromRecipeIDInput(ctx context.Context, id *call.ID, memo recipeCallMemo) (*ResultCall, error) {
+	if id == nil {
+		return nil, nil
+	}
+	if id.IsHandle() {
+		return nil, fmt.Errorf("handle-form IDs cannot be converted to inline recipe calls: %s", idInputDebugString(id))
+	}
+
+	var callType *ResultCallType
+	if id.Type() != nil {
+		callType = NewResultCallType(id.Type().ToAST())
+	}
+	frame := &ResultCall{
+		Kind:         ResultCallKindField,
+		Type:         callType,
+		Field:        id.Field(),
+		View:         id.View(),
+		Nth:          id.Nth(),
+		EffectIDs:    id.EffectIDs(),
+		ExtraDigests: id.ExtraDigests(),
+	}
+
+	if receiver := id.Receiver(); receiver != nil {
+		receiverRef, err := resultCallRefFromIDInput(ctx, receiver, memo)
+		if err != nil {
+			return nil, fmt.Errorf("receiver: %w", err)
+		}
+		frame.Receiver = receiverRef
+	}
+	if mod := id.Module(); mod != nil {
+		modRef, err := resultCallRefFromIDInput(ctx, mod.ID(), memo)
+		if err != nil {
+			return nil, fmt.Errorf("module: %w", err)
+		}
+		frame.Module = &ResultCallModule{
+			ResultRef: modRef,
+			Name:      mod.Name(),
+			Ref:       mod.Ref(),
+			Pin:       mod.Pin(),
+		}
+	}
+	for _, arg := range id.Args() {
+		converted, err := resultCallArgFromRecipeArgument(ctx, arg, memo)
+		if err != nil {
+			return nil, fmt.Errorf("arg %q: %w", arg.Name(), err)
+		}
+		frame.Args = append(frame.Args, converted)
+	}
+	for _, input := range id.ImplicitInputs() {
+		converted, err := resultCallArgFromRecipeArgument(ctx, input, memo)
+		if err != nil {
+			return nil, fmt.Errorf("implicit input %q: %w", input.Name(), err)
+		}
+		frame.ImplicitInputs = append(frame.ImplicitInputs, converted)
+	}
+	return frame, nil
+}
+
+func resultCallArgFromRecipeArgument(ctx context.Context, arg *call.Argument, memo recipeCallMemo) (*ResultCallArg, error) {
+	if arg == nil {
+		return nil, nil
+	}
+	value, err := resultCallLiteralFromRecipeLiteral(ctx, arg.Value(), memo)
+	if err != nil {
+		return nil, err
+	}
+	return &ResultCallArg{
+		Name:        arg.Name(),
+		IsSensitive: arg.IsSensitive(),
+		Value:       value,
+	}, nil
+}
+
+// Symmetric with resultCallLiteralFromCallLiteral; the two differ in how
+// structural input digests get resolved, and in that this one threads a
+// recipeCallMemo.
+func resultCallLiteralFromRecipeLiteral(ctx context.Context, lit call.Literal, memo recipeCallMemo) (*ResultCallLiteral, error) {
+	switch v := lit.(type) {
+	case nil:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	case *call.LiteralNull:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	case *call.LiteralBool:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBool, BoolValue: v.Value()}, nil
+	case *call.LiteralInt:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindInt, IntValue: v.Value()}, nil
+	case *call.LiteralFloat:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
+	case *call.LiteralString:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
+	case *call.LiteralBytes:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBytes, BytesValue: v.Value()}, nil
+	case *call.LiteralEnum:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
+	case *call.LiteralDigestedString:
+		return &ResultCallLiteral{
+			Kind:                 ResultCallLiteralKindDigestedString,
+			DigestedStringValue:  v.Value(),
+			DigestedStringDigest: v.Digest(),
+		}, nil
+	case *call.LiteralID:
+		ref, err := resultCallRefFromIDInput(ctx, v.Value(), memo)
+		if err != nil {
+			return nil, err
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindResultRef,
+			ResultRef: ref,
+		}, nil
+	case *call.LiteralList:
+		items := make([]*ResultCallLiteral, 0, v.Len())
+		for _, item := range v.Values() {
+			converted, err := resultCallLiteralFromRecipeLiteral(ctx, item, memo)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, converted)
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindList,
+			ListItems: items,
+		}, nil
+	case *call.LiteralObject:
+		fields := make([]*ResultCallArg, 0, v.Len())
+		for _, field := range v.Args() {
+			converted, err := resultCallLiteralFromRecipeLiteral(ctx, field.Value(), memo)
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", field.Name(), err)
+			}
+			fields = append(fields, &ResultCallArg{
+				Name:        field.Name(),
+				IsSensitive: field.IsSensitive(),
+				Value:       converted,
+			})
+		}
+		return &ResultCallLiteral{
+			Kind:         ResultCallLiteralKindObject,
+			ObjectFields: fields,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported recipe input literal %T", lit)
+	}
+}
+
+func resultCallArgFromInput(ctx context.Context, name string, input Input, sensitive bool) (*ResultCallArg, error) {
+	if input == nil {
+		return nil, fmt.Errorf("nil input for arg %q", name)
+	}
+	lit, err := resultCallLiteralFromInput(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("arg %q: %w", name, err)
+	}
+	return &ResultCallArg{
+		Name:        name,
+		IsSensitive: sensitive,
+		Value:       lit,
+	}, nil
+}
+
+func resultCallLiteralFromInput(ctx context.Context, input Input) (*ResultCallLiteral, error) {
+	if input == nil {
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	}
+	if idable, ok := UnwrapAs[IDable](input); ok {
+		id, err := idable.ID()
+		if err != nil {
+			return nil, fmt.Errorf("ID input %T is invalid: %w", input, err)
+		}
+		ref, err := resultCallRefFromIDInput(ctx, id, recipeCallMemo{})
+		if err != nil {
+			return nil, err
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindResultRef,
+			ResultRef: ref,
+		}, nil
+	}
+	if opt, ok := input.(resultCallOptionalInput); ok {
+		val, valid := opt.resultCallOptionalValue()
+		if !valid {
+			return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+		}
+		return resultCallLiteralFromInput(ctx, val)
+	}
+	if arr, ok := input.(resultCallArrayInput); ok {
+		values := arr.resultCallArrayValues()
+		items := make([]*ResultCallLiteral, 0, len(values))
+		for _, value := range values {
+			item, err := resultCallLiteralFromInput(ctx, value)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindList,
+			ListItems: items,
+		}, nil
+	}
+	if obj, ok := input.(resultCallInputObject); ok {
+		decodedFields := obj.resultCallInputObjectFields()
+		if decodedFields == nil {
+			return nil, fmt.Errorf("input object %T is missing decoded fields", input)
+		}
+		fields := make([]*ResultCallArg, 0, len(decodedFields))
+		for _, field := range decodedFields {
+			arg, err := resultCallArgFromInput(ctx, field.name, field.value, false)
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", field.name, err)
+			}
+			fields = append(fields, arg)
+		}
+		return &ResultCallLiteral{
+			Kind:         ResultCallLiteralKindObject,
+			ObjectFields: fields,
+		}, nil
+	}
+	return resultCallLiteralFromCallLiteral(ctx, input.ToLiteral())
+}
+
+// Symmetric with resultCallLiteralFromRecipeLiteral; the two differ in how
+// structural input digests get resolved.
+func resultCallLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*ResultCallLiteral, error) {
+	switch v := lit.(type) {
+	case nil:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	case *call.LiteralNull:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	case *call.LiteralBool:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBool, BoolValue: v.Value()}, nil
+	case *call.LiteralInt:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindInt, IntValue: v.Value()}, nil
+	case *call.LiteralFloat:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
+	case *call.LiteralString:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
+	case *call.LiteralBytes:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBytes, BytesValue: v.Value()}, nil
+	case *call.LiteralEnum:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
+	case *call.LiteralDigestedString:
+		return &ResultCallLiteral{
+			Kind:                 ResultCallLiteralKindDigestedString,
+			DigestedStringValue:  v.Value(),
+			DigestedStringDigest: v.Digest(),
+		}, nil
+	case *call.LiteralID:
+		ref, err := resultCallRefFromIDInput(ctx, v.Value(), recipeCallMemo{})
+		if err != nil {
+			return nil, err
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindResultRef,
+			ResultRef: ref,
+		}, nil
+	case *call.LiteralList:
+		items := make([]*ResultCallLiteral, 0, v.Len())
+		for _, item := range v.Values() {
+			converted, err := resultCallLiteralFromCallLiteral(ctx, item)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, converted)
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindList,
+			ListItems: items,
+		}, nil
+	case *call.LiteralObject:
+		fields := make([]*ResultCallArg, 0, v.Len())
+		for _, field := range v.Args() {
+			converted, err := resultCallLiteralFromCallLiteral(ctx, field.Value())
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", field.Name(), err)
+			}
+			fields = append(fields, &ResultCallArg{
+				Name:        field.Name(),
+				IsSensitive: field.IsSensitive(),
+				Value:       converted,
+			})
+		}
+		return &ResultCallLiteral{
+			Kind:         ResultCallLiteralKindObject,
+			ObjectFields: fields,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported input literal %T", lit)
+	}
+}
+
+func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.ID, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve result ref: %w", err)
+	}
+	if ref.Call != nil {
+		resultID, err := cache.resultIDForCall(ref.Call)
+		if err != nil {
+			// The inline recipe has no attached result in the e-graph — e.g.
+			// a client-supplied recipe-form handle (rebuilt from telemetry)
+			// whose producing call's results were released. Hand back the
+			// recipe form itself: the consumer then evaluates it on use,
+			// exactly as node(id:) on the same handle would, instead of
+			// refusing an argument that is perfectly addressable. The
+			// pre-resolved ResultID is only a shortcut; the recipe is the
+			// truth.
+			recipeID, recipeErr := ref.Call.RecipeID(ctx)
+			if recipeErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("rebuild recipe ID: %w", recipeErr))
+			}
+			return recipeID, nil
+		}
+		ref = &ResultCallRef{ResultID: uint64(resultID)}
+	}
+	res, _, _, err := cache.sharedResultByResultID(ctx, "", sharedResultID(ref.ResultID), sharedResultLookupExact)
+	if err != nil {
+		return nil, err
+	}
+	var gqlType *ast.Type
+	if frame := res.loadResultCall(); frame != nil && frame.Type != nil {
+		gqlType = frame.Type.toAST()
+	}
+	if gqlType == nil && res.self != nil {
+		gqlType = res.self.Type()
+	}
+	if gqlType == nil {
+		return nil, fmt.Errorf("result ref %d is missing a GraphQL type", ref.ResultID)
+	}
+	return call.NewEngineResultID(ref.ResultID, call.NewType(gqlType)), nil
+}
+
+func inputValueFromResultCallLiteral(ctx context.Context, lit *ResultCallLiteral) (any, error) {
+	if lit == nil {
+		return nil, nil
+	}
+	switch lit.Kind {
+	case ResultCallLiteralKindNull:
+		return nil, nil
+	case ResultCallLiteralKindBool:
+		return lit.BoolValue, nil
+	case ResultCallLiteralKindInt:
+		return lit.IntValue, nil
+	case ResultCallLiteralKindFloat:
+		return lit.FloatValue, nil
+	case ResultCallLiteralKindString:
+		return lit.StringValue, nil
+	case ResultCallLiteralKindBytes:
+		return slices.Clone(lit.BytesValue), nil
+	case ResultCallLiteralKindEnum:
+		return lit.EnumValue, nil
+	case ResultCallLiteralKindDigestedString:
+		return lit.DigestedStringValue, nil
+	case ResultCallLiteralKindResultRef:
+		return handleIDFromResultCallRef(ctx, lit.ResultRef)
+	case ResultCallLiteralKindList:
+		values := make([]any, 0, len(lit.ListItems))
+		for _, item := range lit.ListItems {
+			val, err := inputValueFromResultCallLiteral(ctx, item)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, val)
+		}
+		return values, nil
+	case ResultCallLiteralKindObject:
+		values := make(map[string]any, len(lit.ObjectFields))
+		for _, field := range lit.ObjectFields {
+			if field == nil {
+				continue
+			}
+			val, err := inputValueFromResultCallLiteral(ctx, field.Value)
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", field.Name, err)
+			}
+			values[field.Name] = val
+		}
+		return values, nil
+	default:
+		return nil, fmt.Errorf("unsupported frame literal kind %q", lit.Kind)
+	}
+}

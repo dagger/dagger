@@ -1,0 +1,11 @@
+"""An agent that reads the base LLM's bound workspace, for @agent integration tests."""
+type Wsaware {
+  """
+  Compose after reading base.workspace mid-fold, like a real agent scanning
+  project context. An unbound compose seed makes this fail with "no workspace
+  is bound to this LLM".
+  """
+  agent(base: LLM!): LLM! @agent {
+    base.withSystemPrompt(base.workspace.file("dagger.toml").contents)
+  }
+}

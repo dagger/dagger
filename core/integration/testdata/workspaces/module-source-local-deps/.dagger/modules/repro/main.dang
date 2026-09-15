@@ -1,0 +1,12 @@
+type Repro {
+  """
+  Load the main module, which depends on ../dep, from module code.
+  """
+  pub direct(ws: Workspace!): String! {
+    ws
+      .directory("/", include: ["main/**", "dep/**"])
+      .asModuleSource(sourceRootPath: "main")
+      .sync
+      .sourceRootSubpath
+  }
+}

@@ -1,0 +1,78 @@
+### Expose services in Dagger Functions to the host
+
+The Dagger Function below creates and returns an HTTP service. This service can be used from the host.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../extending/modules/snippets/services/expose-dagger-services-to-host/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../extending/modules/snippets/services/expose-dagger-services-to-host/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../extending/modules/snippets/services/expose-dagger-services-to-host/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Expose the HTTP service instantiated by a Dagger Function to the host on the default port:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'http-service | up'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+http-service | up
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call http-service up
+```
+</TabItem>
+</Tabs>
+
+Access the service from the host:
+
+```shell
+curl localhost:8080
+```
+
+- Expose the HTTP service instantiated by a Dagger Function to the host on a different host port:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'http-service | up --ports 9000:8080'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+http-service | up --ports 9000:8080
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call http-service up --ports 9000:8080
+```
+</TabItem>
+</Tabs>
+
+Access the service from the host:
+
+```shell
+curl localhost:9000
+```

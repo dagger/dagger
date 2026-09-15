@@ -1,0 +1,7 @@
+{
+  "name": "crasher",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

@@ -1,0 +1,9 @@
+query {
+  container {
+    from(address: "alpine:latest") {
+      withExec(args: ["touch", "/tmp/myfile"]) {
+        id
+      }
+    }
+  }
+}

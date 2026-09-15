@@ -1,0 +1,43 @@
+package worker
+
+import (
+	"context"
+	"io"
+
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
+	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	"github.com/dagger/dagger/internal/buildkit/cache"
+	"github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/executor"
+	"github.com/dagger/dagger/internal/buildkit/frontend"
+	"github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/solver"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+)
+
+type Worker interface {
+	io.Closer
+	// ID needs to be unique in the cluster
+	ID() string
+	Labels() map[string]string
+	Platforms(noCache bool) []ocispecs.Platform
+	BuildkitVersion() client.BuildkitVersion
+
+	GCPolicy() []client.PruneInfo
+	LoadRef(ctx context.Context, id string, hidden bool) (cache.ImmutableRef, error)
+	// ResolveOp resolves Vertex.Sys() to Op implementation.
+	ResolveOp(v solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager) (solver.Op, error)
+	DiskUsage(ctx context.Context, opt client.DiskUsageInfo) ([]*client.UsageInfo, error)
+	Prune(ctx context.Context, ch chan client.UsageInfo, opt ...client.PruneInfo) error
+	FromRemote(ctx context.Context, remote *solver.Remote) (cache.ImmutableRef, error)
+	PruneCacheMounts(ctx context.Context, ids map[string]bool) error
+	ContentStore() *containerdsnapshot.Store
+	Executor() executor.Executor
+	CacheManager() cache.Manager
+	LeaseManager() *bksnapshots.LeaseManager
+}
+
+type Infos interface {
+	DefaultCacheManager() (cache.Manager, error)
+	WorkerInfos() []client.WorkerInfo
+}

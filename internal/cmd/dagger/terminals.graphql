@@ -1,0 +1,10 @@
+query TerminalGroupListDetails($id: ID!) {
+  group: node(id: $id) {
+    ... on TerminalGroup {
+      list {
+        name
+        description
+      }
+    }
+  }
+}

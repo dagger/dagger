@@ -1,0 +1,53 @@
+"""
+An expert Go programmer driven by an LLM, for replay golden tests.
+"""
+type GoProgrammer {
+  model: String = null
+
+  """
+  Complete the assignment and return the resulting main.go contents.
+  """
+  run(assignment: String!, ws: Workspace!): String! {
+    self.drive(assignment, ws).loop.workspace.file("main.go").contents
+  }
+
+  """
+  Set up the programmer's LLM with its tools and assignment.
+  """
+  drive(assignment: String!, ws: Workspace!): LLM! {
+    llm(model: model)
+      .withWorkspace(ws)
+      .withTools(currentNode, except: ["run", "drive"])
+      .withPrompt("You are an expert go programmer. You have access to a workspace.\n" + "Use the read, write, build tools to complete the following assignment.\n" + "Do not try to access the container directly.\n" + "Don't stop until your code builds.\n" + "\n" + "Assignment: " + assignment + "\n")
+  }
+
+  """
+  Read the current contents of main.go.
+  """
+  read(ws: Workspace!): String! {
+    ws.file("main.go").contents
+  }
+
+  """
+  Write main.go with the given contents.
+  """
+  write(content: String!, ws: Workspace!): Workspace! {
+    ws.withNewFile("main.go", content)
+  }
+
+  """
+  Compile the workspace's Go code with 'go build'.
+  """
+  build(ws: Workspace!): Void {
+    container
+      .from("golang")
+      .withMountedCache("/go/pkg/mod", cacheVolume("go_mod_cache"))
+      .withWorkdir("/app")
+      .withDirectory(".", ws.directory(".", include: ["main.go"]))
+      .withExec(["go", "mod", "init", "main"])
+      .withExec(["go", "build", "./..."])
+      .sync
+
+    null
+  }
+}

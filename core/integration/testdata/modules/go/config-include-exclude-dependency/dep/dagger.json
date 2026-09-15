@@ -1,0 +1,12 @@
+{
+  "name": "dep",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "**/foo",
+    "!**/bar"
+  ],
+  "source": ".dagger"
+}

@@ -1,0 +1,5 @@
+type Greeter {
+  pub hello: String! {
+    "hello from workspace"
+  }
+}

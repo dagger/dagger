@@ -1,0 +1,10 @@
+# A dependency module that defines an interface for consumers to implement.
+type Dep {
+  pub name: String! {
+    "dep"
+  }
+}
+
+interface Greeter {
+  pub greet(name: String!): String!
+}

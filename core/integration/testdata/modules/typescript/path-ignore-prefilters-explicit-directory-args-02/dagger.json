@@ -1,0 +1,13 @@
+{
+  "name": "test-mod",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "test",
+      "source": "dep"
+    }
+  ]
+}

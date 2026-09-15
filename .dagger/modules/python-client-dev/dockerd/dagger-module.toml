@@ -1,0 +1,8 @@
+name = "dockerd"
+engineVersion = "v0.21.9"
+
+[runtime]
+  source = "go"
+
+[codegen]
+  automaticGitignore = false

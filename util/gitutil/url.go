@@ -1,0 +1,210 @@
+package gitutil
+
+import (
+	"errors"
+	"fmt"
+	"net/url"
+	"regexp"
+	"strings"
+
+	"github.com/dagger/dagger/internal/buildkit/util/sshutil"
+)
+
+const (
+	HTTPProtocol  string = "http"
+	HTTPSProtocol string = "https"
+	SSHProtocol   string = "ssh"
+	GitProtocol   string = "git"
+)
+
+var (
+	ErrUnknownProtocol = errors.New("unknown protocol")
+	ErrInvalidProtocol = errors.New("invalid protocol")
+)
+
+var supportedProtos = map[string]struct{}{
+	HTTPProtocol:  {},
+	HTTPSProtocol: {},
+	SSHProtocol:   {},
+	GitProtocol:   {},
+}
+
+var protoRegexp = regexp.MustCompile(`^[a-zA-Z0-9]+://`)
+
+// URL is a custom URL type that points to a remote Git repository.
+//
+// URLs can be parsed from both standard URLs (e.g.
+// "https://github.com/dagger/dagger/internal/buildkit.git"), as well as SCP-like URLs (e.g.
+// "git@github.com:moby/buildkit.git").
+//
+// See https://git-scm.com/book/en/v2/Git-on-the-Server-The-Protocols
+type GitURL struct {
+	// Scheme is the protocol over which the git repo can be accessed
+	Scheme string
+
+	// Host is the remote host that hosts the git repo
+	Host string
+	// Path is the path on the host to access the repo
+	Path string
+	// User is the username/password to access the host
+	User *url.Userinfo
+	// Fragment can contain additional metadata
+	Fragment *GitURLFragment
+
+	scpStyle bool // true if the URL is in SCP style
+}
+
+// Remote is a valid URL remote to pass into the Git CLI tooling (i.e. without the fragment metadata)
+func (gitURL *GitURL) Remote() string {
+	gitURLCopy := *gitURL
+	gitURLCopy.Fragment = nil
+	return gitURLCopy.String()
+}
+
+func (gitURL *GitURL) String() string {
+	if gitURL.scpStyle {
+		result := sshutil.SCPStyleURL{
+			User:     gitURL.User,
+			Host:     gitURL.Host,
+			Path:     gitURL.Path,
+			Fragment: gitURL.Fragment.String(),
+		}
+		return result.String()
+	}
+
+	result := &url.URL{
+		Scheme:   gitURL.Scheme,
+		User:     gitURL.User,
+		Host:     gitURL.Host,
+		Path:     gitURL.Path,
+		Fragment: gitURL.Fragment.String(),
+	}
+	return result.String()
+}
+
+// GitURLFragment is the buildkit-specific metadata extracted from the fragment
+// of a remote URL.
+type GitURLFragment struct {
+	// Ref is the git reference
+	Ref string
+	// Subdir is the sub-directory inside the git repository to use
+	Subdir string
+}
+
+// splitGitFragment splits a git URL fragment into its respective git
+// reference and subdirectory components.
+func splitGitFragment(fragment string) *GitURLFragment {
+	if fragment == "" {
+		return nil
+	}
+	ref, subdir, _ := strings.Cut(fragment, ":")
+	return &GitURLFragment{Ref: ref, Subdir: subdir}
+}
+
+func (fragment *GitURLFragment) String() string {
+	if fragment == nil {
+		return ""
+	}
+	if fragment.Subdir == "" {
+		return fragment.Ref
+	}
+	return fragment.Ref + ":" + fragment.Subdir
+}
+
+// ParseURL parses a BuildKit-style Git URL (that may contain additional
+// fragment metadata) and returns a parsed GitURL object.
+func ParseURL(remote string) (*GitURL, error) {
+	if proto := protoRegexp.FindString(remote); proto != "" {
+		proto = strings.ToLower(strings.TrimSuffix(proto, "://"))
+		if _, ok := supportedProtos[proto]; !ok {
+			return nil, fmt.Errorf("%w %q", ErrInvalidProtocol, proto)
+		}
+		url, err := url.Parse(remote)
+		if err != nil {
+			return nil, err
+		}
+		return fromURL(url), nil
+	}
+
+	if url, err := sshutil.ParseSCPStyleURL(remote); err == nil {
+		return fromSCPStyleURL(url), nil
+	}
+
+	return nil, ErrUnknownProtocol
+}
+
+// cloneURLFallbackProtocols is the priority order for resolving a clone ref
+// that omits its scheme (e.g. "github.com/foo/bar"). Callers iterate the
+// candidates and try the next one when authentication fails.
+var cloneURLFallbackProtocols = []string{HTTPSProtocol, SSHProtocol}
+
+// ParseCloneURL parses a clone reference into one or more candidate GitURLs,
+// in priority order.
+//
+// Module sources may omit the scheme (e.g. "github.com/foo/bar") since the
+// transport is decided at clone time, not parse time. For those, ParseCloneURL
+// returns multiple candidates with common protocols prepended; callers iterate
+// and try the next one on authentication failure. For fully-qualified URLs,
+// it returns a single-element slice.
+func ParseCloneURL(remote string) ([]*GitURL, error) {
+	u, err := ParseURL(remote)
+	if err == nil {
+		return []*GitURL{u}, nil
+	}
+	if !errors.Is(err, ErrUnknownProtocol) {
+		return nil, err
+	}
+	candidates := make([]*GitURL, 0, len(cloneURLFallbackProtocols))
+	for _, proto := range cloneURLFallbackProtocols {
+		if u, err := ParseURL(proto + "://" + remote); err == nil {
+			candidates = append(candidates, u)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("%w: %q", ErrUnknownProtocol, remote)
+	}
+	return candidates, nil
+}
+
+func IsGitTransport(remote string) bool {
+	if proto := protoRegexp.FindString(remote); proto != "" {
+		proto = strings.ToLower(strings.TrimSuffix(proto, "://"))
+		_, ok := supportedProtos[proto]
+		return ok
+	}
+	return sshutil.IsImplicitSSHTransport(remote)
+}
+
+func fromURL(url *url.URL) *GitURL {
+	path, fragment := splitGitVersion(url.Path, url.Fragment)
+	return &GitURL{
+		Scheme:   url.Scheme,
+		User:     url.User,
+		Host:     url.Host,
+		Path:     path,
+		Fragment: fragment,
+	}
+}
+
+func fromSCPStyleURL(url *sshutil.SCPStyleURL) *GitURL {
+	path, fragment := splitGitVersion(url.Path, url.Fragment)
+	return &GitURL{
+		Scheme:   SSHProtocol,
+		User:     url.User,
+		Host:     url.Host,
+		Path:     path,
+		Fragment: fragment,
+		scpStyle: true,
+	}
+}
+
+// splitGitVersion accepts the module-source "@ref" spelling in addition to
+// the BuildKit-style "#ref" fragment. An explicit fragment takes precedence.
+func splitGitVersion(path, fragment string) (string, *GitURLFragment) {
+	if fragment == "" {
+		if repoPath, ref, ok := strings.Cut(path, "@"); ok {
+			return repoPath, splitGitFragment(ref)
+		}
+	}
+	return path, splitGitFragment(fragment)
+}

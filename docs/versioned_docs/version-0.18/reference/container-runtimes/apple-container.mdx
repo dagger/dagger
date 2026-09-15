@@ -1,0 +1,58 @@
+---
+title: "Apple Container"
+sidebar_label: "Apple Container"
+slug: /reference/container-runtimes/apple-container
+description: "Learn how to use Dagger with Apple Container."
+---
+
+Dagger can be used with any OCI-compatible container runtime, including [`container` from Apple](https://github.com/apple/container).
+
+:::warning
+The support for Apple's `container` is still early and experimental.
+:::
+
+## How it works
+
+By default, Dagger tries to invoke the `docker` executable at some points during the invocation of `dagger`. Since `container` is partially CLI-compatible with Docker, some functionality works out of the box, and there is a way to get running by combining a symbolic link named `docker` pointing to the `container` executable, together with the approach of [Custom Runner support](https://docs.dagger.io/configuration/custom-runner).
+
+## Prerequisites
+
+- Apple's `container` installed and API server running on the host system, through `container system start`.
+
+## Example
+
+To use `container` with Dagger:
+
+Create a symbolic link in a superior `PATH` position as below:
+
+```shell
+sudo ln -s $(which container) /usr/local/bin/docker
+```
+
+Start the Dagger Engine using appropriate values for memory and cpus:
+
+```shell
+container run --rm -d \
+    --memory 16G \
+    --cpus 4 \
+    --name dagger-engine-custom \
+    registry.dagger.io/engine:v0.18.12
+```
+
+Set this environment variable wherever you want to reach your Dagger Engine:
+
+```shell
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine-custom
+```
+
+:::info
+There is no `container ps`, so use `container ls` to check if the Dagger Engine is running.
+:::
+
+## Resources
+
+If you have any questions about additional ways to use Apple's `container` with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [#macos channel](https://discord.com/channels/707636530424053791/1155969163282628639).
+
+## About Apple's `container`
+
+Apple's [`container`](https://github.com/apple/container) is a tool for creating and running Linux containers using lightweight virtual machines on a Mac. It is written in Swift, and optimized for Apple silicon.

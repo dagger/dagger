@@ -1,0 +1,7 @@
+{
+  "name": "hello-dagger",
+  "engineVersion": "v0.16.1",
+  "sdk": {
+    "source": "java"
+  }
+}

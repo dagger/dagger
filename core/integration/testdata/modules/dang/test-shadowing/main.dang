@@ -1,0 +1,26 @@
+"""
+Test module for Dang type names that shadow Dagger core types.
+"""
+type TestShadowing {
+  pub makeContainer: Container! {
+    Container("container")
+  }
+
+  pub makeDirectory: Directory! {
+    Directory("directory")
+  }
+
+  pub makeCoreContainer: Dagger.Container! {
+    Dagger.container
+      .from("alpine:3.22.1")
+      .withExec(["echo", "core"])
+  }
+}
+
+type Container {
+  pub value: String!
+}
+
+type Directory {
+  pub value: String!
+}

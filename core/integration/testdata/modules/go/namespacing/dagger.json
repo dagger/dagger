@@ -1,0 +1,21 @@
+{
+  "name": "test",
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "sub1",
+      "source": "sub1"
+    },
+    {
+      "name": "sub2",
+      "source": "sub2"
+    }
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
+}

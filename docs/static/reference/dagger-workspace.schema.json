@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dagger/dagger/core/workspace/config",
+  "$ref": "#/$defs/Config",
+  "$defs": {
+    "Config": {
+      "properties": {
+        "modules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ModuleEntry"
+          },
+          "type": "object"
+        },
+        "sdks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SDKEntry"
+          },
+          "type": "object"
+        },
+        "ignore": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "defaults_from_dotenv": {
+          "type": "boolean"
+        },
+        "check-generated": {
+          "type": "boolean",
+          "description": "CheckGenerated controls whether `dagger check` runs generate-as-checks, which fail when generated files are stale. Defaults to true; set false to skip them (like --no-generate). CLI flags override it."
+        },
+        "env": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EnvOverlay"
+          },
+          "type": "object"
+        },
+        "ports": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PortMapping"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Config represents a parsed dagger.toml workspace configuration."
+    },
+    "EnvModuleOverlay": {
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Source, when set, installs a module scoped to this environment. It mirrors [modules.\u003cname\u003e.source]: a workspace-relative path or a canonical ref."
+        },
+        "pin": {
+          "type": "string",
+          "description": "Pin is the resolved version for Source, mirroring [modules.\u003cname\u003e.pin]."
+        },
+        "settings": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "EnvModuleOverlay is the environment-specific overlay for one module."
+    },
+    "EnvOverlay": {
+      "properties": {
+        "modules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EnvModuleOverlay"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "EnvOverlay is a named workspace environment overlay."
+    },
+    "ModuleEntry": {
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "pin": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "object"
+        },
+        "entrypoint": {
+          "type": "boolean"
+        },
+        "legacy-default-path": {
+          "type": "boolean"
+        },
+        "up": {
+          "$ref": "#/$defs/ModuleSkip"
+        },
+        "generate": {
+          "$ref": "#/$defs/ModuleSkip"
+        },
+        "check": {
+          "$ref": "#/$defs/ModuleSkip"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "description": "ModuleEntry represents a single module entry in the workspace config."
+    },
+    "ModuleSkip": {
+      "properties": {
+        "skip": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ModuleSkip carries the per-action skip patterns for a module entry."
+    },
+    "PortMapping": {
+      "properties": {
+        "backendService": {
+          "type": "string"
+        },
+        "backendPort": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "backendService",
+        "backendPort"
+      ],
+      "description": "PortMapping declares a host port that forwards to a workspace service."
+    },
+    "SDKEntry": {
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "scopes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SDKScope"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "module"
+      ],
+      "description": "SDKEntry registers an installed module as a named SDK in this workspace."
+    },
+    "SDKScope": {
+      "properties": {
+        "is-module": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "clients": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "settings": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "SDKScope records one project root that an SDK module manages."
+    }
+  }
+}

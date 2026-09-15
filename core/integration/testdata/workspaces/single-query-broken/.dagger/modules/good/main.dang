@@ -1,0 +1,5 @@
+type Good {
+  pub ping: String! {
+    "healthy module loaded"
+  }
+}

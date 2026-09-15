@@ -1,0 +1,33 @@
+---
+title: "Container runtimes"
+description: "Learn how to use Dagger with Docker."
+slug: /reference/container-runtimes/
+---
+
+When the Dagger CLI is run on the host, it needs to connect to an engine. The
+most common way to do this is to rely on a container runtime available on the
+host to start the engine in a container.
+
+Dagger can be used with most OCI-compatible container runtimes, including:
+
+- [`docker`](./docker)
+- [`podman`](./podman)
+- [`nerdctl` / `finch`](./nerdctl)
+- [Apple's `container`](./apple-container)
+
+## How it works
+
+By default, dagger will attempt to detect an available container runtime on the
+host - no need for additional configuration.
+
+If you need to override the default you can set `_EXPERIMENTAL_DAGGER_RUNNER_HOST`, using the [connection interface](../configuration/custom-runner.mdx#connection-interface).
+
+When attempting to connect to the engine via the selected container runtime,
+the CLI will attempt to download the engine image that matches its own
+version, start it in a container, then connect to it for the request.
+
+The selected container runtime also provides the backend for APIs in the dagger
+engine that rely on a host container runtime, such as:
+
+- `Host.containerImage(name: String!): Container!` (loads an image into the engine)
+- `Container.exportImage(name: String!): Void!` (exports a container image into the host)

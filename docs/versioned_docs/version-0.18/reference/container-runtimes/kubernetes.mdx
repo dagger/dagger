@@ -1,0 +1,221 @@
+---
+title: "Kubernetes"
+description: "Learn how to deploy Dagger on a Kubernetes cluster."
+slug: /reference/container-runtimes/kubernetes
+---
+
+# Kubernetes
+
+This section covers different strategies for deploying Dagger on a Kubernetes cluster.
+Its primary focus are teams that looking forward to self-host their CI infrastructure and
+use Dagger at its core to run their pipelines.
+
+Running Dagger in Kubernetes is generally a good choice for:
+
+- Teams with demanding CI/CD performance needs or regulated environments.
+- Individuals or teams that want to self-host their CI infrastructure.
+- Better integration with internal existing infrastructure.
+- Mitigate CI vendor lock-in
+
+## How it works
+
+### Architecture patterns
+
+This section describe a few common architecture patterns to consider when setting up a Continuous Integration (CI) environment using Dagger on Kubernetes.
+
+#### Persistent nodes
+
+The base pattern consists of persistent Kubernetes nodes with ephemeral CI runners.
+
+The minimum required components are:
+
+- *Kubernetes cluster*, consisting of support nodes and runner nodes.
+  - Runner nodes host CI runners and Dagger Engines.
+  - Support nodes host support and management tools, such as certificate management, runner controller & other functions.
+- *Certificates manager*, required by Runner controller for Admission Webhook.
+- *Runner controller*, responsible for managing CI runners in response to CI job requests.
+  - CI runners are the workhorses of a CI/CD system. They execute the jobs that are defined in the CI/CD pipeline.
+- *Dagger Engine* on each runner node, running alongside one or more CI runners.
+  - Responsible for running Dagger pipelines and caching intermediate and final build artifacts.
+
+In this architecture:
+
+- Kubernetes nodes are persistent.
+- CI runners are ephemeral.
+- Each CI runner has access only to the cache of the local Dagger Engine.
+- The Dagger Engine is deployed as a DaemonSet, to use resources in the most efficient manner and enable reuse of the local Dagger Engine cache to the greatest extent possible.
+
+```mermaid
+graph LR
+    subgraph External APIs
+        SCM
+    end
+    rc --> SCM
+    controlplane --> runner-nodes
+
+    subgraph Kubernetes cluster
+        controlplane{{ Kubernetes control plane }}
+        rc -.-> runner1
+        rc -.-> runnern.1
+        rc -.-> runnern.2
+
+        subgraph support-nodes[Support nodes]
+            rc{{ Runner controller }}
+            cert-manager
+        end
+        subgraph runner-nodes[Runner nodes]
+            direction BT
+            subgraph node-n[Node n]
+                runnern.1{{ CI runner }} --> dagger-engine2[Dagger Engine]
+                runnern.2{{ CI runner }} --> dagger-engine2[Dagger Engine]
+            end
+            subgraph node-1[Node 1]
+                runner1{{ CI runner }} --> dagger-engine[Dagger Engine]
+            end
+        end
+    end
+```
+
+#### Ephemeral, auto-scaled nodes
+
+The base architecture pattern described previously can be optimized by the addition of a *node auto-scaler*. This can automatically adjust the size of node groups based on the current workload. If there are a lot of CI jobs running, the auto-scaler can automatically add more runner nodes to the cluster to handle the increased workload. Conversely, if there are few jobs running, it can remove unnecessary runner nodes.
+
+This optimization reduces the total compute cost since runner nodes are added & removed based on the number of concurrent CI jobs. The trade-off is that we lose all Dagger Engine state stored on the runner node that is de-provisioned. Configuring persistent volumes is worth considering if the platform supports it.
+
+In this architecture:
+
+- Kubernetes nodes provisioned on-demand start with a "clean" Dagger Engine containing no cached data.
+- Cached build artifacts from previous runs will be lost when the runner node gets de-provisioned (can be mitigated via persistent volumes).
+
+```mermaid
+graph LR
+    subgraph External APIs
+        SCM
+    end
+    rc --> SCM
+    controlplane --> runner-nodes
+    as --> controlplane
+
+    subgraph Kubernetes cluster
+        controlplane{{ Kubernetes control plane }}
+        rc -.-> runner1
+        rc -.-> runnern.1
+        rc -.-> runnern.2
+
+        subgraph support-nodes[Support nodes]
+            rc{{ Runner controller }}
+            cert-manager
+            as{{Node auto-scaler}}
+        end
+        subgraph runner-nodes[Runner nodes]
+            direction BT
+            subgraph node-n[Node n]
+                runnern.1{{ CI runner }} --> dagger-engine2[Dagger Engine]
+                runnern.2{{ CI runner }} --> dagger-engine2[Dagger Engine]
+            end
+            subgraph node-1[Node 1]
+                runner1{{ CI runner }} --> dagger-engine[Dagger Engine]
+            end
+        end
+    end
+```
+
+### Recommendations
+
+When deploying Dagger on a Kubernetes cluster, it's important to understand the design constraints you're operating under, so you can optimize your configuration to suit your workload requirements. Here are two key recommendations.
+
+##### Runner nodes with moderate to large NVMe drives
+
+The Dagger Engine cache is used to store intermediate build artifacts, which can significantly speed up your CI jobs. However, this cache can grow very large over time. By choosing nodes with large NVMe drives, you ensure that there is plenty of space for this cache. NVMe drives are also much faster than traditional SSDs, which can further improve performance. These types of drives are usually ephemeral to the node and much less expensive relative to EBS-type volumes.
+
+##### Runner nodes appropriately sized for your workloads
+
+Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8GB of RAM is a good place to start. One approach is to set up the CI runners with various sizes so that the Dagger Engine can consume resources from the runners on the same node if needed.
+
+### Tested Configurations
+
+- Dagger's Helm chart is continuously tested [on K3s via a Dagger pipeline](https://github.com/dagger/dagger/blob/main/helm/.dagger/main.go#L41) in CI
+- Dagger has run CI jobs at significant scale on AWS EKS using the [approach outlined here](https://dagger.io/blog/argo-cd-kubernetes)
+- Dagger has tested [SUSE RKE2](https://docs.rke2.io/install/quickstart) and Rancher Desktop Kubernetes using our Helm chart in DaemonSet configuration. The recommended configuration for RKE2 is SUSE Linux Enterprise (SLE) Micro 6.1 with 100GB storage per node (minimum).
+- Many other Kubernetes configurations should be compatible.
+
+## Prerequisites
+
+- A running Kubernetes cluster with a pre-configured `kubectl` profile.
+- The [Helm](https://helm.sh/) package manager installed on your local machine.
+
+## Example
+
+Dagger provides a Helm chart to create a Dagger Engine DaemonSet on a Kubernetes cluster. A DaemonSet ensures that all matching nodes run an instance of Dagger Engine.
+
+The following command uses the Dagger Helm chart to create a Dagger Engine DaemonSet on the cluster:
+
+```shell
+helm upgrade --install --namespace=dagger --create-namespace \
+    dagger oci://registry.dagger.io/dagger-helm
+```
+
+This Dagger Engine DaemonSet configuration is designed to:
+
+- best utilize local Non-Volatile Memory Express (NVMe) hard drives of the worker nodes
+- reduce the amount of network latency and bandwidth requirements
+- simplify routing of Dagger SDK and CLI requests
+
+Wait for the Dagger Engine to become ready:
+
+```shell
+kubectl wait --for condition=Ready --timeout=60s pod \
+    --selector=name=dagger-dagger-helm-engine --namespace=dagger
+```
+
+Find more information on what was deployed using the following command:
+
+```shell
+kubectl describe daemonset/dagger-dagger-helm-engine --namespace=dagger
+```
+
+Get a Dagger Engine pod name:
+
+```shell
+DAGGER_ENGINE_POD_NAME="$(kubectl get pod \
+    --selector=name=dagger-dagger-helm-engine --namespace=dagger \
+    --output=jsonpath='{.items[0].metadata.name}')"
+export DAGGER_ENGINE_POD_NAME
+```
+
+Next, set the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` variable so that the Dagger CLI knows to connect to the Dagger Engine that you deployed as a Kubernetes pod:
+
+```shell
+_EXPERIMENTAL_DAGGER_RUNNER_HOST="kube-pod://$DAGGER_ENGINE_POD_NAME?namespace=dagger"
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST
+```
+
+Finally, run an operation that shows the kernel info of the Kubernetes node where this Dagger Engine runs:
+
+```shell
+dagger query <<EOF
+{
+    container {
+        from(address:"alpine") {
+            withExec(args: ["uname", "-a"]) { stdout }
+        }
+    }
+}
+EOF
+```
+
+## Resources
+
+Below are some resources from the Dagger community that may help as well. If you have any questions about additional ways to use Kubernetes with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Kubernetes channel](https://discord.com/channels/707636530424053791/1122942037096927353).
+
+- [Kubernetes Dagger modules](https://daggerverse.dev/search?q=kubernetes).
+- [Video: Kubernetes in Dagger](https://www.youtube.com/watch?v=F6-44Je5HvE) by Marcos Lilljedahl: In this demo, Marcos explains how to run Kubernetes clusters using Dagger. He addresses the challenges and solutions in integrating Kubernetes within Dagger and shares a practical setup using the [k3s Dagger module](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/k3s)
+- [Video: Kubernetes Infinity Stones: Can Dagger Complete My Set?](https://youtu.be/VIYxsc7TlhQ) by Diego Ciangottini: In this demo, Diego explores the integration of Dagger with Kubernetes to enhance the deployment and management of components across different environments.
+- [Video: Dagger and Kubernetes Repo Example](https://github.com/developer-guy/kcd-munich-2024-demo) by Batuhan Apaydın and Koray Oksay: In this demo, Batuhan and Koray demonstrate how to use Dagger in a Kubernetes environment to manage the deployment of applications. They use a simple Go application that exposes a REST API. The application is deployed in a Kubernetes cluster using Dagger with a pipeline-as-code approach.
+- [Video: Argo Workflows with Dagger Functions](https://youtu.be/FWOJO2PAQIo)
+- [Blog post: On-Demand Dagger Engines with Argo CD, EKS, and Karpenter](https://dagger.io/blog/argo-cd-kubernetes)
+
+## About Kubernetes
+
+[Kubernetes](https://kubernetes.io/) is an open-source container orchestration platform that automates the deployment, scaling, and management of containerized applications. It was originally designed by Google
+and is now maintained by the Cloud Native Computing Foundation.

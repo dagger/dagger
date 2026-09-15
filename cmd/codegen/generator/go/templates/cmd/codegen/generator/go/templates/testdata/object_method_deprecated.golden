@@ -1,0 +1,29 @@
+// Container with deprecated method
+type Container struct {
+	query *querybuilder.Selection
+}
+type WithContainerFunc func(r *Container) *Container
+
+// With calls the provided function with current Container.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Container) With(f WithContainerFunc) *Container {
+	return f(r)
+}
+
+func (r *Container) WithGraphQLQuery(q *querybuilder.Selection) *Container {
+	return &Container{
+		query: q,
+	}
+}
+
+// Apply configuration to the container
+//
+// Deprecated: Use ApplyV2 instead.
+func (r *Container) Apply() *Container {
+	q := r.query.Select("apply")
+
+	return &Container{
+		query: q,
+	}
+}

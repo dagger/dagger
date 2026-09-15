@@ -1,0 +1,11 @@
+{
+  "name": "minimal",
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "python"
+  },
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
+}

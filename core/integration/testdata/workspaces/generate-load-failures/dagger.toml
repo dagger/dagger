@@ -1,0 +1,20 @@
+[modules.good]
+source = ".dagger/modules/good"
+
+[modules.broken-build]
+source = ".dagger/modules/broken-build"
+
+[modules.ungenerated]
+source = ".dagger/modules/ungenerated"
+
+[modules.stale-build]
+source = ".dagger/modules/stale-build"
+
+[modules.regen]
+source = ".dagger/modules/regen"
+
+[modules.fixable]
+source = ".dagger/modules/fixable"
+
+[modules.fixer]
+source = ".dagger/modules/fixer"

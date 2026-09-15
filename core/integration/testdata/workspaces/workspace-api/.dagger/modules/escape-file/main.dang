@@ -1,0 +1,12 @@
+type EscapeFile {
+  pub content: String!
+
+  new(source: Workspace!) {
+    self.content = source.file("../../etc/hostname").contents
+    self
+  }
+
+  pub read: String! {
+    content
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "description": "The root of the DAG.",
+  "directives": [],
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Create a new TypeDef.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "typeDef",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "TypeDef",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
+  "kind": "OBJECT",
+  "name": "Query",
+  "possibleTypes": []
+}

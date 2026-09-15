@@ -1,0 +1,7 @@
+{
+  "name": "app",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

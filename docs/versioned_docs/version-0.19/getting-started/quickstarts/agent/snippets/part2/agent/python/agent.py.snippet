@@ -1,0 +1,38 @@
+@function
+async def develop(
+    self,
+    assignment: Annotated[str, Doc("Assignment to complete")],
+    source: Annotated[dagger.Directory, DefaultPath("/")],
+) -> dagger.Directory:
+    """A coding agent for developing new features."""
+    # Environment with agent inputs and outputs
+    environment = (
+        dag.env()
+        .with_string_input(
+            "assignment", assignment, "the assignment to complete"
+        )
+        .with_workspace_input(
+            "workspace",
+            dag.workspace(source),
+            "the workspace with tools to edit and test code",
+        )
+        .with_workspace_output(
+            "completed", "the workspace with the completed assignment"
+        )
+    )
+
+    # Detailed prompt stored in markdown file
+    prompt_file = dag.current_module().source().file("develop_prompt.md")
+
+    # Put it all together to form the agent
+    work = dag.llm().with_env(environment).with_prompt_file(prompt_file)
+
+    # Get the output from the agent
+    completed = work.env().output("completed").as_workspace()
+    completed_directory = completed.source().without_directory("node_modules")
+
+    # Make sure the tests really pass
+    await self.test(completed_directory)
+
+    # Return the Directory with the assignment completed
+    return completed_directory

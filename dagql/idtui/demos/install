@@ -1,0 +1,23 @@
+#!/bin/sh
+
+set -e -u -x
+
+rm -rf /tmp/new-mod-install
+mkdir /tmp/new-mod-install
+cd /tmp/new-mod-install
+
+dagger init
+
+dagger install github.com/vito/bass/ci
+
+# dagger call -m bass --help
+
+# dagger call -m bass unit --help
+
+# dagger call -m bass --code ~/src/bass unit --packages ./pkg/bass stdout | tail -1
+
+# dagger call --progress=plain -m bass --code ~/src/bass unit --packages ./pkg/bass stdout | tail -1
+
+# dagger call --silent -m bass --code ~/src/bass unit --packages ./pkg/bass stdout | tail -1
+
+# dagger call -m bass --code ~/src/bass unit --packages ./pkg/bass terminal

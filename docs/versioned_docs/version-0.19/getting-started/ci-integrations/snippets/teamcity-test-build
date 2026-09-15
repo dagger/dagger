@@ -1,0 +1,51 @@
+import jetbrains.buildServer.configs.kotlin.*
+import jetbrains.buildServer.configs.kotlin.vcs.GitVcsRoot
+
+version = "2025.07"
+
+object Conf {
+    const val DAGGER_VERSION = "0.19.2"
+    const val DAGGER_TEAMCITY_RECIPE = "tc:recipe:jetbrains/dagger@1.0.0"
+    const val DAGGER_MODULE = "github.com/kpenfound/dagger-modules/golang@v0.2.0"
+    val address
+        get() = "ttl.sh/my-app-%env.BUILD_NUMBER%"
+}
+
+project {
+    vcsRoot(TestVscRoot)
+    buildType(Build)
+}
+
+object Build : BuildType({
+    name = "Build"
+    requirements {
+        exists("docker.server.version")
+    }
+    vcs {
+        root(TestVscRoot)
+    }
+    steps {
+        step {
+            id = "run tests"
+            type = Conf.DAGGER_TEAMCITY_RECIPE
+            param("env.input_version", Conf.DAGGER_VERSION)
+            param("env.input_command", """dagger -m ${Conf.DAGGER_MODULE} call test --source=.""")
+        }
+        step {
+            id = "build and publish"
+            type = Conf.DAGGER_TEAMCITY_RECIPE
+            param("env.input_version", Conf.DAGGER_VERSION)
+            param(
+                "env.input_command",
+                """dagger -m ${Conf.DAGGER_MODULE} call build-container --source=. --args=. publish --address=${Conf.address}"""
+            )
+        }
+    }
+})
+
+object TestVscRoot : GitVcsRoot({
+    name = "greetings-api"
+    url = "https://github.com/kpenfound/greetings-api.git"
+    branchSpec = "+:refs/heads/*"
+    branch = "refs/heads/main"
+})

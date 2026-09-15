@@ -1,0 +1,6 @@
+{
+  "name": "go-programmer",
+  "engineVersion": "v1.0.0",
+  "sdk": "dang",
+  "disableDefaultFunctionCaching": true
+}

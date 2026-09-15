@@ -1,0 +1,14 @@
+query ModuleSourceDependencies($source: ID!) {
+  source: node(id: $source) {
+    ... on ModuleSource {
+      moduleOriginalName
+      engineVersion
+      dependencies {
+        kind
+        moduleOriginalName
+        pin
+        asString
+      }
+    }
+  }
+}

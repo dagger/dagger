@@ -1,0 +1,6 @@
+kind: Added
+body: 'Add `Container.manifest()` and `Container.layer(id: string)` to support more granular container exporting.'
+time: 2026-06-15T22:58:54.494599943-04:00
+custom:
+    Author: frantjc
+    PR: "13356"

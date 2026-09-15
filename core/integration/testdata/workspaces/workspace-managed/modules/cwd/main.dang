@@ -1,0 +1,5 @@
+type Cwd {
+  pub greet: String! {
+    "hello from cwd dagger json"
+  }
+}

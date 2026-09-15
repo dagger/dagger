@@ -1,0 +1,82 @@
+---
+slug: /install
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import PartialInstallCli from './partials/_install-cli.mdx';
+import { daggerVersion } from './partials/version';
+
+# Installation
+
+## Release type
+
+<PartialInstallCli />
+
+## Update
+
+To update the Dagger CLI, use the same method that you originally used to install it. This will overwrite your currently-installed version with the latest (or specified) version.
+
+Homebrew users can alternatively use the following commands:
+
+```shell
+brew update
+brew upgrade dagger
+```
+
+## Uninstallation
+
+Remove the Dagger CLI using the following command:
+
+```shell
+sudo rm /usr/local/bin/dagger
+```
+
+Homebrew users can alternatively use the following command:
+
+```shell
+brew uninstall dagger
+```
+
+Next, remove the Dagger container using the following commands:
+
+```shell
+docker rm --force --volumes "$(docker ps --quiet --filter='name=^dagger-engine-')"
+```
+
+Finally, remove the `dagger` sub-directory of your local cache and configuration directories (`$XDG_CACHE_HOME` and `$XDG_CONFIG_HOME` on Linux or the equivalent for other platforms):
+
+<Tabs>
+<TabItem value="macOS">
+
+```shell
+rm -rf ~/Library/Caches/dagger
+rm -rf ~/Library/Application\ Support/dagger
+```
+
+</TabItem>
+<TabItem value="Linux">
+
+```shell
+rm -rf ~/.cache/dagger
+rm -rf ~/.config/dagger
+```
+
+</TabItem>
+</Tabs>
+
+:::note
+The paths listed above are defaults and may require adjustment for your specific environment. The third-party packages Dagger uses to determine these paths are listed below:
+  - Go (SDK and CLI): [https://github.com/adrg/xdg](https://github.com/adrg/xdg)
+  - Node.js: [https://github.com/sindresorhus/env-paths](https://github.com/sindresorhus/env-paths)
+  - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
+:::
+
+## Versioning
+
+The Dagger CLI is released in tandem with the Dagger Engine and thus shares a version number with it. Dagger SDKs automatically provision a Dagger Engine at a compatible version.
+
+The Dagger Engine runner is distributed as a container image at `registry.dagger.io/engine`. Tags are made for the version of each release. For example, the {daggerVersion} release has a corresponding image at <code>
+{`registry.dagger.io/engine:v${daggerVersion}`}</code>.
+
+Each release notes the compatible Dagger Engine version in its release notes.

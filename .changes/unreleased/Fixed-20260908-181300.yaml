@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Explain how to proceed when a local engine cannot start because a container
+  runtime is missing or unavailable. Errors name the runtime, suggest a
+  diagnostic command when applicable, and point to `dagger help engine` for
+  other engine options.
+time: 2026-09-08T18:13:00Z
+custom:
+  Author: grouville

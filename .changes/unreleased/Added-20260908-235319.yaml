@@ -1,0 +1,32 @@
+kind: Added
+body: |
+  Dagger now supports SemVer version constraints for Git repositories, OCI
+  images, and module sources. Use the new `version` argument on
+  `GitRepository.latest`, `Container.from`, or `Query.moduleSource`. You can
+  also use a module reference such as `github.com/acme/tool@v1.2`.
+
+  A constraint with a missing component selects the greatest matching stable
+  release. For example, `v1` selects the latest `v1.x.x` release, and `v1.2`
+  selects the latest `v1.2.x` release. A prerelease suffix, such as
+  `v1.2-beta`, selects the latest matching prerelease. The `v` prefix is
+  optional.
+
+  Git resolution checks matching tags first and then matching branches. OCI
+  resolution checks matching tags. The workspace lockfile records the
+  selected Git ref and commit, or the selected OCI tag and digest. `dagger
+  update` resolves the constraint again and updates the lock.
+
+  The `version` argument cannot be combined with a tagged or digested OCI
+  address. It also cannot be combined with a version suffix in `refString`.
+
+  This feature changes how module refs without a `v` prefix resolve for
+  modules that opt in through their engine version. For example,
+  `github.com/acme/tool@1.2.3` is now a SemVer query instead of an exact Git ref
+  name. Use `@refs/heads/1.2.3` or `@refs/tags/1.2.3` to select an exact Git
+  ref. Generated PHP methods place `version` before existing optional
+  arguments. PHP calls that pass those optional arguments by position must use
+  named arguments or add the new argument.
+time: 2026-09-08T23:53:19Z
+custom:
+  Author: tiborvass
+  PR: 14034

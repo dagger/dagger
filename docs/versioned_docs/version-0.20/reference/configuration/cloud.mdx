@@ -1,0 +1,309 @@
+---
+title: "Dagger Cloud"
+description: "Learn how to configure Dagger Cloud for your workflows, including organizations, traces, modules, and more."
+slug: /reference/configuration/cloud
+---
+
+
+# Dagger Cloud
+
+:::caution Identity verification
+Dagger Cloud requires a GitHub or Google account for identity verification. If you don't have one, [register for a free GitHub account](https://github.com/signup) or [create a free Google account](https://accounts.google.com/) before proceeding.
+:::
+
+:::info
+Dagger Cloud requires Dagger v0.11 or higher.
+:::
+
+## Organizations
+
+A Dagger Cloud "organization" refers to a group of member accounts linked to a single team.
+
+A member account grants a person access to log in to a Dagger Cloud organization to diagnose workflow failures and collaborate on changes. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
+
+:::important
+You must hold the `Admin` role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role.
+:::
+
+### Create a Dagger Cloud organization
+
+1. Sign up for Dagger Cloud by selecting a plan on the [Dagger website](https://www.dagger.io/cloud). Dagger Cloud includes plans for both individuals and teams. Click `Continue with GitHub` to log in with your GitHub account.
+
+1. After authorizing Dagger Cloud for your GitHub account, you'll create your organization.
+
+:::info Naming your organization
+Organization names may contain alphanumeric characters and dashes and are unique across Dagger Cloud. We recommend using your company name or team name for your organization.
+:::
+
+1. Review and select a Dagger Cloud subscription plan.
+
+1. If you selected the "Team" plan:
+
+    1. You will be presented with the option to add teammates to your Dagger Cloud account. This step is optional and not available in the Individual plan.
+
+    1. You will then enter your payment information. After your free 14 day trial completes, you will be automatically subscribed to the Dagger Cloud Team plan.
+
+## Traces
+
+### Connect to Dagger Cloud
+
+The next step is to connect to Dagger Cloud from your local development environment or from your CI environment.
+
+#### Connect from your local development host
+
+You can visualize and debug your local Dagger workflow runs with Dagger Cloud to identify issues before pushing them to CI.
+
+To configure for local development, run the `dagger login` command.
+
+:::tip Multiple Dagger Cloud organizations
+To use Dagger Cloud locally when you have multiple organizations linked to your account, you must use `dagger login ORGANIZATION-NAME` instead.
+:::
+
+The Dagger CLI will invite you to authenticate your device by displaying a link containing a unique key. Click the link in your browser, and verify that you see the same key in the Dagger Cloud Web interface.
+
+```shell
+$ dagger login
+Browser opened to: https://auth.dagger.cloud/activate?user_code=XXXX-YYYY
+Confirmation code: XXXX-YYYY
+```
+
+Once you confirm your authentication code, your Dagger CLI will be authenticated and you can now visualize and debug your local Dagger workflow runs.
+
+:::info
+If you do not want to use `dagger login`, set your Dagger Cloud token as an environment variable. For example:
+```shell
+export DAGGER_CLOUD_TOKEN={your token}
+```
+:::
+
+#### Connect from your CI environment
+
+To connect to Dagger Cloud from a CI environment, you require a Dagger Cloud token. Dagger Cloud creates this token automatically when you sign up.
+
+To find your token, navigate to the settings page using the cogwheel icon in the top navigation bar. Under the `Tokens` sub-menu, click the eye icon to view the token. You can also use this URL pattern: `https://v3.dagger.cloud/{Your Org Name}/settings?tab=Tokens`
+
+    ![Get token](/img/current_docs/reference/configuration/get-token.png)
+
+  :::warning
+  If you regenerate your token, you must replace the token wherever you've referenced it. To reduce operational interruptions, only regenerate your token if it has leaked.
+  :::
+
+Once you have your token, you can use it to connect Dagger Cloud with your CI environment. The general procedure is:
+
+- Add your Dagger Cloud token to your CI environment.
+  - Store the Dagger Cloud token as a secret with your CI environment.
+
+:::danger Keep your Dagger Cloud token private
+You must store the Dagger Cloud token as a secret (not plaintext) with your CI environment and reference it in your CI workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project. We provide links in the steps below for configuring secrets with popular CI tools.
+:::
+
+  - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
+- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub check to your pull requests. Each check links to the corresponding workflow visualization in Dagger Cloud.
+
+You can use Dagger Cloud whether you're hosting your own CI runners and infrastructure or using hosted/SaaS runners.
+
+<Tabs groupId="ci">
+<TabItem value="GitHub Actions">
+
+1. Create a new secret for your GitHub repository named `DAGGER_CLOUD_TOKEN`, and set it to the value of the [token](#connect-from-your-ci-environment). Refer to the GitHub documentation [on creating repository secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-a-repository).
+
+1. Update your GitHub Actions workflow and add the secret to the Dagger workflow step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
+
+    [See an example of a sample GitHub Actions workflow file]
+
+1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow job in Dagger Cloud.
+
+</TabItem>
+<TabItem value="GitLab CI">
+
+1. Create a new CI/CD project variable in your GitLab project named `DAGGER_CLOUD_TOKEN`, and set it to the value of the [token](#connect-from-your-ci-environment). Ensure that you configure the project variable to be masked and protected. Refer to the GitLab documentation on [creating CI/CD project variables](https://docs.gitlab.com/ee/ci/variables/#define-a-cicd-variable-in-the-ui) and [CI/CD variable security](https://docs.gitlab.com/ee/ci/variables/#cicd-variable-security).
+
+1. Update your GitLab CI workflow and add the variable to your CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN`. Refer to the GitLab documentation on [using CI/CD variables](https://docs.gitlab.com/ee/ci/variables/index.html#use-cicd-variables-in-job-scripts).
+
+    [See an example of a sample GitLab workflow file]
+
+</TabItem>
+<TabItem value="CircleCI">
+
+1. Create a new environment variable in your CircleCI project named `DAGGER_CLOUD_TOKEN` and set it to the value of the [token](#connect-from-your-ci-environment). Refer to the CircleCI documentation on [creating environment variables for a project](https://circleci.com/docs/set-environment-variable/#set-an-environment-variable-in-a-project).
+
+1. For GitHub, GitLab or Atlassian Bitbucket source code repositories only: Update your CircleCI workflow and add the following values to the CI environment. Refer to the CircleCI documentation on [using pipeline values](https://circleci.com/docs/variables/#pipeline-values).
+
+    GitHub:
+
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+    ```
+
+    GitLab:
+
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+      CIRCLE_PIPELINE_TRIGGER_LOGIN: << pipeline.trigger_parameters.gitlab.user_username >>
+      CIRCLE_PIPELINE_REPO_URL: << pipeline.trigger_parameters.gitlab.repo_url >>
+      CIRCLE_PIPELINE_REPO_FULL_NAME: << pipeline.trigger_parameters.gitlab.repo_name >>
+    ```
+
+    Atlassian BitBucket:
+
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+    ```
+
+    [See an example of a sample CircleCI workflow]
+
+
+</TabItem>
+<TabItem value="Jenkins">
+
+1. Configure a Jenkins credential named `DAGGER_CLOUD_TOKEN` and set it to the value of the [token](#connect-from-your-ci-environment). Refer to the Jenkins documentation on [creating credentials](https://www.jenkins.io/doc/book/using/using-credentials/#configuring-credentials) and [credential security](https://www.jenkins.io/doc/book/using/using-credentials/#credential-security).
+
+1. Update your Jenkins Pipeline and add the variable to the CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the Pipeline environment using the format `DAGGER_CLOUD_TOKEN = credentials('DAGGER_CLOUD_TOKEN')`. Refer to the Jenkins documentation on [handling credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials).
+
+    [See an example of a sample Jenkins Pipeline]:note
+- This Jenkins Pipeline assumes that the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
+- If you use the same Jenkins server for more than one Dagger Cloud organization, create distinct credentials for each organization and link them to their respective Dagger Cloud tokens.
+- Typically, Jenkins servers are non-ephemeral and therefore it is not necessary to adjust the `docker stop` timeout.
+:::
+
+</TabItem>
+<TabItem value="Argo Workflows">
+
+1. Create a new Kubernetes secret named `dagger-cloud` and set it to the value of the [token](#connect-from-your-ci-environment). An example command to achieve this is shown below (replace the `TOKEN` placeholder with your actual token value). Refer to the Kubernetes documentation [on creating secrets](https://kubernetes.io/docs/concepts/configuration/secret/).
+
+    ```shell
+    kubectl create secret generic dagger-cloud --from-literal=token=TOKEN
+    ```
+
+1. Update your Argo Workflows specification and add the secret as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN`.
+
+    [See an example of a sample Argo Workflows specification]-workflows.mdx)
+
+</TabItem>
+</Tabs>
+
+### Test the integration
+
+The next step is to test the integration with Dagger Cloud.
+
+#### Test from your local development host
+
+1. In your terminal, call a Dagger Function. You will see a Dagger Cloud URL printed in the terminal.
+1. Click on the URL to view details of the run in Dagger Cloud.
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello
+```
+
+#### Test from your CI environment
+
+Trigger your CI workflow by pushing a commit or opening a pull request.
+
+### Public traces
+
+Dagger Cloud automatically detects if the traces produced by your workflows originate from
+a CI system and a public repository. When both conditions are met, Dagger Cloud allows
+public access to these traces without requiring an invitation to the organization.
+
+To modify this default setting, navigate to the organization page using the cogwheel icon in the top navigation bar. Under the `Visibility` sub-menu, click the eye icon to toggle public access to trace data as needed.
+
+![public traces](/img/current_docs/reference/configuration/public-traces.png)
+
+### Make an individual trace public
+
+Admin users can make an individual private trace public for sharing of links with users outside of your organization or who are not yet using Dagger Cloud. A confirmation step will verify your intention and the action is reversible.
+
+![make trace public](/img/current_docs/reference/configuration/make-trace-public.png)
+
+### Delete a trace
+
+Admin users can delete an individual trace. There is a confirmation step before deletion, but after deletion, the trace will not be recoverable.
+
+![delete a trace](/img/current_docs/reference/configuration/trace-delete.png)
+
+## Modules
+
+Dagger Cloud lets you see all your organization's modules in one place, with metadata like engine versions, descriptions, and linked repositories. Module information and activity is automatically synced from GitHub.
+
+### Add modules
+
+Dagger Cloud scans your specified repositories for Dagger modules, showing them automatically in Dagger Cloud.
+
+:::info
+You must be signed in to Dagger Cloud with GitHub.
+:::
+
+To initiate this process, navigate to the organization page using the cogwheel icon in the top navigation bar and select the `Git Sources` sub-menu. Click `Install the GitHub Application` to add a GitHub account or organization.
+
+![Module repository setup](/img/current_docs/reference/configuration/cloud-modules-target.png)
+
+You will be directed to install the Dagger Cloud GitHub application and select the GitHub accounts and repositories to add.
+
+![Module repository setup](/img/current_docs/reference/configuration/cloud-modules-install-app.png)
+
+Complete the process and then, once the GitHub account or organization appears in the Dagger Cloud user interface, click `Enable module scanning` to have Dagger Cloud begin scanning for Dagger modules. You can enable module scanning for multiple GitHub organizations. Each one can be enabled on a single Dagger organization.
+
+![Module repository setup](/img/current_docs/reference/configuration/cloud-modules-map.png)
+
+The `Scan Results` section at the bottom of the page maintains a record of scans and their status.
+
+![Module scans](/img/current_docs/reference/configuration/cloud-modules-scans.png)
+
+### Manage and inspect modules
+
+Once your modules have been added, you can start using Dagger Cloud to manage them.
+
+Access the modules dashboard from the `Modules` menu item in the top navigation bar to see a list of available modules.
+
+![Module list](/img/current_docs/reference/configuration/cloud-modules-list.png)
+
+You can view your entire list of modules by selecting the `All Modules` tab. If you wish to curate and organize this list, you can create custom views of modules filtered by team, service, or domain. To create a custom view, click the `+` icon.
+
+![Module filter](/img/current_docs/reference/configuration/cloud-modules-filter.png)
+
+Select a module to see detailed information on its activity and API.
+
+- API: View detailed API documentation for each module, including its installation command, functions, arguments and return values
+
+![Module API](/img/current_docs/reference/configuration/cloud-modules-api.png)
+
+- Activity: See a list of commits, sorted by date
+
+![Module activity](/img/current_docs/reference/configuration/cloud-modules-activity.png)
+
+- Dependencies and dependents: Trace dependencies and dependents of your module
+
+![Module dependencies](/img/current_docs/reference/configuration/cloud-modules-deps.png)
+
+- Traces: List traces triggered by a module
+
+![Module traces](/img/current_docs/reference/configuration/cloud-modules-traces.png)
+
+
+:::tip
+This information is available for all versions of the module; use the version selector in the top bar to switch between versions.
+:::
+
+## Roles and permissions
+
+In Dagger Cloud, users can have one of two roles: `Admin` or `Member`. The Admin role is not a superset of the Member role. If a user needs to administer an organization and view Dagger workflow runs, ensure that the user also has the Member role.
+
+| Actions | Admin | Member |
+| --- | :---: | :---: |
+| View Dagger workflow runs and changes |  | ✓ |
+| View members of an org | ✓ | ✓ |
+| Invite new members to an org | ✓ |  |
+| Delete an existing member from an org | ✓ |  |
+| Make an individual trace public | ✓ |  |
+| Delete an individual trace | ✓ |  |
+
+You cannot change a member's role at this time. Please contact Dagger via the support messenger in Dagger Cloud if you need assistance.
+
+## Cache pruning
+
+Within a Dagger Cloud organization, it is possible to prune the Dagger Cloud cache for a specific token. Navigate to the organization page using the cogwheel icon in the top navigation bar, select the `Tokens` sub-menu, and click the broom icon for the corresponding token.
+
+![Get token](/img/current_docs/reference/configuration/prune-cache.png)

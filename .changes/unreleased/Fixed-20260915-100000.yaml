@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  Removing a snapshot owner lease no longer walks every snapshot in the
+  cache while holding the snapshot manager lock. GC prunes results one at a
+  time, so large caches made each pass O(pruned × snapshots) under the lock,
+  stalling other snapshot operations and disk-pressure GC. A reverse index
+  from lease to snapshots keeps the critical section proportional to the
+  lease's snapshot chain.
+time: 2026-09-15T10:00:00Z
+custom:
+  Author: goingforstudying-ctrl
+  PR: 14153

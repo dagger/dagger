@@ -1,0 +1,655 @@
+package core
+
+// These tests cover module functions that return `Container.Terminal`. They
+// verify the host-side interactive session, prompt/output handling, and nested
+// terminal cases driven through the CLI TUI.
+//
+// See also:
+// - module_up_test.go: the module development server UI.
+// - shell_test.go: interactive shell command behavior.
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"time"
+
+	"github.com/Netflix/go-expect"
+	"github.com/containerd/continuity/fs"
+	"github.com/creack/pty"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/testctx"
+	"github.com/muesli/termenv"
+	"github.com/stretchr/testify/require"
+)
+
+// Terminal tests are run directly on the host rather than in exec containers because we want to
+// directly interact with the dagger shell tui without resorting to embedding more go code
+// into a container for driving it.
+
+const (
+	// this is used in some shell prompts
+	resetSeq = termenv.CSI + termenv.ResetSeq + "m"
+)
+
+func terminalFixtureMod(ctx context.Context, t *testctx.T, fixture string) string {
+	t.Helper()
+	modDir := t.TempDir()
+	copyTestdataFixture(ctx, t, modDir, "modules", "go", fixture)
+	return modDir
+}
+
+func cacheTerminalModule(ctx context.Context, t *testctx.T, modDir string, args ...string) {
+	t.Helper()
+	_, err := hostDaggerExecRaw(ctx, t, modDir, args...)
+	require.NoError(t, err)
+}
+
+func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
+	t.Run("top-level command", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-default")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		out, err := hostDaggerExecRaw(ctx, t, modDir, "shell", "-l")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "# select with 'dagger shell <NAME>'\n")
+		require.Contains(t, string(out), "\nctr")
+		require.NotContains(t, string(out), "test:ctr")
+
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 20})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("pwd")
+		require.NoError(t, err)
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.NoError(t, cmd.Wait())
+	})
+
+	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-default")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		// We want the size to be big enough to fit the output we're expecting, but increasing
+		// the size also eventually slows down the tests due to more output being generated and
+		// needing parsing.
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("pwd")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("echo $COOLENV")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("woo\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("bound service crash keeps terminal open", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-bound-service-crash")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Second)
+
+		_, err = console.SendLine("echo still here")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("still here\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-basic")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		// We want the size to be big enough to fit the output we're expecting, but increasing
+		// the size also eventually slows down the tests due to more output being generated and
+		// needing parsing.
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("pwd")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /a_mnt/foo")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("FOO\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("stat /cachemnt")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("File: /cachemnt\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /z_mnt/bar")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("BAR\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("echo $COOLENV")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("woo\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("attachable", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-attachable")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		// We want the size to be big enough to fit the output we're expecting, but increasing
+		// the size also eventually slows down the tests due to more output being generated and
+		// needing parsing.
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "debug")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("pwd")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("echo $COOLENV")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("xoo\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("override args", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-override-args")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "call", "ctr", "sync")
+
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 5, Cols: 22})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal", "--cmd=python")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(">>> ")
+		require.NoError(t, err)
+
+		_, err = console.SendLine("import os")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(">>> ")
+		require.NoError(t, err)
+
+		_, err = console.SendLine("os.environ['COOLENV']")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("'woo'")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(">>> ")
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit()")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("nested client", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-nested-client")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		thisRepoPath, err := filepath.Abs("../..")
+		require.NoError(t, err)
+
+		nestedSrcDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(nestedSrcDir, "sdk/go"), 0755))
+		require.NoError(t, fs.CopyDir(
+			filepath.Join(nestedSrcDir, "sdk/go"),
+			filepath.Join(thisRepoPath, "sdk/go"),
+		))
+		require.NoError(t, fs.CopyFile(
+			filepath.Join(nestedSrcDir, "go.mod"),
+			filepath.Join(thisRepoPath, "go.mod"),
+		))
+		require.NoError(t, fs.CopyFile(
+			filepath.Join(nestedSrcDir, "go.sum"),
+			filepath.Join(thisRepoPath, "go.sum"),
+		))
+		require.NoError(t, os.WriteFile(filepath.Join(nestedSrcDir, "main.go"), []byte(`package main
+	import (
+		"context"
+		"fmt"
+
+		"dagger.io/dagger"
+	)
+
+	func main() {
+		_, err := dagger.Connect(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("it worked?")
+	}
+	`), 0644))
+
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 41})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("it worked?")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("directory", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-directory")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		out, err := hostDaggerExecRaw(ctx, t, modDir, "sh", "-l")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "# select with 'dagger shell <NAME>'\n")
+		require.Contains(t, string(out), "\ndir")
+		require.NotContains(t, string(out), "test:dir")
+
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		// We want the size to be big enough to fit the output we're expecting, but increasing
+		// the size also eventually slows down the tests due to more output being generated and
+		// needing parsing.
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "sh", "dir")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := fmt.Sprintf("/src%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat test")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("hello world\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("on failure", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-on-failure")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		// We want the size to be big enough to fit the output we're expecting, but increasing
+		// the size also eventually slows down the tests due to more output being generated and
+		// needing parsing.
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "--shell-on-error", "call", "ctr")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := "/ # "
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /fail")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("breakpoint\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /a_mnt/foo")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("FOOFOO\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("stat /cachemnt")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("File: /cachemnt\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /z_mnt/bar")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("BARBAR\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.Error(t, err)
+
+		// Try again with an invalid shell to confirm that the command was replaced.
+		// Keep the old flag here to test the deprecated compatibility alias.
+		console, err = newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+		tty = console.Tty()
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+		cmd = hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("/bin/noexist: no such file or directory")
+		require.NoError(t, err)
+
+		err = cmd.Wait()
+		require.Error(t, err)
+	})
+}
+
+// tuiConsole wraps expect.Console with methods that allow us to enforce
+// timeouts despite the fact that the TUI is constantly writing more data
+// (which invalidates the expect lib's builtin read timeout mechanisms).
+type tuiConsole struct {
+	*expect.Console
+	expectLineTimeout time.Duration
+	output            *bytes.Buffer
+}
+
+func newTUIConsole(t *testctx.T, expectLineTimeout time.Duration) (*tuiConsole, error) {
+	output := bytes.NewBuffer(nil)
+	console, err := expect.NewConsole(
+		expect.WithStdout(io.MultiWriter(testutil.NewTWriter(t), output)),
+		expect.WithDefaultTimeout(expectLineTimeout),
+	)
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() {
+		console.Close()
+	})
+	return &tuiConsole{
+		Console:           console,
+		expectLineTimeout: expectLineTimeout,
+		output:            output,
+	}, nil
+}
+
+func (e *tuiConsole) MatchLine(ctx context.Context, pattern string) (string, []string, error) {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return "", nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, e.expectLineTimeout)
+	defer cancel()
+	lineMatcher := expect.RegexpPattern(".*\n")
+	for {
+		select {
+		case <-ctx.Done():
+			return "", nil, fmt.Errorf("timed out waiting for line matching %q, most recent output:\n%s", pattern, e.output.String())
+		default:
+		}
+
+		line, err := e.Expect(lineMatcher)
+		if err != nil {
+			return "", nil, err
+		}
+		if matches := re.FindStringSubmatch(line); matches != nil {
+			return line, matches, nil
+		}
+	}
+}

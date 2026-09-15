@@ -1,0 +1,3 @@
+[modules.crasher]
+source = ".dagger/modules/crasher"
+entrypoint = true

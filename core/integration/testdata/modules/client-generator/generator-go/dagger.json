@@ -1,0 +1,7 @@
+{
+  "name": "generator-module",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

@@ -1,0 +1,5 @@
+type Lint {
+  pub check: String! {
+    "lint passed"
+  }
+}

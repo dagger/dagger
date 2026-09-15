@@ -1,0 +1,16 @@
+type Paths {
+  pub workspaceValue: String!
+  pub boundaryValue: String!
+  pub foundValue: String!
+  pub workspacePath: String!
+  pub workspaceAddress: String!
+
+  new(ws: Workspace!) {
+    self.workspaceValue = ws.file("app.txt").contents
+    self.boundaryValue = ws.file("/repo.txt").contents
+    self.foundValue = ws.findUp(name: "repo.txt", from: ".") ?? ""
+    self.workspacePath = ws.cwd
+    self.workspaceAddress = ws.address
+    self
+  }
+}

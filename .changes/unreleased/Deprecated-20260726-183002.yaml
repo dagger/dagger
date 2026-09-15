@@ -1,0 +1,10 @@
+kind: Deprecated
+body: |
+  `GitRef.commit` and `GitRef.ref` are deprecated in favor of the new
+  `commitSHA` and `name` fields, which resolve through the same underlying
+  resolvers. Schema views older than v1.0.0-0 keep the undecorated fields they
+  shipped with.
+time: 2026-07-26T18:30:02Z
+custom:
+  Author: vito
+  PR: 13088

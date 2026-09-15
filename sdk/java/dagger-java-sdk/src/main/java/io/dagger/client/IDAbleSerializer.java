@@ -1,0 +1,19 @@
+package io.dagger.client;
+
+import io.dagger.client.exception.DaggerQueryException;
+import jakarta.json.bind.serializer.JsonbSerializer;
+import jakarta.json.bind.serializer.SerializationContext;
+import jakarta.json.stream.JsonGenerator;
+import java.util.concurrent.ExecutionException;
+
+public class IDAbleSerializer<S> implements JsonbSerializer<IDAble<S>> {
+  @Override
+  public void serialize(IDAble<S> obj, JsonGenerator generator, SerializationContext ctx) {
+    try {
+      var id = obj.id();
+      ctx.serialize(id, generator);
+    } catch (ExecutionException | InterruptedException | DaggerQueryException e) {
+      throw new RuntimeException(e);
+    }
+  }
+}

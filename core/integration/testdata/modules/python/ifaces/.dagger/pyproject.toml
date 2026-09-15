@@ -1,0 +1,15 @@
+[project]
+name = "caller"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["dagger-io", "pytest>=8.3.5", "pytest-xdist[psutil]>=3.6.1"]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+
+[build-system]
+requires = ["hatchling==1.25.0"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }

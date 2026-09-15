@@ -1,0 +1,5 @@
+type Main {
+  pub hello: String! {
+    "hello from main"
+  }
+}

@@ -1,0 +1,199 @@
+package core
+
+import (
+	"context"
+	"testing"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/stretchr/testify/require"
+)
+
+func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
+	sessionCtx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID:  "client-1",
+		SessionID: "session-1",
+	})
+
+	for _, tc := range []struct {
+		name               string
+		mod                *Module
+		fn                 *Function
+		expectCallScope    bool
+		expectSessionScope bool
+	}{
+		{
+			name: "default policy",
+			mod: &Module{
+				NameField: "test",
+			},
+			fn: &Function{
+				Name: "fn",
+			},
+			expectSessionScope: false,
+		},
+		{
+			name: "explicit per-session policy",
+			mod: &Module{
+				NameField: "test",
+			},
+			fn: &Function{
+				Name:        "fn",
+				CachePolicy: FunctionCachePolicyPerSession,
+			},
+			expectSessionScope: true,
+		},
+		{
+			name: "default policy with module disable-default-caching",
+			mod: &Module{
+				NameField:                     "test",
+				DisableDefaultFunctionCaching: true,
+			},
+			fn: &Function{
+				Name: "fn",
+			},
+			expectSessionScope: true,
+		},
+		{
+			name: "explicit never policy",
+			mod: &Module{
+				NameField: "test",
+			},
+			fn: &Function{
+				Name:        "fn",
+				CachePolicy: FunctionCachePolicyNever,
+			},
+			expectCallScope: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			modRes, err := dagql.NewObjectResultForCall(
+				tc.mod,
+				func() *dagql.Server {
+					dag := newCoreDagqlServerForTest(t, &Query{})
+					dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+					return dag
+				}(),
+				&dagql.ResultCall{
+					Kind:        dagql.ResultCallKindSynthetic,
+					SyntheticOp: "modfunc_test_module",
+					Type:        dagql.NewResultCallType((&Module{}).Type()),
+				},
+			)
+			require.NoError(t, err)
+
+			modFn := &ModuleFunction{
+				mod:      modRes,
+				metadata: tc.fn,
+			}
+
+			inputs := modFn.cacheImplicitInputs()
+			byName := mapImplicitInputsByName(inputs)
+			_, hasLegacyScopeInput := byName["moduleFunctionScope"]
+			require.False(t, hasLegacyScopeInput, "legacy module scope implicit input should not be present")
+
+			callInput, hasCallInput := byName[dagql.PerCallInput.Name]
+			require.Equal(t, tc.expectCallScope, hasCallInput)
+			if tc.expectCallScope {
+				require.NotEmpty(t, resolveImplicitInputString(t, callInput, sessionCtx))
+			}
+
+			sessionInput, hasSessionInput := byName[dagql.PerSessionInput.Name]
+			require.Equal(t, tc.expectSessionScope, hasSessionInput)
+			if tc.expectSessionScope {
+				require.Equal(
+					t,
+					"session-1",
+					resolveImplicitInputString(t, sessionInput, sessionCtx),
+				)
+			}
+		})
+	}
+}
+
+func TestModuleFunctionCacheImplicitInputsNilSafe(t *testing.T) {
+	require.Nil(t, (*ModuleFunction)(nil).cacheImplicitInputs())
+	require.Nil(t, (&ModuleFunction{}).cacheImplicitInputs())
+	dag := newCoreDagqlServerForTest(t, &Query{})
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+	modRes, err := dagql.NewObjectResultForCall(
+		&Module{},
+		dag,
+		&dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "modfunc_test_nil_safe_module",
+			Type:        dagql.NewResultCallType((&Module{}).Type()),
+		},
+	)
+	require.NoError(t, err)
+	require.Nil(t, (&ModuleFunction{
+		mod: modRes,
+	}).cacheImplicitInputs())
+}
+
+// TestCallerInModuleFunction verifies the gate keys off an active function call,
+// not merely a module in context: a client that only has a module loaded (e.g.
+// `dagger generate` walking a schema) is not treated as a runtime caller, while
+// an active function call is.
+func TestCallerInModuleFunction(t *testing.T) {
+	t.Parallel()
+
+	// Module in context but no active function call: not a runtime caller.
+	moduleOnly := ContextWithQuery(t.Context(), &Query{Server: &mockServer{
+		moduleSource: &ModuleSource{
+			Kind:  ModuleSourceKindLocal,
+			Local: &LocalModuleSource{ContextDirectoryPath: "."},
+		},
+	}})
+	got, err := callerInModuleFunction(moduleOnly)
+	require.NoError(t, err)
+	require.False(t, got)
+
+	// An active function call: a runtime caller.
+	inFn := ContextWithQuery(t.Context(), &Query{Server: &mockServer{
+		functionCall: &FunctionCall{Name: "caller"},
+	}})
+	got, err = callerInModuleFunction(inFn)
+	require.NoError(t, err)
+	require.True(t, got)
+}
+
+// TestModuleFunctionLoadWorkspaceArgRejectsFunctionCallRuntimeCaller verifies an
+// omitted Workspace argument is not filled from caller context when a function
+// call is active (i.e. a module function calling a dependency).
+func TestModuleFunctionLoadWorkspaceArgRejectsFunctionCallRuntimeCaller(t *testing.T) {
+	t.Parallel()
+
+	query := &Query{
+		Server: &mockServer{
+			functionCall: &FunctionCall{Name: "caller"},
+		},
+	}
+	ctx := ContextWithQuery(t.Context(), query)
+	dag := newCoreDagqlServerForTest(t, query)
+
+	_, err := (&ModuleFunction{}).loadWorkspaceArg(ctx, dag)
+	require.ErrorIs(t, err, ErrNoCurrentWorkspace)
+	require.Contains(t, err.Error(), "workspace arguments are not inherited by module runtime calls")
+	require.Contains(t, err.Error(), "pass a Workspace explicitly")
+}
+
+func mapImplicitInputsByName(inputs []dagql.ImplicitInput) map[string]dagql.ImplicitInput {
+	byName := make(map[string]dagql.ImplicitInput, len(inputs))
+	for _, input := range inputs {
+		byName[input.Name] = input
+	}
+	return byName
+}
+
+func resolveImplicitInputString(t *testing.T, input dagql.ImplicitInput, ctx context.Context) string {
+	t.Helper()
+
+	value, err := input.Resolver(ctx, nil)
+	require.NoError(t, err)
+	require.NotNil(t, value)
+
+	strVal, ok := value.(dagql.String)
+	require.True(t, ok, "expected dagql.String implicit input value, got %T", value)
+	return strVal.String()
+}

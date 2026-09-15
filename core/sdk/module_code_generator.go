@@ -1,0 +1,67 @@
+package sdk
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
+)
+
+// A SDK module that implements the `CodeGenerator` interface
+type codeGeneratorModule struct {
+	mod *module
+}
+
+func (sdk *codeGeneratorModule) Codegen(
+	ctx context.Context,
+	deps *core.SchemaBuilder,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (_ *core.GeneratedCode, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
+	defer telemetry.EndWithCause(span, &rerr)
+
+	sdkInst, err := sdk.mod.instantiate(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	dag := sdkInst.dag
+
+	source, err = scopeSourceForSDKOperation(ctx, source, "codegen", dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scope module source for sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	sourceID, err := source.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scoped module source ID for sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection json ID during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
+	var inst dagql.Result[*core.GeneratedCode]
+	err = dag.Select(ctx, sdkInst.sdk, &inst, dagql.Selector{
+		Field: "codegen",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "modSource",
+				Value: dagql.NewID[*core.ModuleSource](sourceID),
+			},
+			{
+				Name:  "introspectionJson",
+				Value: dagql.NewID[*core.File](schemaJSONFileID),
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to call sdk module codegen: %w", err)
+	}
+	return inst.Self(), nil
+}

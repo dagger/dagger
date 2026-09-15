@@ -1,0 +1,108 @@
+pub description = "Build a dev CLI and engine from local code, and run the engine in the host's container runtime"
+
+type Dev {
+  let ws: Workspace!
+
+  """
+  The host container runtime's daemon socket. Defaults to the Linux socket
+  path from dagger.toml; pass --docker=$DOCKER_HOST for a non-default
+  Docker context.
+  """
+  let docker: Socket!
+
+  new(
+    ws: Workspace!,
+    docker: Socket!,
+  ) {
+    self.ws = ws
+    self.docker = docker
+    self
+  }
+
+  """
+  The dev engine image as a gzipped OCI tarball.
+
+  Only needed by the integration tests that spin up extra engines of their
+  own, via _DAGGER_TESTS_ENGINE_TAR; deploy does not produce one.
+  """
+  pub engineTarball(
+    """
+    Enable experimental GPU support in the engine.
+    """
+    gpuSupport: Boolean! = false,
+  ): File! {
+    engineDev(ws: ws)
+      .container(gpuSupport: gpuSupport)
+      # gzip, to stay readable by older docker versions
+      .asTarball(forcedCompression: ImageLayerCompression.GZIP)
+  }
+
+  """
+  Build the dev CLI and engine, load the engine image into the host's
+  container runtime, and restart the engine container on it.
+
+  Returns the dagger CLI, plus a linux CLI when building from a non-linux
+  host. Write it out with --output ./bin.
+  """
+  pub deploy(
+    """
+    Name of the engine container, and of its state volume.
+    """
+    name: String! = "dagger-engine.dev",
+    """
+    Image reference to tag the built engine as.
+    """
+    image: String! = "localhost/dagger-engine.dev",
+    """
+    Platform to build the host CLI for, e.g. "darwin/arm64". Defaults to
+    the engine's own platform, which is only the host's when the two agree.
+    The CLI's --platform=current is not available here, so hack/build
+    resolves the host's platform and passes it explicitly.
+    """
+    platform: Platform,
+    """
+    Enable experimental GPU support in the engine.
+    """
+    gpuSupport: Boolean! = false,
+    """
+    Extra host:ip entries to resolve inside the engine container.
+    """
+    extraHosts: [String!]! = [],
+    """
+    Expose the engine's debug endpoint on port 6060. Named to avoid
+    shadowing the CLI's own --debug.
+    """
+    debugEndpoint: Boolean! = true,
+    cloudToken: Secret,
+    cloudUrl: String! = "",
+  ): Directory! {
+    let engine = engineDev(ws: ws)
+
+    # Bake the dev engine's provisioning URL into the CLI, so a bare `dagger`
+    # from ./bin reaches this container instead of provisioning its own.
+    # cleanup=false keeps other engines the host may be running.
+    let runnerHost = "docker-image://" + image
+      + "?container=" + name
+      + "&volume=" + name
+      + "&cleanup=false"
+
+    # Parallel: the CLI build is independent of the engine, so the engine is
+    # already coming up while the host CLI is still linking.
+    let built = {{
+      cli: cliDev(runnerHost: runnerHost, ws: ws)
+        .devBinaries(platform: platform ?? defaultPlatform),
+
+      started: engine
+        .loadToDocker(docker, name: image, gpuSupport: gpuSupport)
+        .start(
+          name: name,
+          debug: debugEndpoint,
+          extraHosts: extraHosts,
+          cloudToken: cloudToken,
+          cloudUrl: cloudUrl,
+        ),
+    }}
+
+    built.cli
+  }
+}

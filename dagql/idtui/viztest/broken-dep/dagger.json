@@ -1,0 +1,14 @@
+{
+  "name": "broken-dep",
+  "engineVersion": "v0.20.3",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "broken",
+      "source": "broken"
+    }
+  ],
+  "disableDefaultFunctionCaching": true
+}

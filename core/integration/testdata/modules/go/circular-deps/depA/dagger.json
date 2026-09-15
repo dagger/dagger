@@ -1,0 +1,13 @@
+{
+  "name": "depA",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "depC",
+      "source": "../depC"
+    }
+  ]
+}

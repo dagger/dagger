@@ -1,0 +1,631 @@
+package workspace
+
+import (
+	"encoding/json"
+	"fmt"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
+)
+
+// ConventionalSDKShortName returns the workspace-side short name to use for
+// an SDK install derived from its canonical source ref. Builtin runtimes
+// ("go", "python", etc.) pass through unchanged; external refs collapse to
+// the last path segment with any @version suffix stripped — matching the
+// convention `dagger module install` uses when no --name is supplied.
+func ConventionalSDKShortName(sdkRef string) string {
+	ref := sdkRef
+	if i := strings.Index(ref, "@"); i >= 0 {
+		ref = ref[:i]
+	}
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		ref = ref[i+1:]
+	}
+	return ref
+}
+
+// migrationSDKInstallName returns the workspace module install name to record
+// for a legacy SDK ref. A builtin runtime short name (e.g. "go", "php@v1") is
+// keyed by a "dagger-"-prefixed canonical basename ("dagger-go-sdk",
+// "dagger-php-sdk"), matching the historical SDK install name, so it cannot
+// collide with an unrelated module legitimately named "go". External refs and
+// custom/local SDK names keep their existing basename.
+func migrationSDKInstallName(sdkRef string) string {
+	name := ConventionalSDKShortName(sdkRef)
+	if sdkmeta.IsBuiltin(name) {
+		return sdkmeta.InstallNamePrefix + name + "-sdk"
+	}
+	return name
+}
+
+// AddMigratedModuleSDK records, in a workspace config, the SDK/runtime a
+// migrated module uses: modulePath is added as a module scope of the SDK whose
+// installed module exposes sdkSource. An existing SDK install for the
+// same runtime source is reused (so several locally-referenced modules sharing
+// a runtime collapse to one [modules.<sdk>] entry); otherwise a new one is
+// created, matching how the root module's SDK is recorded. This keeps every
+// locally-defined module's runtime installed and pinned in the workspace.
+func AddMigratedModuleSDK(wsCfg *Config, sdkSource, modulePath, migratedModuleName string, clients ...string) {
+	addMigratedModuleSDK(wsCfg, sdkSource, "", modulePath, migratedModuleName, clients...)
+}
+
+func addMigratedModuleSDK(wsCfg *Config, sdkSource, preferredInstallName, modulePath, migratedModuleName string, clients ...string) {
+	providerModuleName := ensureMigratedSDKInstall(wsCfg, sdkSource, preferredInstallName)
+	if providerModuleName == "" || migratedModuleName == "" {
+		return
+	}
+	sdkName, ok := SDKNameForModule(wsCfg, providerModuleName)
+	if !ok {
+		return
+	}
+	sdk := wsCfg.SDKs[sdkName]
+	if sdk.Scopes == nil {
+		sdk.Scopes = map[string]SDKScope{}
+	}
+	scope := sdk.Scopes[modulePath]
+	scope.IsModule = true
+	if scope.Name == "" && migratedScopeNeedsName(wsCfg, modulePath, migratedModuleName) {
+		scope.Name = migratedModuleName
+	}
+	for _, client := range clients {
+		if !slices.Contains(scope.Clients, client) {
+			scope.Clients = append(scope.Clients, client)
+		}
+	}
+	sdk.Scopes[modulePath] = scope
+	wsCfg.SDKs[sdkName] = sdk
+}
+
+// migratedScopeNeedsName reports whether a migrated module keeps its name only
+// through an explicit scope name. The inferred name is not written, matching
+// module init: the scope directory name, or the installed name of the local
+// entrypoint at that path, already resolves to the module's name. Inference is
+// evaluated relative to the config directory, so a root scope with no
+// entrypoint cannot be inferred here and keeps its explicit name.
+func migratedScopeNeedsName(wsCfg *Config, modulePath, migratedModuleName string) bool {
+	inferred, err := InferSDKModuleName(wsCfg, ".", modulePath, "")
+	return err != nil || inferred != migratedModuleName
+}
+
+// RegisterMigratedModuleSDK adds the migrated module's scope without replacing
+// an existing scope owner or name. preferredInstallName preserves a canonical
+// registry install name when sdkSource has already been resolved to a full ref.
+// Check before changing the workspace config.
+func RegisterMigratedModuleSDK(cfg *Config, sdkSource, preferredInstallName, modulePath, moduleName string, clients ...string) error {
+	if cfg == nil {
+		return fmt.Errorf("workspace config is required")
+	}
+	for sdkName, sdk := range cfg.SDKs {
+		for scopePath, scope := range sdk.Scopes {
+			if path.Clean(scopePath) != path.Clean(modulePath) {
+				continue
+			}
+			if entry := cfg.Modules[sdk.Module]; legacyWorkspaceModuleSource(entry.Source, entry.Pin) != sdkSource {
+				return fmt.Errorf("scope %q belongs to SDK %q (%s), not %s", modulePath, sdkName, entry.Source, sdkSource)
+			}
+			if scope.Name != "" && scope.Name != moduleName {
+				return fmt.Errorf("scope %q is named %q, not %q", modulePath, scope.Name, moduleName)
+			}
+			// Preserve the existing scope key, including equivalent spellings.
+			modulePath = scopePath
+		}
+	}
+	addMigratedModuleSDK(cfg, sdkSource, preferredInstallName, modulePath, moduleName, clients...)
+	return nil
+}
+
+// AddMigratedSDKInstall records a workspace SDK install for sdkSource without
+// registering a managed module — the "repo is just a dagger module" pin, where
+// the one install is expected to serve every module in the repo. It reuses an
+// existing SDK install for the same runtime source, so a later
+// AddMigratedModuleSDK for the same runtime lands on the same entry instead of
+// installing the SDK twice.
+func AddMigratedSDKInstall(wsCfg *Config, sdkSource string) {
+	ensureMigratedSDKInstall(wsCfg, sdkSource, "")
+}
+
+// ensureMigratedSDKInstall finds or creates the SDK install entry for
+// sdkSource and returns its install name ("" if there is nothing to record).
+// preferredInstallName overrides the name derived from sdkSource when set.
+func ensureMigratedSDKInstall(wsCfg *Config, sdkSource, preferredInstallName string) string {
+	if wsCfg == nil || sdkSource == "" {
+		return ""
+	}
+	if wsCfg.Modules == nil {
+		wsCfg.Modules = map[string]ModuleEntry{}
+	}
+
+	// Reuse the existing SDK install for this runtime, if any, so the same
+	// runtime is not installed twice under different names.
+	for _, sdk := range wsCfg.SDKs {
+		if entry, ok := wsCfg.Modules[sdk.Module]; ok && legacyWorkspaceModuleSource(entry.Source, entry.Pin) == sdkSource {
+			return sdk.Module
+		}
+	}
+
+	sdkName := preferredInstallName
+	if sdkName == "" {
+		sdkName = migrationSDKInstallName(sdkSource)
+	}
+	sdkIsBuiltin := sdkmeta.IsBuiltin(ConventionalSDKShortName(sdkSource))
+	entry, exists := wsCfg.Modules[sdkName]
+	// A builtin SDK's legacy source (e.g. "go") is a runtime name, not a
+	// module source, so an existing same-named module is never the same
+	// install. For external/custom SDKs the source is a real ref/path, so
+	// reuse the entry only when it matches; otherwise don't clobber it.
+	if exists && (sdkIsBuiltin || entry.Source != sdkSource) {
+		sdkName = uniqueModuleName(wsCfg.Modules, sdkName)
+		exists = false
+	}
+	if !exists {
+		entry = ModuleEntry{Source: sdkSource}
+	}
+	wsCfg.Modules[sdkName] = entry
+	if wsCfg.SDKs == nil {
+		wsCfg.SDKs = map[string]SDKEntry{}
+	}
+	commandName := uniqueSDKName(wsCfg.SDKs, ConventionalSDKName(migrationSDKInstallName(sdkSource)))
+	wsCfg.SDKs[commandName] = SDKEntry{Module: sdkName}
+	return sdkName
+}
+
+// SDKNameForModule returns the named SDK provided by an installed module.
+func SDKNameForModule(cfg *Config, moduleName string) (string, bool) {
+	if cfg == nil {
+		return "", false
+	}
+	var found string
+	for sdkName, sdk := range cfg.SDKs {
+		if sdk.Module == moduleName && (found == "" || sdkName < found) {
+			found = sdkName
+		}
+	}
+	return found, found != ""
+}
+
+func uniqueSDKName(sdks map[string]SDKEntry, base string) string {
+	if _, taken := sdks[base]; !taken {
+		return base
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if _, taken := sdks[candidate]; !taken {
+			return candidate
+		}
+	}
+}
+
+// uniqueModuleName returns base if free, otherwise base with a numeric suffix,
+// so a migrated SDK install never silently overwrites an unrelated module that
+// happens to share its name.
+func uniqueModuleName(modules map[string]ModuleEntry, base string) string {
+	if _, taken := modules[base]; !taken {
+		return base
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if _, taken := modules[candidate]; !taken {
+			return candidate
+		}
+	}
+}
+
+// MigrationPlan is the pure filesystem plan for migrating a legacy
+// dagger.json project to workspace format.
+type MigrationPlan struct {
+	// ProjectRoot is where the workspace config (dagger.toml) and migration
+	// report land.
+	ProjectRoot string
+	// ModuleProjectRoot is where the legacy dagger.json lives: the migrated
+	// dagger-module.toml replaces it there and the legacy file is removed
+	// there. It equals ProjectRoot except for a hoisted subdirectory project,
+	// whose workspace fields migrate to the workspace root while the module
+	// config stays in place.
+	ModuleProjectRoot        string
+	Warnings                 []string
+	MigrationGapCount        int
+	MigrationReportPath      string
+	WorkspaceConfigData      []byte
+	MigratedModuleConfigData []byte
+	MigratedModuleConfigPath string
+	MigrationReportData      []byte
+}
+
+// PlanMigration computes the pure filesystem plan for migrating a compat
+// workspace into workspace format. workspaceRoot is the workspace boundary:
+// when the legacy config lives below it, the plan is "hoisted" — nested
+// dagger.toml files are never created, so the config's workspace fields
+// (toolchains) are installed into a dagger.toml at the workspace root with
+// their local sources rebased, while the module config still converts in
+// place at its own directory and the module itself is not installed.
+//
+// When the config has an SDK, its toolchains are also recorded as
+// dependencies of the migrated module config (see buildMigratedModuleConfig).
+func PlanMigration(compatWorkspace *CompatWorkspace, workspaceRoot string) (*MigrationPlan, error) {
+	plan, err := PlanWorkspaceMigration(compatWorkspace, workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	cfg := compatWorkspace.Config
+	if cfg.SDK != nil && cfg.SDK.Source != "" {
+		modulePlan, err := PlanModuleMigration(cfg, true)
+		if err != nil {
+			return nil, fmt.Errorf("building migrated module config: %w", err)
+		}
+		plan.MigratedModuleConfigData = modulePlan.ConfigData
+		plan.MigratedModuleConfigPath = ModuleConfigFileName
+	}
+	return plan, nil
+}
+
+// PlanWorkspaceMigration converts workspace fields without converting module
+// files. A caller can combine this with PlanModuleMigration before applying.
+func PlanWorkspaceMigration(compatWorkspace *CompatWorkspace, workspaceRoot string) (*MigrationPlan, error) {
+	if compatWorkspace == nil || compatWorkspace.Config == nil {
+		return nil, fmt.Errorf("compat workspace is required")
+	}
+	if compatWorkspace.ProjectRoot == "" {
+		return nil, fmt.Errorf("compat workspace project root is required")
+	}
+	if compatWorkspace.ConfigPath == "" {
+		return nil, fmt.Errorf("compat workspace config path is required")
+	}
+	if workspaceRoot == "" {
+		workspaceRoot = compatWorkspace.ProjectRoot
+	}
+
+	cfg := compatWorkspace.Config
+	if !mustMigrateToWorkspaceConfig(cfg) {
+		return nil, fmt.Errorf("dagger.json does not require workspace config migration")
+	}
+
+	moduleRoot := compatWorkspace.ProjectRoot
+	hoistRel, err := filepath.Rel(filepath.Clean(workspaceRoot), filepath.Clean(moduleRoot))
+	if err != nil {
+		return nil, fmt.Errorf("project root %q relative to workspace root %q: %w", moduleRoot, workspaceRoot, err)
+	}
+	hoistRel = filepath.ToSlash(hoistRel)
+	if hoistRel == ".." || strings.HasPrefix(hoistRel, "../") {
+		return nil, fmt.Errorf("project root %q escapes workspace root %q", moduleRoot, workspaceRoot)
+	}
+	hoisted := hoistRel != "."
+	if hoisted && cfg.Blueprint != nil {
+		// A subdirectory blueprint config is left as legacy by the caller;
+		// hoisting a blueprint would change the repo-wide entrypoint.
+		return nil, fmt.Errorf("subdirectory config with a blueprint cannot be hoisted to the workspace root")
+	}
+
+	hasSDK := cfg.SDK != nil && cfg.SDK.Source != ""
+	sourceAtRoot := ModuleSourceAtRoot(cfg)
+
+	plan := &MigrationPlan{
+		ProjectRoot:       workspaceRoot,
+		ModuleProjectRoot: moduleRoot,
+	}
+	if !hoisted {
+		plan.ProjectRoot = moduleRoot
+	}
+
+	warnings := analyzeCustomizations(cfg.Toolchains)
+	plan.MigrationGapCount = len(warnings)
+	for _, w := range warnings {
+		plan.Warnings = append(plan.Warnings, w.message)
+	}
+
+	wsCfg := compatWorkspace.WorkspaceConfig()
+	if hoisted {
+		// The toolchain installs move from the subdirectory config into the
+		// workspace-root dagger.toml, so their local sources must be
+		// re-expressed relative to the workspace root.
+		rebaseHoistedModuleSources(wsCfg, hoistRel)
+	}
+	mainModule := compatWorkspace.MainModule
+	if !hasSDK || sourceAtRoot || hoisted {
+		// A module whose source is the project root IS the repo, not a module
+		// owned by a surrounding project: it is not installed into the
+		// workspace and gets no entrypoint. Its SDK runtime is pinned
+		// separately (as a plain module install) by the migration caller.
+		// A hoisted subdirectory module is likewise never installed into the
+		// repo-wide workspace — only its toolchains are.
+		mainModule = nil
+	}
+	if mainModule != nil {
+		wsCfg.Modules[cfg.Name] = mainModule.Entry
+
+		// Surface the legacy module's SDK ref as a workspace module installed
+		// as an SDK. Record the migrated module as a scope of that SDK. Legacy
+		// dagger.json carried the SDK inline on the module. The module path is
+		// the module config's directory: the project root, where
+		// dagger-module.toml replaced dagger.json.
+		AddMigratedModuleSDK(wsCfg, MigratedModuleSDKSource(cfg, "."), ".", cfg.Name, MigratedModuleClients(cfg, ".")...)
+	}
+	workspaceConfigData, err := renderMigrationWorkspaceConfig(wsCfg, mainModule)
+	if err != nil {
+		return nil, fmt.Errorf("serializing workspace config: %w", err)
+	}
+	plan.WorkspaceConfigData = workspaceConfigData
+
+	if len(warnings) > 0 {
+		plan.MigrationReportPath = filepath.Join(LockDirName, "migration-report.md")
+		plan.MigrationReportData = []byte(generateMigrationReportMarkdown(compatWorkspace.ConfigPath, warnings))
+	}
+
+	return plan, nil
+}
+
+// ModuleMigrationPlan converts one module in place. Its caller owns workspace
+// changes, file conflict checks, SDK installation and the final apply operation.
+type ModuleMigrationPlan struct {
+	ConfigData []byte
+}
+
+// PlanModuleMigration is shared by standalone module and workspace migration.
+// Workspace fields may only be removed after the caller has planned their
+// conversion into workspace configuration.
+func PlanModuleMigration(cfg *modules.ModuleConfig, workspaceFieldsHandled bool) (*ModuleMigrationPlan, error) {
+	if cfg == nil || cfg.SDK == nil || cfg.SDK.Source == "" {
+		return nil, fmt.Errorf("configuration has no SDK; run dagger workspace migrate")
+	}
+	if HasOwnWorkspaceSemantics(cfg) && !workspaceFieldsHandled {
+		return nil, fmt.Errorf("configuration has workspace fields; run dagger workspace migrate")
+	}
+	// Read the legacy field so migration cannot silently discard its settings.
+	if len(cfg.SDK.Config) > 0 || cfg.SDK.Debug || len(cfg.SDK.Experimental) > 0 { //nolint:staticcheck // SA1019: migration must inspect deprecated JSON fields.
+		return nil, fmt.Errorf("configuration has deprecated SDK settings that cannot be preserved in dagger-module.toml; remove or migrate those settings first")
+	}
+	data, err := buildMigratedModuleConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &ModuleMigrationPlan{ConfigData: data}, nil
+}
+
+// MigratedModuleClients lists module dependencies visible to legacy module
+// code. Local sources are relative to the workspace config, as scope clients
+// require, rather than the legacy module config. Explicit dependencies win
+// over toolchains with the same name, matching module config conversion.
+func MigratedModuleClients(cfg *modules.ModuleConfig, modulePath string) []string {
+	if cfg == nil {
+		return nil
+	}
+	var clients []string
+	seenNames := map[string]bool{}
+	for _, dep := range append(append([]*modules.ModuleConfigDependency(nil), cfg.Dependencies...), cfg.Toolchains...) {
+		if dep == nil || (dep.Name != "" && seenNames[dep.Name]) {
+			continue
+		}
+		seenNames[dep.Name] = true
+		ref := legacyWorkspaceModuleSource(dep.Source, dep.Pin)
+		if IsLocalRef(ref, dep.Pin) && !path.IsAbs(filepath.ToSlash(ref)) {
+			ref = "./" + path.Join(modulePath, filepath.ToSlash(ref))
+		}
+		if ref != "" && !slices.Contains(clients, ref) {
+			clients = append(clients, ref)
+		}
+	}
+	return clients
+}
+
+// MigratedModuleSDKSource preserves runtime pins and rebases local SDK sources
+// from the module directory to the directory containing dagger.toml.
+func MigratedModuleSDKSource(cfg *modules.ModuleConfig, modulePath string) string {
+	if cfg == nil || cfg.SDK == nil {
+		return ""
+	}
+	source := legacyWorkspaceModuleSource(cfg.SDK.Source, cfg.SDK.Pin)
+	if strings.ContainsAny(source, "/\\") && IsLocalRef(source, cfg.SDK.Pin) && !path.IsAbs(filepath.ToSlash(source)) {
+		return "./" + path.Join(modulePath, filepath.ToSlash(source))
+	}
+	return source
+}
+
+// rebaseHoistedModuleSources rewrites local module install sources so refs
+// that were relative to a subdirectory legacy config resolve from the
+// workspace root, where the hoisted dagger.toml lives. Remote refs pass
+// through untouched.
+func rebaseHoistedModuleSources(wsCfg *Config, rel string) {
+	for name, entry := range wsCfg.Modules {
+		if !IsLocalRef(entry.Source, "") {
+			continue
+		}
+		entry.Source = "./" + path.Join(rel, filepath.ToSlash(entry.Source))
+		wsCfg.Modules[name] = entry
+	}
+}
+
+func renderMigrationWorkspaceConfig(cfg *Config, mainModule *CompatMainModule) ([]byte, error) {
+	if mainModule == nil {
+		return UpdateConfigBytes(nil, cfg)
+	}
+
+	mainEntry, ok := cfg.Modules[mainModule.ConfigName]
+	if !ok {
+		return UpdateConfigBytes(nil, cfg)
+	}
+
+	seeded, err := UpdateConfigBytes(nil, &Config{
+		Modules: map[string]ModuleEntry{
+			mainModule.ConfigName: mainEntry,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return UpdateConfigBytes(seeded, cfg)
+}
+
+// buildMigratedModuleConfig creates the cleaned-up dagger-module.toml that
+// replaces dagger.json at the same location. The config does not move, so
+// source, dependency, and include paths are preserved as-is; only the
+// workspace-level fields (toolchains, blueprint, customizations) are dropped —
+// those migrate into dagger.toml instead.
+//
+// Toolchains are additionally recorded as plain dependencies of the migrated
+// module: in 0.21 a module's toolchains were also loaded into its own API, so
+// module code could call them (e.g. dag.Go) exactly like a dependency. Keeping
+// them as dependencies is what keeps that code compiling after migration. The
+// workspace-only fields of a toolchain (customizations, ignore lists, port
+// mappings) belong to the dagger.toml install and are not carried over.
+func buildMigratedModuleConfig(cfg *modules.ModuleConfig) ([]byte, error) {
+	if cfg.Source != "" && filepath.IsAbs(cfg.Source) {
+		return nil, fmt.Errorf("source path %q is absolute", cfg.Source)
+	}
+	source := cfg.Source
+	if source != "" {
+		source = filepath.ToSlash(filepath.Clean(source))
+	}
+	if source == "." {
+		// An empty source means "here", matching configs authored natively.
+		source = ""
+	}
+
+	deps := make([]*modules.ModuleConfigDependency, 0, len(cfg.Dependencies)+len(cfg.Toolchains))
+	depNames := make(map[string]struct{}, len(cfg.Dependencies)+len(cfg.Toolchains))
+	for _, dep := range cfg.Dependencies {
+		if dep == nil {
+			continue
+		}
+		deps = append(deps, &modules.ModuleConfigDependency{
+			Name:             dep.Name,
+			Source:           dep.Source,
+			Pin:              dep.Pin,
+			Customizations:   cloneCustomizations(dep.Customizations),
+			IgnoreChecks:     append([]string(nil), dep.IgnoreChecks...),
+			IgnoreGenerators: append([]string(nil), dep.IgnoreGenerators...),
+			IgnoreServices:   append([]string(nil), dep.IgnoreServices...),
+			PortMappings:     dep.PortMappings,
+		})
+		depNames[dep.Name] = struct{}{}
+	}
+	for _, tc := range cfg.Toolchains {
+		if tc == nil {
+			continue
+		}
+		if _, dup := depNames[tc.Name]; dup && tc.Name != "" {
+			// Already an explicit dependency under the same name; the
+			// dependency entry wins so the module keeps the ref it declared.
+			continue
+		}
+		deps = append(deps, &modules.ModuleConfigDependency{
+			Name:   tc.Name,
+			Source: tc.Source,
+			Pin:    tc.Pin,
+		})
+		depNames[tc.Name] = struct{}{}
+	}
+
+	newCfg := modules.ModuleConfig{
+		Name:                          cfg.Name,
+		EngineVersion:                 cfg.EngineVersion,
+		SDK:                           cfg.SDK,
+		Source:                        source,
+		Dependencies:                  deps,
+		Include:                       append([]string(nil), cfg.Include...),
+		Codegen:                       cfg.Codegen,
+		Clients:                       cfg.Clients,
+		DisableDefaultFunctionCaching: cfg.DisableDefaultFunctionCaching,
+	}
+
+	out, err := modules.MarshalModuleConfigForFormat(&modules.ModuleConfigWithUserFields{
+		ModuleConfig: newCfg,
+	}, modules.ConfigFormatCurrent)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+type migrationWarning struct {
+	module   string
+	message  string
+	original *modules.ModuleConfigArgument
+}
+
+func (w migrationWarning) originalJSON() string {
+	if w.original == nil {
+		return ""
+	}
+	origJSON, err := json.MarshalIndent(w.original, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(origJSON)
+}
+
+func generateMigrationReportMarkdown(configPath string, warnings []migrationWarning) string {
+	var b strings.Builder
+
+	b.WriteString("# Migration Report\n\n")
+	b.WriteString("Dagger migrated `dagger.json`, but some old settings need a manual check.\n\n")
+	b.WriteString("ACTION: Review each item below. If your project still relies on it, add the setting back manually.\n\n")
+	fmt.Fprintf(&b, "Legacy config: `%s`\n", filepath.Base(configPath))
+
+	for i, warning := range warnings {
+		fmt.Fprintf(&b, "\n## %d. `%s` needs a manual check\n\n", i+1, warning.module)
+		fmt.Fprintf(&b, "Dagger could not migrate this setting automatically: %s\n", warning.message)
+		if origJSON := warning.originalJSON(); origJSON != "" {
+			fmt.Fprintf(&b, "\nOriginal setting:\n\n```json\n%s\n```\n", origJSON)
+		}
+	}
+
+	return b.String()
+}
+
+func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migrationWarning {
+	var warnings []migrationWarning
+	for _, tc := range toolchains {
+		if tc == nil {
+			continue
+		}
+		for _, cust := range tc.Customizations {
+			if cust == nil {
+				continue
+			}
+			if !isConstructorCustomization(cust) {
+				funcName := strings.Join(cust.Function, ".")
+				settingName := funcName
+				if cust.Argument != "" {
+					settingName += "." + cust.Argument
+				}
+				warnings = append(warnings, migrationWarning{
+					module: tc.Name,
+					message: fmt.Sprintf(
+						"function setting %q is not supported in workspace config",
+						settingName,
+					),
+					original: cust,
+				})
+				continue
+			}
+			if len(cust.Ignore) > 0 || cust.DefaultPath != "" || cust.DefaultAddress != "" {
+				msg := fmt.Sprintf("constructor arg %q has", cust.Argument)
+				var parts []string
+				if len(cust.Ignore) > 0 {
+					parts = append(parts, "'ignore'")
+				}
+				if cust.DefaultPath != "" {
+					parts = append(parts, "'defaultPath'")
+				}
+				if cust.DefaultAddress != "" {
+					parts = append(parts, "'defaultAddress'")
+				}
+				msg += " " + strings.Join(parts, " and ") + ", which workspace settings do not support"
+				warnings = append(warnings, migrationWarning{
+					module:   tc.Name,
+					message:  msg,
+					original: cust,
+				})
+			}
+		}
+	}
+	return warnings
+}
+
+func isConstructorCustomization(cust *modules.ModuleConfigArgument) bool {
+	return len(cust.Function) == 0
+}

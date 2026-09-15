@@ -1,0 +1,262 @@
+package daggercmd
+
+import (
+	"context"
+	_ "embed"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/codes"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
+)
+
+var (
+	checksListMode     bool
+	checksFailFast     bool
+	checksNoGenerate   bool
+	checksOnlyGenerate bool
+	checksSkip         []string
+	checksScaleOut     bool
+)
+
+//go:embed checks.graphql
+var loadChecksQuery string
+
+func init() {
+	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
+	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
+	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
+	checksCmd.Flags().BoolVar(&checksOnlyGenerate, "generate", false, "Only run generate-as-checks, skip annotated check functions")
+	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching the specified patterns")
+	checksCmd.Flags().BoolVar(&checksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
+	checksCmd.Flags().Lookup("scale-out").Hidden = true
+	checksCmd.MarkFlagsMutuallyExclusive("no-generate", "generate")
+}
+
+var checksCmd = &cobra.Command{
+	Use:   "check [options] [pattern...]",
+	Short: "Verify your project — tests, linters, type checks, security scans, etc.",
+	Long: `Verify your project — tests, linters, type checks, security scans, etc.
+
+Examples:
+  dagger check                    # Run all checks
+  dagger check -l                 # List all available checks
+  dagger check go:lint            # Run the go:lint check and any subchecks
+  dagger check --skip '**e2e'     # Run all checks except those matching '**e2e'
+  dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
+`,
+	Args: cobra.ArbitraryArgs,
+	RunE: runChecksCommand,
+}
+
+func runChecksCommand(cmd *cobra.Command, args []string) error {
+	params := client.Params{
+		EnableCloudScaleOut:  checksScaleOut,
+		LoadWorkspaceModules: true,
+	}
+	return withEngine(
+		cmd.Context(),
+		params,
+		func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+			ws := dag.CurrentWorkspace()
+			checks := ws.Checks(dagger.WorkspaceChecksOpts{
+				Include:      args,
+				Skip:         checksSkip,
+				NoGenerate:   checksNoGenerate,
+				OnlyGenerate: checksOnlyGenerate,
+			})
+			if checksListMode {
+				return listChecks(ctx, dag, checks, cmd)
+			}
+			return runChecks(ctx, dag, checks, cmd, args)
+		},
+	)
+}
+
+// loadGroupListDetails fetches name+description for every item in a group
+// using a single batch GraphQL query.
+//
+// The span encapsulates its children so the per-check name/description
+// resolvers don't spam the list-mode UI, but keeps them in the trace so
+// module loading and query work contribute activity to this span (and can
+// be revealed if it errors or with -v).
+func loadGroupListDetails(
+	ctx context.Context,
+	dag *dagger.Client,
+	spanName string,
+	getID func(context.Context) (any, error),
+	query string,
+	opName string,
+) ([]groupListItem, error) {
+	ctx, span := Tracer().Start(ctx, spanName, telemetry.Encapsulate())
+	defer span.End()
+
+	id, err := getID(ctx)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	var res struct {
+		Group struct {
+			List []groupListItem
+		}
+	}
+
+	err = dag.Do(ctx, &dagger.Request{
+		Query:  query,
+		OpName: opName,
+		Variables: map[string]any{
+			"id": id,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	return res.Group.List, nil
+}
+
+type groupListItem struct {
+	Name        string
+	Description string
+	CheckType   string
+}
+
+func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
+	items, err := loadGroupListDetails(ctx, dag, "fetch check information",
+		func(ctx context.Context) (any, error) { return checkgroup.ID(ctx) },
+		loadChecksQuery, "CheckGroupListDetails",
+	)
+	if err != nil {
+		return nil, err
+	}
+	info := &CheckGroupInfo{Checks: make([]*CheckInfo, 0, len(items))}
+	for _, item := range items {
+		info.Checks = append(info.Checks, &CheckInfo{
+			Name:        cliName(item.Name),
+			Description: item.Description,
+			Type:        item.CheckType,
+		})
+	}
+	return info, nil
+}
+
+type CheckGroupInfo struct {
+	Checks []*CheckInfo
+}
+
+type CheckInfo struct {
+	Name        string
+	Description string
+	Type        string
+}
+
+// 'dagger checks -l'
+func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
+	info, err := loadCheckGroupInfo(ctx, dag, checkgroup)
+	if err != nil {
+		return err
+	}
+
+	return writeCheckList(cmd.OutOrStdout(), info.Checks)
+}
+
+func writeCheckList(w io.Writer, checks []*CheckInfo) error {
+	items := make([]commandListItem, 0, len(checks))
+	for _, c := range checks {
+		comment := firstDescriptionLine(c.Description)
+		if c.Type == "generate" {
+			comment = generatedCheckComment(c.Description)
+		}
+		items = append(items, commandListItem{
+			Name:    c.Name,
+			Comment: comment,
+		})
+	}
+	return writeCommandList(w, items)
+}
+
+// 'dagger checks' (runs by default)
+func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, _ *cobra.Command, include []string) error {
+	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
+	defer zoomSpan.End()
+	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
+	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+	// We don't actually use the API for rendering results
+	// Instead, we rely on telemetry
+	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
+	id, err := checkgroup.ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	var res struct {
+		CheckGroup struct {
+			Run struct {
+				List []struct {
+					Passed bool
+				}
+			}
+		}
+	}
+
+	opName := "CheckGroupRunStatuses"
+	if checksFailFast {
+		opName = "CheckGroupRunStatusesFailFast"
+	}
+
+	err = dag.Do(ctx, &dagger.Request{
+		Query:  loadChecksQuery,
+		OpName: opName,
+		Variables: map[string]any{
+			"checkGroup": id,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		return err
+	}
+	if err := validateCheckSelection(include, len(res.CheckGroup.Run.List)); err != nil {
+		return err
+	}
+
+	var failed int
+	for _, check := range res.CheckGroup.Run.List {
+		if !check.Passed {
+			failed++
+		}
+	}
+	if failed > 0 {
+		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("%d checks failed", failed)}
+	}
+	return nil
+}
+
+func validateCheckSelection(include []string, selected int) error {
+	if len(include) == 0 || selected > 0 {
+		return nil
+	}
+	if len(include) == 1 {
+		return fmt.Errorf("no checks matched pattern %q", include[0])
+	}
+
+	patterns := make([]string, 0, len(include))
+	for _, pattern := range include {
+		patterns = append(patterns, fmt.Sprintf("%q", pattern))
+	}
+	return fmt.Errorf("no checks matched any of the patterns: %s", strings.Join(patterns, ", "))
+}

@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Silent SDK sessions no longer retain frontend telemetry in memory while Cloud
+  and OTLP export remain enabled. `DAGGER_SILENT` is now honored as the
+  equivalent of `--silent`.
+time: 2026-07-29T04:35:46Z
+custom:
+  Author: sipsma
+  PR: 13762

@@ -1,0 +1,47 @@
+.videoPlayerContainer {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.video {
+  width: 100%;
+  border-radius: 4px;
+}
+
+.controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--color-blackAlpha-800);
+  padding: 5px 10px;
+  border-radius: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.controlButton {
+  background: none;
+  border: none;
+  color: var(--color-white);
+  font-size: 1.2em;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: var(--color-whiteAlpha-500);
+  }
+
+  &:active {
+    background-color: var(--color-whiteAlpha-600);
+  }
+}

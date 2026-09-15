@@ -1,0 +1,7 @@
+{
+  "name": "Runtime-Detection",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "typescript"
+  }
+}

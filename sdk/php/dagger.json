@@ -1,0 +1,15 @@
+{
+  "name": "php-sdk",
+  "engineVersion": "v0.21.9",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "!vendor/",
+    "!.cache/"
+  ],
+  "source": "runtime",
+  "codegen": {
+    "automaticGitignore": false
+  }
+}

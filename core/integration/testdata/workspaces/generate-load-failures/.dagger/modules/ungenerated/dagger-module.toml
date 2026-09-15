@@ -1,0 +1,6 @@
+name = "ungenerated"
+engineVersion = "v0.21.5"
+source = "."
+
+[runtime]
+  source = "go"

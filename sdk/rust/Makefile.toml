@@ -1,0 +1,27 @@
+[tasks.codegen]
+command = "cargo"
+args = [
+  "run",
+  "-p",
+  "dagger-bootstrap",
+  "--",
+  "generate",
+  "--output",
+  "crates/dagger-sdk/src/gen.rs",
+]
+workspace = false
+
+[tasks.fmt]
+command = "cargo"
+args = ["fmt", "--all"]
+workspace = false
+
+[tasks.fix]
+command = "cargo"
+args = ["fix", "--workspace", "--allow-dirty"]
+dependencies = ["fmt"]
+workspace = false
+
+[tasks.gen]
+dependencies = ["codegen", "fmt", "fix"]
+workspace = false

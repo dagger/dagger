@@ -1,0 +1,52 @@
+### Perform a multi-stage build
+
+The following Dagger Function performs a multi-stage build.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/builds/multi-stage-build/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/builds/multi-stage-build/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/builds/multi-stage-build/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/builds/multi-stage-build/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'build https://github.com/golang/example#master:hello'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+build https://github.com/golang/example#master:hello
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call build --src="https://github.com/golang/example#master:hello"
+```
+</TabItem>
+</Tabs>

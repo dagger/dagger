@@ -1,0 +1,16 @@
+{
+  "name": "helm-e2e",
+  "engineVersion": "v0.21.9",
+  "dependencies": [
+    {
+      "name": "dagger-cli",
+      "source": "../../.dagger/modules/cli-dev"
+    }
+  ],
+  "clients": [
+    {
+      "generator": "go",
+      "directory": "dagger"
+    }
+  ]
+}

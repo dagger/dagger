@@ -1,0 +1,46 @@
+### Use string inputs and outputs
+
+The following Dagger Function creates an environment with a string input and a string output. The input is a question, and the output represents the answer. The environment is given to an LLM with a prompt describing how it should complete its work.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/env-use-strings/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/env-use-strings/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/env-use-strings/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Ask a question:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'agent "what is an ion"'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+agent "what is an ion"
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call agent --question="what is an ion?"
+```
+</TabItem>
+</Tabs>

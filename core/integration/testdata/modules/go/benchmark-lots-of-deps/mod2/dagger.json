@@ -1,0 +1,13 @@
+{
+  "name": "mod2",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "mod0",
+      "source": "../mod0"
+    }
+  ]
+}

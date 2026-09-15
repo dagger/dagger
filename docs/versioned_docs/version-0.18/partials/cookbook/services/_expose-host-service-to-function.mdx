@@ -1,0 +1,50 @@
+### Expose host services to Dagger Functions
+
+The following Dagger Function accepts a `Service` running on the host, binds it using an alias, and creates a client to access it via the service binding. This example uses a MariaDB database service running on host port 3306, aliased as `db` in the Dagger Function.
+
+:::note
+This implies that a service is already listening on a port on the host, out-of-band of Dagger.
+:::
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../extending/modules/snippets/services/expose-host-services-to-dagger/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../extending/modules/snippets/services/expose-host-services-to-dagger/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../extending/modules/snippets/services/expose-host-services-to-dagger/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Send a query to the database service listening on host port 3306 and return the result as a string:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'user-list tcp://localhost:3306'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+user-list tcp://localhost:3306
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call user-list --svc=tcp://localhost:3306
+```
+</TabItem>
+</Tabs>

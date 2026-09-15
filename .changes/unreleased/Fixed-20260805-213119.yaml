@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  `Container.withDirectory` and `Directory.withDirectory` no longer restore
+  deleted nested files after execs remove and recreate an ancestor
+  directory.
+time: 2026-08-05T21:31:19Z
+custom:
+  Author: sipsma
+  PR: 13848

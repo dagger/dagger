@@ -1,0 +1,123 @@
+using System.Collections.Immutable;
+using System.Text.Json;
+using Dagger.SDK.GraphQL;
+
+namespace Dagger.SDK;
+
+public static class QueryExecutor
+{
+    /// <summary>
+    /// Execute a GraphQL request and deserialize data into `T`.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="client">A GraphQL client.</param>
+    /// <param name="queryBuilder">A QueryBuilder instance.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns></returns>
+    public static async Task<T> ExecuteAsync<T>(
+        GraphQLClient client,
+        QueryBuilder queryBuilder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var jsonElement = await RequestAsync(client, queryBuilder, cancellationToken);
+        jsonElement = TakeJsonElementUntilLast<T>(jsonElement, queryBuilder.Path);
+        return jsonElement.GetProperty(queryBuilder.Path.Last().Name).Deserialize<T>()!;
+    }
+
+    /// <summary>
+    /// Similar to Execute but return a list of data.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="client">A GraphQL client</param>
+    /// <param name="queryBuilder">A QueryBuilder instance.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns></returns>
+    public static async Task<T[]> ExecuteListAsync<T>(
+        GraphQLClient client,
+        QueryBuilder queryBuilder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var jsonElement = await RequestAsync(client, queryBuilder, cancellationToken);
+        jsonElement = TakeJsonElementUntilLast<T>(jsonElement, queryBuilder.Path);
+        return jsonElement
+            .EnumerateArray()
+            .Select(elem => elem.GetProperty(queryBuilder.Path.Last().Name))
+            .Select(elem => elem.Deserialize<T>()!)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Execute a nullable object selection and load the returned object by ID.
+    /// </summary>
+    public static async Task<T?> ExecuteNullableObjectAsync<T>(
+        GraphQLClient client,
+        QueryBuilder queryBuilder,
+        Func<Id, T> objectFactory,
+        CancellationToken cancellationToken = default
+    )
+        where T : class
+    {
+        var idQueryBuilder = queryBuilder.Select("id");
+        var jsonElement = await RequestAsync(client, idQueryBuilder, cancellationToken);
+
+        foreach (var field in idQueryBuilder.Path)
+        {
+            if (jsonElement.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+            jsonElement = jsonElement.GetProperty(field.Name);
+        }
+
+        if (jsonElement.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        return objectFactory(jsonElement.Deserialize<Id>()!);
+    }
+
+    private static async Task<JsonElement> RequestAsync(
+        GraphQLClient client,
+        QueryBuilder queryBuilder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var query = queryBuilder.Build();
+        var response = await client.RequestAsync(query, cancellationToken);
+        var data = await response.Content.ReadAsStringAsync(cancellationToken);
+        var jsonElement = JsonSerializer.Deserialize<JsonElement>(data);
+
+        // Check for GraphQL errors
+        if (jsonElement.TryGetProperty("errors", out var errors))
+        {
+            throw new InvalidOperationException($"GraphQL errors: {errors}");
+        }
+
+        return jsonElement.GetProperty("data");
+    }
+
+    // Traverse jsonElement until the last element.
+    private static JsonElement TakeJsonElementUntilLast<T>(
+        JsonElement jsonElement,
+        ImmutableList<Field> path
+    )
+    {
+        var json = jsonElement;
+        foreach (var fieldName in path.RemoveAt(path.Count - 1).Select(field => field.Name))
+        {
+            if (json.ValueKind == JsonValueKind.Null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot traverse property '{fieldName}': parent element is null. "
+                        + $"The node(id:) query may have returned null."
+                );
+            }
+            json = json.GetProperty(fieldName);
+        }
+
+        return json;
+    }
+}

@@ -1,0 +1,46 @@
+---
+title: "Apple Container"
+sidebar_label: "Apple Container"
+slug: /reference/container-runtimes/apple-container
+description: "Learn how to use Dagger with Apple Container."
+---
+
+# Apple Container
+
+Dagger can be used with any OCI-compatible container runtime, including [`container` from Apple](https://github.com/apple/container).
+
+:::warning
+The support for Apple's `container` is still early and experimental.
+:::
+
+## Prerequisites
+
+Ensure that `container` is installed on your Mac:
+
+```console
+$ container system start
+...
+```
+
+You can install `container` using the official instruction at [github.com/apple/container](https://github.com/apple/container).
+
+## Example
+
+```console
+$ container ls
+ID  IMAGE  OS  ARCH  STATE  ADDR  CPUS  MEMORY
+$ dagger core version
+v0.18.19
+$ container ls
+container ls
+ID                      IMAGE                               OS     ARCH   STATE    ADDR          CPUS  MEMORY
+dagger-engine-v0.18.19  registry.dagger.io/engine:v0.18.19  linux  arm64  running  192.168.64.4  4     8192 MB
+```
+
+## Resources
+
+If you have any questions about additional ways to use Apple's `container` with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [#macos channel](https://discord.com/channels/707636530424053791/1155969163282628639).
+
+## About Apple's `container`
+
+Apple's [`container`](https://github.com/apple/container) is a tool for creating and running Linux containers using lightweight virtual machines on a Mac. It is written in Swift, and optimized for Apple silicon.

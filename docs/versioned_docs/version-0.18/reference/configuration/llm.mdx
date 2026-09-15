@@ -1,0 +1,146 @@
+---
+title: "LLM Providers"
+description: "Learn how to configure Dagger to use various LLM providers for your workflows, including OpenAI, Anthropic, Google Gemini, and more."
+slug: /reference/configuration/llm
+sidebar_label: "LLM Providers"
+---
+
+
+# LLM Providers
+
+Dagger supports a wide range of popular Large Language Models (LLMs), including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using a local provider like Docker Model Runner or Ollama. Dagger supports providers' OpenAI-compatible API if native support is not yet available.
+
+Dagger uses the system's standard environment variables to route LLM requests. Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
+
+:::tip
+Secrets in `.env` files can use Dagger's built-in secrets support. For example:
+
+```shell
+# OpenAI API key stored in 1Password
+OPENAI_API_KEY="op://Private/OpenAI API Key/password"
+```
+:::
+
+## Anthropic
+
+- `ANTHROPIC_API_KEY`: required
+- `ANTHROPIC_MODEL`: optional, defaults to `"claude-sonnet-4-0"`. See other [model name strings](https://docs.anthropic.com/en/docs/about-claude/models/all-models)
+
+## OpenAI
+
+- `OPENAI_API_KEY`: required
+- `OPENAI_MODEL`: optional, defaults to `"gpt-4o"`. See other [model name strings](https://platform.openai.com/docs/models)
+- Optional:
+  - `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
+  - `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview).
+
+## Google Gemini
+
+- `GEMINI_API_KEY`: required
+- `GEMINI_MODEL`: optional, defaults to `"gemini-2.0-flash"`. See other [model name strings](https://ai.google.dev/gemini-api/docs/models/gemini)
+
+## Amazon Bedrock (via LiteLLM proxy)
+
+Dagger connects to models in Amazon Bedrock via OpenAI-compatible proxies such as [LiteLLM](https://www.litellm.ai/).
+
+Sample LiteLLM `config.yml` which relies on `aws sso login`. [Other configs](https://docs.litellm.ai/docs/providers/bedrock#litellm-proxy-usage) possible.
+```
+model_list:
+  - model_name: bedrock-claude-3-5-sonnet
+    litellm_params:
+      model: bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0
+      aws_region_name: us-east-1
+      drop_params: true
+```
+
+:::warning
+Currently `drop_params: true` is required in the LiteLLM `config.yml` when used with AWS Bedrock because the OpenAI API's `seed` and `parallel_tool_calls` parameters are generally unsupported by Bedrock models.
+:::
+
+- `OPENAI_MODEL` required, use `model_name` from `config.yml` e.g. `bedrock-claude-3-5-sonnet`
+- `OPENAI_BASE_URL` required, use actual IPv4 address of host and LiteLLM port, e.g. `http://172.20.2.97:4000`
+
+## Azure OpenAI Service
+
+- `OPENAI_BASE_URL` required, for example `"https://your-azure-openai-resource.cognitiveservices.azure.com"`
+- `OPENAI_API_KEY`: required, Azure OpenAI deployment API key
+- `OPENAI_MODEL`: optional, for example, `"gpt-4o"`. See other [model name strings](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models)
+- `OPENAI_AZURE_VERSION`: optional, for example, `"2024-12-01-preview"`
+
+## Docker Model Runner
+
+1. Configure [Docker Model Runner](https://docs.docker.com/desktop/introduction/features/model-runner/) with Docker Desktop.
+2. Pull any model from [Docker Hub](https://hub.docker.com/u/ai) such as `docker model pull ai/qwen2.5`.
+3. Configure the following environment variables, using `ai/qwen2.5` as an example default model:
+
+    ```shell
+    OPENAI_BASE_URL=http://model-runner.docker.internal/engines/v1/
+    OPENAI_MODEL=index.docker.io/ai/qwen2.5:7B-F16
+    OPENAI_DISABLE_STREAMING=true
+    ```
+
+    :::note
+    This assumes your Dagger engine is running on the same machine as Docker Desktop. If this is not the case, make sure to replace `host.docker.internal` with the appropriate hostname or IP address of the machine running Docker Desktop.
+
+## Ollama
+
+1. Install Ollama from [ollama.ai](https://ollama.ai).
+
+1. Start the Ollama server with host binding:
+
+    ```shell
+    OLLAMA_HOST="0.0.0.0:11434" ollama serve
+    ```
+
+    :::note
+    Ollama has a default context length of 2048. To change this, also set the `OLLAMA_CONTEXT_LENGTH` environment variable.
+    :::
+
+1. Pull models to your local Ollama service:
+
+      ```shell
+      ollama pull MODEL-NAME
+      ```
+
+    For example, a good model for working with code is `qwen2.5-coder`. This model is available in [various sizes](https://ollama.com/library/qwen2.5-coder). For example, to pull `qwen2.5-coder:14b`, which can fit in roughly 16 GB of memory, use the following command:
+
+      ```shell
+      ollama pull qwen2.5-coder:14b
+      ```
+
+    Any model from Ollama or any other model distributor that supports tools can be used with Dagger. Review this list of [Ollama models supporting tools](https://ollama.com/search?c=tools) to find a suitable model.
+
+1. Obtain the host IP address:
+
+    On macOS / Linux (modern distributions):
+
+    ```shell
+    ifconfig | grep "inet " | grep -v 127.0.0.1
+    ```
+
+    On Linux (older distributions):
+
+    ```shell
+    ip addr | grep "inet " | grep -v 127.0.0.1
+    ```
+
+    :::note
+    This step is needed because Dagger's LLM type runs inside the Dagger Engine and needs to reach the Ollama service running on the host. Although we are exploring the implementation of automatic tunneling, the current approach is to use the host's actual IP address (instead of `localhost`) to allow Dagger to communicate with Ollama.
+
+1. Configure the following environment variables. Replace `YOUR-IP` with the IP address from the previous step and `MODEL-NAME` with the default model to use (this can be changed at runtime). The `/v1/` route refers to Ollama's OpenAI compatible routes.
+
+    ```plaintext
+    OPENAI_BASE_URL=http://YOUR-IP:11434/v1/
+    OPENAI_MODEL=MODEL-NAME
+    ```
+
+    For example, if your IP is `192.168.64.1` and your preferred model is `qwen2.5-coder:14b`:
+
+    ```shell
+    OPENAI_BASE_URL=http://192.168.64.1:11434/v1/
+    OPENAI_MODEL=qwen2.5-coder:14b
+    ```
+
+    :::warning
+    The trailing `/` in the route URL is mandatory.
+    :::

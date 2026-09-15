@@ -1,0 +1,59 @@
+---
+title: "Install the Dagger CLI"
+slug: /getting-started/install
+description: "Install the Dagger CLI"
+---
+
+import { daggerVersion } from '../partials/version.js';
+
+Use the command for your operating system. Each command installs Dagger v{daggerVersion}.
+
+<Tabs groupId="platform">
+<TabItem value="macOS">
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh`}
+</CodeBlock>
+
+If you cannot write to `/usr/local/bin`, run the script with `sudo -E`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sudo -E sh`}
+</CodeBlock>
+
+</TabItem>
+<TabItem value="Linux">
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=$HOME/.local/bin sh`}
+</CodeBlock>
+
+Verify that `$HOME/.local/bin` is in your `PATH`.
+
+To install Dagger for all users, run the script with `sudo -E`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sudo -E sh`}
+</CodeBlock>
+
+</TabItem>
+<TabItem value="Windows">
+
+In PowerShell 7 or later:
+
+<CodeBlock language="powershell">
+{`iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -DaggerVersion ${daggerVersion} -AddToPath`}
+</CodeBlock>
+
+This installs `dagger.exe` in `%USERPROFILE%\dagger` and adds it to your user `PATH`.
+
+</TabItem>
+</Tabs>
+
+Run this command to verify the installation:
+
+<CodeBlock language="shell">
+{`dagger version\n# version:     v${daggerVersion}`}
+</CodeBlock>
+
+To change the Dagger version, run the applicable install command again. Specify the required version.

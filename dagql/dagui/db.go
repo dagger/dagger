@@ -1,0 +1,1621 @@
+package dagui
+
+import (
+	"context"
+	"fmt"
+	"iter"
+	"slices"
+	"sort"
+	"sync"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
+)
+
+// LLMTokenMetrics tracks token usage across all LLM calls.
+//
+// Aggregate runs on the UI goroutine (metric export is dispatched there), while
+// Snapshot is read from other goroutines (e.g. the CLI's LLM session driving
+// the status line), so access to ByModel is guarded by mu.
+type LLMTokenMetrics struct {
+	mu sync.Mutex
+	// ByModel maps a model name to its accumulated token metrics.
+	ByModel map[string]*LLMModelMetrics
+	// gaugeValues stores the last value seen for each metric series. LLM token
+	// instruments are gauges that providers record with cumulative per-call
+	// values while streaming; keeping deltas between last values prevents repeat
+	// metric exports from being counted as new spend.
+	gaugeValues map[string]int64
+}
+
+// Snapshot returns a copy of the per-model metrics safe to read from any
+// goroutine.
+func (m *LLMTokenMetrics) Snapshot() []LLMModelMetrics {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]LLMModelMetrics, 0, len(m.ByModel))
+	for _, v := range m.ByModel {
+		out = append(out, *v)
+	}
+	return out
+}
+
+// LLMModelMetrics tracks token usage for a specific model.
+type LLMModelMetrics struct {
+	Model             string
+	Provider          string
+	InputTokens       int64
+	OutputTokens      int64
+	CachedTokenReads  int64
+	CachedTokenWrites int64
+}
+
+// Aggregate adds the metrics from a data point to the running totals, keyed by
+// the point's "model" attribute. Points without a model attribute are ignored.
+func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoint[int64]) {
+	var model, provider string
+	modelAttr, hasModel := point.Attributes.Value(attribute.Key("model"))
+	providerAttr, hasProvider := point.Attributes.Value(attribute.Key("provider"))
+
+	if !hasModel {
+		return // Skip if no model attribute.
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	model = modelAttr.AsString()
+	if hasProvider {
+		provider = providerAttr.AsString()
+	}
+
+	if m.ByModel == nil {
+		m.ByModel = make(map[string]*LLMModelMetrics)
+	}
+	if m.gaugeValues == nil {
+		m.gaugeValues = make(map[string]int64)
+	}
+
+	seriesKey := metricName + "|" + point.Attributes.Encoded(attribute.DefaultEncoder())
+	prev, seen := m.gaugeValues[seriesKey]
+	m.gaugeValues[seriesKey] = point.Value
+
+	delta := point.Value
+	if seen {
+		if point.Value >= prev {
+			delta = point.Value - prev
+		} else {
+			// Treat a lower value for the same series as a fresh baseline rather
+			// than subtracting from already-reported spend. This can happen if a
+			// provider retries within the same span or a gauge series is reset.
+			delta = point.Value
+		}
+	}
+	if delta == 0 {
+		return
+	}
+
+	metrics, ok := m.ByModel[model]
+	if !ok {
+		metrics = &LLMModelMetrics{
+			Model:    model,
+			Provider: provider,
+		}
+		m.ByModel[model] = metrics
+	} else if metrics.Provider == "" && provider != "" {
+		metrics.Provider = provider
+	}
+
+	switch metricName {
+	case telemetry.LLMInputTokens:
+		metrics.InputTokens += delta
+	case telemetry.LLMOutputTokens:
+		metrics.OutputTokens += delta
+	case telemetry.LLMInputTokensCacheReads:
+		metrics.CachedTokenReads += delta
+	case telemetry.LLMInputTokensCacheWrites:
+		metrics.CachedTokenWrites += delta
+	}
+}
+
+type DB struct {
+	PrimarySpan SpanID
+	PrimaryLogs map[SpanID][]sdklog.Record
+
+	Epoch, End time.Time
+
+	Spans    *OrderedSet[SpanID, *Span]
+	RootSpan *Span
+
+	Resources map[attribute.Distinct]*resource.Resource
+
+	Calls map[string]*callpbv1.Call
+
+	Outputs   map[string]map[string]struct{}
+	OutputOf  map[string]map[string]struct{}
+	Intervals map[string]map[time.Time]*Span
+
+	CreatorSpans map[string]SpanSet
+
+	// Map of call digest -> metric name -> data points
+	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
+	// needs generalization as more metric types get added
+	MetricsByCall map[string]map[string][]metricdata.DataPoint[int64]
+	MetricsBySpan map[SpanID]map[string][]metricdata.DataPoint[int64]
+
+	// LLMTokenMetrics aggregates LLM token usage across all spans/models, used
+	// to drive the status line's cost/context display.
+	LLMTokenMetrics *LLMTokenMetrics
+
+	// updatedSpans is a set of spans that have been updated since the last
+	// sync, which includes any parent spans whose overall active time intervals
+	// or status were modified via a child or linked span.
+	updatedSpans SpanSet
+
+	// seenSpans keeps track of which spans have been observed via
+	// UpdatedSnapshots so that we can know whether we need to send them when we
+	// finally see them
+	seenSpans map[SpanID]struct{}
+
+	pendingResumeOutputs map[resumeOutputKey]SpanSet
+	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
+	resolvedLogsBySpan   map[SpanID][]sdklog.Record
+
+	// mutations counts span adds and updates. Derived-view memos (e.g. the
+	// per-span test views and surfaced checks) key on it so a cached result is
+	// reused across the many reads of a single render frame but never survives
+	// new span data.
+	mutations uint64
+
+	// The surfacing memos below are single-entry and key on BOTH db.mutations
+	// and the root the walk was relative to (see surfaceRoot): a zoom change
+	// doesn't bump mutations, so without the root in the key a render zoomed
+	// to one span would be served the tree built for another.
+	surfacedChecks     []*CheckNode
+	surfacedChecksAt   uint64
+	surfacedChecksRoot SpanID
+	surfacedChecksInit bool
+
+	surfacedConversation     []*MessageNode
+	surfacedConversationAt   uint64
+	surfacedConversationRoot SpanID
+	surfacedConversationInit bool
+
+	// The agent-scoped conversation gets a memo slot of its own rather than
+	// sharing the one above: both are consulted on the same render (the
+	// roster scopes the live tree while the report stays zoom-scoped), and a
+	// single slot keyed by root would make them evict each other every frame.
+	agentConversation     []*MessageNode
+	agentConversationAt   uint64
+	agentConversationID   string
+	agentConversationInit bool
+
+	surfacedGenerators     []*GeneratorNode
+	surfacedGeneratorsAt   uint64
+	surfacedGeneratorsRoot SpanID
+	surfacedGeneratorsInit bool
+
+	surfacedServices     []*ServiceNode
+	surfacedServicesAt   uint64
+	surfacedServicesRoot SpanID
+	surfacedServicesInit bool
+
+	serviceDisplays     []*Span
+	serviceDisplaysAt   uint64
+	serviceDisplaysRoot SpanID
+	serviceDisplaysInit bool
+
+	// The agent roster is session-wide rather than zoom-relative (see
+	// DB.Agents: an agent born inside a module call is precisely what the
+	// roster exists to surface), so unlike the surfacing memos above it
+	// keys on db.mutations alone.
+	agents     []*AgentNode
+	agentsAt   uint64
+	agentsInit bool
+
+	testIndex *TestIndex
+}
+
+// MutationCount reports how many span adds/updates the DB has seen, for
+// callers memoizing views derived from span data (see the mutations field).
+func (db *DB) MutationCount() uint64 {
+	return db.mutations
+}
+
+type resumeOutputKey struct {
+	TraceID TraceID
+	Output  string
+}
+
+func NewDB() *DB {
+	return &DB{
+		PrimaryLogs: make(map[SpanID][]sdklog.Record),
+
+		Spans:     NewSpanSet(),
+		Resources: make(map[attribute.Distinct]*resource.Resource),
+
+		Calls: make(map[string]*callpbv1.Call),
+
+		OutputOf:  make(map[string]map[string]struct{}),
+		Outputs:   make(map[string]map[string]struct{}),
+		Intervals: make(map[string]map[time.Time]*Span),
+
+		CreatorSpans: make(map[string]SpanSet),
+
+		updatedSpans: NewSpanSet(),
+		seenSpans:    make(map[SpanID]struct{}),
+
+		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
+		pendingLogsByOutput:  make(map[resumeOutputKey][]sdklog.Record),
+		resolvedLogsBySpan:   make(map[SpanID][]sdklog.Record),
+
+		LLMTokenMetrics: &LLMTokenMetrics{},
+	}
+}
+
+func (db *DB) seen(spanID SpanID) {
+	db.seenSpans[spanID] = struct{}{}
+}
+
+func (db *DB) hasSeen(spanID SpanID) bool {
+	_, seen := db.seenSpans[spanID]
+	return seen
+}
+
+func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
+	snapshots := snapshotSpans(db.updatedSpans.Order, func(span *Span) bool {
+		if !span.Received {
+			// don't send along any stubs; let the client-side create its own stubs
+			return false
+		}
+		if filter == nil || filter[span.ParentID] || filter[span.ID] {
+			// include subscribed (or all) spans, and updates to spans that
+			// were explicitly subscribed themselves (e.g. time-breakdown support
+			// spans whose parents aren't subscribed)
+			return true
+		}
+		if span.IsFailedOrCausedFailure() {
+			// include failed spans so we can summarize them without having to
+			// deep-dive.
+			return true
+		}
+		if span.Reveal || len(span.RevealedSpans.Order) > 0 {
+			// always include revealed spans and their parents
+			return true
+		}
+		if span.HasProgress() || len(span.ProgressSpans.Order) > 0 {
+			// always include progress-carrying spans and their ancestor
+			// chain, so remote frontends can place them in the tree even
+			// when they're deep inside unsubscribed subtrees
+			return true
+		}
+		if span.Passthrough {
+			// include any passthrough spans to ensure failures are collected.
+			// the POST /query span for example never fails on its own.
+			for _, child := range span.ChildSpans.Order {
+				if child.IsFailedOrCausedFailure() {
+					return true
+				}
+			}
+		}
+		return false
+	})
+	for spanID := range filter {
+		span := db.Spans.Map[spanID]
+		if span == nil {
+			continue
+		}
+		if !db.hasSeen(spanID) {
+			snapshots = append(snapshots, span.Snapshot())
+		}
+		for p := range span.Parents {
+			if !db.hasSeen(p.ID) {
+				snapshots = append(snapshots, p.Snapshot())
+			}
+		}
+	}
+	for _, snapshot := range snapshots {
+		db.seen(snapshot.ID)
+	}
+	db.updatedSpans = NewSpanSet()
+	return snapshots
+}
+
+func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
+	spans := make([]*Span, len(snapshots))
+	for i, snapshot := range snapshots {
+		span := db.findOrAllocSpan(snapshot.ID)
+		span.Received = true
+		snapshot.Version += span.Version // don't reset the version
+		if snapshot.Progress == nil {
+			// don't lose locally ingested progress to a snapshot that
+			// predates it
+			snapshot.Progress = span.Progress
+		}
+		if span.hasNameFromLog && snapshot.EndTime.Before(snapshot.StartTime) {
+			// Live name updates arrive on logs because repeated in-flight span
+			// exports retain their start-time name. Do not let one roll the newer
+			// name back.
+			snapshot.Name = span.nameFromLog
+		} else if !snapshot.EndTime.Before(snapshot.StartTime) {
+			// A completed snapshot carries the span's actual ending name and
+			// becomes authoritative over the live-log bridge.
+			span.nameFromLog = ""
+			span.hasNameFromLog = false
+		}
+		span.SpanSnapshot = snapshot
+		db.integrateSpan(span)
+		spans[i] = span
+	}
+	for _, span := range spans {
+		span.PropagateStatusToParentsAndLinks()
+	}
+}
+
+func (db *DB) update(span *Span) {
+	db.mutations++
+	db.noteTestSpanUpdated(span)
+	if span.Final {
+		// don't bump versions for final spans; leave the remote as the
+		// source of truth, lest we stray forward and miss an actual version bump
+		return
+	}
+	span.Version++
+	db.updatedSpans.Add(span)
+}
+
+// Matches returns true if the span matches the filter, looking through
+// Passthrough span parents until a match is found or a non-Passthrough span
+// is reached.
+func (span *Span) Matches(match func(*Span) bool) bool {
+	if match(span) {
+		return true
+	}
+	if span.ParentSpan != nil && span.ParentSpan.Passthrough {
+		return span.ParentSpan.Matches(match)
+	}
+	return false
+}
+
+func snapshotSpans(spans []*Span, filter func(*Span) bool) []SpanSnapshot {
+	var filtered []SpanSnapshot
+	for _, span := range spans {
+		if span.Matches(filter) {
+			filtered = append(filtered, span.Snapshot())
+		}
+	}
+	return filtered
+}
+
+func (db *DB) SpanSnapshots(id SpanID) []SpanSnapshot {
+	snaps := snapshotSpans(db.Spans.Order, func(span *Span) bool {
+		return span.ParentID == id || span.ID == id
+	})
+	if span := db.Spans.Map[id]; span != nil {
+		for p := range span.Parents {
+			if !db.hasSeen(p.ID) {
+				snaps = append(snaps, p.Snapshot())
+			}
+		}
+	}
+	for _, snapshot := range snaps {
+		db.seen(snapshot.ID)
+	}
+	return snaps
+}
+
+func (db *DB) RemainingSnapshots() []SpanSnapshot {
+	return snapshotSpans(db.Spans.Order, func(span *Span) bool {
+		return span.Received && !db.hasSeen(span.ID)
+	})
+}
+
+var _ sdktrace.SpanExporter = (*DB)(nil)
+
+func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan) error {
+	spans := make([]*Span, len(otelSpans))
+	for i, otelSpan := range otelSpans {
+		spans[i] = db.recordOTelSpan(otelSpan)
+	}
+	for _, span := range spans {
+		span.PropagateStatusToParentsAndLinks()
+	}
+	return nil
+}
+
+func (db *DB) LogExporter() sdklog.Exporter {
+	return DBLogExporter{db}
+}
+
+// LogValueString returns value as a string only when its OpenTelemetry kind
+// is string. Callers must not use AsString without first establishing this
+// invariant: the OTel API reports invalid-kind conversions as diagnostics.
+func LogValueString(value otellog.Value) (string, bool) {
+	if value.Kind() != otellog.KindString {
+		return "", false
+	}
+	return value.AsString(), true
+}
+
+// LogValueBool returns value as a bool only when its OpenTelemetry kind is
+// bool.
+func LogValueBool(value otellog.Value) (bool, bool) {
+	if value.Kind() != otellog.KindBool {
+		return false, false
+	}
+	return value.AsBool(), true
+}
+
+// LogValueInt64 returns value as an int64 only when its OpenTelemetry kind is
+// int64.
+func LogValueInt64(value otellog.Value) (int64, bool) {
+	if value.Kind() != otellog.KindInt64 {
+		return 0, false
+	}
+	return value.AsInt64(), true
+}
+
+// LogBodyString returns record's body only when it is text.
+func LogBodyString(record sdklog.Record) (string, bool) {
+	return LogValueString(record.Body())
+}
+
+// IsSpanNameRecord reports whether record's semantic role says its body is an
+// updated display name for the span it is attributed to. These records are
+// metadata and must not also be rendered as ordinary log output.
+func IsSpanNameRecord(record sdklog.Record) bool {
+	_, isSpanName := spanNameRecordReservation(record)
+	return isSpanName
+}
+
+// spanNameRecordReservation reports whether the semantic-role attribute
+// reserves a record as metadata and whether it contains the supported span-name
+// role. Unknown and malformed roles remain reserved so they cannot render as
+// ordinary output.
+func spanNameRecordReservation(record sdklog.Record) (reserved, isSpanName bool) {
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetryattrs.LogRoleAttr {
+			reserved = true
+			role, valid := LogValueString(kv.Value)
+			isSpanName = valid && role == telemetryattrs.LogRoleSpanName
+			return false
+		}
+		return true
+	})
+	return reserved, isSpanName
+}
+
+// ingestSpanName folds a span.name role record into the attributed span. A
+// name record may arrive before the span's first snapshot, so the override is
+// retained on the stub and reapplied when frozen live snapshots arrive later.
+func (db *DB) ingestSpanName(record sdklog.Record) bool {
+	reserved, isSpanName := spanNameRecordReservation(record)
+	if !reserved {
+		return false
+	}
+	if !isSpanName {
+		// An unknown or malformed role is still reserved semantic data.
+		return true
+	}
+	name, valid := LogBodyString(record)
+	if !valid {
+		// It is still a reserved metadata record; consume a malformed body rather
+		// than leaking it into command output.
+		return true
+	}
+
+	spanID := SpanID{SpanID: record.SpanID()}
+	if !spanID.IsValid() {
+		return true
+	}
+	span := db.initSpan(spanID)
+	span.nameFromLog = name
+	span.hasNameFromLog = true
+	if span.Name != name {
+		span.Name = name
+		db.update(span)
+	}
+	return true
+}
+
+type DBLogExporter struct {
+	*DB
+}
+
+func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
+	db.ingestLogs(logs, false)
+	return nil
+}
+
+// IngestLogs classifies and ingests one SDK log batch, returning only ordinary
+// text records for frontend rendering. Semantic/control records are consumed
+// here even when malformed, and non-string bodies are not log text. Empty
+// string records remain renderable so frontends can observe stdio EOF markers.
+func (db *DB) IngestLogs(logs []sdklog.Record) []sdklog.Record {
+	return db.ingestLogs(logs, true)
+}
+
+func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.Record {
+	var renderable []sdklog.Record
+	if collectRenderable {
+		renderable = make([]sdklog.Record, 0, len(logs))
+	}
+	for _, log := range logs {
+		if db.ingestSpanName(log) {
+			// live span metadata, not log text
+			continue
+		}
+		if db.ingestProgress(log) {
+			// streaming progress data, not log text
+			continue
+		}
+		if db.ingestAgentState(log) {
+			// agent lifecycle state, not log text
+			continue
+		}
+		if db.ingestAgentSnapshot(log) {
+			// agent resume anchor, not log text
+			continue
+		}
+		if db.ingestCallPayload(log) {
+			// dagql call payload, not log text
+			continue
+		}
+		if log.Body().Kind() != otellog.KindString {
+			// Never log text, whatever produced it; checking the kind first
+			// also keeps AsString from reporting to the global error handler.
+			continue
+		}
+		body, isText := LogBodyString(log)
+		if !isText {
+			continue
+		}
+		if collectRenderable {
+			renderable = append(renderable, log)
+		}
+		if body == "" {
+			// Preserve explicit empty strings for frontend EOF handling, but do not
+			// route them or mark their spans as having logs.
+			continue
+		}
+		spanID, pendingKey := db.routeLog(log)
+		if pendingKey != nil {
+			db.pendingLogsByOutput[*pendingKey] = append(db.pendingLogsByOutput[*pendingKey], log)
+			continue
+		}
+		if spanID == db.PrimarySpan {
+			// buffer raw logs so we can replay them later
+			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
+		}
+		// flag that the span has received logs
+		db.initSpan(spanID).HasLogs = true
+	}
+	return renderable
+}
+
+func (db *DB) Shutdown(ctx context.Context) error {
+	return nil // noop
+}
+
+func (db *DB) ForceFlush(ctx context.Context) error {
+	return nil // noop
+}
+
+func (db *DB) MetricExporter() sdkmetric.Exporter {
+	return DBMetricExporter{db}
+}
+
+func (db *DB) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.DeltaTemporality
+}
+
+func (db *DB) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.AggregationDefault{}
+}
+
+type DBMetricExporter struct {
+	*DB
+}
+
+func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	for _, scopeMetric := range resourceMetrics.ScopeMetrics {
+		for _, metric := range scopeMetric.Metrics {
+			// TODO: don't lose track of whether it's a Sum or a Gauge - it matters!
+			if metricData, ok := metric.Data.(metricdata.Sum[int64]); ok {
+				db.exportDataPoints(metric, metricData.DataPoints)
+			}
+			if metricData, ok := metric.Data.(metricdata.Gauge[int64]); ok {
+				db.exportDataPoints(metric, metricData.DataPoints)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoints []metricdata.DataPoint[int64]) {
+	for _, point := range dataPoints {
+		var metricsByName map[string][]metricdata.DataPoint[int64]
+		if callDigest, ok := point.Attributes.Value(telemetry.DagDigestAttr); ok {
+			if db.MetricsByCall == nil {
+				db.MetricsByCall = make(map[string]map[string][]metricdata.DataPoint[int64])
+			}
+			var ok bool
+			metricsByName, ok = db.MetricsByCall[callDigest.AsString()]
+			if !ok {
+				metricsByName = make(map[string][]metricdata.DataPoint[int64])
+				db.MetricsByCall[callDigest.AsString()] = metricsByName
+			}
+		} else if spanIDHex, ok := point.Attributes.Value(telemetry.MetricsSpanIDAttr); ok {
+			var spanID SpanID
+			var err error
+			if spanID.SpanID, err = trace.SpanIDFromHex(spanIDHex.AsString()); err != nil {
+				continue
+			}
+			if db.MetricsBySpan == nil {
+				db.MetricsBySpan = make(map[SpanID]map[string][]metricdata.DataPoint[int64])
+			}
+			var ok bool
+			metricsByName, ok = db.MetricsBySpan[spanID]
+			if !ok {
+				metricsByName = make(map[string][]metricdata.DataPoint[int64])
+				db.MetricsBySpan[spanID] = metricsByName
+			}
+		} else {
+			continue
+		}
+
+		metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+
+		// Aggregate LLM token metrics across all spans/models for the status
+		// line's cost/context display.
+		switch metric.Name {
+		case telemetry.LLMInputTokens, telemetry.LLMOutputTokens,
+			telemetry.LLMInputTokensCacheReads, telemetry.LLMInputTokensCacheWrites:
+			if db.LLMTokenMetrics != nil {
+				db.LLMTokenMetrics.Aggregate(metric.Name, point)
+			}
+		}
+	}
+}
+
+// SetPrimarySpan allows the primary span to be explicitly set to a particular
+// span. normally we assume the root span is the primary span, but in a nested
+// scenario we never actually see the root span, so the CLI explicitly sets it
+// to the span it created.
+func (db *DB) SetPrimarySpan(span SpanID) {
+	db.PrimarySpan = span
+}
+
+// surfaceRoot resolves the root a surfacing walk (SurfacedChecks and family)
+// is relative to: the span the caller gave, or the trace root when nil.
+//
+// Surfacing is a question about a subtree, not about the process: "what checks
+// / messages / services ran beneath THIS span". Every frontend asks it about
+// whatever it is zoomed to, and the whole-trace answer is just the zoom-to-the-
+// root case. Flags (Boundary/Encapsulate) on or above the root are outside the
+// question and never contain; flags strictly below it contain exactly as they
+// always have, so a fixture check wrapped in its own boundary stays hidden.
+//
+// The CONVERSATION deliberately does not use this. A resuming client holds a
+// second, imported trace in the same DB (hack/designs/resume-from-trace.md
+// §5.1.3), whose messages hang off a second parentless span and would be
+// dropped by resolving nil to db.RootSpan — so there, nil means every message
+// span in the DB. The fixture-containment rule this exists for is unchanged
+// for checks, generators and services, which have no second trace to miss.
+func (db *DB) surfaceRoot(root *Span) *Span {
+	if root != nil {
+		return root
+	}
+	return db.RootSpan
+}
+
+// surfaceRootID keys a surfacing memo on the root it was built for.
+func surfaceRootID(root *Span) SpanID {
+	if root == nil {
+		return SpanID{}
+	}
+	return root.ID
+}
+
+// spanMayRollUp walks span's real parent chain and reports whether span may
+// roll up to root. Boundary and Encapsulate are unilateral containment flags:
+// either one on an ancestor strictly below root stops the roll-up, while flags
+// on root itself are outside the question. An explicit root must be reached;
+// nil asks about all traces and accepts parentless or severed chains as long as
+// no loaded ancestor contains them.
+//
+// visit is called for each ancestor encountered, including a containing
+// boundary and root itself. Surfaced views use it to retain their nearest
+// semantic parent without reimplementing containment. The starting span is not
+// visited: a span's flags contain its descendants, not the span itself.
+func spanMayRollUp(span, root *Span, visit func(*Span)) bool {
+	if span == nil {
+		return false
+	}
+	if span == root {
+		return true
+	}
+	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		if visit != nil {
+			visit(parent)
+		}
+		if parent == root {
+			return true
+		}
+		if parent.Boundary || parent.Encapsulate {
+			return false
+		}
+	}
+	return root == nil
+}
+
+func (db *DB) initSpan(spanID SpanID) *Span {
+	spanData, found := db.Spans.Map[spanID]
+	if !found {
+		spanData = db.newSpan(spanID)
+		db.Spans.Add(spanData)
+	}
+	return spanData
+}
+
+func (db *DB) findOrAllocSpan(spanID SpanID) *Span {
+	spanData, found := db.Spans.Map[spanID]
+	if found {
+		return spanData
+	}
+	return db.newSpan(spanID)
+}
+
+func (db *DB) newSpan(spanID SpanID) *Span {
+	// TODO: this fools things into thinking they're a root span...?
+	return &Span{
+		SpanSnapshot: SpanSnapshot{
+			ID: spanID,
+		},
+		ChildSpans:      NewSpanSet(),
+		RunningSpans:    NewSpanSet(),
+		RevealedSpans:   NewSpanSet(),
+		FailedLinks:     NewSpanSet(),
+		CanceledLinks:   NewSpanSet(),
+		ErrorOrigins:    NewSpanSet(),
+		ProgressSpans:   NewSpanSet(),
+		causesViaLinks:  NewSpanSet(),
+		effectsViaLinks: NewSpanSet(),
+		db:              db,
+	}
+}
+
+func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
+	spanID := SpanID{span.SpanContext().SpanID()}
+
+	// mark the span as updated so we sync it to the frontend,
+	// if this database is running on a backend
+	//
+	// NOTE: any updates to *other* spans should also be marked! for example, if
+	// we update the status or active time of any linked/parent spans, those
+	// should go in here too.
+
+	// create or update the span itself
+	spanData := db.findOrAllocSpan(spanID)
+	spanData.Received = true
+	spanData.TraceID = TraceID{span.SpanContext().TraceID()}
+	spanData.ParentID.SpanID = span.Parent().SpanID()
+	spanData.Name = span.Name()
+	if spanData.hasNameFromLog && span.StartTime().After(span.EndTime()) {
+		spanData.Name = spanData.nameFromLog
+	} else if !span.StartTime().After(span.EndTime()) {
+		// The completed span's final export carries its actual ending name.
+		spanData.nameFromLog = ""
+		spanData.hasNameFromLog = false
+	}
+	spanData.StartTime = span.StartTime()
+	spanData.EndTime = span.EndTime()
+	spanData.Status = span.Status()
+	spanData.Links = make([]SpanLink, len(span.Links()))
+	for i, link := range span.Links() {
+		spanData.Links[i].SpanContext = SpanContext{
+			TraceID: TraceID{link.SpanContext.TraceID()},
+			SpanID:  SpanID{link.SpanContext.SpanID()},
+		}
+		for _, linkAttr := range link.Attributes {
+			spanData.Links[i].ProcessAttribute(string(linkAttr.Key), linkAttr.Value.AsString())
+		}
+	}
+
+	if resource := span.Resource(); resource != nil {
+		db.Resources[resource.Equivalent()] = resource
+	}
+
+	// populate snapshot from otel attributes
+	for _, attr := range span.Attributes() {
+		spanData.ProcessAttribute(
+			string(attr.Key),
+			attr.Value.AsInterface(),
+		)
+	}
+
+	// integrate the span's data into the DB's live objects
+	db.integrateSpan(spanData)
+	return spanData
+}
+
+type Activity struct {
+	CompletedIntervals []Interval
+	EarliestRunning    time.Time
+
+	// Keep track of the full set of running spans so we can update
+	// EarliestRunning as they complete.
+	//
+	// This needs to be synced to the frontend so it doesn't lose track of the
+	// running status in Activity.Add. We exclude from JSON marshalling since
+	// the map key is incompatible. Syncing to the frontend uses encoding/gob,
+	// which accepts the map key type.
+	AllRunning map[SpanID]time.Time `json:"-"`
+}
+
+func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
+	return func(yield func(Interval) bool) {
+		var latestEnd time.Time
+		yieldRunning := func() {
+			runningStart := activity.EarliestRunning
+			if latestEnd.After(runningStart) {
+				runningStart = latestEnd
+			}
+			if runningStart.Before(now) {
+				yield(Interval{Start: runningStart, End: now})
+			}
+		}
+		for _, ival := range activity.CompletedIntervals {
+			if !activity.EarliestRunning.IsZero() &&
+				activity.EarliestRunning.Before(ival.Start) {
+				yieldRunning()
+				return
+			}
+			if !yield(ival) {
+				return
+			}
+			if ival.End.After(latestEnd) {
+				latestEnd = ival.End
+			}
+		}
+		if !activity.EarliestRunning.IsZero() {
+			yieldRunning()
+		}
+	}
+}
+
+func (activity *Activity) Duration(now time.Time) time.Duration {
+	var dur time.Duration
+	for ival := range activity.Intervals(now) {
+		dur += ival.End.Sub(ival.Start)
+	}
+	return dur
+}
+
+type Interval struct {
+	Start time.Time
+	End   time.Time
+}
+
+func (activity *Activity) Add(span *Span) bool {
+	var changed bool
+
+	if span.IsRunning() {
+		if activity.AllRunning == nil {
+			activity.AllRunning = map[SpanID]time.Time{}
+		}
+		if _, found := activity.AllRunning[span.ID]; !found {
+			activity.AllRunning[span.ID] = span.StartTime
+			changed = true
+		}
+		// O(1): just check if this span is earlier than current earliest.
+		if activity.EarliestRunning.IsZero() || span.StartTime.Before(activity.EarliestRunning) {
+			activity.EarliestRunning = span.StartTime
+			changed = true
+		}
+		return changed
+	}
+
+	wasEarliest := span.StartTime.Equal(activity.EarliestRunning)
+	delete(activity.AllRunning, span.ID)
+	if len(activity.AllRunning) == 0 {
+		if !activity.EarliestRunning.IsZero() {
+			activity.EarliestRunning = time.Time{}
+			changed = true
+		}
+	} else if wasEarliest {
+		// Only rescan if we removed the earliest — O(R) but rare.
+		activity.EarliestRunning = time.Time{}
+		for _, t := range activity.AllRunning {
+			if activity.EarliestRunning.IsZero() || t.Before(activity.EarliestRunning) {
+				activity.EarliestRunning = t
+			}
+		}
+		changed = true
+	}
+
+	ival := Interval{
+		Start: span.StartTime,
+		End:   span.EndTime,
+	}
+
+	if len(activity.CompletedIntervals) == 0 {
+		activity.CompletedIntervals = append(activity.CompletedIntervals, ival)
+		changed = true
+		return changed
+	}
+
+	idx, _ := slices.BinarySearchFunc(activity.CompletedIntervals, ival, func(a, b Interval) int {
+		if a.Start.Before(b.Start) {
+			return -1
+		} else if a.Start.After(b.Start) {
+			return 1
+		} else {
+			return 0
+		}
+	})
+
+	// optimization: if the new interval is wholly subsumed by an existing
+	// interval we can skip adding it. this is also handled by mergeIntervals,
+	// but it's harder to return false after the fact.
+	for _, existing := range activity.CompletedIntervals {
+		if ival.Start.After(existing.Start) && ival.End.Before(existing.End) {
+			return changed
+		}
+	}
+
+	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
+	activity.mergeIntervals()
+	changed = true
+	return changed
+}
+
+func (activity *Activity) IsRunning() bool {
+	return !activity.EarliestRunning.IsZero()
+}
+
+func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
+	if !activity.EarliestRunning.IsZero() {
+		return now
+	}
+	if len(activity.CompletedIntervals) == 0 {
+		return time.Time{}
+	}
+	return activity.CompletedIntervals[len(activity.CompletedIntervals)-1].End
+}
+
+// mergeIntervals merges overlapping intervals in the activity.
+func (activity *Activity) mergeIntervals() {
+	// If there are no intervals, there's nothing to merge.
+	if len(activity.CompletedIntervals) == 0 {
+		return
+	}
+
+	// Keep track of the index of the last merged interval.
+	lastIndex := 0
+	for i := 1; i < len(activity.CompletedIntervals); i++ {
+		ival := activity.CompletedIntervals[i]
+		// If the current interval overlaps with the last one, merge them.
+		if ival.Start.Before(activity.CompletedIntervals[lastIndex].End) {
+			if ival.End.After(activity.CompletedIntervals[lastIndex].End) {
+				// Extend the last interval.
+				activity.CompletedIntervals[lastIndex].End = ival.End
+			}
+			// If ival is wholly subsumed, do nothing (continue).
+		} else {
+			// No overlap, move the lastIndex forward.
+			lastIndex++
+			activity.CompletedIntervals[lastIndex] = ival
+		}
+	}
+
+	// Resize the slice to only include the merged intervals.
+	activity.CompletedIntervals = activity.CompletedIntervals[:lastIndex+1]
+}
+
+// integrateSpan takes a possibly newly created span and updates
+// database relationships and state
+func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
+	// track the span's own interval
+	span.Activity.Add(span)
+	db.update(span)
+
+	// keep track of the time boundary
+	if db.Epoch.IsZero() ||
+		(!span.StartTime.IsZero() &&
+			span.StartTime.Before(db.Epoch)) {
+		db.Epoch = span.StartTime
+	}
+	if span.EndTime.After(db.End) {
+		db.End = span.EndTime
+	}
+
+	// associate the span to its parent
+	if span.ParentID.IsValid() {
+		span.ParentSpan = db.initSpan(span.ParentID)
+		if span.ParentSpan.ChildSpans.Add(span) {
+			// if we're a new child, take a new snapshot for ChildCount
+			db.update(span.ParentSpan)
+		}
+		// progress may have been ingested before the parent linkage was
+		// known (records can arrive ahead of their span, and spans ahead
+		// of their ancestors); re-establish the ancestor registration
+		db.propagateProgressSpans(span)
+	}
+
+	// associate the span to its links
+	for _, linked := range span.Links {
+		linkedCtx := linked.SpanContext
+		switch linked.Purpose {
+		case telemetry.LinkPurposeCause,
+			// By default, links imply a causal relationship.
+			//
+			// Two reasons:
+			// 1. Backward compatibility - this is how links are already interpreted.
+			// 2. Span links are almost always representing a causal relationship
+			// where the target of the link completed before the linking span.
+			// (Otherwise the linking span could just be a child span.)
+			"":
+			linked := db.initSpan(linkedCtx.SpanID)
+			linked.ChildSpans.Add(span)
+			linked.effectsViaLinks.Add(span)
+			span.causesViaLinks.Add(linked)
+		case telemetry.LinkPurposeErrorOrigin:
+			if linkedCtx.SpanID == span.ID {
+				// defense in depth; it's technically possible to link to yourself, and
+				// we don't want to double-init the span since that'll leave a zombie
+				// span
+				continue
+			}
+			linked := db.initSpan(linkedCtx.SpanID)
+			span.ErrorOrigins.Add(linked)
+		}
+	}
+
+	// Extract error origins from span error descriptions
+	if span.Status.Code == codes.Error {
+		for _, origin := range telemetry.ParseErrorOrigins(span.Status.Description) {
+			originID := SpanID{SpanID: origin.SpanID()}
+			if originID == span.ID {
+				// renderStepError early-returns on any non-empty ErrorOrigins,
+				// so a self-origin would suppress the leaf error message.
+				continue
+			}
+			linked := db.initSpan(originID)
+			span.ErrorOrigins.Add(linked)
+		}
+	}
+
+	// keep track of intervals seen for a digest
+	if span.CallDigest != "" {
+		if db.Intervals[span.CallDigest] == nil {
+			db.Intervals[span.CallDigest] = make(map[time.Time]*Span)
+		}
+		db.Intervals[span.CallDigest][span.StartTime] = span
+	}
+
+	if span.CallDigest != "" && span.CallPayload != "" {
+		// Legacy channel: older engines carry a base64 payload on the span
+		// itself. Decode eagerly into the same store the log channel fills so
+		// nothing downstream has to know which channel carried a call.
+		var legacy callpbv1.Call
+		if err := legacy.Decode(span.CallPayload); err == nil {
+			db.addCall(span.CallDigest, &legacy)
+		} else {
+			slog.Warn("failed to decode legacy call payload", "digest", span.CallDigest, "err", err)
+		}
+	}
+
+	if !span.ParentID.IsValid() && span.Received {
+		// keep track of the trace's root span
+		if db.RootSpan == nil {
+			db.RootSpan = span
+		}
+
+		if !db.PrimarySpan.IsValid() {
+			// default primary to root span, though we might never see a "root
+			// span" in a nested scenario.
+			db.PrimarySpan = span.ID
+		}
+
+		if span == db.RootSpan && !span.IsRunning() {
+			// If the root span is completed, we should mark any still-running spans
+			// as canceled.
+			for _, span := range db.Spans.Order {
+				if span.IsRunning() {
+					span.Canceled = true
+					span.LeftRunning = true
+					span.EndTime = db.RootSpan.EndTime
+					span.PropagateStatusToParentsAndLinks()
+					db.update(span)
+				}
+			}
+		}
+	} else if db.RootSpan != nil && !db.RootSpan.IsRunning() && span.IsRunning() {
+		// Same as above (cancel running spans when root ends), but handled for
+		// incoming span updates too.
+		span.Canceled = true
+		span.LeftRunning = true
+		span.EndTime = db.RootSpan.EndTime
+		span.PropagateStatusToParentsAndLinks()
+	}
+
+	if span.CallDigest != "" && span.Output != "" {
+		// parent -> child
+		if db.Outputs[span.CallDigest] == nil {
+			db.Outputs[span.CallDigest] = make(map[string]struct{})
+		}
+		db.Outputs[span.CallDigest][span.Output] = struct{}{}
+
+		// child -> parent
+		if db.OutputOf[span.Output] == nil {
+			db.OutputOf[span.Output] = make(map[string]struct{})
+		}
+		db.OutputOf[span.Output][span.CallDigest] = struct{}{}
+
+		// output -> creator
+		if db.CreatorSpans[span.Output] == nil {
+			db.CreatorSpans[span.Output] = NewSpanSet()
+		}
+		db.CreatorSpans[span.Output].Add(span)
+
+		db.resolvePendingResumeOutputs(span.Output, span.TraceID)
+		db.resolvePendingLogs(span.Output, span.TraceID)
+	}
+
+	if span.Service {
+		db.resolvePendingServiceLogs(span)
+	}
+
+	db.maybeResumeOutput(span)
+
+	// finally, install the span if we don't already have it
+	//
+	// this dance is a little clumsy because we want to make sure parent spans
+	// are inserted before their child spans, so we find-or-allocate the span but
+	// aggressively initialize its parent span
+	//
+	// FIXME: refactor? can we keep some sort of flat map of spans an append
+	// children to them instead of having the single big ordered list?
+	db.Spans.Add(span)
+	db.mutations++
+	db.noteTestSpanUpdated(span)
+}
+
+func (db *DB) linkResumedOutput(span *Span, creator *Span) {
+	changed := creator.ChildSpans.Add(span)
+	creator.effectsViaLinks.Add(span)
+	span.causesViaLinks.Add(creator)
+	if changed {
+		db.update(creator)
+	}
+}
+
+func (db *DB) creatorSpanForDigestInTrace(dig string, traceID trace.TraceID) *Span {
+	creators, ok := db.CreatorSpans[dig]
+	if !ok {
+		return nil
+	}
+
+	var best *Span
+	for _, creator := range creators.Order {
+		if creator.TraceID.TraceID != traceID {
+			continue
+		}
+		if best == nil || creator.StartTime.After(best.StartTime) {
+			best = creator
+		}
+	}
+
+	return best
+}
+
+func (db *DB) maybeResumeOutput(span *Span) {
+	if span.ResumeOutput == "" {
+		return
+	}
+
+	creator := db.creatorSpanForDigestInTrace(span.ResumeOutput, span.TraceID.TraceID)
+	if creator == nil {
+		key := resumeOutputKey{
+			TraceID: span.TraceID,
+			Output:  span.ResumeOutput,
+		}
+		if db.pendingResumeOutputs[key] == nil {
+			db.pendingResumeOutputs[key] = NewSpanSet()
+		}
+		db.pendingResumeOutputs[key].Add(span)
+		return
+	}
+
+	db.linkResumedOutput(span, creator)
+}
+
+func (db *DB) resolvePendingResumeOutputs(output string, traceID TraceID) {
+	key := resumeOutputKey{
+		TraceID: traceID,
+		Output:  output,
+	}
+	pending, ok := db.pendingResumeOutputs[key]
+	if !ok {
+		return
+	}
+	creator := db.creatorSpanForDigestInTrace(output, traceID.TraceID)
+	if creator == nil {
+		return
+	}
+	delete(db.pendingResumeOutputs, key)
+	for _, span := range pending.Order {
+		db.linkResumedOutput(span, creator)
+		span.PropagateStatusToParentsAndLinks()
+		db.update(span)
+	}
+}
+
+func (db *DB) resolvePendingLogs(output string, traceID TraceID) {
+	key := resumeOutputKey{
+		TraceID: traceID,
+		Output:  output,
+	}
+	pending, ok := db.pendingLogsByOutput[key]
+	if !ok {
+		return
+	}
+	creator := db.creatorSpanForDigestInTrace(output, traceID.TraceID)
+	if creator == nil {
+		return
+	}
+	delete(db.pendingLogsByOutput, key)
+	for _, record := range pending {
+		if creator.ID == db.PrimarySpan {
+			db.PrimaryLogs[creator.ID] = append(db.PrimaryLogs[creator.ID], record)
+		}
+		db.initSpan(creator.ID).HasLogs = true
+		db.resolvedLogsBySpan[creator.ID] = append(db.resolvedLogsBySpan[creator.ID], record)
+	}
+}
+
+// resolvePendingServiceLogs claims parked digest-routed log records whose own
+// span is this service's exec span. A service's stdio names the call that
+// created it (DagDigestAttr, see routeLog), but the records can arrive before
+// the exec span's snapshot does: routeLog then finds neither a creator span
+// nor a known Service span and parks the record under its digest. On a warm,
+// fully-cached trace the creator's span is never emitted, so nothing else
+// will ever claim them — do it here, when the exec span shows up. Records
+// from other spans sharing the digest stay parked for the creator path.
+func (db *DB) resolvePendingServiceLogs(span *Span) {
+	for key, records := range db.pendingLogsByOutput {
+		if key.TraceID != span.TraceID {
+			continue
+		}
+		var kept []sdklog.Record
+		var claimed bool
+		for _, record := range records {
+			if (SpanID{SpanID: record.SpanID()}) != span.ID {
+				kept = append(kept, record)
+				continue
+			}
+			claimed = true
+			if span.ID == db.PrimarySpan {
+				db.PrimaryLogs[span.ID] = append(db.PrimaryLogs[span.ID], record)
+			}
+			db.resolvedLogsBySpan[span.ID] = append(db.resolvedLogsBySpan[span.ID], record)
+		}
+		if !claimed {
+			continue
+		}
+		span.HasLogs = true
+		if len(kept) == 0 {
+			delete(db.pendingLogsByOutput, key)
+		} else {
+			db.pendingLogsByOutput[key] = kept
+		}
+	}
+}
+
+func (db *DB) DrainResolvedLogs(spanID SpanID) []sdklog.Record {
+	logs := db.resolvedLogsBySpan[spanID]
+	delete(db.resolvedLogsBySpan, spanID)
+	return logs
+}
+
+func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
+	fallback := SpanID{SpanID: record.SpanID()}
+
+	var targetDig string
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetry.DagDigestAttr {
+			if value, ok := LogValueString(kv.Value); ok {
+				targetDig = value
+			}
+			return false
+		}
+		return true
+	})
+
+	if targetDig == "" {
+		return fallback, nil
+	}
+
+	if creator := db.creatorSpanForDigestInTrace(targetDig, record.TraceID()); creator != nil {
+		return creator.ID, nil
+	}
+
+	// A service's stdio names the call that created the service (the engine
+	// stamps DagDigestAttr with e.g. the asService call digest) so the stream
+	// renders beneath the API call that installed it. On a warm, fully-cached
+	// trace that call's span is never emitted, so no creator will ever arrive
+	// to claim parked lines. The record's own span is the service's
+	// long-lived exec span: attach the stream there, keeping it beneath the
+	// service instance — and, via log roll-up, in whatever row displays it,
+	// e.g. `dagger up`'s per-service display span — instead of parking it
+	// forever. (On a cold trace a record can win a race against the creator
+	// span's arrival and land here too; it stays in the same subtree.)
+	if span, ok := db.Spans.Map[fallback]; ok && span.Service {
+		return fallback, nil
+	}
+
+	key := resumeOutputKey{
+		TraceID: TraceID{TraceID: record.TraceID()},
+		Output:  targetDig,
+	}
+	return SpanID{}, &key
+}
+
+func (db *DB) LogTargetSpanID(record sdklog.Record) SpanID {
+	spanID, _ := db.routeLog(record)
+	return spanID
+}
+
+func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
+	return db.MostInterestingSpan(db.Simplify(call, false).Digest)
+}
+
+func (db *DB) MostInterestingSpan(dig string) *Span {
+	var earliest *Span
+	var earliestCached bool
+	vs := make([]*Span, 0, len(db.Intervals[dig]))
+	for _, span := range db.Intervals[dig] {
+		vs = append(vs, span)
+	}
+	sort.Slice(vs, func(i, j int) bool {
+		return vs[i].StartTime.Before(vs[j].StartTime)
+	})
+	for _, span := range vs {
+		// a running vertex is always most interesting, and these are already in
+		// order
+		if span.IsRunningOrEffectsRunning() {
+			return span
+		}
+		switch {
+		case earliest == nil:
+			// always show _something_
+			earliest = span
+			earliestCached = span.Cached
+		case span.Cached:
+			// don't allow a cached vertex to override a non-cached one
+		case earliestCached:
+			// unclear how this would happen, but non-cached versions are always more
+			// interesting
+			earliest = span
+		case span.StartTime.Before(earliest.StartTime):
+			// prefer the earliest active interval
+			earliest = span
+		}
+	}
+	return earliest
+}
+
+// func (db *DB) IsTransitiveDependency(dig, depDig string) bool {
+// 	for _, v := range db.Intervals[dig] {
+// 		for _, dig := range v.Inputs {
+// 			if dig == depDig {
+// 				return true
+// 			}
+// 			if db.IsTransitiveDependency(dig, depDig) {
+// 				return true
+// 			}
+// 		}
+// 		// assume they all have the same inputs
+// 		return false
+// 	}
+// 	return false
+// }
+
+func (*DB) Close() error {
+	return nil
+}
+
+func (db *DB) Call(dig string) *callpbv1.Call {
+	return db.call(dig, nil)
+}
+
+// call resolves a digest to its call, remembering which digests the creator
+// walk has already visited.
+//
+// The walk needs that memory because CreatorSpans is keyed on a span's OUTPUT
+// digest while it answers with the span's CALL digest, and the two are
+// routinely the same value — a span that is its own creator. As long as an
+// exact call is present that branch returns first and the question never
+// arises; when one is MISSING, which is exactly the case a resume has to
+// report (design §9's first row: "call <digest> never reached this client"),
+// the walk recurred on the digest it started from and blew the stack instead.
+// Found by the end-to-end restore test, feeding it a capture whose call
+// payloads were withheld.
+func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
+	// First, check if we have the exact call.
+	if decoded, ok := db.Calls[dig]; ok {
+		return decoded
+	}
+
+	// Otherwise, try to find the call through creator spans.
+	if creators, ok := db.CreatorSpans[dig]; ok {
+		if seen == nil {
+			seen = map[string]bool{}
+		}
+		seen[dig] = true
+		// Try each creator in order
+		for _, creator := range creators.Order {
+			if seen[creator.CallDigest] {
+				continue
+			}
+			if creatorCall := db.call(creator.CallDigest, seen); creatorCall != nil {
+				return creatorCall
+			}
+		}
+	}
+
+	// No call found
+	return nil
+}
+
+// CallIDForDigest rebuilds the ID of the dagql call with the given digest
+// from the call payloads this client has ingested.
+//
+// It resolves through DB.Call, so it needs no SPAN carrying the digest — only
+// the payload. That distinction is the whole reason it lives here: span
+// emission dedupes per session by call digest (core.ShouldEmitTelemetry), so
+// an identical chain suppresses the second span while the payload still rides
+// the log channel (hack/designs/resume-from-trace.md §3.2, failure mode 2).
+// A rebuild keyed on spans cannot serve that case at all, and it is exactly
+// the case a resume anchor lands in.
+//
+// A gap is reported rather than papered over: the ID is not rebuildable, and
+// the caller must degrade (a read-only roster entry, a refused restore)
+// rather than act on a truncated chain.
+func (db *DB) CallIDForDigest(digest string) (*call.ID, error) {
+	if digest == "" {
+		return nil, fmt.Errorf("no call digest")
+	}
+	rootCall := db.Call(digest)
+	if rootCall == nil {
+		return nil, fmt.Errorf("cannot rebuild ID: %s",
+			missingCall{digest: digest})
+	}
+
+	recipe := &callpbv1.RecipeDAG{
+		// Not `digest`: DB.Call can answer through a creator span, in which
+		// case the chain that rebuilds is the creator's.
+		RootDigest:    rootCall.Digest,
+		CallsByDigest: map[string]*callpbv1.Call{},
+	}
+	// Report the gap here rather than letting decode trip over it below: this
+	// is the only layer that knows which frame referenced the missing call,
+	// and a chain deep enough to matter turns the decode error into a stack of
+	// "failed to decode receiver Call" with a bare digest at the bottom.
+	//
+	// A gap means some frame's payload never reached this client -- no span
+	// carried it and no closure record did -- so the ID is not rebuildable.
+	if missing := extractIntoDAG(recipe, db, rootCall.Digest); len(missing) > 0 {
+		return nil, fmt.Errorf("cannot rebuild ID for %s: %s",
+			frameLabel(rootCall), missing[0])
+	}
+	dag := &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{
+			Recipe: recipe,
+		},
+	}
+
+	var id call.ID
+	if err := id.FromProto(dag); err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
+func (db *DB) MustCall(dig string) *callpbv1.Call {
+	call := db.Call(dig)
+	if call == nil {
+		// Rather than blowing up, fill in an "easter egg."
+		call = &callpbv1.Call{
+			Field: "no",
+			Type: &callpbv1.Type{
+				NamedType: "Missing",
+			},
+			Args: []*callpbv1.Argument{
+				{
+					Name: "digest",
+					Value: &callpbv1.Literal{
+						Value: &callpbv1.Literal_String_{
+							String_: dig,
+						},
+					},
+				},
+			},
+			Digest: dig,
+		}
+	}
+	return call
+}
+
+func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
+	creators, ok := db.CreatorSpans[call.Digest]
+	if !ok {
+		return call
+	}
+
+	for _, creator := range creators.Order {
+		if creator.CallDigest == "" {
+			continue
+		}
+		if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+			return creatorCall // TODO: re-simplify?
+		}
+	}
+
+	return call
+}
+
+type WalkDecision int
+
+const (
+	WalkContinue WalkDecision = iota
+	WalkSkip
+	WalkPassthrough
+	WalkStop
+)
+
+func WalkTree(tree []*TraceTree, f func(*TraceTree, int) WalkDecision) {
+	var walk func([]*TraceTree, int)
+	walk = func(rows []*TraceTree, depth int) {
+		for _, row := range rows {
+			switch f(row, depth) {
+			case WalkContinue:
+				walk(row.Children, depth+1)
+			case WalkPassthrough:
+				walk(row.Children, depth)
+			case WalkSkip:
+				continue
+			case WalkStop:
+				return
+			}
+		}
+	}
+	walk(tree, 0)
+}
+
+func (db *DB) FindResource(filter attribute.KeyValue) *resource.Resource {
+	for _, res := range db.Resources {
+		for _, kv := range res.Attributes() {
+			if kv.Key == filter.Key && kv.Value == filter.Value {
+				return res
+			}
+		}
+	}
+	return nil
+}

@@ -1,0 +1,69 @@
+---
+title: "Migrate from dagger.json"
+slug: /config/migrate-dagger-json
+description: "Convert a legacy dagger.json project to a workspace"
+---
+
+# Migrate from dagger.json
+
+:::note
+If you're new to Dagger, you can skip this page. It's for existing users encountering changes.
+:::
+
+In Dagger 0.x, `dagger.json` served two roles:
+
+1. A manifest for your *module*: a package of code that the Dagger engine can load and execute
+2. A configuration file for your *workspace*: the software repository which you want to use Dagger in
+
+In Dagger 1.0, these two roles are filled by two different files:
+
+| Role | 0.x file | 1.0 file |
+| -- | -- | -- |
+| Manifest for a module | `dagger.json` | `dagger-module.toml` |
+| Configuration for a workspace | `dagger.json` | `dagger.toml` |
+
+## Backwards compatibility
+
+Dagger 1.0 can still load `dagger.json` in both roles, so you don't have to rush a migration. But, we recommend you migrate to take advantage of all the features of 1.0.
+
+## Migrating your workspace
+
+To migrate your workspace:
+
+```shell
+dagger workspace migrate
+```
+
+This will interpret your `dagger.json` as a workspace configuration, and translate it to an equivalent `dagger.toml`.
+
+Each migrated module is registered as a scope of its SDK. The scope gets an explicit `name` only when the module's name differs from the name Dagger infers from the scope directory or its entrypoint installation. See the [`[sdks.<name>]` reference](../reference/config-files/dagger-toml.mdx#sdksname).
+
+| `dagger.json` field | Translation |
+| -- | -- |
+| `sdk` | Create a module at `.dagger/modules/<name>`, install it in `dagger.toml`, make it the workspace entrypoint |
+| `toolchains` | Each installed toolchain is migrated as a 1.0 module (see "migrating a module") then installed in `dagger.toml`. Its customizations are converted to module settings, when possible |
+| `blueprint` | This field cannot be migrated |
+
+## Coding agents
+
+When Dagger detects that a coding agent is running `dagger workspace migrate` or `dagger module migrate`, it requires an explicit choice up front. Pass `-y` to apply the migration, or `--no-apply` to show the changes without writing them:
+
+```shell
+dagger workspace migrate --no-apply
+```
+
+Optional module candidates are skipped in both cases. Use `dagger module migrate PATH` to migrate one explicitly.
+
+## Migration report
+
+After migration, a report is written to `.dagger/migration-report.md`. Read it to know which parts of your `dagger.json` may not have been successfully migrated.
+
+## Migrating a module
+
+To migrate a module from `dagger.json` to `dagger-module.toml`:
+
+```shell
+dagger module migrate ./path/to/module
+```
+
+This will translate only the selected module, without migrating the surrounding workspace.

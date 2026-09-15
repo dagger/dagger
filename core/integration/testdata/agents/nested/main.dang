@@ -1,0 +1,20 @@
+"""Root object whose @agent lives on a chainable sub-object."""
+type Nested {
+  """A chainable sub-object reached via a function (so the rollup recurses)."""
+  tools: NestedTools! {
+    NestedTools()
+  }
+}
+
+"""Sub-object carrying a nested @agent."""
+type NestedTools {
+  """A nested agent, defined on a non-root object."""
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  """A nested tool (stub)."""
+  nestedTool(x: String!): String! {
+    `nested ${x}`
+  }
+}

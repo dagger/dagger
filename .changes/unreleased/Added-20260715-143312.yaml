@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  `dagger setup` now migrates the toolchains and dependencies that a legacy `dagger.json` references by a local path inside the project — and their transitive local dependencies — converting each to `dagger-module.toml` in place, and installing each converted module's runtime SDK in the workspace config.
+time: 2026-07-15T14:33:12Z
+custom:
+  Author: eunomie
+  PR: 13620

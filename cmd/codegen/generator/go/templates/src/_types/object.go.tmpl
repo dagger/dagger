@@ -1,0 +1,274 @@
+{{ .Description | Comment }}
+type {{ .Name | FormatName }} struct {
+{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	query *querybuilder.Selection
+
+    {{ range $field := .Fields }}
+        {{- if $field.TypeRef.IsScalar }}
+        {{ $field.Name | FormatParamName }} *{{ FormatFieldOutputType $field }}
+        {{- end }}
+	{{- end }}
+}
+
+{{- if . | IsSelfChainable }}
+type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
+
+// With calls the provided function with current {{ .Name | FormatName }}.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{ $.Name | FormatName }} {
+	return f(r)
+}
+
+{{- end }}
+
+
+func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ $.Name | FormatName }} {
+	return &{{ .Name | FormatName }}{
+		query: q,
+	}
+}
+
+
+{{ range $field := .Fields }}
+{{- if HasOptionals $field.Args }}
+// {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
+type {{ $field | FieldOptionsStructName }} struct {
+	{{- range $arg := $field.Args }}
+	{{- if IsArgOptional $arg }}
+	{{ $arg.Description | Comment }}
+	{{- if not $arg.DefaultValueZero }}
+	{{- if $arg.Description }}
+	//
+	{{- end }}
+	// Default: {{ $arg.DefaultValue }}
+	{{- end }}
+	{{- if $arg.IsDeprecated }}
+{{ $arg.DeprecationReason | FormatDeprecation }}
+	{{- end }}
+	{{- $formattedTypeRef := "" }}
+	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
+	{{- $formattedTypeRef = $arg.TypeRef | FormatOutputType }}
+	{{- else }}
+	{{- $formattedTypeRef = $arg | FormatInputType }}
+	{{- end }}
+	{{ $arg.Name | FormatName }} {{ $formattedTypeRef }}
+	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- end }}
+	{{- end }}
+}
+
+{{- end }}
+
+{{ $field.Description | Comment }}
+{{- if $field.IsDeprecated }}
+//
+{{ $field.DeprecationReason | FormatDeprecation }}
+{{- end }}
+{{- if $field.Directives.IsExperimental }}
+//
+{{ $field.Directives.ExperimentalReason | FormatExperimental }}
+{{- end }}
+{{- $convertID := $field | ConvertID }}
+{{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
+{{ FieldFunction $field false $supportsVoid }} {
+{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- range $arg := $field.Args }}
+	    {{- if and (IsPointer $arg) (not (IsArgOptional $arg)) }}
+        assertNotNil("{{ $arg.Name}}", {{ $arg.Name | FormatParamName }})
+        {{- end }}
+    {{- end }}
+
+    {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
+    if r.{{ $field.Name | FormatParamName }} != nil {
+        {{- if and $supportsVoid $field.TypeRef.IsVoid }}
+        return nil
+        {{- else }}
+        return *r.{{ $field.Name | FormatParamName }}, nil
+        {{- end }}
+    }
+    {{- end }}
+	q := r.query.Select("{{ $field.Name }}")
+
+	{{- if HasOptionals $field.Args }}
+	for i := len(opts) - 1; i >= 0; i-- {
+	{{- range $arg := $field.Args }}
+	{{- if IsArgOptional $arg }}
+	// `{{ $arg.Name }}` optional argument
+	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
+		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
+	}
+	{{- end }}
+	{{- end }}
+	}
+	{{- end }}
+
+
+	{{- range $arg := $field.Args }}
+	{{- if not (IsArgOptional $arg) }}
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name | FormatParamName }})
+	{{- end }}
+	{{- end }}
+	{{- $typeName := $field.TypeRef | FormatOutputType }}
+	{{ if and $supportsVoid $field.TypeRef.IsVoid }}
+		return q.Execute(ctx)
+	{{- else if $convertID }}
+	var id {{ $typeName }}
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &{{ $field | IDHandleClient }}{
+		query: selectNode(q.Root(), id, "{{ $field | IDHandleType }}"),
+	}, nil
+
+	{{- else if IsNullableObject $field.TypeRef }}
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	{{- if IsInterfaceRef $field.TypeRef }}
+	return &{{ $typeName | InterfaceClientName }}{
+		query: selectNode(q.Root(), *objectID, "{{ $typeName }}"),
+	}, nil
+	{{- else }}
+	return &{{ $typeName }}{
+		query: selectNode(q.Root(), *objectID, "{{ $typeName }}"),
+	}, nil
+	{{- end }}
+
+	{{- else if IsInterfaceRef $field.TypeRef }}
+	{{- /* Interface return: wrap in the interface's query-builder struct */ -}}
+	return &{{ $typeName | InterfaceClientName }}{
+		query: q,
+	}
+
+	{{- else if $field.TypeRef.IsObject }}
+	return &{{ $typeName }} {
+		query: q,
+	}
+
+	{{- else if and $field.TypeRef.IsList (IsListOfInterface $field.TypeRef) }}
+	{{- /* List of interface: query IDs and wrap each in interface client */ -}}
+	{{$eleType := $field.TypeRef | InnerType}}
+	q = q.Select("id")
+	type {{ $field.Name | ToLowerCase }}IDResult struct {
+		Id string
+	}
+	var idResults []{{ $field.Name | ToLowerCase }}IDResult
+	q = q.Bind(&idResults)
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var results {{ $field.TypeRef | InterfaceListResultType }}
+	for _, idResult := range idResults {
+		results = append(results, &{{ $eleType | ObjectName | InterfaceClientName }}{
+			query: selectNode(q.Root(), idResult.Id, "{{ $eleType | ObjectName }}"),
+		})
+	}
+	return results, nil
+
+	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
+		{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+    q = q.Select("{{ range $i, $v := $field | GetArrayField }}{{ if $i }} {{ end }}{{ $v.Name }}{{ end }}")
+
+    type {{ $field.Name | ToLowerCase | FormatParamName }} struct {
+      {{ range $v := $field | GetArrayField }}
+      {{ $v.Name | ToUpperCase }} {{ FormatFieldOutputType $v }}
+      {{- end }}
+    }
+
+    {{$eleType := $field.TypeRef | InnerType}}
+    convert := func(fields []{{ $field.Name | ToLowerCase | FormatParamName }}) {{ $field.TypeRef | FormatOutputType }} {
+        out := {{ $field.TypeRef | FormatOutputType }}{}
+
+        for i := range fields {
+            val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
+            {{- if $eleType | IsIDableObject }}
+              val.query = selectNode(q.Root(), fields[i].Id, "{{$eleType | ObjectName}}")
+            {{- end }}
+            out = append(out, val)
+        }
+
+        return out
+    }
+    {{- end }}
+
+    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+	var response []{{ $field.Name | ToLowerCase | FormatParamName }}
+    {{- else }}
+	var response {{ FormatFieldOutputType $field }}
+    {{- end  }}
+
+	q = q.Bind(&response)
+	    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+
+	err := q.Execute(ctx)
+	if err != nil {
+	    return nil, err
+	}
+
+	return convert(response), nil
+	    {{- else }}
+	return response, q.Execute(ctx)
+	    {{- end }}
+	{{- end }}
+}
+
+{{ if eq $field.Name "id" }}
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *{{ $.Name | FormatName }}) XXX_GraphQLType() string {
+	return "{{ $.Name }}"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *{{ $.Name | FormatName }}) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *{{ $.Name | FormatName }}) XXX_GraphQLID(ctx context.Context) (string, error) {
+  id, err := r.ID(ctx)
+  if err != nil {
+    return "", err
+  }
+	return string(id), nil
+}
+
+func (r *{{ $.Name | FormatName }}) MarshalJSON() ([]byte, error) {
+  id, err := r.ID(marshalCtx)
+  if err != nil {
+    return nil, err
+  }
+  return json.Marshal(id)
+}
+
+{{- if IsModuleCode }}
+func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
+  var id string
+  err := json.Unmarshal(bs, &id)
+  if err != nil {
+    return err
+  }
+  *r = {{ $.Name | FormatName }}{query: selectNode(dag.query, id, "{{ $.Name }}")}
+  return nil
+}
+{{- end }}
+
+{{ end }}
+{{ end }}
+
+{{- /* Generate AsFoo() client-side adapters for each implemented interface */ -}}
+{{ range $iface := . | ImplementedInterfaces }}
+// As{{ $iface.Name | FormatName }} returns this {{ $.Name | FormatName }} as a {{ $iface.Name | FormatName }}.
+// This is a local type conversion — no GraphQL call.
+func (r *{{ $.Name | FormatName }}) As{{ $iface.Name | FormatName }}() {{ $iface.Name | InterfaceReturnType }} {
+	return &{{ $iface.Name | InterfaceClientName }}{
+		query: r.query,
+	}
+}
+{{ end -}}

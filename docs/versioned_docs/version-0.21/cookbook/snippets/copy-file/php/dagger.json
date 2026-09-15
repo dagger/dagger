@@ -1,0 +1,5 @@
+{
+  "name": "my-module",
+  "engineVersion": "v0.18.16",
+  "sdk": "php"
+}

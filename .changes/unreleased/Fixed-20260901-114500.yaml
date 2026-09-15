@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  A workspace that installs one module source several times under different
+  names now shows every one of them. `dagger check -l` and the function listing
+  `dagger call` builds identified a module by its source alone, so two
+  `dagger.toml` entries sharing a `source` collapsed into one and only the
+  first-named survived discovery, even though each was configured with its own
+  settings and calling either one directly still worked.
+time: 2026-09-01T11:45:00Z
+custom:
+  Author: eunomie
+  PR: 14017

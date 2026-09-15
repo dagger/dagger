@@ -1,0 +1,17 @@
+"""A Go docs agent whose base argument is named `llm`, not `base`."""
+type Godoc {
+  """Compose the godoc tool onto a base LLM. Base named `llm` (matched by type)."""
+  agent(llm: LLM!): LLM! @agent {
+    llm.withTools(currentNode)
+  }
+
+  """Look up Go docs (stub)."""
+  goDoc(pkg: String!): String! {
+    `doc ${pkg}`
+  }
+
+  """shared tool from godoc"""
+  shared(x: String!): String! {
+    `godoc shared ${x}`
+  }
+}

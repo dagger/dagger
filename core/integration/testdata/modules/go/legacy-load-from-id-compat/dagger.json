@@ -1,0 +1,6 @@
+{
+  "name": "oldid",
+  "sdk": "go",
+  "source": ".",
+  "engineVersion": "v0.20.6"
+}

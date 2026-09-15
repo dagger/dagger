@@ -1,0 +1,5 @@
+type Lockmod {
+  pub release: String! {
+    Dagger.container.from("alpine:latest").file("/etc/alpine-release").contents
+  }
+}

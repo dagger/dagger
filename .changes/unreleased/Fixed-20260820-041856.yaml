@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Persistable cache results that fail dependency attachment no longer remain
+  retained as permanent lookup errors or get restored as healthy after an
+  engine restart. Persisted cache snapshots now contain only complete result
+  dependency closures.
+time: 2026-08-20T04:18:56Z
+custom:
+  Author: sipsma
+  PR: 13936

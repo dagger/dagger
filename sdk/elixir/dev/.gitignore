@@ -1,0 +1,10 @@
+/dagger_sdk
+/_build
+/cover
+/deps
+/doc
+/erl_crash.dump
+/*.ez
+/template-*.tar
+/tmp
+/.env

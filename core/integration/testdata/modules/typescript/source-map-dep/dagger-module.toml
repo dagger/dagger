@@ -1,0 +1,6 @@
+name = "dep"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "typescript"

@@ -1,0 +1,17 @@
+{
+  "name": "tests",
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "docusaurus",
+      "source": ".."
+    }
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
+}

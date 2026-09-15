@@ -1,0 +1,534 @@
+package engine
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"unicode"
+
+	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
+	"github.com/dagger/dagger/internal/cloud/auth"
+	"google.golang.org/grpc/metadata"
+)
+
+const (
+	EngineVersionMetaKey = "X-Dagger-Engine"
+
+	ClientMetadataMetaKey  = "X-Dagger-Client-Metadata"
+	localImportOptsMetaKey = "X-Dagger-Local-Import-Opts"
+	localExportOptsMetaKey = "X-Dagger-Local-Export-Opts"
+
+	// local dir import (set by buildkit, can't change)
+	localDirImportDirNameMetaKey         = "dir-name"
+	localDirImportIncludePatternsMetaKey = "include-patterns"
+	localDirImportExcludePatternsMetaKey = "exclude-patterns"
+	localDirImportFollowPathsMetaKey     = "followpaths"
+
+	localDirImportGitIgnoreMetaKey = "dagger.gitignore"
+
+	// socket session attachable keys
+	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
+
+	// SuppressTelemetryHeader opts a single /query request out of telemetry
+	// when set to "true": no per-request wrapper span, and no dagql call
+	// spans/logs for the request's whole selection. Intended for read-only
+	// "observer" queries (e.g. the CLI's context visualizer polling the LLM
+	// conversation) whose telemetry is pure noise and, worse, unbounded: an
+	// observer re-reading ever-growing state emits volume quadratic in that
+	// state's size, bloating the engine-side telemetry stores.
+	SuppressTelemetryHeader = "X-Dagger-Suppress-Telemetry"
+)
+
+// ExtraModule specifies a module to load at connect time in addition to
+// (or instead of) workspace modules.
+type ExtraModule struct {
+	Ref        string `json:"ref"`
+	Name       string `json:"name,omitempty"`
+	Entrypoint bool   `json:"entrypoint,omitempty"`
+}
+
+type ClientMetadata struct {
+	// ClientID is unique to each client, randomly generated each time a client initializes.
+	// It's also used as the *buildkit* session ID (as opposed to the dagger session ID), which
+	// is created for each client.
+	ClientID string `json:"client_id"`
+
+	// ClientSecretToken is a secret token that is unique to every client.
+	// Every request w/ that client ID must also include the same token.
+	ClientSecretToken string `json:"client_secret_token"`
+
+	// SessionID is the id of the dagger session that a client and any of its nested
+	// module clients connect to
+	SessionID string `json:"session_id"`
+
+	// ClientHostname is the hostname of the client that made the request. It's
+	// used to help identify clients in the logs more clearly; nothing functional.
+	ClientHostname string `json:"client_hostname"`
+
+	// ClientStableID is an ID that's persisted in a client's XDG state directory.
+	// It's currently used to identify clients that are executing on the same host in order to
+	// tell buildkit which filesync cache ref to re-use when syncing dirs+files to the engine.
+	ClientStableID string `json:"client_stable_id"`
+
+	// ClientVersion is the version string of the client that make the request.
+	ClientVersion string `json:"client_version"`
+
+	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
+	Labels map[string]string `json:"labels"`
+
+	// Interactive mode
+	Interactive bool `json:"interactive"`
+
+	// InteractiveCommand changes the command that is run in interactive mode.
+	InteractiveCommand []string `json:"interactive_command"`
+
+	// Import configuration for Buildkit's remote cache
+	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_import_config"`
+
+	// Export configuration for Buildkit's remote cache
+	UpstreamCacheExportConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_export_config"`
+
+	// Dagger Cloud Org
+	CloudOrg string `json:"cloud_org"`
+
+	// Disable analytics
+	DoNotTrack bool `json:"do_not_track"`
+
+	// SSH auth socket path
+	SSHAuthSocketPath string `json:"ssh_auth_socket_path"`
+
+	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
+	AllowedLLMModules []string `json:"allowed_llm_modules"`
+
+	// Disable lazy loading on module runtime.
+	EagerRuntime bool `json:"eager_runtime"`
+
+	// If set, the auth for cloud requests; used for PARC and scale-out
+	CloudAuth *auth.Cloud `json:"cloud_auth,omitempty"`
+
+	// If true, this client enables scaling checks out to cloud engines
+	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`
+
+	// if set, this client is another engine scaling out to the current one, and the current
+	// one has this ID. Should be included in OTEL span sttrs so we can correlate spans to engine.
+	// TODO: This is a bit convoluted; it would be nicer if an engine could figure out its own ID
+	// rather than being told what it is by the client connecting to it.
+	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
+
+	// ExtraModules specifies additional modules to load at connect time.
+	// When Entrypoint is true, the module's main-object methods are proxied onto
+	// the Query root in addition to its namespaced constructor.
+	ExtraModules []ExtraModule `json:"extra_modules,omitempty"`
+
+	// LoadWorkspaceModules opts this client into loading workspace modules.
+	// When false, only the core API is exposed by default.
+	LoadWorkspaceModules bool `json:"load_workspace_modules,omitempty"`
+
+	// SingleQuery declares that this client will send at most one GraphQL query
+	// request before disconnecting. The engine may use the query document to
+	// optimize session initialization.
+	SingleQuery bool `json:"single_query,omitempty"`
+
+	// SkipWorkspaceModules is a legacy compatibility input. New clients should
+	// use LoadWorkspaceModules instead.
+	SkipWorkspaceModules bool `json:"skip_workspace_modules,omitempty"`
+
+	// SuppressCompatWorkspaceWarning disables the user-facing warning emitted
+	// when a legacy dagger.json is projected into a compat workspace.
+	SuppressCompatWorkspaceWarning bool `json:"suppress_compat_workspace_warning,omitempty"`
+
+	// Workspace explicitly declares the workspace binding for this client.
+	// When unset, the engine applies default workspace binding behavior.
+	Workspace *string `json:"workspace,omitempty"`
+
+	// WorkspaceEnv explicitly selects the workspace environment overlay for
+	// this client. When unset, no environment overlay is applied.
+	WorkspaceEnv *string `json:"workspace_env,omitempty"`
+
+	// UserConfigPath is the caller-host path to the user-level Dagger config
+	// file (~/.config/dagger/config.toml). The engine reads it through the
+	// caller host session to apply user-level workspace overrides. When unset,
+	// no user-level config is consulted.
+	UserConfigPath string `json:"user_config_path,omitempty"`
+
+	// WorkspaceModuleScope hints at the workspace module this client's first
+	// schema introspection targets: the leading CLI command token, unresolved
+	// (it may name a module, an entrypoint-proxied function, or a typo). The
+	// engine may use it to defer loading unrelated workspace modules for the
+	// first request whose only full-schema demand is currentTypeDefs. An
+	// unrecognized token falls back to the entrypoint module when one is
+	// configured, else to loading everything; deferred modules load on demand
+	// from later requests.
+	WorkspaceModuleScope string `json:"workspace_module_scope,omitempty"`
+
+	// UseRecipeIDsByDefault asks id() to return recipe-form IDs unless the
+	// request explicitly passes a recipe argument. This is engine-internal
+	// nested-client state and must not be forwarded through client headers.
+	UseRecipeIDsByDefault bool `json:"-"`
+
+	// Profile enables engine wall-clock profiling (wcprof) for the duration
+	// of this client's work. Experimental; the recorded events are retrieved
+	// via the engine debug endpoints.
+	Profile bool `json:"profile,omitempty"`
+}
+
+type suppressTelemetryCtxKey struct{}
+
+// ContextWithTelemetrySuppression marks the context so that HTTP requests
+// made with it carry SuppressTelemetryHeader, opting the request out of
+// engine-side telemetry. See SuppressTelemetryHeader for when this is
+// appropriate.
+func ContextWithTelemetrySuppression(ctx context.Context) context.Context {
+	return context.WithValue(ctx, suppressTelemetryCtxKey{}, true)
+}
+
+// TelemetrySuppressedFromContext reports whether the context was marked with
+// ContextWithTelemetrySuppression.
+func TelemetrySuppressedFromContext(ctx context.Context) bool {
+	val, _ := ctx.Value(suppressTelemetryCtxKey{}).(bool)
+	return val
+}
+
+type clientMetadataCtxKey struct{}
+
+func ContextWithClientMetadata(ctx context.Context, clientMetadata *ClientMetadata) context.Context {
+	return context.WithValue(ctx, clientMetadataCtxKey{}, clientMetadata)
+}
+
+func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
+	md, ok := ctx.Value(clientMetadataCtxKey{}).(*ClientMetadata)
+	if !ok {
+		return nil, fmt.Errorf("failed to get client metadata from context")
+	}
+
+	return md, nil
+}
+
+func ClientMetadataFromHTTPHeaders(h http.Header) (*ClientMetadata, error) {
+	bs, err := base64.StdEncoding.DecodeString(h.Get(ClientMetadataMetaKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to base64-decode %s: %w", ClientMetadataMetaKey, err)
+	}
+
+	m := &ClientMetadata{}
+	if err := json.Unmarshal(bs, m); err != nil {
+		return nil, fmt.Errorf("failed to JSON-unmarshal %s: %w", ClientMetadataMetaKey, err)
+	}
+
+	if m.ClientVersion == "" {
+		// fallback for old clients that don't send a client version!
+		m.ClientVersion = m.Labels["dagger.io/client.version"]
+	}
+	if err := m.normalizeWorkspaceModuleLoading(); err != nil {
+		return nil, err
+	}
+
+	return m, nil
+}
+
+func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
+	h = h.Clone()
+
+	if err := (&m).normalizeWorkspaceModuleLoading(); err != nil {
+		panic(err)
+	}
+
+	bs, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	h.Set(ClientMetadataMetaKey, base64.StdEncoding.EncodeToString(bs))
+
+	return h
+}
+
+func (m *ClientMetadata) normalizeWorkspaceModuleLoading() error {
+	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
+		m.LoadWorkspaceModules,
+		m.SkipWorkspaceModules,
+	)
+	if err != nil {
+		return err
+	}
+
+	m.LoadWorkspaceModules = loadWorkspaceModules
+	m.SkipWorkspaceModules = false
+
+	return nil
+}
+
+func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {
+	if loadWorkspaceModules && skipWorkspaceModules {
+		return false, fmt.Errorf("load_workspace_modules and skip_workspace_modules are mutually exclusive")
+	}
+	if skipWorkspaceModules {
+		return false, nil
+	}
+	return loadWorkspaceModules, nil
+}
+
+type LocalImportOpts struct {
+	Path               string           `json:"path"`
+	UseGitIgnore       bool             `json:"use_gitignore"`
+	IncludePatterns    []string         `json:"include_patterns"`
+	ExcludePatterns    []string         `json:"exclude_patterns"`
+	FollowPaths        []string         `json:"follow_paths"`
+	ReadSingleFileOnly bool             `json:"read_single_file_only"`
+	MaxFileSize        int64            `json:"max_file_size"`
+	StatPathOnly       bool             `json:"stat_path_only"`
+	StatReturnAbsPath  bool             `json:"stat_return_abs_path"`
+	StatResolvePath    bool             `json:"stat_resolve_path"`
+	GetAbsPathOnly     bool             `json:"get_abs_path_only"`
+	GlobPattern        string           `json:"glob_pattern"`
+	SearchOpts         *LocalSearchOpts `json:"search_opts,omitempty"`
+}
+
+func (o LocalImportOpts) ToGRPCMD() metadata.MD {
+	o.Path = filepath.ToSlash(o.Path)
+	md := encodeMeta(localImportOptsMetaKey, o)
+	md[localDirImportDirNameMetaKey] = []string{o.Path}
+	md[localDirImportGitIgnoreMetaKey] = []string{strconv.FormatBool(o.UseGitIgnore)}
+	md[localDirImportIncludePatternsMetaKey] = o.IncludePatterns
+	md[localDirImportExcludePatternsMetaKey] = o.ExcludePatterns
+	md[localDirImportFollowPathsMetaKey] = o.FollowPaths
+	return encodeOpts(md)
+}
+
+func (o *LocalImportOpts) FromGRPCMD(md metadata.MD) error {
+	if v := md.Get(localImportOptsMetaKey); v != nil {
+		err := decodeMeta(md, localImportOptsMetaKey, o)
+		if err != nil {
+			return err
+		}
+	} else {
+		// otherwise, this is coming from buildkit directly
+		dirNameVals := md.Get(localDirImportDirNameMetaKey)
+		if len(dirNameVals) != 1 {
+			return fmt.Errorf("expected exactly one %s, got %d", localDirImportDirNameMetaKey, len(dirNameVals))
+		}
+		o.Path = dirNameVals[0]
+		o.IncludePatterns = md[localDirImportIncludePatternsMetaKey]
+		o.ExcludePatterns = md[localDirImportExcludePatternsMetaKey]
+		o.FollowPaths = md[localDirImportFollowPathsMetaKey]
+		if v, ok := md[localDirImportGitIgnoreMetaKey]; ok && len(v) > 0 {
+			o.UseGitIgnore, _ = strconv.ParseBool(v[0])
+		}
+	}
+	o.Path = filepath.FromSlash(o.Path)
+	return nil
+}
+
+func (o LocalImportOpts) AppendToOutgoingContext(ctx context.Context) context.Context {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		md = make(metadata.MD)
+	}
+	for k, v := range o.ToGRPCMD() {
+		md[k] = append(md[k], v...)
+	}
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
+	incomingMD, incomingOk := metadata.FromIncomingContext(ctx)
+	outgoingMD, outgoingOk := metadata.FromOutgoingContext(ctx)
+	if !incomingOk && !outgoingOk {
+		return nil, fmt.Errorf("failed to get metadata from context")
+	}
+	md := decodeOpts(metadata.Join(incomingMD, outgoingMD))
+
+	opts := &LocalImportOpts{}
+	if err := opts.FromGRPCMD(md); err != nil {
+		return nil, err
+	}
+	return opts, nil
+}
+
+// LocalSearchResult is a search match returned from a client-side search.
+type LocalSearchResult struct {
+	FilePath       string                `json:"file_path"`
+	LineNumber     int                   `json:"line_number"`
+	AbsoluteOffset int                   `json:"absolute_offset"`
+	MatchedLines   string                `json:"matched_lines"`
+	Submatches     []LocalSearchSubmatch `json:"submatches,omitempty"`
+}
+
+// LocalSearchSubmatch is a sub-match within a search result.
+type LocalSearchSubmatch struct {
+	Text  string `json:"text"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+// LocalSearchOpts configures a client-side search (ripgrep/grep).
+type LocalSearchOpts struct {
+	Pattern     string   `json:"pattern"`
+	Literal     bool     `json:"literal,omitempty"`
+	Multiline   bool     `json:"multiline,omitempty"`
+	Dotall      bool     `json:"dotall,omitempty"`
+	Insensitive bool     `json:"insensitive,omitempty"`
+	SkipIgnored bool     `json:"skip_ignored,omitempty"`
+	SkipHidden  bool     `json:"skip_hidden,omitempty"`
+	FilesOnly   bool     `json:"files_only,omitempty"`
+	Limit       *int     `json:"limit,omitempty"`
+	Paths       []string `json:"paths,omitempty"`
+	Globs       []string `json:"globs,omitempty"`
+}
+
+// RipgrepNoFilesSearched reports whether ripgrep's stderr says it exited only
+// because every candidate file was excluded by a filter (globs, ignore rules,
+// hidden-file rules), rather than because something actually went wrong.
+//
+// ripgrep exits 2 with "No files were searched, which means ripgrep probably
+// applied a filter you didn't expect." even though "the filter matched nothing"
+// is a perfectly ordinary outcome of a search - e.g. a --glob naming a file
+// that doesn't exist in the tree being searched. Since search results from one
+// tree get merged with results from others (workspace overlays, cache mounts),
+// treating this as fatal loses matches that do exist in the other trees.
+func RipgrepNoFilesSearched(stderr string) bool {
+	return strings.Contains(stderr, "No files were searched")
+}
+
+type LocalExportOpts struct {
+	Path               string      `json:"path"`
+	IsFileStream       bool        `json:"is_file_stream"`
+	FileOriginalName   string      `json:"file_original_name"`
+	AllowParentDirPath bool        `json:"allow_parent_dir_path"`
+	FileMode           os.FileMode `json:"file_mode"`
+	// whether to just merge in contents of a directory to the target on the host
+	// or to replace the target entirely such that it matches the source directory,
+	// which includes deleting any files that are not in the source directory
+	Merge       bool
+	RemovePaths []string `json:"remove_paths"`
+}
+
+func (o LocalExportOpts) ToGRPCMD() metadata.MD {
+	o.Path = filepath.ToSlash(o.Path)
+	return encodeMeta(localExportOptsMetaKey, o)
+}
+
+func (o *LocalExportOpts) FromGRPCMD(md metadata.MD) error {
+	if err := decodeMeta(md, localExportOptsMetaKey, o); err != nil {
+		return err
+	}
+	o.Path = filepath.FromSlash(o.Path)
+	return nil
+}
+
+func (o LocalExportOpts) AppendToOutgoingContext(ctx context.Context) context.Context {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		md = make(metadata.MD)
+	}
+	for k, v := range o.ToGRPCMD() {
+		md[k] = append(md[k], v...)
+	}
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+func LocalExportOptsFromContext(ctx context.Context) (*LocalExportOpts, error) {
+	incomingMD, incomingOk := metadata.FromIncomingContext(ctx)
+	outgoingMD, outgoingOk := metadata.FromOutgoingContext(ctx)
+	if !incomingOk && !outgoingOk {
+		return nil, fmt.Errorf("failed to get metadata from context")
+	}
+	md := metadata.Join(incomingMD, outgoingMD)
+
+	opts := &LocalExportOpts{}
+	if err := opts.FromGRPCMD(md); err != nil {
+		return nil, err
+	}
+	return opts, nil
+}
+
+func encodeMeta(key string, v any) metadata.MD {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return metadata.Pairs(key, base64.StdEncoding.EncodeToString(b))
+}
+
+func decodeMeta(md metadata.MD, key string, dest any) error {
+	vals := md.Get(key)
+	if len(vals) != 1 {
+		return fmt.Errorf("expected exactly one %s value, got %d", key, len(vals))
+	}
+	jsonPayload, err := base64.StdEncoding.DecodeString(vals[0])
+	if err != nil {
+		return fmt.Errorf("failed to base64-decode %s: %w", key, err)
+	}
+	if err := json.Unmarshal(jsonPayload, dest); err != nil {
+		return fmt.Errorf("failed to JSON-unmarshal %s: %w", key, err)
+	}
+	return nil
+}
+
+// encodeOpts preserves the existing filesync metadata header encoding.
+func encodeOpts(opts map[string][]string) map[string][]string {
+	md := make(map[string][]string, len(opts))
+	for k, v := range opts {
+		out, encoded := encodeStringForHeader(v)
+		md[k] = out
+		if encoded {
+			md[k+"-encoded"] = []string{"1"}
+		}
+	}
+	return md
+}
+
+// decodeOpts preserves the existing filesync metadata header decoding.
+func decodeOpts(opts map[string][]string) map[string][]string {
+	md := make(map[string][]string, len(opts))
+	for k, v := range opts {
+		out := make([]string, len(v))
+		var isEncoded bool
+		if v, ok := opts[k+"-encoded"]; ok && len(v) > 0 {
+			if b, _ := strconv.ParseBool(v[0]); b {
+				isEncoded = true
+			}
+		}
+		if isEncoded {
+			for i, s := range v {
+				out[i], _ = url.QueryUnescape(s)
+			}
+		} else {
+			copy(out, v)
+		}
+		md[k] = out
+	}
+	return md
+}
+
+// encodeStringForHeader encodes a string value so it can be used in grpc header. This encoding
+// is backwards compatible and avoids encoding ASCII characters.
+//
+// encodeStringForHeader preserves the existing filesync metadata header encoding.
+func encodeStringForHeader(inputs []string) ([]string, bool) {
+	var encode bool
+loop:
+	for _, input := range inputs {
+		for _, runeVal := range input {
+			// Only encode non-ASCII characters, and characters that have special
+			// meaning during decoding.
+			if runeVal > unicode.MaxASCII {
+				encode = true
+				break loop
+			}
+		}
+	}
+	if !encode {
+		return inputs, false
+	}
+	for i, input := range inputs {
+		inputs[i] = url.QueryEscape(input)
+	}
+	return inputs, true
+}

@@ -1,0 +1,19 @@
+"""A basic coding agent, for @agent integration tests."""
+type Editor {
+  """Compose the editor's tools onto a base LLM. Base named `base`."""
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt("editor agent system prompt")
+  }
+
+  """Read a file (stub)."""
+  readFile(path: String!): String! {
+    `read ${path}`
+  }
+
+  """shared tool from editor"""
+  shared(x: String!): String! {
+    `editor shared ${x}`
+  }
+}

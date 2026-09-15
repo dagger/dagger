@@ -1,0 +1,559 @@
+package idtui
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"strings"
+	"sync"
+	"unicode"
+
+	"charm.land/lipgloss/v2"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+	"github.com/vito/midterm"
+)
+
+type Vterm struct {
+	Offset int
+	Height int
+	Width  int
+
+	Prefix string
+
+	Profile termenv.Profile
+
+	vt *midterm.Terminal
+
+	// Separate buffer for Markdown content
+	markdownBuf *bytes.Buffer
+	// Regular terminal buffer
+	viewBuf     *bytes.Buffer
+	rawBuf      *bytes.Buffer
+	needsRedraw bool
+
+	// Search highlight state. When SearchQuery is non-empty, matching
+	// substrings in rendered lines are highlighted. SearchCurrentRow
+	// is the vterm row index of the "current" match (-1 for none),
+	// which gets a brighter highlight.
+	SearchQuery      string
+	SearchCurrentRow int
+
+	mu *sync.Mutex
+}
+
+func NewVterm(profile termenv.Profile) *Vterm {
+	return &Vterm{
+		Profile:     profile,
+		vt:          midterm.NewAutoResizingTerminal(),
+		viewBuf:     new(bytes.Buffer),
+		rawBuf:      new(bytes.Buffer),
+		markdownBuf: new(bytes.Buffer),
+		mu:          new(sync.Mutex),
+	}
+}
+
+func (term *Vterm) Term() *midterm.Terminal {
+	return term.vt
+}
+
+func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	n, err := term.markdownBuf.Write(p)
+	if err != nil {
+		return n, err
+	}
+	_, _ = term.rawBuf.Write(p)
+
+	term.needsRedraw = true
+	return n, nil
+}
+
+// WriteDiff syntax-highlights an authoritative unified diff while retaining its
+// original bytes for raw output and agent-facing reports.
+func (term *Vterm) WriteDiff(p []byte) (int, error) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	atBottom := term.Offset+term.Height >= term.vt.UsedHeight()
+	if term.Height == 0 {
+		atBottom = true
+	}
+
+	highlighted := highlightDiff(term.Profile, string(p))
+	if _, err := term.vt.Write([]byte(highlighted)); err != nil {
+		return 0, err
+	}
+	if _, err := term.rawBuf.Write(p); err != nil {
+		return 0, err
+	}
+
+	if atBottom {
+		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+	}
+	term.needsRedraw = true
+	return len(p), nil
+}
+
+func (term *Vterm) Write(p []byte) (int, error) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	atBottom := term.Offset+term.Height >= term.vt.UsedHeight()
+	if term.Height == 0 {
+		atBottom = true
+	}
+
+	n, err := term.vt.Write(p)
+	if err != nil {
+		return n, err
+	}
+	_, _ = term.rawBuf.Write(p)
+
+	if atBottom {
+		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+	}
+
+	term.needsRedraw = true
+
+	return n, nil
+}
+
+func (term *Vterm) UsedHeight() int {
+	return term.vt.UsedHeight()
+}
+
+func (term *Vterm) SetHeight(height int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if height == term.Height {
+		return
+	}
+	atBottom := term.Offset+term.Height >= term.vt.UsedHeight()
+	term.Height = height
+	if atBottom {
+		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+	}
+	term.needsRedraw = true
+}
+
+func (term *Vterm) SetWidth(width int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if width == term.Width {
+		return
+	}
+	term.Width = width
+	prefixWidth := lipgloss.Width(term.Prefix)
+	if width > prefixWidth {
+		term.vt.ResizeX(width - prefixWidth)
+	}
+	term.needsRedraw = true
+}
+
+func (term *Vterm) SetPrefix(prefix string) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if prefix == term.Prefix {
+		return
+	}
+	term.Prefix = prefix
+	prefixWidth := lipgloss.Width(prefix)
+	if term.Width > prefixWidth && !term.vt.AutoResizeX {
+		term.vt.ResizeX(term.Width - prefixWidth)
+	}
+	term.needsRedraw = true
+}
+
+func (term *Vterm) Init() tea.Cmd {
+	return nil
+}
+
+func (term *Vterm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) { //nolint:gocritic
+	case tea.KeyMsg:
+		_ = msg
+		switch {
+		// case key.Matches(msg, Keys.Up):
+		// 	term.Offset = max(0, term.Offset-1)
+		// case key.Matches(msg, Keys.Down):
+		// 	term.Offset = min(term.vt.UsedHeight()-term.Height, term.Offset+1)
+		// case key.Matches(msg, Keys.PageUp):
+		// 	term.Offset = max(0, term.Offset-term.Height)
+		// case key.Matches(msg, Keys.PageDown):
+		// 	term.Offset = min(term.vt.UsedHeight()-term.Height, term.Offset+term.Height)
+		// case key.Matches(msg, Keys.Home):
+		// 	term.Offset = 0
+		// case key.Matches(msg, Keys.End):
+		// 	term.Offset = term.vt.UsedHeight() - term.Height
+		}
+	}
+	return term, nil
+}
+
+// SetSearchHighlight sets the search highlight state using native midterm
+// search. Pass an empty query to clear highlights. currentRow is the vterm
+// row of the "current" match (-1 if none in this vterm).
+//
+// Always re-runs the search so that new content is picked up.
+func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	if query == "" {
+		if term.SearchQuery != "" {
+			term.vt.SearchClear()
+			term.needsRedraw = true
+		}
+		term.SearchQuery = ""
+		term.SearchCurrentRow = -1
+		return
+	}
+
+	// Always re-run search to pick up new content.
+	term.vt.Search(query)
+
+	// Mark the current match by row.
+	if currentRow >= 0 {
+		term.setCurrentMatchByRow(currentRow)
+	} else {
+		// Clear any previous current highlight.
+		term.vt.SearchSetCurrent(-1)
+	}
+
+	if term.SearchQuery != query || term.SearchCurrentRow != currentRow {
+		term.needsRedraw = true
+	}
+	term.SearchQuery = query
+	term.SearchCurrentRow = currentRow
+}
+
+// setCurrentMatchByRow finds the first search match on the given row and
+// marks it as "current" in midterm. Must be called with term.mu held.
+func (term *Vterm) setCurrentMatchByRow(row int) {
+	for i, m := range term.vt.SearchMatches {
+		if m.Row == row {
+			term.vt.SearchSetCurrent(i)
+			return
+		}
+	}
+}
+
+// ScrollToRow scrolls the viewport so that the given row is centered
+// (or as close as possible) within the visible area.
+func (term *Vterm) ScrollToRow(row int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	// Center the target row in the viewport.
+	term.Offset = max(0, row-term.Height/2)
+	term.clampOffsetLocked()
+	term.needsRedraw = true
+}
+
+func (term *Vterm) ScrollBy(delta int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.Offset += delta
+	term.clampOffsetLocked()
+	term.needsRedraw = true
+}
+
+func (term *Vterm) ScrollPage(deltaPages int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	page := max(term.Height-1, 1)
+	term.Offset += deltaPages * page
+	term.clampOffsetLocked()
+	term.needsRedraw = true
+}
+
+func (term *Vterm) ScrollToTop() {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.Offset = 0
+	term.needsRedraw = true
+}
+
+func (term *Vterm) ScrollToBottom() {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+	term.needsRedraw = true
+}
+
+func (term *Vterm) clampOffsetLocked() {
+	if term.Offset < 0 {
+		term.Offset = 0
+	}
+	maxOffset := max(0, term.vt.UsedHeight()-term.Height)
+	if term.Offset > maxOffset {
+		term.Offset = maxOffset
+	}
+}
+
+func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	if query == "" {
+		term.vt.SearchClear()
+		term.SearchQuery = ""
+		term.SearchCurrentRow = -1
+		term.needsRedraw = true
+		return 0, -1
+	}
+
+	count = term.vt.Search(query)
+	if currentIdx < 0 || currentIdx >= count {
+		row, _ = term.vt.SearchSetCurrent(-1)
+	} else {
+		row, _ = term.vt.SearchSetCurrent(currentIdx)
+	}
+	term.SearchQuery = query
+	term.SearchCurrentRow = row
+	term.needsRedraw = true
+	return count, row
+}
+
+func (term *Vterm) ScrollPercent() float64 {
+	return min(1, float64(term.Offset+term.Height)/float64(term.vt.UsedHeight()))
+}
+
+const reset = termenv.CSI + termenv.ResetSeq + "m"
+
+// View returns the output for the current region of the terminal, with ANSI
+// formatting or rendered Markdown if present.
+func (term *Vterm) View() string {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if term.needsRedraw {
+		term.redraw()
+		term.needsRedraw = false
+	}
+	return term.viewBuf.String()
+}
+
+var MarkdownStyle = styles.LightStyleConfig
+
+func init() {
+	if HasDarkBackground() {
+		MarkdownStyle = styles.DarkStyleConfig
+	}
+
+	// We don't need any extra margin.
+	MarkdownStyle.Document.Margin = nil
+
+	// No real point setting a custom foreground, it just looks weird.
+	MarkdownStyle.Document.Color = nil
+
+	// Render inline code without the default padding spaces on either side.
+	MarkdownStyle.Code.Prefix = ""
+	MarkdownStyle.Code.Suffix = ""
+}
+
+func (term *Vterm) redraw() {
+	term.viewBuf.Reset()
+
+	// First render any Markdown content
+	if term.markdownBuf.Len() > 0 {
+		renderer, _ := glamour.NewTermRenderer(
+			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
+			glamour.WithStyles(MarkdownStyle),
+			// Constrain rendering to the 16-color ANSI palette.
+			glamour.WithColorProfile(termenv.ANSI),
+			glamour.WithChromaFormatter("terminal16"),
+			glamour.WithPreservedNewLines(),
+			glamour.WithEmoji(),
+		)
+
+		rendered, err := renderer.Render(term.markdownBuf.String())
+		if err != nil {
+			fmt.Fprintf(term.viewBuf, "Error rendering Markdown: %s\n", err)
+		} else {
+			// Remove leading and trailing newlines
+			rendered = strings.TrimSpace(rendered)
+			// Add prefix to each line of rendered Markdown
+			lines := strings.Split(rendered, "\n")
+			for i, line := range lines {
+				if i > 0 {
+					fmt.Fprint(term.viewBuf, term.Prefix)
+				}
+				fmt.Fprintln(term.viewBuf, line)
+			}
+		}
+	}
+
+	// Then render regular terminal content
+	term.Render(term.viewBuf, term.Offset, term.Height)
+
+	// In agent / NO_COLOR mode (Ascii profile), escape codes are pure noise to a
+	// text consumer. midterm still emits SGR resets even with colour disabled, so
+	// strip them from the rendered view. ansi.Strip only removes escape
+	// sequences; the log text itself is left untouched.
+	if term.Profile == termenv.Ascii {
+		stripped := ansi.Strip(term.viewBuf.String())
+		term.viewBuf.Reset()
+		term.viewBuf.WriteString(stripped)
+	}
+}
+
+type Markdown struct {
+	Content    string
+	Background termenv.Color
+	Prefix     string
+	Width      int
+
+	viewBuf     strings.Builder
+	needsRedraw bool
+}
+
+func (m *Markdown) View() string {
+	if !m.needsRedraw && m.viewBuf.Len() > 0 {
+		return m.viewBuf.String()
+	}
+	m.viewBuf.Reset()
+	st := MarkdownStyle
+	// HACK: we want "0" or "255", but termenv.Color doesn't have a
+	// String() method, only Sequence(bool) which prints the ANSI
+	// formatting sequence.
+	if m.Background != nil {
+		switch x := m.Background.(type) {
+		case termenv.ANSIColor, termenv.ANSI256Color:
+			// annoyingly, there's no clean conversion from termenv.Color
+			// back to the value that lipgloss wants, because ANSI 0
+			// translates to "#000000" and we want "0"
+			bg := fmt.Sprintf("%d", x)
+			st.Document.BackgroundColor = &bg
+		default:
+			bg := fmt.Sprint(m.Background)
+			st.Document.BackgroundColor = &bg
+		}
+	}
+	glamourOpts := []glamour.TermRendererOption{
+		glamour.WithStyles(st),
+		// Constrain rendering to the 16-color ANSI palette.
+		glamour.WithColorProfile(termenv.ANSI),
+		glamour.WithChromaFormatter("terminal16"),
+		glamour.WithPreservedNewLines(),
+		glamour.WithEmoji(),
+	}
+	if m.Width != 0 {
+		// Subtract 2 for a margin on the right edge, matching the prefix
+		// margin on the left.
+		glamourOpts = append(glamourOpts,
+			glamour.WithWordWrap(m.Width-lipgloss.Width(m.Prefix)-2))
+	}
+	renderer, err := glamour.NewTermRenderer(glamourOpts...)
+	if err != nil {
+		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
+	}
+
+	rendered, err := renderer.Render(m.Content)
+	if err != nil {
+		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
+	} else if m.Prefix != "" {
+		// Remove leading and trailing newlines
+		rendered = strings.TrimSpace(rendered)
+		// Add prefix to each line of rendered Markdown
+		lines := strings.Split(rendered, "\n")
+		for i, line := range lines {
+			if i > 0 {
+				m.viewBuf.WriteString(m.Prefix)
+			}
+			m.viewBuf.WriteString(line)
+			m.viewBuf.WriteString("\n")
+		}
+	} else {
+		m.viewBuf.WriteString(rendered)
+	}
+	return m.viewBuf.String()
+}
+
+// Render writes the output for the given region of the terminal, with
+// ANSI formatting. Search highlights are rendered natively by midterm.
+func (term *Vterm) Render(w io.Writer, offset, height int) {
+	used := term.vt.UsedHeight()
+	if used == 0 {
+		return
+	}
+
+	vt := NewOutput(w, termenv.WithProfile(term.Profile))
+	w = vt
+
+	var lines int
+	for row := range term.vt.Content {
+		if row < offset {
+			continue
+		}
+		if row+1 > (offset + height) {
+			break
+		}
+
+		fmt.Fprint(w, vt.String(term.Prefix))
+		term.vt.RenderLineFgBg(w, row, nil, nil)
+		fmt.Fprintln(w)
+		lines++
+
+		if row > used {
+			break
+		}
+	}
+}
+
+// LastLine returns the last line of visible text, with ANSI formatting, but
+// without any trailing whitespace.
+func (term *Vterm) LastLine() string {
+	used := term.vt.UsedHeight()
+	if used == 0 {
+		return ""
+	}
+	var lastLine string
+	for row := used - 1; row >= 0; row-- {
+		buf := new(strings.Builder)
+		_ = term.vt.RenderLine(buf, row)
+		if strings.TrimSpace(buf.String()) == "" {
+			continue
+		}
+		lastLine = strings.TrimRightFunc(buf.String(), unicode.IsSpace)
+		break
+	}
+	return lastLine + reset
+}
+
+// Print prints the full log output without any formatting.
+func (term *Vterm) Print(w io.Writer) error {
+	used := term.vt.UsedHeight()
+
+	for row, l := range term.vt.Content {
+		_, err := fmt.Fprintln(w, strings.TrimRight(string(l), " "))
+		if err != nil {
+			return err
+		}
+
+		if row > used {
+			break
+		}
+	}
+
+	return nil
+}
+
+// PrintRaw prints the bytes written to the log terminal without applying any
+// terminal wrapping or markdown rendering.
+func (term *Vterm) PrintRaw(w io.Writer) error {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if term.Profile == termenv.Ascii {
+		// Agent / NO_COLOR mode: drop the user stream's own escape codes so the
+		// report is clean text. Only escape sequences are removed.
+		_, err := io.WriteString(w, ansi.Strip(term.rawBuf.String()))
+		return err
+	}
+	_, err := w.Write(term.rawBuf.Bytes())
+	return err
+}

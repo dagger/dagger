@@ -1,0 +1,22 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+╰╴✔ loading type definitions X.Xs
+
+✔ parsing command line arguments X.Xs
+
+$ viztest: Viztest! X.Xs CACHED
+✘ .callBubblingDep: Void X.Xs ERROR
+├╴$ dep: Dep! X.Xs CACHED
+╰╴✘ .bubblingFunction: Void X.Xs ERROR
+  ├╴$ nestedDep: NestedDep! X.Xs CACHED
+  ╰╴✘ .failingFunction: Void X.Xs ERROR
+    ! im a failing nested function
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -1,0 +1,471 @@
+package dagql
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"reflect"
+
+	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql/call"
+)
+
+// Derefable is a type that wraps another type.
+//
+// In practice this is only used for Optional and Nullable. It should be used
+// sparingly, since wrapping interfaces explodes very quickly.
+type Derefable interface {
+	Deref() (Typed, bool)
+}
+
+// DerefableResult is a Derefable that can return a result underlied by the specific type the Derefable wraps.
+type DerefableResult interface {
+	Derefable
+	DerefToResult(call *ResultCall) (AnyResult, bool)
+}
+
+// Optional wraps a type and allows it to be null.
+//
+// This is used for optional arguments and return values.
+type Optional[I Input] struct {
+	Value I
+	// true if the value is set
+	Valid bool
+}
+
+var _ Input = Optional[Input]{}
+
+func MapOpt[I Input, R Typed](opt Optional[I], fn func(I) (R, error)) (Nullable[R], error) {
+	if !opt.Valid {
+		return Nullable[R]{}, nil
+	}
+	r, err := fn(opt.Value)
+	if err != nil {
+		return Nullable[R]{}, err
+	}
+	return Nullable[R]{
+		Value: r,
+		Valid: true,
+	}, nil
+}
+
+func Opt[I Input](v I) Optional[I] {
+	return Optional[I]{
+		Value: v,
+		Valid: true,
+	}
+}
+
+// GetOr returns the value of the Optional, or the given value if the Optional
+// is empty.
+func (n Optional[I]) GetOr(v I) I {
+	if !n.Valid {
+		return v
+	}
+	return n.Value
+}
+
+func (n Optional[I]) AsPtr() *I {
+	if !n.Valid {
+		return nil
+	}
+	return &n.Value
+}
+
+// NoOpt returns an empty Optional value.
+func NoOpt[I Input]() Optional[I] {
+	return Optional[I]{}
+}
+
+func (o Optional[I]) ToNullable() Nullable[I] {
+	return Nullable[I](o)
+}
+
+func (o Optional[I]) Decoder() InputDecoder {
+	return o
+}
+
+func (o Optional[I]) resultCallOptionalValue() (Input, bool) {
+	if !o.Valid {
+		return nil, false
+	}
+	return o.Value, true
+}
+
+func (o Optional[I]) ToLiteral() call.Literal {
+	if !o.Valid {
+		return call.NewLiteralNull()
+	}
+	return o.Value.ToLiteral()
+}
+
+func (o Optional[I]) MarshalJSON() ([]byte, error) {
+	if !o.Valid {
+		return json.Marshal(nil)
+	}
+	return json.Marshal(o.Value)
+}
+
+var _ Typed = Optional[Input]{}
+
+func (o Optional[I]) Type() *ast.Type {
+	nullable := *o.Value.Type()
+	nullable.NonNull = false
+	return &nullable
+}
+
+var _ Derefable = Optional[Input]{}
+
+func (o Optional[I]) DecodeInput(val any) (Input, error) {
+	if val == nil {
+		return Optional[I]{}, nil
+	}
+	var zero I
+	val, err := zero.Decoder().DecodeInput(val)
+	if err != nil {
+		return nil, err
+	}
+	return Optional[I]{
+		Value: val.(I), // TODO would be nice to not have to cast
+		Valid: true,
+	}, nil
+}
+
+func (o Optional[I]) Deref() (Typed, bool) {
+	return o.Value, o.Valid
+}
+
+func (o *Optional[I]) UnmarshalJSON(p []byte) error {
+	if bytes.Equal(bytes.TrimSpace(p), []byte("null")) {
+		var zero I
+		o.Value = zero
+		o.Valid = false
+		return nil
+	}
+	if err := json.Unmarshal(p, &o.Value); err != nil {
+		return err
+	}
+	o.Valid = true
+	return nil
+}
+
+var _ Setter = Optional[Input]{}
+
+func (o Optional[I]) SetField(val reflect.Value) error {
+	switch val.Kind() {
+	case reflect.Ptr:
+		if o.Valid {
+			ptr := reflect.New(val.Type().Elem())
+			if err := assign(ptr.Elem(), o.Value); err != nil {
+				return fmt.Errorf("optional pointer: %w", err)
+			}
+			val.Set(ptr)
+		}
+	default:
+		if o.Valid {
+			if err := assign(val, o.Value); err != nil {
+				return fmt.Errorf("optional: %w", err)
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+type DynamicOptional struct {
+	Elem  Input
+	Value Input
+	Valid bool
+}
+
+var _ Input = DynamicOptional{}
+
+func (o DynamicOptional) Type() *ast.Type {
+	cp := *o.Elem.Type()
+	cp.NonNull = false
+	return &cp
+}
+
+func (o DynamicOptional) Decoder() InputDecoder {
+	return o
+}
+
+func (o DynamicOptional) resultCallOptionalValue() (Input, bool) {
+	if !o.Valid {
+		return nil, false
+	}
+	return o.Value, true
+}
+
+func (o DynamicOptional) ToLiteral() call.Literal {
+	if !o.Valid {
+		return call.NewLiteralNull()
+	}
+	return o.Value.ToLiteral()
+}
+
+var _ InputDecoder = DynamicOptional{}
+
+func (o DynamicOptional) DecodeInput(val any) (Input, error) {
+	if val == nil {
+		return DynamicOptional{
+			Elem:  o.Elem,
+			Valid: false,
+		}, nil
+	}
+	input, err := o.Elem.Decoder().DecodeInput(val)
+	if err != nil {
+		return nil, err
+	}
+	if input == nil {
+		// The element decoder coerced the value to "nothing" (e.g. an empty
+		// string decodes to (nil, nil) for JSON). Treat that as an absent
+		// optional rather than a valid-but-nil value, which would otherwise
+		// nil-panic in assign (reflect.TypeOf(nil).AssignableTo).
+		return DynamicOptional{
+			Elem:  o.Elem,
+			Valid: false,
+		}, nil
+	}
+	return DynamicOptional{
+		Elem:  o.Elem,
+		Value: input,
+		Valid: true,
+	}, nil
+}
+
+var _ Setter = DynamicOptional{}
+
+func (o DynamicOptional) SetField(val reflect.Value) error {
+	switch val.Kind() {
+	case reflect.Ptr:
+		if o.Valid {
+			ptr := reflect.New(val.Type().Elem())
+			if err := assign(ptr.Elem(), o.Value); err != nil {
+				return fmt.Errorf("dynamic optional pointer: %w", err)
+			}
+			val.Set(ptr)
+		}
+	default:
+		if o.Valid {
+			if err := assign(val, o.Value); err != nil {
+				return fmt.Errorf("dynamic optional: %w", err)
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+var _ Derefable = DynamicOptional{}
+
+func (o DynamicOptional) Deref() (Typed, bool) {
+	return o.Value, o.Valid
+}
+
+func (o DynamicOptional) Unwrap() Typed {
+	return o.Value
+}
+
+func (o DynamicOptional) MarshalJSON() ([]byte, error) {
+	if !o.Valid {
+		return json.Marshal(nil)
+	}
+	optional, err := json.Marshal(o.Value)
+	if err != nil {
+		return nil, err
+	}
+	return optional, nil
+}
+
+func (o *DynamicOptional) UnmarshalJSON(p []byte) error {
+	if bytes.Equal(bytes.TrimSpace(p), []byte("null")) {
+		o.Value = nil
+		o.Valid = false
+		return nil
+	}
+	if o.Elem == nil {
+		return fmt.Errorf("dynamic optional: missing element template")
+	}
+	dst := reflect.New(reflect.TypeOf(o.Elem))
+	if err := json.Unmarshal(p, dst.Interface()); err != nil {
+		return err
+	}
+	input, ok := dst.Elem().Interface().(Input)
+	if !ok {
+		return fmt.Errorf("dynamic optional: decoded value %T is not an input", dst.Elem().Interface())
+	}
+	o.Value = input
+	o.Valid = true
+	return nil
+}
+
+// Nullable wraps a type and allows it to be null.
+//
+// This is used for optional arguments and return values.
+type Nullable[T Typed] struct {
+	Value T
+	Valid bool
+}
+
+// nullableDestination reports whether field is an addressable Nullable[T].
+//
+// Setter is source-side and only ever sees the bare selected value, so a
+// Nullable[T] destination has to be recognized here (dagger/dagger#13992).
+func nullableDestination(field reflect.Value) (nullableSetter, bool) {
+	if !field.CanAddr() {
+		return nil, false
+	}
+	dest, ok := field.Addr().Interface().(nullableSetter)
+	return dest, ok
+}
+
+type nullableSetter interface {
+	setFromValue(any) error
+}
+
+func (n *Nullable[T]) setFromValue(val any) error {
+	// A value carrying its own nullness decides it; anything else is present by
+	// virtue of having been returned at all.
+	if deref, ok := val.(Derefable); ok {
+		inner, valid := deref.Deref()
+		if !valid {
+			*n = Nullable[T]{}
+			return nil
+		}
+		val = inner
+	}
+	var elem T
+	if err := assign(reflect.ValueOf(&elem).Elem(), val); err != nil {
+		return err
+	}
+	n.Value = elem
+	n.Valid = true
+	return nil
+}
+
+func Null[T Typed]() Nullable[T] {
+	return Nullable[T]{}
+}
+
+func NonNull[T Typed](val T) Nullable[T] {
+	return Nullable[T]{
+		Value: val,
+		Valid: true,
+	}
+}
+
+var _ Typed = Nullable[Typed]{}
+
+func (n Nullable[T]) Type() *ast.Type {
+	nullable := *n.Value.Type()
+	nullable.NonNull = false
+	return &nullable
+}
+
+var _ DerefableResult = Nullable[Typed]{}
+
+func (n Nullable[T]) Deref() (Typed, bool) {
+	return n.Value, n.Valid
+}
+
+func (n Nullable[T]) DerefToResult(
+	call *ResultCall,
+) (AnyResult, bool) {
+	if !n.Valid {
+		return nil, false
+	}
+	if anyRes, ok := any(n.Value).(AnyResult); ok {
+		// If the value is already an AnyResult, we can return it directly.
+		return anyRes, true
+	}
+
+	res := newDetachedResult(call, n.Value)
+	return res, true
+}
+
+func (n Nullable[T]) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return json.Marshal(nil)
+	}
+	return json.Marshal(n.Value)
+}
+
+func (n *Nullable[T]) UnmarshalJSON(p []byte) error {
+	if bytes.Equal(bytes.TrimSpace(p), []byte("null")) {
+		var zero T
+		n.Value = zero
+		n.Valid = false
+		return nil
+	}
+	if err := json.Unmarshal(p, &n.Value); err != nil {
+		return err
+	}
+	n.Valid = true
+	return nil
+}
+
+type DynamicNullable struct {
+	Elem  Typed
+	Value Typed
+	Valid bool
+}
+
+var _ Typed = DynamicNullable{}
+
+func (n DynamicNullable) Type() *ast.Type {
+	cp := *n.Elem.Type()
+	cp.NonNull = false
+	return &cp
+}
+
+var _ DerefableResult = DynamicNullable{}
+
+func (n DynamicNullable) Deref() (Typed, bool) {
+	return n.Value, n.Valid
+}
+
+func (n DynamicNullable) DerefToResult(
+	call *ResultCall,
+) (AnyResult, bool) {
+	if !n.Valid {
+		return nil, false
+	}
+	if anyRes, ok := n.Value.(AnyResult); ok {
+		// If the value is already an AnyResult, we can return it directly.
+		return anyRes, true
+	}
+
+	res := newDetachedResult(call, n.Value)
+	return res, true
+}
+
+func (n DynamicNullable) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return json.Marshal(nil)
+	}
+	return json.Marshal(n.Value)
+}
+
+func (n *DynamicNullable) UnmarshalJSON(p []byte) error {
+	if bytes.Equal(bytes.TrimSpace(p), []byte("null")) {
+		n.Value = nil
+		n.Valid = false
+		return nil
+	}
+	if n.Elem == nil {
+		return fmt.Errorf("dynamic nullable: missing element template")
+	}
+	dst := reflect.New(reflect.TypeOf(n.Elem))
+	if err := json.Unmarshal(p, dst.Interface()); err != nil {
+		return err
+	}
+	typed, ok := dst.Elem().Interface().(Typed)
+	if !ok {
+		return fmt.Errorf("dynamic nullable: decoded value %T is not typed", dst.Elem().Interface())
+	}
+	n.Value = typed
+	n.Valid = true
+	return nil
+}

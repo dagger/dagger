@@ -1,0 +1,1324 @@
+// ════════════════════════════════════════════════════════════════════
+//  Dagger docs — theme
+//
+//  Ported from the dagger.io design system (dagger.io/src/styles/global.css).
+//  Tokens are named by role, not appearance, so they flip with the theme.
+//  The dark block near the top is the ONLY place the palette is restated.
+//
+//  Dark mode follows the system preference and has no toggle, matching the
+//  website. That is configured in docusaurus.config.ts:
+//    colorMode: { disableSwitch: true, respectPrefersColorScheme: true }
+//  Docusaurus still writes html[data-theme], so we key off that attribute
+//  rather than a @media query — its inline script runs before paint, which
+//  keeps the no-flash guarantee the website gets from having no toggle.
+// ════════════════════════════════════════════════════════════════════
+
+$mobile-width: 480px;
+$tablet-width: 1180px;
+$desktop-width: 1200px;
+$desktop-xl-width: 1400px;
+
+@mixin mobile {
+  @media (max-width: #{$mobile-width}) {
+    @content;
+  }
+}
+
+@mixin tablet {
+  @media (max-width: #{$tablet-width}) {
+    @content;
+  }
+}
+
+@mixin desktop {
+  @media (min-width: #{$desktop-width}) {
+    @content;
+  }
+}
+
+@mixin desktopWide {
+  @media (min-width: #{$desktop-xl-width}) {
+    @content;
+  }
+}
+
+// ──────────────── Fonts ────────────────
+// Self-hosted, copied from dagger.io/public/fonts. General Sans for headings
+// and UI, Inter for body. Source Code Pro is pulled from Google Fonts in
+// docusaurus.config.ts, same as the website.
+
+@font-face {
+  font-family: "General Sans";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/general-sans-regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "General Sans";
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/general-sans-medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "General Sans";
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/general-sans-semibold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/inter-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/inter-400-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/inter-600.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+// ──────────────── Design tokens ────────────────
+
+:root {
+  --color-bg: #f8f4ef;
+  --color-surface: #ffffff;
+  --color-fg: #131226;
+  --color-border: #e7e6ef;
+
+  // Secondary text, in descending prominence.
+  --color-muted: rgba(19, 18, 38, 0.8);
+  --color-dim: rgba(19, 18, 38, 0.58);
+  --color-faint: rgba(19, 18, 38, 0.5);
+
+  // Low-opacity fills: code chips, dashed rules, table lines.
+  --color-wash: rgba(19, 18, 38, 0.06);
+  --color-hairline: rgba(19, 18, 38, 0.15);
+
+  --color-orange: #ef7b1a;
+  --color-teal: #40b9bc;
+  --color-yellow: #fcc009;
+  --color-blue: #3d66ff;
+
+  // The ambient wash behind every page. Teal top-left, orange top-right,
+  // same as the website's homepage and changelog.
+  --ambient-teal: rgba(64, 185, 188, 0.12);
+  --ambient-orange: rgba(239, 123, 26, 0.06);
+
+  --font-heading: "General Sans", system-ui, -apple-system, Segoe UI, Roboto,
+    sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-mono: "Source Code Pro", "IBM Plex Mono", ui-monospace, SFMono-Regular,
+    monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  // The website is 1120px with no sidebar. Docs carry a nav rail and a table
+  // of contents, so the shell is wider while the prose column below stays at
+  // the website's reading measure.
+  --container-max: 1440px;
+  --container-pad: 1rem;
+  --prose-measure: 74ch;
+
+  --header-height: 56px;
+
+  // ── Type scale, from the website ──
+  --text-page-title: clamp(30px, 3.4vw, 38px);
+  --text-section: 24px;
+  --text-lead: 17px;
+  --text-body: 16px;
+  --text-small: 13px;
+  --text-label: 12.5px;
+}
+
+// ──────────────── Dark theme ────────────────
+// System preference only, surfaced by Docusaurus as html[data-theme="dark"].
+
+html[data-theme="dark"] {
+  --color-bg: #0d0c1b;
+  --color-surface: #16152b;
+  --color-fg: #ded9ec;
+  --color-border: rgba(222, 217, 236, 0.14);
+
+  --color-muted: rgba(222, 217, 236, 0.82);
+  --color-dim: rgba(222, 217, 236, 0.58);
+  --color-faint: rgba(222, 217, 236, 0.46);
+
+  --color-wash: rgba(222, 217, 236, 0.08);
+  --color-hairline: rgba(222, 217, 236, 0.18);
+
+  // Nudged brighter to hold contrast against the dark ground.
+  --color-orange: #f79441;
+
+  --ambient-teal: rgba(64, 185, 188, 0.1);
+  --ambient-orange: rgba(247, 148, 65, 0.06);
+}
+
+// ──────────────── Syntax palette ────────────────
+// Consumed by src/prism/theme.ts, which emits var(--syntax-*) so one theme
+// object covers both modes. Drawn from the brand accents — orange, teal,
+// yellow, blue — rather than a generic highlighter palette, and kept low in
+// saturation so a code block reads as part of the page.
+
+:root {
+  --syntax-text: var(--color-fg);
+  --syntax-muted: var(--color-faint);
+  --syntax-punctuation: var(--color-dim);
+  --syntax-keyword: #a0522d;
+  --syntax-operator: #a0522d;
+  --syntax-string: #2f7d6f;
+  --syntax-function: #2f4fd0;
+  --syntax-builtin: #1f7f86;
+  --syntax-type: #b5620f;
+  --syntax-property: #2f4fd0;
+  --syntax-constant: #8a6904;
+  --syntax-directive: #9c2f5c;
+  --syntax-inserted: #2b7a4b;
+  --syntax-deleted: #be1d43;
+}
+
+html[data-theme="dark"] {
+  --syntax-text: var(--color-fg);
+  --syntax-muted: var(--color-faint);
+  --syntax-punctuation: var(--color-dim);
+  --syntax-keyword: #f79441;
+  --syntax-operator: #f79441;
+  --syntax-string: #6fd3b8;
+  --syntax-function: #8fa8ff;
+  --syntax-builtin: #5fd0d4;
+  --syntax-type: #ffc27a;
+  --syntax-property: #8fa8ff;
+  --syntax-constant: #fcc009;
+  --syntax-directive: #f291b7;
+  --syntax-inserted: #6ede9a;
+  --syntax-deleted: #ff7a97;
+}
+
+// ──────────────── Legacy palette compatibility ────────────────
+// A handful of components predating this theme (the GraphQL API reference
+// cards, the search palette, a few swizzled bits) still reference the old
+// Chakra-style scale. Rather than leave 300 lines of dead palette behind,
+// alias just the names still in use onto the tokens above, so those
+// components inherit the new theme instead of fighting it.
+
+:root,
+html[data-theme="dark"] {
+  --color-transparent: transparent;
+  --color-white: var(--color-surface);
+  --color-blackHole: #0d0c1b;
+  --color-primary: var(--color-orange);
+
+  --color-gray-50: var(--color-wash);
+  --color-gray-100: var(--color-wash);
+  --color-gray-300: var(--color-border);
+  --color-gray-600: var(--color-dim);
+  --color-gray-800: var(--color-wash);
+  --color-gray-900: var(--color-surface);
+
+  --color-blackAlpha-200: var(--color-wash);
+  --color-blackAlpha-300: var(--color-hairline);
+  --color-blackAlpha-500: var(--color-hairline);
+
+  --color-purple-200: var(--color-teal);
+  --color-purple-300: var(--color-teal);
+  --color-purple-800: var(--color-orange);
+  --color-raisinBlack-700: var(--color-fg);
+
+  --color-blue-200: rgba(61, 102, 255, 0.25);
+  --color-blue-400: var(--color-blue);
+  --color-blue-500: var(--color-blue);
+  --color-blue-600: var(--color-blue);
+
+  --color-red-50: rgba(190, 29, 67, 0.08);
+  --color-red-200: rgba(190, 29, 67, 0.3);
+  --color-red-300: #be1d43;
+  --color-red-500: #be1d43;
+  --color-red-700: #be1d43;
+  --color-redAlpha-10: rgba(190, 29, 67, 0.1);
+
+  --color-yellow-50: rgba(252, 192, 9, 0.08);
+  --color-yellow-200: rgba(252, 192, 9, 0.3);
+  --color-yellow-300: var(--color-yellow);
+  --color-yellow-400: var(--color-yellow);
+  --color-yellow-500: var(--color-yellow);
+  --color-yellow-600: #d9a406;
+  --color-yellow-800: #8a6904;
+  --color-yellowAlpha-10: rgba(252, 192, 9, 0.1);
+
+  --scrollbar-thumb: var(--color-hairline);
+  --scrollbar-thumb-hover: var(--color-dim);
+  --scrollbar-thumb-dark: var(--color-hairline);
+  --scrollbar-thumb-hover-dark: var(--color-dim);
+}
+
+// ──────────────── Infima bindings ────────────────
+// Docusaurus's stylesheet reads --ifm-*. Point those at the tokens above so
+// the built-in components inherit the theme without per-component overrides.
+
+:root,
+html[data-theme="dark"] {
+  --ifm-font-family-base: var(--font-body);
+  --ifm-heading-font-family: var(--font-heading);
+  --ifm-font-family-monospace: var(--font-mono);
+  --ifm-font-size-base: var(--text-body);
+  --ifm-font-weight-base: 400;
+  --ifm-line-height-base: 1.65;
+
+  --ifm-background-color: var(--color-bg);
+  --ifm-background-surface-color: var(--color-surface);
+  --ifm-font-color-base: var(--color-fg);
+  --ifm-heading-color: var(--color-fg);
+
+  --ifm-color-primary: var(--color-orange);
+  --ifm-color-primary-dark: var(--color-orange);
+  --ifm-color-primary-darker: var(--color-orange);
+  --ifm-color-primary-darkest: var(--color-orange);
+  --ifm-color-primary-light: var(--color-orange);
+  --ifm-color-primary-lighter: var(--color-orange);
+  --ifm-color-primary-lightest: var(--color-orange);
+
+  --ifm-color-emphasis-0: var(--color-bg);
+  --ifm-color-emphasis-100: var(--color-wash);
+  --ifm-color-emphasis-200: var(--color-wash);
+  --ifm-color-emphasis-300: var(--color-border);
+  --ifm-color-emphasis-400: var(--color-hairline);
+  --ifm-color-emphasis-500: var(--color-faint);
+  --ifm-color-emphasis-600: var(--color-dim);
+  --ifm-color-emphasis-700: var(--color-dim);
+  --ifm-color-emphasis-800: var(--color-muted);
+  --ifm-color-emphasis-900: var(--color-fg);
+  --ifm-color-emphasis-1000: var(--color-fg);
+
+  --ifm-link-color: var(--color-orange);
+  --ifm-link-hover-color: var(--color-orange);
+  --ifm-link-decoration: none;
+
+  --ifm-global-radius: var(--radius-sm);
+  --ifm-global-shadow-lw: none;
+  --ifm-global-shadow-md: none;
+  --ifm-global-shadow-tl: none;
+
+  --ifm-navbar-height: var(--header-height);
+  --ifm-navbar-background-color: var(--color-bg);
+  --ifm-navbar-shadow: none;
+  --ifm-navbar-padding-vertical: 0;
+  --ifm-navbar-link-color: var(--color-dim);
+  --ifm-navbar-link-hover-color: var(--color-orange);
+
+  --ifm-menu-color: var(--color-muted);
+  --ifm-menu-color-active: var(--color-fg);
+  --ifm-menu-color-background-active: var(--color-wash);
+  --ifm-menu-color-background-hover: var(--color-wash);
+
+  --ifm-toc-border-color: var(--color-border);
+  --ifm-toc-link-color: var(--color-dim);
+
+  --ifm-hr-background-color: var(--color-border);
+  --ifm-hr-border-color: var(--color-border);
+
+  --ifm-table-border-color: var(--color-border);
+  --ifm-table-head-background: var(--color-wash);
+  --ifm-table-stripe-background: transparent;
+
+  --ifm-code-font-size: 0.86em;
+  --ifm-code-background: var(--color-wash);
+  --ifm-code-border-radius: var(--radius-xs);
+  --ifm-code-padding-horizontal: 0.34rem;
+  --ifm-code-padding-vertical: 0.08rem;
+
+  --ifm-pre-background: var(--color-surface);
+  --ifm-pre-color: var(--color-fg);
+  --ifm-pre-border-radius: var(--radius-md);
+
+  --ifm-blockquote-color: var(--color-muted);
+  --ifm-blockquote-border-color: var(--color-border);
+
+  --ifm-footer-background-color: transparent;
+  --ifm-footer-color: var(--color-dim);
+  --ifm-footer-link-color: var(--color-dim);
+  --ifm-footer-link-hover-color: var(--color-orange);
+  --ifm-footer-title-color: var(--color-fg);
+
+  --ifm-breadcrumb-color-active: var(--color-orange);
+  --ifm-breadcrumb-item-background-active: var(--color-wash);
+  --ifm-breadcrumb-separator-size-multiplier: 1;
+
+  --ifm-alert-border-radius: var(--radius-md);
+  --ifm-alert-border-left-width: 3px;
+  --ifm-alert-shadow: none;
+
+  --ifm-tabs-padding-vertical: 0.5rem;
+  --ifm-scrollbar-track-background-color: transparent;
+  --ifm-scrollbar-thumb-background-color: var(--color-hairline);
+  --ifm-scrollbar-thumb-hover-background-color: var(--color-dim);
+}
+
+// ──────────────── Base ────────────────
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// The website's ambient wash. Fixed, behind everything, unclickable.
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+      70rem 40rem at 7% -8%,
+      var(--ambient-teal),
+      transparent 58%
+    ),
+    radial-gradient(60rem 34rem at 100% 0%, var(--ambient-orange), transparent 52%);
+}
+
+#__docusaurus {
+  position: relative;
+  z-index: 1;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  color: var(--color-fg);
+  letter-spacing: -0.015em;
+}
+
+// ──────────────── Utilities carried over from the website ────────────────
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-dim);
+}
+
+// The site-wide call to action: a bracketed mono link, not a filled pill.
+.bracket-link {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-orange);
+  text-decoration: none;
+
+  &:hover {
+    background: var(--color-orange);
+    color: var(--color-bg);
+    text-decoration: none;
+  }
+}
+
+// ──────────────── Announcement bar ────────────────
+
+.theme-announcement-bar,
+div[class*="announcementBar_"] {
+  --site-announcement-bar-stripe-color-1: var(--color-orange);
+  --site-announcement-bar-stripe-color-2: var(--color-orange);
+  background-color: var(--color-fg);
+  color: var(--color-bg);
+  border-bottom: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+
+  button {
+    color: inherit;
+    opacity: 0.7;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
+}
+
+// ──────────────── Navbar ────────────────
+// A compact, single-row take on the website's masthead: the DAGGER wordmark
+// in General Sans, everything else mono and bracketed, hairline underneath.
+
+// Opaque, not translucent. The navbar is sticky and the sidebar's search box
+// sits directly beneath it, so any transparency lets that box ghost through
+// as the page scrolls. The website's masthead is opaque for the same reason
+// it can afford to be — it never overlaps content.
+.navbar {
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: none;
+  padding-inline: 0;
+
+  .navbar__inner {
+    max-width: var(--container-max);
+    margin-inline: auto;
+    padding-inline: var(--container-pad);
+  }
+}
+
+// The wordmark. `title` in the config renders here; the logo image is
+// dropped in favour of type, matching the website's masthead.
+.navbar__brand {
+  margin-right: 1.25rem;
+}
+
+.navbar__title {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-fg);
+}
+
+.navbar__logo {
+  display: none;
+}
+
+// The "DOCS" tag sitting next to the wordmark, so the reader knows which
+// property they are on — the masthead's tagline slot, compressed.
+.navbar__brand::after {
+  content: "DOCS";
+  margin-left: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--color-dim);
+}
+
+// Mono bracketed nav items, as on the website. Dropdown toggles are excluded:
+// Infima draws their caret with ::after, so bracketing them would either eat
+// the caret or stack a stray "]" above it.
+.navbar__items .navbar__link {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+  padding: 0.35rem 0.5rem;
+
+  &:hover,
+  &.navbar__link--active {
+    color: var(--color-orange);
+  }
+}
+
+.navbar__items > .navbar__item:not(.dropdown) > .navbar__link::before,
+.navbar__items > .navbar__link:not(.dropdown .navbar__link)::before {
+  content: "[ ";
+}
+
+.navbar__items > .navbar__item:not(.dropdown) > .navbar__link::after,
+.navbar__items > .navbar__link:not(.dropdown .navbar__link)::after {
+  content: " ]";
+}
+
+// The auth pair, as on the website's masthead: one set of brackets around
+// two independent links, so it reads as a single item.
+.navbar__auth {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-dim);
+  white-space: nowrap;
+  padding: 0.35rem 0.5rem;
+
+  a {
+    color: var(--color-dim);
+
+    &:hover {
+      color: var(--color-orange);
+    }
+  }
+
+  @include mobile {
+    display: none;
+  }
+}
+
+.navbar__toggle {
+  color: var(--color-fg);
+}
+
+// Version dropdown, restyled to mono.
+.navbar .dropdown > .navbar__link {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+}
+
+.dropdown__menu {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+
+.dropdown__link {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--color-muted);
+  border-radius: var(--radius-xs);
+
+  &:hover {
+    background: var(--color-wash);
+    color: var(--color-fg);
+  }
+
+  &--active {
+    background: transparent;
+    color: var(--color-orange);
+  }
+}
+
+.docs-version-select {
+  height: 32px;
+  max-width: 96px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-dim);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 0 0.35rem;
+}
+
+.navbar-version-select-mobile {
+  display: none !important;
+}
+
+@media (max-width: 996px) {
+  .navbar-version-select-mobile {
+    display: flex !important;
+    align-items: center !important;
+    margin-right: 56px !important;
+  }
+
+  .navbar-version-dropdown {
+    display: none !important;
+  }
+}
+
+// Two search bars would otherwise show at once: this one and the sidebar's,
+// which sits at the top of the nav rail and is the better placement. The
+// sidebar version is desktop-only though (DocSidebar/Desktop), so this stays
+// as the only way to search on narrow screens. 997px is where Docusaurus
+// brings the sidebar in, so the two swap over with no gap and no overlap.
+.header-searchbar {
+  padding-block: 0 !important;
+}
+
+@media (min-width: 997px) {
+  .header-searchbar {
+    display: none !important;
+  }
+}
+
+.header-github-link {
+  width: 28px;
+  height: 28px;
+  margin-left: 0.25rem;
+  background-color: var(--color-dim);
+  mask-image: url("/img/github-icon.svg");
+  mask-size: 100%;
+  mask-repeat: no-repeat;
+  mask-position: center;
+
+  &:hover {
+    background-color: var(--color-orange);
+  }
+
+  @include tablet {
+    display: none;
+  }
+}
+
+// ──────────────── Sidebar ────────────────
+
+.theme-doc-sidebar-container,
+aside[class*="docSidebarContainer"] {
+  border: none !important;
+  background: transparent;
+
+  @include desktop {
+    position: sticky !important;
+    top: 0 !important;
+    height: 100vh !important;
+  }
+}
+
+.menu {
+  border: none !important;
+  padding: 1.25rem 0.75rem 3rem !important;
+  font-size: var(--text-small);
+
+  @include desktop {
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-hairline) transparent;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--color-hairline);
+      border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: var(--color-dim);
+    }
+  }
+}
+
+.menu__list {
+  font-size: var(--text-small);
+}
+
+.menu__link {
+  font-size: var(--text-small);
+  font-weight: 400;
+  color: var(--color-dim);
+  border-radius: var(--radius-xs);
+  padding: 0.3rem 0.5rem;
+  line-height: 1.5;
+
+  &:hover {
+    background: var(--color-wash);
+    color: var(--color-fg);
+  }
+}
+
+// Top-level sections read as the website's mono section labels. A section with
+// child pages renders as a collapsible category. A section whose only page is
+// its own index renders as a plain link, so both need the same treatment.
+.theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible > .menu__link,
+.theme-doc-sidebar-item-link-level-1 > .menu__link {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-dim);
+
+  &:hover {
+    background: transparent;
+    color: var(--color-fg);
+  }
+}
+
+.theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible {
+  margin-bottom: 0.15rem;
+}
+
+.theme-doc-sidebar-item-category-level-1,
+.theme-doc-sidebar-item-link-level-1 {
+  margin-bottom: 1.4rem;
+}
+
+.menu__list-item-collapsible {
+  &:hover {
+    background: transparent;
+  }
+}
+
+.menu__caret::before {
+  opacity: 0.5;
+}
+
+// The active page: an orange rule on the left rather than a filled block,
+// echoing the website's use of orange as the single accent.
+.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
+  background: var(--color-wash);
+  color: var(--color-fg);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--color-orange);
+}
+
+// ──────────────── Content column ────────────────
+// Prose sits directly on the page ground, as on the website. No floating
+// sheet: the ambient wash and the hairline rules do the separating.
+
+main[class*="docMainContainer"] {
+  padding-left: 1.5rem;
+
+  @include tablet {
+    padding-left: 0;
+  }
+}
+
+.theme-doc-markdown {
+  max-width: var(--prose-measure);
+}
+
+.markdown {
+  line-height: 1.65;
+
+  h1 {
+    font-size: var(--text-page-title);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin-bottom: 1.5rem;
+  }
+
+  h2 {
+    font-size: var(--text-section);
+    font-weight: 600;
+    line-height: 1.25;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 2rem;
+  }
+
+  h4 {
+    font-size: var(--text-lead);
+    font-weight: 600;
+  }
+
+  a {
+    color: var(--color-orange);
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-orange) 35%, transparent);
+
+    &:hover {
+      border-bottom-color: var(--color-orange);
+    }
+  }
+
+  // Images keep their aspect ratio and never stretch.
+  img {
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    margin: 1.5rem 0;
+    border-radius: var(--radius-md);
+  }
+
+  // A caption is an <em> immediately after an image.
+  img + em {
+    display: block;
+    text-align: center;
+    font-size: var(--text-small);
+    color: var(--color-faint);
+    margin-top: -0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  table {
+    display: table;
+    width: 100%;
+    margin-bottom: 1.5rem;
+    border-collapse: collapse;
+    font-size: var(--text-small);
+  }
+
+  table thead {
+    background: var(--color-wash);
+  }
+
+  table th,
+  table td {
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--color-border);
+  }
+
+  table th {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: var(--text-label);
+    color: var(--color-dim);
+  }
+
+  blockquote {
+    border-left: 2px solid var(--color-orange);
+    background: transparent;
+    padding-left: 1rem;
+    color: var(--color-muted);
+  }
+}
+
+// Inline code: a bordered chip, as on the website.
+.markdown code:not(pre code) {
+  border: 1px solid var(--color-border);
+  background: var(--color-wash);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+}
+
+// Anchor links stay orange but drop the underline, which would collide with
+// the heading's own baseline.
+.markdown .hash-link {
+  border-bottom: none;
+  color: var(--color-faint);
+
+  &:hover {
+    color: var(--color-orange);
+  }
+}
+
+// ──────────────── Code blocks ────────────────
+
+div[class*="codeBlockContainer"] {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  margin-bottom: 1.25rem;
+}
+
+div[class*="codeBlockTitle"] {
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+  color: var(--color-dim);
+}
+
+pre[class*="codeBlock"],
+.prism-code {
+  background: transparent !important;
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+button[class*="copyButton"] {
+  background: var(--color-wash);
+  border: 1px solid var(--color-border);
+  color: var(--color-dim);
+
+  &:hover {
+    color: var(--color-orange);
+  }
+}
+
+// The Dagger Shell tab title.
+.language-shell > div:nth-child(1) {
+  color: var(--color-teal);
+  font-style: normal;
+}
+
+// ──────────────── Tabs ────────────────
+
+ul.tabs {
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  width: 100%;
+  gap: 0.15rem;
+}
+
+.tabs__item {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.7rem;
+
+  &:hover {
+    background: var(--color-wash);
+    color: var(--color-fg);
+  }
+
+  &--active {
+    background: transparent;
+    color: var(--color-fg);
+    border-bottom-color: var(--color-orange);
+  }
+}
+
+// ──────────────── Admonitions ────────────────
+
+// Infima colours the whole alert — text included — from --ifm-alert-*, which
+// is why an untreated tip renders as green body copy. Drive those variables
+// instead of just the border, so only the rule and the icon carry the accent
+// and the prose stays the same colour as the rest of the page.
+.theme-admonition {
+  --ifm-alert-background-color: var(--color-surface);
+  --ifm-alert-foreground-color: var(--color-muted);
+  --ifm-alert-border-color: var(--color-border);
+  --ifm-alert-padding-vertical: 0.9rem;
+  --ifm-alert-padding-horizontal: 1rem;
+
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--admonition-accent, var(--color-teal));
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  font-size: var(--text-small);
+  color: var(--color-muted);
+
+  div[class*="admonitionHeading"] {
+    font-family: var(--font-mono);
+    font-size: var(--text-label);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--admonition-accent, var(--color-teal));
+
+    // Infima's admonition icons ship with a hard-coded fill, so they stay
+    // black unless told to track the heading colour.
+    svg {
+      fill: currentColor;
+    }
+  }
+
+  a {
+    color: var(--color-orange);
+  }
+}
+
+.theme-admonition-note {
+  --admonition-accent: var(--color-dim);
+}
+
+.theme-admonition-info,
+.theme-admonition-tip {
+  --admonition-accent: var(--color-teal);
+}
+
+.theme-admonition-warning,
+.theme-admonition-caution {
+  --admonition-accent: var(--color-yellow);
+}
+
+.theme-admonition-danger {
+  --admonition-accent: #be1d43;
+}
+
+// ──────────────── Table of contents ────────────────
+
+.table-of-contents {
+  font-size: var(--text-small);
+  border-left: 1px solid var(--color-border);
+
+  &__left-border {
+    border-left: 1px solid var(--color-border);
+  }
+}
+
+.table-of-contents__link {
+  display: block;
+  padding: 0.2rem 0.5rem;
+  color: var(--color-dim);
+  border-left: 2px solid transparent;
+  margin-left: -1px;
+
+  &:hover {
+    color: var(--color-fg);
+    text-decoration: none;
+  }
+
+  &--active {
+    color: var(--color-fg);
+    border-left-color: var(--color-orange);
+  }
+}
+
+// ──────────────── Version badge & banner ────────────────
+// Docusaurus ships these as Infima alert boxes. Reduced to the website's
+// mono label so the badge sits above the title as a tag, not a pill.
+
+.theme-doc-version-badge {
+  display: inline-block;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-bottom: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+}
+
+.theme-doc-version-banner {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-yellow);
+  border-radius: var(--radius-md);
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+// The mobile "On this page" disclosure, which Infima renders as a filled
+// grey pill by default.
+.theme-doc-toc-mobile {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-small);
+
+  button {
+    font-family: var(--font-mono);
+    font-size: var(--text-label);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+  }
+}
+
+// ──────────────── Breadcrumbs ────────────────
+
+.breadcrumbs__item {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.breadcrumbs__link {
+  background: transparent;
+  color: var(--color-faint);
+  padding: 0.15rem 0.3rem;
+
+  &:hover {
+    background: transparent;
+    color: var(--color-orange);
+  }
+}
+
+.breadcrumbs__item--active .breadcrumbs__link {
+  background: transparent;
+  color: var(--color-dim);
+}
+
+.breadcrumbHomeIcon_node_modules-\@docusaurus-theme-classic-lib-theme-DocBreadcrumbs-Items-Home-styles-module,
+.breadcrumbs__item svg {
+  color: var(--color-faint);
+}
+
+// ──────────────── Pagination ────────────────
+
+.pagination-nav__link {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+
+  &:hover {
+    border-color: var(--color-orange);
+  }
+}
+
+.pagination-nav__sublabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+.pagination-nav__label {
+  font-family: var(--font-heading);
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+// ──────────────── Cards (doc category index pages) ────────────────
+
+article .card,
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    border-color: var(--color-teal);
+    transform: translateY(-1px);
+  }
+}
+
+// ──────────────── Footer / colophon ────────────────
+// The website's colophon: a hairline rule, mono links, nothing else.
+
+.footer {
+  background: transparent;
+  color: var(--color-dim);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  padding: 0;
+  margin-top: 4.5rem;
+
+  .container {
+    max-width: var(--container-max);
+    padding: 18px var(--container-pad) 56px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  // Docusaurus centres the copyright row; the colophon is a justified pair.
+  .footer__bottom {
+    text-align: left;
+  }
+
+  .colophon__inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .colophon__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+  }
+
+  .colophon__inner a {
+    color: var(--color-dim);
+
+    &:hover {
+      color: var(--color-orange);
+      text-decoration: none;
+    }
+  }
+
+  @include mobile {
+    .colophon__inner {
+      flex-direction: column;
+      gap: 10px;
+    }
+  }
+
+  .footer__title {
+    font-family: var(--font-mono);
+    font-size: var(--text-label);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-faint);
+  }
+
+  .footer__link-item {
+    color: var(--color-dim);
+    font-size: 12.5px;
+
+    &:hover {
+      color: var(--color-orange);
+      text-decoration: none;
+    }
+  }
+
+  .footer__copyright {
+    font-size: 12.5px;
+    color: var(--color-faint);
+  }
+
+  hr {
+    background: var(--color-border);
+  }
+
+  .footer-discord-link,
+  .footer-x-link {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    margin: 0 4px;
+    background-color: var(--color-dim);
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: 20px 20px;
+
+    &:hover {
+      background-color: var(--color-orange);
+    }
+  }
+
+  .footer-discord-link {
+    mask-image: url("/img/discord-icon.svg");
+  }
+
+  .footer-x-link {
+    mask-image: url("/img/x-icon.svg");
+  }
+}
+
+// ──────────────── Diagrams ────────────────
+
+.flowchart {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+  max-width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.flowchart svg {
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}

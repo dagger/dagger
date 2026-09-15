@@ -1,0 +1,6 @@
+kind: Fixed
+body: Session shutdown no longer releases cache results while in-flight cache operations or lazy callbacks are still using them. Shutdown persistence now waits for cache quiescence.
+time: 2026-08-20T09:06:38.051510224Z
+custom:
+    Author: sipsma
+    PR: "13940"

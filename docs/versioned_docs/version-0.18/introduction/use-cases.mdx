@@ -1,0 +1,56 @@
+---
+title: "Use Cases"
+description: "Dagger is a platform for composing and running software engineering workflows. Learn how to get started, explore common use cases, and join the community."
+slug: "/use-cases"
+---
+
+Dagger is a versatile tool with multiple applications and use cases. Some of the most common ones are described below.
+
+## Agentic CI
+
+Coding agents are dramatically increasing the volume of code flowing through your software delivery pipelines. And those pipelines, typically characterized by artisanal "glue" scripts and complex YAML, starting to crack under the pressure. This presents an opportunity: organizations can leverage AI to increase throughput and maintain their software development velocity.
+
+Agentic CI proposes integrating Large Language Models (LLMs), and their ability to use tools, into existing CI workflows. It involves transferring many of the time-consuming tasks typically handled by human reviewers - enforcing coding standards, securing code against common exploits, diagnosing test failures - to autonomous AI agents running on existing CI infrastructure.
+
+### Benefits
+
+- Agentic CI can speed up the development cycle, by enabling fast, automatic identification and correction for bugs, security vulnerabilities, or performance issues. Agents can also provide quick feedback on test coverage and results.
+- With agentic CI, developers can focus on higher-value tasks, such as defining product architecture or adding new features, instead of spending time and effort diagnosing test failures, enforcing coding standards, or performing other manual tasks.
+- As the amount of AI-generated code increases, agentic CI infrastructure can quickly scale up to deal with the increasing workload.
+
+Dagger can be used as a runtime and programming environment for AI agents, making it simple and efficient to integrate them into existing CI workflows.
+
+- Dagger provides an `LLM` type that enables native integration of Large Language Models (LLM) in your workflows, together with out-of-the-box support for tool use: an LLM can automatically discover and use any available Dagger Functions in the provided environment.
+- Dagger has built-in Model Context Protocol (MCP) support that allows you to easily expose Dagger modules as an MCP server. This allows you to configure a client (such as Claude Desktop, Cursor, Goose CLI/Desktop) to consume modules from [the Daggerverse](https://daggerverse.dev) or any Git repository as native MCP servers.
+- Dagger Shell lets you interact with any attached LLM using natural language commands. Each input builds upon previous interactions, creating a prompt chain that lets you execute complex workflows without needing to know the exact syntax of the underlying Dagger API.
+- Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using local providers like Docker Model Runner or Ollama.
+- Dagger provides [end-to-end tracing](features/observability.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
+
+## Portable CI
+
+A common problem seen in software development is the "works on my machine" problem - essentially, that code runs as expected in one environment (such as a developer's laptop), but fails or works differently in other environments (such as in CI or production). This usually happens because of subtle environmental differences - differences in operating systems, environment variables, installed software versions, and so on.
+
+Dagger solves this problem by making it possible to build CI workflows that run identically, both locally and in your CI system. It does this by running each part of the workflow in an isolated container, ensuring that the execution environment remains consistent - regardless of whether the workflow runs on a local laptop, in a remote CI system, in Kubernetes, or in production.
+
+### Benefits
+
+- Platform engineers can define and validate CI workflows locally, without needing to push them to a remote CI system for testing. This significantly reduces the time required to create new CI workflows or improve existing ones.
+- Application developers can execute CI workflows on their laptops or local development environments, without needing to push code to a remote CI system first and wait for feedback. This significantly shortens the development cycle by providing near-instant feedback for tests and builds, avoiding the time-consuming "push and pray" problem seen in traditional CI.
+- Since workflows are executed in containers, they can run in any environment which has a compatible container runtime. This decouples them from specific CI systems, eliminates vendor lock-in, and makes it easy and efficient to migrate workflows from one CI provider to another.
+
+## Monorepo CI
+
+A monorepo typically contains multiple independent projects, each of which has different test, build and deployment requirements. Managing these requirements in a single CI workflow or YAML file can be incredibly complex and time-consuming.
+
+Dagger modules provide a framework that you can use to break up this complexity and cleanly separate CI responsibilities in a monorepo without losing reusability or performance.
+
+### Benefits
+
+- Encapsulating workflows into shareable, reusable modules reduces code duplication and ensures a consistent CI environment for all projects. For example, a shared module could create a common build environment and leverage this for multiple projects in the monorepo.
+- Dependencies between different projects in the monorepo can be accurately modeled, even across languages. For example, Dagger's own docs builder module is written in TypeScript, while the CLI builder is in Go. But the docs builder includes a generated CLI reference, and this is accurately modeled as a dependency between the CLI and docs modules
+- Dagger modules can leverage a programming language's native concurrency features to run faster, resulting in quicker feedback loops.
+- Dagger modules provide a way to separate, and therefore easily debug, the business logic for different workflows in a monorepo.
+
+:::tip
+Learn about [best practices for monorepo CI](../reference/best-practices/monorepos.mdx).
+:::

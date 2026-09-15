@@ -1,0 +1,25 @@
+{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dep",
+      "source": "modules/dep"
+    },
+    {
+      "name": "git",
+      "source": "modules/git"
+    },
+    {
+      "name": "go",
+      "source": "modules/go"
+    },
+    {
+      "name": "objdoc",
+      "source": "modules/objdoc"
+    }
+  ]
+}

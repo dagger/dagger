@@ -1,0 +1,56 @@
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Text.Json.Serialization;
+
+namespace Dagger.SDK.SourceGenerator.Types;
+
+public class Field
+{
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = "";
+
+    [JsonPropertyName("type")]
+    public required TypeRef Type { get; set; }
+
+    [JsonPropertyName("args")]
+    public InputValue[] Args { get; set; } = [];
+
+    [JsonPropertyName("directives")]
+    public Directive[] Directives { get; set; } = [];
+
+    [JsonPropertyName("isDeprecated")]
+    public bool IsDeprecated { get; set; }
+
+    [JsonPropertyName("deprecationReason")]
+    public string DeprecationReason { get; set; } = "";
+
+    /// <summary>
+    /// Get optional arguments from Args.
+    /// </summary>
+    public ImmutableArray<InputValue> OptionalArgs() =>
+        Args.Where(arg => arg.Type.Kind != "NON_NULL").ToImmutableArray();
+
+    /// <summary>
+    /// Get required arguments from Args.
+    /// </summary>
+    public ImmutableArray<InputValue> RequiredArgs() =>
+        Args.Where(arg => arg.Type.Kind == "NON_NULL").ToImmutableArray();
+
+    /// <summary>
+    /// Get the @expectedType name from this field's directives, if present.
+    /// </summary>
+    public string? GetExpectedType()
+    {
+        foreach (var d in Directives)
+        {
+            var et = d.GetExpectedType();
+            if (et != null)
+                return et;
+        }
+        return null;
+    }
+}

@@ -1,0 +1,13 @@
+type Cacheme {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".", exclude: ["*", "!included-file"])
+    self
+	}
+
+	pub read: String! {
+		print("FUNCTION_EXECUTED")
+		source.file("included-file").contents
+	}
+}

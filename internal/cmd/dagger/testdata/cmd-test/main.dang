@@ -1,0 +1,28 @@
+type CmdTest {
+  pub workdir: Directory! @defaultPath(path: ".")
+
+  pub agent: LLM! {
+    llm.withEnv(env.withCurrentModule.withWorkspace(workdir))
+  }
+
+  """
+  Read a file within the workspace.
+  """
+  pub readFile(path: String!): String! {
+    workdir.file(path).contents
+  }
+
+  """
+  List the files/directories beneath a path.
+  """
+  pub list(path: String! = "."): [String!]! {
+    workdir.entries(path)
+  }
+
+  """
+  Write a new file with the specified contents.
+  """
+  pub writeFile(path: String!, contents: String!): Changeset! {
+    workdir.withNewFile(path, contents).changes(workdir)
+  }
+}

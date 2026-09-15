@@ -1,0 +1,17 @@
+name = "typescript-client-dev"
+engineVersion = "v0.21.9"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "codegen"
+  source = "../../../cmd/codegen"
+
+[[dependencies]]
+  name = "dagger-engine"
+  source = "../engine-dev"
+
+[[dependencies]]
+  name = "go"
+  source = "../go"

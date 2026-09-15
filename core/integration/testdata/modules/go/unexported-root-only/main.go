@@ -1,0 +1,19 @@
+package main
+
+type Minimal struct{}
+
+type Foo struct{}
+
+type bar struct{}
+
+func (m *Minimal) Hello(name string) string {
+	return name
+}
+
+func (f *Foo) Hello(name string) string {
+	return name
+}
+
+func (b *bar) Hello(name string) string {
+	return name
+}

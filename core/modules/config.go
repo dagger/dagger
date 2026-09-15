@@ -1,0 +1,473 @@
+package modules
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"reflect"
+	"strings"
+
+	"github.com/dagger/dagger/engine"
+	toml "github.com/pelletier/go-toml"
+	"github.com/vektah/gqlparser/v2/ast"
+)
+
+// Filename is the name of the current module config file.
+const Filename = "dagger-module.toml"
+
+// LegacyFilename is the legacy module config file name.
+const LegacyFilename = "dagger.json"
+
+// ConfigFormat identifies the field layout for a module config file.
+type ConfigFormat string
+
+const (
+	ConfigFormatCurrent ConfigFormat = "current"
+	ConfigFormatLegacy  ConfigFormat = "legacy"
+)
+
+// EngineVersionLatest is replaced by the current engine.Version during module init.
+const EngineVersionLatest string = "latest"
+
+func ConfigFormatForFilename(filename string) ConfigFormat {
+	if filepath.Base(filename) == LegacyFilename {
+		return ConfigFormatLegacy
+	}
+	return ConfigFormatCurrent
+}
+
+func ConfigFilenames() []string {
+	return []string{Filename, LegacyFilename}
+}
+
+func IsConfigFilename(filename string) bool {
+	switch filepath.Base(filename) {
+	case Filename, LegacyFilename:
+		return true
+	default:
+		return false
+	}
+}
+
+func ParseModuleConfig(src []byte) (*ModuleConfigWithUserFields, error) {
+	return ParseModuleConfigForFormat(src, ConfigFormatLegacy)
+}
+
+func ParseModuleConfigForFilename(src []byte, filename string) (*ModuleConfigWithUserFields, error) {
+	return ParseModuleConfigForFormat(src, ConfigFormatForFilename(filename))
+}
+
+func ParseModuleConfigForFormat(src []byte, format ConfigFormat) (*ModuleConfigWithUserFields, error) {
+	switch format {
+	case ConfigFormatCurrent:
+		return parseCurrentModuleConfigTOML(src)
+	case ConfigFormatLegacy:
+		return parseLegacyModuleConfigJSON(src)
+	default:
+		return nil, fmt.Errorf("unknown module config format %q", format)
+	}
+}
+
+func parseCurrentModuleConfigTOML(src []byte) (*ModuleConfigWithUserFields, error) {
+	// before attempting to parse the entire config, just read the
+	// engineVersion field, to perform version checks to see if it's even
+	// possible
+	var meta struct {
+		EngineVersion string `toml:"engineVersion"`
+	}
+	if err := toml.Unmarshal(src, &meta); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	if err := checkModuleConfigVersion(meta.EngineVersion); err != nil {
+		return nil, err
+	}
+
+	if err := validateCurrentModuleConfigTOML(src); err != nil {
+		return nil, err
+	}
+
+	var current CurrentModuleConfigWithUserFields
+	if err := toml.Unmarshal(src, &current); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+
+	modCfg := current.moduleConfigWithUserFields()
+	normalizeLoadedModuleConfig(&modCfg.ModuleConfig)
+	return modCfg, nil
+}
+
+func parseLegacyModuleConfigJSON(src []byte) (*ModuleConfigWithUserFields, error) {
+	// before attempting to parse the entire config, just read the
+	// engineVersion field, to perform version checks to see if it's even
+	// possible
+	var meta struct {
+		EngineVersion string `json:"engineVersion"`
+	}
+	if err := json.Unmarshal(src, &meta); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	if err := checkModuleConfigVersion(meta.EngineVersion); err != nil {
+		return nil, err
+	}
+
+	var modCfg ModuleConfigWithUserFields
+	if err := json.Unmarshal(src, &modCfg); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	if err := validateLegacyModuleConfigJSON(src); err != nil {
+		return nil, err
+	}
+	return &modCfg, nil
+}
+
+func checkModuleConfigVersion(version string) error {
+	version = engine.NormalizeVersion(version)
+	if !engine.CheckMaxVersionCompatibility(version, engine.BaseVersion(engine.Version)) {
+		return fmt.Errorf("module requires dagger %s, but you have %s", version, engine.Version)
+	}
+	return nil
+}
+
+func MarshalModuleConfigForFilename(modCfg *ModuleConfigWithUserFields, filename string) ([]byte, error) {
+	return MarshalModuleConfigForFormat(modCfg, ConfigFormatForFilename(filename))
+}
+
+func MarshalModuleConfigForFormat(modCfg *ModuleConfigWithUserFields, format ConfigFormat) ([]byte, error) {
+	var (
+		out []byte
+		err error
+	)
+	switch format {
+	case ConfigFormatCurrent:
+		var buf bytes.Buffer
+		err = toml.NewEncoder(&buf).
+			Order(toml.OrderPreserve).
+			Encode(newCurrentModuleConfigWithUserFields(modCfg))
+		out = buf.Bytes()
+	case ConfigFormatLegacy:
+		out, err = json.MarshalIndent(modCfg, "", "  ")
+	default:
+		err = fmt.Errorf("unknown module config format %q", format)
+	}
+	if err != nil {
+		return nil, err
+	}
+	out = bytes.TrimRight(out, "\n")
+	out = append(out, '\n')
+	return out, nil
+}
+
+// ModuleConfigWithUserFields is the config for a single module as loaded from a module config file.
+// Includes additional fields that should only be set by the user.
+type ModuleConfigWithUserFields struct {
+	ModuleConfigUserFields
+	ModuleConfig
+}
+
+// ModuleConfig is the config for a single module as loaded from a module config file.
+// Only contains fields that are set/edited by dagger utilities.
+type ModuleConfig struct {
+	// The name of the module.
+	Name string `json:"name"`
+
+	// The version of the engine this module was last updated with.
+	EngineVersion string `json:"engineVersion"`
+
+	// The runtime this module uses. It is serialized as "runtime" in
+	// dagger-module.toml and as "sdk" in legacy dagger.json.
+	SDK *SDK `json:"sdk,omitempty"`
+
+	// An optional blueprint module
+	Blueprint *ModuleConfigDependency `json:"blueprint,omitempty"`
+
+	// Toolchain modules
+	Toolchains []*ModuleConfigDependency `json:"toolchains,omitempty"`
+
+	// Paths to explicitly include from the module, relative to the configuration file.
+	Include []string `json:"include,omitempty"`
+
+	// The modules this module depends on.
+	Dependencies []*ModuleConfigDependency `json:"dependencies,omitempty"`
+
+	// The path, relative to this config file, to the subdir containing the module's implementation source code.
+	Source string `json:"source,omitempty"`
+
+	// Codegen configuration for this module.
+	Codegen *ModuleCodegenConfig `json:"codegen,omitempty"`
+
+	// Paths to explicitly exclude from the module, relative to the configuration file.
+	//
+	// Deprecated: Use !<pattern> in the include list instead.
+	Exclude []string `json:"exclude,omitempty"`
+
+	// The clients generated for this module.
+	Clients []*ModuleConfigClient `json:"clients,omitempty"`
+
+	// If true, disable the new default function caching behavior for this module. Functions will
+	// instead default to the old behavior of per-session caching.
+	DisableDefaultFunctionCaching *bool `json:"disableDefaultFunctionCaching,omitempty"`
+}
+
+type ModuleConfigUserFields struct {
+	// The self-describing config schema.
+	Schema string `json:"$schema,omitempty" toml:"$schema,omitempty"`
+}
+
+// SDK represents the runtime/sdk field in module config.
+//
+// The source is either a built-in runtime name (e.g. "go", "python") or a
+// canonical module ref (e.g. "github.com/dagger/go-sdk"). Pin is the
+// content-addressed digest of the runtime module for reproducible loads;
+// it is empty for built-ins and only set for external refs.
+//
+// Config, Debug, and Experimental are deprecated and no longer persisted by
+// the current TOML schema. They survive on this struct only for back-compat
+// reading of legacy dagger.json. Writes to current TOML omit them; writes to
+// legacy JSON preserve them (the legacy format is not being rewritten).
+type SDK struct {
+	Source string `json:"source" toml:"source"`
+	Pin    string `json:"pin,omitempty" toml:"pin,omitempty"`
+
+	// Deprecated: not persisted by current TOML schema. Legacy JSON read-only.
+	Config map[string]any `json:"config,omitempty" toml:"-"`
+	// Deprecated: not persisted by current TOML schema. Legacy JSON read-only.
+	Debug bool `json:"debug,omitempty" toml:"-"`
+	// Deprecated: self-calls graduated; not persisted by current TOML schema. Legacy JSON read-only.
+	Experimental map[string]bool `json:"experimental,omitempty" toml:"-"`
+}
+
+func (sdk *SDK) UnmarshalJSON(data []byte) error {
+	if sdk == nil {
+		return fmt.Errorf("cannot unmarshal into nil SDK")
+	}
+	if len(data) == 0 {
+		sdk.Source = ""
+		return nil
+	}
+
+	// check if this is a legacy config, where sdk was a string
+	if data[0] == '"' {
+		var sdkRefStr string
+		if err := json.Unmarshal(data, &sdkRefStr); err != nil {
+			return fmt.Errorf("unmarshal sdk as string: %w", err)
+		}
+		*sdk = SDK{Source: sdkRefStr}
+		return nil
+	}
+
+	type alias SDK // lets us use the default json unmashaler
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return fmt.Errorf("unmarshal sdk as struct: %w", err)
+	}
+	*sdk = SDK(tmp)
+	return nil
+}
+
+func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
+	if modCfg == nil {
+		return fmt.Errorf("cannot unmarshal into nil %T", modCfg)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	type alias ModuleConfig // lets us use the default json unmashaler
+	var tmp struct {
+		alias
+		Runtime *SDK `json:"runtime,omitempty"`
+	}
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return fmt.Errorf("unmarshal module config: %w", err)
+	}
+	if tmp.Runtime != nil {
+		if tmp.SDK != nil && !reflect.DeepEqual(tmp.SDK, tmp.Runtime) {
+			return fmt.Errorf("module config cannot set both sdk and runtime")
+		}
+		tmp.SDK = tmp.Runtime
+	}
+
+	loaded := ModuleConfig(tmp.alias)
+	normalizeLoadedModuleConfig(&loaded)
+	*modCfg = loaded
+	return nil
+}
+
+func normalizeLoadedModuleConfig(modCfg *ModuleConfig) {
+	if modCfg == nil {
+		return
+	}
+
+	// Detect the case where SDK is set but Source isn't, which should only happen when loading an older config.
+	// For those cases, the Source was implicitly ".", so set it to that.
+	if modCfg.SDK != nil && modCfg.SDK.Source != "" && modCfg.Source == "" {
+		modCfg.Source = "."
+	}
+
+	// adapt exclude to include
+	for _, exclude := range modCfg.Exclude {
+		if len(exclude) == 0 {
+			continue
+		}
+		if strings.HasPrefix(exclude, "!") {
+			modCfg.Include = append(modCfg.Include, exclude[1:])
+		} else {
+			modCfg.Include = append(modCfg.Include, "!"+exclude)
+		}
+	}
+	modCfg.Exclude = nil
+}
+
+func (modCfg *ModuleConfigWithUserFields) UnmarshalJSON(data []byte) error {
+	if modCfg == nil {
+		return fmt.Errorf("cannot unmarshal into nil %T", modCfg)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	if err := json.Unmarshal(data, &modCfg.ModuleConfigUserFields); err != nil {
+		return fmt.Errorf("unmarshal module config: %w", err)
+	}
+	if err := json.Unmarshal(data, &modCfg.ModuleConfig); err != nil {
+		return fmt.Errorf("unmarshal module config: %w", err)
+	}
+	return nil
+}
+
+func (modCfg *ModuleConfig) DependencyByName(name string) (*ModuleConfigDependency, bool) {
+	for _, dep := range modCfg.Dependencies {
+		if dep.Name == name {
+			return dep, true
+		}
+	}
+	return nil, false
+}
+
+type ModuleConfigDependency struct {
+	// The name to use for this dependency. By default, the same as the dependency module's name,
+	// but can also be overridden to use a different name.
+	Name string `json:"name"`
+
+	// The source ref of the module dependency.
+	Source string `json:"source"`
+
+	// The pinned version of the module dependency.
+	Pin string `json:"pin,omitempty"`
+
+	// Customizations configuration for toolchains that override function argument pragmas.
+	Customizations []*ModuleConfigArgument `json:"customizations,omitempty"`
+
+	// IgnoreChecks is a list of check patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match check names.
+	IgnoreChecks []string `json:"ignoreChecks,omitempty"`
+
+	// IgnoreGenerators is a list of generator patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match generator names.
+	IgnoreGenerators []string `json:"ignoreGenerators,omitempty"`
+
+	// IgnoreServices is a list of service (up) patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match service names.
+	IgnoreServices []string `json:"ignoreServices,omitempty"`
+
+	// PortMappings maps service names to port forwarding rules.
+	// Keys are service names (e.g. "web", "infra:database").
+	// Values are arrays of "hostPort:containerPort" strings (e.g. ["3000:80"]).
+	PortMappings map[string][]string `json:"portMappings,omitempty"`
+}
+
+// ModuleConfigArgument represents an argument override for a toolchain function
+type ModuleConfigArgument struct {
+	// The function chain to apply this argument to. Empty or nil for constructor.
+	Function []string `json:"function,omitempty"`
+
+	// The name of the argument to override.
+	Argument string `json:"argument"`
+
+	// The default value to use for this argument.
+	Default string `json:"default,omitempty"`
+
+	// The default path to use for File or Directory arguments.
+	DefaultPath string `json:"defaultPath,omitempty"`
+
+	// The default address to use for Container arguments.
+	DefaultAddress string `json:"defaultAddress,omitempty"`
+
+	// Ignore patterns for Directory arguments.
+	Ignore []string `json:"ignore,omitempty"`
+}
+
+func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
+	if depCfg == nil {
+		return fmt.Errorf("cannot unmarshal into nil ModuleConfigDependency")
+	}
+	if len(data) == 0 {
+		depCfg.Source = ""
+		return nil
+	}
+
+	// check if this is a legacy config, where deps were just a list of strings
+	if data[0] == '"' {
+		var depRefStr string
+		if err := json.Unmarshal(data, &depRefStr); err != nil {
+			return fmt.Errorf("unmarshal module config dependency: %w", err)
+		}
+		*depCfg = ModuleConfigDependency{Source: depRefStr}
+		return nil
+	}
+
+	type alias ModuleConfigDependency // lets us use the default json unmashaler
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return fmt.Errorf("unmarshal module config dependency: %w", err)
+	}
+	*depCfg = ModuleConfigDependency(tmp)
+	return nil
+}
+
+type ModuleConfigView struct {
+	Name     string   `json:"name"`
+	Patterns []string `json:"patterns,omitempty"`
+}
+
+type ModuleCodegenConfig struct {
+	// Whether to automatically generate a .gitignore file for this module.
+	//
+	// When explicitly false, the module commits its generated files rather
+	// than ignoring them, and they might be used by an SDK at runtime.
+	AutomaticGitignore *bool `json:"automaticGitignore,omitempty" toml:"automaticGitignore,omitempty"`
+}
+
+func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
+	if cfg.AutomaticGitignore == nil {
+		return &cfg
+	}
+	clone := *cfg.AutomaticGitignore
+	cfg.AutomaticGitignore = &clone
+	return &cfg
+}
+
+type ModuleConfigClient struct {
+	// The generator the client uses to be generated.
+	Generator string `field:"true" name:"generator" json:"generator" toml:"generator" doc:"The generator to use"`
+
+	// The directory the client is generated in.
+	Directory string `field:"true" name:"directory" json:"directory" toml:"directory" doc:"The directory the client is generated in."`
+}
+
+func (*ModuleConfigClient) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleConfigClient",
+		NonNull:   true,
+	}
+}
+
+func (*ModuleConfigClient) TypeDescription() string {
+	return "The client generated for the module."
+}
+
+func (m ModuleConfigClient) Clone() *ModuleConfigClient {
+	cp := m
+	return &cp
+}

@@ -1,0 +1,7 @@
+{
+  "name": "nester",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

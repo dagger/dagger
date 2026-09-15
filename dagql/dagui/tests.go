@@ -1,0 +1,1026 @@
+package dagui
+
+import (
+	"cmp"
+	"net/url"
+	"slices"
+	"time"
+)
+
+// TestStatus is the normalized OpenTelemetry semantic status for a test span.
+//
+// OpenTelemetry has separate well-known values for test.case.result.status
+// (pass/fail) and test.suite.run.status (success, failure, skipped, aborted,
+// timed_out, in_progress). The UI only needs render categories, so case-level
+// pass/fail values are normalized to success/failure.
+type TestStatus string
+
+const (
+	TestStatusUnset      TestStatus = ""
+	TestStatusSuccess    TestStatus = "success"
+	TestStatusFailure    TestStatus = "failure"
+	TestStatusSkipped    TestStatus = "skipped"
+	TestStatusAborted    TestStatus = "aborted"
+	TestStatusTimedOut   TestStatus = "timed_out"
+	TestStatusInProgress TestStatus = "in_progress"
+)
+
+func normalizeTestStatus(raw string) TestStatus {
+	switch raw {
+	case "pass", "success":
+		return TestStatusSuccess
+	case "fail", "failure":
+		return TestStatusFailure
+	case "skipped":
+		return TestStatusSkipped
+	case "aborted":
+		return TestStatusAborted
+	case "timed_out":
+		return TestStatusTimedOut
+	case "in_progress":
+		return TestStatusInProgress
+	default:
+		return TestStatusUnset
+	}
+}
+
+func mergeTestStatus(current, next TestStatus) TestStatus {
+	if next == TestStatusUnset {
+		return current
+	}
+	if testStatusPriority(next) >= testStatusPriority(current) {
+		return next
+	}
+	return current
+}
+
+func testStatusPriority(status TestStatus) int {
+	switch status {
+	case TestStatusFailure, TestStatusTimedOut, TestStatusAborted:
+		return 4
+	case TestStatusSkipped:
+		return 3
+	case TestStatusInProgress:
+		return 2
+	case TestStatusSuccess:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (s TestStatus) IsFailing() bool {
+	switch s {
+	case TestStatusFailure, TestStatusTimedOut, TestStatusAborted:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s TestStatus) IsSkipped() bool {
+	return s == TestStatusSkipped
+}
+
+func (s TestStatus) IsRunning() bool {
+	return s == TestStatusInProgress
+}
+
+func (s TestStatus) IsSuccess() bool {
+	return s == TestStatusSuccess
+}
+
+// TestCategory is the aggregate/render category for a test node.
+type TestCategory uint8
+
+const (
+	TestCategoryFailing TestCategory = iota
+	TestCategoryRunning
+	TestCategorySkipped
+	TestCategoryPassing
+	TestCategoryMixed
+)
+
+func (c TestCategory) String() string {
+	switch c {
+	case TestCategoryFailing:
+		return "failing"
+	case TestCategoryRunning:
+		return "running"
+	case TestCategorySkipped:
+		return "skipped"
+	case TestCategoryPassing:
+		return "passing"
+	case TestCategoryMixed:
+		return "mixed"
+	default:
+		return "unknown"
+	}
+}
+
+// TestCounts tallies counted test cases by render category.
+type TestCounts struct {
+	Failing int
+	Running int
+	Passing int
+	Skipped int
+}
+
+func (c TestCounts) Total() int {
+	return c.Failing + c.Running + c.Passing + c.Skipped
+}
+
+func (c TestCounts) add(other TestCounts) TestCounts {
+	return TestCounts{
+		Failing: c.Failing + other.Failing,
+		Running: c.Running + other.Running,
+		Passing: c.Passing + other.Passing,
+		Skipped: c.Skipped + other.Skipped,
+	}
+}
+
+func countForCategory(category TestCategory) TestCounts {
+	switch category {
+	case TestCategoryFailing:
+		return TestCounts{Failing: 1}
+	case TestCategoryRunning:
+		return TestCounts{Running: 1}
+	case TestCategorySkipped:
+		return TestCounts{Skipped: 1}
+	default:
+		return TestCounts{Passing: 1}
+	}
+}
+
+// TestNodeKind identifies whether a test node is a real test case, a real
+// suite span, or a synthetic suite grouping.
+type TestNodeKind uint8
+
+const (
+	TestNodeCase TestNodeKind = iota
+	TestNodeSuite
+	TestNodeVirtualSuite
+)
+
+// TestNodeID is stable across view rebuilds. Real test case and suite nodes
+// use "span:<span-id>"; virtual suites use "suite:<url-escaped-suite-name>".
+type TestNodeID string
+
+type TestNode struct {
+	ID   TestNodeID
+	Kind TestNodeKind
+
+	// Name is the local display name for this node. Real test nodes use the
+	// backing span name; virtual suites use their synthetic suite name.
+	Name string
+
+	// FullName is the fully-qualified semantic name reported by test.case.name
+	// or test.suite.name. Use this for stable lookups and URL compatibility.
+	FullName string
+
+	// Span is nil for virtual suites.
+	Span *Span
+
+	Parent   *TestNode
+	Children []*TestNode
+
+	// RepresentativeSpan is the first real descendant span for a virtual suite.
+	// It is not a pseudo-span: virtual suites keep Span nil because they are
+	// synthetic, and this span is only used to focus/open a related trace and
+	// sort the synthetic node.
+	RepresentativeSpan *Span
+
+	// SelfCategory is the backing span's own category before child aggregation.
+	// Category is the aggregate category for the rendered node and includes the
+	// counted test cases under it.
+	SelfCategory TestCategory
+	Category     TestCategory
+	Counts       TestCounts
+
+	suiteName string
+}
+
+// SelfCounts returns the counts this node contributes for itself, before its
+// children are rolled up.
+//
+// Only leaf test cases count: the test producer emits a test.case.name span
+// for every `=== RUN`, so a parent test like TestDirectory is a real span even
+// though it is just a grouping around its subtests. Counting it alongside its
+// subtests inflates the totals (one subtest under one parent reported "2
+// passed"). Suites (real or virtual) never counted in the first place.
+//
+// A parent that itself failed is still counted when no descendant recorded a
+// failure -- e.g. a t.Fatal or panic in the parent after its subtests passed.
+// Otherwise its failure would vanish from the tallies entirely and the header
+// could claim everything passed while a FAIL entry is listed below it.
+func (n *TestNode) SelfCounts() TestCounts {
+	if n == nil || n.Kind != TestNodeCase {
+		return TestCounts{}
+	}
+	if len(n.Children) == 0 {
+		return countForCategory(n.SelfCategory)
+	}
+	if n.SelfCategory == TestCategoryFailing {
+		for _, child := range n.Children {
+			if child.Counts.Failing > 0 {
+				// A descendant already accounts for the failure.
+				return TestCounts{}
+			}
+		}
+		return TestCounts{Failing: 1}
+	}
+	return TestCounts{}
+}
+
+type TestView struct {
+	Roots []*TestNode
+
+	ByID         map[TestNodeID]*TestNode
+	BySpan       map[SpanID]*TestNode
+	CasesByName  map[string][]*TestNode
+	SuitesByName map[string][]*TestNode
+
+	Counts TestCounts
+}
+
+func (v *TestView) HasTests() bool {
+	return v != nil && len(v.Roots) > 0
+}
+
+func (v *TestView) FindCaseByName(name string) *TestNode {
+	if v == nil {
+		return nil
+	}
+	matches := v.CasesByName[name]
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches[0]
+}
+
+func (v *TestView) FindSuiteByName(name string) *TestNode {
+	if v == nil {
+		return nil
+	}
+	matches := v.SuitesByName[name]
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches[0]
+}
+
+type TestPartition struct {
+	Failing []*TestNode
+	Running []*TestNode
+	Suites  []*TestNode
+	// Mixed keeps aggregate test-case nodes with heterogeneous child results in
+	// an explicit bucket so the sidebar can render them after suites but before
+	// fully passing or skipped tests.
+	Mixed   []*TestNode
+	Passing []*TestNode
+	Skipped []*TestNode
+}
+
+func PartitionTests(nodes []*TestNode) TestPartition {
+	var partition TestPartition
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		if node.Kind == TestNodeSuite || node.Kind == TestNodeVirtualSuite {
+			partition.Suites = append(partition.Suites, node)
+			continue
+		}
+		switch node.Category {
+		case TestCategoryFailing:
+			partition.Failing = append(partition.Failing, node)
+		case TestCategoryRunning:
+			partition.Running = append(partition.Running, node)
+		case TestCategorySkipped:
+			partition.Skipped = append(partition.Skipped, node)
+		case TestCategoryPassing:
+			partition.Passing = append(partition.Passing, node)
+		case TestCategoryMixed:
+			partition.Mixed = append(partition.Mixed, node)
+		}
+	}
+	return partition
+}
+
+func (span *Span) TestCategory() TestCategory {
+	if span == nil {
+		return TestCategoryPassing
+	}
+	if span.TestStatus != TestStatusUnset {
+		switch {
+		case span.TestStatus.IsFailing():
+			return TestCategoryFailing
+		case span.TestStatus.IsSkipped():
+			return TestCategorySkipped
+		case span.TestStatus.IsRunning():
+			return TestCategoryRunning
+		default:
+			return TestCategoryPassing
+		}
+	}
+	switch {
+	case span.IsFailedOrCausedFailure():
+		return TestCategoryFailing
+	case span.IsRunningOrEffectsRunning():
+		return TestCategoryRunning
+	default:
+		return TestCategoryPassing
+	}
+}
+
+type TestIndex struct {
+	db *DB
+
+	initialBuilt   bool
+	structureDirty bool
+	aggregateDirty bool
+
+	nodesBySpan map[SpanID]*TestNode
+	dirtySpans  map[SpanID]struct{}
+
+	knownTestSpans map[SpanID]*Span
+
+	// globalIncluded and globalParentBySpan record the containment-sensitive
+	// structure of the nil-root/all-traces view. testsByAncestor indexes every
+	// known test by each real parent ID (including unreceived placeholders), and
+	// ancestorIDsByTest supports replacing that index after reparenting. Together
+	// they preserve the incremental cached view for unrelated updates while
+	// efficiently detecting ancestors that add/remove a Boundary or reconnect a
+	// severed chain.
+	globalIncluded     map[SpanID]bool
+	globalParentBySpan map[SpanID]SpanID
+	testsByAncestor    map[SpanID]map[SpanID]struct{}
+	ancestorIDsByTest  map[SpanID][]SpanID
+
+	cachedView   *TestView
+	version      uint64
+	builtVersion uint64
+
+	// perSpanViews memoizes ViewForSpan per root for the current index
+	// version and DB mutation count. Render passes read the same roots
+	// several times per frame (claims seeding, row predicates, rollups);
+	// without the memo each read rescans every known test span.
+	perSpanViews    map[SpanID]*TestView
+	perSpanVersion  uint64
+	perSpanDBEpoch  uint64
+	perSpanMemoInit bool
+
+	initialScanCount       int
+	structuralRebuildCount int
+}
+
+func (db *DB) TestView() *TestView {
+	if db.testIndex == nil {
+		db.testIndex = &TestIndex{db: db}
+	}
+	return db.testIndex.View()
+}
+
+func (db *DB) TestViewForSpan(root *Span) *TestView {
+	if db.testIndex == nil {
+		db.testIndex = &TestIndex{db: db}
+	}
+	return db.testIndex.ViewForSpan(root)
+}
+
+func (db *DB) HasTests() bool {
+	return db.TestView().HasTests()
+}
+
+func (db *DB) noteTestSpanUpdated(span *Span) {
+	if db == nil || db.testIndex == nil || span == nil {
+		return
+	}
+	db.testIndex.spanUpdated(span)
+}
+
+func (idx *TestIndex) View() *TestView {
+	if !idx.initialBuilt {
+		idx.buildInitial()
+	}
+	if idx.structureDirty {
+		idx.rebuildStructure()
+	} else if idx.aggregateDirty {
+		idx.applyAggregateUpdates()
+	}
+	return idx.cachedView
+}
+
+func (idx *TestIndex) ViewForSpan(root *Span) *TestView {
+	if root == nil {
+		return idx.View()
+	}
+	idx.View()
+
+	// Serve repeated same-frame reads from the memo; any index change or DB
+	// span add/update (which can extend an ancestor chain) invalidates it.
+	if !idx.perSpanMemoInit || idx.perSpanVersion != idx.version || idx.perSpanDBEpoch != idx.db.mutations {
+		idx.perSpanViews = make(map[SpanID]*TestView)
+		idx.perSpanVersion = idx.version
+		idx.perSpanDBEpoch = idx.db.mutations
+		idx.perSpanMemoInit = true
+	}
+	if view, ok := idx.perSpanViews[root.ID]; ok {
+		return view
+	}
+	view := idx.buildViewForSpan(root)
+	idx.perSpanViews[root.ID] = view
+	return view
+}
+
+func (idx *TestIndex) buildViewForSpan(root *Span) *TestView {
+	nodesBySpan := make(map[SpanID]*TestNode)
+	for id, span := range idx.knownTestSpans {
+		if span == nil {
+			continue
+		}
+		if !spanMayRollUp(span, root, nil) {
+			continue
+		}
+		kind, name, fullName, suiteName, ok := testNodeMetadata(span)
+		if !ok {
+			continue
+		}
+		nodesBySpan[id] = &TestNode{
+			ID:        TestNodeID("span:" + span.ID.String()),
+			Kind:      kind,
+			Name:      name,
+			FullName:  fullName,
+			Span:      span,
+			suiteName: suiteName,
+		}
+	}
+
+	var roots []*TestNode
+	for _, node := range nodesBySpan {
+		if parent := nearestTestAncestor(node.Span, nodesBySpan); parent != nil {
+			node.Parent = parent
+			parent.Children = append(parent.Children, node)
+		} else {
+			roots = append(roots, node)
+		}
+	}
+
+	sortTestNodes(roots)
+	roots = groupVirtualSuites(roots)
+	sortTestNodes(roots)
+
+	return buildTestView(roots, nodesBySpan)
+}
+
+func (idx *TestIndex) buildInitial() {
+	idx.initialScanCount++
+	idx.knownTestSpans = make(map[SpanID]*Span)
+	for _, span := range idx.db.Spans.Order {
+		if testSpanHasNode(span) {
+			idx.knownTestSpans[span.ID] = span
+		}
+	}
+	idx.initialBuilt = true
+	idx.structureDirty = true
+	idx.rebuildStructure()
+}
+
+func (idx *TestIndex) spanUpdated(span *Span) {
+	if !idx.initialBuilt {
+		return
+	}
+
+	hasNodeMetadata := testSpanHasNode(span)
+	if idx.knownTestSpans == nil {
+		idx.knownTestSpans = make(map[SpanID]*Span)
+	}
+
+	node := idx.nodesBySpan[span.ID]
+	_, known := idx.knownTestSpans[span.ID]
+
+	if hasNodeMetadata {
+		idx.knownTestSpans[span.ID] = span
+	} else if known || node != nil {
+		wasIncluded := idx.globalIncluded[span.ID] || node != nil
+		idx.indexTestAncestors(span.ID, nil)
+		delete(idx.knownTestSpans, span.ID)
+		delete(idx.globalIncluded, span.ID)
+		delete(idx.globalParentBySpan, span.ID)
+		if wasIncluded {
+			idx.markStructureDirty()
+		}
+		return
+	}
+
+	if idx.structureDirty {
+		return
+	}
+	if idx.globalTestStructureChanged(span) {
+		idx.markStructureDirty()
+		return
+	}
+	if !hasNodeMetadata || !idx.globalIncluded[span.ID] {
+		// Non-test updates that do not affect a test's containment/parentage and
+		// updates to boundary-contained tests leave the global cached view alone.
+		// Scoped views still invalidate on the DB mutation epoch.
+		return
+	}
+
+	if node == nil {
+		idx.markStructureDirty()
+		return
+	}
+
+	kind, name, fullName, suiteName, ok := testNodeMetadata(span)
+	if !ok || node.Kind != kind || node.Name != name || node.FullName != fullName || node.suiteName != suiteName {
+		idx.markStructureDirty()
+		return
+	}
+
+	nearest := nearestTestAncestor(span, idx.nodesBySpan)
+	if node.Parent != nil && node.Parent.Kind == TestNodeVirtualSuite {
+		if nearest != nil {
+			idx.markStructureDirty()
+			return
+		}
+	} else if node.Parent != nil && node.Parent.Kind == TestNodeSuite && node.Kind == TestNodeCase && nearest == nil && node.suiteName == node.Parent.suiteName {
+		// The case is synthetically grouped under a real suite with the same
+		// test.suite.name even though the spans are not parented together.
+	} else if nearest != node.Parent {
+		idx.markStructureDirty()
+		return
+	}
+
+	idx.markAggregateDirty(span.ID)
+}
+
+// globalTestStructureChanged compares containment and nearest-parent signatures
+// only for tests affected by updated: the span itself when it is a test, plus
+// tests whose indexed real parent chain contains its ID. Unrelated span updates
+// are O(1), while placeholder fills and ancestor reparenting remain visible.
+func (idx *TestIndex) globalTestStructureChanged(updated *Span) bool {
+	if updated == nil {
+		return false
+	}
+	affected := idx.testsByAncestor[updated.ID]
+	_, updatedIsTest := idx.knownTestSpans[updated.ID]
+	if !updatedIsTest && len(affected) == 0 {
+		return false
+	}
+	targets := make(map[SpanID]struct{}, len(affected)+1)
+	if updatedIsTest {
+		targets[updated.ID] = struct{}{}
+	}
+	for id := range affected {
+		targets[id] = struct{}{}
+	}
+	for id := range targets {
+		span := idx.knownTestSpans[id]
+		if span == nil {
+			continue
+		}
+		included := spanMayRollUp(span, nil, nil)
+		previous, signed := idx.globalIncluded[id]
+		if !signed {
+			if span.ParentID.IsValid() && span.ParentSpan == nil {
+				// integrateSpan records the snapshot before wiring its parent. Defer
+				// the new test's signature to the post-integration notification.
+				continue
+			}
+			if !included {
+				// A newly discovered contained test changes only scoped views. Keep
+				// it indexed for its owning boundary without rebuilding the
+				// byte-identical global view.
+				idx.globalIncluded[id] = false
+				idx.indexTestAncestors(id, span)
+				continue
+			}
+			return true
+		}
+		if previous != included {
+			return true
+		}
+		var parentID SpanID
+		if included {
+			spanMayRollUp(span, nil, func(parent *Span) {
+				if !parentID.IsValid() && testSpanHasNode(parent) {
+					parentID = parent.ID
+				}
+			})
+		}
+		if idx.globalParentBySpan[id] != parentID {
+			return true
+		}
+		idx.indexTestAncestors(id, span)
+	}
+	return false
+}
+
+func (idx *TestIndex) indexTestAncestors(testID SpanID, span *Span) {
+	for _, ancestorID := range idx.ancestorIDsByTest[testID] {
+		delete(idx.testsByAncestor[ancestorID], testID)
+		if len(idx.testsByAncestor[ancestorID]) == 0 {
+			delete(idx.testsByAncestor, ancestorID)
+		}
+	}
+	delete(idx.ancestorIDsByTest, testID)
+	if span == nil {
+		return
+	}
+	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		if idx.testsByAncestor[parent.ID] == nil {
+			idx.testsByAncestor[parent.ID] = make(map[SpanID]struct{})
+		}
+		idx.testsByAncestor[parent.ID][testID] = struct{}{}
+		idx.ancestorIDsByTest[testID] = append(idx.ancestorIDsByTest[testID], parent.ID)
+	}
+}
+
+func (idx *TestIndex) markStructureDirty() {
+	idx.structureDirty = true
+	idx.version++
+}
+
+func (idx *TestIndex) markAggregateDirty(spanID SpanID) {
+	if idx.dirtySpans == nil {
+		idx.dirtySpans = make(map[SpanID]struct{})
+	}
+	idx.dirtySpans[spanID] = struct{}{}
+	idx.aggregateDirty = true
+	idx.version++
+}
+
+func (idx *TestIndex) rebuildStructure() {
+	idx.structuralRebuildCount++
+
+	nodesBySpan := make(map[SpanID]*TestNode, len(idx.knownTestSpans))
+	idx.globalIncluded = make(map[SpanID]bool, len(idx.knownTestSpans))
+	idx.globalParentBySpan = make(map[SpanID]SpanID, len(idx.knownTestSpans))
+	idx.testsByAncestor = make(map[SpanID]map[SpanID]struct{})
+	idx.ancestorIDsByTest = make(map[SpanID][]SpanID, len(idx.knownTestSpans))
+	for id, span := range idx.knownTestSpans {
+		idx.indexTestAncestors(id, span)
+		included := spanMayRollUp(span, nil, nil)
+		idx.globalIncluded[id] = included
+		if !included {
+			continue
+		}
+		kind, name, fullName, suiteName, ok := testNodeMetadata(span)
+		if !ok {
+			idx.indexTestAncestors(id, nil)
+			delete(idx.knownTestSpans, id)
+			delete(idx.globalIncluded, id)
+			continue
+		}
+		node := &TestNode{
+			ID:        TestNodeID("span:" + span.ID.String()),
+			Kind:      kind,
+			Name:      name,
+			FullName:  fullName,
+			Span:      span,
+			suiteName: suiteName,
+		}
+		nodesBySpan[id] = node
+	}
+
+	var roots []*TestNode
+	for id, node := range nodesBySpan {
+		if parent := nearestTestAncestor(node.Span, nodesBySpan); parent != nil {
+			node.Parent = parent
+			parent.Children = append(parent.Children, node)
+			idx.globalParentBySpan[id] = parent.Span.ID
+		} else {
+			roots = append(roots, node)
+		}
+	}
+
+	sortTestNodes(roots)
+	roots = groupVirtualSuites(roots)
+	sortTestNodes(roots)
+
+	idx.nodesBySpan = nodesBySpan
+	idx.cachedView = buildTestView(roots, idx.nodesBySpan)
+	idx.structureDirty = false
+	idx.aggregateDirty = false
+	clear(idx.dirtySpans)
+	idx.builtVersion = idx.version
+}
+
+func buildTestView(roots []*TestNode, nodesBySpan map[SpanID]*TestNode) *TestView {
+	view := &TestView{
+		Roots:        roots,
+		ByID:         make(map[TestNodeID]*TestNode),
+		BySpan:       make(map[SpanID]*TestNode, len(nodesBySpan)),
+		CasesByName:  make(map[string][]*TestNode),
+		SuitesByName: make(map[string][]*TestNode),
+	}
+
+	for _, root := range roots {
+		computeTestAggregates(root)
+		view.Counts = view.Counts.add(root.Counts)
+	}
+
+	walkTestNodes(roots, func(node *TestNode) {
+		view.ByID[node.ID] = node
+		if node.Span != nil {
+			view.BySpan[node.Span.ID] = node
+		}
+		switch node.Kind {
+		case TestNodeCase:
+			addTestNameIndex(view.CasesByName, node)
+		case TestNodeSuite, TestNodeVirtualSuite:
+			addTestNameIndex(view.SuitesByName, node)
+		}
+	})
+
+	return view
+}
+
+// FilterCases returns a deep-cloned view containing only the case nodes for
+// which keep returns true. Suites (real or virtual) left without surviving
+// descendants are pruned, and aggregates/counts are recomputed. When keep
+// accepts every case the result is structurally equivalent to v. Spans are
+// shared (read-only); only the node tree is cloned.
+func (v *TestView) FilterCases(keep func(*TestNode) bool) *TestView {
+	if v == nil {
+		return nil
+	}
+	var cloneNode func(*TestNode) *TestNode
+	cloneNode = func(n *TestNode) *TestNode {
+		if n == nil {
+			return nil
+		}
+		var kids []*TestNode
+		for _, child := range n.Children {
+			if c := cloneNode(child); c != nil {
+				kids = append(kids, c)
+			}
+		}
+		keepSelf := n.Kind == TestNodeCase && keep(n)
+		// A FAILING suite with no cases of its own -- e.g. a test package that
+		// failed to compile -- has no case children to carry its status, so it
+		// must survive on its own or the failure vanishes from the view.
+		// Failing only: a skipped case-less suite (a package with no test
+		// files) is noise, and a running one shows up once its cases do.
+		caselessSuite := n.Kind != TestNodeCase && len(n.Children) == 0
+		if caselessSuite && n.Category == TestCategoryFailing && keep(n) {
+			keepSelf = true
+		}
+		if !keepSelf && len(kids) == 0 {
+			return nil
+		}
+		clone := *n
+		clone.Parent = nil
+		clone.Children = kids
+		if clone.Kind != TestNodeCase && !caselessSuite {
+			// Re-derive suite status from the retained cases rather than the
+			// backing span: a suite kept only for its surviving (e.g. passing)
+			// cases must not inherit the failing status contributed by sibling
+			// cases that were filtered out. A case-less suite (kept above) is
+			// exempt: its own span IS its status, and summaries need the span
+			// to render it.
+			clone.Kind = TestNodeVirtualSuite
+			clone.Span = nil
+			clone.RepresentativeSpan = nil
+		}
+		for _, child := range kids {
+			child.Parent = &clone
+		}
+		return &clone
+	}
+	var roots []*TestNode
+	for _, root := range v.Roots {
+		if c := cloneNode(root); c != nil {
+			roots = append(roots, c)
+		}
+	}
+	return buildTestView(roots, nil)
+}
+
+func addTestNameIndex(index map[string][]*TestNode, node *TestNode) {
+	if node.FullName != "" {
+		index[node.FullName] = append(index[node.FullName], node)
+	}
+	if node.Name != "" && node.Name != node.FullName {
+		index[node.Name] = append(index[node.Name], node)
+	}
+}
+
+func (idx *TestIndex) applyAggregateUpdates() {
+	if idx.cachedView == nil {
+		idx.rebuildStructure()
+		return
+	}
+	for spanID := range idx.dirtySpans {
+		node := idx.nodesBySpan[spanID]
+		if node == nil {
+			continue
+		}
+		idx.updateNodeAggregate(node)
+	}
+	clear(idx.dirtySpans)
+	idx.aggregateDirty = false
+	idx.builtVersion = idx.version
+
+	idx.cachedView.Counts = TestCounts{}
+	for _, root := range idx.cachedView.Roots {
+		idx.cachedView.Counts = idx.cachedView.Counts.add(root.Counts)
+	}
+}
+
+func (idx *TestIndex) updateNodeAggregate(node *TestNode) {
+	node.SelfCategory = node.Span.TestCategory()
+	// Recompute from the children upward rather than propagating a self-count
+	// delta: a node's self-count depends on its children (only leaves count,
+	// plus the failing-parent guard), so an ancestor's own contribution can
+	// change when a descendant's counts change.
+	for current := node; current != nil; current = current.Parent {
+		counts := TestCounts{}
+		for _, child := range current.Children {
+			counts = counts.add(child.Counts)
+		}
+		current.Counts = counts.add(current.SelfCounts())
+		current.Category = aggregateTestCategory(current.Kind, current.SelfCategory, current.Counts)
+	}
+}
+
+func testSpanHasNode(span *Span) bool {
+	if span == nil {
+		return false
+	}
+	return span.TestCaseName != "" || span.TestSuiteName != ""
+}
+
+func testNodeMetadata(span *Span) (TestNodeKind, string, string, string, bool) {
+	if span == nil {
+		return TestNodeCase, "", "", "", false
+	}
+	if span.TestCaseName != "" {
+		return TestNodeCase, span.Name, span.TestCaseName, span.TestSuiteName, true
+	}
+	if span.TestSuiteName != "" {
+		return TestNodeSuite, span.Name, span.TestSuiteName, span.TestSuiteName, true
+	}
+	return TestNodeCase, "", "", "", false
+}
+
+func nearestTestAncestor(span *Span, nodesBySpan map[SpanID]*TestNode) *TestNode {
+	if span == nil {
+		return nil
+	}
+	for parent := range span.Parents {
+		if node := nodesBySpan[parent.ID]; node != nil {
+			return node
+		}
+	}
+	return nil
+}
+
+func groupVirtualSuites(roots []*TestNode) []*TestNode {
+	realSuites := make(map[string]*TestNode)
+	for _, node := range roots {
+		if node.Kind == TestNodeSuite && node.suiteName != "" {
+			if realSuites[node.suiteName] == nil {
+				realSuites[node.suiteName] = node
+			}
+		}
+	}
+
+	suiteGroups := make(map[string]*TestNode)
+	var grouped []*TestNode
+	for _, node := range roots {
+		if node.Kind != TestNodeCase || node.suiteName == "" {
+			grouped = append(grouped, node)
+			continue
+		}
+		if suite := realSuites[node.suiteName]; suite != nil {
+			node.Parent = suite
+			suite.Children = append(suite.Children, node)
+			continue
+		}
+		suite := suiteGroups[node.suiteName]
+		if suite == nil {
+			suite = &TestNode{
+				ID:                 TestNodeID("suite:" + url.PathEscape(node.suiteName)),
+				Kind:               TestNodeVirtualSuite,
+				Name:               node.suiteName,
+				FullName:           node.suiteName,
+				RepresentativeSpan: node.Span,
+				suiteName:          node.suiteName,
+			}
+			suiteGroups[node.suiteName] = suite
+			grouped = append(grouped, suite)
+		}
+		node.Parent = suite
+		suite.Children = append(suite.Children, node)
+	}
+	return grouped
+}
+
+func sortTestNodes(nodes []*TestNode) {
+	slices.SortFunc(nodes, compareTestNodes)
+	for _, node := range nodes {
+		sortTestNodes(node.Children)
+		if node.Kind == TestNodeVirtualSuite {
+			node.RepresentativeSpan = representativeSpan(node)
+		}
+	}
+}
+
+func compareTestNodes(a, b *TestNode) int {
+	return cmp.Or(
+		cmp.Compare(a.Name, b.Name),
+		cmp.Compare(testNodeStart(a).UnixNano(), testNodeStart(b).UnixNano()),
+		cmp.Compare(string(a.ID), string(b.ID)),
+	)
+}
+
+func testNodeStart(node *TestNode) time.Time {
+	if node == nil {
+		return time.Time{}
+	}
+	if node.Span != nil {
+		return node.Span.StartTime
+	}
+	if node.RepresentativeSpan != nil {
+		return node.RepresentativeSpan.StartTime
+	}
+	return time.Time{}
+}
+
+func representativeSpan(node *TestNode) *Span {
+	if node == nil {
+		return nil
+	}
+	if node.Span != nil {
+		return node.Span
+	}
+	for _, child := range node.Children {
+		if rep := representativeSpan(child); rep != nil {
+			return rep
+		}
+	}
+	return nil
+}
+
+func computeTestAggregates(node *TestNode) {
+	if node == nil {
+		return
+	}
+
+	node.Counts = TestCounts{}
+	node.SelfCategory = node.Span.TestCategory()
+
+	for _, child := range node.Children {
+		computeTestAggregates(child)
+		node.Counts = node.Counts.add(child.Counts)
+	}
+	// Self-count comes last: it depends on the children's aggregate.
+	node.Counts = node.Counts.add(node.SelfCounts())
+	if node.Kind == TestNodeVirtualSuite && node.RepresentativeSpan == nil {
+		node.RepresentativeSpan = representativeSpan(node)
+	}
+	node.Category = aggregateTestCategory(node.Kind, node.SelfCategory, node.Counts)
+}
+
+func aggregateTestCategory(kind TestNodeKind, self TestCategory, counts TestCounts) TestCategory {
+	if kind == TestNodeCase {
+		// A case's own outcome still shapes its category even when it doesn't
+		// contribute to the counts (see SelfCounts): a parent that passed with
+		// a single skipped subtest is mixed, not skipped.
+		counts = counts.add(countForCategory(self))
+	}
+	if self == TestCategoryFailing || counts.Failing > 0 {
+		return TestCategoryFailing
+	}
+	if self == TestCategoryRunning || counts.Running > 0 {
+		return TestCategoryRunning
+	}
+	if total := counts.Total(); total > 0 {
+		switch {
+		case counts.Skipped == total:
+			return TestCategorySkipped
+		case counts.Passing == total && self != TestCategorySkipped:
+			return TestCategoryPassing
+		default:
+			return TestCategoryMixed
+		}
+	}
+	if kind != TestNodeVirtualSuite {
+		switch self {
+		case TestCategorySkipped:
+			return TestCategorySkipped
+		case TestCategoryPassing:
+			return TestCategoryPassing
+		}
+	}
+	return TestCategoryMixed
+}
+
+func walkTestNodes(nodes []*TestNode, f func(*TestNode)) {
+	for _, node := range nodes {
+		f(node)
+		walkTestNodes(node.Children, f)
+	}
+}
