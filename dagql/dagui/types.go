@@ -405,16 +405,12 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 	}
 
 	autoExpand := row.Depth() < 1 && row.IsRunningOrChildRunning
-	// Generator progress can be a tree of scopes and downstream clients.
-	// Follow its explicitly revealed branches to the active scope, while
-	// leaving the leaf's low-level work collapsed. Manual toggles still win.
-	if row.IsRunningOrChildRunning && row.Span.Reveal && row.ShouldShowRevealedSpans(opts) {
-		for parent := row.Parent; parent != nil; parent = parent.Parent {
-			if parent.Span.GeneratorName != "" {
-				autoExpand = true
-				break
-			}
-		}
+	// Explicit progress branches reveal the path to running or failed work.
+	// This also covers generation caused by an update command, which has no
+	// generator marker. Leaf internals and manually collapsed branches stay shut.
+	if (row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure()) &&
+		row.Span.Reveal && row.ShouldShowRevealedSpans(opts) {
+		autoExpand = true
 	}
 
 	alwaysExpand := row.Span.IsCanceled() ||

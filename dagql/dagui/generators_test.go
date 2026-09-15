@@ -197,3 +197,39 @@ func TestSDKGeneratorScopeProgress(t *testing.T) {
 		t.Fatalf("expected expanded client internals, got %+v", rows)
 	}
 }
+
+func TestUpdateRegenerationProgress(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "running", true: "failed"}[failed], func(t *testing.T) {
+			db := NewDB()
+			root := generatorSnapshot(1, "updates", SpanID{}, "")
+			root.Passthrough = true
+			operation := generatorSnapshot(2, "update: api", root.ID, "")
+			operation.Reveal = true
+			regeneration := generatorSnapshot(3, "re-generate", operation.ID, "")
+			regeneration.Reveal = true
+			group := generatorSnapshot(4, "downstream clients", regeneration.ID, "")
+			group.Reveal = true
+			scope := generatorSnapshot(5, "re-generate: ./web", group.ID, "")
+			scope.Reveal = true
+			spans := []SpanSnapshot{root, operation, regeneration, group, scope}
+			for i := range spans {
+				if failed {
+					spans[i].Status = sdktrace.Status{Code: codes.Error, Description: "broken client"}
+				} else {
+					spans[i].EndTime = time.Time{}
+				}
+			}
+			db.ImportSnapshots(spans)
+			opts := FrontendOpts{ZoomedSpan: root.ID}
+			rows := db.RowsView(opts).Rows(opts).Order
+			if len(rows) != 4 || rows[0].Span.Name != "update: api" || rows[1].Span.Name != "re-generate" || rows[3].Span.Name != "re-generate: ./web" {
+				t.Fatalf("expected regeneration group and scope, got %+v", rows)
+			}
+			opts.SpanExpanded = map[SpanID]bool{regeneration.ID: false}
+			if rows := db.RowsView(opts).Rows(opts).Order; len(rows) != 2 {
+				t.Fatalf("expected command and collapsed regeneration rows, got %d", len(rows))
+			}
+		})
+	}
+}
