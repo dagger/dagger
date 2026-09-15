@@ -12,7 +12,10 @@ import (
 	"time"
 )
 
-var gitConfigAllowedKeys = []string{}
+// gitConfigAllowedKeys names the config the engine may read from the client:
+// commit identity, URL rewrites, and the origin remote URL (recorded on
+// reconstructed checkout repositories so remote-aware tooling keeps working).
+var gitConfigAllowedKeys = []string{"user.name", "user.email", "remote.origin.url"}
 
 func isGitConfigKeyAllowed(key string) bool {
 	if slices.Contains(gitConfigAllowedKeys, key) {
@@ -61,6 +64,9 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 	// inside a git repo can fail fatally if the .git pointer is invalid
 	// (e.g. a mounted git worktree whose gitdir target doesn't exist).
 	cmd.Dir = os.TempDir()
+	if req.GetCheckoutPath() != "" {
+		cmd.Dir = req.GetCheckoutPath()
+	}
 
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",

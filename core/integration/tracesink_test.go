@@ -4,12 +4,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
+	"testing"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -39,7 +40,7 @@ type agentTraceSink struct {
 	logs   []*collogspb.ExportLogsServiceRequest
 }
 
-func newAgentTraceSink(t *testctx.T) *agentTraceSink {
+func newAgentTraceSink(t testing.TB) *agentTraceSink {
 	t.Helper()
 	db := dagui.NewDB()
 	sink := &agentTraceSink{db: db, logExp: db.LogExporter()}
@@ -115,4 +116,12 @@ func (sink *agentTraceSink) read(fn func(db *dagui.DB)) {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	fn(sink.db)
+}
+
+// capture returns the OTLP export requests the session forwarded, in arrival
+// order — the raw material a fake Cloud serves back.
+func (sink *agentTraceSink) capture() ([]*coltracepb.ExportTraceServiceRequest, []*collogspb.ExportLogsServiceRequest) {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	return slices.Clone(sink.traces), slices.Clone(sink.logs)
 }

@@ -14,7 +14,9 @@ namespace Dagger;
 class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Creates a synthetic workspace from this git repository.
+     * Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+     *
+     * Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
      */
     public function asWorkspace(?string $cwd = '/'): Workspace
     {
@@ -161,6 +163,38 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('bundle', $bundle);
         if (null !== $prerequisiteRef) {
         $innerQueryBuilder->setArgument('prerequisiteRef', $prerequisiteRef);
+        }
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+     *
+     * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+     *
+     * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+     */
+    public function withDirectory(Directory $directory): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
+        $innerQueryBuilder->setArgument('directory', $directory);
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Register a named remote on this repository, replacing any registered remote of the same name.
+     *
+     * Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.
+     *
+     * Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+     */
+    public function withRemote(string $name, string $url, ?string $pushUrl = ''): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRemote');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('url', $url);
+        if (null !== $pushUrl) {
+        $innerQueryBuilder->setArgument('pushUrl', $pushUrl);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

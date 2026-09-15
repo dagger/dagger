@@ -130,6 +130,7 @@ func NewLLMSession(
 	llmModel string,
 	shellHandler *shellCallHandler,
 	frontend idtui.Frontend,
+	initialLLM *dagger.LLM,
 ) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:        dag,
@@ -163,20 +164,49 @@ func NewLLMSession(
 	own.model = llmModel
 	s.agents = []*sessionAgent{own}
 	s.target = own
-	own.reset()
-	// This plain prompt-mode LLM is the real starting value when no composed
-	// agent replaces it. startInteractivePromptMode explicitly replaces this
-	// baseline together with the composed LLM before entering the prompt.
-	own.setLastSynced(own.llm.Workspace())
-
-	// Grab the model to check for a valid config
-	model, err := own.llm.Model(ctx)
-	if err != nil {
+	// Install the selected composition before status reads so its frozen
+	// checkpoint is captured only once and belongs to this conversation.
+	if initialLLM == nil {
+		workspace, err := snapshotWorkspace(ctx, dag)
+		if err != nil {
+			return nil, err
+		}
+		initialLLM = dag.LLM(dagger.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
+	}
+	if err := own.setInitialLLM(initialLLM); err != nil {
 		return nil, err
 	}
-	own.model = model
+
+	if sink, ok := frontend.(interface {
+		SetLLMToolsProvider(idtui.LLMToolsProvider)
+	}); ok {
+		sink.SetLLMToolsProvider(s.tools)
+	}
 
 	return s, nil
+}
+
+// tools resolves focus and the runtime snapshot at request time, so background
+// conversations cannot replace the toolset shown for the selected agent.
+func (s *LLMSession) tools(ctx context.Context) (string, error) {
+	a := s.Target()
+	if a == nil {
+		return "", fmt.Errorf("no LLM session active")
+	}
+	a.llmL.RLock()
+	llm := a.llm
+	a.llmL.RUnlock()
+	if rt := a.runtime(); rt != nil {
+		id, err := rt.SnapshotID(ctx)
+		if err != nil {
+			return "", err
+		}
+		llm = dagger.Ref[*dagger.LLM](s.dag, id)
+	}
+	if llm == nil {
+		return "", fmt.Errorf("no LLM session active")
+	}
+	return llm.Tools(ctx)
 }
 
 // defaultAgentName is the display label the session's own conversation spawns

@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Add GitRef.push for engine-side pushes without a host checkout. Pushes use
+  the destination's HTTP or SSH credentials, support explicit remote-SHA
+  leases, and return a GitPushResult receipt with the old and new object IDs
+  and update disposition. Pushes are never cached; replaying a receipt does
+  not repeat the push.
+time: 2026-09-05T23:00:00Z
+custom:
+  Author: vito
+  PR: ""

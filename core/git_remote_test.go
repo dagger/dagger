@@ -3,6 +3,9 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +13,41 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGitCheckoutContentOnlyDepthWithSubmodule(t *testing.T) {
+	ctx := context.Background()
+	submodule := t.TempDir()
+	gitBundleTestRun(t, submodule, "init", "--quiet", "--initial-branch=main")
+	require.NoError(t, os.WriteFile(filepath.Join(submodule, "value"), []byte("pinned"), 0o644))
+	gitBundleTestRun(t, submodule, "add", ".")
+	gitBundleTestRun(t, submodule, "commit", "-m", "pinned submodule")
+	pinned := gitBundleTestRun(t, submodule, "rev-parse", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(submodule, "value"), []byte("later"), 0o644))
+	gitBundleTestRun(t, submodule, "commit", "-am", "later submodule")
+	source := t.TempDir()
+	gitBundleTestRun(t, source, "init", "--quiet", "--initial-branch=main")
+	gitBundleTestRun(t, source, "-c", "protocol.file.allow=always", "submodule", "add", "file://"+submodule, "module")
+	gitBundleTestRun(t, filepath.Join(source, "module"), "checkout", pinned)
+	gitBundleTestRun(t, source, "add", ".")
+	gitBundleTestRun(t, source, "commit", "-m", "submodule at older commit")
+	gitBundleTestRun(t, source, "commit", "--allow-empty", "-m", "later parent")
+	head := gitBundleTestRun(t, source, "rev-parse", "HEAD")
+	for _, depth := range []int{0, 1} {
+		t.Run(fmt.Sprint(depth), func(t *testing.T) {
+			root := t.TempDir()
+			git := gitutil.NewGitCLI(gitutil.WithDir(root), gitutil.WithWorkTree(root),
+				gitutil.WithGitDir(filepath.Join(root, ".git")),
+				// Only this private test fixture allows local submodule URLs.
+				gitutil.WithArgs("-c", "protocol.file.allow=always"))
+			require.NoError(t, doGitCheckout(ctx, git, nil, "file://"+source, &gitutil.Ref{SHA: head}, depth, true))
+			data, err := os.ReadFile(filepath.Join(root, "module", "value"))
+			require.NoError(t, err)
+			require.Equal(t, "pinned", string(data), "parent depth does not change the gitlink checkout")
+			_, err = os.Stat(filepath.Join(root, ".git"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
 
 func TestRemoteFromCacheResultAcceptsStringPayload(t *testing.T) {
 	payloadRemote := &gitutil.Remote{

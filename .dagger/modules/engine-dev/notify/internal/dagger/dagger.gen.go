@@ -1069,7 +1069,7 @@ func (r *Check) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// Return the fully qualified name of the check
+// Return the command name of the check. Entrypoint targets omit the module prefix.
 func (r *Check) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -7154,7 +7154,7 @@ func (r *Generator) IsEmpty(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// Return the fully qualified name of the generator
+// Return the command name of the generator. Entrypoint targets omit the module prefix.
 func (r *Generator) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -7167,7 +7167,7 @@ func (r *Generator) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The original module in which the generator has been defined
+// The module that defined the generator, or null for an engine-defined generator
 func (r *Generator) OriginalModule() *Module {
 	q := r.query.Select("originalModule")
 
@@ -13830,7 +13830,7 @@ func (r *Up) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// Return the fully qualified name of the service
+// Return the command name of the service. Entrypoint targets omit the module prefix.
 func (r *Up) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil

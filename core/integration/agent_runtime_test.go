@@ -45,7 +45,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -60,8 +59,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
-	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -1632,14 +1629,6 @@ func (sink *agentTraceSink) awaitAgentState(t *testctx.T, name, state string) {
 			assert.Fail(ct, "agent not in trace", "agent %q", name)
 		})
 	}, 60*time.Second, 100*time.Millisecond)
-}
-
-// capture returns the OTLP export requests the session forwarded, in arrival
-// order — the raw material a fake Cloud serves back.
-func (sink *agentTraceSink) capture() ([]*coltracepb.ExportTraceServiceRequest, []*collogspb.ExportLogsServiceRequest) {
-	sink.mu.Lock()
-	defer sink.mu.Unlock()
-	return slices.Clone(sink.traces), slices.Clone(sink.logs)
 }
 
 // rebuild turns a roster entry back into a handle the way a frontend would:

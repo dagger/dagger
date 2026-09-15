@@ -276,6 +276,18 @@ export function CacheSharingModeNameToValue(name: string): CacheSharingMode {
       return name as CacheSharingMode
   }
 }
+export type ChangesetFilterOpts = {
+  /**
+   * Only include changes at paths matching these patterns. Empty includes all paths.
+   */
+  include?: string[]
+
+  /**
+   * Exclude changes at paths matching these patterns.
+   */
+  exclude?: string[]
+}
+
 export type ChangesetWithChangesetOpts = {
   /**
    * What to do on a merge conflict
@@ -1979,6 +1991,72 @@ export type GitCommitTreeOpts = {
   includeTags?: boolean
 }
 
+/**
+ * How a Git push updated the remote ref.
+ */
+export enum GitPushDisposition {
+  /**
+   * The remote ref was created.
+   */
+  Created = "CREATED",
+
+  /**
+   * The remote ref was fast-forwarded.
+   */
+  FastForward = "FAST_FORWARD",
+
+  /**
+   * The remote ref was replaced under an explicit lease.
+   */
+  Forced = "FORCED",
+
+  /**
+   * The remote ref already pointed to this commit.
+   */
+  UpToDate = "UP_TO_DATE",
+}
+
+/**
+ * Utility function to convert a GitPushDisposition value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function GitPushDispositionValueToName(
+  value: GitPushDisposition,
+): string {
+  switch (value) {
+    case GitPushDisposition.Created:
+      return "CREATED"
+    case GitPushDisposition.FastForward:
+      return "FAST_FORWARD"
+    case GitPushDisposition.Forced:
+      return "FORCED"
+    case GitPushDisposition.UpToDate:
+      return "UP_TO_DATE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a GitPushDisposition name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function GitPushDispositionNameToValue(
+  name: string,
+): GitPushDisposition {
+  switch (name) {
+    case "CREATED":
+      return GitPushDisposition.Created
+    case "FAST_FORWARD":
+      return GitPushDisposition.FastForward
+    case "FORCED":
+      return GitPushDisposition.Forced
+    case "UP_TO_DATE":
+      return GitPushDisposition.UpToDate
+    default:
+      return name as GitPushDisposition
+  }
+}
 export type GitRefAsWorkspaceOpts = {
   /**
    * Current working directory inside the workspace root. Defaults to the workspace root.
@@ -2003,6 +2081,28 @@ export type GitRefLogOpts = {
   base?: GitRef
 }
 
+export type GitRefPushOpts = {
+  /**
+   * Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has multiple push URLs or no remote URL.
+   */
+  to?: GitRepository
+
+  /**
+   * Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead.
+   */
+  remote?: string
+
+  /**
+   * Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+   */
+  branch?: string
+
+  /**
+   * Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+   */
+  expectedRemoteSHA?: string
+}
+
 export type GitRefTreeOpts = {
   /**
    * Set to true to discard .git directory.
@@ -2018,6 +2118,33 @@ export type GitRefTreeOpts = {
    * Set to true to populate tag refs in the local checkout .git.
    */
   includeTags?: boolean
+}
+
+export type GitRefWithCommitOpts = {
+  /**
+   * Committer name. Defaults to authorName.
+   */
+  committerName?: string
+
+  /**
+   * Committer email. Defaults to authorEmail.
+   */
+  committerEmail?: string
+
+  /**
+   * RFC3339 committer date. Defaults to date.
+   */
+  committerDate?: string
+
+  /**
+   * Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+   */
+  allowEmpty?: boolean
+
+  /**
+   * Add a Signed-off-by trailer using the commit author's name and email.
+   */
+  signoff?: boolean
 }
 
 export type GitRepositoryAsWorkspaceOpts = {
@@ -2060,6 +2187,13 @@ export type GitRepositoryWithBundleOpts = {
    * An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
    */
   prerequisiteRef?: string
+}
+
+export type GitRepositoryWithRemoteOpts = {
+  /**
+   * Push destination, when pushes go somewhere other than url. Empty uses url.
+   */
+  pushUrl?: string
 }
 
 export type HostDirectoryOpts = {
@@ -3470,6 +3604,18 @@ export type WorkspaceChecksOpts = {
   onlyGenerate?: boolean
 }
 
+export type WorkspaceCommitsFromOpts = {
+  /**
+   * Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   */
+  commits?: string[]
+
+  /**
+   * Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+   */
+  maxCommits?: number
+}
+
 export type WorkspaceConfigReadOpts = {
   /**
    * Dotted key path (e.g. modules.greeter.source). Empty for full config.
@@ -3492,6 +3638,18 @@ export type WorkspaceDirectoryOpts = {
    * Apply .gitignore filter rules inside the directory.
    */
   gitignore?: boolean
+}
+
+export type WorkspaceExportOpts = {
+  /**
+   * Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
+   */
+  path?: string
+
+  /**
+   * Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
+   */
+  from?: Workspace
 }
 
 export type WorkspaceFindRootsOpts = {
@@ -3622,6 +3780,45 @@ export type WorkspaceWithClientOpts = {
   settings?: JSON
 }
 
+export type WorkspaceWithCommitOpts = {
+  /**
+   * Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+   */
+  paths?: string[]
+
+  /**
+   * RFC3339 author and committer date. Required for reproducible commits.
+   */
+  date: string
+
+  /**
+   * Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+   */
+  authorName?: string
+
+  /**
+   * Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+   */
+  authorEmail?: string
+
+  /**
+   * Add a Signed-off-by trailer using the commit author's name and email.
+   */
+  signoff?: boolean
+}
+
+export type WorkspaceWithCommitsFromOpts = {
+  /**
+   * Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   */
+  commits?: string[]
+
+  /**
+   * Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+   */
+  maxCommits?: number
+}
+
 export type WorkspaceWithConfigEnvOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
@@ -3692,6 +3889,13 @@ export type WorkspaceWithNewFileOpts = {
    * Permissions of the new file.
    */
   permissions?: number
+}
+
+export type WorkspaceWithResetOpts = {
+  /**
+   * Discard uncommitted changes, resetting the working tree to the commit.
+   */
+  hard?: boolean
 }
 
 export type WorkspaceWithSdkOpts = {
@@ -3782,6 +3986,129 @@ export type WorkspaceWithoutSdkOpts = {
   here?: boolean
 }
 
+/**
+ * Why a source commit cannot be pulled.
+ */
+export enum WorkspaceCommitPickReason {
+  /**
+   * The patch conflicts with committed content.
+   */
+  Content = "CONTENT",
+
+  /**
+   * The commit touches uncommitted paths in the receiving workspace.
+   */
+  Dirty = "DIRTY",
+
+  /**
+   * No conflict.
+   */
+  None = "NONE",
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickReason value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function WorkspaceCommitPickReasonValueToName(
+  value: WorkspaceCommitPickReason,
+): string {
+  switch (value) {
+    case WorkspaceCommitPickReason.Content:
+      return "CONTENT"
+    case WorkspaceCommitPickReason.Dirty:
+      return "DIRTY"
+    case WorkspaceCommitPickReason.None:
+      return "NONE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickReason name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function WorkspaceCommitPickReasonNameToValue(
+  name: string,
+): WorkspaceCommitPickReason {
+  switch (name) {
+    case "CONTENT":
+      return WorkspaceCommitPickReason.Content
+    case "DIRTY":
+      return WorkspaceCommitPickReason.Dirty
+    case "NONE":
+      return WorkspaceCommitPickReason.None
+    default:
+      return name as WorkspaceCommitPickReason
+  }
+}
+/**
+ * Whether a source commit can be pulled.
+ */
+export enum WorkspaceCommitPickStatus {
+  /**
+   * The commit cannot be applied; see reason and conflictPaths.
+   */
+  Conflict = "CONFLICT",
+
+  /**
+   * The commit can be applied.
+   */
+  Pickable = "PICKABLE",
+
+  /**
+   * The commit is already present by hash or cherry-pick origin.
+   */
+  Picked = "PICKED",
+
+  /**
+   * The patch is already present, or applying it would be empty.
+   */
+  Redundant = "REDUNDANT",
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickStatus value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function WorkspaceCommitPickStatusValueToName(
+  value: WorkspaceCommitPickStatus,
+): string {
+  switch (value) {
+    case WorkspaceCommitPickStatus.Conflict:
+      return "CONFLICT"
+    case WorkspaceCommitPickStatus.Pickable:
+      return "PICKABLE"
+    case WorkspaceCommitPickStatus.Picked:
+      return "PICKED"
+    case WorkspaceCommitPickStatus.Redundant:
+      return "REDUNDANT"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickStatus name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function WorkspaceCommitPickStatusNameToValue(
+  name: string,
+): WorkspaceCommitPickStatus {
+  switch (name) {
+    case "CONFLICT":
+      return WorkspaceCommitPickStatus.Conflict
+    case "PICKABLE":
+      return WorkspaceCommitPickStatus.Pickable
+    case "PICKED":
+      return WorkspaceCommitPickStatus.Picked
+    case "REDUNDANT":
+      return WorkspaceCommitPickStatus.Redundant
+    default:
+      return name as WorkspaceCommitPickStatus
+  }
+}
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
 }
@@ -4615,6 +4942,18 @@ export class Changeset extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Select changes matching the supplied glob patterns, preserving their original baseline.
+   *
+   * Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+   * @param opts.include Only include changes at paths matching these patterns. Empty includes all paths.
+   * @param opts.exclude Exclude changes at paths matching these patterns.
+   */
+  filter = (opts?: ChangesetFilterOpts): Changeset => {
+    const ctx = this._ctx.select("filter", { ...opts })
+    return new Changeset(ctx)
   }
 
   /**
@@ -10333,6 +10672,112 @@ export class GitCommit extends BaseClient {
 }
 
 /**
+ * A receipt for a completed Git push. Reading or replaying the receipt does not push again.
+ */
+export class GitPushResult extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _disposition?: GitPushDisposition = undefined
+  private readonly _previousSHA?: string = undefined
+  private readonly _ref?: string = undefined
+  private readonly _sha?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _disposition?: GitPushDisposition,
+    _previousSHA?: string,
+    _ref?: string,
+    _sha?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._disposition = _disposition
+    this._previousSHA = _previousSHA
+    this._ref = _ref
+    this._sha = _sha
+  }
+
+  /**
+   * A unique identifier for this GitPushResult.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * How the remote ref was updated.
+   */
+  disposition = async (): Promise<GitPushDisposition> => {
+    if (this._disposition) {
+      return this._disposition
+    }
+
+    const ctx = this._ctx.select("disposition")
+
+    const response: Awaited<GitPushDisposition> = await ctx.execute()
+
+    return GitPushDispositionNameToValue(response)
+  }
+
+  /**
+   * The previous remote object ID; empty when the ref was created.
+   */
+  previousSHA = async (): Promise<string> => {
+    if (this._previousSHA) {
+      return this._previousSHA
+    }
+
+    const ctx = this._ctx.select("previousSHA")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The fully qualified remote ref.
+   */
+  ref = async (): Promise<string> => {
+    if (this._ref) {
+      return this._ref
+    }
+
+    const ctx = this._ctx.select("ref")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The object ID pushed to the remote.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * A git ref (tag, branch, or commit).
  */
 export class GitRef extends BaseClient {
@@ -10375,6 +10820,16 @@ export class GitRef extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Return this ref's repository with HEAD pinned to the selected commit.
+   *
+   * Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+   */
+  asRepository = (): GitRepository => {
+    const ctx = this._ctx.select("asRepository")
+    return new GitRepository(ctx)
   }
 
   /**
@@ -10462,6 +10917,22 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * Push this ref's commit and history to a remote repository using the destination's credentials.
+   *
+   * The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+   *
+   * A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+   * @param opts.to Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has multiple push URLs or no remote URL.
+   * @param opts.remote Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead.
+   * @param opts.branch Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+   * @param opts.expectedRemoteSHA Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+   */
+  push = (opts?: GitRefPushOpts): GitPushResult => {
+    const ctx = this._ctx.select("push", { ...opts })
+    return new GitPushResult(ctx)
+  }
+
+  /**
    * The resolved ref name at this ref.
    * @deprecated Use "name" instead.
    */
@@ -10494,6 +10965,42 @@ export class GitRef extends BaseClient {
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Create a single-parent commit on this ref by applying a changeset's edits.
+   *
+   * Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+   *
+   * Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+   * @param changes Changes to apply. Use Changeset.filter to select paths before committing.
+   * @param message Commit message.
+   * @param date RFC3339 author date; also the default committer date.
+   * @param authorName Author name.
+   * @param authorEmail Author email.
+   * @param opts.committerName Committer name. Defaults to authorName.
+   * @param opts.committerEmail Committer email. Defaults to authorEmail.
+   * @param opts.committerDate RFC3339 committer date. Defaults to date.
+   * @param opts.allowEmpty Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+   * @param opts.signoff Add a Signed-off-by trailer using the commit author's name and email.
+   */
+  withCommit = (
+    changes: Changeset,
+    message: string,
+    date: string,
+    authorName: string,
+    authorEmail: string,
+    opts?: GitRefWithCommitOpts,
+  ): GitRef => {
+    const ctx = this._ctx.select("withCommit", {
+      changes,
+      message,
+      date,
+      authorName,
+      authorEmail,
+      ...opts,
+    })
+    return new GitRef(ctx)
   }
 
   /**
@@ -10539,7 +11046,9 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Creates a synthetic workspace from this git repository.
+   * Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+   *
+   * Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
    * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
    */
   asWorkspace = (opts?: GitRepositoryAsWorkspaceOpts): Workspace => {
@@ -10581,6 +11090,8 @@ export class GitRepository extends BaseClient {
   /**
    * Returns details of a commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
+   *
+   * May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded against locally available objects. Remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA otherwise.
    */
   commit = (id: string): GitCommit => {
     const ctx = this._ctx.select("commit", { id })
@@ -10609,6 +11120,8 @@ export class GitRepository extends BaseClient {
   /**
    * Returns details of a ref.
    * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+   *
+   * Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
    */
   ref = (name: string): GitRef => {
     const ctx = this._ctx.select("ref", { name })
@@ -10669,6 +11182,38 @@ export class GitRepository extends BaseClient {
     opts?: GitRepositoryWithBundleOpts,
   ): GitRepository => {
     const ctx = this._ctx.select("withBundle", { bundle, ...opts })
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+   *
+   * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+   *
+   * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+   * @param directory Existing Git storage to open. Git metadata and object dependencies must be contained in this directory.
+   */
+  withDirectory = (directory: Directory): GitRepository => {
+    const ctx = this._ctx.select("withDirectory", { directory })
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Register a named remote on this repository, replacing any registered remote of the same name.
+   *
+   * Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.
+   *
+   * Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+   * @param name The remote's name, e.g. "origin" or "upstream".
+   * @param url The remote's fetch URL.
+   * @param opts.pushUrl Push destination, when pushes go somewhere other than url. Empty uses url.
+   */
+  withRemote = (
+    name: string,
+    url: string,
+    opts?: GitRepositoryWithRemoteOpts,
+  ): GitRepository => {
+    const ctx = this._ctx.select("withRemote", { name, url, ...opts })
     return new GitRepository(ctx)
   }
 
@@ -13997,6 +14542,7 @@ export class Port extends BaseClient {
  */
 export class Client extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _currentTimestamp?: string = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
 
@@ -14006,12 +14552,14 @@ export class Client extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _currentTimestamp?: string,
     _defaultPlatform?: Platform,
     _version?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._currentTimestamp = _currentTimestamp
     this._defaultPlatform = _defaultPlatform
     this._version = _version
   }
@@ -14128,6 +14676,17 @@ export class Client extends BaseClient {
   currentNode = (): Node => {
     const ctx = this._ctx.select("currentNode")
     return new _NodeClient(ctx)
+  }
+
+  /**
+   * The current UTC time in RFC3339 format. Never cached.
+   */
+  currentTimestamp = async (): Promise<string> => {
+    const ctx = this._ctx.select("currentTimestamp")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -16272,6 +16831,38 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+   *
+   * Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+   *
+   * A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+   * @param source Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
+   * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+   */
+  commitsFrom = async (
+    source: Workspace,
+    opts?: WorkspaceCommitsFromOpts,
+  ): Promise<WorkspaceCommitPick[]> => {
+    type commitsFrom = {
+      id: ID
+    }
+
+    const ctx = this._ctx
+      .select("commitsFrom", { source, ...opts })
+      .select("id")
+
+    const response: Awaited<commitsFrom[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceCommitPick(
+          ctx.copy().selectNode(r.id, "WorkspaceCommitPick"),
+        ),
+    )
+  }
+
+  /**
    * Selected native workspace config file relative to the workspace cwd, if any.
    */
   configFile = async (): Promise<string> => {
@@ -16386,16 +16977,20 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Write this workspace's pending changes to its local Git workspace on the current client's host.
+   * Write this workspace's commits and pending changes to a checkout on the calling client.
    *
-   * Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
+   * With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+   *
+   * Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
+   * @param opts.path Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
+   * @param opts.from Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
    */
-  export = async (): Promise<void> => {
+  export = async (opts?: WorkspaceExportOpts): Promise<void> => {
     if (this._export) {
       return
     }
 
-    const ctx = this._ctx.select("export")
+    const ctx = this._ctx.select("export", { ...opts })
 
     await ctx.execute()
   }
@@ -16555,14 +17150,6 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-   */
-  reloaded = (): Workspace => {
-    const ctx = this._ctx.select("reloaded")
-    return new Workspace(ctx)
-  }
-
-  /**
    * An installed SDK, by name.
    * @param name SDK name to look up.
    */
@@ -16630,6 +17217,23 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return a snapshot of this workspace as a stable value.
+   *
+   * Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
+   *
+   * Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.
+   *
+   * Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
+   *
+   * The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+   * @experimental
+   */
+  snapshot = (): Workspace => {
+    const ctx = this._ctx.select("snapshot")
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return all terminal targets from modules loaded in the workspace.
    * @param opts.include Only include terminal targets matching the specified patterns
    */
@@ -16664,6 +17268,44 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+   *
+   * A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+   *
+   * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+   * @param message Commit message.
+   * @param opts.paths Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+   * @param opts.date RFC3339 author and committer date. Required for reproducible commits.
+   * @param opts.authorName Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+   * @param opts.authorEmail Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+   * @param opts.signoff Add a Signed-off-by trailer using the commit author's name and email.
+   */
+  withCommit = (message: string, opts?: WorkspaceWithCommitOpts): Workspace => {
+    const ctx = this._ctx.select("withCommit", { message, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+   *
+   * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+   *
+   * A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
+   *
+   * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+   * @param source Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
+   * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+   */
+  withCommitsFrom = (
+    source: Workspace,
+    opts?: WorkspaceWithCommitsFromOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withCommitsFrom", { source, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a named config environment created.
    * @param name Environment name.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -16673,6 +17315,25 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithConfigEnvOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withConfigEnv", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Select the config environment carried by this workspace.
+   * @param name Environment name, or empty to clear the selection.
+   */
+  withConfigEnvironment = (name: string): Workspace => {
+    const ctx = this._ctx.select("withConfigEnvironment", { name })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+   * @param configFile Config file path.
+   * @param lockFile Lockfile path.
+   */
+  withConfigPaths = (configFile: string, lockFile: string): Workspace => {
+    const ctx = this._ctx.select("withConfigPaths", { configFile, lockFile })
     return new Workspace(ctx)
   }
 
@@ -16822,6 +17483,22 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+   *
+   * A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+   *
+   * With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+   *
+   * Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+   * @param commit Full commit hash to reset HEAD to.
+   * @param opts.hard Discard uncommitted changes, resetting the working tree to the commit.
+   */
+  withReset = (commit: string, opts?: WorkspaceWithResetOpts): Workspace => {
+    const ctx = this._ctx.select("withReset", { commit, ...opts })
     return new Workspace(ctx)
   }
 
@@ -16996,6 +17673,95 @@ export class Workspace extends BaseClient {
 }
 
 /**
+ * A source commit classified against the receiving workspace.
+ */
+export class WorkspaceCommitPick extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _reason?: WorkspaceCommitPickReason = undefined
+  private readonly _status?: WorkspaceCommitPickStatus = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _reason?: WorkspaceCommitPickReason,
+    _status?: WorkspaceCommitPickStatus,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._reason = _reason
+    this._status = _status
+  }
+
+  /**
+   * A unique identifier for this WorkspaceCommitPick.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The commit in the source workspace.
+   */
+  commit = (): GitCommit => {
+    const ctx = this._ctx.select("commit")
+    return new GitCommit(ctx)
+  }
+
+  /**
+   * Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+   */
+  conflictPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("conflictPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Why the commit conflicts, or NONE.
+   */
+  reason = async (): Promise<WorkspaceCommitPickReason> => {
+    if (this._reason) {
+      return this._reason
+    }
+
+    const ctx = this._ctx.select("reason")
+
+    const response: Awaited<WorkspaceCommitPickReason> = await ctx.execute()
+
+    return WorkspaceCommitPickReasonNameToValue(response)
+  }
+
+  /**
+   * Whether this commit can be applied.
+   */
+  status = async (): Promise<WorkspaceCommitPickStatus> => {
+    if (this._status) {
+      return this._status
+    }
+
+    const ctx = this._ctx.select("status")
+
+    const response: Awaited<WorkspaceCommitPickStatus> = await ctx.execute()
+
+    return WorkspaceCommitPickStatusNameToValue(response)
+  }
+}
+
+/**
  * Local git state for a workspace.
  */
 export class WorkspaceGit extends BaseClient {
@@ -17023,6 +17789,18 @@ export class WorkspaceGit extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
+   *
+   * Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
+   *
+   * This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
+   */
+  directory = (): Directory => {
+    const ctx = this._ctx.select("directory")
+    return new Directory(ctx)
   }
 
   /**

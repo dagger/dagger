@@ -16,7 +16,9 @@ defmodule Dagger.GitRepository do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Creates a synthetic workspace from this git repository.
+  Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+
+  Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
   """
   @spec as_workspace(t(), [{:cwd, String.t() | nil}]) :: Dagger.Workspace.t()
   def as_workspace(%__MODULE__{} = git_repository, optional_args \\ []) do
@@ -212,6 +214,49 @@ defmodule Dagger.GitRepository do
       |> QB.select("withBundle")
       |> QB.put_arg("bundle", Dagger.ID.id!(bundle))
       |> QB.maybe_put_arg("prerequisiteRef", optional_args[:prerequisite_ref])
+
+    %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
+  Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+
+  Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+
+  The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+  """
+  @spec with_directory(t(), Dagger.Directory.t()) :: Dagger.GitRepository.t()
+  def with_directory(%__MODULE__{} = git_repository, directory) do
+    query_builder =
+      git_repository.query_builder
+      |> QB.select("withDirectory")
+      |> QB.put_arg("directory", Dagger.ID.id!(directory))
+
+    %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
+  Register a named remote on this repository, replacing any registered remote of the same name.
+
+  Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.
+
+  Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+  """
+  @spec with_remote(t(), String.t(), String.t(), [{:push_url, String.t() | nil}]) ::
+          Dagger.GitRepository.t()
+  def with_remote(%__MODULE__{} = git_repository, name, url, optional_args \\ []) do
+    query_builder =
+      git_repository.query_builder
+      |> QB.select("withRemote")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("url", url)
+      |> QB.maybe_put_arg("pushUrl", optional_args[:push_url])
 
     %Dagger.GitRepository{
       query_builder: query_builder,
