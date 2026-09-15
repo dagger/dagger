@@ -344,6 +344,30 @@ func TestRenderDigestedLiteralIsOpaque(t *testing.T) {
 	}
 }
 
+func TestIncompleteErrorOriginDoesNotSuppressMessage(t *testing.T) {
+	for _, originStatus := range []sdktrace.Status{{}, {Code: codes.Error}} {
+		t.Run(originStatus.Code.String(), func(t *testing.T) {
+			const message = `workspace path "../.." escapes workspace root`
+			rootID, callID, originID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+			start := time.Unix(100, 0)
+			db := dagui.NewDB()
+			db.ImportSnapshots([]dagui.SpanSnapshot{
+				{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger call", StartTime: start, EndTime: start.Add(time.Second), Final: true},
+				{ID: callID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "escapeDir", StartTime: start, EndTime: start.Add(time.Second), Final: true, Status: sdktrace.Status{Code: codes.Error, Description: message}},
+				// A nested session's error can arrive before its origin's final span.
+				{ID: originID, TraceID: prettyTestTraceID(), ParentID: callID, Name: "Workspace.directory", StartTime: start, Status: originStatus},
+			})
+			db.Spans.Map[callID].ErrorOrigins.Add(db.Spans.Map[originID])
+			db.SetPrimarySpan(rootID)
+			fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
+			fe.err = fmt.Errorf("%s [traceparent:%s-%s]", message, prettyTestTraceID(), originID)
+			var output bytes.Buffer
+			_ = fe.FinalRender(&output)
+			require.Contains(t, ansi.Strip(output.String()), message)
+		})
+	}
+}
+
 func TestSortErrorOriginsUsesCurrentSpanData(t *testing.T) {
 	spanID := func(id byte) dagui.SpanID {
 		return dagui.SpanID{SpanID: trace.SpanID{id}}
