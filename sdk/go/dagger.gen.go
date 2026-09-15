@@ -18176,6 +18176,8 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 // Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
 //
 // The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+//
+// Experimental: Best-effort capture for resumable sessions; capture and fallback behavior may change.
 func (r *Workspace) Snapshot() *Workspace {
 	q := r.query.Select("snapshot")
 

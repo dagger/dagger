@@ -17340,6 +17340,10 @@ class Workspace(Type):
 
         The recipe is portable when a remote can serve its base; otherwise it
         is frozen for this session only.
+
+        .. caution::
+            Experimental: Best-effort capture for resumable sessions; capture
+            and fallback behavior may change.
         """
         _args: list[Arg] = []
         _ctx = self._select("snapshot", _args)
