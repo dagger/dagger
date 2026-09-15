@@ -123,26 +123,6 @@ func (r *ReleaseReport) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r ReleaseTest) MarshalJSON() ([]byte, error) {
-	var concrete struct {
-		Container *dagger.Container
-	}
-	concrete.Container = r.Container
-	return json.Marshal(&concrete)
-}
-
-func (r *ReleaseTest) UnmarshalJSON(bs []byte) error {
-	var concrete struct {
-		Container *dagger.Container
-	}
-	err := json.Unmarshal(bs, &concrete)
-	if err != nil {
-		return err
-	}
-	r.Container = concrete.Container
-	return nil
-}
-
 func (r ReleaseReportArtifact) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Name   string
@@ -686,20 +666,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Release).RustSdkTargetVersion(&parent, ctx)
-		case "TestLocalRelease":
-			var parent Release
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*Release).TestLocalRelease(&parent, ctx, version)
 		case "TypescriptSdkTargetVersion":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -733,32 +699,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*ReleaseReport).Markdown(&parent, ctx)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "ReleaseTest":
-		switch fnName {
-		case "ExistingModule":
-			var parent ReleaseTest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var testdata *dagger.Directory
-			if inputArgs["testdata"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["testdata"]), &testdata)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testdata", err))
-				}
-			}
-			return nil, (*ReleaseTest).ExistingModule(&parent, ctx, testdata)
-		case "NewModule":
-			var parent ReleaseTest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*ReleaseTest).NewModule(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -877,12 +817,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithSourceMap(dag.SourceMap("generate.go", 149, 1)).
 							WithGenerator()).
 					WithFunction(
-						dag.Function("TestLocalRelease",
-							dag.TypeDef().WithObject("ReleaseTest")).
-							WithDescription("Create a fake release a run checks to catch potential breaking changes.").
-							WithSourceMap(dag.SourceMap("tests.go", 14, 1)).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Current engine version. The test runs the next patch (vX.Y.Z+1) on top.", SourceMap: dag.SourceMap("tests.go", 17, 2)})).
-					WithFunction(
 						dag.Function("TypescriptSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate TypeScript SDK files that reference the target Dagger Engine version.").
@@ -906,22 +840,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithField("Artifacts", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("ReleaseReportArtifact")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 36, 2)}).
 					WithField("FollowUps", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("ReleaseReportFollowUp")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 37, 2)}).
 					WithField("Errors", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Error")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 39, 2)})).
-			WithObject(
-				dag.TypeDef().WithObject("ReleaseTest", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("tests.go", 30, 6)}).
-					WithFunction(
-						dag.Function("ExistingModule",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Test calling an existing module with basic commands.").
-							WithSourceMap(dag.SourceMap("tests.go", 69, 1)).
-							WithCheck().
-							WithArg("testdata", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("tests.go", 73, 2), DefaultPath: "/.dagger/modules/release/testdata/module"})).
-					WithFunction(
-						dag.Function("NewModule",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Test scaffolding a new module via the Go SDK and executing basic commands.\n\nThis installs the Go SDK, uses `dagger module init` with the legacy template\n(the classic ContainerEcho/GrepDir example) to scaffold a module, then calls\nthe generated module. Workspace discovery resolves through a .git boundary,\nso the working directory is initialized as a repo first.").
-							WithSourceMap(dag.SourceMap("tests.go", 41, 1)).
-							WithCheck()).
-					WithField("Container", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("tests.go", 31, 2)})).
 			WithObject(
 				dag.TypeDef().WithObject("ReleaseReportArtifact", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 42, 6)}).
 					WithField("Name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 43, 2)}).
