@@ -6,8 +6,8 @@ include = ["../../../go.mod", "../../../go.sum"]
   source = "go"
 
 [[dependencies]]
-  name = "changelog"
-  source = "../changelog"
+  name = "changie"
+  source = "../changie"
 
 [[dependencies]]
   name = "cli-dev"
