@@ -114,7 +114,20 @@ module.exports = {
           collapsible: true,
           collapsed: true,
           items: [
-            "reference/modules/go",
+            {
+              type: "category",
+              label: "Go",
+              link: {
+                type: "doc",
+                id: "reference/modules/go",
+              },
+              collapsible: true,
+              collapsed: true,
+              items: [
+                "reference/modules/go/golangci-lint",
+                "reference/modules/go/staticcheck",
+              ],
+            },
             {
               type: "category",
               label: "JavaScript",
