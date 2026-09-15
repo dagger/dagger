@@ -249,3 +249,7 @@ is-module = true
 [sdks.go.scopes.".dagger/modules/go"]
 clients = ["./modules/wolfi"]
 is-module = true
+
+[modules.dagger-dev]
+source = ".dagger/modules/dagger-dev"
+entrypoint = true

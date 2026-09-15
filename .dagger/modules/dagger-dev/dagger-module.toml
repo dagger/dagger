@@ -1,0 +1,9 @@
+name = "dagger-dev"
+engineVersion = "v1.0.0-beta.12"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "engine-dev"
+  source = "../engine-dev"

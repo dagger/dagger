@@ -1,0 +1,10 @@
+"""
+A Dagger module to help developer Dagger.
+Single use for the dagger open-source repo.
+"""
+type DaggerDev {
+
+  playground(ws: Workspace!): Container! {
+    engineDev(ws).playground()
+  }
+}
