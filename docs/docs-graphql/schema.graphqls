@@ -7415,3 +7415,4 @@ type WorkspaceSDK implements Node {
   """The module reference this SDK was installed from."""
   ref: String!
 }
+
