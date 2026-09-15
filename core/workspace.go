@@ -540,6 +540,21 @@ func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path 
 	return cp
 }
 
+// WithoutMountedAt returns a copy of the workspace with the given mounts tree
+// and every mount point at or under the workspace-root-relative path removed.
+func (ws *Workspace) WithoutMountedAt(newMounts dagql.ObjectResult[*Directory], path string) *Workspace {
+	cp := ws.Clone()
+	cp.mounts = newMounts
+	p := filepath.ToSlash(path)
+	cp.mountPoints = slices.DeleteFunc(cp.mountPoints, func(target string) bool {
+		return p == "." || target == p || strings.HasPrefix(target, p+"/")
+	})
+	if len(cp.mountPoints) == 0 {
+		cp.mounts = dagql.ObjectResult[*Directory]{}
+	}
+	return cp
+}
+
 // MountedPath reports whether a workspace-root-relative path is at or under
 // one of the workspace's mount points.
 func (ws *Workspace) MountedPath(resolvedPath string) bool {
