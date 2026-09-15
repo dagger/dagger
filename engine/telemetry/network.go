@@ -73,6 +73,13 @@ type NetworkAccumulator struct {
 	total    atomic.Int64
 }
 
+type networkAccumulatorsKey struct{}
+
+type networkAccumulators struct {
+	rx *NetworkAccumulator
+	tx *NetworkAccumulator
+}
+
 func NewNetworkAccumulator(ctx context.Context, direction NetworkDirection) (*NetworkAccumulator, error) {
 	recorder, err := NewNetworkRecorder(ctx, direction)
 	if err != nil {
@@ -86,4 +93,31 @@ func (a *NetworkAccumulator) Add(bytes int64) {
 		return
 	}
 	a.recorder.Record(a.total.Add(bytes))
+}
+
+// WithNetworkRecording attaches one RX/TX accumulator pair to ctx. Transports
+// beneath the operation can contribute retries and concurrent streams without
+// resetting the operation's gauges.
+func WithNetworkRecording(ctx context.Context) (context.Context, error) {
+	rx, err := NewNetworkAccumulator(ctx, NetworkRX)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := NewNetworkAccumulator(ctx, NetworkTX)
+	if err != nil {
+		return nil, err
+	}
+	return context.WithValue(ctx, networkAccumulatorsKey{}, networkAccumulators{rx: rx, tx: tx}), nil
+}
+
+func RecordNetworkRX(ctx context.Context, bytes int64) {
+	if accumulators, ok := ctx.Value(networkAccumulatorsKey{}).(networkAccumulators); ok {
+		accumulators.rx.Add(bytes)
+	}
+}
+
+func RecordNetworkTX(ctx context.Context, bytes int64) {
+	if accumulators, ok := ctx.Value(networkAccumulatorsKey{}).(networkAccumulators); ok {
+		accumulators.tx.Add(bytes)
+	}
 }
