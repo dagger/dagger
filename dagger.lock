@@ -17,6 +17,7 @@
 ["","git-sha",["github.com/dagger/go-sdk","main"],"2fa6a872760d2e2a33b612f1737ca5099d71ad0d"]
 ["","git-sha",["github.com/dagger/go-sdk","refs/tags/v0.1"],"ec2d1ff3ea14032cc0ae5de842b81cea3ce8f8c1"]
 ["","git-sha",["github.com/dagger/go-sdk","refs/tags/v1.1.0"],"2fa6a872760d2e2a33b612f1737ca5099d71ad0d"]
+["","git-sha",["github.com/dagger/golangci-lint","main"],"f134a34405e2ea5a7da4e19cf6426b8e896d4b34"]
 ["","git-sha",["github.com/dagger/sdk-helpers","refs/tags/v1.0.4"],"6c883f657933ecb06ae86d56d9cd1f8785346bb1"]
 ["","git-sha",["github.com/eunomie/empty","HEAD"],"8de4cdfd244137aa83243a283d079cc630e3268a"]
 ["","git-sha",["github.com/eunomie/ws-test","HEAD"],"42501096f5759d18410eb629ec6b4c08a7888a0e"]
