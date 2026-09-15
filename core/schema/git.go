@@ -245,6 +245,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			IsPersistable().
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The resolved commit SHA at this ref.`),
+		dagql.NodeFunc("__fullCheckout", s.fullCheckout).
+			IsPersistable().
+			Doc(`(Internal-only) Materialize full history and Git metadata regardless of keepGitDir.`),
 		dagql.NodeFunc("tree", s.tree).
 			IsPersistable().
 			View(AllVersion).
@@ -1862,6 +1865,21 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 	return parent, nil
 }
 
+// fullCheckout materializes the canonical full retained checkout, shared by
+// public trees and workspaces, including repositories with keepGitDir=false.
+// Its cache key depends on the resolved GitRef, never on workspace edits.
+func (s *gitSchema) fullCheckout(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], _ struct{}) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := parent.Self().Backend.Tree(ctx, srv, false, 0, false, parent.Self().Repo.Self().Remotes)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
 type treeArgs struct {
 	DiscardGitDir bool `default:"false"`
 	Depth         int  `default:"1"`
@@ -1894,11 +1912,17 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return pinnedGitTree(ctx, srv, ref.Repo, ref.Ref.SHA, args)
 	}
 
-	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
-	if err != nil {
-		return inst, err
+	if !ref.Repo.Self().DiscardGitDir && !args.DiscardGitDir && args.Depth == 0 && !args.IncludeTags {
+		// Use one materialization for full retained trees and workspace Git
+		// metadata, even when callers spell the public default args differently.
+		err = srv.Select(ctx, parent, &inst, dagql.Selector{Field: "__fullCheckout"})
+	} else {
+		var dir *core.Directory
+		dir, err = ref.Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
+		if err == nil {
+			inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+		}
 	}
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
 		return inst, err
 	}

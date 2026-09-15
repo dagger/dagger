@@ -15,7 +15,11 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().
 		WithNewFile("base.txt", "base").WithNewFile("removed.txt", "remove me"))
-	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	const upstreamURL = "https://example.com/upstream/repo.git"
+	const upstreamPushURL = "ssh://git@example.com/upstream/repo.git"
+	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).
+		WithRemote("upstream", upstreamURL, dagger.GitRepositoryWithRemoteOpts{PushURL: upstreamPushURL}).
+		Head().AsWorkspace()
 	baseSHA, err := base.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	// Check the remote backend directly, before commits switch to a local one.
@@ -27,6 +31,12 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	out, err = clean.WithExec([]string{"git", "remote", "get-url", "origin"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, url, strings.TrimSpace(out))
+	out, err = clean.WithExec([]string{"git", "remote", "get-url", "upstream"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, upstreamURL, strings.TrimSpace(out))
+	out, err = clean.WithExec([]string{"git", "remote", "get-url", "--push", "upstream"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, upstreamPushURL, strings.TrimSpace(out))
 
 	ws := base.WithNewFile("committed.txt", "agent commit").With(func(ws *dagger.Workspace) *dagger.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "agent commit", workspaceCommitDate)
@@ -49,6 +59,29 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	require.NotContains(t, gitEntries, ".git/")
 	assertWorkspaceFullCheckout(ctx, t, c, ws, []string{head, baseSHA})
 
+	// Explicit depth zero must use the same full retained checkout as the
+	// metadata mount. The Go SDK omits zero-valued depth, so use GraphQL here.
+	refID, err := ws.Git().Head().ID(ctx)
+	require.NoError(t, err)
+	var fullTree struct {
+		Node struct {
+			Tree struct{ ID dagger.ID }
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { tree(depth: 0, discardGitDir: false) { id } } } }`,
+		Variables: map[string]any{"id": refID},
+	}, &dagger.Response{Data: &fullTree}))
+	publicCheckout := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithMountedDirectory("/src", dagger.Ref[*dagger.Directory](c, fullTree.Node.Tree.ID)).WithWorkdir("/src")
+	out, err = publicCheckout.WithExec([]string{"git", "log", "--format=%H"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{head, baseSHA}, strings.Fields(out))
+	out, err = publicCheckout.WithExec([]string{"git", "remote", "get-url", "--push", "upstream"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, upstreamPushURL, strings.TrimSpace(out))
+
 	ctr := workspaceGitDirectoryContainer(c, ws)
 	out, err = ctr.WithExec([]string{"git", "log", "--format=%H"}).Stdout(ctx)
 	require.NoError(t, err)
@@ -57,6 +90,12 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	out, err = ctr.WithExec([]string{"git", "remote", "get-url", "origin"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, url, strings.TrimSpace(out))
+	out, err = ctr.WithExec([]string{"git", "remote", "get-url", "upstream"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, upstreamURL, strings.TrimSpace(out))
+	out, err = ctr.WithExec([]string{"git", "remote", "get-url", "--push", "upstream"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, upstreamPushURL, strings.TrimSpace(out))
 	out, err = ctr.WithExec([]string{"git", "rev-parse", "--is-shallow-repository"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "false\n", out)

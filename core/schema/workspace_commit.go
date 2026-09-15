@@ -198,14 +198,10 @@ func (s *workspaceSchema) workspaceGitFullCheckout(ctx context.Context, parent d
 	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "head"}); err != nil {
 		return inst, fmt.Errorf("workspace Git checkout requires a HEAD commit: %w", err)
 	}
-	// Bypass the repository's keepGitDir option and the default shallow depth.
-	// Retain the complete immutable snapshot as a dagql result so consumers can
-	// use either the worktree or its metadata without reconstructing history.
-	dir, err := head.Self().Backend.Tree(ctx, srv, false, 0, false, head.Self().Repo.Self().Remotes)
-	if err != nil {
-		return inst, err
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	// Cache the retained full checkout on the resolved GitRef, not on workspace
+	// state: public trees and workspaces with pending edits share its snapshot.
+	err = srv.Select(ctx, head, &inst, dagql.Selector{Field: "__fullCheckout"})
+	return inst, err
 }
 
 // workspaceGitCheckout materializes HEAD once, with full history and Git

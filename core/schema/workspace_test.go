@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -25,6 +26,144 @@ import (
 // The qualification test must only Peek: any attempt to mount/evaluate this
 // snapshot panics through the deliberately unimplemented embedded interface.
 type workspaceExportTestSnapshot struct{ bkcache.ImmutableRef }
+
+type workspaceCheckoutRequest struct {
+	discard     bool
+	depth       int
+	includeTags bool
+	remotes     []core.GitRemote
+}
+
+type workspaceCheckoutBackend struct {
+	core.GitRefBackend
+	mu       sync.Mutex
+	requests []workspaceCheckoutRequest
+}
+
+func (b *workspaceCheckoutBackend) Tree(_ context.Context, _ *dagql.Server, discard bool, depth int, includeTags bool, remotes []core.GitRemote) (*core.Directory, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.requests = append(b.requests, workspaceCheckoutRequest{discard, depth, includeTags, remotes})
+	// Each backend invocation produces a distinct materialization. Comparing
+	// content digests would miss redundant copies of identical checkout data.
+	return &core.Directory{}, nil
+}
+
+func TestWorkspaceGitCheckoutReuse(t *testing.T) {
+	for _, discard := range []bool{false, true} {
+		for _, order := range []string{"tree first", "workspace first", "concurrent"} {
+			t.Run(fmt.Sprintf("discard=%t/%s", discard, order), func(t *testing.T) {
+				ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "caller", SessionID: "checkout-test"})
+				cache, err := dagql.NewCache(ctx, "", nil, nil)
+				require.NoError(t, err)
+				ctx = dagql.ContextWithCache(ctx, cache)
+				srv, err := dagql.NewServer(ctx, &core.Query{})
+				require.NoError(t, err)
+				srv.InstallObject(dagql.NewClass[*core.Directory](srv))
+				srv.InstallObject(dagql.NewClass[*core.GitRepository](srv))
+				srv.InstallObject(dagql.NewClass[*core.Workspace](srv))
+				git := &gitSchema{}
+				wsSchema := &workspaceSchema{}
+				dagql.Fields[*core.GitRef]{
+					dagql.NodeFunc("tree", git.tree),
+					dagql.NodeFunc("__fullCheckout", git.fullCheckout),
+				}.Install(srv)
+				dagql.Fields[*core.WorkspaceGit]{
+					dagql.NodeFunc("head", wsSchema.workspaceGitHead),
+					dagql.NodeFunc("__checkout", wsSchema.workspaceGitFullCheckout),
+				}.Install(srv)
+				backend := &workspaceCheckoutBackend{}
+				remotes := []core.GitRemote{{Name: "upstream", URL: "https://example.com/upstream.git"}}
+				sha := strings.Repeat("a", 40)
+				ref := objectResult(t, srv, "checkout-ref", &core.GitRef{
+					Repo:    objectResult(t, srv, "checkout-repo", &core.GitRepository{DiscardGitDir: discard, Remotes: remotes}),
+					Backend: backend,
+					Ref:     &gitutil.Ref{Name: sha, SHA: sha},
+				})
+				base := &core.Workspace{}
+				base.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+				overlay := &core.Workspace{}
+				overlay.SetSource(core.NewWorkspaceSourceOverlay(base.Source(), nil, nil, dagql.ObjectResult[*core.Changeset]{}))
+				workspaces := []dagql.ObjectResult[*core.WorkspaceGit]{
+					objectResult(t, srv, "checkout-base-git", &core.WorkspaceGit{Workspace: objectResult(t, srv, "checkout-base", base)}),
+					objectResult(t, srv, "checkout-overlay-git", &core.WorkspaceGit{Workspace: objectResult(t, srv, "checkout-overlay", overlay)}),
+				}
+				var tree dagql.ObjectResult[*core.Directory]
+				checkouts := make([]dagql.ObjectResult[*core.Directory], len(workspaces))
+				selectTree := func() error {
+					return srv.Select(ctx, ref, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+						{Name: "depth", Value: dagql.NewInt(0)},
+						{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+						{Name: "includeTags", Value: dagql.NewBoolean(false)},
+					}})
+				}
+				selectWorkspace := func(i int) error {
+					return srv.Select(ctx, workspaces[i], &checkouts[i], dagql.Selector{Field: "__checkout"})
+				}
+				switch order {
+				case "tree first":
+					require.NoError(t, selectTree())
+					for i := range workspaces {
+						require.NoError(t, selectWorkspace(i))
+					}
+				case "workspace first":
+					for i := range workspaces {
+						require.NoError(t, selectWorkspace(i))
+					}
+					require.NoError(t, selectTree())
+				case "concurrent":
+					errs := make(chan error, 3)
+					go func() { errs <- selectTree() }()
+					for i := range workspaces {
+						go func() { errs <- selectWorkspace(i) }()
+					}
+					for range 3 {
+						require.NoError(t, <-errs)
+					}
+				}
+				if !discard {
+					var implicit dagql.ObjectResult[*core.Directory]
+					require.NoError(t, srv.Select(ctx, ref, &implicit, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+						{Name: "depth", Value: dagql.NewInt(0)},
+					}}))
+					require.Same(t, tree.Self(), implicit.Self(), "omitted defaults share the materialization")
+				}
+				require.Same(t, checkouts[0].Self(), checkouts[1].Self(), "pending edits must not reconstruct HEAD")
+				retained, discarded := 0, 0
+				for _, req := range backend.requests {
+					require.Zero(t, req.depth)
+					require.False(t, req.includeTags)
+					require.Equal(t, remotes, req.remotes)
+					if req.discard {
+						discarded++
+					} else {
+						retained++
+					}
+				}
+				require.Equal(t, 1, retained, "materialize the retained checkout only once")
+				if discard {
+					require.Equal(t, 1, discarded, "public tree must still honor keepGitDir=false")
+					require.NotSame(t, tree.Self(), checkouts[0].Self())
+				} else {
+					require.Zero(t, discarded)
+					require.Same(t, tree.Self(), checkouts[0].Self())
+				}
+				// A default source tree is still shallow, not the full checkout.
+				var shallow dagql.ObjectResult[*core.Directory]
+				require.NoError(t, srv.Select(ctx, ref, &shallow, dagql.Selector{Field: "tree"}))
+				require.NotSame(t, tree.Self(), shallow.Self())
+				require.Equal(t, 1, backend.requests[len(backend.requests)-1].depth)
+				var tagged dagql.ObjectResult[*core.Directory]
+				require.NoError(t, srv.Select(ctx, ref, &tagged, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+					{Name: "depth", Value: dagql.NewInt(0)},
+					{Name: "includeTags", Value: dagql.NewBoolean(true)},
+				}}))
+				require.NotSame(t, tree.Self(), tagged.Self())
+				require.True(t, backend.requests[len(backend.requests)-1].includeTags)
+			})
+		}
+	}
+}
 
 func TestWorkspaceExportBaseCandidate(t *testing.T) {
 	for _, scenario := range []string{"matching origin", "matching no remote", "matching implicit origin", "origin mismatch", "extra remote", "sha256", "diverged", "rewritten", "routing mismatch", "push mismatch", "live", "mutable ref", "unevaluated", "remote backend", "directory", "overlay"} {
