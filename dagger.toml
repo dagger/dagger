@@ -35,7 +35,7 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "github.com/dagger/go"
+source = "dagger.io/go"
 legacy-default-path = true
 
 [modules.golang.settings]
@@ -45,7 +45,7 @@ lint = ".,engine/distconsts,modules/daggerverse,sdk/go,.dagger/modules/cli-dev,.
 test = "e2e/**"
 
 [modules.helm]
-source = "github.com/dagger/helm"
+source = "dagger.io/kubernetes/helm"
 legacy-default-path = true
 
 [modules.helm.settings]
@@ -68,7 +68,7 @@ source = ".dagger/modules/php-client-dev"
 legacy-default-path = true
 
 [modules.ps-analyzer]
-source = "github.com/dagger/PsScriptAnalyzer"
+source = "dagger.io/dotnet/PsScriptAnalyzer"
 legacy-default-path = true
 
 [modules.python-client]
@@ -100,7 +100,7 @@ ignore = [
 ]
 
 [modules.shellcheck]
-source = "github.com/dagger/shellcheck"
+source = "dagger.io/shellcheck"
 legacy-default-path = true
 
 [modules.test-split]
