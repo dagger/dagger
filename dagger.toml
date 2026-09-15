@@ -1,6 +1,5 @@
-[modules.changelog]
-source = ".dagger/modules/changelog"
-legacy-default-path = true
+[modules.changie]
+source = ".dagger/modules/changie"
 
 [modules.bootstrap]
 source = ".dagger/modules/bootstrap"
@@ -135,7 +134,7 @@ source = "github.com/vito/editor"
 [sdks.dang]
 module = "dang-sdk"
 
-[sdks.dang.scopes.".dagger/modules/changelog"]
+[sdks.dang.scopes.".dagger/modules/changie"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/ci"]
@@ -211,7 +210,7 @@ is-module = true
 
 [sdks.go.scopes.".dagger/modules/release"]
 is-module = true
-clients = ["./.dagger/modules/changelog", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/release/gh", "./.dagger/modules/go-client-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "./modules/wolfi"]
+clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/release/gh", "./.dagger/modules/go-client-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "./modules/wolfi"]
 
 [sdks.go.scopes.".dagger/modules/release/apko"]
 is-module = true
