@@ -87,6 +87,9 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	if cm.snapshotOwnerLeases == nil {
 		cm.snapshotOwnerLeases = make(map[string]map[string]struct{})
 	}
+	if cm.ownerLeaseSnapshots == nil {
+		cm.ownerLeaseSnapshots = make(map[string]map[string]struct{})
+	}
 
 	return nil
 }
@@ -190,6 +193,10 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			cm.snapshotOwnerLeases[currentSnapshotID] = make(map[string]struct{})
 		}
 		cm.snapshotOwnerLeases[currentSnapshotID][leaseID] = struct{}{}
+		if cm.ownerLeaseSnapshots[leaseID] == nil {
+			cm.ownerLeaseSnapshots[leaseID] = make(map[string]struct{})
+		}
+		cm.ownerLeaseSnapshots[leaseID][currentSnapshotID] = struct{}{}
 	}
 
 	return nil
@@ -208,13 +215,20 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 		return pkgerrors.Wrapf(err, "delete owner lease %s", leaseID)
 	}
 
+	// Only touch the snapshots this lease is attached to. The reverse index
+	// keeps the critical section proportional to the lease's snapshot chain
+	// instead of the whole cache. GC prunes one result at a time, so a pass
+	// over a large cache used to be O(pruned × all-snapshots) work under mu,
+	// stalling AttachLease and recordSnapshotContent for minutes.
 	cm.mu.Lock()
-	for snapshotID, leaseIDs := range cm.snapshotOwnerLeases {
+	for snapshotID := range cm.ownerLeaseSnapshots[leaseID] {
+		leaseIDs := cm.snapshotOwnerLeases[snapshotID]
 		delete(leaseIDs, leaseID)
 		if len(leaseIDs) == 0 {
 			delete(cm.snapshotOwnerLeases, snapshotID)
 		}
 	}
+	delete(cm.ownerLeaseSnapshots, leaseID)
 	cm.mu.Unlock()
 
 	return nil
