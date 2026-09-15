@@ -457,6 +457,38 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 		require.NotContains(t, out, "modules/bad")
 	})
 
+	t.Run("a module that cannot load does not suppress an SDK's derived check", func(ctx context.Context, t *testctx.T) {
+		// The two reach allChecks from different places: the derived check is
+		// built from workspace config (so it survives a module that cannot
+		// load), the load-failure check from the load failures themselves.
+		out, err := workspaceFixture(t, c, "sdk-generate-check").
+			WithNewFile("dagger.toml", `[modules.alpha-sdk]
+source = ".dagger/modules/alpha-sdk"
+
+[sdks.alpha]
+module = "alpha-sdk"
+
+[sdks.alpha.scopes."alpha"]
+is-module = true
+name = "alpha"
+
+[modules.bad]
+source = ".dagger/modules/bad"
+`).
+			WithNewFile(".dagger/modules/bad/dagger-module.toml", `name = "bad"
+engineVersion = "v0.21.9"
+
+[runtime]
+  source = "dang"
+`).
+			WithNewFile(".dagger/modules/bad/main.dang", "this is intentionally invalid dang source").
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "alpha-sdk:generate")
+		require.Contains(t, out, "bad:load")
+	})
+
 	t.Run("a module missing its generated files is still told to generate", func(ctx context.Context, t *testctx.T) {
 		// The reason best-effort loading cannot reuse generate's phrasing:
 		// generate drops the "run `dagger generate`" advice because that is
