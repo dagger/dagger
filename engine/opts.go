@@ -98,6 +98,9 @@ type ClientMetadata struct {
 	// Dagger Cloud Org
 	CloudOrg string `json:"cloud_org"`
 
+	// CloudEngine reports that this client is connected to a Dagger Cloud Engine.
+	CloudEngine bool `json:"cloud_engine,omitempty"`
+
 	// Disable analytics
 	DoNotTrack bool `json:"do_not_track"`
 

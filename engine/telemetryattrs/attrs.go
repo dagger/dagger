@@ -1,6 +1,10 @@
 package telemetryattrs
 
 const (
+	// CloudEngineAttr reports that telemetry was produced by a Dagger Cloud
+	// Engine. It is a resource attribute on client and engine telemetry. (bool)
+	CloudEngineAttr = "dagger.io/cloud.engine"
+
 	// TelemetryOriginClientIDAttr records the immutable client identity captured
 	// from the emission context. Session-owned trace and log exporters use it to
 	// route each record to the origin client's DB and every validated ancestor

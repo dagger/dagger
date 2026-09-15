@@ -1652,7 +1652,7 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 		client.daggerSession = sess
 	}
 	installTestClientRecords(sess)
-	srv.initializeSessionTelemetry(sess)
+	srv.initializeSessionTelemetry(sess, false)
 	for _, client := range sess.clientRuntimes {
 		srv.initializeClientMetrics(client)
 	}
@@ -2346,7 +2346,7 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	require.Equal(t, 1, srv.clientDBs.OpenStats().Refs)
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
-	srv.initializeSessionTelemetry(sess)
+	srv.initializeSessionTelemetry(sess, false)
 
 	cleanupCtx := engine.ContextWithClientMetadata(context.Background(), md)
 	exported := make(chan struct{}, 1)
@@ -2467,7 +2467,7 @@ func newStrandedTeardownSession(t *testing.T, srv *Server, sessionID string) (*d
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
 	sess.state.Store(sessionStateInitialized)
-	srv.initializeSessionTelemetry(sess)
+	srv.initializeSessionTelemetry(sess, false)
 
 	stranded, err := sess.acquireRootClientScope(client, engine.ClientLeaseSharedWork, "stuck callback")
 	require.NoError(t, err)

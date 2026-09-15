@@ -8,7 +8,9 @@ import (
 
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -221,12 +223,18 @@ func TestConfiguredRunnerHost(t *testing.T) {
 		reset()
 		engineFlag = "cloud"
 		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
+		value, ok := Resource(t.Context()).Set().Value(attribute.Key(telemetryattrs.CloudEngineAttr))
+		require.True(t, ok)
+		require.True(t, value.AsBool())
 	})
 
 	t.Run("runner host URI", func(t *testing.T) {
 		reset()
 		engineFlag = "tcp://engine.example.com:1234"
 		require.Equal(t, engineFlag, configuredRunnerHost())
+		value, ok := Resource(t.Context()).Set().Value(attribute.Key(telemetryattrs.CloudEngineAttr))
+		require.True(t, ok)
+		require.False(t, value.AsBool())
 	})
 
 	t.Run("engine flag overrides cloud alias", func(t *testing.T) {

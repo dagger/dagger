@@ -782,7 +782,7 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 	}
 }
 
-func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
+func (srv *Server) initializeSessionTelemetry(sess *daggerSession, cloudEngine bool) {
 	spanExporter := sessionSpanExporter{sess: sess, ps: srv.telemetryPubSub}
 	logExporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
 	sess.spanExporter = spanExporter
@@ -798,8 +798,18 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
 		// Stamp origin before the live processor freezes its start snapshot.
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
-		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter)),
 	}
+	if cloudEngine {
+		cloudResource, err := cloudEngineTelemetryResource()
+		if err != nil {
+			slog.Warn("failed to create Cloud Engine telemetry resource", "error", err)
+		} else {
+			tracerOpts = append(tracerOpts, sdktrace.WithResource(cloudResource))
+		}
+	}
+	tracerOpts = append(tracerOpts,
+		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter)),
+	)
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
 		// Stamp origin before the batch processor copies the record.
@@ -853,7 +863,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.telemetryPubSub = srv.telemetryPubSub
-	srv.initializeSessionTelemetry(sess)
+	srv.initializeSessionTelemetry(sess, clientMetadata.CloudEngine)
 	failureCleanups.Add("shutdown session telemetry", func() error {
 		return sess.shutdownTelemetry(context.Background())
 	})
