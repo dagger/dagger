@@ -207,24 +207,18 @@ func (dev *EngineDev) Service(
 	sharedCache bool,
 	// +optional
 	metrics bool,
-	// +optional
-	version string,
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
 	dev = dev.IncrementSubnet()
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
-		if version != "" {
-			cacheVolumeName = "dagger-dev-engine-state-" + version
-		} else {
-			cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
-		}
+		cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
 		if name != "" {
 			cacheVolumeName += "-" + name
 		}
 	}
 
-	devEngine, err := dev.Container(ctx, "", gpuSupport, version)
+	devEngine, err := dev.Container(ctx, "", gpuSupport, "")
 	if err != nil {
 		return nil, err
 	}
@@ -263,8 +257,6 @@ func (dev *EngineDev) InstallClient(
 	// The engine service to bind
 	// +optional
 	service *dagger.Service,
-	// +optional
-	version string,
 ) (*dagger.Container, error) {
 	if client == nil {
 		// By default, start from a simple base container
@@ -278,7 +270,6 @@ func (dev *EngineDev) InstallClient(
 			false, // gpuSupport
 			false, // sharedCache
 			false, // metrics
-			version,
 		)
 		if err != nil {
 			return nil, err
@@ -293,7 +284,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Source: dev.Source, Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
+		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
@@ -309,7 +300,7 @@ func (dev *EngineDev) InstallClient(
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
 func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	ctr, err := dev.InstallClient(ctx, nil, nil, "")
+	ctr, err := dev.InstallClient(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +317,7 @@ func (dev *EngineDev) GraphqlSchema(
 	// +optional
 	version string,
 ) (*dagger.File, error) {
-	ctr, err := dev.InstallClient(ctx, nil, nil, "")
+	ctr, err := dev.InstallClient(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}
