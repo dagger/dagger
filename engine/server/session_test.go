@@ -420,19 +420,21 @@ func TestClientInitializationDoesNotHoldScopeLock(t *testing.T) {
 		initDone <- err
 	}()
 
+	// Admission briefly holds both locks before releasing scopeMu for slow
+	// initialization. Observe stateMu while holding scopeMu so we cannot mistake
+	// that admission window for the blocked schema boundary. The regression held
+	// scopeMu across schema construction, so it can never satisfy this condition.
 	require.Eventually(t, func() bool {
+		if !sess.scopeMu.TryLock() {
+			return false
+		}
+		defer sess.scopeMu.Unlock()
 		if child.stateMu.TryLock() {
 			child.stateMu.Unlock()
 			return false
 		}
 		return true
-	}, time.Second, time.Millisecond, "client initialization did not reach the blocked schema boundary")
-
-	// The lifecycle regression held scopeMu across the blocked initializer. That
-	// inverted against schema construction, whose detached DagQL work clones a
-	// ClientScope and must acquire scopeMu. Admission must leave the lock available.
-	require.True(t, sess.scopeMu.TryLock(), "slow client initialization retained scopeMu")
-	sess.scopeMu.Unlock()
+	}, time.Second, time.Millisecond, "slow client initialization retained scopeMu")
 
 	// Closing reachability during initialization must not reclaim the runtime:
 	// the provisional request lease owns it until initialization returns.
