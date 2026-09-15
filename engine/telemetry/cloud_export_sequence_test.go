@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,38 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExportSequencerIsolatesAndReusesConnections(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, r.RemoteAddr)
+	}))
+	t.Cleanup(server.Close)
+
+	request := func(client *http.Client, method string) string {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), method, server.URL, nil)
+		require.NoError(t, err)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return string(body)
+	}
+
+	// Drain each response so the connection is available for reuse. With the
+	// default transport, the upload would reuse the reader's connection.
+	readerConn := request(http.DefaultClient, http.MethodGet)
+	sequencer := newExportSequencer()
+	uploadConn := request(sequencer.httpClient(), http.MethodPost)
+	require.NotEqual(t, readerConn, uploadConn)
+
+	// Refreshing credentials constructs a new client for the same sequencer.
+	require.Equal(t, uploadConn, request(sequencer.httpClient(), http.MethodPost))
+	// Other export signals share the private upload pool, too.
+	require.Equal(t, uploadConn, request(newExportSequencer().httpClient(), http.MethodPost))
+	require.Equal(t, readerConn, request(http.DefaultClient, http.MethodGet))
+}
 
 func TestExportSequencerAddsRetryStableHeader(t *testing.T) {
 	headers := make(chan string, 3)

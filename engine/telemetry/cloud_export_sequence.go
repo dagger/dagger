@@ -3,8 +3,10 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -14,6 +16,24 @@ import (
 )
 
 const cloudExportHeader = "X-Dagger-Export"
+
+// Keep uploads off the default transport's connections, which Cloud trace
+// readers also use. Cloud's ingress can send duplicate HTTP/2 END_STREAM frames
+// for uploads multiplexed with an active download. Reuse this private pool
+// across exporters and token refreshes without disabling HTTP/2. These settings
+// match the OTLP HTTP exporters' private transports and Go's DefaultTransport.
+var cloudExportTransport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          100,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+}
 
 type exportSequenceContextKey struct{}
 
@@ -39,7 +59,7 @@ func (s *exportSequencer) nextContext(ctx context.Context) context.Context {
 }
 
 func (s *exportSequencer) httpClient() *http.Client {
-	return &http.Client{Transport: exportSequenceTransport{base: http.DefaultTransport}}
+	return &http.Client{Transport: exportSequenceTransport{base: cloudExportTransport}}
 }
 
 type exportSequenceTransport struct {
