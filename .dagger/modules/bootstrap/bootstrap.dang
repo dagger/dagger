@@ -7,7 +7,11 @@ type Bootstrap {
   Run a single lint check (go linting) against a dev build of the engine
   """
   goLint(ws: Workspace!): Void @check {
-    runChecks(ws, ["golang:lint-all"], include: ["**/*.go", "**/go.mod", "**/go.sum", "dagger.toml", ".dagger/module"])
+    runChecks(
+      ws,
+      checks:["golang:lint-all"],
+      include: ["**/*.go", "**/go.mod", "**/go.sum", "dagger.toml", ".dagger/modules", "**/.golangci.yml"]
+    )
   }
 
 
