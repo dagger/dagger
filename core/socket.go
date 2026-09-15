@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -266,6 +267,14 @@ func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context
 }
 
 func (socket *Socket) MountSSHAgent(ctx context.Context) (string, func() error, error) {
+	rx, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return "", nil, fmt.Errorf("create socket receive recorder: %w", err)
+	}
+	tx, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkTX)
+	if err != nil {
+		return "", nil, fmt.Errorf("create socket transmit recorder: %w", err)
+	}
 	dir, err := os.MkdirTemp("", ".dagger-ssh-sock")
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create temp dir: %w", err)
@@ -313,7 +322,7 @@ func (socket *Socket) MountSSHAgent(ctx context.Context) (string, func() error, 
 				_ = conn.Close()
 				return fmt.Errorf("failed to connect to socket: %w", err)
 			}
-			go sshforward.Copy(egCtx, conn, stream, stream.CloseSend)
+			go sshforward.CopyWithMetrics(egCtx, conn, stream, stream.CloseSend, rx.Add, tx.Add)
 		}
 	})
 
