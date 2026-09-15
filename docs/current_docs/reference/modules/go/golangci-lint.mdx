@@ -1,0 +1,71 @@
+---
+title: "golangci-lint"
+slug: /reference/modules/go/golangci-lint
+description: "Lint Go modules across a workspace with golangci-lint."
+---
+
+# golangci-lint
+
+The golangci-lint module runs Go linters as a Dagger check, using the same
+configuration locally and in CI. It discovers `go.mod` files and runs
+golangci-lint separately in each selected Go module.
+
+## Add it to your workspace
+
+```bash
+dagger module install dagger.io/go/golangci-lint
+```
+
+`dagger module recommend` suggests this module when it finds `.golangci.yml`,
+`.golangci.yaml`, `.golangci.toml`, or `.golangci.json` in the workspace.
+
+## Run the check
+
+```bash
+dagger check                       # run every check in the workspace
+dagger check golangci-lint:lint-all # lint the selected Go modules
+```
+
+`lint-all` discovers Go modules at or below the working directory, including
+the enclosing module when run from a subdirectory. Run it from the workspace
+root to check every module. Each check runs `golangci-lint run` with the
+workspace's `.golangci.*` configuration files and reports diagnostics with
+workspace-relative paths.
+
+Go and C/C++ sources, embedded assets, and local `go.mod` replacement
+dependencies within the workspace are included automatically. Go module,
+build, and golangci-lint caches are shared between runs.
+
+## Configure it
+
+List the current settings with `dagger module settings golangci-lint`, then
+change one with `dagger module settings golangci-lint <key> <value>`. Settings
+live in `dagger.toml` under `[modules.golangci-lint.settings]`:
+
+- `version` (default `2.11.4`) selects the golangci-lint version, without the
+  `v` prefix. The default Alpine image is pinned by digest and includes a C/C++
+  toolchain for cgo typechecking.
+- `base` is an optional custom container with Go, golangci-lint, and any required
+  system dependencies installed. It cannot be combined with `version`.
+- `includeExtraFiles` (default empty) adds workspace-root path patterns for
+  files that automatic source discovery misses.
+- `lint` (default `["**"]`) selects module roots to lint. A bare path or
+  `path/**` includes that module and its descendants; `!path` excludes them.
+  Exclusions always win. `"**"` and `"*"` match every module. With no positive
+  pattern, every module is included unless excluded; `["!**"]` skips all
+  modules. Other glob forms are not supported by this setting.
+
+Edit list-valued settings directly in `dagger.toml`:
+
+```toml
+[modules.golangci-lint.settings]
+version = "2.11.4"
+lint = ["**", "!legacy-service"]
+includeExtraFiles = ["shared/config/**"]
+```
+
+## Working with other modules
+
+Use this module alongside [Go](../go.mdx) for tests and code generation.
+
+[source code](https://github.com/dagger/golangci-lint)
