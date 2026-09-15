@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	daggerotel "github.com/dagger/otel-go"
@@ -63,4 +64,26 @@ func (r *NetworkRecorder) Record(bytes int64) {
 		return
 	}
 	r.gauge.Record(r.ctx, bytes, r.opts...)
+}
+
+// NetworkAccumulator combines concurrent transfer streams belonging to one
+// operation into a single absolute network metric.
+type NetworkAccumulator struct {
+	recorder *NetworkRecorder
+	total    atomic.Int64
+}
+
+func NewNetworkAccumulator(ctx context.Context, direction NetworkDirection) (*NetworkAccumulator, error) {
+	recorder, err := NewNetworkRecorder(ctx, direction)
+	if err != nil {
+		return nil, err
+	}
+	return &NetworkAccumulator{recorder: recorder}, nil
+}
+
+func (a *NetworkAccumulator) Add(bytes int64) {
+	if a == nil || bytes <= 0 {
+		return
+	}
+	a.recorder.Record(a.total.Add(bytes))
 }

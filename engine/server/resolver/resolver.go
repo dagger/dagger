@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -376,10 +377,14 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	if err != nil {
 		return nil, err
 	}
+	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, fmt.Errorf("create registry pull network recorder: %w", err)
+	}
 	childrenHandler := images.ChildrenHandler(r.contentStore)
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(progressIngester{r.contentStore}, fetcher),
+		remotes.FetchHandler(progressIngester{Ingester: r.contentStore, network: network}, fetcher),
 		childrenHandler,
 		dslHandler,
 	)
@@ -666,7 +671,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	pushUpdateSourceHandler, err := updateDistributionSourceHandler(r.contentStore, images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
-		_, err := pushHandler(pusher, img.Provider)(ctx, desc)
+		_, err := pushHandler(pusher, img.Provider, nil)(ctx, desc)
 		return nil, err
 	}), ref)
 	if err != nil {
@@ -705,7 +710,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if err != nil {
 		return err
 	}
-	pushLeaf := pushHandler(pusher, img.Provider)
+	pushLeaf := pushHandler(pusher, img.Provider, nil)
 	for i := len(manifestStack) - 1; i >= 0; i-- {
 		if _, err := pushLeaf(ctx, manifestStack[i]); err != nil {
 			return err
@@ -1208,7 +1213,7 @@ func collectManifestStack(ctx context.Context, provider content.Provider, rootDe
 	return stack, nil
 }
 
-func pushHandler(pusher remotes.Pusher, provider content.Provider) images.HandlerFunc {
+func pushHandler(pusher remotes.Pusher, provider content.Provider, network *enginetelemetry.NetworkAccumulator) images.HandlerFunc {
 	return func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
 		cw, err := pusher.Push(ctx, desc)
 		if err != nil {
@@ -1225,7 +1230,7 @@ func pushHandler(pusher remotes.Pusher, provider content.Provider) images.Handle
 		defer ra.Close()
 		// stream upload progress per layer, attributed to the "pushing
 		// <ref>" span carried by ctx
-		w := wrapProgressWriter(ctx, cw, desc)
+		w := wrapProgressWriter(ctx, cw, desc, network)
 		if err := content.Copy(ctx, w, io.NewSectionReader(ra, 0, desc.Size), desc.Size, desc.Digest); err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
 				return nil, nil
