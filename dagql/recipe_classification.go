@@ -81,7 +81,7 @@ func (classifier *recipeClassifier) classify(id *call.ID) *NotReplayableCall {
 		}
 	}
 
-	lazyRefs := (&recipeLoadState{srv: classifier.srv}).lazyRefArgNames(id)
+	lazyRefs := classifier.srv.lazyRefArgNames(id)
 	for _, input := range (&recipeLoadState{srv: classifier.srv}).directRecipeInputIDs(id, lazyRefs) {
 		inputMatch := classifier.classify(input)
 		if first == nil && inputMatch != nil {
