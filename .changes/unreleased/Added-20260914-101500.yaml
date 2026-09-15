@@ -1,0 +1,11 @@
+kind: Added
+body: |-
+  Report operation-level network receive and transmit byte metrics for
+  container execs, HTTP downloads, native Git fetches, registry image pulls
+  and pushes, host filesync, host sockets and tunnels, and LLM requests.
+  Container exec metrics additionally separate Dagger-internal traffic from
+  external traffic using TCX eBPF on the host-side CNI veth.
+time: 2026-09-14T10:15:00-07:00
+custom:
+  Author: tiborvass
+  PR: ""
