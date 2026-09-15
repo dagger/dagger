@@ -70,29 +70,39 @@ func ParseModuleConfigForFormat(src []byte, format ConfigFormat) (*ModuleConfigW
 }
 
 func parseCurrentModuleConfigTOML(src []byte) (*ModuleConfigWithUserFields, error) {
-	// before attempting to parse the entire config, just read the
-	// format and engineVersion fields, to select the parser and perform
-	// version checks before parsing the complete config.
-	var meta struct {
-		ManifestVersion int    `toml:"manifestVersion"`
-		EngineVersion   string `toml:"engineVersion"`
-	}
-	if err := toml.Unmarshal(src, &meta); err != nil {
+	tree, err := toml.LoadBytes(src)
+	if err != nil {
 		return nil, fmt.Errorf("failed to decode module config: %w", err)
 	}
-	if meta.ManifestVersion != 0 {
-		return parseModuleManifestV2TOML(src, meta.ManifestVersion)
+
+	// The entrypoint table selects the manifest version 2 format. The format has
+	// no explicit version key, so reject the one that manifest version 2 used
+	// while it was in development.
+	if tree.Has("manifestVersion") {
+		return nil, fmt.Errorf("%s does not support %q: the [entrypoint] table selects the manifest version 2 format", Filename, "manifestVersion")
+	}
+	if tree.Has("entrypoint") {
+		return parseModuleManifestV2TOML(tree)
+	}
+
+	// before decoding the entire config, just read the engineVersion field, to
+	// perform version checks before decoding the complete config.
+	var meta struct {
+		EngineVersion string `toml:"engineVersion"`
+	}
+	if err := tree.Unmarshal(&meta); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
 	}
 	if err := checkModuleConfigVersion(meta.EngineVersion); err != nil {
 		return nil, err
 	}
 
-	if err := validateCurrentModuleConfigTOML(src); err != nil {
+	if err := validateCurrentModuleConfigTOML(tree); err != nil {
 		return nil, err
 	}
 
 	var current CurrentModuleConfigWithUserFields
-	if err := toml.Unmarshal(src, &current); err != nil {
+	if err := tree.Unmarshal(&current); err != nil {
 		return nil, fmt.Errorf("failed to decode module config: %w", err)
 	}
 
@@ -101,16 +111,13 @@ func parseCurrentModuleConfigTOML(src []byte) (*ModuleConfigWithUserFields, erro
 	return modCfg, nil
 }
 
-func parseModuleManifestV2TOML(src []byte, manifestVersion int) (*ModuleConfigWithUserFields, error) {
-	if manifestVersion != ModuleManifestVersion2 {
-		return nil, fmt.Errorf("unsupported %s manifest version %d", Filename, manifestVersion)
-	}
-	if err := validateModuleManifestV2TOML(src); err != nil {
+func parseModuleManifestV2TOML(tree *toml.Tree) (*ModuleConfigWithUserFields, error) {
+	if err := validateModuleManifestV2TOML(tree); err != nil {
 		return nil, err
 	}
 
 	var manifest ModuleManifestV2
-	if err := toml.Unmarshal(src, &manifest); err != nil {
+	if err := tree.Unmarshal(&manifest); err != nil {
 		return nil, fmt.Errorf("failed to decode module config: %w", err)
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
@@ -129,9 +136,8 @@ func parseModuleManifestV2TOML(src []byte, manifestVersion int) (*ModuleConfigWi
 
 	return &ModuleConfigWithUserFields{
 		ModuleConfig: ModuleConfig{
-			ManifestVersion: manifest.ManifestVersion,
-			Name:            manifest.Name,
-			Entrypoint:      &manifest.Entrypoint,
+			Name:       manifest.Name,
+			Entrypoint: &manifest.Entrypoint,
 		},
 	}, nil
 }
@@ -181,14 +187,10 @@ func MarshalModuleConfigForFormat(modCfg *ModuleConfigWithUserFields, format Con
 	case ConfigFormatCurrent:
 		var buf bytes.Buffer
 		encoder := toml.NewEncoder(&buf).Order(toml.OrderPreserve)
-		if modCfg.ManifestVersion == ModuleManifestVersion2 {
-			if modCfg.Entrypoint == nil {
-				return nil, fmt.Errorf("%s manifest version 2 requires entrypoint", Filename)
-			}
+		if modCfg.Entrypoint != nil {
 			err = encoder.Encode(&ModuleManifestV2{
-				ManifestVersion: modCfg.ManifestVersion,
-				Name:            modCfg.Name,
-				Entrypoint:      *modCfg.Entrypoint,
+				Name:       modCfg.Name,
+				Entrypoint: *modCfg.Entrypoint,
 			})
 		} else {
 			err = encoder.Encode(newCurrentModuleConfigWithUserFields(modCfg))
@@ -217,15 +219,14 @@ type ModuleConfigWithUserFields struct {
 // ModuleConfig is the config for a single module as loaded from a module config file.
 // Only contains fields that are set/edited by dagger utilities.
 type ModuleConfig struct {
-	// ManifestVersion selects the dagger-module.toml schema. Zero identifies
-	// the transitional pre-v2 TOML schema.
-	ManifestVersion int `json:"manifestVersion,omitempty"`
-
 	// The name of the module.
 	Name string `json:"name"`
 
 	// Entrypoint defines how the engine loads and calls a manifest v2 module.
-	Entrypoint *ModuleEntrypointConfig `json:"entrypoint,omitempty"`
+	// Its presence selects the manifest version 2 format; the pre-v2 format
+	// never sets it. It is read and written as an entrypoint table in
+	// dagger-module.toml only, never as a dagger.json field.
+	Entrypoint *ModuleEntrypointConfig `json:"-"`
 
 	// The version of the engine this module was last updated with.
 	EngineVersion string `json:"engineVersion"`

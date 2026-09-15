@@ -8,8 +8,6 @@ import (
 	toml "github.com/pelletier/go-toml"
 )
 
-const ModuleManifestVersion2 = 2
-
 type ModuleEntrypointKind string
 
 const (
@@ -17,11 +15,11 @@ const (
 	ModuleEntrypointKindModule ModuleEntrypointKind = "module"
 )
 
-// ModuleManifestV2 is the version 2 dagger-module.toml schema.
+// ModuleManifestV2 is the version 2 dagger-module.toml schema. The presence of
+// the entrypoint table selects this schema; there is no explicit version key.
 type ModuleManifestV2 struct {
-	ManifestVersion int                    `toml:"manifestVersion"`
-	Name            string                 `toml:"name"`
-	Entrypoint      ModuleEntrypointConfig `toml:"entrypoint"`
+	Name       string                 `toml:"name"`
+	Entrypoint ModuleEntrypointConfig `toml:"entrypoint"`
 }
 
 // ModuleEntrypointConfig selects and configures a module entrypoint.
@@ -193,11 +191,7 @@ func cloneBoolPtr(v *bool) *bool {
 	return &cloned
 }
 
-func validateCurrentModuleConfigTOML(data []byte) error {
-	tree, err := toml.LoadBytes(data)
-	if err != nil {
-		return fmt.Errorf("failed to decode module config: %w", err)
-	}
+func validateCurrentModuleConfigTOML(tree *toml.Tree) error {
 	if tree.Get("sdk") != nil {
 		return fmt.Errorf("%s uses runtime instead of sdk", Filename)
 	}
@@ -227,21 +221,16 @@ func validateCurrentModuleConfigTOML(data []byte) error {
 	return nil
 }
 
-func validateModuleManifestV2TOML(data []byte) error {
-	tree, err := toml.LoadBytes(data)
-	if err != nil {
-		return fmt.Errorf("failed to decode module config: %w", err)
-	}
-
+func validateModuleManifestV2TOML(tree *toml.Tree) error {
 	for _, key := range tree.Keys() {
-		if !slices.Contains([]string{"manifestVersion", "name", "entrypoint"}, key) {
+		if !slices.Contains([]string{"name", "entrypoint"}, key) {
 			return fmt.Errorf("%s manifest version 2 does not support %q", Filename, key)
 		}
 	}
 
 	entrypoint, ok := tree.Get("entrypoint").(*toml.Tree)
 	if !ok {
-		return fmt.Errorf("%s manifest version 2 requires entrypoint", Filename)
+		return fmt.Errorf("%s manifest version 2 requires an [entrypoint] table", Filename)
 	}
 	for _, key := range entrypoint.Keys() {
 		if !slices.Contains([]string{"kind", "source"}, key) {
@@ -259,6 +248,12 @@ func validateLegacyModuleConfigJSON(data []byte) error {
 	}
 	if _, ok := raw["runtime"]; ok {
 		return fmt.Errorf("%s uses sdk instead of runtime", LegacyFilename)
+	}
+	// The entrypoint table is the manifest version 2 selector. It only belongs in
+	// dagger-module.toml, so a dagger.json that sets it cannot be mistaken for a
+	// version 2 manifest.
+	if _, ok := raw["entrypoint"]; ok {
+		return fmt.Errorf("%s does not support %q: use %s instead", LegacyFilename, "entrypoint", Filename)
 	}
 	return nil
 }

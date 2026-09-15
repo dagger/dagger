@@ -76,13 +76,15 @@ A legacy module gets a v2 manifest. The manifest selects the legacy entrypoint
 module with the `module` kind:
 
 ```toml
-manifestVersion = 2
 name = "hello"
 
 [entrypoint]
 kind = "module"
 source = "github.com/dagger/dagger/modules/legacy-entrypoint@v1.0.0"
 ```
+
+The `entrypoint` table is the only manifest version 2 selector. See
+[Format selection](spec.md#format-selection).
 
 The engine adds one gated API: the function call channel on `Container`.
 
@@ -218,10 +220,15 @@ answer is the workspace `dagger.toml`.
 Manifest v2 rejects a directory that contains both `dagger.json` and
 `dagger-module.toml`. This design amends that rule:
 
-- If `dagger-module.toml` has `manifestVersion = 2`, the engine ignores
+- If `dagger-module.toml` has an `entrypoint` table, the engine ignores
   `dagger.json`. Only the legacy entrypoint module reads it.
 - The reason for the old rule was an ambiguous compatibility mode. With this
   design, the engine has no compatibility mode.
+
+A `dagger.json` that sets `entrypoint` is an error. The migration writes the
+`entrypoint` table into `dagger-module.toml`, and the legacy file keeps only
+legacy fields. This keeps the selector unambiguous: exactly one file can carry
+an `entrypoint` table.
 
 The manifest v2 rule that the `module` driver does not load a `dagger.json`
 entrypoint module stays. The legacy entrypoint module is a v2 module. Only the
@@ -245,6 +252,7 @@ The engine and the legacy entrypoint module must report these errors:
   error carries the `Error` value.
 - `currentFunctionCall` is called in a v2 `call` that set no channel.
 - `dagger.json` is missing from the module workspace.
+- `dagger.json` sets `entrypoint`.
 - `dagger.json` names an SDK that does not resolve.
 - `dagger.json` requests runtime code generation and the module has no
   committed generated code.
@@ -283,7 +291,8 @@ The engine and the legacy entrypoint module must report these errors:
 8. Propagate `returnError` from a legacy runtime as the target function error.
 9. Reject a legacy module that requests runtime code generation.
 10. Verify that a second call reuses the runtime container build.
-11. Load a directory that has both manifest files with `manifestVersion = 2`.
+11. Load a directory that has both manifest files, where `dagger-module.toml`
+    has an `entrypoint` table.
 12. Verify that the v2 schema view does not show the function call channel.
 
 ## Status

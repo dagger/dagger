@@ -43,10 +43,9 @@ is not a required part of the module contract.
 
 ## Manifest
 
-The manifest has four required values:
+The manifest has three required values:
 
 ```toml
-manifestVersion = 2
 name = "hello"
 
 [entrypoint]
@@ -56,10 +55,42 @@ source = "./internal/dagger/entrypoint"
 
 | Field | Meaning |
 | --- | --- |
-| `manifestVersion` | The file format version. It must be `2`. |
 | `name` | The module name. |
 | `entrypoint.kind` | The entrypoint kind. It must be `dang` or `module`. |
 | `entrypoint.source` | A local path, or an address that resolves to a `Directory`. |
+
+### Format selection
+
+The presence of the `entrypoint` table selects this format. A
+`dagger-module.toml` that has an `entrypoint` table is a version 2 manifest. A
+`dagger-module.toml` that has no `entrypoint` table is the previous format.
+There is no `manifestVersion` key.
+
+The engine rejects a `dagger-module.toml` that sets `manifestVersion`. An
+earlier draft of this design used that key, so the error names its replacement:
+
+```text
+dagger-module.toml does not support "manifestVersion": the [entrypoint] table
+selects the manifest version 2 format
+```
+
+The engine rejects a `dagger.json` that sets `entrypoint`. The `entrypoint`
+table belongs to `dagger-module.toml` only, so a legacy file can never select
+this format.
+
+**Decision: a future format version needs a structural selector.** This format
+reads no version number, so a version 3 cannot announce itself with one. It
+must differ by structure, such as a new required table, or by a new file name.
+This design accepts that cost. The alternative keeps a version key that every
+manifest repeats and that no manifest can disagree with.
+
+**Decision: an engine that predates this design ignores the entrypoint.** Such
+an engine decodes `dagger-module.toml` with a decoder that drops unknown keys.
+It therefore ignores the `entrypoint` table, finds no `runtime` value, and
+fails with `no sdk ref provided`. That engine drops a `manifestVersion` key for
+the same reason, so it fails the same way for a manifest that carries one.
+Removing the version key does not change how often this failure happens. This
+design accepts the failure and adds no version handshake.
 
 A local path is relative to the directory that contains `dagger-module.toml`.
 It must stay inside that directory. An absolute path is an error. It does not
@@ -291,8 +322,9 @@ type ModuleManifest {
 }
 ```
 
-`moduleManifest` sets `manifestVersion` to `2`. `asFile` returns an error until
-`withEntrypoint` sets both entrypoint values.
+`asFile` writes `name` and the `entrypoint` table, and nothing else. It returns
+an error until `withEntrypoint` sets both entrypoint values. It writes no
+`manifestVersion` key, because the `entrypoint` table selects the format.
 
 ## Compatibility
 
@@ -302,8 +334,12 @@ when `dagger-module.toml` is present.
 The legacy loader keeps the current SDK runtime, runtime `Container`, empty
 definition call, and introspection behavior.
 
-Without `dagger.json`, `dagger-module.toml` must use manifest version 2. It does
-not accept legacy runtime fields.
+Without `dagger.json`, `dagger-module.toml` must use manifest version 2, so it
+must have an `entrypoint` table. It does not accept legacy runtime fields.
+
+That rule describes the end state. Until the migration finishes, the engine
+still reads a `dagger-module.toml` with no `entrypoint` table as the previous
+format. See [Format selection](#format-selection).
 
 All new GraphQL fields and types use the v1 schema view gate.
 
@@ -311,7 +347,7 @@ All new GraphQL fields and types use the v1 schema view gate.
 
 | Area | Required behavior |
 | --- | --- |
-| Manifest | Read and write the four fields. Reject missing or invalid values. |
+| Manifest | Read and write the three fields. Select the format by the presence of the `entrypoint` table. Reject missing or invalid values. Reject a `manifestVersion` key in `dagger-module.toml` and an `entrypoint` value in `dagger.json`. |
 | Source | Resolve module-relative local paths, remote Git directories, and module-returned directories. Reject paths that leave the module directory. |
 | Dang driver | Load a directory without a manifest. Require one empty-constructible `ModuleEntrypoint`. Reject dependencies. |
 | Types | Bind name-only module and core type references. Reject invalid or duplicate definitions. |

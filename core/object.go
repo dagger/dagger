@@ -12,7 +12,6 @@ import (
 
 	"github.com/vektah/gqlparser/v2/ast"
 
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
@@ -1099,7 +1098,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 }
 
 func (obj *ModuleObject) isMainObject() bool {
-	if src := obj.Module.Self().GetSource(); src != nil && src.ManifestVersion == modules.ModuleManifestVersion2 {
+	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
 	return gqlObjectName(obj.TypeDef.OriginalName) == gqlObjectName(obj.Module.Self().OriginalName)

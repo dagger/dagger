@@ -15,8 +15,7 @@ func (ModuleSuite) TestBuiltinDangModuleEntrypoint(ctx context.Context, t *testc
 		WithNewFile("dagger.toml", `[modules.tiny]
 source = ".dagger/modules/tiny"
 `).
-		WithNewFile(".dagger/modules/tiny/dagger-module.toml", `manifestVersion = 2
-name = "tiny"
+		WithNewFile(".dagger/modules/tiny/dagger-module.toml", `name = "tiny"
 
 [entrypoint]
 kind = "dang"
@@ -67,8 +66,7 @@ func (ModuleSuite) TestBuiltinDangModuleEntrypointFromSubdir(ctx context.Context
 		WithNewFile("dagger.toml", `[modules.tiny]
 source = ".dagger/modules/tiny"
 `).
-		WithNewFile(".dagger/modules/tiny/dagger-module.toml", `manifestVersion = 2
-name = "tiny"
+		WithNewFile(".dagger/modules/tiny/dagger-module.toml", `name = "tiny"
 
 [entrypoint]
 kind = "dang"
