@@ -1,0 +1,9 @@
+name = "ci"
+engineVersion = "v1.0.0-beta.13"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "engine-dev"
+  source = "../engine-dev"
