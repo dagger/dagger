@@ -2,10 +2,8 @@
 source = ".dagger/modules/changelog"
 legacy-default-path = true
 
-# settings.source = "./path"
-
-[modules.ci]
-source = ".dagger/modules/ci"
+[modules.bootstrap]
+source = ".dagger/modules/bootstrap"
 legacy-default-path = true
 
 [modules.cli]
