@@ -16,7 +16,8 @@ import (
 type cloudFeature string
 
 const (
-	featureCloudChecks cloudFeature = "CLOUD_CHECKS"
+	featureCloudChecks  cloudFeature = "CLOUD_CHECKS"
+	featureCloudModules cloudFeature = "CLOUD_MODULES"
 )
 
 // cloudFeatureTrialDays is the trial length offered when a required feature is
@@ -67,10 +68,11 @@ func commandCloudFeatures(cmd *cobra.Command) []cloudFeature {
 }
 
 // ensureCommandCloudFeatures verifies orgName has every feature cmd requires.
-// For each missing feature the user is prompted (auto-accepted with
-// --auto-apply) to start a free trial via startFeatureTrial; declining, or a
-// non-interactive run, fails with an actionable error. A command with no
-// declared requirements is a no-op.
+// All missing features are offered together as a single free trial (one prompt,
+// one startFeatureTrial call — e.g. Cloud checks need CLOUD_CHECKS and
+// CLOUD_MODULES). --auto-apply or --start-trial accept without prompting;
+// declining, or a non-interactive run, fails with an actionable error. A
+// command with no declared requirements is a no-op.
 func ensureCommandCloudFeatures(cmd *cobra.Command, client *cloudapi.Client, orgName string) error {
 	features := commandCloudFeatures(cmd)
 	if len(features) == 0 {
@@ -81,25 +83,70 @@ func ensureCommandCloudFeatures(cmd *cobra.Command, client *cloudapi.Client, org
 	if err != nil {
 		return fmt.Errorf("lookup Cloud org %q: %w", orgName, err)
 	}
+	missing := make([]cloudFeature, 0, len(features))
 	for _, feature := range features {
-		if orgFeatureEnabled(details, feature) {
-			continue
+		if !orgFeatureEnabled(details, feature) {
+			missing = append(missing, feature)
 		}
-		start, err := confirmFeatureTrial(cmd, details, feature)
-		if err != nil {
-			return err
-		}
-		if !start {
-			return fmt.Errorf("%s is not enabled for organization %q; enable it at https://dagger.cloud/%s/settings or re-run with --auto-apply to start a trial",
-				feature, details.Name, details.Name)
-		}
-		if err := client.StartFeatureTrial(ctx, details.ID, string(feature), cloudFeatureTrialDays); err != nil {
-			return fmt.Errorf("start %s trial for organization %q: %w", feature, details.Name, err)
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Started a %d-day %s trial for organization %q.\n",
-			cloudFeatureTrialDays, feature, details.Name)
 	}
+	if len(missing) == 0 {
+		return nil
+	}
+	start, err := confirmFeatureTrial(cmd, details, missing)
+	if err != nil {
+		return err
+	}
+	if !start {
+		return featureTrialDeclinedError(cmd, details, missing)
+	}
+	if err := client.StartFeatureTrial(ctx, details.ID, featureNames(missing), cloudFeatureTrialDays); err != nil {
+		return fmt.Errorf("start %s trial for organization %q: %w", joinFeatures(missing), details.Name, err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Started a %d-day %s trial for organization %q.\n",
+		cloudFeatureTrialDays, joinFeatures(missing), details.Name)
 	return nil
+}
+
+// featureNames converts features to the plain strings the API expects.
+func featureNames(features []cloudFeature) []string {
+	names := make([]string, 0, len(features))
+	for _, feature := range features {
+		names = append(names, string(feature))
+	}
+	return names
+}
+
+// joinFeatures renders a feature list for humans, e.g.
+// "CLOUD_CHECKS + CLOUD_MODULES".
+func joinFeatures(features []cloudFeature) string {
+	return strings.Join(featureNames(features), " + ")
+}
+
+// featureTrialDeclinedError is returned when required features are missing and
+// no trial was started (prompt declined, or a non-interactive run). When the
+// command offers a --start-trial flag the error points at it; otherwise it
+// falls back to the org settings page.
+func featureTrialDeclinedError(cmd *cobra.Command, details *cloudapi.OrgDetails, missing []cloudFeature) error {
+	verb := "is"
+	if len(missing) > 1 {
+		verb = "are"
+	}
+	if cmd.Flags().Lookup(startTrialFlag) != nil {
+		return fmt.Errorf("%s %s not enabled for organization %q; start a free trial:\n\n%s --%s",
+			joinFeatures(missing), verb, details.Name, cmd.CommandPath(), startTrialFlag)
+	}
+	return fmt.Errorf("%s %s not enabled for organization %q; enable it at https://dagger.cloud/%s/settings",
+		joinFeatures(missing), verb, details.Name, details.Name)
+}
+
+// startTrialFlag names the opt-in flag feature-gated commands can register to
+// start a missing feature's trial without an interactive prompt.
+const startTrialFlag = "start-trial"
+
+// startTrialRequested reports whether cmd was invoked with --start-trial.
+func startTrialRequested(cmd *cobra.Command) bool {
+	flag := cmd.Flags().Lookup(startTrialFlag)
+	return flag != nil && flag.Value.String() == "true"
 }
 
 type featureTrialChoice string
@@ -109,12 +156,13 @@ const (
 	featureTrialNotNow featureTrialChoice = "not-now"
 )
 
-// confirmFeatureTrial asks whether to start a trial of the missing feature,
-// rendered as the same explicit-choice prompt as the `dagger setup` Cloud
-// login step. --auto-apply accepts without prompting; a non-interactive run
-// declines (the caller turns that into an actionable error).
-func confirmFeatureTrial(cmd *cobra.Command, details *cloudapi.OrgDetails, feature cloudFeature) (bool, error) {
-	if autoApply {
+// confirmFeatureTrial asks whether to start a single trial covering all the
+// missing features, rendered as the same explicit-choice prompt as the
+// `dagger setup` Cloud login step. --auto-apply and --start-trial accept
+// without prompting; a non-interactive run declines (the caller turns that
+// into an actionable error).
+func confirmFeatureTrial(cmd *cobra.Command, details *cloudapi.OrgDetails, missing []cloudFeature) (bool, error) {
+	if autoApply || startTrialRequested(cmd) {
 		return true, nil
 	}
 	if !stdinIsTTY {
@@ -126,9 +174,9 @@ func confirmFeatureTrial(cmd *cobra.Command, details *cloudapi.OrgDetails, featu
 			huh.NewOption("Start trial", featureTrialStart),
 			huh.NewOption("Not now", featureTrialNotNow),
 		).
-			Title(fmt.Sprintf("Start a free %d-day %s trial?", cloudFeatureTrialDays, feature)).
+			Title(fmt.Sprintf("Start a free %d-day %s trial?", cloudFeatureTrialDays, joinFeatures(missing))).
 			TitleLink(fmt.Sprintf("https://dagger.cloud/%s/settings", details.Name)).
-			Description(fmt.Sprintf("Organization %q does not have %s enabled.\nMore info: https://dagger.cloud/%s/settings", details.Name, feature, details.Name)),
+			Description(fmt.Sprintf("Organization %q does not have %s enabled.\nMore info: https://dagger.cloud/%s/settings", details.Name, joinFeatures(missing), details.Name)),
 	))
 	if err := idtui.RunStandaloneForm(cmd.Context(), form); err != nil {
 		return false, err
