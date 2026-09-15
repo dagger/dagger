@@ -16976,6 +16976,17 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with the content mounted at the given path unmounted.
+   *
+   * Removes directory and file mounts at or below the path, revealing the underlying workspace content. Other mounts and pending changes are preserved.
+   * @param path Location of the mount to remove. Relative paths resolve from the workspace cwd. Use / to remove all mounts.
+   */
+  withoutMount = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutMount", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with an SDK removed from its config.
    * @param name Name of the installed SDK entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.

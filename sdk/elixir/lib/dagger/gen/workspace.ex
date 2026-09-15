@@ -1054,6 +1054,22 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with the content mounted at the given path unmounted.
+
+  Removes directory and file mounts at or below the path, revealing the underlying workspace content. Other mounts and pending changes are preserved.
+  """
+  @spec without_mount(t(), String.t()) :: Dagger.Workspace.t()
+  def without_mount(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutMount") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with an SDK removed from its config.
   """
   @spec without_sdk(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()

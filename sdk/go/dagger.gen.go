@@ -18368,6 +18368,18 @@ func (r *Workspace) WithoutModule(name string, opts ...WorkspaceWithoutModuleOpt
 	}
 }
 
+// Return this workspace with the content mounted at the given path unmounted.
+//
+// Removes directory and file mounts at or below the path, revealing the underlying workspace content. Other mounts and pending changes are preserved.
+func (r *Workspace) WithoutMount(path string) *Workspace {
+	q := r.query.Select("withoutMount")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithoutSDKOpts contains options for Workspace.WithoutSDK
 type WorkspaceWithoutSDKOpts struct {
 	// Write to the workspace config directory at the workspace cwd.

@@ -17492,6 +17492,26 @@ class Workspace(Type):
         _ctx = self._select("withoutModule", _args)
         return Workspace(_ctx)
 
+    def without_mount(self, path: str) -> Self:
+        """Return this workspace with the content mounted at the given path
+        unmounted.
+
+        Removes directory and file mounts at or below the path, revealing the
+        underlying workspace content. Other mounts and pending changes are
+        preserved.
+
+        Parameters
+        ----------
+        path:
+            Location of the mount to remove. Relative paths resolve from the
+            workspace cwd. Use / to remove all mounts.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withoutMount", _args)
+        return Workspace(_ctx)
+
     def without_sdk(
         self,
         name: str,

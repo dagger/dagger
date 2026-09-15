@@ -6834,6 +6834,19 @@ type Workspace implements Node {
     here: Boolean = false
   ): Workspace!
 
+  """
+  Return this workspace with the content mounted at the given path unmounted.
+
+  Removes directory and file mounts at or below the path, revealing the
+  underlying workspace content. Other mounts and pending changes are preserved.
+  """
+  withoutMount(
+    """
+    Location of the mount to remove. Relative paths resolve from the workspace cwd. Use / to remove all mounts.
+    """
+    path: String!
+  ): Workspace!
+
   """Return this workspace with an SDK removed from its config."""
   withoutSDK(
     """Name of the installed SDK entry to remove."""

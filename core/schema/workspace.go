@@ -224,6 +224,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Location of the mounted file. Relative paths resolve from the workspace cwd."),
 				dagql.Arg("source").Doc("File to mount."),
 			),
+		dagql.NodeFunc("withoutMount", s.withoutMount).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with the content mounted at the given path unmounted.",
+				"Removes directory and file mounts at or below the path, revealing the underlying workspace content. Other mounts and pending changes are preserved.").
+			Args(
+				dagql.Arg("path").Doc("Location of the mount to remove. Relative paths resolve from the workspace cwd. Use / to remove all mounts."),
+			),
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
 			// Env-sensitive writes: what this records depends on the client's env
@@ -1992,6 +1999,43 @@ func (s *workspaceSchema) withMountedFile(
 	args workspaceWithMountedFileArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	return withMountedSource(ctx, parent, args.Path, args.Source, "withFile")
+}
+
+type workspaceWithoutMountArgs struct {
+	Path string
+}
+
+func (s *workspaceSchema) withoutMount(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithoutMountArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := parent.Self()
+	resolvedPath, err := resolveWorkspacePath(args.Path, ws.Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	mounts, ok := ws.MountsDir()
+	if !ok {
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.Clone())
+	}
+	if resolvedPath == "." {
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.WithoutMountedAt(dagql.ObjectResult[*core.Directory]{}, resolvedPath))
+	}
+	// withoutDirectory removes the path whatever its type, so this also
+	// removes mounted files and any mounts nested beneath the path.
+	var updated dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, mounts, &updated, dagql.Selector{
+		Field: "withoutDirectory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.WithoutMountedAt(updated, resolvedPath))
 }
 
 // withMountedSource is the shared implementation of withMountedDirectory and

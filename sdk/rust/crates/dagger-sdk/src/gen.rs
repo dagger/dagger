@@ -17938,6 +17938,21 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with the content mounted at the given path unmounted.
+    /// Removes directory and file mounts at or below the path, revealing the underlying workspace content. Other mounts and pending changes are preserved.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mount to remove. Relative paths resolve from the workspace cwd. Use / to remove all mounts.
+    pub fn without_mount(&self, path: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutMount");
+        query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with an SDK removed from its config.
     ///
     /// # Arguments
