@@ -169,7 +169,17 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 			changes[i] = after.Changes(before)
 		}
 	}
-	merged := dag.Changeset().WithChangesets(changes, dagger.ChangesetWithChangesetsOpts{OnConflict: dagger.ChangesetsMergeConflictFailEarly})
+	var merged *dagger.Changeset
+	if len(changes) == 1 {
+		// There is nothing to merge. Keep the snapshots so Git cannot discard
+		// permission bits or empty directories, and exclude root Git metadata
+		// just as the merge path does.
+		before := changes[0].Before().WithoutDirectory(".git")
+		after := changes[0].After().WithoutDirectory(".git")
+		merged = after.Changes(before)
+	} else {
+		merged = dag.Changeset().WithChangesets(changes, dagger.ChangesetWithChangesetsOpts{OnConflict: dagger.ChangesetsMergeConflictFailEarly})
+	}
 	if err := verifyRegeneratedModules(ctx, dag, merged, failures); err != nil {
 		return err
 	}
