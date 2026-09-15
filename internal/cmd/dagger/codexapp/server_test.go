@@ -369,13 +369,8 @@ func TestServerHandshake(t *testing.T) {
 	require.NotNil(t, rpcErr)
 	require.Equal(t, int64(CodeMethodNotFound), rpcErr.Code)
 
-	// A line that is not JSON gets a parse error with a null id, and the
-	// connection lives on.
+	// A line that is not a message is dropped, and the connection lives on.
 	client.send("{{{")
-	msg := client.recv()
-	require.NotNil(t, msg.Error)
-	require.Equal(t, int64(CodeParseError), msg.Error.Code)
-	require.JSONEq(t, "null", string(msg.ID))
 	client.ok(MethodThreadLoadedList, nil, nil)
 }
 

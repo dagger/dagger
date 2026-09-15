@@ -146,8 +146,8 @@ func (c *Conn) Reply(id json.RawMessage, result any) error {
 	return c.write(wireResponse{ID: id, Result: result})
 }
 
-// ReplyError answers a request with an error. A nil id (a parse error, where
-// no request could be read) is sent as null.
+// ReplyError answers a request with an error. A missing id is sent as null,
+// as JSON-RPC prescribes when the request's id could not be read.
 func (c *Conn) ReplyError(id json.RawMessage, rpcErr *RPCError) error {
 	if len(id) == 0 {
 		id = json.RawMessage("null")

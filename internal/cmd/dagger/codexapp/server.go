@@ -124,8 +124,6 @@ type Server struct {
 	optOut      map[string]bool
 	threads     map[string]*thread
 	order       []string
-
-	turns sync.WaitGroup
 }
 
 type thread struct {
@@ -222,9 +220,11 @@ func (s *Server) Serve(ctx context.Context) error {
 				return nil
 			}
 			if in.err != nil {
-				var rpcErr *RPCError
-				if errors.As(in.err, &rpcErr) {
-					_ = s.conn.ReplyError(nil, rpcErr)
+				if isParseError(in.err) {
+					// A line that is not a message has no id to answer on.
+					// Codex's schema has no null-id error response either, so
+					// like Codex, log it and move on.
+					slog.Warn("ignoring undecodable message from the client", "error", in.err)
 					continue
 				}
 				if errors.Is(in.err, io.EOF) {
@@ -763,7 +763,6 @@ func (s *Server) turnStart(ctx context.Context, p TurnStartParams) (any, error) 
 	}
 	t.active = tn
 	t.mu.Unlock()
-	s.turns.Add(1)
 	go s.runTurn(ctx, t, tn)
 	return TurnStartResponse{Turn: proto}, nil
 }
@@ -788,7 +787,6 @@ func previewName(text string) string {
 // prompt while the item stream narrates it, then settles the stream, exports
 // the workspace edits, reports usage, and announces completion.
 func (s *Server) runTurn(ctx context.Context, t *thread, tn *turnState) {
-	defer s.turns.Done()
 	defer s.nextTurn(ctx, t)
 
 	tn.startedAt = s.now()
@@ -860,7 +858,6 @@ func (s *Server) nextTurn(ctx context.Context, t *thread) {
 	}
 	t.mu.Unlock()
 	if next != nil && ctx.Err() == nil {
-		s.turns.Add(1)
 		go s.runTurn(ctx, t, next)
 		return
 	}
