@@ -1812,7 +1812,8 @@ class Changeset(Type):
 class Check(Type):
     async def check_type(self) -> str:
         """The type of check: 'check' for annotated checks, 'generate' for
-        generate-as-checks
+        generate-as-checks, 'load' for a workspace module that could not be
+        loaded
 
         Returns
         -------

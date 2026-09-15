@@ -1185,6 +1185,26 @@ func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Co
 		require.NoError(t, err)
 	})
 
+	t.Run("listing only the healthy module skips the broken entrypoint", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("generate", "-l", "good")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "good:generate")
+	})
+
+	t.Run("generating only the healthy module skips the broken entrypoint", func(ctx context.Context, t *testctx.T) {
+		// Narrowing to `good` means the entrypoint is never attempted, so it is
+		// not in the failed-module set that protects the unknown-field fallback:
+		// the follow-up node(id:) queries have to resolve their own demand.
+		ctr := base.With(daggerExec("generate", "good", "-y", "--progress=plain"))
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "no changes to apply")
+		_, err = ctr.WithExec([]string{"grep", "-rl", "hello from good", "."}).Sync(ctx)
+		require.NoError(t, err)
+	})
+
 	t.Run("generate --no-apply previews despite a broken entrypoint", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerExec("generate", "--no-apply", "--progress=plain")).
@@ -1339,11 +1359,41 @@ func (GeneratorsSuite) TestWorkspaceCheckNarrowsToRequestedModule(ctx context.Co
 	})
 
 	t.Run("checking across all modules still loads the broken module", func(ctx context.Context, t *testctx.T) {
+		// Listing is best-effort now (see TestChecksReportUnloadableModules),
+		// so it succeeds and names the broken module instead of aborting.
 		out, err := base.
-			With(daggerExecFail("check", "-l")).
+			With(daggerExec("check", "-l")).
 			CombinedOutput(ctx)
-		require.NoError(t, err)
+		require.NoError(t, err, out)
 		require.Contains(t, out, "bad")
+	})
+}
+
+// TestWorkspaceCheckSkipsBrokenEntrypoint mirrors
+// TestWorkspaceGenerateSkipsBrokenEntrypoint for `dagger check`: scoping a
+// check to a healthy module must not drag in an unloadable entrypoint. The
+// `currentWorkspace { checks(include:) }` request narrows correctly, but the
+// CLI's follow-up queries on the returned CheckGroup are rooted at `node(id:)`,
+// which used to fall back to loading the pending entrypoint.
+func (GeneratorsSuite) TestWorkspaceCheckSkipsBrokenEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generators-broken-entrypoint")
+
+	t.Run("listing only the healthy module skips the broken entrypoint", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("check", "-l", "good")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "good:verify")
+	})
+
+	t.Run("running only the healthy module's checks skips the broken entrypoint", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("check", "good", "--no-generate", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "intentionally invalid")
 	})
 }
 

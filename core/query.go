@@ -92,11 +92,11 @@ type Server interface {
 
 	// Load pending workspace modules on demand; include narrows to the modules
 	// its patterns name ("module" or "module:item"), empty or unrecognized
-	// loads all. With bestEffort, modules that fail to load are skipped with a
+	// loads all. In a best-effort mode, modules that fail to load are skipped with a
 	// warning instead of failing the operation, and their failure messages are
 	// returned for the caller to surface (e.g. GeneratorGroup.loadFailures) —
 	// for operations like generate that may be exactly what repairs the module.
-	EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) (loadFailures []ModuleLoadFailure, _ error)
+	EnsureWorkspaceModules(ctx context.Context, include []string, mode ModuleLoadMode) (loadFailures []ModuleLoadFailure, _ error)
 
 	// A snapshot of the current workspace lockfile. When requireWritable is
 	// true, returns ok=false for read-only workspace lock sources.

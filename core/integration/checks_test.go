@@ -408,6 +408,100 @@ check.skip = ["failing-check", "failing-container"]
 	require.NotContains(t, out, "hello-with-checks:failing-container")
 }
 
+// TestChecksReportUnloadableModules covers `dagger check`'s handling of a
+// workspace module that cannot be loaded: the modules that do load still run,
+// and the one that does not is reported as a check that fails. check stays a
+// gate -- the run exits non-zero even when every check that ran passed -- but a
+// broken module no longer costs the whole report, and listing no longer aborts.
+func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generators-broken")
+
+	t.Run("listing succeeds and names the module that could not be loaded", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "good:verify")
+		require.Contains(t, out, "bad:load")
+		require.Contains(t, out, "this workspace module could not be loaded")
+	})
+
+	t.Run("running reports the load failure as a failed check and still runs the rest", func(ctx context.Context, t *testctx.T) {
+		// good:verify passes, so the non-zero exit can only come from the
+		// module that could not be loaded.
+		out, err := base.
+			With(daggerExecFail("check", "--no-generate", "--progress=report")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `good:verify.*OK`, out)
+		require.Regexp(t, `bad:load.*ERROR`, out)
+		require.Contains(t, out, `loading module "/work/.dagger/modules/bad"`)
+	})
+
+	t.Run("scoping to the broken module reports its load failure", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("check", "bad", "--no-generate", "--progress=report")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `bad:load.*ERROR`, out)
+	})
+
+	t.Run("scoping to the healthy module passes and never mentions the broken one", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("check", "good", "--no-generate", "--progress=report")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `good:verify.*OK`, out)
+		require.NotContains(t, out, "modules/bad")
+	})
+
+	t.Run("a module that cannot load does not suppress an SDK's derived check", func(ctx context.Context, t *testctx.T) {
+		// The two reach allChecks from different places: the derived check is
+		// built from workspace config (so it survives a module that cannot
+		// load), the load-failure check from the load failures themselves.
+		out, err := workspaceFixture(t, c, "sdk-generate-check").
+			WithNewFile("dagger.toml", `[modules.alpha-sdk]
+source = ".dagger/modules/alpha-sdk"
+
+[sdks.alpha]
+module = "alpha-sdk"
+
+[sdks.alpha.scopes."alpha"]
+is-module = true
+name = "alpha"
+
+[modules.bad]
+source = ".dagger/modules/bad"
+`).
+			WithNewFile(".dagger/modules/bad/dagger-module.toml", `name = "bad"
+engineVersion = "v0.21.9"
+
+[runtime]
+  source = "dang"
+`).
+			WithNewFile(".dagger/modules/bad/main.dang", "this is intentionally invalid dang source").
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "alpha-sdk:generate")
+		require.Contains(t, out, "bad:load")
+	})
+
+	t.Run("a module missing its generated files is still told to generate", func(ctx context.Context, t *testctx.T) {
+		// The reason best-effort loading cannot reuse generate's phrasing:
+		// generate drops the "run `dagger generate`" advice because that is
+		// what is running, and for check it is the fix (see ModuleLoadMode).
+		out, err := workspaceFixture(t, c, "generate-load-failures").
+			With(daggerExecFail("check", "ungenerated", "--progress=report")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "run `dagger generate`")
+		require.NotContains(t, out, "skipped until it is generated")
+	})
+}
+
 func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := checksTestEnv(t, c)

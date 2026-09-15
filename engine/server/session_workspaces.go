@@ -25,6 +25,7 @@ import (
 	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -1180,21 +1181,23 @@ func workspaceGitRefSelector(remote workspaceRemoteRef, supportsVersionQueries b
 // additive, so narrowing is deferral, not exclusion. Mutex+flags (not
 // sync.Once) keep transient failures retriable.
 //
-// With bestEffort, a module that fails to load is skipped with a warning
-// instead of failing the whole batch: the demanding operation (dagger generate)
-// may be exactly what repairs it — e.g. a dagger-module.toml module whose
+// In a best-effort mode, a module that fails to load is skipped with a warning
+// instead of failing the whole batch: the demanding operation may be exactly
+// what repairs it (dagger generate — e.g. a dagger-module.toml module whose
 // committed generated files don't exist yet, which loads only after its SDK
-// generator runs. The skipped modules' failure messages are returned so the
-// caller can surface them (e.g. GeneratorGroup.loadFailures). Genuine engine
-// errors (batch resolution, arbitration, serving) stay fatal regardless.
-func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *clientRuntime, filter func([]pendingModule) []pendingModule, bestEffort bool) (loadFailures []core.ModuleLoadFailure, _ error) {
-	return srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, bestEffort, nil)
+// generator runs), or may have work to do for the modules that did load
+// (dagger check). The skipped modules' failure messages are returned so the
+// caller can surface them (e.g. GeneratorGroup.loadFailures, or the failed
+// check Workspace.checks stands each one up as). Genuine engine errors (batch
+// resolution, arbitration, serving) stay fatal regardless.
+func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *clientRuntime, filter func([]pendingModule) []pendingModule, mode core.ModuleLoadMode) (loadFailures []core.ModuleLoadFailure, _ error) {
+	return srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, mode, nil)
 }
 
 // ensureModulesLoadedModeWithSuccess runs onSuccessLocked after a successful
 // load while modulesMu is still held. Callers use it for state transitions
 // that must be atomic with the load becoming visible to another request.
-func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *clientRuntime, filter func([]pendingModule) []pendingModule, bestEffort bool, onSuccessLocked func()) (loadFailures []core.ModuleLoadFailure, rerr error) {
+func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *clientRuntime, filter func([]pendingModule) []pendingModule, mode core.ModuleLoadMode, onSuccessLocked func()) (loadFailures []core.ModuleLoadFailure, rerr error) {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
 	defer func() {
@@ -1223,11 +1226,11 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 
 	// A failed module stays pending; surface its recorded error rather than
 	// reloading it. Best-effort loads skip it instead, collecting its message.
-	if bestEffort {
+	if mode.BestEffort() {
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
 			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-				loadFailures = append(loadFailures, moduleLoadFailure(mod, err))
+				loadFailures = append(loadFailures, moduleLoadFailure(mod, err, mode))
 				continue
 			}
 			kept = append(kept, mod)
@@ -1263,9 +1266,9 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 		if resolveErrs[i] != nil {
 			loadErr := moduleLoadErr(load, resolveErrs[i])
 			client.recordFailedModule(load.mod, loadErr)
-			if bestEffort {
-				reportSkippedModule(ctx, moduleProgressName(load.mod), core.LoadFailureCause("", loadErr))
-				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr))
+			if mode.BestEffort() {
+				reportSkippedModule(ctx, moduleProgressName(load.mod), core.LoadFailureCause("", loadErr, mode))
+				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr, mode))
 				continue
 			}
 			if firstErr == nil {
@@ -1455,10 +1458,10 @@ func (client *clientRuntime) removePendingModules(served []pendingModule) {
 // EnsureWorkspaceModules loads the pending workspace modules a selector
 // resolver (checks/generators/services) demands. Those fields validate against
 // the core schema, so loading waits until resolution where include is native.
-// With bestEffort, modules that fail to load are skipped with a warning instead
-// of failing the operation, and their failure messages are returned for the
-// caller to surface (see ensureModulesLoadedMode).
-func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) ([]core.ModuleLoadFailure, error) {
+// In a best-effort mode, modules that fail to load are skipped with a warning
+// instead of failing the operation, and their failure messages are returned
+// for the caller to surface (see ensureModulesLoadedMode).
+func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, mode core.ModuleLoadMode) ([]core.ModuleLoadFailure, error) {
 	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -1466,7 +1469,7 @@ func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string,
 	return srv.ensureModulesLoadedMode(ctx, client, func(mods []pendingModule) []pendingModule {
 		// runs under client.modulesMu, which also guards servedWorkspaceModuleNames
 		return filterPendingWorkspaceModulesBySelectorInclude(mods, client.servedWorkspaceModuleNames, include)
-	}, bestEffort)
+	}, mode)
 }
 
 // canonicalWorkspaceModuleName kebab-normalizes a name or pattern segment for
@@ -1539,6 +1542,48 @@ func filterPendingWorkspaceModulesBySelectorInclude(mods []pendingModule, served
 		}
 	}
 	return filtered
+}
+
+// requestRootFieldDemand flattens a request peek into the root fields that
+// drive workspace module loading. `node` is a core field whose demand is
+// knowable from its id, so it is resolved rather than left to the
+// entrypoint-guess fallback in filterPendingWorkspaceModulesForRootFields: a
+// handle-form id is an engine-local reference the engine only ever minted for a
+// client that already had its type served, and the node resolver rebuilds that
+// result's own dependency server (see SetNodeLoader in core/schema_build.go),
+// so it demands nothing here. A recipe-form id is portable, so it demands the
+// root fields it replays.
+//
+// An id that cannot be read or decoded puts `node` back in the demand, keeping
+// the conservative fallback for it, while the ids that did resolve still
+// contribute theirs.
+func requestRootFieldDemand(peek dagql.RootFieldPeek) []string {
+	if !slices.Contains(peek.Fields, "node") {
+		return peek.Fields
+	}
+
+	demand := make([]string, 0, len(peek.Fields)+len(peek.NodeIDs))
+	for _, field := range peek.Fields {
+		if field != "node" {
+			demand = append(demand, field)
+		}
+	}
+	unaccounted := peek.UnresolvedNodeIDs
+	for _, encoded := range peek.NodeIDs {
+		var id call.ID
+		if err := id.Decode(encoded); err != nil {
+			unaccounted = true
+			continue
+		}
+		if id.IsHandle() {
+			continue
+		}
+		demand = append(demand, id.RootFields()...)
+	}
+	if unaccounted {
+		demand = append(demand, "node")
+	}
+	return demand
 }
 
 // filterPendingWorkspaceModulesForRootFields selects the pending modules a
@@ -1741,18 +1786,23 @@ func isCoreRootField(field string) bool {
 		"_httpState",
 		"_remoteGitMirror",
 		"address",
+		"blob",
 		"cacheVolume",
 		"changeset",
 		"cloud",
 		"container",
 		"currentFunctionCall",
 		"currentModule",
+		// currentNode resolves the receiver of the current module function
+		// call, whose module is served to that client by definition
+		"currentNode",
 		// currentWorkspace's selector resolvers load on demand from their
 		// include argument, so the root field demands nothing here
 		"currentWorkspace",
 		"defaultPlatform",
 		"directory",
 		"engine",
+		"engineVolume",
 		// NOTE: "env" is intentionally absent — it needs the full workspace
 		// (see rootFieldsRequireFullWorkspaceSchema)
 		"envFile",
@@ -1763,14 +1813,20 @@ func isCoreRootField(field string) bool {
 		"git",
 		"host",
 		"http",
+		// NOTE: "id" is intentionally absent — it is the one name a module
+		// function may not take (see Module.validateObjectFunction), and the
+		// error saying so only exists once the module is loaded, so a request
+		// rooted at `id` has to keep demanding it.
 		"json",
 		"llm",
 		"module",
 		"moduleSource",
 		"pipeline",
+		"schema",
 		"secret",
 		"setSecret",
 		"sourceMap",
+		"sshfsVolume",
 		"typeDef",
 		"version":
 		return true
@@ -1961,11 +2017,11 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 // moduleLoadFailure is the API-facing record of a skipped module: its name
 // (matching the skipped-module span), its workspace directory (so generate
 // can tell whether the run regenerated it) and the described message.
-func moduleLoadFailure(mod pendingModule, err error) core.ModuleLoadFailure {
+func moduleLoadFailure(mod pendingModule, err error, mode core.ModuleLoadMode) core.ModuleLoadFailure {
 	return core.ModuleLoadFailure{
 		Name:    moduleProgressName(mod),
 		Dir:     mod.WorkspaceDir,
-		Message: core.DescribeLoadFailure(err),
+		Message: core.DescribeLoadFailure(err, mode),
 	}
 }
 

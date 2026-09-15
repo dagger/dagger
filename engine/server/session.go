@@ -2542,7 +2542,8 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 	var filter func([]pendingModule) []pendingModule
 	scopeApplied := false
 	if client.hasPendingWorkspaceModules() {
-		if ok, rootFields, err := dagql.PeekRootFields(r); err == nil && ok {
+		if ok, peek, err := dagql.PeekRootFields(r); err == nil && ok {
+			rootFields := requestRootFieldDemand(peek)
 			filter = func(mods []pendingModule) []pendingModule {
 				// runs under client.modulesMu, which also guards
 				// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
@@ -2562,7 +2563,7 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 			}
 		}
 	}
-	_, err := srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, false, func() {
+	_, err := srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, core.ModuleLoadStrict, func() {
 		// Consume only after a successful load, but before modulesMu is
 		// released, so another request cannot claim the one-shot scope.
 		if scopeApplied {
