@@ -115,6 +115,7 @@ func (e *sequencedLogExporter) ForceFlush(ctx context.Context) error {
 type sequencedMetricExporter struct {
 	sequencer *exportSequencer
 	exporter  sdkmetric.Exporter
+	shutdown  atomic.Bool
 }
 
 var _ sdkmetric.Exporter = (*sequencedMetricExporter)(nil)
@@ -128,10 +129,21 @@ func (e *sequencedMetricExporter) Aggregation(kind sdkmetric.InstrumentKind) sdk
 }
 
 func (e *sequencedMetricExporter) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
+	// PeriodicReader performs a final collection even when this process never
+	// recorded metrics. A resource with no instrumentation scopes carries no
+	// metrics to deliver; avoid an otherwise empty Cloud request on shutdown.
+	// Do not consume a sequence number for a request we will not send.
+	if metrics != nil && len(metrics.ScopeMetrics) == 0 {
+		if e.shutdown.Load() {
+			return sdkmetric.ErrExporterShutdown
+		}
+		return ctx.Err()
+	}
 	return e.exporter.Export(e.sequencer.nextContext(ctx), metrics)
 }
 
 func (e *sequencedMetricExporter) Shutdown(ctx context.Context) error {
+	e.shutdown.Store(true)
 	return e.exporter.Shutdown(ctx)
 }
 
