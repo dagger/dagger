@@ -326,7 +326,7 @@ func (DaggerCMDSuite) TestAgentToolsetFollowsFocusAndSnapshot(ctx context.Contex
 	// A running agent's committed snapshot takes precedence over its turn seed.
 	id, err := directoryLLM.ID(ctx)
 	require.NoError(t, err)
-	second.agent = &fakeRuntime{snapshot: dagger.ID(id)}
+	second.agent = &fakeRuntime{snapshot: id}
 	got, err = s.tools(ctx)
 	require.NoError(t, err)
 	require.Equal(t, directoryTools, got)
