@@ -16,6 +16,7 @@ import (
 	"github.com/containerd/continuity/sysx"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/internal/fsutil/types"
@@ -346,11 +347,17 @@ func (local *localFS) Sync( //nolint:gocyclo
 	// syncs transfer only directory entries and are skipped.
 	var uploadedBytes atomic.Int64
 	upload := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
+	network, err := enginetelemetry.NewNetworkRecorder(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, "", fmt.Errorf("create directory import network recorder: %w", err)
+	}
 	countUploaded := func(written int64) {
 		if forParents {
 			return
 		}
-		upload.Update(uploadedBytes.Add(written))
+		current := uploadedBytes.Add(written)
+		upload.Update(current)
+		network.Record(current)
 	}
 	defer upload.Finish()
 

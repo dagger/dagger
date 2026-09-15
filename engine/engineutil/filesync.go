@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 )
 
@@ -100,6 +101,11 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
+	recorder, err := enginetelemetry.NewNetworkRecorder(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, fmt.Errorf("create host file network recorder: %w", err)
+	}
+	recorder.Record(int64(len(msg.Data)))
 	return msg.Data, nil
 }
 
@@ -218,9 +224,14 @@ func (c *Client) LocalDirExport(
 	}()
 	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
 	defer download.Finish()
+	network, err := enginetelemetry.NewNetworkRecorder(ctx, enginetelemetry.NetworkTX)
+	if err != nil {
+		return fmt.Errorf("create directory export network recorder: %w", err)
+	}
 
 	return sendDiffCopyToCaller(diffCopyClient, outputFS, func(current int, _ bool) {
 		download.Update(int64(current))
+		network.Record(int64(current))
 	})
 }
 
@@ -284,6 +295,10 @@ func (c *Client) LocalFileExport(
 	}()
 	download := bkcache.NewProgressTracker(ctx, "bytes", stat.Size(), "bytes")
 	defer download.Finish()
+	network, err := enginetelemetry.NewNetworkRecorder(ctx, enginetelemetry.NetworkTX)
+	if err != nil {
+		return fmt.Errorf("create file export network recorder: %w", err)
+	}
 
 	var sent int64
 	fileSizeLeft := stat.Size()
@@ -300,6 +315,7 @@ func (c *Client) LocalFileExport(
 		fileSizeLeft -= n
 		sent += n
 		download.Update(sent)
+		network.Record(sent)
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
@@ -354,6 +370,10 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 	}()
 	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
 	defer download.Finish()
+	network, err := enginetelemetry.NewNetworkRecorder(ctx, enginetelemetry.NetworkTX)
+	if err != nil {
+		return fmt.Errorf("create reader export network recorder: %w", err)
+	}
 	var sent int64
 
 	chunkSize := int64(MaxFileContentsChunkSize)
@@ -370,6 +390,7 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		}
 		sent += n
 		download.Update(sent)
+		network.Record(sent)
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
