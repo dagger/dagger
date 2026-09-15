@@ -514,25 +514,32 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		return err
 	}
 	locker := query.Locker()
+	_, waitSpan := Tracer(ctx).Start(ctx, "waiting for git mirror lock: "+repo.URL.Remote(), telemetry.Internal())
 	locker.Lock(remoteGitLockPrefix + repo.URL.Remote())
+	waitSpan.End()
 	defer locker.Unlock(remoteGitLockPrefix + repo.URL.Remote())
 
 	if repo.Mirror.Self() == nil {
 		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
 	}
-	remoteRef, releaseMirror, err := repo.Mirror.Self().acquire(ctx, query)
+	acquireCtx, acquireSpan := Tracer(ctx).Start(ctx, "acquiring git mirror: "+repo.URL.Remote(), telemetry.Internal())
+	remoteRef, releaseMirror, err := repo.Mirror.Self().acquire(acquireCtx, query)
+	telemetry.EndWithCause(acquireSpan, &err)
 	if err != nil {
 		return err
 	}
 	defer releaseMirror()
 
-	mount, err := remoteRef.Mount(ctx, false)
+	mountCtx, mountSpan := Tracer(ctx).Start(ctx, "mounting git mirror: "+repo.URL.Remote(), telemetry.Internal())
+	mount, err := remoteRef.Mount(mountCtx, false)
 	if err != nil {
+		telemetry.EndWithCause(mountSpan, &err)
 		return err
 	}
 
 	lm := bkcache.LocalMounter(mount)
 	dir, err := lm.Mount()
+	telemetry.EndWithCause(mountSpan, &err)
 	if err != nil {
 		return err
 	}
@@ -581,36 +588,45 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 	}()
 
-	err = ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
-		gitURL, err := git.URL(ctx)
-		if err != nil {
-			return fmt.Errorf("could not find git dir: %w", err)
-		}
+	// Keep checkout credentials and network setup alive independently of the
+	// mirror mount: only the object-copy phase needs the mirror's locks.
+	git, cleanup, err := ref.repo.setup(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
-		checkoutRef, err = cache.New(ctx, nil,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
-			bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.repo.URL.Remote(), ref.Name, ref.SHA)))
+	checkoutRef, err = cache.New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
+		bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.repo.URL.Remote(), ref.Name, ref.SHA)))
+	if err != nil {
+		return nil, err
+	}
+
+	err = MountRef(ctx, checkoutRef, func(checkoutDir string, _ *ctdmount.Mount) error {
+		checkoutDirGit := filepath.Join(checkoutDir, ".git")
+		if err := os.MkdirAll(checkoutDir, 0711); err != nil {
+			return err
+		}
+		checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
+		var tmpref string
+		err := ref.mount(ctx, depth, includeTags, func(mirrorGit *gitutil.GitCLI) error {
+			gitURL, err := mirrorGit.URL(ctx)
+			if err != nil {
+				return fmt.Errorf("could not find git dir: %w", err)
+			}
+			tmpref, err = fetchGitCheckout(ctx, checkoutGit, gitURL, ref.Ref, depth)
+			return err
+		})
 		if err != nil {
 			return err
 		}
 
-		err = MountRef(ctx, checkoutRef, func(checkoutDir string, _ *ctdmount.Mount) error {
-			checkoutDirGit := filepath.Join(checkoutDir, ".git")
-			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
-				return err
-			}
-			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
-
-			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir)
-		})
-		if err != nil {
-			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)
-		}
-
-		return nil
+		// The checkout owns its objects now; slow submodules must not hold the mirror.
+		return finishGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), ref.repo.URL.Remote(), ref.Ref, tmpref, discardGitDir)
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)
 	}
 
 	snap, err := checkoutRef.Commit(ctx)

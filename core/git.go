@@ -960,14 +960,20 @@ func doGitCheckout(
 	depth int,
 	discardGitDir bool,
 ) error {
-	checkoutDirGit, err := checkoutGit.GitDir(ctx)
-	if err != nil {
-		return fmt.Errorf("could not find git dir: %w", err)
-	}
-
-	_, err = checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	tmpref, err := fetchGitCheckout(ctx, checkoutGit, cloneURL, ref, depth)
 	if err != nil {
 		return err
+	}
+	return finishGitCheckout(ctx, checkoutGit, remoteURL, cloneURL, ref, tmpref, discardGitDir)
+}
+
+// fetchGitCheckout copies the objects into an independent repository. A caller
+// borrowing a locked mirror only needs to retain it until this phase returns;
+// checking out files and initializing submodules do not read the mirror.
+func fetchGitCheckout(ctx context.Context, checkoutGit *gitutil.GitCLI, cloneURL string, ref *gitutil.Ref, depth int) (string, error) {
+	_, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	if err != nil {
+		return "", err
 	}
 
 	tmpref := "refs/dagger.tmp/" + identity.NewID()
@@ -983,7 +989,15 @@ func doGitCheckout(
 	args = append(args, ref.SHA+":"+tmpref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
-		return err
+		return "", err
+	}
+	return tmpref, nil
+}
+
+func finishGitCheckout(ctx context.Context, checkoutGit *gitutil.GitCLI, remoteURL string, cloneURL string, ref *gitutil.Ref, tmpref string, discardGitDir bool) error {
+	checkoutDirGit, err := checkoutGit.GitDir(ctx)
+	if err != nil {
+		return fmt.Errorf("could not find git dir: %w", err)
 	}
 	if ref.Name == "" {
 		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
