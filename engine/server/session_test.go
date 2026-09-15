@@ -388,6 +388,9 @@ func TestClientInitializationDoesNotHoldScopeLock(t *testing.T) {
 
 	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
 	defer requestScope.Lease().Release()
+	srv.clientDBs = clientdb.NewDBs(t.TempDir())
+	sess.telemetryPubSub = NewPubSub(srv)
+	t.Cleanup(func() { require.NoError(t, srv.clientDBs.Close()) })
 	metadata := nestedTransportTestMetadata("child")
 	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
 	require.NoError(t, err)
@@ -450,6 +453,8 @@ func TestClientInitializationDoesNotHoldScopeLock(t *testing.T) {
 		_, retained := sess.clientRuntimes[child.clientID]
 		return !retained
 	}, time.Second, time.Millisecond, "failed initialization did not release its provisional request lease")
+	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats(),
+		"failed initialization must release its telemetry store reference")
 }
 
 func TestChildQuiescenceReleasesClosingParent(t *testing.T) {
