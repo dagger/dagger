@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/sourcegraph/conc/pool"
 )
@@ -20,6 +21,14 @@ type c2hTunnel struct {
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	rx, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return fmt.Errorf("create tunnel receive recorder: %w", err)
+	}
+	tx, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkTX)
+	if err != nil {
+		return fmt.Errorf("create tunnel transmit recorder: %w", err)
+	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errors.New("tunnel finished"))
@@ -82,7 +91,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 				}
 
 				proxyConnPool.Go(func(ctx context.Context) error {
-					err := sshforward.Copy(ctx, downstreamConn, upstreamClient, upstreamClient.CloseSend)
+					err := sshforward.CopyWithMetrics(ctx, downstreamConn, upstreamClient, upstreamClient.CloseSend, rx.Add, tx.Add)
 					if err != nil {
 						connSlog.Error("failed to copy data", "error", err)
 					}

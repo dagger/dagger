@@ -26,6 +26,7 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -250,6 +251,16 @@ func (c *Client) ListenHostToContainer(
 	if err != nil {
 		return nil, nil, err
 	}
+	rx, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		cancel(fmt.Errorf("listen host to container error: %w", err))
+		return nil, nil, fmt.Errorf("create tunnel receive recorder: %w", err)
+	}
+	tx, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkTX)
+	if err != nil {
+		cancel(fmt.Errorf("listen host to container error: %w", err))
+		return nil, nil, fmt.Errorf("create tunnel transmit recorder: %w", err)
+	}
 
 	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
@@ -395,6 +406,7 @@ func (c *Client) ListenHostToContainer(
 								cancel(fmt.Errorf("send tunnel data: %w", err))
 								return
 							}
+							tx.Add(int64(n))
 						}
 						if readErr != nil {
 							return
@@ -404,7 +416,9 @@ func (c *Client) ListenHostToContainer(
 			}
 
 			if res.Data != nil {
-				_, err = conn.Write(res.Data)
+				n, writeErr := conn.Write(res.Data)
+				rx.Add(int64(n))
+				err = writeErr
 				if err != nil {
 					// The reader retires this socket and notifies the listener.
 					// One failed connection must not stop the whole tunnel.
