@@ -11,7 +11,7 @@ namespace Dagger;
 class Check extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+     * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded
      */
     public function checkType(): string
     {

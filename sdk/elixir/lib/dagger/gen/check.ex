@@ -16,7 +16,7 @@ defmodule Dagger.Check do
   @type t() :: %__MODULE__{}
 
   @doc """
-  The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+  The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded
   """
   @spec check_type(t()) :: {:ok, String.t()} | {:error, term()}
   def check_type(%__MODULE__{} = check) do
