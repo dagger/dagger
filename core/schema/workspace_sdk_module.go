@@ -578,38 +578,7 @@ func (s *workspaceSchema) withUpdatedSDKModuleClients(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.generateSDKModuleClientSelections(ctx, updated, staged, selections)
-}
-
-func (s *workspaceSchema) generateSDKModuleClientSelections(
-	ctx context.Context,
-	updated dagql.ObjectResult[*core.Workspace],
-	staged *stagedWorkspaceConfig,
-	selections []sdkModuleClientSelection,
-) (dagql.ObjectResult[*core.Workspace], error) {
-	selections, err := orderSDKModuleClientSelections(staged, selections)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	for _, selection := range selections {
-		selected, err := selectSDKModule(staged.Config, selection.sdkName)
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-		updated, err = s.generateSDKModuleScope(
-			ctx,
-			updated,
-			staged,
-			selected,
-			selection.configScopePath,
-			selection.workspaceScope,
-			selection.scope,
-		)
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-	}
-	return updated, nil
+	return s.regenerateSDKModuleClients(ctx, updated, staged, selections)
 }
 
 func orderSDKModuleClientSelections(
