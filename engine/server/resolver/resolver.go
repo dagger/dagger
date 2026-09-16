@@ -22,6 +22,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/engine/realm"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
@@ -44,7 +45,7 @@ import (
 
 var ErrCredentialsNotFound = errors.New("registry credentials not found")
 
-var defaultRegistryTransport = enginetelemetry.NewOwnerTransport(
+var defaultRegistryTransport = realm.NewTransport(
 	http.DefaultTransport.(*http.Transport),
 )
 
@@ -197,7 +198,7 @@ func (r *Resolver) ResolveImageConfig(
 	ref string,
 	opts ResolveImageConfigOpts,
 ) (_ string, _ digest.Digest, _ []byte, rerr error) {
-	ctx = withDefaultUserlandNetworkOwner(ctx)
+	ctx = withDefaultUserlandRealm(ctx)
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
@@ -292,7 +293,7 @@ func (r *Resolver) ResolveImageDigest(
 	ref string,
 	opts ResolveImageDigestOpts,
 ) (_ string, _ digest.Digest, rerr error) {
-	ctx = withDefaultUserlandNetworkOwner(ctx)
+	ctx = withDefaultUserlandRealm(ctx)
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref,
 		telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
@@ -317,7 +318,7 @@ func (r *Resolver) ResolveImageDigest(
 }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
-	ctx = withDefaultUserlandNetworkOwner(ctx)
+	ctx = withDefaultUserlandRealm(ctx)
 	span, ctx := tracing.StartSpan(ctx, "pulling "+bkcache.DisplayRef(ref), telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
@@ -684,7 +685,7 @@ func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest
 }
 
 func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) (rerr error) {
-	ctx = withDefaultUserlandNetworkOwner(ctx)
+	ctx = withDefaultUserlandRealm(ctx)
 	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
@@ -692,6 +693,10 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 
 	if img == nil {
 		return errors.New("pushed image is nil")
+	}
+	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkTX)
+	if err != nil {
+		return fmt.Errorf("create registry push network recorder: %w", err)
 	}
 
 	ctx = contentutil.RegisterContentPayloadTypes(ctx)
@@ -719,7 +724,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	pushUpdateSourceHandler, err := updateDistributionSourceHandler(r.contentStore, images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
-		_, err := pushHandler(pusher, img.Provider, nil)(ctx, desc)
+		_, err := pushHandler(pusher, img.Provider, network)(ctx, desc)
 		return nil, err
 	}), ref)
 	if err != nil {
@@ -758,7 +763,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if err != nil {
 		return err
 	}
-	pushLeaf := pushHandler(pusher, img.Provider, nil)
+	pushLeaf := pushHandler(pusher, img.Provider, network)
 	for i := len(manifestStack) - 1; i >= 0; i-- {
 		if _, err := pushLeaf(ctx, manifestStack[i]); err != nil {
 			return err
@@ -767,8 +772,8 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	return nil
 }
 
-func withDefaultUserlandNetworkOwner(ctx context.Context) context.Context {
-	return enginetelemetry.WithDefaultNetworkOwner(ctx, enginetelemetry.NetworkOwnerUserland)
+func withDefaultUserlandRealm(ctx context.Context) context.Context {
+	return realm.WithDefault(ctx, realm.Userland)
 }
 
 type resolveImageConfigResult struct {
@@ -1115,7 +1120,7 @@ func withRegistryHostNetwork(hosts []docker.RegistryHost, network NetworkConfig,
 			if len(network.HostAliases) > 0 {
 				transport = netconfhttp.NewDialTransportWithHostAliases(httpTransport, network.DNS, network.HostAliases)
 			}
-		case *enginetelemetry.OwnerTransport:
+		case *realm.Transport:
 			transport = httpTransport.Transform(func(pool *http.Transport) *http.Transport {
 				if registryTransport.InsecureSkipTLSVerify && out[i].Scheme != "http" {
 					pool = cloneHTTPTransportWithInsecureTLS(pool)
