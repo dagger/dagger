@@ -47,6 +47,12 @@ func (proof *partDelegationProof) currentLocked(c *Cache, source *PartSourceLeas
 	if _, ok := row.deps[proof.parent.id]; !ok {
 		return false
 	}
+	if proof.mapping.ParentResultID != uint64(proof.parent.id) || !containsPart([]PersistedPartAddress{proof.mapping.Address}, proof.source) {
+		return false
+	}
+	if len(proof.target.OutputPath) == 0 && (proof.childFrame == nil || proof.childFrame.Receiver == nil || proof.childFrame.Receiver.ResultID != proof.mapping.ParentResultID) {
+		return false
+	}
 	return source.sessionID != "" &&
 		c.sessionSatisfiesResourceRequirementsLocked(source.sessionID, row) &&
 		c.sessionSatisfiesResourceRequirementsLocked(source.sessionID, proof.parent) &&

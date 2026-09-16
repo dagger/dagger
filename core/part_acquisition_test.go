@@ -30,8 +30,14 @@ type partObservedManager struct {
 	failOwner          atomic.Bool
 	ownerAttempts      atomic.Int64
 	pins               atomic.Int64
+	accessorRefs       atomic.Int64
 	failPinRelease     atomic.Bool
 	pinReleaseAttempts atomic.Int64
+}
+
+func (m *partObservedManager) GetBySnapshotID(ctx context.Context, id string, opts ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
+	m.accessorRefs.Add(1)
+	return m.SnapshotManager.GetBySnapshotID(ctx, id, opts...)
 }
 
 func (m *partObservedManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {

@@ -41,10 +41,13 @@ func TestPartDelegationProofAdmission(t *testing.T) {
 	parent := persistedListTestResult(t, ctx, cache, srv, "parent", &transferTestValue{Text: "ready"})
 	transferTestDependency(cache, ctx, child, parent)
 	row, input := child.cacheSharedResult(), parent.cacheSharedResult()
+	frame := row.loadResultCall().clone()
+	frame.Receiver = &ResultCallRef{ResultID: uint64(input.id)}
+	row.storeResultCall(frame)
 	session, err := partSession(ctx)
 	require.NoError(t, err)
 	address := PersistedPartAddress{Part: "snapshot"}
-	proof := &partDelegationProof{child: row, parent: input, childFrame: row.loadResultCall(), parentFrame: input.loadResultCall(), target: address, source: address}
+	proof := &partDelegationProof{child: row, parent: input, childFrame: row.loadResultCall(), parentFrame: input.loadResultCall(), target: address, source: address, mapping: PartDelegation{ParentResultID: uint64(input.id), Address: address}}
 	source := &PartSourceLease{source: input, target: address, descriptor: PartDescriptor{Address: address}, sessionID: session}
 	cache.egraphMu.Lock()
 	defer cache.egraphMu.Unlock()

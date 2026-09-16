@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,7 +78,7 @@ func attachDelegationChild(t *testing.T, ctx context.Context, cache *dagql.Cache
 }
 
 func TestPartDelegationRealStore(t *testing.T) {
-	for _, mode := range []string{"ready-parent", "pending-parent", "sync-retry", "native-restart"} {
+	for _, mode := range []string{"ready-parent", "pending-parent", "sync-retry", "native-restart", "ready-parent-over-chain", "ordinary-ready-tie", "child-chain-first", "late-child"} {
 		t.Run(mode, func(t *testing.T) {
 			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 			actx, a, asrv := transferCache(t, aStore, "", "a")
@@ -99,13 +101,16 @@ func TestPartDelegationRealStore(t *testing.T) {
 			bStore.Manager = observed
 			bctx, b, bsrv := transferCache(t, bStore, filepath.Join(t.TempDir(), "b.db"), "b")
 			b.EnableTransferFixtureParts()
-			if mode != "pending-parent" {
+			if mode != "pending-parent" && mode != "child-chain-first" && mode != "late-child" {
 				localRef, _ := bStore.Build(t, nil, "payload", "delegated bytes")
 				local := NewContainer(base.Platform)
 				local.FS.setValue(partTestDirectory(localRef, "/"))
 				attachTransferObject(t, bctx, b, bsrv, "b", "delegationBase", local)
 			}
 			selection := dagql.ValueSelection{Roots: []dagql.AnyResult{result}, Outputs: []dagql.SelectedValueOutput{{Result: parent, Address: dagql.PersistedPartAddress{Part: "fs"}}}}
+			if mode == "ready-parent-over-chain" || mode == "child-chain-first" {
+				selection.Outputs = append(selection.Outputs, dagql.SelectedValueOutput{Result: result, Address: dagql.PersistedPartAddress{Part: "fs"}})
+			}
 			require.NoError(t, a.WithExportedValues(actx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
 				provider := &testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}
 				b.SetPartContentSource(partTestContentSource{provider})
@@ -114,11 +119,83 @@ func TestPartDelegationRealStore(t *testing.T) {
 				loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 				require.NoError(t, err)
 				got := loaded.(dagql.ObjectResult[*Container])
+				frame, err := b.ResultCallByResultID(bctx, "", imported[0].ResultID)
+				require.NoError(t, err)
+				parentID := frame.Receiver.ResultID
+				parentHolds := func() int64 {
+					for _, row := range b.DebugEGraphSnapshot().Results {
+						if row.SharedResultID == parentID {
+							return row.IncomingOwnershipCount
+						}
+					}
+					t.Fatal("exact parent disappeared")
+					return 0
+				}
+				if mode == "ready-parent" || mode == "sync-retry" || mode == "ready-parent-over-chain" || mode == "ordinary-ready-tie" {
+					exact, err := b.LoadResultByResultID(bctx, "", bsrv, parentID)
+					require.NoError(t, err)
+					require.NoError(t, b.EvaluateParts(bctx, exact, ContainerPartFS))
+				}
+				addDonor := func() {
+					ref, _ := bStore.Build(t, nil, "payload", "delegated bytes")
+					donor := NewContainer(base.Platform)
+					donor.FS.setValue(partTestDirectory(ref, "/"))
+					row := attachTransferObject(t, bctx, b, bsrv, "b", "ordinaryDonor", donor)
+					require.NoError(t, b.TeachCallEquivalentToResult(bctx, "b", frame, row))
+				}
+				if mode == "ordinary-ready-tie" {
+					addDonor()
+				}
 				require.NoError(t, b.EvaluateParts(bctx, got, ContainerPartMetadata))
 				require.Zero(t, provider.Reads.Load())
-				if mode == "sync-retry" {
+				if mode == "late-child" {
+					started, release := make(chan struct{}), make(chan struct{})
+					var once sync.Once
+					provider.BeforeRead = func(ctx context.Context, _ ocispec.Descriptor) error {
+						once.Do(func() { close(started) })
+						select {
+						case <-release:
+							return nil
+						case <-ctx.Done():
+							return context.Cause(ctx)
+						}
+					}
+					done := make(chan error, 1)
+					go func() { done <- b.EvaluateParts(bctx, got, ContainerPartFS) }()
+					select {
+					case <-started:
+					case <-time.After(10 * time.Second):
+						t.Fatal("parent did not start")
+					}
+					addDonor()
+					require.NoError(t, b.RunLazyTask(bctx, got, "obtain:fs", dagql.LazyTaskSpec{Body: func(ctx context.Context) error {
+						address := dagql.PersistedPartAddress{Part: "fs"}
+						source, err := b.AcquireEquivalentPartSource(ctx, got, address)
+						if err != nil {
+							return err
+						}
+						require.NotNil(t, source)
+						permit, outcome, err := b.TryAcquire(ctx, got, address, dagql.PartTaskFromContext(ctx))
+						if err != nil {
+							return err
+						}
+						require.Equal(t, dagql.GateGranted, outcome)
+						return b.InstallReadyPart(ctx, got, source, permit)
+					}}))
+					select {
+					case err := <-done:
+						t.Fatalf("waiter returned before parent completed: %v", err)
+					case <-time.After(100 * time.Millisecond):
+					}
+					close(release)
+					require.NoError(t, <-done)
+				} else if mode == "sync-retry" {
+					before, pins, releases := parentHolds(), observed.pins.Load(), observed.pinReleaseAttempts.Load()
 					observed.failOwner.Store(true)
 					require.ErrorIs(t, b.EvaluateParts(bctx, got, ContainerPartFS), partInjectedOwnerFailure)
+					require.Equal(t, before, parentHolds(), "temporary parent hold survived failed child sync")
+					require.Equal(t, pins+1, observed.pins.Load())
+					require.Equal(t, releases, observed.pinReleaseAttempts.Load(), "child pin must survive failed sync")
 				}
 				require.NoError(t, b.EvaluateParts(bctx, got, ContainerPartFS))
 				require.Equal(t, "/child", got.Self().Config.WorkingDir)
@@ -141,8 +218,12 @@ func TestPartDelegationRealStore(t *testing.T) {
 						require.Nil(t, event.Source)
 					}
 				}
-				require.Equal(t, 1, installs)
-				if mode == "pending-parent" {
+				if mode == "ordinary-ready-tie" || mode == "child-chain-first" || mode == "late-child" {
+					require.Zero(t, installs)
+				} else {
+					require.Equal(t, 1, installs)
+				}
+				if mode == "pending-parent" || mode == "child-chain-first" || mode == "late-child" {
 					require.Positive(t, provider.Reads.Load())
 				} else {
 					require.Zero(t, provider.Reads.Load())
@@ -187,8 +268,9 @@ func testNativeDelegationRestart(t *testing.T, store *testutil.Store, snapshotID
 	}
 	started := time.Now()
 	observed.ownerAttempts.Store(0)
+	observed.accessorRefs.Store(0)
 	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartFS))
-	t.Logf("native delegation depth=%d bookkeeping latency=%s pins=%d owner-syncs=%d", depth, time.Since(started), observed.pins.Load(), observed.ownerAttempts.Load())
+	t.Logf("native delegation depth=%d bookkeeping latency=%s pins=%d owner-syncs=%d independent-accessor-refs=%d", depth, time.Since(started), observed.pins.Load(), observed.ownerAttempts.Load(), observed.accessorRefs.Load())
 	require.EqualValues(t, depth, observed.pins.Load())
 	report, err = cache.TransferFixtureSnapshot(ctx, "reopened", nil)
 	require.NoError(t, err)
