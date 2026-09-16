@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -243,5 +244,10 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, file.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, file)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -396,7 +397,7 @@ func (state *HTTPState) fileResult(
 	query *Query,
 	name string,
 	permissions int,
-) (*HTTPFetchResult, error) {
+) (_ *HTTPFetchResult, rerr error) {
 	if state.snapshot == nil {
 		return nil, fmt.Errorf("http state %q has no snapshot", state.URL)
 	}
@@ -409,6 +410,11 @@ func (state *HTTPState) fileResult(
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if newRef != nil {
+			rerr = errors.Join(rerr, newRef.Release(context.WithoutCancel(ctx)))
+		}
+	}()
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		src, err := RootPathWithoutFinalSymlink(root, httpStateCanonicalPath)
 		if err != nil {
@@ -427,13 +433,13 @@ func (state *HTTPState) fileResult(
 		return nil
 	})
 	if err != nil {
-		_ = newRef.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
 	snap, err := newRef.Commit(ctx)
 	if err != nil {
 		return nil, err
 	}
+	newRef = nil
 	file := &File{
 		Platform: query.Platform(),
 		File:     new(LazyAccessor[string, *File]),

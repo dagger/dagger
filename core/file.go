@@ -522,7 +522,7 @@ func decodePersistedFileLazy(ctx context.Context, dec *dagql.PersistDecodeContex
 }
 
 func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.blob", func(ctx context.Context) error {
+	return lazy.LazyState.Evaluate(ctx, "File.blob", func(ctx context.Context) (rerr error) {
 		if dir, _ := filepath.Split(lazy.Filename); dir != "" {
 			return fmt.Errorf("file name %q must not contain a directory", lazy.Filename)
 		}
@@ -552,6 +552,11 @@ func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
 		if err != nil {
 			return fmt.Errorf("create blob snapshot: %w", err)
 		}
+		defer func() {
+			if newRef != nil {
+				rerr = errors.Join(rerr, newRef.Release(context.WithoutCancel(ctx)))
+			}
+		}()
 		filePath := filepath.Join("/", lazy.Filename)
 		if err := MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 			resolvedDest, err := containerdfs.RootPath(root, filePath)
@@ -566,6 +571,7 @@ func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
 		if err != nil {
 			return fmt.Errorf("commit blob snapshot: %w", err)
 		}
+		newRef = nil
 		file.File.setValue(filePath)
 		file.Snapshot.setValue(snapshot)
 		return nil

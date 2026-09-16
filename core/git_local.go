@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -123,8 +124,8 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		return inst, err
 	}
 	defer func() {
-		if rerr != nil && bkref != nil {
-			bkref.Release(context.WithoutCancel(ctx))
+		if bkref != nil {
+			rerr = errors.Join(rerr, bkref.Release(context.WithoutCancel(ctx)))
 		}
 	}()
 	skip := false
@@ -161,35 +162,27 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		if err != nil {
 			return err
 		}
-		_, err = io.Copy(tmp, idx)
-		if err != nil {
-			tmp.Close()
-			return err
-		}
-		if err := tmp.Close(); err != nil {
-			return err
-		}
-		defer os.Remove(tmp.Name())
+		return withTemporaryGitIndex(idx, tmp, func(indexPath string) error {
+			git = git.New(gitutil.WithIndexFile(indexPath))
 
-		git = git.New(gitutil.WithIndexFile(tmp.Name()))
+			// reset index to HEAD
+			// NOTE: we cannot use "git reset --hard" because it writes every file,
+			// which *kills* performance on overlayfs
+			_, err = git.Run(ctx, "restore", "--staged", ".")
+			if err != nil {
+				return err
+			}
+			_, err = git.Run(ctx, "restore", ".")
+			if err != nil {
+				return err
+			}
+			_, err = git.Run(ctx, "clean", "-fd")
+			if err != nil {
+				return err
+			}
 
-		// reset index to HEAD
-		// NOTE: we cannot use "git reset --hard" because it writes every file,
-		// which *kills* performance on overlayfs
-		_, err = git.Run(ctx, "restore", "--staged", ".")
-		if err != nil {
-			return err
-		}
-		_, err = git.Run(ctx, "restore", ".")
-		if err != nil {
-			return err
-		}
-		_, err = git.Run(ctx, "clean", "-fd")
-		if err != nil {
-			return err
-		}
-
-		return nil
+			return nil
+		})
 	})
 	if err != nil {
 		return inst, err
@@ -214,10 +207,22 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
-		_ = dir.OnRelease(context.WithoutCancel(ctx))
+		err = errors.Join(err, dir.OnRelease(context.WithoutCancel(ctx)))
 		return inst, err
 	}
 	return inst, nil
+}
+
+// withTemporaryGitIndex owns the newly created index until the Git commands finish.
+func withTemporaryGitIndex(idx io.Reader, tmp *os.File, run func(string) error) (rerr error) {
+	defer func() { rerr = errors.Join(rerr, os.Remove(tmp.Name())) }()
+	if _, err := io.Copy(tmp, idx); err != nil {
+		return errors.Join(err, tmp.Close())
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return run(tmp.Name())
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
