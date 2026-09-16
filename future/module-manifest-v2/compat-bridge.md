@@ -83,7 +83,9 @@ kind = "module"
 source = "github.com/dagger/dagger/modules/legacy-entrypoint@v1.0.0"
 ```
 
-The `entrypoint` table is the only manifest version 2 selector. See
+The `entrypoint` table selects manifest version 2. This manifest has no
+dependency list, so the transitional rule that keeps a manifest with
+dependencies on the previous format does not apply to it. See
 [Format selection](spec.md#format-selection).
 
 The engine adds one gated API: the function call channel on `Container`.
@@ -220,7 +222,7 @@ answer is the workspace `dagger.toml`.
 Manifest v2 rejects a directory that contains both `dagger.json` and
 `dagger-module.toml`. This design amends that rule:
 
-- If `dagger-module.toml` has an `entrypoint` table, the engine ignores
+- If `dagger-module.toml` reads as manifest version 2, the engine ignores
   `dagger.json`. Only the legacy entrypoint module reads it.
 - The reason for the old rule was an ambiguous compatibility mode. With this
   design, the engine has no compatibility mode.

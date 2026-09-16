@@ -129,9 +129,6 @@ legacy-default-path = true
 source = ".dagger/modules/test-split"
 legacy-default-path = true
 
-[modules.tiny]
-source = ".dagger/modules/tiny"
-
 [modules.tla-check]
 source = ".dagger/modules/tla-check"
 
