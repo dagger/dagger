@@ -1506,6 +1506,9 @@ func (s *gitSchema) withBundleDirectory(
 			rerr = errors.Join(rerr, dir.OnRelease(context.WithoutCancel(ctx)))
 		}
 	}()
+	if err := core.RecordCompletedProducer(dir, &core.DirectoryGitBundleImportLazy{LazyState: core.NewLazyState(), Repo: parent, Bundle: bundle, PrerequisiteRef: args.PrerequisiteRef}); err != nil {
+		return inst, err
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
@@ -1813,6 +1816,11 @@ func (s *gitSchema) cleaned(ctx context.Context, parent dagql.ObjectResult[*core
 	dir, err := parent.Self().Backend.Cleaned(ctx)
 	if err != nil {
 		return inst, err
+	}
+	if local, ok := parent.Self().Backend.(*core.LocalGitRepository); ok && dir.Self() != local.Directory.Self() {
+		if err := core.RecordCompletedProducer(dir.Self(), &core.DirectoryGitCleanedLazy{LazyState: core.NewLazyState(), Repo: parent}); err != nil {
+			return inst, errors.Join(err, dir.Self().OnRelease(context.WithoutCancel(ctx)))
+		}
 	}
 	return dir, nil
 }

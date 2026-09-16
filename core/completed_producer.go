@@ -139,3 +139,18 @@ func moveProducedFile(dst, src *File) error {
 	src.Snapshot = new(LazyAccessor[bkcache.ImmutableRef, *File])
 	return nil
 }
+
+func attachCompletedProducerInput[T dagql.Typed](attach func(dagql.AnyResult) (dagql.AnyResult, error), input dagql.ObjectResult[T], label string) (dagql.ObjectResult[T], error) {
+	if nilProducerValue(input.Self()) {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("%s: missing input", label)
+	}
+	attached, err := attach(input)
+	if err != nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("%s: %w", label, err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[T])
+	if !ok || nilProducerValue(typed.Self()) {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
+	}
+	return typed, nil
+}

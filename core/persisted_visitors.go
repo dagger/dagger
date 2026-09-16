@@ -188,6 +188,29 @@ func parentAndSource[T any](sourceField string, parent, source func(*T) *uint64)
 // persistedDirectoryLazyVisitors declares the references of every Directory
 // lazy kind, mirroring decodePersistedDirectoryLazy.
 var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
+	persistedDirectoryLazyKindGitBundleImport: persistedLazyStructVisitor(func(p *persistedDirectoryGitBundleImportLazy, w *persistedRefWalker) error {
+		if err := p.validate(); err != nil {
+			return err
+		}
+		if err := w.child("repoResultID", &p.RepoResultID); err != nil {
+			return err
+		}
+		if err := w.child("bundleResultID", &p.BundleResultID); err != nil {
+			return err
+		}
+		return nil
+	}),
+
+	persistedDirectoryLazyKindGitCleaned: persistedLazyStructVisitor(func(p *persistedDirectoryGitCleanedLazy, w *persistedRefWalker) error {
+		if err := p.validate(); err != nil {
+			return err
+		}
+		if err := w.child("repoResultID", &p.RepoResultID); err != nil {
+			return err
+		}
+		return nil
+	}),
+
 	persistedDirectoryLazyKindContainerRootFS:    parentOnly(func(p *persistedContainerRootFSLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindContainerDirectory: parentOnly(func(p *persistedContainerDirectoryLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindWithDirectory: parentAndSource("sourceResultID",

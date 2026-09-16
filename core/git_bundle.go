@@ -711,15 +711,31 @@ func resolveGitBundleTarget(remote *gitutil.Remote, name string) (*gitBundleTarg
 // immutable snapshot.
 //
 //nolint:gocyclo // bundle import verifies prerequisites, refs, and connectivity in one pass
-func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle, prerequisiteRef string) (_ *Directory, rerr error) {
+func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle, prerequisiteRef string) (*Directory, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir := &Directory{Platform: query.Platform(), Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory])}
+	if err := importGitBundleInto(ctx, dir, repo, bundle, prerequisiteRef); err != nil {
+		return nil, err
+	}
+	return dir, nil
+}
+
+func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepository, bundle *GitBundle, prerequisiteRef string) (rerr error) {
+	if err := validateProducedDirectoryReceiver(dst); err != nil {
+		return err
+	}
+
 	if repo == nil || repo.Backend == nil {
-		return nil, fmt.Errorf("git repository is required")
+		return fmt.Errorf("git repository is required")
 	}
 	if bundle == nil || bundle.File.Self() == nil {
-		return nil, fmt.Errorf("git bundle is required")
+		return fmt.Errorf("git bundle is required")
 	}
 	if err := validateGitBundleFileSize(ctx, bundle.File); err != nil {
-		return nil, err
+		return err
 	}
 
 	prerequisites := make([]*gitutil.Ref, len(bundle.PrerequisiteSHAs))
@@ -729,11 +745,11 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 	if prerequisiteRef != "" && len(prerequisites) > 0 {
 		remote, err := repo.LoadRemote(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		hint, err := remote.Lookup(prerequisiteRef)
 		if err != nil {
-			return nil, fmt.Errorf("resolve git bundle prerequisite ref %q: %w", prerequisiteRef, err)
+			return fmt.Errorf("resolve git bundle prerequisite ref %q: %w", prerequisiteRef, err)
 		}
 		// The hint identifies a remote ref whose history carried the exact
 		// prerequisite at capture time. Its tip may have advanced since then;
@@ -747,20 +763,20 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 	for _, prerequisite := range prerequisites {
 		backend, err := repo.Backend.Get(ctx, prerequisite)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		backends = append(backends, backend)
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	bkref, err := query.SnapshotManager().New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("git bundle repository"))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() {
 		if rerr != nil && bkref != nil {
@@ -848,24 +864,19 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	snapshot, err := bkref.Commit(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	bkref = nil
-	dir := &Directory{
-		Platform: query.Platform(),
-		Dir:      new(LazyAccessor[string, *Directory]),
-		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-	}
-	dir.Dir.setValue("/")
-	dir.Snapshot.setValue(snapshot)
-	return dir, nil
+	dst.Dir.setValue("/")
+	dst.Services = nil
+	dst.Snapshot.setValue(snapshot)
+	return nil
 }
-
 func gitBundlePrerequisiteRef(index int) string {
 	return "refs/dagger/bundle/prerequisites/" + strconv.Itoa(index)
 }
@@ -962,4 +973,82 @@ func runGitEnv(ctx context.Context, dir string, args ...string) (_ string, rerr 
 		return stdout.String(), fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()+stdout.String()))
 	}
 	return stdout.String(), nil
+}
+
+const persistedDirectoryLazyKindGitBundleImport = "gitBundleImport"
+
+type DirectoryGitBundleImportLazy struct {
+	LazyState
+	Repo            dagql.ObjectResult[*GitRepository]
+	Bundle          dagql.ObjectResult[*GitBundle]
+	PrerequisiteRef string
+}
+
+type persistedDirectoryGitBundleImportLazy struct {
+	RepoResultID    uint64 `json:"repoResultID"`
+	BundleResultID  uint64 `json:"bundleResultID"`
+	PrerequisiteRef string `json:"prerequisiteRef"`
+}
+
+func (p *persistedDirectoryGitBundleImportLazy) validate() error {
+	if p.RepoResultID == 0 {
+		return fmt.Errorf("DirectoryGitBundleImportLazy: missing repoResultID")
+	}
+	if p.BundleResultID == 0 {
+		return fmt.Errorf("DirectoryGitBundleImportLazy: missing bundleResultID")
+	}
+	return nil
+}
+func (lazy *DirectoryGitBundleImportLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	return lazy.LazyState.Evaluate(ctx, "GitRepository.__withBundleDirectory", func(ctx context.Context) error {
+		if err := validateProducedDirectoryReceiver(dir); err != nil {
+			return err
+		}
+		if lazy.Repo.Self() == nil || lazy.Bundle.Self() == nil {
+			return fmt.Errorf("git bundle producer: missing Repo or Bundle")
+		}
+		return importGitBundleInto(ctx, dir, lazy.Repo.Self(), lazy.Bundle.Self(), lazy.PrerequisiteRef)
+	})
+}
+func (lazy *DirectoryGitBundleImportLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	repo, err := attachCompletedProducerInput(attach, lazy.Repo, "DirectoryGitBundleImportLazy.Repo")
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := attachCompletedProducerInput(attach, lazy.Bundle, "DirectoryGitBundleImportLazy.Bundle")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Repo = repo
+	lazy.Bundle = bundle
+	return []dagql.AnyResult{repo, bundle}, nil
+}
+func (lazy *DirectoryGitBundleImportLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	repoID, err := encodePersistedObjectRef(enc, lazy.Repo, "DirectoryGitBundleImportLazy.Repo")
+	if err != nil {
+		return nil, err
+	}
+	bundleID, err := encodePersistedObjectRef(enc, lazy.Bundle, "DirectoryGitBundleImportLazy.Bundle")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedDirectoryGitBundleImportLazy{RepoResultID: repoID, BundleResultID: bundleID, PrerequisiteRef: lazy.PrerequisiteRef})
+}
+func decodeDirectoryGitBundleImportLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
+	var p persistedDirectoryGitBundleImportLazy
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("decode DirectoryGitBundleImportLazy: %w", err)
+	}
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dec, p.RepoResultID, "DirectoryGitBundleImportLazy.Repo")
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := loadPersistedObjectResultByResultID[*GitBundle](ctx, dec, p.BundleResultID, "DirectoryGitBundleImportLazy.Bundle")
+	if err != nil {
+		return nil, err
+	}
+	return &DirectoryGitBundleImportLazy{LazyState: NewLazyState(), Repo: repo, Bundle: bundle, PrerequisiteRef: p.PrerequisiteRef}, nil
 }

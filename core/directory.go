@@ -628,6 +628,14 @@ func attachFileResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res
 
 func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Directory]) (string, json.RawMessage, error) {
 	switch lazy := lazy.(type) {
+	case *DirectoryGitBundleImportLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindGitBundleImport, payload, err
+
+	case *DirectoryGitCleanedLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindGitCleaned, payload, err
+
 	case *ContainerRootFSLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindContainerRootFS, payload, err
@@ -681,6 +689,12 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeContext, lazyKind string, payload json.RawMessage) (Lazy[*Directory], error) {
 	switch lazyKind {
+	case persistedDirectoryLazyKindGitBundleImport:
+		return decodeDirectoryGitBundleImportLazy(ctx, dec, payload)
+
+	case persistedDirectoryLazyKindGitCleaned:
+		return decodeDirectoryGitCleanedLazy(ctx, dec, payload)
+
 	case persistedDirectoryLazyKindContainerRootFS:
 		var persisted persistedContainerRootFSLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
