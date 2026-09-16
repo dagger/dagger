@@ -4384,6 +4384,9 @@ func decodePersistedContainerRecipe(
 	payload json.RawMessage,
 ) (Lazy[*Container], error) {
 	switch call.Field {
+	case "_builtinContainer":
+		return decodeContainerBuiltinLazy(payload)
+
 	case "withEntrypoint":
 		var persisted persistedContainerWithEntrypointLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
