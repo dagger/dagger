@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 )
@@ -65,7 +66,7 @@ func setupLocalTunnel(ctx context.Context, endpoint *LLMEndpoint) error {
 		},
 	}
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := realm.Userland.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		return fmt.Errorf("listen for local tunnel: %w", err)
 	}
@@ -77,9 +78,8 @@ func setupLocalTunnel(ctx context.Context, endpoint *LLMEndpoint) error {
 	// Route the endpoint's connections through the tunnel. The request URL
 	// stays the original one, so certificates and virtual-hosted endpoints
 	// keep working.
-	var dialer net.Dialer
 	endpoint.dial = func(ctx context.Context, network, _ string) (net.Conn, error) {
-		return dialer.DialContext(ctx, network, tunnelAddr)
+		return realm.Userland.Dialer(net.Dialer{}).DialContext(ctx, network, tunnelAddr)
 	}
 
 	return nil
