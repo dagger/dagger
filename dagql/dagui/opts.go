@@ -1,7 +1,6 @@
 package dagui
 
 import (
-	"slices"
 	"strings"
 	"time"
 )
@@ -208,10 +207,11 @@ func ShouldSkipFunction(obj, field string) bool {
 	// TODO: make this configurable in the API but may not be easy to
 	// generalize because an "internal" field may still need to exist in
 	// codegen, for example. Could expose if internal via the TypeDefs though.
-	skip := map[string][]string{
-		"Query": {
-			// for SDKs only
-			"_builtinContainer",
+	switch obj {
+	case "Query":
+		switch field {
+		// for SDKs only
+		case "_builtinContainer",
 			"generatedCode",
 			"currentFunctionCall",
 			"currentModule",
@@ -225,24 +225,20 @@ func ShouldSkipFunction(obj, field string) bool {
 			// directly to build root flags; users never call it
 			"with",
 			// deprecated
-			"pipeline",
-		},
-		// for SDKs only
-		"TypeDef":  nil,
-		"Function": nil,
-		"Module": {
-			"withDescription",
-			"withObject",
-			"withInterface",
-			"withEnum",
-		},
-	}
-	if fields, ok := skip[obj]; ok {
-		if fields == nil {
-			// if no sub-fields specified, skip all fields
+			"pipeline":
 			return true
 		}
-		return slices.Contains(fields, field)
+	// for SDKs only
+	case "TypeDef", "Function":
+		return true
+	case "Module":
+		switch field {
+		case "withDescription",
+			"withObject",
+			"withInterface",
+			"withEnum":
+			return true
+		}
 	}
 	return false
 }
