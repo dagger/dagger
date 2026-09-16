@@ -3,6 +3,11 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math/rand/v2"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
