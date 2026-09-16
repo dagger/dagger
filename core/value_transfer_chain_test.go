@@ -3,17 +3,114 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/dagger/dagger/util/gitutil"
+	"github.com/moby/locker"
 	"github.com/stretchr/testify/require"
 )
+
+type transferGitServer struct {
+	*cacheVolumeTestQueryServer
+	locks *locker.Locker
+	ns    *os.File
+}
+
+func (s *transferGitServer) Platform() Platform     { return Platform{OS: "linux", Architecture: "amd64"} }
+func (s *transferGitServer) Locker() *locker.Locker { return s.locks }
+func (s *transferGitServer) DNS() *oci.DNSConfig    { return &oci.DNSConfig{} }
+func (s *transferGitServer) CleanMountNS() *os.File { return s.ns }
+
+func TestValueTransferPartsGitTrees(t *testing.T) {
+	for _, backend := range []string{"local", "remote"} {
+		t.Run(backend, func(t *testing.T) {
+			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+			observed := &transferObservedSnapshots{SnapshotManager: producer.Manager}
+			producer.Manager = observed
+			ctx, cache, srv := transferCache(t, producer, filepath.Join(t.TempDir(), "a.db"), "a")
+			ns, err := os.Open("/proc/self/ns/mnt")
+			require.NoError(t, err)
+			defer ns.Close()
+			query, err := CurrentQuery(ctx)
+			require.NoError(t, err)
+			query.Server = &transferGitServer{cacheVolumeTestQueryServer: query.Server.(*cacheVolumeTestQueryServer), locks: locker.New(), ns: ns}
+			source := t.TempDir()
+			git := func(dir string, args ...string) string {
+				t.Helper()
+				cmd := exec.CommandContext(ctx, "git", args...)
+				cmd.Dir = dir
+				output, err := cmd.CombinedOutput()
+				require.NoError(t, err, "%s", output)
+				return strings.TrimSpace(string(output))
+			}
+			git(source, "init", "--initial-branch=main")
+			require.NoError(t, os.WriteFile(filepath.Join(source, "tree.txt"), []byte("git selected bytes"), 0644))
+			git(source, "add", "tree.txt")
+			git(source, "-c", "user.name=transfer", "-c", "user.email=transfer@example.invalid", "commit", "-m", "fixture")
+			ref := &gitutil.Ref{Name: "refs/heads/main", SHA: git(source, "rev-parse", "HEAD")}
+			var selected *Directory
+			if backend == "local" {
+				mutable, err := producer.Manager.New(ctx, nil)
+				require.NoError(t, err)
+				require.NoError(t, MountRef(ctx, mutable, func(path string, _ *mount.Mount) error {
+					git(path, "clone", "--no-hardlinks", source, ".")
+					return nil
+				}))
+				snapshot, err := mutable.Commit(ctx)
+				require.NoError(t, err)
+				dir := &Directory{Platform: query.Platform(), Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory])}
+				dir.SetPath("/")
+				dir.SetSnapshot(snapshot)
+				local := &LocalGitRepository{Directory: attachTransferObject(t, ctx, cache, srv, "a", "localGitSource", dir)}
+				selected, err = (&LocalGitRef{Ref: ref, repo: local}).Tree(ctx, srv, true, 0, false, nil)
+				require.NoError(t, err)
+			} else {
+				// The real remote backend fetches from a local file transport, keeping
+				// this selected-byte test independent of network services.
+				url := &gitutil.GitURL{Scheme: "file", Path: source}
+				srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*RemoteGitMirror]{}))
+				mirror := attachTransferObject(t, ctx, cache, srv, "a", "remoteGitMirror", NewRemoteGitMirror(url.Remote()))
+				remote := &RemoteGitRepository{URL: url, Mirror: mirror}
+				selected, err = (&RemoteGitRef{Ref: ref, repo: remote}).Tree(ctx, srv, true, 0, false, nil)
+				require.NoError(t, err)
+			}
+			result := attachTransferObject(t, ctx, cache, srv, "a", "gitTree", selected)
+			observed.opens = nil
+			err = cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{result}, Outputs: []dagql.SelectedValueOutput{{Result: result, Address: dagql.PersistedPartAddress{Part: "snapshot"}}}}, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(ctx context.Context, values *dagql.ExportedValues) error {
+				require.Len(t, values.Chains.Entries, 1)
+				entry := values.Chains.Entries[0]
+				copied, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: entry.Layers, Provider: entry.Provider})
+				require.NoError(t, err)
+				defer copied.Release(context.WithoutCancel(ctx))
+				require.NoError(t, MountRef(ctx, copied, func(root string, _ *mount.Mount) error {
+					bytes, err := os.ReadFile(filepath.Join(root, "tree.txt"))
+					require.NoError(t, err)
+					require.Equal(t, "git selected bytes", string(bytes))
+					_, err = os.Stat(filepath.Join(root, ".git"))
+					require.True(t, os.IsNotExist(err), "discardGitDir survives transfer")
+					return nil
+				}, mountRefAsReadOnly))
+				return nil
+			})
+			require.NoError(t, err)
+			snapshot, ok := selected.Snapshot.Peek()
+			require.True(t, ok)
+			require.Equal(t, []string{snapshot.SnapshotID()}, observed.opens)
+		})
+	}
+}
 
 type transferObservedSnapshots struct {
 	bkcache.SnapshotManager
