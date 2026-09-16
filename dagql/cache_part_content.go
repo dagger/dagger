@@ -17,6 +17,8 @@ import (
 
 // Provider construction is metadata-only. ReaderAt is the missing-byte boundary.
 type PartContentSource interface {
+	// Available is a pure address/bridge check; it must not request content.
+	Available(PersistedPartOffer, int64) bool
 	Provider(context.Context, PersistedPartOffer, *PartDemandState) content.InfoReaderProvider
 }
 type partContentSourceBinding struct{ source PartContentSource }
@@ -30,6 +32,10 @@ func (c *Cache) SetPartContentSource(source PartContentSource) {
 }
 
 type fixedPartContentSource struct{}
+
+func (fixedPartContentSource) Available(offer PersistedPartOffer, now int64) bool {
+	return chainAddressesUsable(&offer, now)
+}
 
 func (fixedPartContentSource) Provider(_ context.Context, offer PersistedPartOffer, _ *PartDemandState) content.InfoReaderProvider {
 	return &fixedPartProvider{offer: offer, client: http.DefaultClient}
@@ -157,6 +163,9 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		return err
 	}
 	provider := contentSource.Provider(ctx, copied[0], demand)
+	if c.partFixture.Load() != nil {
+		provider = partFixtureProvider{InfoReaderProvider: provider, cache: c, row: receiver.cacheSharedResult(), address: source.target}
+	}
 	imported, err := c.snapshotManager.ImportChain(ctx, &snapshots.ExportChain{Layers: copied[0].Chain.Layers, Provider: provider})
 	if err != nil {
 		if cause := context.Cause(ctx); cause != nil {
@@ -240,6 +249,7 @@ func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address Persi
 	}
 	queue, err := c.retireFinalPartOffersLocked(ctx, row, address)
 	if err == nil {
+		c.recordPartFixture(row, address, "settled")
 		state.phase = PartComplete
 		gate.outputs[key] = state
 		gate.revision++

@@ -13,7 +13,7 @@ import (
 
 func (family foreignFamilyCodec) PreparePartRecord(receiver, source dagql.PersistedRecord, d dagql.PartDescriptor, target dagql.PersistedPartAddress) (dagql.PersistedRecord, error) {
 	if len(target.OutputPath) != 0 {
-		return receiver, fmt.Errorf("inline part store awaits scoped snapshot links")
+		return receiver, fmt.Errorf("codec part store requires a local output address")
 	}
 	role := "snapshot"
 	switch family {
@@ -150,7 +150,7 @@ func (family foreignFamilyCodec) PreparePartRecord(receiver, source dagql.Persis
 	default:
 		return receiver, fmt.Errorf("unsupported part family %s", family)
 	}
-	receiver.SnapshotLinks = slices.Clone(receiver.SnapshotLinks)
+	receiver.SnapshotLinks = dagql.ClonePersistedSnapshotLinks(receiver.SnapshotLinks)
 	if d.SnapshotID != "" {
 		receiver.SnapshotLinks = slices.DeleteFunc(receiver.SnapshotLinks, func(l dagql.PersistedSnapshotRefLink) bool { return l.Role == role })
 		receiver.SnapshotLinks = append(receiver.SnapshotLinks, dagql.PersistedSnapshotRefLink{Role: role, RefKey: d.SnapshotID})
@@ -295,12 +295,31 @@ func (ctr *Container) PersistedOutputRevision() (dagql.OutputRevision, error) {
 	if view := ctr.acquiredOutput.Load(); view != nil {
 		return view.Revision, nil
 	}
-	unlock, err := ctr.lockForPersistence(false)
+	unlock, err := ctr.tryPartPublicationGuard()
 	if err != nil {
 		return 0, err
 	}
 	defer unlock()
+	lazy := ctr.Lazy
+	if lazy == nil {
+		lazy = ctr.completedRecipe
+	}
+	if provider, ok := lazy.(interface{ ContainerLazyState() *LazyState }); ok {
+		return dagql.OutputRevision(provider.ContainerLazyState().outputRevision.Load()), nil
+	}
 	return 0, nil
+}
+
+func (ctr *Container) PersistedSnapshotRefLinksChecked() ([]dagql.PersistedSnapshotRefLink, error) {
+	if view := ctr.acquiredOutput.Load(); view != nil {
+		return dagql.ClonePersistedSnapshotLinks(view.Links), nil
+	}
+	unlock, err := ctr.tryPartPublicationGuard()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	return ctr.PersistedSnapshotRefLinks(), nil
 }
 
 type containerPartStore struct {
@@ -376,6 +395,10 @@ func (s *containerPartStore) Publish() {
 }
 func (ctr *Container) PreparePartStore(ctx context.Context, dec *dagql.PersistDecodeContext, record dagql.PersistedRecord, d dagql.PartDescriptor, ref bkcache.ImmutableRef) (dagql.PreparedPartStore, error) {
 	previous := ctr.acquiredOutput.Load()
+	baseRevision, err := ctr.PersistedOutputRevision()
+	if err != nil {
+		return nil, err
+	}
 	typed, err := (*Container)(nil).DecodePersistedObject(ctx, dec, record.Envelope.ObjectJSON)
 	if err != nil {
 		return nil, err
@@ -385,9 +408,7 @@ func (ctr *Container) PreparePartStore(ctx context.Context, dec *dagql.PersistDe
 	if view == nil {
 		return nil, fmt.Errorf("Container store requires raw representation")
 	}
-	if previous != nil {
-		view.Revision = previous.Revision + 1
-	}
+	view.Revision = baseRevision + 1
 	if d.Address.Part != ContainerPartMetadata && !d.Absent {
 		if err := next.assignAcquiredRef(ctx, dec, d.Address.Part, ref); err != nil {
 			return nil, err

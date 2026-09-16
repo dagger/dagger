@@ -96,13 +96,15 @@ type TransferFixtureRow struct {
 	TermIDs       []uint64             `json:"termIDs"`
 }
 type TransferFixtureReport struct {
-	Rows   []TransferFixtureRow   `json:"rows"`
-	Owners []CacheDebugOfferOwner `json:"owners"`
+	Parts  []TransferFixturePartEvent `json:"parts,omitempty"`
+	Rows   []TransferFixtureRow       `json:"rows"`
+	Owners []CacheDebugOfferOwner     `json:"owners"`
 }
 
 // TransferFixtureSnapshot copies raw metadata without demanding values or
 // retaining rows. Filesystem counters are read separately by the fixture.
 func (c *Cache) TransferFixtureSnapshot(ctx context.Context, sessionID string, ids []*call.ID) (report TransferFixtureReport, rerr error) {
+	report.Parts = c.partFixtureEvents()
 	op, err := c.beginSessionOperation(sessionID)
 	if err != nil {
 		return report, err

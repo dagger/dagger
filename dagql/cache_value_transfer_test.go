@@ -24,6 +24,7 @@ type transferTestValue struct {
 	Recipe  string `json:"recipe,omitempty"`
 	rev     atomic.Uint64
 	release OnReleaseFunc
+	links   []PersistedSnapshotRefLink
 }
 
 func (*transferTestValue) Type() *ast.Type {
@@ -31,7 +32,7 @@ func (*transferTestValue) Type() *ast.Type {
 }
 func (v *transferTestValue) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	raw, err := json.Marshal(v)
-	return PersistedObjectEncoding{JSON: raw}, err
+	return PersistedObjectEncoding{JSON: raw, SnapshotLinks: cloneSnapshotRefLinks(v.links)}, err
 }
 func (v *transferTestValue) PersistedOutputRevision() (OutputRevision, error) {
 	return OutputRevision(v.rev.Load()), nil
@@ -39,6 +40,9 @@ func (v *transferTestValue) PersistedOutputRevision() (OutputRevision, error) {
 func (*transferTestValue) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, raw json.RawMessage) (Typed, error) {
 	value := new(transferTestValue)
 	err := json.Unmarshal(raw, value)
+	if err == nil && value.Text == "snapshot" {
+		value.links, err = dec.SnapshotRoles(ctx)
+	}
 	if err == nil {
 		if hook, ok := transferDecodeHooks.Load(dec.ResultID()); ok {
 			err = hook.(func(context.Context, *PersistDecodeContext, *transferTestValue) error)(ctx, dec, value)
@@ -50,6 +54,9 @@ func (*transferTestValue) DecodePersistedObject(ctx context.Context, dec *Persis
 type transferTestCodec struct{}
 
 func (transferTestCodec) VisitPersistedReferences(v PersistedPayloadVisit, visit PersistedRefVisitor) (json.RawMessage, error) {
+	if err := VisitPersistedSnapshotRoles(visit, PersistedRefOutputRole, v.Path, v.SnapshotLinks); err != nil {
+		return nil, err
+	}
 	value := new(transferTestValue)
 	if err := json.Unmarshal(v.Payload, value); err != nil {
 		return nil, err
@@ -391,4 +398,8 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	require.True(t, removed)
 	require.EqualValues(t, 1, rowCleanups.Load())
 	require.EqualValues(t, 1, winningReleases.Load())
+}
+
+func (v *transferTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
+	return cloneSnapshotRefLinks(v.links)
 }

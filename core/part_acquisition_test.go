@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/plugins/content/local"
@@ -23,12 +26,33 @@ import (
 
 type partObservedManager struct {
 	bkcache.SnapshotManager
-	bodies atomic.Int64
+	bodies        atomic.Int64
+	failOwner     atomic.Bool
+	ownerAttempts atomic.Int64
+	pins          atomic.Int64
 }
 
 func (m *partObservedManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	m.bodies.Add(1)
 	return m.SnapshotManager.New(ctx, parent, opts...)
+}
+
+var partInjectedOwnerFailure = errors.New("injected owner acknowledgement failure")
+
+func (m *partObservedManager) AttachLease(ctx context.Context, id, snapshot string) error {
+	m.ownerAttempts.Add(1)
+	if err := m.SnapshotManager.AttachLease(ctx, id, snapshot); err != nil {
+		return err
+	}
+	if m.failOwner.Swap(false) {
+		return partInjectedOwnerFailure
+	}
+	return nil
+}
+
+func (m *partObservedManager) PinSnapshot(ctx context.Context, id string) (bkcache.ImmutableRef, error) {
+	m.pins.Add(1)
+	return m.SnapshotManager.PinSnapshot(ctx, id)
 }
 
 type partTestContentSource struct{ provider content.InfoReaderProvider }
@@ -37,19 +61,20 @@ func (s partTestContentSource) Provider(context.Context, dagql.PersistedPartOffe
 	return s.provider
 }
 func TestPartAcquisitionRootRoutes(t *testing.T) {
-	for _, mode := range []string{"ready", "chain", "producer"} {
+	for _, mode := range []string{"ready", "chain", "chain-sync-retry", "chain-sync-restart", "chain-fallback", "producer"} {
 		t.Run(mode, func(t *testing.T) {
 			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 			actx, a, asrv := transferCache(t, aStore, filepath.Join(t.TempDir(), "a.db"), "a")
 			observed := &partObservedManager{SnapshotManager: bStore.Manager}
 			bStore.Manager = observed
-			bctx, b, bsrv := transferCache(t, bStore, filepath.Join(t.TempDir(), "b.db"), "b")
+			bPath := filepath.Join(t.TempDir(), "b.db")
+			bctx, b, bsrv := transferCache(t, bStore, bPath, "b")
 			platform := Platform{OS: "linux", Architecture: "amd64"}
 			file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: platform, Lazy: &FileBlobLazy{LazyState: NewLazyState(), Filename: "produced.txt", Contents: []byte("producer bytes"), Permissions: 0644}}
 			file.SetPath("/pending-preseed")
 			original := attachTransferObject(t, actx, a, asrv, "a", "partFile", file)
 			var selections []dagql.SelectedValueOutput
-			if mode == "chain" {
+			if strings.HasPrefix(mode, "chain") {
 				require.NoError(t, a.Evaluate(actx, original))
 				selections = []dagql.SelectedValueOutput{{Result: original, Address: dagql.PersistedPartAddress{Part: "snapshot"}}}
 			}
@@ -63,9 +88,12 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 			observed.bodies.Store(0)
 			require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}, Outputs: selections}, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(ctx context.Context, exported *dagql.ExportedValues) error {
 				var provider *testutil.Provider
-				if mode == "chain" {
+				if strings.HasPrefix(mode, "chain") {
 					require.Len(t, exported.Chains.Entries, 1)
 					provider = &testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}
+					if mode == "chain-fallback" {
+						provider.BeforeRead = func(context.Context, ocispec.Descriptor) error { return errors.New("supplied blob unavailable") }
+					}
 					b.SetPartContentSource(partTestContentSource{provider})
 				}
 				imported, err := b.ImportValues(bctx, exported.Bundle)
@@ -74,7 +102,36 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 				require.NoError(t, err)
 				result := loaded.(dagql.ObjectResult[*File])
 				oldPath, oldSnapshot := result.Self().File, result.Self().Snapshot
-				require.NoError(t, b.Evaluate(bctx, result))
+				observed.ownerAttempts.Store(0)
+				observed.pins.Store(0)
+				started := time.Now()
+				if strings.HasPrefix(mode, "chain-sync-") {
+					observed.failOwner.Store(true)
+					require.ErrorIs(t, b.Evaluate(bctx, result), partInjectedOwnerFailure)
+					_, err := b.CapturePersistedRecord(bctx, result)
+					require.ErrorIs(t, err, dagql.ErrPersistStateNotReady)
+					reads := provider.Reads.Load()
+					require.Positive(t, reads)
+					if mode == "chain-sync-restart" {
+						require.NoError(t, b.ReleaseSession(bctx, "b"))
+						require.NoError(t, b.Close(bctx))
+						bStore.Reload(t)
+						observed = &partObservedManager{SnapshotManager: bStore.Manager}
+						bStore.Manager = observed
+						bctx, b, bsrv = transferCache(t, bStore, bPath, "restart")
+						require.Equal(t, dagql.CachePersistenceResetNone, b.PersistenceResetReason())
+						b.SetPartContentSource(partTestContentSource{provider})
+						loaded, err = b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
+						require.NoError(t, err)
+						result = loaded.(dagql.ObjectResult[*File])
+						oldPath, oldSnapshot = result.Self().File, result.Self().Snapshot
+					}
+					require.NoError(t, b.Evaluate(bctx, result))
+					require.Equal(t, reads, provider.Reads.Load(), "bookkeeping retry must not repeat acquisition")
+				} else {
+					require.NoError(t, b.Evaluate(bctx, result))
+				}
+				t.Logf("route=%s latency=%s pins=%d owner-sync-attempts=%d private-bodies=%d", mode, time.Since(started), observed.pins.Load(), observed.ownerAttempts.Load(), observed.bodies.Load())
 				require.Same(t, oldPath, result.Self().File)
 				require.Same(t, oldSnapshot, result.Self().Snapshot)
 				got, err := result.Self().Contents(bctx, result, nil, nil)
@@ -86,7 +143,7 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 					require.Equal(t, "producer bytes", string(got))
 					require.Equal(t, "/produced.txt", mustTransferPath(t, bctx, result))
 				}
-				if mode == "producer" {
+				if mode == "producer" || mode == "chain-fallback" {
 					require.EqualValues(t, 1, observed.bodies.Load())
 				} else {
 					require.Zero(t, observed.bodies.Load())
@@ -259,3 +316,7 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 		return nil
 	}))
 }
+
+func (partTestContentSource) Available(dagql.PersistedPartOffer, int64) bool { return true }
+
+func (partSelectingContentSource) Available(dagql.PersistedPartOffer, int64) bool { return true }

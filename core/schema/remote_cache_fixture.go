@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -26,6 +27,7 @@ type remoteCacheFixtureArgs struct {
 	Operation string
 	Path      string
 	IDs       dagql.ArrayInput[dagql.AnyID]
+	OutputIDs dagql.ArrayInput[dagql.AnyID] `name:"outputIDs"`
 }
 type remoteCacheFixtureMapping struct {
 	Ordinal  dagql.TransferOrdinal `json:"ordinal"`
@@ -71,7 +73,7 @@ func installRemoteCacheFixture(srv *dagql.Server) error {
 	}
 	dagql.Fields[*core.Query]{dagql.Func("_remoteCacheFixture", func(ctx context.Context, q *core.Query, args remoteCacheFixtureArgs) (core.JSON, error) {
 		return runRemoteCacheFixture(ctx, q, path, args)
-	}).Args(dagql.Arg("path").Default(dagql.String("")), dagql.Arg("ids").Default(dagql.ArrayInput[dagql.AnyID]{})).View(AllVersion).DoNotCache("Test fixture reads and mutates external state")}.Install(srv)
+	}).Args(dagql.Arg("path").Default(dagql.String("")), dagql.Arg("ids").Default(dagql.ArrayInput[dagql.AnyID]{}), dagql.Arg("outputIDs").Default(dagql.ArrayInput[dagql.AnyID]{})).View(AllVersion).DoNotCache("Test fixture reads and mutates external state")}.Install(srv)
 	return nil
 }
 
@@ -220,6 +222,9 @@ func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 
 //nolint:gocyclo // one phase per fixture scenario kind; splitting hides the order of the phases
 func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args remoteCacheFixtureArgs) (core.JSON, error) {
+	if args.Operation != "export" && len(args.OutputIDs) != 0 {
+		return nil, fmt.Errorf("selected outputs require export")
+	}
 	switch args.Operation {
 	case "export":
 		if len(args.IDs) == 0 {
@@ -264,25 +269,47 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 			return nil, err
 		}
 	}
+	cache.EnableTransferFixtureParts()
+	cache.SetPartContentSource(fixturePartContentSource{path: path})
+	outputIDs := make([]*call.ID, len(args.OutputIDs))
+	for i, arg := range args.OutputIDs {
+		outputIDs[i], err = arg.ID()
+		if err != nil {
+			return nil, err
+		}
+	}
 	var response any
 	switch args.Operation {
 	case "export":
 		err = cache.WithTransferFixtureRoots(ctx, md.SessionID, ids, func(roots []dagql.AnyResult) error {
-			return cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: roots}, config.RefConfig{}, func(ctx context.Context, values *dagql.ExportedValues) error {
-				mapping, err := fixtureMappings(values.Bundle, values.Sources)
-				if err != nil {
-					return err
+			return cache.WithTransferFixtureRoots(ctx, md.SessionID, outputIDs, func(outputs []dagql.AnyResult) error {
+				selection := dagql.ValueSelection{Roots: roots}
+				for _, output := range outputs {
+					typ := output.Type().Name()
+					if typ != "Directory" && typ != "File" {
+						return fmt.Errorf("selected fixture output must be Directory or File")
+					}
+					selection.Outputs = append(selection.Outputs, dagql.SelectedValueOutput{Result: output, Address: dagql.PersistedPartAddress{Part: "snapshot"}})
 				}
-				root, err := fixtureRoot(path, "bundles")
-				if err != nil {
-					return err
-				}
-				defer root.Close()
-				if err := writeFixtureJSON(ctx, root, args.Path, values.Bundle); err != nil {
-					return err
-				}
-				response = mapping
-				return nil
+				return cache.WithExportedValues(ctx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(ctx context.Context, values *dagql.ExportedValues) error {
+					if err := writeFixtureChains(ctx, path, values.Chains); err != nil {
+						return err
+					}
+					mapping, err := fixtureMappings(values.Bundle, values.Sources)
+					if err != nil {
+						return err
+					}
+					root, err := fixtureRoot(path, "bundles")
+					if err != nil {
+						return err
+					}
+					defer root.Close()
+					if err := writeFixtureJSON(ctx, root, args.Path, values.Bundle); err != nil {
+						return err
+					}
+					response = mapping
+					return nil
+				})
 			})
 		})
 	case "import":

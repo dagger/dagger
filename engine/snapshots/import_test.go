@@ -811,7 +811,7 @@ type chainBytesReader struct{ *bytes.Reader }
 
 func (r chainBytesReader) Close() error { return nil }
 func TestChainContentClassification(t *testing.T) {
-	for _, mode := range []string{"missing", "short", "checksum", "apply", "lease", "cancel"} {
+	for _, mode := range []string{"missing", "short", "checksum", "apply", "lease", "writer", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -827,6 +827,8 @@ func TestChainContentClassification(t *testing.T) {
 				provider = alteredChainProvider{InfoReaderProvider: provider, mode: mode}
 			case "apply":
 				consumer.BeforeApply = func(context.Context, ocispecs.Descriptor) error { return failure }
+			case "writer":
+				consumer.BeforeWrite = func([]byte) error { return failure }
 			case "lease":
 				consumer.BeforeAdd = func(context.Context, leases.Lease, leases.Resource) error { return failure }
 			case "cancel":
@@ -837,7 +839,7 @@ func TestChainContentClassification(t *testing.T) {
 			require.Error(t, err)
 			var contentErr *bkcache.ChainContentError
 			switch mode {
-			case "lease":
+			case "lease", "writer":
 				require.ErrorIs(t, err, failure)
 				require.False(t, errors.As(err, &contentErr))
 			case "cancel":

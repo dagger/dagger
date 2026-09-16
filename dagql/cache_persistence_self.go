@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	set "github.com/hashicorp/go-set/v3"
@@ -22,7 +23,7 @@ const (
 
 // persistedResultEnvelopeVersion is the current interpretation of
 // PersistedResultEnvelope. Every change to how an envelope is read cuts a new
-// version; older versions are never read (see cachePersistenceSchemaVersion).
+// version, including scoped (OutputPath, Role) snapshot links; older versions are never read (see cachePersistenceSchemaVersion).
 //
 // 3: attached absent values keep their row identity as null envelopes;
 // scalars decode losslessly; lists rebuild their declared recursive type from
@@ -122,15 +123,36 @@ func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache Persist
 	return encodePersistedResultEnvelope(ctx, enc, res, true)
 }
 
-func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
+func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (ret AnyResult, rerr error) {
 	dec := NewPersistDecodeContext(dag, resultID, call)
 	dec.roles, _ = ctx.Value(copiedDecodeRolesKey{}).(*copiedDecodeRoles)
+	if dec.roles != nil && dec.roles.ResultID != resultID {
+		return nil, fmt.Errorf("persist decode snapshot roles: carrier owner mismatch")
+	}
+	if dec.roles == nil && resultID != 0 && env.Kind == persistedResultKindList {
+		if cache, err := EngineCache(ctx); err == nil {
+			if links, err := cache.PersistedSnapshotLinksByResultID(ctx, resultID); err == nil {
+				dec.roles = &copiedDecodeRoles{ResultID: resultID, Links: cloneSnapshotRefLinks(links), Imported: env.Imported}
+			}
+		}
+	}
 	dec.imported = env.Imported
 	if dec.roles != nil && dec.roles.ResultID == resultID {
 		dec.imported = dec.roles.Imported
 		dec.host = dec.roles.Host
 	}
-	return decodePersistedResultEnvelope(ctx, dec, env, true)
+	var cleanup OnReleaseFunc
+	dec.cleanup = &cleanup
+	defer func() {
+		if rerr != nil && cleanup != nil {
+			rerr = errors.Join(rerr, cleanup(context.WithoutCancel(ctx)))
+		}
+	}()
+	ret, rerr = decodePersistedResultEnvelope(ctx, dec, env, true)
+	if rerr == nil && ret != nil {
+		ret.cacheSharedResult().onRelease = cleanup
+	}
+	return ret, rerr
 }
 
 // persistedAbsentEnvelope describes an attached absent value: the row keeps
@@ -216,7 +238,7 @@ func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContex
 				SessionResourceHandle: sessionResourceHandle,
 				ObjectJSON:            objectEncoding.JSON,
 			},
-			SnapshotLinks: objectEncoding.SnapshotLinks,
+			SnapshotLinks: prefixSnapshotLinks(objectEncoding.SnapshotLinks, enc.path),
 		}, nil
 	}
 
@@ -229,6 +251,7 @@ func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContex
 			return PersistedResultEncoding{}, fmt.Errorf("encode persisted list: recorded call type %s does not declare a list", parentCall.Type.toAST())
 		}
 		itemEnvs := make([]PersistedResultEnvelope, 0, enumerable.Len())
+		var itemLinks []PersistedSnapshotRefLink
 		for i := 1; i <= enumerable.Len(); i++ {
 			item, err := enumerable.NthValue(i, parentCall)
 			if err != nil {
@@ -246,6 +269,7 @@ func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContex
 				return PersistedResultEncoding{}, fmt.Errorf("encode persisted list item %d envelope: %w", i, err)
 			}
 			itemEnvs = append(itemEnvs, itemEncoding.Envelope)
+			itemLinks = append(itemLinks, itemEncoding.SnapshotLinks...)
 		}
 		return PersistedResultEncoding{
 			Envelope: PersistedResultEnvelope{
@@ -256,6 +280,7 @@ func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContex
 				SessionResourceHandle: sessionResourceHandle,
 				Items:                 itemEnvs,
 			},
+			SnapshotLinks: itemLinks,
 		}, nil
 	}
 
@@ -448,9 +473,18 @@ func decodePersistedObjectEnvelope(ctx context.Context, dec *PersistDecodeContex
 	if err != nil {
 		return nil, fmt.Errorf("decode object_id envelope load: %w", err)
 	}
+	if release, ok := valSelf.(OnReleaser); ok && dec.cleanup != nil {
+		*dec.cleanup = joinOnRelease(*dec.cleanup, release.OnRelease)
+	}
+	if host, ok := valSelf.(HasPartHost); ok && dec.host != nil {
+		host.BindPartHost(dec.host)
+	}
 	valRes, err := NewResultForCall(valSelf, call)
 	if err != nil {
 		return nil, fmt.Errorf("decode object_id envelope result: %w", err)
+	}
+	if len(dec.scope.OutputPath) != 0 {
+		valRes.cacheSharedResult().inlineBorrow = dec.host
 	}
 	objRes, err := objType.New(valRes)
 	if err != nil {
@@ -510,7 +544,7 @@ func decodePersistedListEnvelope(ctx context.Context, dec *PersistDecodeContext,
 	for i, itemEnv := range env.Items {
 		itemCall := persistedListItemCall(call, i+1)
 		itemCtx := ContextWithCall(ctx, itemCall)
-		itemRes, err := decodePersistedResultEnvelope(itemCtx, dec.item(itemCall), itemEnv, false)
+		itemRes, err := decodePersistedResultEnvelope(itemCtx, dec.item(itemCall, i), itemEnv, false)
 		if err != nil {
 			return nil, fmt.Errorf("decode list item %d: %w", i+1, err)
 		}
@@ -522,6 +556,9 @@ func decodePersistedListEnvelope(ctx context.Context, dec *PersistDecodeContext,
 	}, call)
 	if err != nil {
 		return nil, err
+	}
+	if len(dec.scope.OutputPath) != 0 {
+		res.cacheSharedResult().inlineBorrow = dec.host
 	}
 	return persistedNullableView(res, call), nil
 }
@@ -602,31 +639,15 @@ func persistedBuiltinScalarName(typeName string) bool {
 // PersistedSnapshotRefLink is a generic non-opaque link from a persisted result
 // self payload to one durable snapshot ref key.
 type PersistedSnapshotRefLink struct {
-	RefKey string
-	Role   string
+	RefKey     string
+	Role       string
+	OutputPath PersistedRefPath `json:"outputPath,omitempty"`
 }
 
 // PersistedSnapshotRefLinkProvider is the shared interface used by persistable
 // self payloads to expose snapshot ref links for `result_snapshot_links`.
 type PersistedSnapshotRefLinkProvider interface {
 	PersistedSnapshotRefLinks() []PersistedSnapshotRefLink
-}
-
-func snapshotOwnerLinksFromTyped(self Typed) []PersistedSnapshotRefLink {
-	if self == nil {
-		return nil
-	}
-	linker, ok := any(self).(PersistedSnapshotRefLinkProvider)
-	if !ok {
-		return nil
-	}
-	links := linker.PersistedSnapshotRefLinks()
-	if len(links) == 0 {
-		return nil
-	}
-	cpy := make([]PersistedSnapshotRefLink, len(links))
-	copy(cpy, links)
-	return cpy
 }
 
 // persistedTypedRef is the descriptor-only leaf of a rebuilt declared type. It

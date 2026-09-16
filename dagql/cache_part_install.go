@@ -120,9 +120,6 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 	if source == nil || permit == nil || source.cache != c {
 		return nil, fmt.Errorf("prepare part: missing source or permit")
 	}
-	if len(permit.address.OutputPath) != 0 {
-		return nil, c.prepareInlineReadyPart(ctx, receiver, source, permit)
-	}
 	if source.readiness != PartReady && source.descriptor.SnapshotID == "" {
 		return nil, fmt.Errorf("prepare part: source is not materialized")
 	}
@@ -147,17 +144,18 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 	if probe.LocalComplete {
 		return nil, ErrPartReselect
 	}
-	family, ok := PersistedObjectFamilyByName(current.Envelope.ObjectCodec)
+	local, err := partRecordAt(current, permit.address.OutputPath)
+	if err != nil {
+		return nil, err
+	}
+	family, ok := PersistedObjectFamilyByName(local.Envelope.ObjectCodec)
 	if !ok {
 		return nil, fmt.Errorf("prepare part: unknown family")
 	}
 	if source.descriptor.Family != "" && source.descriptor.Family != family.Name {
 		return nil, fmt.Errorf("prepare part: incompatible output family")
 	}
-	codec, ok := family.Transfer.(PersistedPartInstaller)
-	if !ok {
-		return nil, fmt.Errorf("prepare part: codec has no installer")
-	}
+
 	c.egraphMu.Lock()
 	for _, id := range c.partSourceDependenciesLocked(source) {
 		dep := c.resultsByID[sharedResultID(id)]
@@ -191,19 +189,28 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 			}
 		}
 	}
-	p.next, err = codec.PreparePartRecord(current, source.record, source.Descriptor(), permit.address)
+	p.next, err = prepareScopedPartRecord(current, source.record, source.Descriptor(), permit.address)
 	if err != nil {
 		return nil, err
 	}
 	if version.payload.hasValue {
-		preparer, ok := UnwrapAs[PartStorePreparer](Result[Typed]{shared: row})
+		value, err := inlineValueAt(Result[Typed]{shared: row}, current.Call, permit.address.OutputPath)
+		if err != nil {
+			return nil, err
+		}
+		preparer, ok := UnwrapAs[PartStorePreparer](value)
 		if !ok {
 			return nil, fmt.Errorf("prepare part: typed value has no store")
 		}
-		dec := c.partDecodeContext(ctx, row, p.next)
+		dec := c.partDecodeContext(ctx, row, p.next).atPath(permit.address.OutputPath)
 		d := source.Descriptor()
 		d.Address = clonePartAddress(permit.address)
-		p.store, err = preparer.PreparePartStore(ctx, dec, p.next, d, p.accessor)
+		nextLocal, err := partRecordAt(p.next, permit.address.OutputPath)
+		if err != nil {
+			return nil, err
+		}
+		d.Address.OutputPath = nil
+		p.store, err = preparer.PreparePartStore(ctx, dec, nextLocal, d, p.accessor)
 		if err != nil {
 			return nil, err
 		}
@@ -212,12 +219,6 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 		return nil, err
 	}
 	return p, nil
-}
-
-// The council's scoped-link addendum attaches inline items[i] preparation here.
-// It must preserve the enclosing row and full address, never create a child row.
-func (c *Cache) prepareInlineReadyPart(context.Context, AnyResult, *PartSourceLease, *PartPermit) error {
-	return fmt.Errorf("inline part installation awaits scoped snapshot-link Addendum 1")
 }
 
 // preparePartDependenciesLocked computes every fallible graph/requirement
@@ -316,7 +317,18 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if p == nil || p.cache != c || !p.consumed.CompareAndSwap(false, true) {
 		return nil, PartInstallRefused, fmt.Errorf("commit part: consumed preparation")
 	}
-	defer func() { rerr = errors.Join(rerr, p.release(ctx, outcome == PartInstalled)) }()
+	defer func() {
+		rerr = errors.Join(rerr, p.release(ctx, outcome == PartInstalled))
+		if outcome == PartInstalled {
+			kind := "installed-ready"
+			if p.original != nil {
+				kind = "installed-producer"
+			} else if p.source.readiness == PartDownloadable {
+				kind = "installed-chain"
+			}
+			c.recordPartFixture(p.receiver, p.permit.address, kind)
+		}
+	}()
 	if err := context.Cause(ctx); err != nil {
 		return nil, PartInstallRefused, err
 	}
@@ -340,10 +352,15 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 			return nil, PartInstallRefused, ErrPartReselect
 		}
 		found := false
-		for _, candidate := range c.collectPartCandidatesLocked(row, source.lookup, source.sessionID) {
-			if candidate.row == source.source {
-				found = true
-				break
+		if source.sessionlessShare {
+			_, found = c.sessionlessPartEquivalentLocked(row, source.source, source.lookup)
+			found = found && row.imported
+		} else {
+			for _, candidate := range c.collectPartCandidatesLocked(row, source.lookup, source.sessionID) {
+				if candidate.row == source.source {
+					found = true
+					break
+				}
 			}
 		}
 		if !found {
@@ -353,7 +370,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		return nil, PartInstallRefused, ErrPartReselect
 	}
 	for _, dep := range p.deps {
-		if !c.sessionSatisfiesResourceRequirementsLocked(source.sessionID, dep) {
+		if !c.partSourceReferenceAllowedLocked(row, source, dep) {
 			return nil, PartInstallRefused, ErrPartReselect
 		}
 	}
@@ -421,7 +438,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if p.privateCleanup != nil {
 		row.onRelease = joinOnRelease(row.onRelease, p.privateCleanup.release)
 	}
-	row.snapshotLinkIntent = &snapshotLinkIntent{Links: slices.Clone(p.next.SnapshotLinks)}
+	row.snapshotLinkIntent = &snapshotLinkIntent{Links: cloneSnapshotRefLinks(p.next.SnapshotLinks)}
 	if p.store == nil {
 		env := p.next.Envelope
 		row.persistedEnvelope = &env

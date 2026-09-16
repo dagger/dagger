@@ -769,9 +769,9 @@ func (c *Cache) traceImportResultLoaded(ctx context.Context, importRunID string,
 	})
 }
 
-func (c *Cache) traceImportResultSnapshotLinkLoaded(ctx context.Context, importRunID string, resID sharedResultID, refKey, role string) {
+func (c *Cache) traceImportResultSnapshotLinkLoaded(ctx context.Context, importRunID string, resID sharedResultID, refKey, role, outputPath string) {
 	c.traceLazy(ctx, "import_result_snapshot_link_loaded", func() []any {
-		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "ref_key", refKey, "role", role}
+		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "ref_key", refKey, "role", role, "output_path", outputPath}
 	})
 }
 

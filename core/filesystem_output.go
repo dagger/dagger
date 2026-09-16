@@ -160,3 +160,28 @@ func (dir *Directory) clearLazy() {
 func (out *filesystemOutput) BindPartHost(host *dagql.PartHost) {
 	out.partHost.CompareAndSwap(nil, host)
 }
+
+func (out *filesystemOutput) PartHostBinding() *dagql.PartHost { return out.partHost.Load() }
+
+func (file *File) PersistedSnapshotRefLinksChecked() ([]dagql.PersistedSnapshotRefLink, error) {
+	unlock, err := file.lockForPersistence()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if id, ok := file.snapshotIdentityLocked(); ok {
+		return []dagql.PersistedSnapshotRefLink{{RefKey: id, Role: "snapshot"}}, nil
+	}
+	return nil, nil
+}
+func (dir *Directory) PersistedSnapshotRefLinksChecked() ([]dagql.PersistedSnapshotRefLink, error) {
+	unlock, err := dir.lockForPersistence()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if id, ok := dir.snapshotIdentityLocked(); ok {
+		return []dagql.PersistedSnapshotRefLink{{RefKey: id, Role: "snapshot"}}, nil
+	}
+	return nil, nil
+}

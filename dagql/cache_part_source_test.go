@@ -14,9 +14,20 @@ func (transferTestCodec) DescribeParts(v PersistedPayloadVisit) ([]PartProbe, er
 	if err := json.Unmarshal(v.Payload, &p); err != nil {
 		return nil, err
 	}
-	return []PartProbe{{Descriptor: PartDescriptor{Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, Absent: p.Text == "ready"}, LocalComplete: p.Text == "ready", HasProducer: p.Text != "ready"}}, nil
+	snapshot := ""
+	for _, link := range v.SnapshotLinks {
+		if link.Role == "snapshot" {
+			snapshot = link.RefKey
+		}
+	}
+	return []PartProbe{{Descriptor: PartDescriptor{SnapshotID: snapshot, Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, Absent: p.Text == "ready"}, LocalComplete: p.Text == "ready" || snapshot != "", HasProducer: p.Text != "ready"}}, nil
 }
-func (transferTestCodec) PreparePartRecord(receiver, source PersistedRecord, _ PartDescriptor, _ PersistedPartAddress) (PersistedRecord, error) {
+func (transferTestCodec) PreparePartRecord(receiver, source PersistedRecord, descriptor PartDescriptor, _ PersistedPartAddress) (PersistedRecord, error) {
+	if descriptor.SnapshotID != "" {
+		receiver.Envelope.ObjectJSON = json.RawMessage(`{"text":"snapshot"}`)
+		receiver.SnapshotLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: descriptor.SnapshotID}}
+		return receiver, nil
+	}
 	receiver.Envelope.ObjectJSON = append([]byte(nil), source.Envelope.ObjectJSON...)
 	return receiver, nil
 }

@@ -36,6 +36,13 @@ type PartProbe struct {
 	DescriptorRev                                 uint64
 	OutputRev                                     OutputRevision
 	OfferRev                                      uint64
+	captured                                      *partProbeCapture
+}
+
+type partProbeCapture struct {
+	row     *sharedResult
+	record  PersistedRecord
+	version capturedRowRevision
 }
 
 // PersistedPartDescriber is pure: it neither loads references nor opens storage.
@@ -164,6 +171,10 @@ func (c *Cache) partFactsLocked(row *sharedResult) partSourceFacts {
 // This collector deliberately does not call or change ordinary early-return
 // lookup helpers. Every route is collected before availability is ranked.
 func (c *Cache) collectPartCandidatesLocked(receiver *sharedResult, l partLookup, sessionID string) []partCandidate {
+	return c.collectPartCandidatesWithAdmissionLocked(receiver, l, func(row *sharedResult) bool { return c.sessionSatisfiesResourceRequirementsLocked(sessionID, row) })
+}
+
+func (c *Cache) collectPartCandidatesWithAdmissionLocked(receiver *sharedResult, l partLookup, allowed func(*sharedResult) bool) []partCandidate {
 	now := time.Now().Unix()
 	seen := map[sharedResultID]bool{}
 	out := []partCandidate{}
@@ -174,7 +185,7 @@ func (c *Cache) collectPartCandidatesLocked(receiver *sharedResult, l partLookup
 		if row != receiver && row.expiresAtUnix != 0 && row.expiresAtUnix <= now {
 			return
 		}
-		if !c.sessionSatisfiesResourceRequirementsLocked(sessionID, row) {
+		if !allowed(row) {
 			return
 		}
 		seen[row.id] = true
@@ -315,6 +326,9 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 		}
 		gate.mu.Unlock()
 	}
+	if probe != nil {
+		probe.captured = &partProbeCapture{row: row, record: record, version: version}
+	}
 	return record, version, probe, nil
 }
 func (c *Cache) AcquireEquivalentPartSource(ctx context.Context, receiver AnyResult, address PersistedPartAddress) (*PartSourceLease, error) {
@@ -387,7 +401,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		r := PartRunnable
 		if p != nil && p.LocalComplete && !p.Busy {
 			r = PartReady
-		} else if candidate.offer != nil && (candidate.row == row || chainAddressesUsable(candidate.offer, time.Now().Unix()) || candidate.offer.Chain.RenewalKey != "" && c.partContentSource.Load() != nil) && (demand == nil || !demand.exhausted(candidate.row.id, address, candidate.offer)) {
+		} else if candidate.offer != nil && (candidate.row == row || c.partOfferAvailable(*candidate.offer, time.Now().Unix())) && (demand == nil || !demand.exhausted(candidate.row.id, address, candidate.offer)) {
 			r = PartDownloadable
 		}
 		if p != nil && candidate.row == row && p.LocalComplete {
@@ -527,4 +541,80 @@ func partCanReselect(err error) bool {
 		return partCanReselect(wrapped.Unwrap())
 	}
 	return err == ErrPartReselect || err == ErrPersistStateNotReady
+}
+
+// ownPartRequirementsFitLocked deliberately excludes offer-owner resources.
+func (c *Cache) ownPartRequirementsFitLocked(receiver, dependency *sharedResult) bool {
+	if receiver == nil || dependency == nil || c.resultsByID[dependency.id] != dependency {
+		return false
+	}
+	if dependency.requiredSessionResources == nil || dependency.requiredSessionResources.Empty() {
+		return true
+	}
+	return receiver.requiredSessionResources != nil && receiver.requiredSessionResources.Subset(dependency.requiredSessionResources)
+}
+
+// E held; the caller has already probed held rows outside E. This is the
+// sessionless Ready-sharing admission boundary; it takes its own donor hold.
+func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receiver, donor *sharedResult, target, address PersistedPartAddress, probe PartProbe) (*PartSourceLease, error) {
+	if receiver == nil || donor == nil || !receiver.imported || c.resultsByID[receiver.id] != receiver || c.resultsByID[donor.id] != donor {
+		return nil, fmt.Errorf("sessionless part source requires registered rows and an imported receiver")
+	}
+	if _, err := partAddressKey(target); err != nil {
+		return nil, err
+	}
+	key, err := partAddressKey(address)
+	if err != nil {
+		return nil, err
+	}
+	probedKey, err := partAddressKey(probe.Descriptor.Address)
+	if err != nil || key != probedKey || !probe.LocalComplete || probe.Busy || probe.captured == nil || probe.captured.row != donor {
+		return nil, ErrPartReselect
+	}
+	lookup, err := c.partLookupFor(receiver)
+	if err != nil {
+		return nil, err
+	}
+	// Resource filtering is performed below using only the receiver's current
+	// own set. The normal collector and foreground session filter stay intact.
+	route, eligible := c.sessionlessPartEquivalentLocked(receiver, donor, lookup)
+	if !eligible || !c.ownPartRequirementsFitLocked(receiver, donor) {
+		return nil, ErrPartReselect
+	}
+	source := &PartSourceLease{cache: c, source: donor, sourceID: uint64(donor.id), descriptor: probe.Descriptor, target: clonePartAddress(target), readiness: PartReady, route: route, sessionlessShare: true, record: probe.captured.record, version: probe.captured.version, lookup: lookup, facts: c.partFactsLocked(donor)}
+	source.descriptor = source.Descriptor()
+	source.descriptor.DependencyIDs = append(source.descriptor.DependencyIDs, c.partResourceLeavesLocked(donor)...)
+	slices.Sort(source.descriptor.DependencyIDs)
+	source.descriptor.DependencyIDs = slices.Compact(source.descriptor.DependencyIDs)
+	for _, id := range source.descriptor.DependencyIDs {
+		if !c.ownPartRequirementsFitLocked(receiver, c.resultsByID[sharedResultID(id)]) {
+			return nil, ErrPartReselect
+		}
+	}
+	source.descriptorRev, source.offerRev, source.resourceRev, source.ownershipRev = source.facts.payload, source.facts.offers, source.facts.resources, source.facts.ownership
+	c.incrementIncomingOwnershipLocked(ctx, donor)
+	return source, nil
+}
+
+func (c *Cache) sessionlessPartEquivalentLocked(receiver, donor *sharedResult, lookup partLookup) (CacheHitRoute, bool) {
+	for _, candidate := range c.collectPartCandidatesWithAdmissionLocked(receiver, lookup, func(row *sharedResult) bool { return c.ownPartRequirementsFitLocked(receiver, row) }) {
+		if candidate.row == donor {
+			return candidate.route, true
+		}
+	}
+	return "", false
+}
+
+func (c *Cache) partSourceReferenceAllowedLocked(receiver *sharedResult, source *PartSourceLease, dep *sharedResult) bool {
+	if source.sessionlessShare {
+		return receiver.imported && c.ownPartRequirementsFitLocked(receiver, dep)
+	}
+	return source.sessionID != "" && c.sessionSatisfiesResourceRequirementsLocked(source.sessionID, dep)
+}
+
+func (c *Cache) partOfferAvailable(offer PersistedPartOffer, now int64) bool {
+	if binding := c.partContentSource.Load(); binding != nil {
+		return binding.source.Available(offer, now)
+	}
+	return (fixedPartContentSource{}).Available(offer, now)
 }

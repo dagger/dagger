@@ -608,13 +608,11 @@ func attachTypedModuleObjectValue(
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, ok := val.(dagql.AnyResult); ok {
-			return attached, []dagql.AnyResult{attached}, nil
-		}
-		if _, ok := val.(dagql.IDable); ok {
-			return attached, []dagql.AnyResult{attached}, nil
-		}
-		return val, []dagql.AnyResult{attached}, nil
+		// Keep the declared object reference in its attached form. An SDK
+		// handle string would otherwise serialize as an opaque scalar and
+		// retain the producing engine's row ID during transfer. SDK input
+		// conversion already accepts this attached form.
+		return attached, []dagql.AnyResult{attached}, nil
 	default:
 		return val, nil, nil
 	}

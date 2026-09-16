@@ -73,6 +73,7 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 		}
 	}
 	if !t.synced {
+		c.recordPartFixture(row, PersistedPartAddress{}, "owner-sync")
 		if err := c.syncResultSnapshotLeases(ctx, row); err != nil {
 			return err
 		}

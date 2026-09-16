@@ -19,6 +19,7 @@ type Lazy[T dagql.Typed] interface {
 }
 
 type LazyState struct {
+	outputRevision atomic.Uint64
 	// LazyMu guards the latch transitions and groups. For whole-op
 	// evaluation (Evaluate) it is additionally held across the body, as
 	// it always was. Per-group evaluation (EvaluateGroup) holds it only
@@ -59,6 +60,7 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 		return nil
 	}
 	if run == nil {
+		lazy.outputRevision.Add(1)
 		lazy.lazyInitComplete.Store(true)
 		return nil
 	}
@@ -89,6 +91,7 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 		slog.InfoContext(ctx, "end lazy evaluation", args...)
 	}()
 
+	defer lazy.outputRevision.Add(1)
 	if rerr = run(ctx); rerr != nil {
 		return rerr
 	}
@@ -126,6 +129,7 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 		return nil
 	}
 	if run == nil {
+		lazy.outputRevision.Add(1)
 		g.done.Store(true)
 		return nil
 	}
@@ -147,6 +151,7 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 		slog.InfoContext(ctx, "end lazy group evaluation", args...)
 	}()
 
+	defer lazy.outputRevision.Add(1)
 	if rerr = run(ctx); rerr != nil {
 		return rerr
 	}

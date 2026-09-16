@@ -67,7 +67,7 @@ func (obj *cacheTestPartsObject) PersistedSnapshotRefLinks() []PersistedSnapshot
 	}
 	obj.mu.Lock()
 	defer obj.mu.Unlock()
-	return append([]PersistedSnapshotRefLink(nil), obj.snapshotLinks...)
+	return cloneSnapshotRefLinks(obj.snapshotLinks)
 }
 
 func (obj *cacheTestPartsObject) LazyEvalFunc() LazyEvalFunc {

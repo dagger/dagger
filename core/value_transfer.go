@@ -454,3 +454,33 @@ func (container *Container) setAbsentTransferPart(part dagql.PartKey) {
 		}
 	}
 }
+
+// ValidateSnapshotScope checks local role coverage before a generic visitor
+// relocates storage keys. Foreign pending descriptors carry no local roles.
+func (family foreignFamilyCodec) ValidateSnapshotScope(v dagql.PersistedPayloadVisit) error {
+	switch family {
+	case "File", "Directory", "Container":
+	default:
+		return nil
+	}
+	outputs, err := family.MapSnapshotParts(v)
+	if err != nil {
+		return err
+	}
+	expected := map[string]bool{}
+	for _, output := range outputs {
+		if output.State == "completed" {
+			expected[output.Role] = true
+		}
+	}
+	for _, link := range v.SnapshotLinks {
+		if !expected[link.Role] {
+			return fmt.Errorf("undeclared snapshot role %q", link.Role)
+		}
+		delete(expected, link.Role)
+	}
+	if len(expected) != 0 {
+		return fmt.Errorf("completed descriptor is missing snapshot roles")
+	}
+	return nil
+}

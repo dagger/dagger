@@ -46,7 +46,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 	}
 	if view := container.acquiredOutput.Load(); view != nil {
 		raw, err := json.Marshal(view.Payload)
-		return dagql.PersistedObjectEncoding{JSON: raw, SnapshotLinks: slices.Clone(view.Links)}, err
+		return dagql.PersistedObjectEncoding{JSON: raw, SnapshotLinks: dagql.ClonePersistedSnapshotLinks(view.Links)}, err
 	}
 	unlock, err := container.lockForPersistence(enc.Quiescent())
 	if err != nil {

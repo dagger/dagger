@@ -35,6 +35,7 @@ type transferFixtureMapping struct {
 }
 type transferFixtureReport struct {
 	Persistence enginecore.RemoteCacheFixturePersistence `json:"persistence"`
+	Parts       []dagql.TransferFixturePartEvent         `json:"parts"`
 	Rows        []dagql.TransferFixtureRow               `json:"rows"`
 	Bodies      []struct {
 		Parent, Function, Client string
@@ -53,6 +54,17 @@ func transferFixture(ctx context.Context, client *dagger.Client, op, path string
 	return json.Unmarshal([]byte(data.Value), out)
 }
 
+func transferFixtureSelected(ctx context.Context, client *dagger.Client, path string, ids, outputs []string, out any) error {
+	var data struct {
+		Value string `json:"_remoteCacheFixture"`
+	}
+	err := client.Do(ctx, &dagger.Request{Query: `query($path:String!,$ids:[ID!]!,$outputs:[ID!]!){_remoteCacheFixture(operation:"export",path:$path,ids:$ids,outputIDs:$outputs)}`, Variables: map[string]any{"path": path, "ids": ids, "outputs": outputs}}, &dagger.Response{Data: &data})
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(data.Value), out)
+}
+
 const transferProbeSource = `package main
 import (
  "context"
@@ -63,7 +75,7 @@ type CacheProbe struct{}
 type Code string
 type Status string
 const Ready Status = "READY"
-type Report struct { Seed string; Code Code; Status Status; Platform dagger.Platform }
+type Report struct { Seed string; Code Code; Status Status; Platform dagger.Platform; Artifact *dagger.Directory }
 type Named interface { DaggerObject; Seed(context.Context)(string,error) }
 func(m *CacheProbe) Echo(ctx context.Context, item Named)(Named,error){
  if err:=recordBody(ctx);err!=nil{return nil,err}; return item,nil
@@ -79,7 +91,7 @@ func recordBody(ctx context.Context) error {
 }
 func(m *CacheProbe) Report(ctx context.Context, seed string)(*Report,error){
  if err:=recordBody(ctx);err!=nil{return nil,err}
- return &Report{Seed:seed,Code:Code(seed),Status:Ready,Platform:dagger.Platform("linux/amd64")},nil
+ return &Report{Seed:seed,Code:Code(seed),Status:Ready,Platform:dagger.Platform("linux/amd64"),Artifact:dag.Directory().WithNewFile("payload.txt", "selected artifact:"+seed)},nil
 }
 func(r *Report) NoteFile(ctx context.Context,
  // +defaultPath="notes.txt"
@@ -102,7 +114,6 @@ func (RemoteCacheTransferSuite) TestSchemaRecovery(ctx context.Context, t *testc
 }
 
 func (RemoteCacheTransferSuite) TestSchemaRecoveryCold(ctx context.Context, t *testctx.T) {
-	t.Skip("addendum 2: fully cold import needs batch 4 acquisition through local-equivalent selection or the batch 1 builtin producer; batch 7 owns acceptance")
 	runTransferSchemaRecovery(ctx, t, true, false)
 }
 
@@ -159,20 +170,27 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, err)
 		return e
 	}
+	var lastArtifactID string
 	callReport := func(t *testctx.T, client *dagger.Client, seed string) string {
 		var data struct {
 			Probe struct {
 				Report struct {
 					ID                           string
 					Seed, Code, Status, Platform string
+					Artifact                     struct {
+						ID   string
+						File struct{ Contents string }
+					}
 				}
 			} `json:"cacheProbe"`
 		}
-		require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($seed:String!){cacheProbe{report(seed:$seed){id seed code status platform}}}`, Variables: map[string]any{"seed": seed}}, &dagger.Response{Data: &data}))
+		require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($seed:String!){cacheProbe{report(seed:$seed){id seed code status platform artifact{id file(path:"payload.txt"){contents}}}}}`, Variables: map[string]any{"seed": seed}}, &dagger.Response{Data: &data}))
 		require.Equal(t, seed, data.Probe.Report.Seed)
 		require.Equal(t, seed, data.Probe.Report.Code)
 		require.Equal(t, "READY", data.Probe.Report.Status)
 		require.Equal(t, "linux/amd64", data.Probe.Report.Platform)
+		require.Equal(t, "selected artifact:"+seed, data.Probe.Report.Artifact.File.Contents)
+		lastArtifactID = data.Probe.Report.Artifact.ID
 		return data.Probe.Report.ID
 	}
 	countBody := func(t *testctx.T, client *dagger.Client, function string) uint64 {
@@ -194,13 +212,16 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	aID := callReport(t, a.client, "same")
 	require.Equal(t, uint64(1), countBody(t, a.client, "report"))
 	var source []transferFixtureMapping
-	require.NoError(t, transferFixture(ctx, a.client, "export", "report.json", []string{aID}, &source))
+	require.NoError(t, transferFixtureSelected(ctx, a.client, "report.json", []string{aID}, []string{lastArtifactID}, &source))
 	require.NotEmpty(t, source)
 	// The same contextual call succeeds on the native object without import.
 	var native struct{ Node struct{ NoteFile string } }
 	require.NoError(t, a.client.Do(ctx, &dagger.Request{Query: `query($id:ID!){node(id:$id){... on CacheProbeReport{noteFile}}}`, Variables: map[string]any{"id": aID}}, &dagger.Response{Data: &native}))
 	require.Equal(t, "producer notes", native.Node.NoteFile)
 	orders := []string{"before", "after"}
+	if cold {
+		orders = []string{"before"}
+	}
 	if defaultGC {
 		orders = []string{"after"}
 	}
@@ -211,9 +232,10 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			bState := "b2-transfer-b-state-" + identity.NewID()
 			b := start(t, bState, bVolume, bDir)
 			defer func() { stop(t, b) }()
-			operational := b.client.ModuleSource(".").AsModule()
+			var operational *dagger.Module
 			var err error
 			if !cold {
+				operational = b.client.ModuleSource(".").AsModule()
 				operational, err = operational.Sync(ctx)
 				require.NoError(t, err)
 			}
@@ -222,15 +244,36 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				require.NoError(t, operational.Serve(ctx))
 			}
 			_, err = outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
-				WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/report.json /destination/bundles/report.json"}).Sync(ctx)
+				WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/report.json /destination/bundles/report.json; cp -a /source/blobs /destination/"}).Sync(ctx)
 			require.NoError(t, err)
 			var imported []transferFixtureMapping
 			require.NoError(t, transferFixture(ctx, b.client, "import", "report.json", []string{}, &imported))
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"))
 			if order == "before" {
+				if cold {
+					operational = b.client.ModuleSource(".").AsModule()
+				}
 				require.NoError(t, operational.Serve(ctx))
 			}
 			saved := callReport(t, b.client, "same")
+			var acquisition transferFixtureReport
+			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
+			counters := map[string]int{}
+			builtinRoute := 0
+			for _, event := range acquisition.Parts {
+				counters[event.Kind]++
+				if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-producer") {
+					builtinRoute++
+				}
+			}
+			require.Positive(t, counters["provider-read"], "selected artifact must read its transferred chain")
+			require.Positive(t, counters["installed-chain"])
+			require.Positive(t, counters["owner-sync"])
+			require.Positive(t, counters["settled"])
+			if cold {
+				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
+			}
+			t.Logf("acquisition route counters cold=%t builtin=%d counts=%v", cold, builtinRoute, counters)
 			var echoed struct {
 				Probe struct{ Echo struct{ Seed string } } `json:"cacheProbe"`
 			}

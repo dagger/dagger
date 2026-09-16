@@ -988,7 +988,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 		},
 	}, parentCall)
 	assert.NilError(t, err)
-	_, err = producerCache.GetOrInitCall(
+	parentAttached, err := producerCache.GetOrInitCall(
 		producerCtx,
 		"semantic-producer-session",
 		producerDepDag,
@@ -999,6 +999,24 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 		dagql.ValueFunc(parentDetached),
 	)
 	assert.NilError(t, err)
+
+	// A declared SDK handle must enter the persisted reference grammar too.
+	// Keeping its original string retains liveness but bypasses relocation.
+	record := coreRelocationRecord(t, producerCtx, producerCache, parentAttached)
+	var payload persistedModuleObjectPayload
+	assert.NilError(t, json.Unmarshal(record.Envelope.ObjectJSON, &payload))
+	assert.Equal(t, persistedModuleObjectValueKindResultRef, payload.Fields["child"].Kind)
+	assert.Equal(t, childID.EngineResultID(), payload.Fields["child"].ResultID)
+	relocated := childID.EngineResultID() + 1000
+	out, err := dagql.VisitEncodedReferences(record, func(ref *dagql.PersistedRef) error {
+		if ref.ResultID == childID.EngineResultID() {
+			ref.ResultID = relocated
+		}
+		return nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, json.Unmarshal(out.Envelope.ObjectJSON, &payload))
+	assert.Equal(t, relocated, payload.Fields["child"].ResultID)
 
 	assert.NilError(t, producerCache.ReleaseSession(producerCtx, "semantic-producer-session"))
 

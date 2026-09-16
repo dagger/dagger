@@ -149,6 +149,8 @@ type persistedEdge struct {
 // persisted as result refs. Older snapshots may hold untracked scalar handle
 // strings whose referents were never retained (and whose IDs may have been
 // reused), so they are wiped rather than imported.
+// Schema 20 includes canonical output_path and the (result_id, output_path,
+// role) storage key. Earlier private schema-20 stores reset on import failure.
 const cachePersistenceSchemaVersion = "20"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
@@ -432,6 +434,9 @@ func NewCache(
 	}
 
 	if dbPath == "" {
+		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
+			return nil, err
+		}
 		return c, nil
 	}
 
@@ -494,6 +499,9 @@ func NewCache(
 		c.pdb = persistDB
 	}
 	if err := c.importPersistedState(ctx); err != nil {
+		if errors.Is(err, errOwnerLeaseReconciliation) {
+			return nil, errors.Join(err, closeCacheDBs(db, c.pdb))
+		}
 		c.persistenceResetReason = CachePersistenceResetImportFailure
 		c.tracePersistStoreWipedImportFailure(ctx, err)
 		slog.Warn("dagql persistence import failed; wiping and cold-starting", "err", err)
@@ -507,8 +515,21 @@ func NewCache(
 		if err != nil {
 			return nil, err
 		}
-		c.sqlDB = db
-		c.pdb = persistDB
+		// No caller has been admitted. Discard the failed import's graph and
+		// private decoded values before accepting the empty replacement store.
+		var releases []OnReleaseFunc
+		for _, row := range c.resultsByID {
+			if row != nil && row.onRelease != nil {
+				releases = append(releases, row.onRelease)
+			}
+		}
+		if err := runOnReleaseFuncs(context.WithoutCancel(ctx), releases); err != nil {
+			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
+		}
+		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, persistenceResetReason: CachePersistenceResetImportFailure, sqlDB: db, pdb: persistDB}
+		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
+			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
+		}
 	}
 
 	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, cachePersistenceSchemaVersion); err != nil {
@@ -1548,8 +1569,20 @@ func runOnReleaseFuncs(ctx context.Context, onReleases []OnReleaseFunc) error {
 	return rerr
 }
 
-func resultSnapshotLeaseID(resultID sharedResultID, role string) string {
-	return fmt.Sprintf("dagql/result/%d/%s", resultID, url.PathEscape(role))
+func resultSnapshotLeaseID(resultID sharedResultID, role string, path ...PersistedRefPath) string {
+	var scope PersistedRefPath
+	if len(path) != 0 {
+		scope = path[0]
+	}
+	canonical, err := canonicalPath(scope)
+	if err != nil {
+		panic(err)
+	} // all callers validate the map first
+	return resultSnapshotLeaseIDForKey(resultID, snapshotOwnerKey{Path: canonical, Role: role})
+}
+func resultSnapshotLeaseIDForKey(resultID sharedResultID, key snapshotOwnerKey) string {
+	data, _ := json.Marshal([2]any{json.RawMessage(key.Path), key.Role})
+	return fmt.Sprintf("dagql/result/%d/%s", resultID, url.PathEscape(string(data)))
 }
 
 func joinOnRelease(a, b OnReleaseFunc) OnReleaseFunc {
@@ -1566,26 +1599,22 @@ func joinOnRelease(a, b OnReleaseFunc) OnReleaseFunc {
 }
 
 type snapshotOwnerKey struct {
+	Path string
 	Role string
 }
 
-func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink {
+func desiredSnapshotLinksForResult(res *sharedResult) ([]PersistedSnapshotRefLink, error) {
 	if res == nil {
-		return nil
+		return nil, nil
 	}
-
 	state := res.loadPayloadState()
 	if state.hasValue && state.self != nil {
-		return snapshotOwnerLinksFromTyped(state.self)
+		return snapshotOwnerLinksFromTyped(state.self, res.loadResultCall())
 	}
-
 	if state.snapshotLinkIntent != nil {
-		return slices.Clone(state.snapshotLinkIntent.Links)
+		return cloneSnapshotRefLinks(state.snapshotLinkIntent.Links), nil
 	}
-	if len(state.snapshotOwnerLinks) == 0 {
-		return nil
-	}
-	return slices.Clone(state.snapshotOwnerLinks)
+	return cloneSnapshotRefLinks(state.snapshotOwnerLinks), nil
 }
 
 func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
@@ -1598,26 +1627,25 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 			return nil
 		}
 
-		links := res.loadSnapshotOwnerLinks()
-		res.payloadMu.RLock()
-		for role := range res.snapshotLeaseCleanupRoles {
-			links = append(links, PersistedSnapshotRefLink{Role: role})
-		}
-		res.payloadMu.RUnlock()
-
-		seen := make(map[snapshotOwnerKey]struct{}, len(links))
+		seen := make(map[snapshotOwnerKey]struct{})
 		var rerr error
-		for _, link := range links {
-			key := snapshotOwnerKey{Role: link.Role}
-			if _, alreadySeen := seen[key]; alreadySeen {
+		for _, link := range res.loadSnapshotOwnerLinks() {
+			key, err := snapshotLinkKey(link)
+			if err != nil {
+				rerr = errors.Join(rerr, err)
 				continue
 			}
 			seen[key] = struct{}{}
-			rerr = errors.Join(rerr, c.snapshotManager.RemoveLease(
-				ctx,
-				resultSnapshotLeaseID(res.id, link.Role),
-			))
 		}
+		res.payloadMu.RLock()
+		for key := range res.snapshotLeaseCleanupRoles {
+			seen[key] = struct{}{}
+		}
+		res.payloadMu.RUnlock()
+		for key := range seen {
+			rerr = errors.Join(rerr, c.snapshotManager.RemoveLease(ctx, resultSnapshotLeaseIDForKey(res.id, key)))
+		}
+
 		return rerr
 	}
 }
@@ -1634,7 +1662,10 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	res.leaseSyncMu.Lock()
 	defer res.leaseSyncMu.Unlock()
 
-	links := desiredSnapshotLinksForResult(res)
+	links, err := desiredSnapshotLinksForResult(res)
+	if err != nil {
+		return err
+	}
 
 	oldLinks := res.loadSnapshotOwnerLinks()
 
@@ -1642,11 +1673,21 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
 
 	for _, link := range oldLinks {
-		oldByKey[snapshotOwnerKey{Role: link.Role}] = link
+		key, err := snapshotLinkKey(link)
+		if err != nil {
+			return err
+		}
+		oldByKey[key] = link
 	}
 	for _, link := range links {
-		key := snapshotOwnerKey{Role: link.Role}
-		if prev, found := newByKey[key]; found && prev.RefKey != link.RefKey {
+		key, err := snapshotLinkKey(link)
+		if err != nil {
+			return err
+		}
+		if link.RefKey == "" {
+			return fmt.Errorf("empty snapshot key")
+		}
+		if prev, found := newByKey[key]; found {
 			return fmt.Errorf(
 				"sync result %d snapshot owner leases: conflicting desired links for %q: %q vs %q",
 				res.id,
@@ -1663,7 +1704,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		if !ok || newLink.RefKey != oldLink.RefKey {
 			if err := c.snapshotManager.RemoveLease(
 				ctx,
-				resultSnapshotLeaseID(res.id, key.Role),
+				resultSnapshotLeaseIDForKey(res.id, key),
 			); err != nil {
 				return err
 			}
@@ -1675,13 +1716,13 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		if !ok || oldLink.RefKey != newLink.RefKey {
 			res.payloadMu.Lock()
 			if res.snapshotLeaseCleanupRoles == nil {
-				res.snapshotLeaseCleanupRoles = map[string]struct{}{}
+				res.snapshotLeaseCleanupRoles = map[snapshotOwnerKey]struct{}{}
 			}
-			res.snapshotLeaseCleanupRoles[key.Role] = struct{}{}
+			res.snapshotLeaseCleanupRoles[key] = struct{}{}
 			res.payloadMu.Unlock()
 			if err := c.snapshotManager.AttachLease(
 				ctx,
-				resultSnapshotLeaseID(res.id, key.Role),
+				resultSnapshotLeaseIDForKey(res.id, key),
 				newLink.RefKey,
 			); err != nil {
 				return err
@@ -1715,9 +1756,9 @@ func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult
 	return c.syncResultSnapshotLeases(ctx, shared)
 }
 
-func (c *Cache) desiredImportedOwnerLeaseIDs() map[string]struct{} {
+func (c *Cache) desiredImportedOwnerLeaseIDs() (map[string]struct{}, error) {
 	if c == nil {
-		return nil
+		return nil, nil
 	}
 
 	c.egraphMu.RLock()
@@ -1731,13 +1772,16 @@ func (c *Cache) desiredImportedOwnerLeaseIDs() map[string]struct{} {
 
 	desired := make(map[string]struct{})
 	for _, res := range results {
-		links := desiredSnapshotLinksForResult(res)
+		links, err := desiredSnapshotLinksForResult(res)
+		if err != nil {
+			return nil, err
+		}
 		for _, link := range links {
-			desired[resultSnapshotLeaseID(res.id, link.Role)] = struct{}{}
+			desired[resultSnapshotLeaseID(res.id, link.Role, link.OutputPath)] = struct{}{}
 		}
 	}
 
-	return desired
+	return desired, nil
 }
 
 func prepareCacheDBs(ctx context.Context, dbPath string) (*sql.DB, *persistdb.Queries, error) {
@@ -1821,6 +1865,7 @@ func wipeSQLiteFiles(dbPath string) error {
 }
 
 type Cache struct {
+	partFixture              atomic.Pointer[partFixtureState]
 	testTransferCopied       func(uint64)
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
@@ -2112,6 +2157,7 @@ type cacheUsageMayChange interface {
 
 // sharedResult holds cache-entry state and shared payload published to per-call Result values.
 type sharedResult struct {
+	inlineBorrow *PartHost
 	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
 	imported                    bool
 	partOffers                  map[string]*partOffer
@@ -2179,7 +2225,7 @@ type sharedResult struct {
 	snapshotOwnerLinks        []PersistedSnapshotRefLink
 	snapshotLinkIntent        *snapshotLinkIntent
 	payloadRevision           uint64
-	snapshotLeaseCleanupRoles map[string]struct{}
+	snapshotLeaseCleanupRoles map[snapshotOwnerKey]struct{}
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
@@ -2381,7 +2427,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		hasValue:           res.hasValue,
 		objClass:           res.objClass,
 		persistedEnvelope:  res.persistedEnvelope,
-		snapshotOwnerLinks: slices.Clone(res.snapshotOwnerLinks),
+		snapshotOwnerLinks: cloneSnapshotRefLinks(res.snapshotOwnerLinks),
 		createdAtUnixNano:  res.createdAtUnixNano,
 		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
 	}
@@ -2409,7 +2455,7 @@ func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
 		return nil
 	}
 	res.payloadMu.RLock()
-	links := slices.Clone(res.snapshotOwnerLinks)
+	links := cloneSnapshotRefLinks(res.snapshotOwnerLinks)
 	res.payloadMu.RUnlock()
 	return links
 }
@@ -2419,7 +2465,7 @@ func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLin
 		return
 	}
 	res.payloadMu.Lock()
-	res.snapshotOwnerLinks = slices.Clone(links)
+	res.snapshotOwnerLinks = cloneSnapshotRefLinks(links)
 	res.payloadRevision++
 	res.payloadMu.Unlock()
 }
@@ -3322,6 +3368,20 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 	cache, err := EngineCache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
+	}
+	if child := detached.cacheSharedResult(); child != nil {
+		if binding, ok := UnwrapAs[HasPartHostBinding](detached); ok {
+			child.inlineBorrow = binding.PartHostBinding()
+		}
+		if child.inlineBorrow == nil {
+			if _, list := UnwrapAs[Enumerable](detached); list {
+				host := cache.partHostFor(r.shared)
+				if r.shared.inlineBorrow != nil {
+					host = r.shared.inlineBorrow
+				}
+				child.inlineBorrow = host.at(host.path.Field("items").Index(nth - 1))
+			}
+		}
 	}
 	return cache.GetOrInitCall(ctx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return detached, nil
@@ -4801,7 +4861,7 @@ func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
 			identities = cacheUsageIdentitiesFromSelf(state.self)
 			sizeMayChange = cacheUsageSizeMayChangeFromSelf(state.self)
 		} else {
-			snapshotLinks = slices.Clone(state.snapshotOwnerLinks)
+			snapshotLinks = cloneSnapshotRefLinks(state.snapshotOwnerLinks)
 			identities = cacheUsageIdentitiesFromSnapshotLinks(snapshotLinks)
 		}
 		if len(identities) == 0 {
@@ -5702,6 +5762,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 
 			resWasCacheBacked = true
 		} else {
+			if source := oc.val.cacheSharedResult(); source != nil && source.inlineBorrow != nil {
+				if err := c.validateInlineBorrow(source.inlineBorrow, req, oc.val); err != nil {
+					return err
+				}
+				oc.res.inlineBorrow = source.inlineBorrow
+			}
 			oc.res.self = oc.val.Unwrap()
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				if frame := shared.loadResultCall(); frame != nil {
@@ -5720,7 +5786,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			oc.res.hasValue = true
 			oc.res.payloadRevision++
 
-			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
+			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok && oc.res.inlineBorrow == nil {
 				oc.res.onRelease = onReleaser.OnRelease
 			}
 			isObject, objClass, err := resultIsObject(oc.val, resolver)
@@ -6026,7 +6092,14 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			return attachErr
 		}
 	}
-	if err := c.syncResultSnapshotLeases(ctx, oc.res); err != nil {
+	if err := func() error {
+		if !resWasCacheBacked {
+			if err := c.attachInlineHosts(oc.res, oc.val); err != nil {
+				return err
+			}
+		}
+		return c.syncResultSnapshotLeases(ctx, oc.res)
+	}(); err != nil {
 		c.egraphMu.Lock()
 		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
 		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
@@ -6057,7 +6130,7 @@ func AttachmentResolverServer(ctx context.Context) *Server {
 }
 
 func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
-	if parent == nil || val == nil {
+	if parent == nil || val == nil || parent.inlineBorrow != nil {
 		return nil
 	}
 	withKinds, hasKinds := UnwrapAs[HasDependencyResultsKinds](val)

@@ -1087,3 +1087,5 @@ func (container *Container) nativeGroupParts(ctx context.Context, op LazyContain
 	}
 	return writes, nil
 }
+
+func (container *Container) PartHostBinding() *dagql.PartHost { return container.partHost.Load() }

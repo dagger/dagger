@@ -1263,7 +1263,7 @@ func (container *Container) AttachDependencyResultsKinds(
 func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
 	if container != nil {
 		if view := container.acquiredOutput.Load(); view != nil {
-			return slices.Clone(view.Links)
+			return dagql.ClonePersistedSnapshotLinks(view.Links)
 		}
 	}
 	if container == nil {
@@ -1313,7 +1313,9 @@ func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapsho
 	for _, stored := range container.storedParts {
 		if stored.SnapshotID != "" {
 			link := dagql.PersistedSnapshotRefLink{RefKey: stored.SnapshotID, Role: stored.Role}
-			if !slices.Contains(links, link) {
+			if !slices.ContainsFunc(links, func(existing dagql.PersistedSnapshotRefLink) bool {
+				return existing.Role == link.Role && existing.RefKey == link.RefKey
+			}) {
 				links = append(links, link)
 			}
 		}
@@ -1613,7 +1615,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		if _, err := mapContainerTransferParts(dagql.PersistedPayloadVisit{SnapshotLinks: links}, envelope); err != nil {
 			return nil, err
 		}
-		container.acquiredOutput.Store(&containerAcquiredOutput{Payload: envelope, Links: slices.Clone(links), Revision: 1})
+		container.acquiredOutput.Store(&containerAcquiredOutput{Payload: envelope, Links: dagql.ClonePersistedSnapshotLinks(links), Revision: 1})
 		for part, descriptor := range envelope.Parts {
 			if descriptor.Kind == containerPartAbsent {
 				container.setAbsentTransferPart(part)

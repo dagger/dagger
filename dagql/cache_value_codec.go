@@ -94,13 +94,29 @@ func walkTransferCalls(frame *ResultCall, visit func(*ResultCall) error, refVisi
 
 // walkTransferPayloads visits declared envelopes, never arbitrary JSON fields.
 func walkTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink, path PersistedRefPath, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
+	scopes, err := partitionSnapshotLinks(*env, links)
+	if err != nil {
+		return err
+	}
+	// Mutations are private until the entire declared walk succeeds.
+	next, err := clonePersistedEnvelope(*env)
+	if err != nil {
+		return err
+	}
+	if err := walkScopedTransferPayloads(&next, frame, scopes, path, visit); err != nil {
+		return err
+	}
+	*env = next
+	return nil
+}
+func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
 	switch env.Kind {
 	case persistedResultKindObject:
 		family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
 		if !ok {
 			return fmt.Errorf("unknown object codec %q at %s", env.ObjectCodec, path)
 		}
-		raw, err := visit(family, PersistedPayloadVisit{Version: env.Version, Call: frame, Path: path, Payload: env.ObjectJSON, SnapshotLinks: links})
+		raw, err := visit(family, PersistedPayloadVisit{Version: env.Version, Call: frame, Path: path, Payload: env.ObjectJSON, SnapshotLinks: scopes.project(path)})
 		if err != nil {
 			return fmt.Errorf("codec %s at %s: %w", family.Name, path, err)
 		}
@@ -111,7 +127,7 @@ func walkTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links
 			if frame != nil {
 				childCall = persistedListItemCall(frame, i+1)
 			}
-			if err := walkTransferPayloads(&env.Items[i], childCall, nil, path.Field("items").Index(i), visit); err != nil {
+			if err := walkScopedTransferPayloads(&env.Items[i], childCall, scopes, path.Field("items").Index(i), visit); err != nil {
 				return err
 			}
 		}

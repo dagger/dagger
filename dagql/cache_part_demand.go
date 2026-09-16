@@ -64,6 +64,9 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	return true
 }
 func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *sharedResult, parts []PartKey) (rerr error) {
+	return c.evaluateAcquiredScope(ctx, res, row, nil, parts)
+}
+func (c *Cache) evaluateAcquiredScope(ctx context.Context, res AnyResult, row *sharedResult, path PersistedRefPath, parts []PartKey) (rerr error) {
 	c.egraphMu.Lock()
 	if c.resultsByID[row.id] != row {
 		c.egraphMu.Unlock()
@@ -74,7 +77,7 @@ func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *s
 	defer func() { rerr = errors.Join(rerr, c.releasePartRow(context.WithoutCancel(ctx), row)) }()
 	if len(parts) == 0 {
 		// Metadata establishes a Container's final target-keyed output set.
-		record, _, _, err := c.probePart(ctx, row, PersistedPartAddress{Part: "metadata"})
+		record, _, _, err := c.probePart(ctx, row, PersistedPartAddress{OutputPath: path, Part: "metadata"})
 		if err != nil {
 			return err
 		}
@@ -84,15 +87,15 @@ func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *s
 		}
 		hasMetadata := false
 		for _, out := range outputs {
-			if out.Address.Part == "metadata" {
+			if slices.Equal(out.Address.OutputPath, path) && out.Address.Part == "metadata" {
 				hasMetadata = true
 			}
 		}
 		if hasMetadata {
-			if err := c.demandPart(ctx, res, PersistedPartAddress{Part: "metadata"}); err != nil {
+			if err := c.demandPart(ctx, res, PersistedPartAddress{OutputPath: path, Part: "metadata"}); err != nil {
 				return err
 			}
-			record, _, _, err = c.probePart(ctx, row, PersistedPartAddress{Part: "metadata"})
+			record, _, _, err = c.probePart(ctx, row, PersistedPartAddress{OutputPath: path, Part: "metadata"})
 			if err != nil {
 				return err
 			}
@@ -102,12 +105,14 @@ func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *s
 			}
 		}
 		for _, out := range outputs {
-			parts = append(parts, out.Address.Part)
+			if slices.Equal(out.Address.OutputPath, path) {
+				parts = append(parts, out.Address.Part)
+			}
 		}
 	}
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, part := range parts {
-		eg.Go(func() error { return c.demandPart(ctx, res, PersistedPartAddress{Part: part}) })
+		eg.Go(func() error { return c.demandPart(ctx, res, PersistedPartAddress{OutputPath: path, Part: part}) })
 	}
 	return eg.Wait()
 }
@@ -165,10 +170,8 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					return err
 				}
 				if probe != nil && probe.LocalComplete && !probe.Busy {
-					if opener, ok := UnwrapAs[PartOutputOpener](res); ok {
-						if err := opener.OpenPart(ctx, address); err != nil {
-							return err
-						}
+					if err := c.openAcquiredPart(ctx, res, address); err != nil {
+						return err
 					}
 					session, err := partSession(ctx)
 					if err != nil {
@@ -200,6 +203,11 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					return err
 				}
 				if source != nil {
+					kind := "selected-ready"
+					if source.readiness == PartDownloadable {
+						kind = "selected-chain"
+					}
+					c.recordPartFixture(row, address, kind)
 					var ownership atomic.Uint32 // 0 caller, 1 body, 2 caller released before body entry
 					err = c.RunLazyTask(ctx, res, partTaskKey("obtain", address), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 						if !ownership.CompareAndSwap(0, 1) {
@@ -361,7 +369,11 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 		if err != nil {
 			return err
 		}
-		family, ok := PersistedObjectFamilyByName(record.Envelope.ObjectCodec)
+		local, err := partRecordAt(record, address.OutputPath)
+		if err != nil {
+			return err
+		}
+		family, ok := PersistedObjectFamilyByName(local.Envelope.ObjectCodec)
 		if !ok {
 			return fmt.Errorf("producer: unsupported output family")
 		}
@@ -369,7 +381,7 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 		if !ok {
 			return fmt.Errorf("producer: family has no saved invoker")
 		}
-		invocation, err := factory.PreparePartProducer(ctx, c.partDecodeContext(ctx, row, record), record, route)
+		invocation, err := factory.PreparePartProducer(ctx, c.partDecodeContext(ctx, row, record).atPath(address.OutputPath), local, route)
 		if err != nil {
 			return err
 		}
@@ -410,16 +422,20 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 			if outcome != GateGranted {
 				return ErrPartReselect
 			}
+			c.recordPartFixture(row, address, "producer-enter")
 			if err := invocation.Run(ctx); err != nil {
 				return err
 			}
-			encoding, err := invocation.Capture(ctx, NewPersistEncodeContext(c, uint64(row.id), record.Call))
+			encoding, err := invocation.Capture(ctx, NewPersistEncodeContext(c, uint64(row.id), local.Call))
 			if err != nil {
 				return err
 			}
-			produced := record
-			produced.Envelope.ObjectJSON = encoding.JSON
-			produced.SnapshotLinks = encoding.SnapshotLinks
+			local.Envelope.ObjectJSON = encoding.JSON
+			local.SnapshotLinks = encoding.SnapshotLinks
+			produced, err := replacePartRecord(record, address.OutputPath, local)
+			if err != nil {
+				return err
+			}
 			return c.publishProducedParts(ctx, res, address, produced, original, cleanup)
 		}
 		return ErrPartReselect

@@ -56,9 +56,10 @@ type MirrorPersistedEdge struct {
 }
 
 type MirrorResultSnapshotLink struct {
-	ResultID int64
-	RefKey   string
-	Role     string
+	OutputPath string
+	ResultID   int64
+	RefKey     string
+	Role       string
 }
 
 type MirrorSnapshotContentLink struct {
@@ -192,11 +193,11 @@ func (q *Queries) InsertMirrorPersistedEdge(ctx context.Context, arg MirrorPersi
 }
 
 const insertMirrorResultSnapshotLink = `
-INSERT INTO result_snapshot_links (result_id, ref_key, role) VALUES (?, ?, ?)
+INSERT INTO result_snapshot_links (result_id, ref_key, role, output_path) VALUES (?, ?, ?, ?)
 `
 
 func (q *Queries) InsertMirrorResultSnapshotLink(ctx context.Context, arg MirrorResultSnapshotLink) error {
-	_, err := q.exec(ctx, nil, insertMirrorResultSnapshotLink, arg.ResultID, arg.RefKey, arg.Role)
+	_, err := q.exec(ctx, nil, insertMirrorResultSnapshotLink, arg.ResultID, arg.RefKey, arg.Role, arg.OutputPath)
 	return err
 }
 
@@ -398,7 +399,7 @@ func (q *Queries) ListMirrorResultDeps(ctx context.Context) ([]MirrorResultDep, 
 	return out, rows.Err()
 }
 
-const listMirrorResultSnapshotLinks = `SELECT result_id, ref_key, role FROM result_snapshot_links`
+const listMirrorResultSnapshotLinks = `SELECT result_id, ref_key, role, output_path FROM result_snapshot_links`
 
 func (q *Queries) ListMirrorResultSnapshotLinks(ctx context.Context) ([]MirrorResultSnapshotLink, error) {
 	rows, err := q.db.QueryContext(ctx, listMirrorResultSnapshotLinks)
@@ -409,7 +410,7 @@ func (q *Queries) ListMirrorResultSnapshotLinks(ctx context.Context) ([]MirrorRe
 	var out []MirrorResultSnapshotLink
 	for rows.Next() {
 		var row MirrorResultSnapshotLink
-		if err := rows.Scan(&row.ResultID, &row.RefKey, &row.Role); err != nil {
+		if err := rows.Scan(&row.ResultID, &row.RefKey, &row.Role, &row.OutputPath); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

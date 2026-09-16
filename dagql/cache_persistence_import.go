@@ -69,7 +69,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	}
 
 	if len(resultRows) == 0 && len(eqClassRows) == 0 && len(termRows) == 0 {
-		return nil
+		return c.reconcileEmptyOwnerLeases(ctx)
 	}
 
 	var eagerDecodeResultIDs []sharedResultID
@@ -353,13 +353,22 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if res == nil {
 				return fmt.Errorf("import result_snapshot_link: missing result %d", row.ResultID)
 			}
+			var outputPath PersistedRefPath
+			if err := json.Unmarshal([]byte(row.OutputPath), &outputPath); err != nil {
+				return fmt.Errorf("snapshot output path: %w", err)
+			}
+			pathKey, err := canonicalPath(outputPath)
+			if err != nil {
+				return err
+			}
 			res.payloadMu.Lock()
 			res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, PersistedSnapshotRefLink{
-				RefKey: row.RefKey,
-				Role:   row.Role,
+				OutputPath: outputPath,
+				RefKey:     row.RefKey,
+				Role:       row.Role,
 			})
 			res.payloadMu.Unlock()
-			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role)
+			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role, pathKey)
 		}
 
 		if err := c.validateStoredOwnershipLocked(); err != nil {
@@ -466,13 +475,13 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			continue
 		}
 		decodeCtx := ContextWithCall(ctx, call)
-		decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: slices.Clone(state.snapshotOwnerLinks), Imported: state.imported, Host: c.partHostFor(res)})
+		decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(state.snapshotOwnerLinks), Imported: state.imported, Host: c.partHostFor(res)})
 		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *state.persistedEnvelope); err == nil && decoded != nil {
 			res.payloadMu.Lock()
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
 				res.payloadMu.Unlock()
-				if release, ok := UnwrapAs[OnReleaser](decoded); ok {
-					if err := release.OnRelease(context.WithoutCancel(ctx)); err != nil {
+				if release := decoded.cacheSharedResult().onRelease; release != nil {
+					if err := release(context.WithoutCancel(ctx)); err != nil {
 						return err
 					}
 				}
@@ -492,9 +501,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				// and is read under egraphMu, not payloadMu.
 				res.persistedEnvelope = nil
 				res.payloadRevision++
-				if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
-					res.onRelease = joinOnRelease(res.onRelease, onReleaser.OnRelease)
-				}
+				res.onRelease = joinOnRelease(res.onRelease, decoded.cacheSharedResult().onRelease)
 			}
 			res.payloadMu.Unlock()
 			if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
@@ -543,7 +550,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			return fmt.Errorf("hydrate snapshot metadata: %w", err)
 		}
 
-		desiredLeaseIDs := c.desiredImportedOwnerLeaseIDs()
+		desiredLeaseIDs, err := c.desiredImportedOwnerLeaseIDs()
+		if err != nil {
+			return err
+		}
 		c.egraphMu.RLock()
 		results := make([]*sharedResult, 0, len(c.resultsByID))
 		for _, res := range c.resultsByID {
@@ -553,17 +563,23 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 		c.egraphMu.RUnlock()
 		for _, res := range results {
-			links := desiredSnapshotLinksForResult(res)
+			links, err := desiredSnapshotLinksForResult(res)
+			if err != nil {
+				return err
+			}
 			seen := make(map[snapshotOwnerKey]struct{}, len(links))
 			for _, link := range links {
-				key := snapshotOwnerKey{Role: link.Role}
+				key, err := snapshotLinkKey(link)
+				if err != nil {
+					return err
+				}
 				if _, alreadySeen := seen[key]; alreadySeen {
 					continue
 				}
 				seen[key] = struct{}{}
 				if err := c.snapshotManager.AttachLease(
 					ctx,
-					resultSnapshotLeaseID(res.id, link.Role),
+					resultSnapshotLeaseIDForKey(res.id, key),
 					link.RefKey,
 				); err != nil {
 					return fmt.Errorf("attach imported result %d owner lease %q: %w", res.id, key.Role, err)
@@ -571,7 +587,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 		}
 		if err := c.snapshotManager.DeleteStaleDaggerOwnerLeases(ctx, desiredLeaseIDs); err != nil {
-			return fmt.Errorf("delete stale owner leases: %w", err)
+			return fmt.Errorf("%w: %w", errOwnerLeaseReconciliation, err)
 		}
 	}
 
@@ -793,7 +809,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			if state.snapshotLinkIntent != nil {
 				roles = state.snapshotLinkIntent.Links
 			}
-			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: slices.Clone(roles), Imported: state.imported, Host: c.partHostFor(res)})
+			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(roles), Imported: state.imported, Host: c.partHostFor(res)})
 			decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
 			if err != nil {
 				c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
@@ -810,8 +826,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			res.payloadMu.Lock()
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
 				res.payloadMu.Unlock()
-				if release, ok := UnwrapAs[OnReleaser](decoded); ok {
-					if err := release.OnRelease(context.WithoutCancel(ctx)); err != nil {
+				if release := decoded.cacheSharedResult().onRelease; release != nil {
+					if err := release(context.WithoutCancel(ctx)); err != nil {
 						finishPersistDecode(err, false)
 						return nil, err
 					}
@@ -833,9 +849,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				// lookup filter, which reads the field under egraphMu.
 				res.persistedEnvelope = nil
 				res.payloadRevision++
-				if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
-					res.onRelease = joinOnRelease(res.onRelease, onReleaser.OnRelease)
-				}
+				res.onRelease = joinOnRelease(res.onRelease, decoded.cacheSharedResult().onRelease)
 				c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 			}
 			res.payloadMu.Unlock()

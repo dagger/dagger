@@ -92,7 +92,7 @@ func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imp
 	payload := shared.loadPayloadState()
 	version.payload = payload
 	if payload.snapshotLinkIntent != nil {
-		payload.snapshotOwnerLinks = slices.Clone(payload.snapshotLinkIntent.Links)
+		payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
 	}
 	frame := shared.loadResultCall().clone()
 	captured := &sharedResult{
@@ -138,7 +138,7 @@ func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imp
 		ResultID:      uint64(shared.id),
 		Envelope:      envelope,
 		Call:          frame,
-		SnapshotLinks: slices.Clone(encoding.SnapshotLinks),
+		SnapshotLinks: cloneSnapshotRefLinks(encoding.SnapshotLinks),
 	}, nil
 }
 

@@ -54,9 +54,6 @@ func (c *Cache) publishProducedParts(ctx context.Context, res AnyResult, demande
 	}
 }
 func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) (_ *PreparedReadyPart, rerr error) {
-	if len(demanded.OutputPath) != 0 {
-		return nil, fmt.Errorf("inline producer publication awaits scoped snapshot-link Addendum 1")
-	}
 	row := res.cacheSharedResult()
 	session, err := partSession(ctx)
 	if err != nil {
@@ -89,19 +86,7 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 	if err != nil {
 		return nil, err
 	}
-	family, ok := PersistedObjectFamilyByName(current.Envelope.ObjectCodec)
-	if !ok {
-		return nil, fmt.Errorf("producer publication: unknown family")
-	}
-	describe, ok := family.Transfer.(PersistedPartDescriber)
-	if !ok {
-		return nil, fmt.Errorf("producer publication: missing describer")
-	}
-	codec, ok := family.Transfer.(PersistedPartInstaller)
-	if !ok {
-		return nil, fmt.Errorf("producer publication: missing installer")
-	}
-	probes, err := describe.DescribeParts(PersistedPayloadVisit{Call: produced.Call, Payload: produced.Envelope.ObjectJSON, SnapshotLinks: produced.SnapshotLinks})
+	probes, err := describePartRecord(produced)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +99,7 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 	if !producedParts[demandedKey].LocalComplete {
 		return nil, fmt.Errorf("saved producer left required output %s unset", demanded.Part)
 	}
-	currentProbes, err := describe.DescribeParts(PersistedPayloadVisit{Call: current.Call, Payload: current.Envelope.ObjectJSON, SnapshotLinks: current.SnapshotLinks})
+	currentProbes, err := describePartRecord(current)
 	if err != nil {
 		return nil, err
 	}
@@ -136,9 +121,8 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 			return nil, fmt.Errorf("saved producer left write-set output %s unset", address.Part)
 		}
 		d := probe.Descriptor
-		d.Family = family.Name
 		d.Address = clonePartAddress(address)
-		next, err := codec.PreparePartRecord(p.next, produced, d, address)
+		next, err := prepareScopedPartRecord(p.next, produced, d, address)
 		if err != nil {
 			return nil, err
 		}
@@ -189,19 +173,30 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 		return nil, err
 	}
 	if p.version.payload.hasValue {
-		dec := c.partDecodeContext(ctx, row, p.next)
+		dec := c.partDecodeContext(ctx, row, p.next).atPath(demanded.OutputPath)
+		value, err := inlineValueAt(res, current.Call, demanded.OutputPath)
+		if err != nil {
+			return nil, err
+		}
+		local, err := partRecordAt(p.next, demanded.OutputPath)
+		if err != nil {
+			return nil, err
+		}
+		for i := range descriptors {
+			descriptors[i].Address.OutputPath = nil
+		}
 		if len(descriptors) > 1 {
-			store, ok := UnwrapAs[PartBatchStorePreparer](res)
+			store, ok := UnwrapAs[PartBatchStorePreparer](value)
 			if !ok {
 				return nil, fmt.Errorf("producer publication: no batch store")
 			}
-			p.store, err = store.PreparePartStores(ctx, dec, p.next, descriptors, refs)
+			p.store, err = store.PreparePartStores(ctx, dec, local, descriptors, refs)
 		} else {
-			store, ok := UnwrapAs[PartStorePreparer](res)
+			store, ok := UnwrapAs[PartStorePreparer](value)
 			if !ok {
 				return nil, fmt.Errorf("producer publication: no store")
 			}
-			p.store, err = store.PreparePartStore(ctx, dec, p.next, descriptors[0], refs[0])
+			p.store, err = store.PreparePartStore(ctx, dec, local, descriptors[0], refs[0])
 		}
 		if err != nil {
 			return nil, err
