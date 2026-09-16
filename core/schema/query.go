@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
@@ -37,6 +36,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			View(AllVersion).
 			IsPersistable().
 			WithInput(dagql.CurrentSchemaInput).
+			WithInput(engineDefaultPlatformInput).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
@@ -230,28 +230,11 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	var dirInst dagql.ObjectResult[*core.Directory]
-	if err := dag.Select(ctx, dag.Root(), &dirInst, dagql.Selector{Field: "directory"}); err != nil {
-		return inst, err
-	}
-
 	file := &core.File{
 		Platform: parent.Self().Platform(),
 		File:     new(core.LazyAccessor[string, *core.File]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
-	}
-
-	if err := file.WithContents(ctx, dirInst, schemaJSONFilename, moduleSchemaJSON, perm, nil); err != nil {
-		return inst, err
-	}
-
-	defer func() {
-		if rerr != nil {
-			rerr = errors.Join(rerr, file.OnRelease(context.WithoutCancel(ctx)))
-		}
-	}()
-	if err := core.RecordCompletedProducer(file, &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: schemaJSONFilename, Contents: slices.Clone(moduleSchemaJSON), Permissions: perm}); err != nil {
-		return inst, err
+		Lazy:     &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: schemaJSONFilename, Contents: slices.Clone(moduleSchemaJSON), Permissions: perm},
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, file)
 }

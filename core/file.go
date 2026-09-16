@@ -580,6 +580,7 @@ func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
 		if err != nil {
 			return fmt.Errorf("create blob scratch snapshot: %w", err)
 		}
+		defer func() { rerr = errors.Join(rerr, scratch.Release(context.WithoutCancel(ctx))) }()
 		newRef, err := query.SnapshotManager().New(
 			ctx,
 			scratch,
