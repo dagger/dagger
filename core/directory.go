@@ -117,6 +117,8 @@ func (dir *Directory) AttachDependencyResultsKinds(
 	}
 	lazy := dir.Lazy
 	if lazy == nil {
+		// A live recipe belongs to exactly one value. Concurrent publication of
+		// one shared value is out of scope; attachment updates the recipe's inputs.
 		lazy = dir.completedRecipe
 	}
 	if lazy == nil {
