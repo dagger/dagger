@@ -106,10 +106,14 @@ func (file *File) AttachDependencyResultsKinds(
 	if err != nil {
 		return nil, err
 	}
-	if file.Lazy == nil {
+	lazy := file.Lazy
+	if lazy == nil {
+		lazy = file.completedRecipe
+	}
+	if lazy == nil {
 		return serviceDeps, nil
 	}
-	lazyDeps, err := file.Lazy.AttachDependencies(ctx, attach)
+	lazyDeps, err := lazy.AttachDependencies(ctx, attach)
 	if err != nil {
 		return nil, err
 	}

@@ -115,10 +115,14 @@ func (dir *Directory) AttachDependencyResultsKinds(
 	if err != nil {
 		return nil, err
 	}
-	if dir.Lazy == nil {
+	lazy := dir.Lazy
+	if lazy == nil {
+		lazy = dir.completedRecipe
+	}
+	if lazy == nil {
 		return serviceDeps, nil
 	}
-	lazyDeps, err := dir.Lazy.AttachDependencies(ctx, attach)
+	lazyDeps, err := lazy.AttachDependencies(ctx, attach)
 	if err != nil {
 		return nil, err
 	}
