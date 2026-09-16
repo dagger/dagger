@@ -2912,15 +2912,10 @@ func (args LLMTranscriptArgs) validate() error {
 	return nil
 }
 
-// Transcript returns the selected message history as plain text suitable for
-// LLM consumption. Pagination counts messages with renderable content, not
-// blocks; even tail pages are returned in chronological order.
-func (llm *LLM) Transcript(args LLMTranscriptArgs) (string, error) {
-	if err := args.validate(); err != nil {
-		return "", err
-	}
+// selectMessages filters and paginates before any transcript formatting.
+func (args LLMTranscriptArgs) selectMessages(messages []*LLMMessage) []*LLMMessage {
 	fromEnd := args.Last.Valid && args.Last.Value > 0
-	remaining := len(llm.Messages)
+	remaining := len(messages)
 	if args.Limit.Valid && args.Limit.Value > 0 {
 		remaining = args.Limit.Value.Int()
 	} else if fromEnd {
@@ -2928,12 +2923,12 @@ func (llm *LLM) Transcript(args LLMTranscriptArgs) (string, error) {
 	}
 	skip := args.Offset
 	selected := []*LLMMessage{}
-	for n := 0; n < len(llm.Messages) && remaining > 0; n++ {
+	for n := 0; n < len(messages) && remaining > 0; n++ {
 		i := n
 		if fromEnd {
-			i = len(llm.Messages) - 1 - n
+			i = len(messages) - 1 - n
 		}
-		msg := llm.Messages[i]
+		msg := messages[i]
 		if msg == nil {
 			continue
 		}
@@ -2960,8 +2955,19 @@ func (llm *LLM) Transcript(args LLMTranscriptArgs) (string, error) {
 		slices.Reverse(selected)
 	}
 
+	return selected
+}
+
+// Transcript returns the selected message history as plain text suitable for
+// LLM consumption. Pagination counts messages with renderable content, not
+// blocks; even tail pages are returned in chronological order.
+func (llm *LLM) Transcript(args LLMTranscriptArgs) (string, error) {
+	if err := args.validate(); err != nil {
+		return "", err
+	}
+
 	var parts []string
-	for _, msg := range selected {
+	for _, msg := range args.selectMessages(llm.Messages) {
 		switch msg.Role {
 		case LLMMessageRoleUser:
 			for _, block := range msg.Content {
