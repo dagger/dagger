@@ -48,6 +48,15 @@ case *File:
 	ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(value)
 }
 `},
+			{"completed_producer.go", "func RecordCompletedContainerMountProducer(value *Container, producer Lazy[*Container]) error {", `
+{
+value.Lazy = producer
+mount := value.Mounts[len(value.Mounts)-1]
+var ref bkcache.ImmutableRef
+if mount.DirectorySource != nil { dir, _ := mount.DirectorySource.Peek(); ref, _ = dir.Snapshot.Peek() } else { file, _ := mount.FileSource.Peek(); ref, _ = file.Snapshot.Peek() }
+ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(value)
+}
+`},
 			{"builtincontainer.go", "func recordCompletedBuiltinProducer(container *Container, producer *ContainerBuiltinLazy) error {", `
 container.Lazy = producer
 fs, _ := container.FS.Peek()
@@ -56,7 +65,11 @@ ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(cont
 `},
 		} {
 			source := filepath.Join(root, "core", injection.file)
-			data, err := os.ReadFile(source)
+			input := source
+			if previous := replace[source]; previous != "" {
+				input = previous
+			}
+			data, err := os.ReadFile(input)
 			require.NoError(t, err)
 			require.Equal(t, 1, strings.Count(string(data), injection.anchor))
 			modified, err := format.Source([]byte(strings.Replace(string(data), injection.anchor, injection.anchor+injection.body, 1)))
@@ -78,7 +91,7 @@ ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(cont
 		return
 	}
 
-	for _, site := range []string{"cleaned", "HTTP", "bundle", "schema File", "builtin Container"} {
+	for _, site := range []string{"cleaned", "HTTP", "bundle", "schema File", "builtin Container", "mounted File", "mounted Directory"} {
 		t.Run(site, func(t *testing.T) {
 			ctx, srv, cache, server := resolverOutputFixture(t)
 			releaseErr := errors.New("injected recording cleanup failure")
@@ -86,6 +99,38 @@ ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(cont
 			var invoke func(context.Context) error
 			var borrowed *resolverOutputRef
 			switch site {
+			case "mounted File", "mounted Directory":
+				borrowed = &resolverOutputRef{root: t.TempDir(), id: "mount-input"}
+				server.manager.inputs = map[string]*resolverOutputRef{borrowed.id: borrowed}
+				platform := core.Platform{OS: "linux", Architecture: "amd64"}
+				dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]), Platform: platform}
+				dir.SetPath("/")
+				dir.SetSnapshot(borrowed)
+				ctr := core.NewContainer(platform)
+				ctr.FS.SetValue(dir)
+				parent := resolverAttach(t, ctx, srv, cache, "mountParent", ctr)
+				if site == "mounted Directory" {
+					source := resolverAttach(t, ctx, srv, cache, "mountSourceDirectory", dir)
+					id, err := source.ID()
+					require.NoError(t, err)
+					invoke = installRecordingFaultCall(t, srv, func(ctx context.Context) (dagql.ObjectResult[*core.Container], error) {
+						out, err := (&containerSchema{}).withMountedDirectory(ctx, parent, containerWithMountedDirectoryArgs{Path: "/target", Source: dagql.NewID[*core.Directory](id), ReadOnly: true})
+						require.Nil(t, out)
+						return dagql.ObjectResult[*core.Container]{}, err
+					})
+				} else {
+					file := &core.File{File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Platform: platform}
+					file.SetPath("/payload")
+					file.SetSnapshot(borrowed)
+					source := resolverAttach(t, ctx, srv, cache, "mountSourceFile", file)
+					id, err := source.ID()
+					require.NoError(t, err)
+					invoke = installRecordingFaultCall(t, srv, func(ctx context.Context) (dagql.ObjectResult[*core.Container], error) {
+						out, err := (&containerSchema{}).withMountedFile(ctx, parent, containerWithMountedFileArgs{Path: "/target", Source: dagql.NewID[*core.File](id)})
+						require.Nil(t, out)
+						return dagql.ObjectResult[*core.Container]{}, err
+					})
+				}
 			case "cleaned", "bundle":
 				root := t.TempDir()
 				run := func(args ...string) {
@@ -174,7 +219,11 @@ ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(cont
 			injected := 0
 			for _, ref := range server.manager.outputs {
 				if ref.faultValue == nil {
-					require.Zero(t, ref.releases, "released retained HTTP state")
+					if strings.HasPrefix(site, "mounted ") {
+						require.Equal(t, 1, ref.releases, "cloned parent ref was not released once")
+					} else {
+						require.Zero(t, ref.releases, "released retained HTTP state")
+					}
 					continue
 				}
 				injected++

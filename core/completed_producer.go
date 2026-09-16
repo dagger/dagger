@@ -17,8 +17,8 @@ func RecordCompletedContainerMountProducer(value *Container, producer Lazy[*Cont
 	if value == nil || nilProducerValue(producer) {
 		return fmt.Errorf("record completed Container mount: nil value or producer")
 	}
-	if value.Lazy != nil || value.completedRecipe != nil || len(value.completedRecipeJSON) != 0 || value.acquiredOutput.Load() != nil || len(value.storedParts) != 0 {
-		return fmt.Errorf("record completed Container mount: pending, restored or already recorded value")
+	if value.Lazy != nil || value.completedRecipe != nil || len(value.completedRecipeJSON) != 0 || value.acquiredOutput.Load() != nil || value.transferPending != nil || len(value.storedParts) != 0 {
+		return fmt.Errorf("record completed Container mount: operation already recorded or pending/restored value")
 	}
 	var target string
 	var directory bool

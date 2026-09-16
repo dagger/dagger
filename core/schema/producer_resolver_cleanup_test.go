@@ -192,12 +192,26 @@ type resolverOutputManager struct {
 	outputs               []*resolverOutputRef
 	leaseFault            error
 	recordingReleaseError error
+	inputs                map[string]*resolverOutputRef
+}
+
+func (m *resolverOutputManager) GetBySnapshotID(_ context.Context, id string, _ ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
+	input := m.inputs[id]
+	if input == nil {
+		return nil, fmt.Errorf("missing test snapshot %s", id)
+	}
+	ref := &resolverOutputRef{root: input.root, id: id, faultReleaseError: m.recordingReleaseError}
+	m.outputs = append(m.outputs, ref)
+	return ref, nil
 }
 
 func (m *resolverOutputManager) AttachLease(context.Context, string, string) error {
 	return m.leaseFault
 }
 func (m *resolverOutputManager) RemoveLease(context.Context, string) error { return nil }
+func (m *resolverOutputManager) DeleteStaleDaggerOwnerLeases(context.Context, map[string]struct{}) error {
+	return nil
+}
 func (m *resolverOutputManager) New(ctx context.Context, parent bkcache.ImmutableRef, _ ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	root := m.t.TempDir()
 	if parent != nil {
