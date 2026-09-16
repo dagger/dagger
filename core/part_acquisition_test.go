@@ -27,6 +27,7 @@ import (
 type partObservedManager struct {
 	bkcache.SnapshotManager
 	bodies             atomic.Int64
+	failBody           atomic.Bool
 	failOwner          atomic.Bool
 	ownerAttempts      atomic.Int64
 	pins               atomic.Int64
@@ -42,8 +43,14 @@ func (m *partObservedManager) GetBySnapshotID(ctx context.Context, id string, op
 
 func (m *partObservedManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	m.bodies.Add(1)
+	if m.failBody.Load() {
+		return nil, partInjectedBodyFailure
+	}
 	return m.SnapshotManager.New(ctx, parent, opts...)
 }
+
+var partInjectedBodyFailure = errors.New("private producer failed")
+var partInjectedProviderFailure = errors.New("supplied blob unavailable")
 
 var partInjectedOwnerFailure = errors.New("injected owner acknowledgement failure")
 
@@ -88,7 +95,7 @@ func (s partTestContentSource) Provider(context.Context, dagql.PersistedPartOffe
 	return s.provider
 }
 func TestPartAcquisitionRootRoutes(t *testing.T) {
-	for _, mode := range []string{"ready", "chain", "chain-sync-retry", "chain-sync-restart", "chain-pin-release-retry", "chain-fallback", "producer"} {
+	for _, mode := range []string{"ready", "chain", "chain-sync-retry", "chain-sync-restart", "chain-pin-release-retry", "chain-fallback", "chain-fallback-producer-failure", "producer"} {
 		t.Run(mode, func(t *testing.T) {
 			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 			actx, a, asrv := transferCache(t, aStore, filepath.Join(t.TempDir(), "a.db"), "a")
@@ -118,8 +125,8 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 				if strings.HasPrefix(mode, "chain") {
 					require.Len(t, exported.Chains.Entries, 1)
 					provider = &testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}
-					if mode == "chain-fallback" {
-						provider.BeforeRead = func(context.Context, ocispec.Descriptor) error { return errors.New("supplied blob unavailable") }
+					if strings.HasPrefix(mode, "chain-fallback") {
+						provider.BeforeRead = func(context.Context, ocispec.Descriptor) error { return partInjectedProviderFailure }
 					}
 					b.SetPartContentSource(partTestContentSource{provider})
 				}
@@ -132,6 +139,17 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 				observed.ownerAttempts.Store(0)
 				observed.pins.Store(0)
 				started := time.Now()
+				if mode == "chain-fallback-producer-failure" {
+					observed.failBody.Store(true)
+					err := b.Evaluate(bctx, result)
+					require.ErrorIs(t, err, partInjectedProviderFailure)
+					require.ErrorIs(t, err, partInjectedBodyFailure)
+					var contentErr *bkcache.ChainContentError
+					require.ErrorAs(t, err, &contentErr)
+					require.EqualValues(t, 1, observed.bodies.Load())
+					require.EqualValues(t, 1, provider.Reads.Load())
+					return nil
+				}
 				if mode == "chain-pin-release-retry" {
 					observed.failPinRelease.Store(true)
 					require.ErrorIs(t, b.Evaluate(bctx, result), partInjectedPinReleaseFailure)

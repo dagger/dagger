@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -78,7 +79,7 @@ func attachDelegationChild(t *testing.T, ctx context.Context, cache *dagql.Cache
 }
 
 func TestPartDelegationRealStore(t *testing.T) {
-	for _, mode := range []string{"ready-parent", "pending-parent", "sync-retry", "native-restart", "ready-parent-over-chain", "ordinary-ready-tie", "child-chain-first", "late-child"} {
+	for _, mode := range []string{"ready-parent", "pending-parent", "sync-retry", "native-restart", "ready-parent-over-chain", "ordinary-ready-tie", "child-chain-first", "late-child", "child-and-parent-failure"} {
 		t.Run(mode, func(t *testing.T) {
 			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 			actx, a, asrv := transferCache(t, aStore, "", "a")
@@ -101,14 +102,14 @@ func TestPartDelegationRealStore(t *testing.T) {
 			bStore.Manager = observed
 			bctx, b, bsrv := transferCache(t, bStore, filepath.Join(t.TempDir(), "b.db"), "b")
 			b.EnableTransferFixtureParts()
-			if mode != "pending-parent" && mode != "child-chain-first" && mode != "late-child" {
+			if mode != "pending-parent" && mode != "child-chain-first" && mode != "late-child" && mode != "child-and-parent-failure" {
 				localRef, _ := bStore.Build(t, nil, "payload", "delegated bytes")
 				local := NewContainer(base.Platform)
 				local.FS.setValue(partTestDirectory(localRef, "/"))
 				attachTransferObject(t, bctx, b, bsrv, "b", "delegationBase", local)
 			}
 			selection := dagql.ValueSelection{Roots: []dagql.AnyResult{result}, Outputs: []dagql.SelectedValueOutput{{Result: parent, Address: dagql.PersistedPartAddress{Part: "fs"}}}}
-			if mode == "ready-parent-over-chain" || mode == "child-chain-first" {
+			if mode == "ready-parent-over-chain" || mode == "child-chain-first" || mode == "child-and-parent-failure" {
 				selection.Outputs = append(selection.Outputs, dagql.SelectedValueOutput{Result: result, Address: dagql.PersistedPartAddress{Part: "fs"}})
 			}
 			require.NoError(t, a.WithExportedValues(actx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
@@ -148,6 +149,21 @@ func TestPartDelegationRealStore(t *testing.T) {
 				}
 				require.NoError(t, b.EvaluateParts(bctx, got, ContainerPartMetadata))
 				require.Zero(t, provider.Reads.Load())
+				if mode == "child-and-parent-failure" {
+					childFailure, parentFailure := errors.New("child chain failed"), errors.New("parent chain failed")
+					provider.BeforeRead = func(context.Context, ocispec.Descriptor) error {
+						if provider.Reads.Load() == 1 {
+							return childFailure
+						}
+						return parentFailure
+					}
+					err := b.EvaluateParts(bctx, got, ContainerPartFS)
+					require.ErrorIs(t, err, childFailure)
+					require.ErrorIs(t, err, parentFailure)
+					require.ErrorIs(t, err, dagql.ErrUnavailablePart)
+					require.EqualValues(t, 2, provider.Reads.Load())
+					return nil
+				}
 				if mode == "late-child" {
 					started, release := make(chan struct{}), make(chan struct{})
 					var once sync.Once

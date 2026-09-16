@@ -254,7 +254,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 						if partCanReselect(err) {
 							continue
 						}
-						return err
+						return errors.Join(demand.causes(), err)
 					}
 					continue
 				}
@@ -266,7 +266,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					continue
 				}
 				if err != nil {
-					return err
+					return errors.Join(demand.causes(), err)
 				}
 			}
 		}})
