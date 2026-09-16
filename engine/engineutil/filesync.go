@@ -224,14 +224,15 @@ func (c *Client) LocalDirExport(
 	}()
 	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
 	defer download.Finish()
-	network, err := enginetelemetry.NewNetworkRecorder(ctx, enginetelemetry.NetworkTX)
+	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkTX)
 	if err != nil {
 		return fmt.Errorf("create directory export network recorder: %w", err)
 	}
 
 	return sendDiffCopyToCaller(diffCopyClient, outputFS, func(current int, _ bool) {
 		download.Update(int64(current))
-		network.Record(int64(current))
+	}, func(bytes int) {
+		network.Add(int64(bytes))
 	})
 }
 
