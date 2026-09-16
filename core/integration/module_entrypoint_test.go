@@ -2,9 +2,9 @@ package core
 
 import (
 	"context"
-	"dagger.io/dagger"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
