@@ -21,11 +21,6 @@ func main() {
 }
 
 func generate() error {
-	// go generate runs in this package's directory. Resolve paths from the repository root.
-	if err := os.Chdir("../.."); err != nil {
-		return err
-	}
-
 	targets := []struct {
 		output string
 		path   string
