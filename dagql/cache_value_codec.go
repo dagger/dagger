@@ -299,7 +299,7 @@ func validateTransferOffer(offer PersistedPartOffer, part CapturedCodecOutput) e
 	if err := validateSnapshotValue(offer.Value); err != nil {
 		return err
 	}
-	if part.Value != nil && part.Value.Kind != offer.Value.Kind {
+	if (part.ValueKind != "" && part.ValueKind != offer.Value.Kind) || (part.Value != nil && part.Value.Kind != offer.Value.Kind) {
 		return fmt.Errorf("offer kind does not match part")
 	}
 	if part.Address.Part == "metadata" {

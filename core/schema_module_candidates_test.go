@@ -124,3 +124,29 @@ func TestModDepsForCallInstalledPreference(t *testing.T) {
 		})
 	}
 }
+
+func TestModDepsForCallInstalledPreferenceTraversal(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "traversal")
+	ctx, cache, srv := env.open(t)
+	installPreferenceScope(t, srv)
+	query, err := CurrentQuery(ctx)
+	require.NoError(t, err)
+	dependency := preferenceModule(t, env, ctx, cache, srv, "dependency", "dependency")
+	first := preferenceModule(t, env, ctx, cache, srv, "first", "first", dependency)
+	second := preferenceModule(t, env, ctx, cache, srv, "second", "second", dependency)
+	facade := &installedPreferenceServer{persistedFamiliesTestQueryServer: query.Server.(*persistedFamiliesTestQueryServer), served: NewSchemaBuilder(query, []Mod{NewUserMod(first), NewUserMod(second), NewUserMod(first)})}
+	query.Server = facade
+	candidates, err := query.installedSchemaModuleCandidates(ctx, cache)
+	require.NoError(t, err)
+	require.Len(t, candidates, 3)
+	for i, module := range []dagql.ObjectResult[*Module]{first, second, dependency} {
+		id, err := cache.PersistedResultID(module)
+		require.NoError(t, err)
+		require.Equal(t, id, candidates[i].ModuleResultID)
+		scoped, err := ImplementationScopedModule(ctx, module)
+		require.NoError(t, err)
+		scopedID, err := cache.PersistedResultID(scoped)
+		require.NoError(t, err)
+		require.Equal(t, scopedID, candidates[i].ScopedResultID)
+	}
+}

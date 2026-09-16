@@ -118,6 +118,7 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 }
 
 func TestValueTransferCapture(t *testing.T) {
+	testValueTransferCaptureConcurrent(t)
 	t.Run("direct and offer diamond", func(t *testing.T) {
 		ctx, c, srv := transferTestCache(t)
 		leaf := persistedListTestResult(t, ctx, c, srv, "leaf", String("shared"))
@@ -244,6 +245,7 @@ func TestValueTransferReferences(t *testing.T) {
 }
 
 func TestValueTransferImportPublication(t *testing.T) {
+	testValueTransferImportConcurrent(t)
 	ctx, a, srv := transferTestCache(t)
 	leaf := persistedListTestResult(t, ctx, a, srv, "leaf", String("value"))
 	root := persistedListTestResult(t, ctx, a, srv, "root", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{leaf}})

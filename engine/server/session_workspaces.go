@@ -1739,6 +1739,7 @@ func isCoreRootField(field string) bool {
 		"_builtinContainer",
 		"_clientFilesyncMirror",
 		"_httpState",
+		"_remoteCacheFixture",
 		"_remoteGitMirror",
 		"address",
 		"blob",

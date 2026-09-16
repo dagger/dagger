@@ -293,6 +293,7 @@ func (family foreignFamilyCodec) MapSnapshotParts(v dagql.PersistedPayloadVisit)
 	out := dagql.CapturedCodecOutput{Address: dagql.PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, State: "pending", Role: "snapshot"}
 	switch family {
 	case "File":
+		out.ValueKind = "file"
 		var p persistedFilePayload
 		if err := readForeignPayload(v.Payload, &p); err != nil {
 			return nil, err
@@ -304,6 +305,7 @@ func (family foreignFamilyCodec) MapSnapshotParts(v dagql.PersistedPayloadVisit)
 			out.State = "completed"
 		}
 	case "Directory":
+		out.ValueKind = "directory"
 		var p persistedDirectoryPayload
 		if err := readForeignPayload(v.Payload, &p); err != nil {
 			return nil, err
@@ -358,7 +360,7 @@ func mapContainerTransferParts(v dagql.PersistedPayloadVisit, p persistedContain
 		if !ok {
 			return nil, fmt.Errorf("unknown container part %q", key)
 		}
-		out := dagql.CapturedCodecOutput{Address: dagql.PersistedPartAddress{OutputPath: v.Path, Part: key}, State: part.Kind, Role: part.Role}
+		out := dagql.CapturedCodecOutput{Address: dagql.PersistedPartAddress{OutputPath: v.Path, Part: key}, State: part.Kind, ValueKind: want.kind, Role: part.Role}
 		kind := part.Kind
 		if kind == containerPartPending {
 			kind = part.ValueKind
@@ -389,7 +391,7 @@ func mapContainerTransferParts(v dagql.PersistedPayloadVisit, p persistedContain
 			if p.Metadata.Consumed {
 				return nil, fmt.Errorf("missing container part %s", key)
 			}
-			outputs = append(outputs, dagql.CapturedCodecOutput{Address: dagql.PersistedPartAddress{OutputPath: v.Path, Part: key}, State: "pending", Role: want.role})
+			outputs = append(outputs, dagql.CapturedCodecOutput{Address: dagql.PersistedPartAddress{OutputPath: v.Path, Part: key}, State: "pending", ValueKind: want.kind, Role: want.role})
 		}
 	}
 	slices.SortFunc(outputs, func(a, b dagql.CapturedCodecOutput) int {

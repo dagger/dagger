@@ -328,6 +328,8 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 type ExportedValues struct {
 	Bundle ValueBundle
 	Chains *SelectedChains
+	// Sources maps bundle ordinals to held source rows; it is not transported.
+	Sources []ImportedValue
 }
 
 func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
@@ -468,5 +470,9 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
-	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains})
+	sources := make([]ImportedValue, len(capture.order))
+	for i, row := range capture.order {
+		sources[i] = ImportedValue{Ordinal: row.ordinal, ResultID: uint64(row.shared.id)}
+	}
+	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, Sources: sources})
 }

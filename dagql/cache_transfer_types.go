@@ -92,8 +92,10 @@ type PersistedTransferCodec interface {
 }
 type ForeignPayload struct{ JSON json.RawMessage }
 type CapturedCodecOutput struct {
-	Address    PersistedPartAddress
-	State      string
+	Address PersistedPartAddress
+	State   string
+	// ValueKind remains known when pending output metadata is not yet known.
+	ValueKind  string
 	Value      *SnapshotValue
 	Role       string
 	SnapshotID string
