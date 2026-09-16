@@ -81,6 +81,27 @@ defmodule Dagger.GitCommit do
   end
 
   @doc """
+  Returns the changes from the first parent to this commit, excluding Git metadata.
+
+  Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+  """
+  @spec changes(t(), [{:against, Dagger.GitCommit.t() | nil}]) :: Dagger.Changeset.t()
+  def changes(%__MODULE__{} = git_commit, optional_args \\ []) do
+    query_builder =
+      git_commit.query_builder
+      |> QB.select("changes")
+      |> QB.maybe_put_arg(
+        "against",
+        if(optional_args[:against], do: Dagger.ID.id!(optional_args[:against]), else: nil)
+      )
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: git_commit.client
+    }
+  end
+
+  @doc """
   Git committer date, in RFC3339 format.
   """
   @spec committed_date(t()) :: {:ok, String.t()} | {:error, term()}

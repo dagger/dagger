@@ -1967,6 +1967,13 @@ export type GitCommitAncestorReleaseTagOpts = {
   includePreRelease?: boolean
 }
 
+export type GitCommitChangesOpts = {
+  /**
+   * Use this commit as the comparison base instead of the first parent. The comparison commit may belong to an unrelated history or repository.
+   */
+  against?: GitCommit
+}
+
 export type GitCommitReleaseTagOpts = {
   /**
    * Include pre-release tags when choosing the latest tag.
@@ -10509,6 +10516,17 @@ export class GitCommit extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Returns the changes from the first parent to this commit, excluding Git metadata.
+   *
+   * Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+   * @param opts.against Use this commit as the comparison base instead of the first parent. The comparison commit may belong to an unrelated history or repository.
+   */
+  changes = (opts?: GitCommitChangesOpts): Changeset => {
+    const ctx = this._ctx.select("changes", { ...opts })
+    return new Changeset(ctx)
   }
 
   /**

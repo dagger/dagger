@@ -9117,6 +9117,12 @@ pub struct GitCommitAncestorReleaseTagOpts {
     pub include_pre_release: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitCommitChangesOpts {
+    /// Use this commit as the comparison base instead of the first parent. The comparison commit may belong to an unrelated history or repository.
+    #[builder(setter(into, strip_option), default)]
+    pub against: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitCommitReleaseTagOpts {
     /// Include pre-release tags when choosing the latest tag.
     #[builder(setter(into, strip_option), default)]
@@ -9216,6 +9222,37 @@ impl GitCommit {
     pub async fn authored_date(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("authoredDate");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns the changes from the first parent to this commit, excluding Git metadata.
+    /// Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn changes(&self) -> Changeset {
+        let query = self.selection.select("changes");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the changes from the first parent to this commit, excluding Git metadata.
+    /// Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn changes_opts(&self, opts: GitCommitChangesOpts) -> Changeset {
+        let mut query = self.selection.select("changes");
+        if let Some(against) = opts.against {
+            query = query.arg("against", against);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Git committer date, in RFC3339 format.
     pub async fn committed_date(&self) -> Result<String, DaggerError> {

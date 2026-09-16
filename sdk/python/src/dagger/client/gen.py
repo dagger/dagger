@@ -8915,6 +8915,30 @@ class GitCommit(Type):
         _ctx = self._select("authoredDate", _args)
         return await _ctx.execute(str)
 
+    def changes(
+        self,
+        *,
+        against: "GitCommit | None" = None,
+    ) -> Changeset:
+        """Returns the changes from the first parent to this commit, excluding
+        Git metadata.
+
+        Root commits are compared with an empty tree. Merge commits are
+        compared with their first parent, not a merge base.
+
+        Parameters
+        ----------
+        against:
+            Use this commit as the comparison base instead of the first
+            parent. The comparison commit may belong to an unrelated history
+            or repository.
+        """
+        _args = [
+            Arg("against", against, None),
+        ]
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
     async def committed_date(self) -> str:
         """Git committer date, in RFC3339 format.
 
