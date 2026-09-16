@@ -11,6 +11,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var scratchRecordBenchmarkOutput *Directory
+
+// Isolate recording's allocation/latency cost from the existing Scratch I/O.
+func BenchmarkScratchCompletedRecording(b *testing.B) {
+	for _, record := range []bool{false, true} {
+		name := "eager-output"
+		if record {
+			name = "eager-output-and-recipe"
+		}
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				dir := containerPersistenceTestDirectory("scratch", "/")
+				if record {
+					if err := RecordCompletedProducer(dir, &DirectoryScratchLazy{LazyState: NewLazyState()}); err != nil {
+						b.Fatal(err)
+					}
+				}
+				scratchRecordBenchmarkOutput = dir
+			}
+		})
+	}
+}
+
 func TestRecordCompletedProducer(t *testing.T) {
 	t.Run("scratch", testRecordCompletedProducerScratch)
 	t.Run("Directory", testRecordCompletedProducerDirectory)
