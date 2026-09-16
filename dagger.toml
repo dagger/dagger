@@ -160,10 +160,6 @@ module = "dang-sdk"
 [sdks.dang.scopes.".dagger/modules/changie"]
 is-module = true
 
-[sdks.dang.scopes.".dagger/modules/ci"]
-is-module = true
-clients = ["./.dagger/modules/engine-dev"]
-
 [sdks.dang.scopes.".dagger/modules/dotnet-client-dev"]
 clients = ["./.dagger/modules/engine-dev"]
 is-module = true
