@@ -174,7 +174,7 @@ func (container *Container) HasPendingLazyComputation() bool {
 	if container == nil {
 		return false
 	}
-	if container.acquiredOutput.Load() != nil || container.transferPending != nil {
+	if container.acquiredOutput.Load() != nil {
 		_, err := container.resolveTransferParts(nil)
 		return err != nil
 	}

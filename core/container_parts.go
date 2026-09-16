@@ -364,7 +364,7 @@ func (container *Container) consumeLazyOp() {
 // and never demand sibling groups) and then delegates the mapping to
 // the op.
 func (container *Container) ResolveLazyEvalGroups(ctx context.Context, self dagql.AnyResult, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
-	if container != nil && (container.acquiredOutput.Load() != nil || container.transferPending != nil) {
+	if container != nil && container.acquiredOutput.Load() != nil {
 		return container.resolveTransferParts(parts)
 	}
 	if container == nil {
@@ -501,7 +501,7 @@ func (container *Container) consumeFinalParentDelegations(ctx context.Context, o
 }
 
 func containerParentPartFinal(ctx context.Context, parent *Container, part dagql.PartKey) (bool, error) {
-	if parent.acquiredOutput.Load() != nil || parent.transferPending != nil {
+	if parent.acquiredOutput.Load() != nil {
 		// Only captured metadata and explicitly absent parts are final. A
 		// delegation sweep must never demand a pending foreign snapshot.
 		_, err := parent.resolveTransferParts([]dagql.PartKey{part})
@@ -566,7 +566,7 @@ func (container *Container) evaluatePartsDirect(ctx context.Context, parts ...da
 	if host := container.partHost.Load(); host != nil && !host.Admitted(ctx) {
 		return host.Evaluate(ctx, parts...)
 	}
-	if container.acquiredOutput.Load() != nil || container.transferPending != nil {
+	if container.acquiredOutput.Load() != nil {
 		_, err := container.resolveTransferParts(parts)
 		return err
 	}

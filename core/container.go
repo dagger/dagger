@@ -64,10 +64,9 @@ type DefaultTerminalCmdOpts struct {
 
 // Container is a content-addressed container.
 type Container struct {
-	partHost        atomic.Pointer[dagql.PartHost]
-	acquiredOutput  atomic.Pointer[containerAcquiredOutput]
-	acquiredOpens   sync.Map
-	transferPending *persistedContainerPayload
+	partHost       atomic.Pointer[dagql.PartHost]
+	acquiredOutput atomic.Pointer[containerAcquiredOutput]
+	acquiredOpens  sync.Map
 	// fromContentDigestSafe tracks whether Container.From can give its result a
 	// content digest based only on the resolved image and platform. It is false
 	// by default so derived containers conservatively retain their call identity.
@@ -1106,15 +1105,7 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 	if container == nil {
 		return nil
 	}
-	if container.transferPending != nil {
-		if _, err := container.resolveTransferParts(nil); err == nil {
-			return nil
-		}
-		return func(context.Context) error {
-			_, err := container.resolveTransferParts(nil)
-			return err
-		}
-	}
+
 	lazy := container.lazyOpForRouting()
 	if lazy == nil {
 		return nil
