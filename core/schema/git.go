@@ -74,6 +74,15 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("httpAuthHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the repo is fetched.`),
 			),
+		// Query.git is scoped per client because it discovers implicit inputs
+		// (credential helper tokens, the SSH agent socket, remote visibility)
+		// from the calling client. Once those are explicit arguments the
+		// repository is fully described by them, so git delegates to this field
+		// and every client with the same inputs shares one result and one
+		// downstream cache lineage.
+		dagql.NodeFunc("__gitRepository", s.gitRepository).
+			View(AllVersion).
+			Doc(`(Internal-only) Construct a remote Git repository from fully explicit inputs.`),
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRepository]{
@@ -647,12 +656,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		})
 	}
 
-	var (
-		sshAuthSock    dagql.ObjectResult[*core.Socket]
-		httpAuthToken  dagql.ObjectResult[*core.Secret]
-		httpAuthHeader dagql.ObjectResult[*core.Secret]
-	)
-
 	switch remote.Scheme {
 	case gitutil.SSHProtocol:
 		if remote.User == nil {
@@ -663,12 +666,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		}
 
 		if args.SSHAuthSocket.Valid {
-			if args.SSHAuthSocketScoped {
-				sshAuthSock, err = args.SSHAuthSocket.Value.Load(ctx, srv)
-				if err != nil {
-					return inst, err
-				}
-			} else {
+			// A scoped socket is already an explicit, client-independent
+			// input; it is loaded by __gitRepository below.
+			if !args.SSHAuthSocketScoped {
 				var scopedSock dagql.ObjectResult[*core.Socket]
 				if err := srv.Select(ctx, srv.Root(), &scopedSock,
 					dagql.Selector{
@@ -837,19 +837,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			return inst, err
 		}
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
-		if args.HTTPAuthToken.Valid {
-			httpAuthToken, err = args.HTTPAuthToken.Value.Load(ctx, srv)
-			if err != nil {
-				return inst, err
-			}
-		}
-		if args.HTTPAuthHeader.Valid {
-			httpAuthHeader, err = args.HTTPAuthHeader.Value.Load(ctx, srv)
-			if err != nil {
-				return inst, err
-			}
-		}
-		if httpAuthToken.Self() == nil && httpAuthHeader.Self() == nil {
+		if !args.HTTPAuthToken.Valid && !args.HTTPAuthHeader.Valid {
 			// For HTTP refs, try to load client credentials from the git helper.
 			parentClientMetadata, err := parent.Self().NonModuleParentClientMetadata(ctx)
 			if err != nil {
@@ -1007,6 +995,114 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		}
 	}
 
+	// Every implicit input is now explicit, so the repository no longer depends
+	// on which client asked. Delegate to the client-independent constructor.
+	err = srv.Select(ctx, parent, &inst, dagql.Selector{
+		Field: "__gitRepository",
+		Args:  gitRepositoryNamedInputs(remote, args, experimentalServiceHostID, sshAuthSocketID, httpAuthTokenID, httpAuthHeaderID),
+		View:  curCall.View,
+	})
+	return inst, err
+}
+
+// gitRepositoryNamedInputs spells out the arguments for __gitRepository. Only
+// set arguments are included so that equivalent requests produce the same call.
+func gitRepositoryNamedInputs(remote *gitutil.GitURL, args gitArgs, serviceID, sshAuthSocketID, httpAuthTokenID, httpAuthHeaderID *call.ID) []dagql.NamedInput {
+	inputs := []dagql.NamedInput{
+		{Name: "url", Value: dagql.NewString(remote.String())},
+	}
+	if args.KeepGitDir.Valid {
+		inputs = append(inputs, dagql.NamedInput{Name: "keepGitDir", Value: dagql.Opt(args.KeepGitDir.Value)})
+	}
+	if serviceID != nil {
+		inputs = append(inputs, dagql.NamedInput{Name: "experimentalServiceHost", Value: dagql.Opt(dagql.NewID[*core.Service](serviceID))})
+	}
+	if args.SSHKnownHosts != "" {
+		inputs = append(inputs, dagql.NamedInput{Name: "sshKnownHosts", Value: dagql.NewString(args.SSHKnownHosts)})
+	}
+	if sshAuthSocketID != nil {
+		inputs = append(inputs, dagql.NamedInput{Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](sshAuthSocketID))})
+	}
+	if args.HTTPAuthUsername != "" {
+		inputs = append(inputs, dagql.NamedInput{Name: "httpAuthUsername", Value: dagql.NewString(args.HTTPAuthUsername)})
+	}
+	if httpAuthTokenID != nil {
+		inputs = append(inputs, dagql.NamedInput{Name: "httpAuthToken", Value: dagql.Opt(dagql.NewID[*core.Secret](httpAuthTokenID))})
+	}
+	if httpAuthHeaderID != nil {
+		inputs = append(inputs, dagql.NamedInput{Name: "httpAuthHeader", Value: dagql.Opt(dagql.NewID[*core.Secret](httpAuthHeaderID))})
+	}
+	if args.Commit != "" {
+		inputs = append(inputs, dagql.NamedInput{Name: "commit", Value: dagql.NewString(args.Commit)})
+	}
+	if args.Ref != "" {
+		inputs = append(inputs, dagql.NamedInput{Name: "ref", Value: dagql.NewString(args.Ref)})
+	}
+	return inputs
+}
+
+// gitRepository constructs a remote repository from explicit inputs only. It
+// performs no credential discovery: git resolves those per client and passes
+// the results here, so this call is shared by every client with the same
+// arguments.
+func (s *gitSchema) gitRepository(ctx context.Context, parent dagql.ObjectResult[*core.Query], args gitArgs) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	remote, err := gitutil.ParseURL(args.URL)
+	if err != nil {
+		return inst, fmt.Errorf("failed to parse Git URL: %w", err)
+	}
+	if remote.Scheme == gitutil.SSHProtocol && remote.User == nil {
+		remote.User = url.User("git")
+	}
+
+	var gitServices core.ServiceBindings
+	if args.ExperimentalServiceHost.Valid {
+		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, err
+		}
+		svcDig, err := svc.ContentPreferredDigest(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("experimental service host digest: %w", err)
+		}
+		host, err := svc.Self().Hostname(ctx, svcDig)
+		if err != nil {
+			return inst, err
+		}
+		gitServices = append(gitServices, core.ServiceBinding{
+			Service:  svc,
+			Hostname: host,
+		})
+	}
+
+	var (
+		sshAuthSock    dagql.ObjectResult[*core.Socket]
+		httpAuthToken  dagql.ObjectResult[*core.Secret]
+		httpAuthHeader dagql.ObjectResult[*core.Secret]
+	)
+	if args.SSHAuthSocket.Valid {
+		sshAuthSock, err = args.SSHAuthSocket.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, err
+		}
+	}
+	if args.HTTPAuthToken.Valid {
+		httpAuthToken, err = args.HTTPAuthToken.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, err
+		}
+	}
+	if args.HTTPAuthHeader.Valid {
+		httpAuthHeader, err = args.HTTPAuthHeader.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, err
+		}
+	}
+
 	discardGitDir := false
 	if args.KeepGitDir.Valid {
 		discardGitDir = !args.KeepGitDir.Value.Bool()
@@ -1047,12 +1143,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	repo.Remote.Head = head
 	repo.DiscardGitDir = discardGitDir
 
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
-	if err != nil {
-		return inst, err
-	}
-
-	return inst, nil
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
 
 func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, error) {

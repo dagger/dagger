@@ -534,6 +534,27 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 	})
 }
 
+func (GitSuite) TestCrossSessionGitRepositoryIdentity(ctx context.Context, t *testctx.T) {
+	// Query.git discovers implicit credentials per client, but once those are
+	// resolved the repository is described entirely by its explicit inputs. A
+	// public repository has none, so separate sessions must share one result;
+	// otherwise everything derived from it (bundle imports, checkouts, snapshot
+	// reconstruction) re-executes for every new CLI process.
+	const repoURL = "https://github.com/dagger/dagger"
+
+	c1 := connect(ctx, t)
+	id1, err := c1.Git(repoURL).ID(ctx)
+	require.NoError(t, err)
+
+	c2 := connect(ctx, t)
+	id2, err := c2.Git(repoURL).ID(ctx)
+	require.NoError(t, err)
+
+	// Clients receive handle-form IDs that reference one engine-local cached
+	// result, so equal IDs mean both sessions share the same repository.
+	require.Equal(t, id1, id2)
+}
+
 func (ModuleSuite) TestCrossSessionSockets(ctx context.Context, t *testctx.T) {
 	tmp := t.TempDir()
 	sock := filepath.Join(tmp, "test.sock")
