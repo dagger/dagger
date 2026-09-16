@@ -145,6 +145,15 @@ func (file *File) snapshotIdentity() (string, bool) {
 	if file == nil {
 		return "", false
 	}
+	file.outputMu.Lock()
+	defer file.outputMu.Unlock()
+	return file.snapshotIdentityLocked()
+}
+
+func (file *File) snapshotIdentityLocked() (string, bool) {
+	if file == nil {
+		return "", false
+	}
 	if file.Snapshot != nil {
 		if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
 			return snapshot.SnapshotID(), true
@@ -243,7 +252,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 		Platform:   file.Platform,
 		Services:   services,
 	}
-	if identity, ok := file.snapshotIdentity(); ok {
+	if identity, ok := file.snapshotIdentityLocked(); ok {
 		payload.Form = persistedFileFormSnapshot
 		payload.LazyKind = file.completedRecipeKind
 		payload.LazyJSON = file.completedRecipeJSON

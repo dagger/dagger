@@ -291,3 +291,31 @@ func (l *LeaseManager) ListResources(ctx context.Context, lease leases.Lease) ([
 	ctx = namespaces.WithNamespace(ctx, l.ns)
 	return l.manager.ListResources(ctx, lease)
 }
+
+// PinSnapshot protects an existing snapshot and its ancestry independently of
+// any donor or ambient operation lease. It never downloads content.
+func (cm *snapshotManager) PinSnapshot(ctx context.Context, snapshotID string) (_ ImmutableRef, rerr error) {
+	pin, pinnedCtx, err := cm.newResourcePin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ref ImmutableRef
+	defer func() {
+		if rerr != nil {
+			cleanup := context.WithoutCancel(ctx)
+			if ref != nil {
+				rerr = stderrors.Join(rerr, ref.Release(cleanup))
+			}
+			rerr = stderrors.Join(rerr, pin.release(cleanup))
+		}
+	}()
+	if err := cm.AttachLease(pinnedCtx, pin.id, snapshotID); err != nil {
+		return nil, err
+	}
+	ref, err = cm.GetBySnapshotID(pinnedCtx, snapshotID, NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+	ref.(*immutableRef).pin = pin
+	return ref, nil
+}

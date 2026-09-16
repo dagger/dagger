@@ -65,6 +65,7 @@ type DefaultTerminalCmdOpts struct {
 // Container is a content-addressed container.
 type Container struct {
 	partHost        atomic.Pointer[dagql.PartHost]
+	acquiredOutput  atomic.Pointer[containerAcquiredOutput]
 	transferPending *persistedContainerPayload
 	// fromContentDigestSafe tracks whether Container.From can give its result a
 	// content digest based only on the resolved image and platform. It is false
@@ -1244,6 +1245,11 @@ func (container *Container) AttachDependencyResultsKinds(
 }
 
 func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	if container != nil {
+		if view := container.acquiredOutput.Load(); view != nil {
+			return slices.Clone(view.Links)
+		}
+	}
 	if container == nil {
 		return nil
 	}
@@ -1569,10 +1575,10 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		DefaultArgs:        persisted.DefaultArgs,
 	}
 	if envelope.ProducerState != "" {
-		if err := foreignFamilyCodec("Container").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call(), SnapshotLinks: links}); err != nil {
+		if _, err := mapContainerTransferParts(dagql.PersistedPayloadVisit{SnapshotLinks: links}, envelope); err != nil {
 			return nil, err
 		}
-		container.transferPending = &envelope
+		container.acquiredOutput.Store(&containerAcquiredOutput{Payload: envelope, Links: slices.Clone(links), Revision: 1})
 		for part, descriptor := range envelope.Parts {
 			if descriptor.Kind == containerPartAbsent {
 				container.setAbsentTransferPart(part)
@@ -1580,6 +1586,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		}
 		return container, nil
 	}
+
 	var recipe Lazy[*Container]
 	pending := !envelope.Metadata.Consumed
 	for _, part := range envelope.Parts {

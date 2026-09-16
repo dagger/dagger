@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -21,16 +22,22 @@ type LazyTaskSpec struct {
 var ErrLazyTaskBusy = errors.New("lazy task already active or awaiting bookkeeping")
 
 type PartTaskToken struct {
-	row        *sharedResult
-	key        LazyGroupKey
-	generation uint64
-	active     atomic.Bool
-	installed  atomic.Pointer[InstalledOutputs]
+	row           *sharedResult
+	key           LazyGroupKey
+	generation    uint64
+	active        atomic.Bool
+	installed     atomic.Pointer[InstalledOutputs]
+	ownerSync     chan struct{}
+	ownerSyncOnce sync.Once
+	settled       atomic.Bool
 }
 
 // InstalledOutputs is immutable after publication. Installation identity is
 // distinct from the generation executing a later bookkeeping-only retry.
-type InstalledOutputs struct{ outputs []installedPartOutput }
+type InstalledOutputs struct {
+	outputs     []installedPartOutput
+	protections []*partProtection
+}
 type installedPartOutput struct {
 	address      PersistedPartAddress
 	installation uint64
@@ -52,6 +59,7 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 	if t.spec.OwnerSyncReady != nil {
 		select {
 		case <-t.spec.OwnerSyncReady:
+		case <-t.token.ownerSync:
 		case <-ctx.Done():
 			return context.Cause(ctx)
 		}
@@ -63,6 +71,13 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 		t.synced = true
 	}
 	if !t.cleaned {
+		if installed := t.token.installed.Load(); installed != nil {
+			for _, protection := range installed.protections {
+				if err := protection.release(ctx); err != nil {
+					return err
+				}
+			}
+		}
 		if t.spec.AfterOwnerSync != nil {
 			if err := t.spec.AfterOwnerSync(ctx); err != nil {
 				return err
@@ -78,6 +93,7 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 		}
 		t.settled = true
 	}
+	t.token.settled.Store(true)
 	return nil
 }
 
@@ -118,4 +134,12 @@ func (c *Cache) releasePartRow(ctx context.Context, row *sharedResult) error {
 
 func isPartTaskKey(key LazyGroupKey) bool {
 	return strings.HasPrefix(string(key), "obtain:") || strings.HasPrefix(string(key), "acquire:") || strings.HasPrefix(string(key), "producer:")
+}
+
+func (t *PartTaskToken) openOwnerSync() {
+	t.ownerSyncOnce.Do(func() {
+		if t.ownerSync != nil {
+			close(t.ownerSync)
+		}
+	})
 }

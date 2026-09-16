@@ -4269,7 +4269,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			evalCtx = ContextWithCall(evalCtx, resultCall)
 		}
 		shared.lazyGeneration++
-		token := &PartTaskToken{row: shared, key: group, generation: shared.lazyGeneration}
+		token := &PartTaskToken{ownerSync: make(chan struct{}), row: shared, key: group, generation: shared.lazyGeneration}
 		token.active.Store(true)
 		installationToken := token
 		if g.syncPending && g.nativeInstallation != nil {

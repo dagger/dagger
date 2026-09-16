@@ -765,3 +765,21 @@ func TestImportChainCanceledWaiter(t *testing.T) {
 	require.EqualValues(t, 2, provider.Reads.Load())
 	require.EqualValues(t, 2, consumer.Applies.Load())
 }
+
+func TestPinSnapshotIndependentOwner(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	parent, _ := store.Build(t, nil, "prefix", "owned prefix")
+	child, _ := store.Build(t, parent, "suffix", "owned suffix")
+	pin, err := store.Manager.PinSnapshot(ctx, child.SnapshotID())
+	require.NoError(t, err)
+	require.NoError(t, parent.Release(ctx))
+	require.NoError(t, child.Release(ctx))
+	store.GC(t)
+	testutil.CheckFile(t, pin, "prefix", "owned prefix")
+	testutil.CheckFile(t, pin, "suffix", "owned suffix")
+	require.NoError(t, pin.Release(ctx))
+	require.NoError(t, pin.Release(ctx))
+	_, err = store.Manager.PinSnapshot(ctx, "missing-snapshot")
+	require.Error(t, err)
+}

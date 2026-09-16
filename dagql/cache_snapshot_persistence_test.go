@@ -469,3 +469,7 @@ func TestCachePersistenceWorkerUsesEncodedSnapshotLinks(t *testing.T) {
 var _ bkcache.SnapshotManager = (*fakeSnapshotManager)(nil)
 var _ PersistedObject = (*persistSnapshotValue)(nil)
 var _ PersistedSnapshotRefLinkProvider = (*persistSnapshotValue)(nil)
+
+func (*fakeSnapshotManager) PinSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
+	panic("unexpected PinSnapshot")
+}

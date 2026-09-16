@@ -654,3 +654,7 @@ var _ bkcache.ImmutableRef = (*cacheVolumeTestImmutableRef)(nil)
 var _ bkcache.MutableRef = (*cacheVolumeTestMutableRef)(nil)
 var _ bkcache.SnapshotManager = (*cacheVolumeTestSnapshotManager)(nil)
 var _ dagql.PersistedObject = (*CacheVolume)(nil)
+
+func (*cacheVolumeTestSnapshotManager) PinSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
+	panic("unexpected PinSnapshot")
+}

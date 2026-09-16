@@ -1,0 +1,442 @@
+package dagql
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"sync"
+	"sync/atomic"
+
+	"github.com/dagger/dagger/engine/snapshots"
+	set "github.com/hashicorp/go-set/v3"
+)
+
+type PartInstallOutcome uint8
+
+const (
+	PartInstallRefused PartInstallOutcome = iota
+	PartInstallAlreadyInstalled
+	PartInstalled
+)
+
+type partProtection struct {
+	once sync.Once
+	ref  snapshots.ImmutableRef
+	err  error
+}
+
+func (p *partProtection) release(ctx context.Context) error {
+	if p == nil {
+		return nil
+	}
+	p.once.Do(func() {
+		if p.ref != nil {
+			p.err = p.ref.Release(context.WithoutCancel(ctx))
+		}
+	})
+	return p.err
+}
+
+type PreparedReadyPart struct {
+	cache      *Cache
+	receiver   *sharedResult
+	source     *PartSourceLease
+	permit     *PartPermit
+	version    capturedRowRevision
+	next       PersistedRecord
+	store      PreparedPartStore
+	deps       []*sharedResult
+	protection *partProtection
+	accessor   snapshots.ImmutableRef
+	consumed   atomic.Bool
+}
+type ReadyPartReceipt struct {
+	cache      *Cache
+	receiver   *sharedResult
+	task       *PartTaskToken
+	once       sync.Once
+	releaseErr error
+}
+
+func (r *ReadyPartReceipt) release(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	r.once.Do(func() { r.releaseErr = r.cache.releasePartRow(context.WithoutCancel(ctx), r.receiver) })
+	return r.releaseErr
+}
+func (p *PreparedReadyPart) Release(ctx context.Context) error {
+	if p == nil || !p.consumed.CompareAndSwap(false, true) {
+		return nil
+	}
+	return p.release(ctx, false)
+}
+func (p *PreparedReadyPart) release(ctx context.Context, published bool) error {
+	ctx = context.WithoutCancel(ctx)
+	var err error
+	if !published {
+		err = errors.Join(err, p.protection.release(ctx))
+		if p.accessor != nil {
+			err = errors.Join(err, p.accessor.Release(ctx))
+		}
+	}
+	// Drop independent graph holds before owner sync, including offer owners
+	// with backreferences to this receiver.
+	for _, dep := range p.deps {
+		err = errors.Join(err, p.cache.releasePartRow(ctx, dep))
+	}
+	err = errors.Join(err, p.source.Release(ctx))
+	p.permit.Release()
+	if !published && p.receiver != nil {
+		err = errors.Join(err, p.cache.releasePartRow(ctx, p.receiver))
+	}
+	return err
+}
+func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit) (_ *PreparedReadyPart, rerr error) {
+	p := &PreparedReadyPart{cache: c, source: source, permit: permit}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, p.Release(ctx))
+		}
+	}()
+	if source == nil || permit == nil || source.cache != c {
+		return nil, fmt.Errorf("prepare part: missing source or permit")
+	}
+	if len(permit.address.OutputPath) != 0 {
+		return nil, c.prepareInlineReadyPart(ctx, receiver, source, permit)
+	}
+	if source.readiness != PartReady && source.descriptor.SnapshotID == "" {
+		return nil, fmt.Errorf("prepare part: source is not materialized")
+	}
+	c.egraphMu.Lock()
+	row, err := c.validatePartTaskLocked(receiver, permit.task)
+	if err == nil {
+		c.incrementIncomingOwnershipLocked(ctx, row)
+		p.receiver = row
+	}
+	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	current, version, probe, err := c.probePart(ctx, row, permit.address)
+	if err != nil {
+		return nil, err
+	}
+	p.version = version
+	if probe == nil {
+		return nil, fmt.Errorf("prepare part: undeclared output")
+	}
+	if probe.LocalComplete {
+		return nil, ErrPartReselect
+	}
+	family, ok := PersistedObjectFamilyByName(current.Envelope.ObjectCodec)
+	if !ok {
+		return nil, fmt.Errorf("prepare part: unknown family")
+	}
+	if source.descriptor.Family != "" && source.descriptor.Family != family.Name {
+		return nil, fmt.Errorf("prepare part: incompatible output family")
+	}
+	codec, ok := family.Transfer.(PersistedPartInstaller)
+	if !ok {
+		return nil, fmt.Errorf("prepare part: codec has no installer")
+	}
+	c.egraphMu.Lock()
+	for _, id := range source.descriptor.DependencyIDs {
+		dep := c.resultsByID[sharedResultID(id)]
+		if dep == nil {
+			err = fmt.Errorf("prepare part: missing exact reference %d", id)
+			break
+		}
+		c.incrementIncomingOwnershipLocked(ctx, dep)
+		p.deps = append(p.deps, dep)
+	}
+	if err == nil {
+		_, err = c.preparePartDependenciesLocked(row, p.deps)
+	}
+	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if source.descriptor.SnapshotID != "" {
+		if c.snapshotManager == nil {
+			return nil, fmt.Errorf("prepare part: no snapshot manager")
+		}
+		ref, err := c.snapshotManager.PinSnapshot(ctx, source.descriptor.SnapshotID)
+		if err != nil {
+			return nil, err
+		}
+		p.protection = &partProtection{ref: ref}
+		if version.payload.hasValue {
+			p.accessor, err = c.snapshotManager.GetBySnapshotID(ctx, source.descriptor.SnapshotID, snapshots.NoUpdateLastUsed)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	p.next, err = codec.PreparePartRecord(current, source.record, source.Descriptor(), permit.address)
+	if err != nil {
+		return nil, err
+	}
+	if version.payload.hasValue {
+		preparer, ok := UnwrapAs[PartStorePreparer](Result[Typed]{shared: row})
+		if !ok {
+			return nil, fmt.Errorf("prepare part: typed value has no store")
+		}
+		dec := NewPersistDecodeContext(CurrentDagqlServer(ctx), uint64(row.id), current.Call).WithSnapshotRoles(p.next.SnapshotLinks)
+		d := source.Descriptor()
+		d.Address = clonePartAddress(permit.address)
+		p.store, err = preparer.PreparePartStore(ctx, dec, p.next, d, p.accessor)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := version.check(row); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// The council's scoped-link addendum attaches inline items[i] preparation here.
+// It must preserve the enclosing row and full address, never create a child row.
+func (c *Cache) prepareInlineReadyPart(context.Context, AnyResult, *PartSourceLease, *PartPermit) error {
+	return fmt.Errorf("inline part installation awaits scoped snapshot-link Addendum 1")
+}
+
+// preparePartDependenciesLocked computes every fallible graph/requirement
+// operation before publication. Offer edges participate in cycle detection but
+// never in the propagated own-resource requirements.
+func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sharedResult) (map[*sharedResult]*set.TreeSet[SessionResourceHandle], error) {
+	seen := map[sharedResultID]bool{}
+	var walk func(*sharedResult) error
+	walk = func(row *sharedResult) error {
+		if row == nil || c.resultsByID[row.id] != row {
+			return fmt.Errorf("part graph: missing dependency")
+		}
+		if row == receiver {
+			return fmt.Errorf("part graph: ownership cycle through %d", row.id)
+		}
+		if seen[row.id] {
+			return nil
+		}
+		seen[row.id] = true
+		for child := range c.resultOwnershipChildrenLocked(row) {
+			if child.owner != nil {
+				for _, dep := range child.owner.deps {
+					if err := walk(dep); err != nil {
+						return err
+					}
+				}
+			} else if err := walk(child.result); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, dep := range deps {
+		if err := walk(dep); err != nil {
+			return nil, err
+		}
+	}
+	requirements := map[*sharedResult]*set.TreeSet[SessionResourceHandle]{}
+	queue := []*sharedResult{receiver}
+	seen = map[sharedResultID]bool{}
+	for len(queue) > 0 {
+		row := queue[0]
+		queue = queue[1:]
+		if seen[row.id] {
+			continue
+		}
+		seen[row.id] = true
+		for id := range row.deps {
+			if c.resultsByID[id] == nil {
+				return nil, fmt.Errorf("part graph: missing ancestor dependency %d", id)
+			}
+		}
+		req := set.NewTreeSet(compareSessionResourceHandles)
+		if row.requiredSessionResources != nil {
+			req = req.Union(row.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
+		}
+		for _, dep := range deps {
+			if dep.requiredSessionResources != nil {
+				req = req.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
+			}
+		}
+		requirements[row] = req
+		if row.depParents != nil {
+			for id := range row.depParents.Items() {
+				parent := c.resultsByID[id]
+				if parent == nil {
+					return nil, fmt.Errorf("part graph: missing ancestor %d", id)
+				}
+				queue = append(queue, parent)
+			}
+		}
+	}
+	return requirements, nil
+}
+func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *sharedResult, deps []*sharedResult, requirements map[*sharedResult]*set.TreeSet[SessionResourceHandle]) {
+	if receiver.deps == nil {
+		receiver.deps = map[sharedResultID]struct{}{}
+	}
+	for _, dep := range deps {
+		if _, ok := receiver.deps[dep.id]; ok {
+			continue
+		}
+		receiver.deps[dep.id] = struct{}{}
+		receiver.dependencyOwnershipRevision++
+		c.rememberDependencyEdgeLocked(receiver, dep)
+		c.incrementIncomingOwnershipLocked(ctx, dep)
+	}
+	for row, req := range requirements {
+		if !sessionResourceSetsEqual(row.requiredSessionResources, req) {
+			row.requiredSessionResources = req
+			row.requiredSessionResourcesGen.Add(1)
+		}
+	}
+}
+func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *ReadyPartReceipt, outcome PartInstallOutcome, rerr error) {
+	if p == nil || p.cache != c || !p.consumed.CompareAndSwap(false, true) {
+		return nil, PartInstallRefused, fmt.Errorf("commit part: consumed preparation")
+	}
+	defer func() { rerr = errors.Join(rerr, p.release(ctx, outcome == PartInstalled)) }()
+	if err := context.Cause(ctx); err != nil {
+		return nil, PartInstallRefused, err
+	}
+	if err := p.version.check(p.receiver); err != nil {
+		return nil, PartInstallRefused, ErrPartReselect
+	}
+	source := p.source
+	if source.readiness == PartReady {
+		if err := source.version.check(source.source); err != nil {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	row := p.receiver
+	if c.resultsByID[row.id] != row || !p.permit.task.active.Load() {
+		return nil, PartInstallRefused, ErrPartReselect
+	}
+	if source.readiness == PartReady {
+		if source.source == nil || c.resultsByID[source.source.id] != source.source || source.facts != c.partFactsLocked(source.source) {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+		found := false
+		for _, candidate := range c.collectPartCandidatesLocked(row, source.lookup, source.sessionID) {
+			if candidate.row == source.source {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+	} else if !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
+		return nil, PartInstallRefused, ErrPartReselect
+	}
+	for _, dep := range p.deps {
+		if !c.sessionSatisfiesResourceRequirementsLocked(source.sessionID, dep) {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+	}
+	requirements, err := c.preparePartDependenciesLocked(row, p.deps)
+	if err != nil {
+		return nil, PartInstallRefused, err
+	}
+	gate := p.permit.gate
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	key, _ := partAddressKey(p.permit.address)
+	if gate.outputs[key].phase != PartPending {
+		return nil, PartInstallAlreadyInstalled, nil
+	}
+	if gate.writers[p.permit.ticket] != p.permit {
+		return nil, PartInstallRefused, ErrPartReselect
+	}
+	if p.store != nil {
+		if !p.store.TryLock() {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+		defer p.store.Unlock()
+	}
+	row.payloadMu.Lock()
+	defer row.payloadMu.Unlock()
+	if row.payloadRevision != p.version.payload.payloadRevision || row.hasValue != p.version.payload.hasValue || row.persistedEnvelope != p.version.payload.persistedEnvelope {
+		return nil, PartInstallRefused, ErrPartReselect
+	}
+	// No fallible work after this point. Protection cleanup belongs to the row,
+	// independently of the receipt and the continuation's temporary row hold.
+	c.applyPartDependenciesLocked(ctx, row, p.deps, requirements)
+	if p.protection != nil {
+		row.onRelease = joinOnRelease(row.onRelease, p.protection.release)
+	}
+	row.snapshotLinkIntent = &snapshotLinkIntent{Links: slices.Clone(p.next.SnapshotLinks)}
+	if p.store == nil {
+		env := p.next.Envelope
+		row.persistedEnvelope = &env
+	} else {
+		p.store.Publish()
+	}
+	row.payloadRevision++
+	gate.managed = true
+	gate.revision++
+	token := p.permit.task
+	installation := gate.revision
+	gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: token, installation: installation}
+	previous := token.installed.Load()
+	installed := &InstalledOutputs{}
+	if previous != nil {
+		installed.outputs = slices.Clone(previous.outputs)
+		installed.protections = slices.Clone(previous.protections)
+	}
+	installed.outputs = append(installed.outputs, installedPartOutput{address: clonePartAddress(p.permit.address), installation: installation})
+	if p.protection != nil {
+		installed.protections = append(installed.protections, p.protection)
+	}
+	token.installed.Store(installed)
+	return &ReadyPartReceipt{cache: c, receiver: row, task: token}, PartInstalled, nil
+}
+func (c *Cache) FinishReadyPart(ctx context.Context, receipt *ReadyPartReceipt) (rerr error) {
+	if receipt == nil || receipt.cache != c {
+		return fmt.Errorf("finish part: invalid receipt")
+	}
+	defer func() { rerr = errors.Join(rerr, receipt.release(ctx)) }()
+	if PartTaskFromContext(ctx) == receipt.task {
+		return fmt.Errorf("finish part: owning Body must use inline handoff")
+	}
+	receipt.task.openOwnerSync()
+	return c.RunLazyTask(ctx, Result[Typed]{shared: receipt.receiver}, receipt.task.key, LazyTaskSpec{Body: func(context.Context) error {
+		if receipt.task.settled.Load() {
+			return nil
+		}
+		return fmt.Errorf("part receipt lost its owning continuation")
+	}})
+}
+func (c *Cache) finishReadyPartInline(ctx context.Context, receipt *ReadyPartReceipt) error {
+	if receipt == nil || PartTaskFromContext(ctx) != receipt.task {
+		return fmt.Errorf("inline finish: wrong task")
+	}
+	receipt.task.openOwnerSync()
+	return receipt.release(ctx)
+}
+func (c *Cache) InstallReadyPart(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit) error {
+	p, err := c.PrepareReadyPart(ctx, receiver, source, permit)
+	if err != nil {
+		return err
+	}
+	receipt, outcome, err := c.CommitReadyPart(ctx, p)
+	if outcome == PartInstalled {
+		if PartTaskFromContext(ctx) == receipt.task {
+			return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
+		}
+		return errors.Join(err, c.FinishReadyPart(ctx, receipt))
+	}
+	if err != nil {
+		return err
+	}
+	if outcome == PartInstallRefused {
+		return ErrPartReselect
+	}
+	return nil
+}

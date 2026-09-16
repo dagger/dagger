@@ -150,6 +150,15 @@ func (dir *Directory) snapshotIdentity() (string, bool) {
 	if dir == nil {
 		return "", false
 	}
+	dir.outputMu.Lock()
+	defer dir.outputMu.Unlock()
+	return dir.snapshotIdentityLocked()
+}
+
+func (dir *Directory) snapshotIdentityLocked() (string, bool) {
+	if dir == nil {
+		return "", false
+	}
 	if dir.Snapshot != nil {
 		if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
 			return snapshot.SnapshotID(), true
@@ -256,7 +265,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 		Platform:   dir.Platform,
 		Services:   services,
 	}
-	if identity, ok := dir.snapshotIdentity(); ok {
+	if identity, ok := dir.snapshotIdentityLocked(); ok {
 		payload.Form = persistedDirectoryFormSnapshot
 		payload.LazyKind = dir.completedRecipeKind
 		payload.LazyJSON = dir.completedRecipeJSON

@@ -142,6 +142,13 @@ func NewPersistDecodeContext(dag *Server, resultID uint64, call *ResultCall) *Pe
 	return &PersistDecodeContext{server: dag, resultID: resultID, call: call}
 }
 
+// WithSnapshotRoles supplies an authoritative copied desired map, including empty.
+func (dec *PersistDecodeContext) WithSnapshotRoles(links []PersistedSnapshotRefLink) *PersistDecodeContext {
+	copy := *dec
+	copy.roles = &copiedDecodeRoles{ResultID: dec.resultID, Links: slices.Clone(links)}
+	return &copy
+}
+
 // Server is the defining server for the row being decoded.
 func (dec *PersistDecodeContext) Server() *Server {
 	if dec == nil {
