@@ -66,13 +66,10 @@ The presence of the `entrypoint` table selects this format. A
 `dagger-module.toml` that has no `entrypoint` table is the previous format.
 There is no `manifestVersion` key.
 
-The engine rejects a `dagger-module.toml` that sets `manifestVersion`. An
-earlier draft of this design used that key, so the error names its replacement:
-
-```text
-dagger-module.toml does not support "manifestVersion": the [entrypoint] table
-selects the manifest version 2 format
-```
+A version 2 manifest accepts `name` and `entrypoint` and nothing else, so a
+`manifestVersion` key is rejected as an unsupported key. An earlier draft of
+this design required that key, but no released engine ever read or wrote it,
+so no manifest in the wild carries it.
 
 The engine rejects a `dagger.json` that sets `entrypoint`. The `entrypoint`
 table belongs to `dagger-module.toml` only, so a legacy file can never select

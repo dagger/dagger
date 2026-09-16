@@ -76,11 +76,7 @@ func parseCurrentModuleConfigTOML(src []byte) (*ModuleConfigWithUserFields, erro
 	}
 
 	// The entrypoint table selects the manifest version 2 format. The format has
-	// no explicit version key, so reject the one that manifest version 2 used
-	// while it was in development.
-	if tree.Has("manifestVersion") {
-		return nil, fmt.Errorf("%s does not support %q: the [entrypoint] table selects the manifest version 2 format", Filename, "manifestVersion")
-	}
+	// no version key.
 	if tree.Has("entrypoint") {
 		return parseModuleManifestV2TOML(tree)
 	}
