@@ -62,6 +62,7 @@ func (a *gitPushApprovals) check(ctx context.Context, key gitPushApprovalKey, as
 	return decision.allowed, decision.err
 }
 
+//nolint:gocyclo // keep owner routing, destination validation, and approval in one auditable flow
 func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, force, resolveURL bool) (*core.GitPushAuthorization, error) {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
