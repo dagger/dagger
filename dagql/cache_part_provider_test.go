@@ -53,15 +53,51 @@ func TestPartFixedProviderAndContentExhaustion(t *testing.T) {
 	admitted := &PartSourceLease{sourceID: 7, descriptor: PartDescriptor{Address: address}, offer: &offer, offerRev: 1}
 	failure := errors.New("missing content")
 	demand.exhaust(admitted, failure)
-	require.True(t, demand.exhausted(7, address, &offer))
+	require.True(t, demand.exhausted(7, address, &offer, 1))
 	require.ErrorIs(t, demand.causes(), failure)
 	refreshed, _ := clonePartOffers([]PersistedPartOffer{offer})
 	refreshed[0].Chain.Addresses[descriptor.Digest] = BlobAddress{URL: server.URL + "/fresh", ExpiresAtUnix: time.Now().Unix() + 3600}
-	require.True(t, demand.exhausted(7, address, &refreshed[0]), "fresh addresses do not repeat exhausted content")
-	require.False(t, demand.exhausted(8, address, &refreshed[0]), "a different source remains eligible")
+	require.True(t, demand.exhausted(7, address, &refreshed[0], 1), "addresses alone do not change the admitted revision")
+	require.False(t, demand.exhausted(7, address, &refreshed[0], 2), "a newly admitted offer revision is eligible")
+	require.False(t, demand.exhausted(8, address, &refreshed[0], 1), "a different source remains eligible")
 	sibling := clonePartAddress(address)
 	sibling.OutputPath[1].Index = 1
-	require.False(t, demand.exhausted(7, sibling, &refreshed[0]))
+	require.False(t, demand.exhausted(7, sibling, &refreshed[0], 1))
 	refreshed[0].Chain.Layers[0].Descriptor.Digest = digest.FromString("new content")
-	require.False(t, demand.exhausted(7, address, &refreshed[0]))
+	require.False(t, demand.exhausted(7, address, &refreshed[0], 1))
+}
+
+func TestPartOfferReplacementNotExhausted(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	address := PersistedPartAddress{Part: "snapshot"}
+	record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}
+	replace := func() {
+		c.egraphMu.Lock()
+		owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
+		require.NoError(t, err)
+		queue, err := c.replacePartOfferLocked(ctx, receiver.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
+		require.NoError(t, err)
+		callbacks, err := c.collectUnownedResultsLocked(ctx, queue)
+		c.egraphMu.Unlock()
+		require.NoError(t, err)
+		require.NoError(t, runOnReleaseFuncs(ctx, callbacks))
+	}
+	replace()
+	demand := &PartDemandState{}
+	source, _, err := c.scanPartSources(ctx, receiver, address, demand)
+	require.NoError(t, err)
+	require.NotNil(t, source)
+	oldRevision := source.offerRev
+	demand.exhaust(source, errors.New("first content attempt failed"))
+	require.NoError(t, source.Release(ctx))
+	source, _, err = c.scanPartSources(ctx, receiver, address, demand)
+	require.NoError(t, err)
+	require.Nil(t, source)
+	replace() // Same immutable content, newly admitted revision.
+	source, _, err = c.scanPartSources(ctx, receiver, address, demand)
+	require.NoError(t, err)
+	require.NotNil(t, source)
+	require.Greater(t, source.offerRev, oldRevision)
+	require.NoError(t, source.Release(ctx))
 }

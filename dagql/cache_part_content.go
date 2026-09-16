@@ -128,7 +128,7 @@ func (d *PartDemandState) exhaust(source *PartSourceLease, err error) {
 	if d.exhaustedContent == nil {
 		d.exhaustedContent = map[string]struct{}{}
 	}
-	d.exhaustedContent[partContentKey(sharedResultID(source.sourceID), source.descriptor.Address, source.offer)] = struct{}{}
+	d.exhaustedContent[partContentKey(sharedResultID(source.sourceID), source.descriptor.Address, source.offer, source.offerRev)] = struct{}{}
 	d.failures = append(d.failures, partContentFailure{source: source.sourceID, address: clonePartAddress(source.descriptor.Address), offerRevision: source.offerRev, cause: err})
 	d.revision++
 }

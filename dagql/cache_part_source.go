@@ -408,7 +408,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		r := PartRunnable
 		if p != nil && p.LocalComplete && !p.Busy {
 			r = PartReady
-		} else if candidate.offer != nil && (candidate.row == row || c.partOfferAvailable(*candidate.offer, time.Now().Unix())) && (demand == nil || !demand.exhausted(candidate.row.id, address, candidate.offer)) {
+		} else if candidate.offer != nil && (candidate.row == row || c.partOfferAvailable(*candidate.offer, time.Now().Unix())) && (demand == nil || !demand.exhausted(candidate.row.id, address, candidate.offer, candidate.facts.offers)) {
 			r = PartDownloadable
 		}
 		if p != nil && candidate.row == row && p.LocalComplete {
@@ -499,19 +499,20 @@ type PartDemandState struct {
 	revision         uint64
 }
 
-func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer) string {
+func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) string {
 	raw, _ := json.Marshal(struct {
-		ID      sharedResultID
-		Address PersistedPartAddress
-		Value   SnapshotValue
-		Layers  any
-	}{id, address, offer.Value, offer.Chain.Layers})
+		ID       sharedResultID
+		Address  PersistedPartAddress
+		Value    SnapshotValue
+		Layers   any
+		Revision uint64
+	}{id, address, offer.Value, offer.Chain.Layers, revision})
 	return string(raw)
 }
-func (s *PartDemandState) exhausted(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer) bool {
+func (s *PartDemandState) exhausted(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.exhaustedContent[partContentKey(id, address, offer)]
+	_, ok := s.exhaustedContent[partContentKey(id, address, offer, revision)]
 	return ok
 }
 
