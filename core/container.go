@@ -47,6 +47,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/realm"
 )
 
 var ErrMountNotExist = errors.New("mount does not exist")
@@ -735,6 +736,7 @@ type persistedContainerFromLazy struct {
 	Platform          Platform                         `json:"platform"`
 	RegistryServices  []persistedServiceBinding        `json:"registryServices,omitempty"`
 	RegistryTransport serverresolver.RegistryTransport `json:"registryTransport,omitempty"`
+	Realm             realm.Realm                      `json:"realm,omitempty"`
 }
 
 type persistedContainerWithRootFSLazy struct {
@@ -5089,6 +5091,7 @@ func decodePersistedContainerLazy(
 			Platform:          persisted.Platform,
 			ResolveMode:       serverresolver.ResolveModeDefault,
 			RegistryTransport: persisted.RegistryTransport,
+			Realm:             persisted.Realm,
 		}
 		if len(persisted.RegistryServices) > 0 {
 			services, err := decodePersistedServiceBindings(ctx, dag, "container from registry", persisted.RegistryServices)

@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/realm"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -1226,6 +1227,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			ResolveMode:       serverresolver.ResolveModeDefault,
 			RegistryServices:  registryServices,
 			RegistryTransport: registryTransport,
+			Realm:             realm.FromContext(ctx),
 		}
 
 		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
