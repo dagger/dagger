@@ -50,15 +50,33 @@ func testRecordCompletedProducerDirectory(t *testing.T) {
 			case "restore":
 				producer = &DirectoryRestoreLazy{LazyState: NewLazyState()}
 			}
-			var original Directory
+			var original *Directory
 			if dir != nil {
-				original = *dir
+				// Snapshot every field without copying the fresh fixture's
+				// zero-valued output mutex. Compare through pointers below.
+				original = &Directory{
+					filesystemOutput: filesystemOutput{
+						OutputRev:       dir.OutputRev,
+						persistenceBody: dir.persistenceBody,
+					},
+					transferPending:     dir.transferPending,
+					Platform:            dir.Platform,
+					Services:            dir.Services,
+					storedDiagnostics:   dir.storedDiagnostics,
+					stored:              dir.stored,
+					Lazy:                dir.Lazy,
+					completedRecipe:     dir.completedRecipe,
+					completedRecipeKind: dir.completedRecipeKind,
+					completedRecipeJSON: dir.completedRecipeJSON,
+					Dir:                 dir.Dir,
+					Snapshot:            dir.Snapshot,
+				}
 			}
 			err := RecordCompletedProducer(dir, producer)
 			if invalid != "" {
 				require.Error(t, err)
 				if dir != nil {
-					require.Equal(t, original, *dir)
+					require.Equal(t, original, dir)
 				}
 				return
 			}
@@ -108,15 +126,32 @@ func testRecordCompletedProducerFile(t *testing.T) {
 			case "restore":
 				producer = &FileRestoreLazy{LazyState: NewLazyState()}
 			}
-			var original File
+			var original *File
 			if file != nil {
-				original = *file
+				// Keep the same full-value comparison without copying a mutex.
+				original = &File{
+					filesystemOutput: filesystemOutput{
+						OutputRev:       file.OutputRev,
+						persistenceBody: file.persistenceBody,
+					},
+					transferPending:     file.transferPending,
+					Platform:            file.Platform,
+					Services:            file.Services,
+					storedDiagnostics:   file.storedDiagnostics,
+					stored:              file.stored,
+					Lazy:                file.Lazy,
+					completedRecipe:     file.completedRecipe,
+					completedRecipeKind: file.completedRecipeKind,
+					completedRecipeJSON: file.completedRecipeJSON,
+					File:                file.File,
+					Snapshot:            file.Snapshot,
+				}
 			}
 			err := RecordCompletedProducer(file, producer)
 			if invalid != "" {
 				require.Error(t, err)
 				if file != nil {
-					require.Equal(t, original, *file)
+					require.Equal(t, original, file)
 				}
 				return
 			}
