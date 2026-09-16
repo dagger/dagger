@@ -16724,9 +16724,6 @@ pub struct WorkspaceWithCommitOpts<'a> {
     /// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
     #[builder(setter(into, strip_option), default)]
     pub author_name: Option<&'a str>,
-    /// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
-    #[builder(setter(into, strip_option), default)]
-    pub paths: Option<Vec<&'a str>>,
     /// Add a Signed-off-by trailer using the commit author's name and email.
     #[builder(setter(into, strip_option), default)]
     pub signoff: Option<bool>,
@@ -17735,17 +17732,31 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
-    /// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    /// Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
+    /// The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.
+    /// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
     /// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
     ///
     /// # Arguments
     ///
+    /// * `changes` - Changeset to commit, for example git.uncommitted.filter(...). Paths are rooted at the repository; rename sides are determined by the changeset. Git metadata (.git) is ignored; metadata-only changes fail with nothing to commit.
     /// * `message` - Commit message.
     /// * `date` - RFC3339 author and committer date. Required for reproducible commits.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_commit(&self, message: impl Into<String>, date: impl Into<String>) -> Workspace {
+    pub fn with_commit(
+        &self,
+        changes: impl IntoID<Id>,
+        message: impl Into<String>,
+        date: impl Into<String>,
+    ) -> Workspace {
         let mut query = self.selection.select("withCommit");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
         query = query.arg("message", message.into());
         query = query.arg("date", date.into());
         Workspace {
@@ -17754,27 +17765,34 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
-    /// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    /// Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
+    /// The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.
+    /// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
     /// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
     ///
     /// # Arguments
     ///
+    /// * `changes` - Changeset to commit, for example git.uncommitted.filter(...). Paths are rooted at the repository; rename sides are determined by the changeset. Git metadata (.git) is ignored; metadata-only changes fail with nothing to commit.
     /// * `message` - Commit message.
     /// * `date` - RFC3339 author and committer date. Required for reproducible commits.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_commit_opts<'a>(
         &self,
+        changes: impl IntoID<Id>,
         message: impl Into<String>,
         date: impl Into<String>,
         opts: WorkspaceWithCommitOpts<'a>,
     ) -> Workspace {
         let mut query = self.selection.select("withCommit");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
         query = query.arg("message", message.into());
         query = query.arg("date", date.into());
-        if let Some(paths) = opts.paths {
-            query = query.arg("paths", paths);
-        }
         if let Some(author_name) = opts.author_name {
             query = query.arg("authorName", author_name);
         }

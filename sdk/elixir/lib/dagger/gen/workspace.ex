@@ -652,25 +652,26 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+  Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
 
-  A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+  The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.
+
+  A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
 
   Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
   """
-  @spec with_commit(t(), String.t(), String.t(), [
-          {:paths, [String.t()]},
+  @spec with_commit(t(), Dagger.Changeset.t(), String.t(), String.t(), [
           {:author_name, String.t() | nil},
           {:author_email, String.t() | nil},
           {:signoff, boolean() | nil}
         ]) :: Dagger.Workspace.t()
-  def with_commit(%__MODULE__{} = workspace, message, date, optional_args \\ []) do
+  def with_commit(%__MODULE__{} = workspace, changes, message, date, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("withCommit")
+      |> QB.put_arg("changes", Dagger.ID.id!(changes))
       |> QB.put_arg("message", message)
       |> QB.put_arg("date", date)
-      |> QB.maybe_put_arg("paths", optional_args[:paths])
       |> QB.maybe_put_arg("authorName", optional_args[:author_name])
       |> QB.maybe_put_arg("authorEmail", optional_args[:author_email])
       |> QB.maybe_put_arg("signoff", optional_args[:signoff])

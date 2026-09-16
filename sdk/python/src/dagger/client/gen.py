@@ -17440,20 +17440,26 @@ class Workspace(Type):
 
     def with_commit(
         self,
+        changes: Changeset,
         message: str,
         date: str,
         *,
-        paths: list[str] | None = None,
         author_name: str | None = None,
         author_email: str | None = None,
         signoff: bool | None = False,
     ) -> Self:
-        """Create a Git commit from this workspace's uncommitted changes and
-        return a stable workspace with HEAD advanced.
+        """Create a Git commit from a changeset and return a stable workspace
+        with HEAD advanced.
+
+        The changeset is three-way merged into both HEAD and the frozen
+        working tree. Compatible unselected edits remain uncommitted; incoming
+        changes need not already be in the working tree. Conflicts with either
+        tree fail without modifying the workspace. Empty changesets, or
+        changes already present in HEAD, fail with nothing to commit.
 
         A local workspace is snapshotted automatically before committing;
         untracked files require interactive approval. The host checkout is not
-        modified. Changes outside the selected paths remain uncommitted.
+        modified.
 
         Missing author fields are resolved from Git config in the calling
         client's working directory at commit time, then recorded explicitly
@@ -17462,14 +17468,16 @@ class Workspace(Type):
 
         Parameters
         ----------
+        changes:
+            Changeset to commit, for example git.uncommitted.filter(...).
+            Paths are rooted at the repository; rename sides are determined by
+            the changeset. Git metadata (.git) is ignored; metadata-only
+            changes fail with nothing to commit.
         message:
             Commit message.
         date:
             RFC3339 author and committer date. Required for reproducible
             commits.
-        paths:
-            Literal paths relative to the workspace cwd. Empty commits
-            everything. Renames must include both paths.
         author_name:
             Author and committer name. Defaults to git config user.name in the
             calling client's working directory, otherwise Dagger.
@@ -17482,9 +17490,9 @@ class Workspace(Type):
             email.
         """
         _args = [
+            Arg("changes", changes),
             Arg("message", message),
             Arg("date", date),
-            Arg("paths", [] if paths is None else paths, []),
             Arg("authorName", author_name, None),
             Arg("authorEmail", author_email, None),
             Arg("signoff", signoff, False),

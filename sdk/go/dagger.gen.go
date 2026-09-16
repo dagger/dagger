@@ -18273,8 +18273,6 @@ func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *
 
 // WorkspaceWithCommitOpts contains options for Workspace.WithCommit
 type WorkspaceWithCommitOpts struct {
-	// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
-	Paths []string
 	// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
 	AuthorName string
 	// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
@@ -18283,18 +18281,17 @@ type WorkspaceWithCommitOpts struct {
 	Signoff bool
 }
 
-// Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+// Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
 //
-// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+// The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.
+//
+// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
 //
 // Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
-func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
+func (r *Workspace) WithCommit(changes *Changeset, message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
+	assertNotNil("changes", changes)
 	q := r.query.Select("withCommit")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `paths` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Paths) {
-			q = q.Arg("paths", opts[i].Paths)
-		}
 		// `authorName` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AuthorName) {
 			q = q.Arg("authorName", opts[i].AuthorName)
@@ -18308,6 +18305,7 @@ func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWit
 			q = q.Arg("signoff", opts[i].Signoff)
 		}
 	}
+	q = q.Arg("changes", changes)
 	q = q.Arg("message", message)
 	q = q.Arg("date", date)
 

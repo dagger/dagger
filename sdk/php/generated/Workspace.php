@@ -514,26 +514,26 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+     * Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
      *
-     * A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+     * The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.
+     *
+     * A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
      *
      * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
      */
     public function withCommit(
+        Changeset $changes,
         string $message,
         string $date,
-        ?array $paths = [],
         ?string $authorName = null,
         ?string $authorEmail = null,
         ?bool $signoff = false,
     ): Workspace {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommit');
+        $innerQueryBuilder->setArgument('changes', $changes);
         $innerQueryBuilder->setArgument('message', $message);
         $innerQueryBuilder->setArgument('date', $date);
-        if (null !== $paths) {
-        $innerQueryBuilder->setArgument('paths', $paths);
-        }
         if (null !== $authorName) {
         $innerQueryBuilder->setArgument('authorName', $authorName);
         }

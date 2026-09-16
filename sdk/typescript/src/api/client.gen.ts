@@ -3789,16 +3789,6 @@ export type WorkspaceWithClientOpts = {
 
 export type WorkspaceWithCommitOpts = {
   /**
-   * Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
-   */
-  paths?: string[]
-
-  /**
-   * RFC3339 author and committer date. Required for reproducible commits.
-   */
-  date: string
-
-  /**
    * Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
    */
   authorName?: string
@@ -17286,20 +17276,32 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+   * Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
    *
-   * A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+   * The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.
+   *
+   * A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
    *
    * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+   * @param changes Changeset to commit, for example git.uncommitted.filter(...). Paths are rooted at the repository; rename sides are determined by the changeset. Git metadata (.git) is ignored; metadata-only changes fail with nothing to commit.
    * @param message Commit message.
-   * @param opts.paths Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
-   * @param opts.date RFC3339 author and committer date. Required for reproducible commits.
+   * @param date RFC3339 author and committer date. Required for reproducible commits.
    * @param opts.authorName Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
    * @param opts.authorEmail Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
    * @param opts.signoff Add a Signed-off-by trailer using the commit author's name and email.
    */
-  withCommit = (message: string, opts?: WorkspaceWithCommitOpts): Workspace => {
-    const ctx = this._ctx.select("withCommit", { message, ...opts })
+  withCommit = (
+    changes: Changeset,
+    message: string,
+    date: string,
+    opts?: WorkspaceWithCommitOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withCommit", {
+      changes,
+      message,
+      date,
+      ...opts,
+    })
     return new Workspace(ctx)
   }
 
