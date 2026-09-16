@@ -2,7 +2,7 @@ package telemetry
 
 import (
 	"context"
-	"sync/atomic"
+	"sync"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	daggerotel "github.com/dagger/otel-go"
@@ -70,7 +70,8 @@ func (r *NetworkRecorder) Record(bytes int64) {
 // operation into a single absolute network metric.
 type NetworkAccumulator struct {
 	recorder *NetworkRecorder
-	total    atomic.Int64
+	mu       sync.Mutex
+	total    int64
 }
 
 type networkAccumulatorsKey struct{}
@@ -92,7 +93,10 @@ func (a *NetworkAccumulator) Add(bytes int64) {
 	if a == nil || bytes <= 0 {
 		return
 	}
-	a.recorder.Record(a.total.Add(bytes))
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.total += bytes
+	a.recorder.Record(a.total)
 }
 
 // WithNetworkRecording attaches one RX/TX accumulator pair to ctx. Transports
