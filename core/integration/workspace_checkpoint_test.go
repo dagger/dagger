@@ -100,7 +100,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotContentOnlyTreesPreserveHistory(ctx c
 	require.Equal(t, inputStatus, git("status", "--porcelain"), "snapshot leaves the host index and worktree alone")
 	// A shallow content view must not truncate the repository used to make
 	// commits, integrate ancestry, or repeat an incremental pending save.
-	first := snapshotWorkspace(ctx, t, c, frozen.WithCommit("captured changes", workspaceCommitDate).WithNewFile("pending.txt", "first"))
+	first := snapshotWorkspace(ctx, t, c, frozen.WithCommit(frozen.Git().Uncommitted(), "captured changes", workspaceCommitDate).WithNewFile("pending.txt", "first"))
 	require.NoError(t, saveWorkspaceTo(ctx, c, first, nil, destination))
 	second := snapshotWorkspace(ctx, t, c, first.WithNewFile("pending.txt", "second"))
 	require.NoError(t, saveWorkspaceTo(ctx, c, second, first, destination))

@@ -156,7 +156,9 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.Nil(t, unbound.Target().lastSynced())
 	waitRefresh(unbound)
 	const date = "2026-09-05T12:00:00Z"
-	id, err := baseline.WithNewFile("saved.txt", "committed\n").WithCommit("agent commit", date).ID(ctx)
+	id, err := baseline.WithNewFile("saved.txt", "committed\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "agent commit", date)
+	}).ID(ctx)
 	require.NoError(t, err)
 	committed := dagger.Ref[*dagger.Workspace](dag, id)
 	s.Target().llm = start.WithWorkspace(committed)
@@ -229,7 +231,9 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	hostSHA := git("rev-parse", "HEAD")
 	require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
 	require.Empty(t, changes.Body(80), "host commits must not change the sidebar")
-	s.Target().llm = s.Target().llm.WithWorkspace(s.Target().llm.Workspace().WithNewFile("agent.txt", "agent\n").WithCommit("divergent agent", date))
+	s.Target().llm = s.Target().llm.WithWorkspace(s.Target().llm.Workspace().WithNewFile("agent.txt", "agent\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "divergent agent", date)
+	}))
 	require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
 	require.NotContains(t, changes.Body(80), "Checkpoint-only commits")
 	require.NotContains(t, changes.Body(80), "checkout commit")
@@ -251,7 +255,9 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.Equal(t, savedHostSHA, git("rev-parse", "HEAD"), "saving twice must not duplicate cherry-picked commits")
 
 	// A second save from the original agent history only contributes new work.
-	s.Target().llm = s.Target().llm.WithWorkspace(s.Target().llm.Workspace().WithNewFile("later.txt", "later\n").WithCommit("later agent", date))
+	s.Target().llm = s.Target().llm.WithWorkspace(s.Target().llm.Workspace().WithNewFile("later.txt", "later\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "later agent", date)
+	}))
 	unsyncedLLM := s.Target().llm
 	unsyncedID, err := unsyncedLLM.Workspace().ID(ctx)
 	require.NoError(t, err)
@@ -285,7 +291,9 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	// checkpoint baseline, even though nonconflicting divergence is accepted.
 	baselineID, err := s.Target().lastSynced().ID(ctx)
 	require.NoError(t, err)
-	conflictingID, err := s.Target().llm.Workspace().WithNewFile("agent.txt", "another agent edit\n").WithCommit("conflicting agent", date).ID(ctx)
+	conflictingID, err := s.Target().llm.Workspace().WithNewFile("agent.txt", "another agent edit\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "conflicting agent", date)
+	}).ID(ctx)
 	require.NoError(t, err)
 	s.Target().llm = s.Target().llm.WithWorkspace(dagger.Ref[*dagger.Workspace](dag, conflictingID))
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "agent.txt"), []byte("user edit\n"), 0o644))

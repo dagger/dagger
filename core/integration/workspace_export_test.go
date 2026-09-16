@@ -214,7 +214,7 @@ func (WorkspaceSuite) TestWorkspaceExportReusesCapturedBase(ctx context.Context,
 	require.Equal(t, "second save", string(pending))
 	// The source now has a different HEAD: only the previous-save value is an
 	// eligible base for the captured destination.
-	committed := second.WithCommit("commit saved pending", workspaceCommitDate)
+	committed := second.WithCommit(second.Git().Uncommitted(), "commit saved pending", workspaceCommitDate)
 	require.NoError(t, saveWorkspaceTo(ctx, c, committed, second, checkout))
 	require.Equal(t, "second save", git("show", "HEAD:pending.txt"))
 	require.Equal(t, index, git("diff", "--cached", "--binary"))
@@ -258,7 +258,9 @@ func (WorkspaceSuite) TestWorkspaceExportToCheckoutIncrementally(ctx context.Con
 		require.NoError(t, err)
 		return dagger.Ref[*dagger.Workspace](c, id)
 	}
-	first := pin(base.WithNewFile("agent.txt", "agent").WithCommit("agent first", workspaceCommitDate).
+	first := pin(base.WithNewFile("agent.txt", "agent").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "agent first", workspaceCommitDate)
+	}).
 		WithNewFile("pending.txt", "first pending").
 		WithMountedDirectory("mount", c.Directory().WithNewFile("private", "not exported")))
 	require.NoError(t, saveWorkspaceTo(ctx, c, first, base, destination))
@@ -277,7 +279,7 @@ func (WorkspaceSuite) TestWorkspaceExportToCheckoutIncrementally(ctx context.Con
 	data, err := os.ReadFile(filepath.Join(destination, "pending.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "second pending", string(data))
-	third := pin(second.WithCommit("commit saved pending", workspaceCommitDate))
+	third := pin(second.WithCommit(second.Git().Uncommitted(), "commit saved pending", workspaceCommitDate))
 	require.NoError(t, saveWorkspaceTo(ctx, c, third, second, destination))
 	require.NoError(t, saveWorkspaceTo(ctx, c, third, second, destination))
 	require.Equal(t, "2", targetGit("rev-list", "--count", hostHead+"..HEAD"))
@@ -355,8 +357,12 @@ func (WorkspaceSuite) TestWorkspaceExportIndependentAgents(ctx context.Context, 
 	baseID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).ID(ctx)
 	require.NoError(t, err)
 	base := dagger.Ref[*dagger.Workspace](c, baseID)
-	a := base.WithNewFile("agent-a.txt", "a").WithCommit("agent A", workspaceCommitDate)
-	b := base.WithNewFile("agent-b.txt", "b").WithCommit("agent B", workspaceCommitDate)
+	a := base.WithNewFile("agent-a.txt", "a").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "agent A", workspaceCommitDate)
+	})
+	b := base.WithNewFile("agent-b.txt", "b").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "agent B", workspaceCommitDate)
+	})
 	aID, err := a.ID(ctx)
 	require.NoError(t, err)
 	bID, err := b.ID(ctx)
@@ -386,7 +392,9 @@ func (WorkspaceSuite) TestWorkspaceExportCapturedDirt(ctx context.Context, t *te
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("captured dirt"), 0o644))
-	agentID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).WithCommit("commit captured cleanup", workspaceCommitDate).ID(ctx)
+	agentID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "commit captured cleanup", workspaceCommitDate)
+	}).ID(ctx)
 	require.NoError(t, err)
 	agent := dagger.Ref[*dagger.Workspace](c, agentID)
 	require.NoError(t, saveWorkspaceTo(ctx, c, agent, nil, checkout))
@@ -403,7 +411,9 @@ func (WorkspaceSuite) TestWorkspaceExportCapturedDirt(ctx context.Context, t *te
 func (WorkspaceSuite) TestWorkspaceExportIntegrationConflicts(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	agentID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).WithNewFile("base.txt", "agent").WithCommit("agent", workspaceCommitDate).ID(ctx)
+	agentID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).WithNewFile("base.txt", "agent").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "agent", workspaceCommitDate)
+	}).ID(ctx)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("user"), 0o644))
 	git("commit", "-am", "user")
@@ -486,7 +496,7 @@ func (WorkspaceSuite) TestWorkspaceExportExplicitTargetAndCwd(ctx context.Contex
 	linked := filepath.Join(t.TempDir(), "linked")
 	git("worktree", "add", "-b", "linked", linked)
 	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(checkout, "sub")))
-	committed, err := commitWorkspace(ctx, c, c.CurrentWorkspace().WithNewFile("a.txt", "a").WithNewFile("b.txt", "b"), "nested", []string{"a.txt"})
+	committed, err := commitWorkspace(ctx, c, c.CurrentWorkspace().WithNewFile("a.txt", "a").WithNewFile("b.txt", "b"), "nested", []string{"sub/a.txt"})
 	require.NoError(t, err)
 	frozen := dagger.Ref[*dagger.Workspace](c, committed.ID)
 	// Destination is another checkout; cwd must not shift repo-root paths.

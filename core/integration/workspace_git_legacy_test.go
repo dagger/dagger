@@ -53,7 +53,7 @@ func (WorkspaceSuite) TestWorkspaceLegacyKeepGitDirFalse(ctx context.Context, t 
 	t.Run("scoped commits preserve history and pending edits", func(ctx context.Context, t *testctx.T) {
 		ws := repo.Branch("main").AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "src"}).
 			WithNewFile("a.txt", "new-a").WithNewFile("b.txt", "new-b")
-		id, err := ws.WithCommit("selected edit", workspaceCommitDate, dagger.WorkspaceWithCommitOpts{Paths: []string{"a.txt"}}).ID(ctx)
+		id, err := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"src/a.txt"}}), "selected edit", workspaceCommitDate).ID(ctx)
 		require.NoError(t, err)
 		committed := dagger.Ref[*dagger.Workspace](c, id)
 		tree := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})

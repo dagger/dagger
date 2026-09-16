@@ -849,7 +849,9 @@ sleep infinity
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
-	committed := repo.Branch("main").AsWorkspace().WithNewFile("pushed.txt", "SSH push").WithCommit("SSH push", workspaceCommitDate)
+	committed := repo.Branch("main").AsWorkspace().WithNewFile("pushed.txt", "SSH push").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "SSH push", workspaceCommitDate)
+	})
 	result, err := pushGitRef(ctx, c, committed.Git().Head(), repo, "ssh-push", nil)
 	require.NoError(t, err)
 	require.Equal(t, "CREATED", result.Disposition)

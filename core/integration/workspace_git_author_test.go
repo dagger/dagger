@@ -54,11 +54,14 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitConfigIdentity(ctx context.Conte
 				selection = fmt.Sprintf(`git(url: %q) { head { asWorkspace { %%s } } }`, repoURL)
 				resultPath = "git.head.asWorkspace"
 			}
+			changes, err := c.Directory().WithNewFile("authored.txt", "authored").Changes(c.Directory()).ID(ctx)
+			require.NoError(t, err)
 			query := "{" + fmt.Sprintf(selection, `withNewFile(path: "authored.txt", contents: "authored") {
-				withCommit(message: "authored", date: "2026-09-05T12:00:00Z" __AUTHOR_ARGS__) {
+				withCommit(changes: __CHANGES__, message: "authored", date: "2026-09-05T12:00:00Z" __AUTHOR_ARGS__) {
 					git { head { targetCommit { authorName authorEmail committerName committerEmail } } }
 				}
 			}`) + "}"
+			query = strings.ReplaceAll(query, "__CHANGES__", fmt.Sprintf("%q", changes))
 			query = strings.ReplaceAll(query, "__AUTHOR_ARGS__", tc.authorArgs)
 			out, err := configured.With(daggerQuery(query)).Stdout(ctx)
 			require.NoError(t, err)
@@ -91,9 +94,9 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Con
 		WithNewFile("modules/prober/dagger.json", `{"name":"prober","engineVersion":"latest","sdk":{"source":"dang"}}`).
 		WithNewFile("modules/prober/main.dang", fmt.Sprintf(`type Prober {
   commitAuthor: String! {
-    let commit = git(%q).head.asWorkspace
+    let ws = git(%q).head.asWorkspace
       .withNewFile("authored.txt", "authored")
-      .withCommit("authored", date: "2026-09-05T12:00:00Z")
+    let commit = ws.withCommit(ws.git.uncommitted, "authored", date: "2026-09-05T12:00:00Z")
       .git.head.targetCommit
     `+"`${commit.authorName} <${commit.authorEmail}>`"+`
   }
@@ -117,7 +120,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			original := base.WithNewFile("/tmp/author.gitconfig", tc.config)
-			recipe, err := original.With(daggerShell(fmt.Sprintf(`llm | with-workspace --workspace $(git --url %s | head | as-workspace | with-new-file authored.txt authored | with-commit --message authored --date 2026-09-05T12:00:00Z) | portable-id`, repoURL))).Stdout(ctx)
+			recipe, err := original.With(daggerShell(fmt.Sprintf(`ws=$(git --url %s | head | as-workspace | with-new-file authored.txt authored); llm | with-workspace --workspace $($ws | with-commit --changes $($ws | git | uncommitted) --message authored --date 2026-09-05T12:00:00Z) | portable-id`, repoURL))).Stdout(ctx)
 			require.NoError(t, err)
 			recipe = strings.TrimSpace(recipe)
 			// The original client is gone. Replaying the commit retains its
@@ -134,11 +137,13 @@ func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.
 			require.Len(t, parents, 1)
 			// A new commit samples the restoring client, rather than inheriting
 			// the identity of the earlier commit or checkpoint.
+			changes, err := restored.WithReset(parents[0]).Git().Uncommitted().ID(ctx)
+			require.NoError(t, err)
 			query := fmt.Sprintf(`{ node(id: %q) { ... on LLM { workspace {
-				withReset(commit: %q) { withCommit(message: "amended", date: "2026-09-05T12:00:00Z") {
+				withReset(commit: %q) { withCommit(changes: %q, message: "amended", date: "2026-09-05T12:00:00Z") {
 					git { head { targetCommit { authorName authorEmail committerName committerEmail } } }
 				} }
-			} } } }`, recipe, parents[0])
+			} } } }`, recipe, parents[0], changes)
 			out, err := base.WithNewFile("/tmp/author.gitconfig", "[user]\nname = Restorer\nemail = restorer@example.com\n").
 				With(daggerQuery(query)).Stdout(ctx)
 			require.NoError(t, err)

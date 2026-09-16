@@ -12,24 +12,19 @@ import (
 )
 
 type workspaceWithCommitArgs struct {
+	Changes     dagql.ID[*core.Changeset]
 	Message     string
-	Paths       []string `default:"[]"`
 	Date        string
 	AuthorName  dagql.Optional[dagql.String]
 	AuthorEmail dagql.Optional[dagql.String]
 	Signoff     bool `default:"false"`
 }
 
-type workspaceCommitOpts struct {
-	core.GitCommitOpts
-	Paths []string
-}
-
-func (args workspaceWithCommitArgs) opts(ws *core.Workspace) (workspaceCommitOpts, error) {
-	opts := workspaceCommitOpts{GitCommitOpts: core.GitCommitOpts{
+func (args workspaceWithCommitArgs) opts() (core.GitCommitOpts, error) {
+	opts := core.GitCommitOpts{
 		Message: args.Message, Date: args.Date, Signoff: args.Signoff,
 		AuthorName: args.AuthorName.Value.String(), AuthorEmail: args.AuthorEmail.Value.String(),
-	}}
+	}
 	if _, err := time.Parse(time.RFC3339, args.Date); err != nil {
 		return opts, fmt.Errorf("withCommit date must be RFC3339: %w", err)
 	}
@@ -45,28 +40,14 @@ func (args workspaceWithCommitArgs) opts(ws *core.Workspace) (workspaceCommitOpt
 	if err := validateWorkspaceGitAuthor(opts.AuthorName, opts.AuthorEmail); err != nil {
 		return opts, err
 	}
-	for _, p := range args.Paths {
-		resolved, err := resolveWorkspacePath(p, ws.Cwd)
-		if err != nil {
-			return opts, err
-		}
-		if resolved == ".git" || strings.HasPrefix(resolved, ".git/") {
-			return opts, fmt.Errorf("withCommit cannot commit Git metadata")
-		}
-		opts.Paths = append(opts.Paths, resolved)
-	}
 	return opts, nil
 }
 
 func (args workspaceWithCommitArgs) selectors() []dagql.NamedInput {
-	paths := make(dagql.ArrayInput[dagql.String], len(args.Paths))
-	for i, p := range args.Paths {
-		paths[i] = dagql.NewString(p)
-	}
 	return []dagql.NamedInput{
+		{Name: "changes", Value: args.Changes},
 		{Name: "message", Value: dagql.NewString(args.Message)},
 		{Name: "date", Value: dagql.NewString(args.Date)},
-		{Name: "paths", Value: paths},
 		{Name: "authorName", Value: args.AuthorName},
 		{Name: "authorEmail", Value: args.AuthorEmail},
 		{Name: "signoff", Value: dagql.NewBoolean(args.Signoff)},
@@ -77,7 +58,7 @@ func (args workspaceWithCommitArgs) selectors() []dagql.NamedInput {
 // over a frozen receiver. The cached helper never captures host state, and no
 // effectful withCommit/snapshot call is retained in the resulting recipe.
 func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (inst dagql.ObjectResult[*core.Workspace], err error) {
-	if _, err := args.opts(parent.Self()); err != nil {
+	if _, err := args.opts(); err != nil {
 		return inst, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -112,47 +93,47 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 	); err != nil {
 		return inst, err
 	}
-	opts, err := args.opts(frozen.Self())
+	changesID, err := changes.ID()
 	if err != nil {
 		return inst, err
 	}
-	selected := changes
-	if len(opts.Paths) > 0 {
-		paths, err := changes.Self().ComputePaths(ctx)
-		if err != nil {
-			return inst, err
-		}
-		matches := func(p string) bool {
-			for _, scope := range opts.Paths {
-				if scope == "." || p == scope || strings.HasPrefix(p, scope+"/") {
-					return true
-				}
-			}
-			return false
-		}
-		for to, from := range paths.Renamed {
-			if matches(to) != matches(from) {
-				return inst, fmt.Errorf("paths would split the rename %q -> %q; include both paths or neither", from, to)
-			}
-		}
-		includes := make([]string, 0, len(opts.Paths))
-		escape := strings.NewReplacer("\\", "\\\\", "*", "\\*", "?", "\\?", "[", "\\[")
-		for _, p := range opts.Paths {
-			if p == "." {
-				includes = nil
-				break
-			}
-			includes = append(includes, escape.Replace(p))
-		}
-		if err := srv.Select(ctx, changes, &selected, dagql.Selector{Field: "filter", Args: []dagql.NamedInput{{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(includes...))}}}); err != nil {
-			return inst, err
-		}
+	// An empty uncommitted changeset may have an empty After tree. Apply the
+	// delta to HEAD to recover the complete source tree, excluding mounts.
+	var workingTree dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, frozen, &workingTree,
+		dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"},
+		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}},
+		dagql.Selector{Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}}},
+	); err != nil {
+		return inst, err
 	}
-	changesID, err := selected.ID()
+	opts, err := args.opts()
 	if err != nil {
 		return inst, err
 	}
-	commitArgs := gitRefWithCommitArgs{Changes: dagql.NewID[*core.Changeset](changesID), Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail, Signoff: opts.Signoff}
+	incoming, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	beforeID, err := incoming.Self().Before.ID()
+	if err != nil {
+		return inst, err
+	}
+	// Merge the same delta into the approved working tree as well as HEAD.
+	// Restoring the old tree after committing would undo off-baseline input.
+	var working dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, workingTree, &working, dagql.Selector{
+		Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	}); err != nil {
+		return inst, err
+	}
+	var merged dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, working, &merged, dagql.Selector{Field: "withChangeset", Args: []dagql.NamedInput{
+		{Name: "changes", Value: args.Changes}, {Name: "onConflict", Value: core.FailOnMergeConflict},
+	}}); err != nil {
+		return inst, fmt.Errorf("apply commit changes to working tree: %w", err)
+	}
+	commitArgs := gitRefWithCommitArgs{Changes: args.Changes, Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail, Signoff: opts.Signoff}
 	var committed dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, frozen, &committed, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}, dagql.Selector{Field: "withCommit", Args: commitArgs.selectors()}); err != nil {
 		return inst, err
@@ -165,8 +146,8 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 		return inst, err
 	}
 
-	// The complete approved working tree is unchanged by committing. Only its
-	// base moves: diffing it against the new HEAD leaves the unselected edits.
+	// Only the difference between the merged working tree and new HEAD remains
+	// pending. Compatible unselected edits and incoming content both survive.
 	var newBase dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, inst, &newBase, dagql.Selector{
 		Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/")}},
@@ -178,7 +159,7 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 		return inst, err
 	}
 	var remaining dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, changes.Self().After, &remaining, dagql.Selector{
+	if err := srv.Select(ctx, merged.Self().After, &remaining, dagql.Selector{
 		Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](baseID)}},
 	}); err != nil {
 		return inst, err

@@ -64,7 +64,9 @@ func (GitSuite) TestPushWorkspaces(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "UP_TO_DATE", result.Disposition)
 	require.Equal(t, "refs/heads/main", result.Ref)
-	ws := baseRef.AsWorkspace().WithNewFile("committed", "yes").WithCommit("new commit", workspaceCommitDate).WithNewFile("pending", "not pushed")
+	ws := baseRef.AsWorkspace().WithNewFile("committed", "yes").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "new commit", workspaceCommitDate)
+	}).WithNewFile("pending", "not pushed")
 	sha, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	result, err = pushGitRef(ctx, c, ws.Git().Head(), repo, "main", nil)
@@ -146,7 +148,9 @@ func (GitSuite) TestPushGoSDK(ctx context.Context, t *testctx.T) {
 	base := repo.Branch("main")
 	baseSHA, err := base.CommitSHA(ctx)
 	require.NoError(t, err)
-	tip := base.AsWorkspace().WithNewFile("next", "next").WithCommit("next", workspaceCommitDate).Git().Head()
+	tip := base.AsWorkspace().WithNewFile("next", "next").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "next", workspaceCommitDate)
+	}).Git().Head()
 	tipSHA, err := tip.CommitSHA(ctx)
 	require.NoError(t, err)
 	opts := dagger.GitRefPushOpts{To: repo, Branch: "sdk", ExpectedRemoteSHA: ""}
@@ -173,7 +177,9 @@ func (GitSuite) TestPushHTTPAuth(ctx context.Context, t *testctx.T) {
 	service, url := gitPushHTTPService(ctx, t, c)
 	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service, HTTPAuthUsername: "writer", HTTPAuthToken: c.SetSecret("push-token", "push-test-password")})
 	base := repo.Branch("main")
-	ws := base.AsWorkspace().WithNewFile("new", "new").WithCommit("HTTP push", workspaceCommitDate)
+	ws := base.AsWorkspace().WithNewFile("new", "new").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "HTTP push", workspaceCommitDate)
+	})
 	bad := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service, HTTPAuthUsername: "writer", HTTPAuthToken: c.SetSecret("push-wrong", "wrong-push-password")})
 	_, err := pushGitRef(ctx, c, ws.Git().Head(), bad, "new", nil)
 	require.Error(t, err)
@@ -268,7 +274,9 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, fetchSHA, head, "push URL must not change the fetch source")
 	// Exercise propagation through both commit and pull repository rebuilds.
-	committed := frozen.WithNewFile("new", "committed").WithCommit("commit before push", workspaceCommitDate)
+	committed := frozen.WithNewFile("new", "committed").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "commit before push", workspaceCommitDate)
+	})
 	updated := snapshotWorkspace(ctx, t, c, frozen.WithCommitsFrom(committed))
 	sha, err := updated.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)

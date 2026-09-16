@@ -27,8 +27,8 @@ type workspaceCommitState struct {
 	}
 }
 
-func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, message string, paths []string) (got workspaceCommitState, err error) {
-	got.ID, err = ws.WithCommit(message, workspaceCommitDate, dagger.WorkspaceWithCommitOpts{Paths: paths}).ID(ctx)
+func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, message string, include []string) (got workspaceCommitState, err error) {
+	got.ID, err = ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: include}), message, workspaceCommitDate).ID(ctx)
 	if err != nil {
 		return got, err
 	}
@@ -87,7 +87,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 		WithNewFile("a.txt", "new-a").WithNewFile("b.txt", "new-b")
 	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	first, err := commitWorkspace(ctx, c, ws, "same message", []string{"a.txt"})
+	first, err := commitWorkspace(ctx, c, ws, "same message", []string{"src/a.txt"})
 	require.NoError(t, err)
 	require.NotEqual(t, baseSHA, first.Git.Head.Commit)
 	require.Equal(t, []string{"src/b.txt"}, first.Git.Uncommitted.ModifiedPaths)
@@ -103,15 +103,15 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 		require.NoError(t, err)
 		require.Equal(t, expected, contents)
 	}
-	repeated, err := commitWorkspace(ctx, c, ws, "same message", []string{"a.txt"})
+	repeated, err := commitWorkspace(ctx, c, ws, "same message", []string{"src/a.txt"})
 	require.NoError(t, err)
 	require.Equal(t, first.Git.Head.Commit, repeated.Git.Head.Commit)
 	// Force a different recipe with the same resolved identity and tree, so
 	// this checks Git determinism rather than just a cache hit.
-	equivalent, err := commitWorkspace(ctx, c, ws.WithConfigEnvironment(""), "same message", []string{"a.txt"})
+	equivalent, err := commitWorkspace(ctx, c, ws.WithConfigEnvironment(""), "same message", []string{"src/a.txt"})
 	require.NoError(t, err)
 	require.Equal(t, first.Git.Head.Commit, equivalent.Git.Head.Commit)
-	laterSHA, err := ws.WithCommit("same message", "2026-09-05T12:00:01Z", dagger.WorkspaceWithCommitOpts{Paths: []string{"a.txt"}}).Git().Head().CommitSHA(ctx)
+	laterSHA, err := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"src/a.txt"}}), "same message", "2026-09-05T12:00:01Z").Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, first.Git.Head.Commit, laterSHA)
 	second, err := commitWorkspace(ctx, c, frozen, "same message", nil)
@@ -202,7 +202,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitSignoff(ctx context.Context, t *tes
 	const message = "subject\n\nCommit body."
 
 	t.Run("does not sign off by default", func(ctx context.Context, t *testctx.T) {
-		got, err := ws.WithCommit(message, workspaceCommitDate).Git().Head().TargetCommit().Message(ctx)
+		got, err := ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate).Git().Head().TargetCommit().Message(ctx)
 		require.NoError(t, err)
 		require.Equal(t, message, strings.TrimSpace(got))
 	})
@@ -235,7 +235,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitSignoff(ctx context.Context, t *tes
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			id, err := ws.WithCommit(message, workspaceCommitDate, tc.opts).ID(ctx)
+			id, err := ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate, tc.opts).ID(ctx)
 			require.NoError(t, err)
 			meta := dagger.Ref[*dagger.Workspace](c, id).Git().Head().TargetCommit()
 			got, err := meta.Message(ctx)
@@ -260,8 +260,9 @@ func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t
 
 	committed := ws.
 		WithNewFile("feature.txt", "feature").
-		WithNewFile("pending.txt", "pending").
-		WithCommit("draft mesage", workspaceCommitDate, dagger.WorkspaceWithCommitOpts{Paths: []string{"feature.txt"}})
+		WithNewFile("pending.txt", "pending").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"feature.txt"}}), "draft mesage", workspaceCommitDate)
+	})
 	draftSHA, err := committed.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, baseSHA, draftSHA)
@@ -328,18 +329,31 @@ func (WorkspaceSuite) TestWorkspaceWithCommitValidation(ctx context.Context, t *
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("old.txt", strings.Repeat("rename me\n", 20)))
 	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
 		WithoutFile("old.txt").WithNewFile("new.txt", strings.Repeat("rename me\n", 20))
-	_, err := commitWorkspace(ctx, c, ws, "rename", []string{"new.txt"})
-	require.ErrorContains(t, err, "split the rename")
+	// A filtered changeset, not Workspace, decides which rename sides to keep.
+	addition, err := commitWorkspace(ctx, c, ws, "new side only", []string{"new.txt"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"old.txt"}, addition.Git.Uncommitted.RemovedPaths)
+	additionTree := dagger.Ref[*dagger.Workspace](c, addition.ID).Git().Head().Tree()
+	for _, path := range []string{"old.txt", "new.txt"} {
+		exists, err := additionTree.Exists(ctx, path)
+		require.NoError(t, err)
+		require.True(t, exists)
+	}
 	committed, err := commitWorkspace(ctx, c, ws, "rename", []string{"old.txt", "new.txt"})
 	require.NoError(t, err)
 	require.Empty(t, committed.Git.Uncommitted.AddedPaths)
 	require.Empty(t, committed.Git.Uncommitted.RemovedPaths)
 	_, err = commitWorkspace(ctx, c, ws, "", nil)
 	require.ErrorContains(t, err, "message must be nonempty")
-	_, err = commitWorkspace(ctx, c, ws, "bad path", []string{"../outside"})
-	require.Error(t, err)
-	_, err = commitWorkspace(ctx, c, ws, "metadata", []string{".git/config"})
-	require.ErrorContains(t, err, "Git metadata")
+	_, err = commitWorkspace(ctx, c, ws, "empty selection", []string{"missing"})
+	require.ErrorContains(t, err, "nothing to commit")
+	_, err = ws.WithCommit(ws.Git().Uncommitted(), "bad date", "now").ID(ctx)
+	require.ErrorContains(t, err, "RFC3339")
+	var response any
+	for _, args := range []string{`message: "missing changes", date: "2026-09-05T12:00:00Z"`, `message: "old API", date: "2026-09-05T12:00:00Z", paths: ["new.txt"]`} {
+		err := c.Do(ctx, &dagger.Request{Query: `{ currentWorkspace { withCommit(` + args + `) { id } } }`}, &dagger.Response{Data: &response})
+		require.Error(t, err)
+	}
 	_, err = commitWorkspace(ctx, c, c.Directory().WithNewFile("a", "no Git").AsWorkspace(), "no repo", nil)
 	require.ErrorContains(t, err, "not in a git repository")
 }
@@ -347,7 +361,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitValidation(ctx context.Context, t *
 func (WorkspaceSuite) TestWorkspaceWithCommitRestoresWithoutClient(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c)
-	recipe, err := base.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | with-commit --message "frozen commit" --date "2026-09-05T12:00:00Z") | portable-id`)).Stdout(ctx)
+	recipe, err := base.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | with-commit --changes $(current-workspace | git | uncommitted) --message "frozen commit" --date "2026-09-05T12:00:00Z") | portable-id`)).Stdout(ctx)
 	require.NoError(t, err)
 	// The CLI's owning client and checkout are gone. Restore the recipe from
 	// the outer client, then create another commit using a new client identity.
@@ -449,12 +463,111 @@ func (*Probe) Committed() error { return nil }
 	require.Equal(t, "probe:committed", name)
 }
 
+func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	before := c.Directory().WithNewFile("base.txt", "base\n").WithNewFile("keep.txt", "keep\n")
+	daemon, url := gitService(ctx, t, c, before)
+	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	// This baseline is deliberately not HEAD: unchanged foreign content must
+	// not be imported, while the actual incoming delta must survive in both trees.
+	foreign := before.WithNewFile("foreign.txt", "not a change\n")
+	incoming := foreign.WithNewFile("base.txt", "incoming\n").WithNewFile("new.txt", "new\n").Changes(foreign)
+	for _, dirty := range []bool{false, true} {
+		name := "clean receiver"
+		ws := base
+		if dirty {
+			name = "retain unrelated dirt"
+			ws = ws.WithNewFile("pending.txt", "pending\n").WithNewFile("keep.txt", "pending edit\n")
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			id, err := ws.WithCommit(incoming, "incoming delta", workspaceCommitDate).ID(ctx)
+			require.NoError(t, err)
+			got := dagger.Ref[*dagger.Workspace](c, id)
+			for _, tree := range []*dagger.Directory{got.Directory("/"), got.Git().Head().Tree()} {
+				for file, want := range map[string]string{"base.txt": "incoming\n", "new.txt": "new\n"} {
+					content, err := tree.File(file).Contents(ctx)
+					require.NoError(t, err)
+					require.Equal(t, want, content)
+				}
+				exists, err := tree.Exists(ctx, "foreign.txt")
+				require.NoError(t, err)
+				require.False(t, exists)
+			}
+			added, err := got.Git().Uncommitted().AddedPaths(ctx)
+			require.NoError(t, err)
+			modified, err := got.Git().Uncommitted().ModifiedPaths(ctx)
+			require.NoError(t, err)
+			if dirty {
+				require.Equal(t, []string{"pending.txt"}, added)
+				require.Equal(t, []string{"keep.txt"}, modified)
+				content, err := got.File("keep.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "pending edit\n", content)
+			} else {
+				require.Empty(t, added)
+				require.Empty(t, modified)
+			}
+			_, err = got.WithCommit(incoming, "already in HEAD", workspaceCommitDate).ID(ctx)
+			require.ErrorContains(t, err, "nothing to commit")
+			_, err = ws.WithCommit(before.Changes(before), "empty", workspaceCommitDate).ID(ctx)
+			require.ErrorContains(t, err, "nothing to commit")
+			content, err := ws.File("base.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "base\n", content, "the receiver is immutable")
+		})
+	}
+}
+
+func (WorkspaceSuite) TestWorkspaceWithCommitMergeConflicts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	before := c.Directory().WithNewFile("base.txt", "base\n")
+	daemon, url := gitService(ctx, t, c, before)
+	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	incoming := before.WithNewFile("base.txt", "incoming\n").Changes(before)
+	t.Run("working tree conflict", func(ctx context.Context, t *testctx.T) {
+		ws := base.WithNewFile("base.txt", "pending\n")
+		_, err := ws.WithCommit(incoming, "conflict", workspaceCommitDate).ID(ctx)
+		require.ErrorContains(t, err, "apply commit changes to working tree")
+		require.ErrorContains(t, err, "base.txt")
+		content, err := ws.File("base.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "pending\n", content)
+	})
+	t.Run("HEAD conflict even when working tree matches", func(ctx context.Context, t *testctx.T) {
+		ours := base.WithNewFile("base.txt", "committed\n")
+		ours = ours.WithCommit(ours.Git().Uncommitted(), "diverge", workspaceCommitDate)
+		ws := ours.WithNewFile("base.txt", "incoming\n")
+		_, err := ws.WithCommit(incoming, "conflict", workspaceCommitDate).ID(ctx)
+		require.ErrorContains(t, err, "apply commit changes")
+		require.NotContains(t, err.Error(), "apply commit changes to working tree")
+		require.ErrorContains(t, err, "base.txt")
+		content, err := ws.Git().Head().Tree().File("base.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "committed\n", content)
+	})
+	t.Run("compatible edits in the same file", func(ctx context.Context, t *testctx.T) {
+		text := "first\n" + strings.Repeat("context\n", 10) + "last\n"
+		ours := base.WithNewFile("base.txt", text)
+		ours = ours.WithCommit(ours.Git().Uncommitted(), "multiline base", workspaceCommitDate)
+		baseline := ours.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		selected := baseline.WithNewFile("base.txt", strings.Replace(text, "first", "selected", 1)).Changes(baseline)
+		ws := ours.WithNewFile("base.txt", strings.Replace(text, "last", "pending", 1))
+		committed := ws.WithCommit(selected, "partial file", workspaceCommitDate)
+		content, err := committed.File("base.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "selected\n"+strings.Repeat("context\n", 10)+"pending\n", content)
+		content, err = committed.Git().Head().Tree().File("base.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.Replace(text, "first", "selected", 1), content)
+	})
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitLiteralPaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("a*.txt", "old").WithNewFile("abc.txt", "old").WithNewFile("dir[1]/file", "old"))
 	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace().
 		WithNewFile("a*.txt", "literal").WithNewFile("abc.txt", "unselected").WithNewFile("dir[1]/file", "selected directory")
-	result := ws.WithCommit("literal paths", workspaceCommitDate, dagger.WorkspaceWithCommitOpts{Paths: []string{"a*.txt", "dir[1]"}})
+	result := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{`a\*.txt`, `dir\[1]`}}), "literal paths", workspaceCommitDate)
 	for file, want := range map[string]string{"a*.txt": "literal", "abc.txt": "old", "dir[1]/file": "selected directory"} {
 		got, err := result.Git().Head().Tree().File(file).Contents(ctx)
 		require.NoError(t, err)

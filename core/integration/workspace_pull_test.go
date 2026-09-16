@@ -67,7 +67,9 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	c := connect(ctx, t)
 	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
 	base := snapshotWorkspace(ctx, t, c, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
-	source := base.WithNewFile("source.txt", "source").WithCommit("source commit", workspaceCommitDate).WithNewFile("ignored.txt", "source WIP")
+	source := base.WithNewFile("source.txt", "source").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "source commit", workspaceCommitDate)
+	}).WithNewFile("ignored.txt", "source WIP")
 	receiver := base.WithNewFile("pending.txt", "receiver WIP").
 		WithMountedDirectory("mount", c.Directory().WithNewFile("mounted.txt", "mount"))
 	sourceSHA, err := source.Git().Head().CommitSHA(ctx)
@@ -114,7 +116,7 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	require.NoError(t, err)
 	require.Equal(t, sourceSHA, sha)
 	// New commits after a pull resolve the calling client's Git identity.
-	next := pulled.WithCommit("save WIP", workspaceCommitDate)
+	next := pulled.WithCommit(pulled.Git().Uncommitted(), "save WIP", workspaceCommitDate)
 	name, err := next.Git().Head().TargetCommit().AuthorName(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "Dagger", name)
@@ -125,7 +127,9 @@ func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testct
 	git("config", "user.name", "Source")
 	git("config", "user.email", "source@example.com")
 	sourceClient := connect(ctx, t, dagger.WithWorkdir(checkout))
-	sourceID, err := snapshotWorkspace(ctx, t, sourceClient, sourceClient.CurrentWorkspace()).WithNewFile("from-source.txt", "source").WithCommit("source", workspaceCommitDate).ID(ctx)
+	sourceID, err := snapshotWorkspace(ctx, t, sourceClient, sourceClient.CurrentWorkspace()).WithNewFile("from-source.txt", "source").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "source", workspaceCommitDate)
+	}).ID(ctx)
 	require.NoError(t, err)
 
 	git("config", "user.name", "Receiver")
@@ -133,7 +137,9 @@ func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testct
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
 	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
 	source := dagger.Ref[*dagger.Workspace](c, sourceID)
-	receiver := base.WithNewFile("local.txt", "local").WithCommit("local", workspaceCommitDate)
+	receiver := base.WithNewFile("local.txt", "local").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "local", workspaceCommitDate)
+	})
 	sourceSHA, err := source.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	oldSHA, err := receiver.Git().Head().CommitSHA(ctx)
@@ -186,12 +192,16 @@ func (WorkspaceSuite) TestWorkspacePullConflictsAndRedundancy(ctx context.Contex
 	checkout, _ := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
 	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
-	source := base.WithNewFile("base.txt", "source").WithCommit("conflicting", workspaceCommitDate).
-		WithNewFile("independent.txt", "independent").WithCommit("independent", workspaceCommitDate)
+	source := base.WithNewFile("base.txt", "source").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "conflicting", workspaceCommitDate)
+	}).
+		WithNewFile("independent.txt", "independent").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "independent", workspaceCommitDate)
+	})
 	for _, dirty := range []bool{true, false} {
 		receiver := base.WithNewFile("base.txt", "local")
 		if !dirty {
-			receiver = receiver.WithCommit("local", workspaceCommitDate)
+			receiver = receiver.WithCommit(receiver.Git().Uncommitted(), "local", workspaceCommitDate)
 		}
 		original, err := receiver.Git().Head().CommitSHA(ctx)
 		require.NoError(t, err)
@@ -216,7 +226,9 @@ func (WorkspaceSuite) TestWorkspacePullConflictsAndRedundancy(ctx context.Contex
 		require.NoError(t, err)
 		require.Equal(t, "local", contents)
 	}
-	same := base.WithNewFile("base.txt", "source").WithCommit("equivalent local", workspaceCommitDate)
+	same := base.WithNewFile("base.txt", "source").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "equivalent local", workspaceCommitDate)
+	})
 	plan, err := planWorkspacePull(ctx, c, same, source, nil, 100)
 	require.NoError(t, err)
 	require.Equal(t, "REDUNDANT", plan[0].Status)
@@ -226,7 +238,9 @@ func (WorkspaceSuite) TestWorkspacePullConflictsAndRedundancy(ctx context.Contex
 	dirtyPaths, err := emptyDir.Git().Uncommitted().AddedPaths(ctx)
 	require.NoError(t, err)
 	require.Contains(t, dirtyPaths, "empty/")
-	incoming := base.WithNewFile("empty", "incoming file").WithCommit("replace empty directory", workspaceCommitDate)
+	incoming := base.WithNewFile("empty", "incoming file").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "replace empty directory", workspaceCommitDate)
+	})
 	plan, err = planWorkspacePull(ctx, c, emptyDir, incoming, nil, 100)
 	require.NoError(t, err)
 	require.Len(t, plan, 1)
@@ -241,10 +255,14 @@ func (WorkspaceSuite) TestWorkspacePullSelectionAndLimits(ctx context.Context, t
 	checkout, _ := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
 	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
-	source := base.WithNewFile("a", "a").WithCommit("a", workspaceCommitDate)
+	source := base.WithNewFile("a", "a").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "a", workspaceCommitDate)
+	})
 	a, err := source.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	source = source.WithNewFile("b", "b").WithCommit("b", workspaceCommitDate)
+	source = source.WithNewFile("b", "b").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "b", workspaceCommitDate)
+	})
 	b, err := source.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	plan, err := planWorkspacePull(ctx, c, base, source, []string{b, a}, 100)

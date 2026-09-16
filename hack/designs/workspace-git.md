@@ -142,9 +142,9 @@ and [client capture](../../engine/session/git/git_capture.go).
 extend type Workspace {
   """Create a real Git commit, advance HEAD, and retain unselected edits."""
   withCommit(
+    """Delta to merge into both HEAD and the working tree; fail on conflicts or no-op."""
+    changes: ID! @expectedType(name: "Changeset")
     message: String!
-    """Literal cwd-relative paths. Empty selects all; include both sides of renames."""
-    paths: [String!] = []
     """Explicit RFC3339 author and committer date."""
     date: String!
     """Defaults from the calling client's Git config at commit time, else Dagger."""

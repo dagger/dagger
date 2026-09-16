@@ -28,8 +28,9 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	require.Equal(t, url, strings.TrimSpace(out))
 
-	ws := base.WithNewFile("committed.txt", "agent commit").
-		WithCommit("agent commit", workspaceCommitDate).
+	ws := base.WithNewFile("committed.txt", "agent commit").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "agent commit", workspaceCommitDate)
+	}).
 		WithNewFile("base.txt", "pending edit").
 		WithoutFile("removed.txt").
 		WithNewFile("untracked.txt", "pending addition")
