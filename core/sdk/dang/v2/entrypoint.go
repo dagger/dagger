@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
+	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
 	telemetry "github.com/dagger/otel-go"
@@ -33,7 +34,7 @@ func EntrypointModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("get current query for entrypoint types: %w", err)
 	}
-	entrySrc, workspace, err := resolveEntrypointSource(ctx, dag, src)
+	entrySrc, workspace, err := entrypoint.ResolveSource(ctx, dag, src)
 	if err != nil {
 		return inst, err
 	}
@@ -62,7 +63,7 @@ func EntrypointModuleTypes(
 			if err != nil {
 				return nil, err
 			}
-			workspaceArg, err := workspaceCallArg(workspace)
+			workspaceArg, err := entrypoint.WorkspaceCallArg(workspace)
 			if err != nil {
 				return nil, err
 			}
@@ -79,10 +80,10 @@ func EntrypointModuleTypes(
 	if err != nil {
 		return inst, dangshared.ConvertError(err)
 	}
-	if err := validateEntrypointConstructors(typeDefs); err != nil {
+	if err := entrypoint.ValidateConstructors(typeDefs); err != nil {
 		return inst, err
 	}
-	return moduleFromEntrypointTypeDefs(ctx, dag, typeDefs)
+	return entrypoint.ModuleFromTypeDefs(ctx, dag, typeDefs)
 }
 
 type entrypointRuntime struct {
@@ -122,7 +123,7 @@ func (r *entrypointRuntime) Call(
 	if err != nil {
 		return fmt.Errorf("get current query for entrypoint call: %w", err)
 	}
-	entrySrc, workspace, err := resolveEntrypointSource(ctx, dag, r.modSource)
+	entrySrc, workspace, err := entrypoint.ResolveSource(ctx, dag, r.modSource)
 	if err != nil {
 		return err
 	}
@@ -154,20 +155,20 @@ func (r *entrypointRuntime) Call(
 			if err != nil {
 				return nil, err
 			}
-			workspaceArg, err := workspaceCallArg(workspace)
+			workspaceArg, err := entrypoint.WorkspaceCallArg(workspace)
 			if err != nil {
 				return nil, err
 			}
-			fnArgs, err := functionArgsJSON(fnCall.InputArgs)
+			fnArgs, err := entrypoint.FunctionArgsJSON(fnCall.InputArgs)
 			if err != nil {
 				return nil, err
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, []*core.FunctionCallArgValue{
 				workspaceArg,
-				stringCallArg("receiverType", fnCall.ParentName),
-				jsonScalarCallArg("receiverValue", fnCall.Parent),
-				stringCallArg("fnName", fnCall.Name),
-				jsonScalarCallArg("fnArgs", fnArgs),
+				entrypoint.StringCallArg("receiverType", fnCall.ParentName),
+				entrypoint.JSONScalarCallArg("receiverValue", fnCall.Parent),
+				entrypoint.StringCallArg("fnName", fnCall.Name),
+				entrypoint.JSONScalarCallArg("fnArgs", fnArgs),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("call module entrypoint: %w", err)
@@ -180,147 +181,6 @@ func (r *entrypointRuntime) Call(
 		return err
 	}
 	return fnCall.ReturnValue(ctx, core.JSON(resultJSON))
-}
-
-func resolveEntrypointSource(
-	ctx context.Context,
-	dag *dagql.Server,
-	src dagql.ObjectResult[*core.ModuleSource],
-) (dagql.ObjectResult[*core.ModuleSource], dagql.ObjectResult[*core.Workspace], error) {
-	if src.Self().Entrypoint == nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module entrypoint is not configured")
-	}
-
-	var workspace dagql.ObjectResult[*core.Workspace]
-	if err := dag.Select(ctx, dag.Root(), &workspace, dagql.Selector{Field: "currentWorkspace"}); err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("get module workspace: %w", err)
-	}
-
-	address := src.Self().Entrypoint.Source
-	directory, err := resolveEntrypointSourceDirectory(ctx, dag, src, address)
-	if err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("resolve module entrypoint source %q: %w", address, err)
-	}
-
-	entrySrc := src.Self().Clone()
-	entrySrc.ContextDirectory = directory
-	entrySrc.SourceRootSubpath = "."
-	entrySrc.SourceSubpath = "."
-	entrySrc.IncludePaths = nil
-	entrySrc.RebasedIncludePaths = nil
-	entrySrc.ConfigDependencies = nil
-	entrySrc.Dependencies = nil
-	entrySrc.ConfigBlueprint = nil
-	entrySrc.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
-	entrySrc.ConfigToolchains = nil
-	entrySrc.Toolchains = nil
-	entrySrc.Local = nil
-	entrySrc.Git = nil
-	entrySrc.DirSrc = &core.DirModuleSource{OriginalContextDir: directory}
-	entrySrc.Kind = core.ModuleSourceKindDir
-
-	entrySrcResult, err := dagql.NewObjectResultForCurrentCall(ctx, dag, entrySrc)
-	if err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("attach module entrypoint source: %w", err)
-	}
-	return entrySrcResult, workspace, nil
-}
-
-// resolveEntrypointSourceDirectory loads the directory named by
-// entrypoint.source. A local path is relative to the directory that contains
-// dagger-module.toml and is read from the module's own context directory, so
-// it resolves the same way for local, git and directory module sources. Any
-// other value is an address that resolves to a Directory.
-func resolveEntrypointSourceDirectory(
-	ctx context.Context,
-	dag *dagql.Server,
-	src dagql.ObjectResult[*core.ModuleSource],
-	address string,
-) (dagql.ObjectResult[*core.Directory], error) {
-	var directory dagql.ObjectResult[*core.Directory]
-
-	local, err := isLocalEntrypointSource(ctx, src, address)
-	if err != nil {
-		return directory, err
-	}
-	if !local {
-		err := dag.Select(ctx, dag.Root(), &directory,
-			dagql.Selector{Field: "address", Args: []dagql.NamedInput{{Name: "value", Value: dagql.String(address)}}},
-			dagql.Selector{Field: "directory"},
-		)
-		return directory, err
-	}
-
-	subpath, err := entrypointSourceSubpath(src.Self(), address)
-	if err != nil {
-		return directory, err
-	}
-	contextDir := src.Self().ContextDirectory
-	if contextDir.Self() == nil {
-		return directory, fmt.Errorf("module source has no context directory")
-	}
-	err = dag.Select(ctx, contextDir, &directory, dagql.Selector{
-		Field: "directory",
-		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}},
-	})
-	return directory, err
-}
-
-// isLocalEntrypointSource reports whether source is a path relative to the
-// module directory, as opposed to an address. It follows the same heuristic
-// as module refs: an explicit path prefix or a dot-free value is local, a value
-// with a ":" (a URL or a module:function address) is remote, and an ambiguous
-// value such as "example.com/repo" is local only when the path exists under
-// the module directory.
-func isLocalEntrypointSource(
-	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-	source string,
-) (bool, error) {
-	if strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/") {
-		return true, nil
-	}
-	if strings.Contains(source, ":") {
-		// URL, scp-like git URL, or a module:function address
-		return false, nil
-	}
-	switch core.FastModuleSourceKindCheck(source, "") {
-	case core.ModuleSourceKindLocal:
-		return true, nil
-	case core.ModuleSourceKindGit:
-		return false, nil
-	}
-	if src.Self() == nil || src.Self().ContextDirectory.Self() == nil {
-		return false, nil
-	}
-	subpath, err := entrypointSourceSubpath(src.Self(), source)
-	if err != nil {
-		// not a usable local path, so treat it as an address
-		return false, nil //nolint:nilerr
-	}
-	contextDir := src.Self().ContextDirectory
-	_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: contextDir}, subpath)
-	if err != nil {
-		return false, fmt.Errorf("stat %q in module directory: %w", source, err)
-	}
-	return exists, nil
-}
-
-// entrypointSourceSubpath converts a module-relative entrypoint path into a
-// path relative to the module source context directory.
-func entrypointSourceSubpath(src *core.ModuleSource, source string) (string, error) {
-	if filepath.IsAbs(source) {
-		return "", fmt.Errorf("entrypoint source path %q must be relative to the module directory", source)
-	}
-	cleaned := filepath.Clean(source)
-	if !filepath.IsLocal(cleaned) {
-		return "", fmt.Errorf("entrypoint source path %q escapes the module directory", source)
-	}
-	rootSubpath := src.SourceRootSubpath
-	if rootSubpath == "" {
-		rootSubpath = "."
-	}
-	return filepath.Join(rootSubpath, cleaned), nil
 }
 
 const moduleEntrypointInterface = `interface ModuleEntrypoint {
@@ -428,49 +288,6 @@ func callEntrypointMethod(
 	})
 }
 
-func workspaceCallArg(workspace dagql.ObjectResult[*core.Workspace]) (*core.FunctionCallArgValue, error) {
-	id, err := workspace.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get module workspace ID: %w", err)
-	}
-	encoded, err := id.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode module workspace ID: %w", err)
-	}
-	return stringCallArg("workspace", encoded), nil
-}
-
-func jsonCallArg(name string, value core.JSON) *core.FunctionCallArgValue {
-	return &core.FunctionCallArgValue{Name: name, Value: value}
-}
-
-func stringCallArg(name, value string) *core.FunctionCallArgValue {
-	data, _ := json.Marshal(value)
-	return jsonCallArg(name, core.JSON(data))
-}
-
-func jsonScalarCallArg(name string, value core.JSON) *core.FunctionCallArgValue {
-	return stringCallArg(name, string(value))
-}
-
-func functionArgsJSON(args []*core.FunctionCallArgValue) (core.JSON, error) {
-	values := make(map[string]json.RawMessage, len(args))
-	for _, arg := range args {
-		if arg == nil {
-			continue
-		}
-		if !json.Valid(arg.Value) {
-			return nil, fmt.Errorf("function argument %q is not valid JSON", arg.Name)
-		}
-		values[arg.Name] = json.RawMessage(arg.Value)
-	}
-	data, err := json.Marshal(values)
-	if err != nil {
-		return nil, fmt.Errorf("encode function arguments: %w", err)
-	}
-	return core.JSON(data), nil
-}
-
 func entrypointJSONResult(value dang.Value) ([]byte, error) {
 	switch value := value.(type) {
 	case dang.ScalarValue:
@@ -521,51 +338,6 @@ func loadEntrypointTypeDefs(
 		typeDefs = append(typeDefs, typeDef)
 	}
 	return typeDefs, nil
-}
-
-func validateEntrypointConstructors(typeDefs dagql.ObjectResultArray[*core.TypeDef]) error {
-	var constructors []string
-	for _, typeDef := range typeDefs {
-		if typeDef.Self().Kind != core.TypeDefKindObject || !typeDef.Self().AsObject.Value.Self().Constructor.Valid {
-			continue
-		}
-		constructors = append(constructors, typeDef.Self().AsObject.Value.Self().OriginalName)
-	}
-	if len(constructors) > 1 {
-		return fmt.Errorf("multiple object constructors are not supported: %s", strings.Join(constructors, ", "))
-	}
-	return nil
-}
-
-func moduleFromEntrypointTypeDefs(
-	ctx context.Context,
-	dag *dagql.Server,
-	typeDefs dagql.ObjectResultArray[*core.TypeDef],
-) (dagql.ObjectResult[*core.Module], error) {
-	selectors := []dagql.Selector{{Field: "module"}}
-	for i, typeDef := range typeDefs {
-		id, err := typeDef.ID()
-		if err != nil {
-			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("get module entrypoint type %d ID: %w", i, err)
-		}
-		typeDefID := dagql.NewID[*core.TypeDef](id)
-		switch typeDef.Self().Kind {
-		case core.TypeDefKindObject:
-			selectors = append(selectors, dagql.Selector{Field: "withObject", Args: []dagql.NamedInput{{Name: "object", Value: typeDefID}}})
-		case core.TypeDefKindInterface:
-			selectors = append(selectors, dagql.Selector{Field: "withInterface", Args: []dagql.NamedInput{{Name: "iface", Value: typeDefID}}})
-		case core.TypeDefKindEnum:
-			selectors = append(selectors, dagql.Selector{Field: "withEnum", Args: []dagql.NamedInput{{Name: "enum", Value: typeDefID}}})
-		default:
-			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("module entrypoint type %d has unsupported kind %q", i, typeDef.Self().Kind)
-		}
-	}
-
-	var module dagql.ObjectResult[*core.Module]
-	if err := dag.Select(ctx, dag.Root(), &module, selectors...); err != nil {
-		return module, fmt.Errorf("create module from entrypoint types: %w", err)
-	}
-	return module, nil
 }
 
 var _ core.ModuleRuntime = (*entrypointRuntime)(nil)
