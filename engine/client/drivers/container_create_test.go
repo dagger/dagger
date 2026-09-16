@@ -3,9 +3,12 @@ package drivers
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"net/url"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,11 +24,12 @@ func TestImageDriverCreateEnablesLoopbackDebugListener(t *testing.T) {
 	backend := &captureContainerBackend{}
 	driver := &imageDriver{backend: backend}
 
-	target, err := driver.create(ctx, containerCreateOpts{
+	target, wasRunning, err := driver.create(ctx, containerCreateOpts{
 		imageRef: "registry.example.com/dagger-engine:v0.21.0",
 		port:     1234,
 	}, &DriverOpts{})
 	require.NoError(t, err)
+	require.False(t, wasRunning)
 	require.Equal(t, "dagger-engine-v0.21.0", target.Host)
 
 	require.Equal(t, "dagger-engine-v0.21.0", backend.runName)
@@ -58,11 +62,12 @@ func TestImageDriverCreateStartsExistingEngineWithoutListing(t *testing.T) {
 	}
 	driver := &imageDriver{backend: backend}
 
-	target, err := driver.create(t.Context(), containerCreateOpts{
+	target, wasRunning, err := driver.create(t.Context(), containerCreateOpts{
 		imageRef: "registry.example.com/dagger-engine:v0.21.0",
 		cleanup:  true,
 	}, &DriverOpts{})
 	require.NoError(t, err)
+	require.True(t, wasRunning)
 	require.Equal(t, "dagger-engine-v0.21.0", target.Host)
 	require.Empty(t, backend.runName, "no container is run")
 	require.Empty(t, backend.started, "a running engine is not started again")
@@ -86,16 +91,18 @@ func TestImageDriverCreateSweepsBeforeRunningNewEngine(t *testing.T) {
 	close(backend.lsGate)
 	driver := &imageDriver{backend: backend}
 
-	_, err := driver.create(t.Context(), containerCreateOpts{
+	_, wasRunning, err := driver.create(t.Context(), containerCreateOpts{
 		imageRef: "registry.example.com/dagger-engine:v0.21.0",
 		cleanup:  true,
 	}, &DriverOpts{})
 	require.NoError(t, err)
+	require.False(t, wasRunning)
 	require.Equal(t, "dagger-engine-v0.21.0", backend.runName)
 	require.Equal(t, []string{"dagger-engine-v0.20.0"}, backend.removedIDs())
 }
 
-// A stopped engine is started; a running one is not started again.
+// A stopped engine is started, and reported as not having been running, so
+// no tunnel is dialed into it before it is up.
 func TestImageDriverCreateStartsStoppedEngine(t *testing.T) {
 	t.Parallel()
 
@@ -106,13 +113,60 @@ func TestImageDriverCreateStartsStoppedEngine(t *testing.T) {
 	close(backend.lsGate)
 	driver := &imageDriver{backend: backend}
 
-	_, err := driver.create(t.Context(), containerCreateOpts{
+	_, wasRunning, err := driver.create(t.Context(), containerCreateOpts{
 		imageRef: "registry.example.com/dagger-engine:v0.21.0",
 		cleanup:  true,
 	}, &DriverOpts{})
 	require.NoError(t, err)
+	require.False(t, wasRunning)
 	require.Empty(t, backend.runName)
 	require.Equal(t, []string{"dagger-engine-v0.21.0"}, backend.started)
+
+	// Provision follows create: no pre-dialed tunnels for an engine that was
+	// not running.
+	connector, err := driver.Provision(t.Context(), &url.URL{Scheme: "image", Host: "registry.example.com", Path: "/dagger-engine:v0.21.0"}, &DriverOpts{})
+	require.NoError(t, err)
+	require.Nil(t, connector.(containerConnector).warm)
+}
+
+// The connector dials its tunnels ahead of time, all at once, and hands
+// them out in order; past those it dials on demand, and a pre-dial that
+// failed is replaced by a fresh dial.
+func TestContainerConnectorPreDialsTunnels(t *testing.T) {
+	t.Parallel()
+
+	backend := &dialCountingBackend{failFirst: 1}
+	driver := &containerDriver{backend: backend}
+	connector, err := driver.Provision(t.Context(), &url.URL{Scheme: "container", Host: "engine"}, &DriverOpts{})
+	require.NoError(t, err)
+
+	// All four tunnels are in flight before anyone asked for one.
+	require.Eventually(t, func() bool { return backend.dials.Load() == warmTunnelCount }, 5*time.Second, 10*time.Millisecond)
+
+	for range warmTunnelCount + 1 {
+		conn, err := connector.Connect(t.Context())
+		require.NoError(t, err)
+		require.NotNil(t, conn)
+		conn.Close()
+	}
+	// Four pre-dials, one of which failed and was redone, plus one on demand.
+	require.Equal(t, int32(warmTunnelCount+2), backend.dials.Load())
+}
+
+type dialCountingBackend struct {
+	captureContainerBackend
+	dials     atomic.Int32
+	failFirst int32
+}
+
+func (b *dialCountingBackend) ContainerDial(context.Context, string, []string) (net.Conn, error) {
+	n := b.dials.Add(1)
+	if n <= b.failFirst {
+		return nil, fmt.Errorf("dial %d failed", n)
+	}
+	client, server := net.Pipe()
+	go func() { _, _ = io.Copy(io.Discard, server) }()
+	return client, nil
 }
 
 // existingEngineBackend fakes a runtime holding the containers in ids, of

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/adrg/xdg"
 	telemetry "github.com/dagger/otel-go"
@@ -143,7 +144,7 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 	}
 
 	port, _ := strconv.Atoi(target.Query().Get("port"))
-	target, err := d.create(ctx, containerCreateOpts{
+	target, wasRunning, err := d.create(ctx, containerCreateOpts{
 		imageRef:      target.Host + target.Path,
 		containerName: target.Query().Get("container"),
 		volumeName:    target.Query().Get("volume"),
@@ -156,11 +157,18 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 	if err != nil {
 		return nil, err
 	}
-	return containerConnector{
+	connector := containerConnector{
 		backend: d.backend,
 		host:    target.Host,
 		values:  target.Query(),
-	}, nil
+	}
+	// Tunnels dialed into an engine that is still booting are dead on
+	// arrival and cost every client a reconnect backoff, so only an engine
+	// that was already running gets them ahead of time.
+	if wasRunning {
+		connector = connector.withWarmTunnels(ctx)
+	}
+	return connector, nil
 }
 
 func (d *imageDriver) ImageLoader(ctx context.Context) imageload.Backend {
@@ -171,6 +179,58 @@ type containerConnector struct {
 	host    string
 	values  url.Values
 	backend containerBackend
+
+	// warm holds tunnels dialed ahead of time; see warmTunnels.
+	warm *warmTunnels
+}
+
+// A command opens a handful of connections to the engine, one per client
+// library (gRPC control, session upgrade, telemetry, API), and each one
+// dials when its library is created, one after the other. An exec tunnel
+// costs a runc exec per dial, so the connector dials that many at once as
+// soon as it exists and hands them out in order; anything past them dials
+// on demand. Unused tunnels end with the process.
+const warmTunnelCount = 4
+
+type warmTunnels struct {
+	mu      sync.Mutex
+	pending []chan dialResult
+}
+
+type dialResult struct {
+	conn net.Conn
+	err  error
+}
+
+func (d containerConnector) withWarmTunnels(ctx context.Context) containerConnector {
+	w := &warmTunnels{}
+	d.warm = w
+	dialer := d
+	for range warmTunnelCount {
+		ch := make(chan dialResult, 1)
+		w.pending = append(w.pending, ch)
+		go func() {
+			conn, err := dialer.dial(ctx)
+			ch <- dialResult{conn: conn, err: err}
+		}()
+	}
+	return d
+}
+
+// next hands out the oldest pre-dialed tunnel, or nothing when they are
+// all taken.
+func (w *warmTunnels) next() chan dialResult {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.pending) == 0 {
+		return nil
+	}
+	ch := w.pending[0]
+	w.pending = w.pending[1:]
+	return ch
 }
 
 // imageDriver connects to a container directly
@@ -187,7 +247,7 @@ func (d *containerDriver) Provision(ctx context.Context, target *url.URL, opts *
 		backend: d.backend,
 		host:    target.Host,
 		values:  target.Query(),
-	}, nil
+	}.withWarmTunnels(ctx), nil
 }
 
 func (d *containerDriver) ImageLoader(ctx context.Context) imageload.Backend {
@@ -195,6 +255,21 @@ func (d *containerDriver) ImageLoader(ctx context.Context) imageload.Backend {
 }
 
 func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
+	if ch := d.warm.next(); ch != nil {
+		select {
+		case r := <-ch:
+			if r.err == nil {
+				return r.conn, nil
+			}
+			// fall through to a fresh dial, which reports its own error
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return d.dial(ctx)
+}
+
+func (d containerConnector) dial(ctx context.Context) (net.Conn, error) {
 	args := []string{}
 	if context := d.values.Get("context"); context != "" {
 		args = append(args, "--context="+context)
@@ -240,8 +315,9 @@ type containerCreateOpts struct {
 // sha of the image. Remove any other containers leftover from
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
-// "dagger-engine-").
-func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopts *DriverOpts) (target *url.URL, rerr error) {
+// "dagger-engine-"). wasRunning reports whether the engine was already
+// up before this call.
+func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopts *DriverOpts) (target *url.URL, wasRunning bool, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "create container")
 	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
@@ -250,7 +326,7 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	if containerName == "" {
 		id, err := resolveImageID(opts.imageRef)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		// run the container using that id in the name
 		containerName = containerNamePrefix + id
@@ -265,19 +341,19 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	if id, running, err := d.backend.ContainerInspect(ctx, containerName); err == nil {
 		if !running {
 			if err := d.backend.ContainerStart(ctx, containerName); err != nil {
-				return nil, fmt.Errorf("failed to start container: %w", err)
+				return nil, false, fmt.Errorf("failed to start container: %w", err)
 			}
 		}
 		d.sweepLeftoverEngines(ctx, opts.cleanup, containerName, id)
-		return &url.URL{Host: containerName}, nil
+		return &url.URL{Host: containerName}, running, nil
 	} else if errors.Is(err, context.Canceled) {
-		return nil, err
+		return nil, false, err
 	}
 
 	leftoverEngines, err := d.collectLeftoverEngines(ctx, containerName)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, err
+			return nil, false, err
 		}
 		slog.Warn("failed to list containers", "error", err)
 		leftoverEngines = []string{}
@@ -287,21 +363,21 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		// if we already have a container with that name, attempt to start it
 		if leftoverEngine == containerName {
 			if err := d.backend.ContainerStart(ctx, leftoverEngine); err != nil {
-				return nil, fmt.Errorf("failed to start container: %w", err)
+				return nil, false, fmt.Errorf("failed to start container: %w", err)
 			}
 			d.garbageCollectEngines(ctx, opts.cleanup, nil, slices.Delete(leftoverEngines, i, i+1))
-			return &url.URL{Host: containerName}, nil
+			return &url.URL{Host: containerName}, false, nil
 		}
 	}
 
 	// ensure the image is pulled
 	exists, err := d.backend.ImageExists(ctx, opts.imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to inspect image: %w", err)
+		return nil, false, fmt.Errorf("failed to inspect image: %w", err)
 	}
 	if !exists {
 		if err := d.backend.ImagePull(ctx, opts.imageRef); err != nil {
-			return nil, fmt.Errorf("failed to pull image: %w", err)
+			return nil, false, fmt.Errorf("failed to pull image: %w", err)
 		}
 	}
 
@@ -349,7 +425,7 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		// maybe someone else started the container simultaneously?
 		if !errors.Is(err, errContainerAlreadyExists) {
 			if exists, _ := d.backend.ContainerExists(ctx, containerName); !exists {
-				return nil, fmt.Errorf("failed to run container: %w", err)
+				return nil, false, fmt.Errorf("failed to run container: %w", err)
 			}
 		}
 	}
@@ -359,7 +435,7 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	// version
 	d.garbageCollectEngines(ctx, opts.cleanup, nil, leftoverEngines)
 
-	return &url.URL{Host: containerName}, nil
+	return &url.URL{Host: containerName}, false, nil
 }
 
 // sweepLeftoverEngines removes engines of other versions without holding
