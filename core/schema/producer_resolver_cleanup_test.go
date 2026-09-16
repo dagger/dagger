@@ -76,6 +76,7 @@ func (m resolverInputMount) Mount() ([]mount.Mount, func() error, error) {
 	return []mount.Mount{{Type: "bind", Source: string(m)}}, func() error { return nil }, nil
 }
 func TestProducerResolverCleanup(t *testing.T) {
+	t.Run("constructed output recording", testProducerRecordingRejections)
 	for _, kind := range []string{"ref wrapping", "ref digest", "commit wrapping", "ref recording", "commit recording"} {
 		t.Run(kind, func(t *testing.T) {
 			server := &currentTypeDefsTestServer{}
@@ -151,16 +152,25 @@ func TestProducerResolverCleanup(t *testing.T) {
 // Faults happen after the eager body has produced its immutable output.
 type resolverOutputRef struct {
 	bkcache.ImmutableRef
-	root, id string
-	releases int
+	root, id          string
+	releases          int
+	faultValue        dagql.Typed
+	faultLazy         any
+	faultReleaseError error
 }
 
 func (r *resolverOutputRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
 	return resolverInputMount(r.root), nil
 }
-func (r *resolverOutputRef) ID() string                          { return r.id }
-func (r *resolverOutputRef) SnapshotID() string                  { return r.id }
-func (r *resolverOutputRef) Release(ctx context.Context) error   { r.releases++; return ctx.Err() }
+func (r *resolverOutputRef) ID() string         { return r.id }
+func (r *resolverOutputRef) SnapshotID() string { return r.id }
+func (r *resolverOutputRef) Release(ctx context.Context) error {
+	r.releases++
+	if r.faultValue != nil {
+		return errors.Join(ctx.Err(), r.faultReleaseError)
+	}
+	return ctx.Err()
+}
 func (r *resolverOutputRef) Size(context.Context) (int64, error) { return 0, nil }
 
 type resolverMutableRef struct {
@@ -178,9 +188,10 @@ func (r *resolverMutableRef) Release(ctx context.Context) error { return ctx.Err
 
 type resolverOutputManager struct {
 	bkcache.SnapshotManager
-	t          *testing.T
-	outputs    []*resolverOutputRef
-	leaseFault error
+	t                     *testing.T
+	outputs               []*resolverOutputRef
+	leaseFault            error
+	recordingReleaseError error
 }
 
 func (m *resolverOutputManager) AttachLease(context.Context, string, string) error {
@@ -210,12 +221,12 @@ func (m *resolverOutputManager) New(ctx context.Context, parent bkcache.Immutabl
 			return os.WriteFile(dst, data, info.Mode())
 		}))
 	}
-	ref := &resolverOutputRef{root: root, id: fmt.Sprintf("output-%d", len(m.outputs))}
+	ref := &resolverOutputRef{root: root, id: fmt.Sprintf("output-%d", len(m.outputs)), faultReleaseError: m.recordingReleaseError}
 	m.outputs = append(m.outputs, ref)
 	return &resolverMutableRef{output: ref}, nil
 }
 func (m *resolverOutputManager) ImportImage(context.Context, *bkcache.ImportedImage, bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
-	ref := &resolverOutputRef{root: m.t.TempDir(), id: "builtin"}
+	ref := &resolverOutputRef{root: m.t.TempDir(), id: "builtin", faultReleaseError: m.recordingReleaseError}
 	m.outputs = append(m.outputs, ref)
 	return ref, nil
 }

@@ -68,19 +68,61 @@ func TestRecordCompletedProducer(t *testing.T) {
 		}
 	})
 	t.Run("File", func(t *testing.T) {
-		file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
-		file.File.setValue("data")
-		snapshot := &cacheVolumeTestImmutableRef{}
-		file.Snapshot.setValue(snapshot)
-		producer := &FileBlobLazy{LazyState: NewLazyState(), Filename: "data"}
-		require.NoError(t, RecordCompletedProducer(file, producer))
-		require.Same(t, producer, file.completedRecipe)
-		require.Nil(t, file.Lazy)
-		require.Error(t, RecordCompletedProducer(file, producer))
-		require.Same(t, producer, file.completedRecipe)
-		got, ok := file.Snapshot.Peek()
-		require.True(t, ok)
-		require.Same(t, snapshot, got)
+		for _, invalid := range []string{"", "nil value", "nil producer", "typed nil producer", "pending", "recorded", "kind", "json", "path accessor", "snapshot accessor", "path", "snapshot", "nil snapshot", "restore"} {
+			t.Run(invalid, func(t *testing.T) {
+				file := freshProducerFile()
+				file.File.setValue("data")
+				file.Snapshot.setValue(&cacheVolumeTestImmutableRef{})
+				producer := Lazy[*File](&FileBlobLazy{LazyState: NewLazyState()})
+				switch invalid {
+				case "nil value":
+					file = nil
+				case "nil producer":
+					producer = nil
+				case "typed nil producer":
+					producer = (*FileBlobLazy)(nil)
+				case "pending":
+					file.Lazy = &FileBlobLazy{LazyState: NewLazyState()}
+				case "recorded":
+					file.completedRecipe = &FileBlobLazy{LazyState: NewLazyState()}
+				case "kind":
+					file.completedRecipeKind = "saved"
+				case "json":
+					file.completedRecipeJSON = []byte(`{}`)
+				case "path accessor":
+					file.File = nil
+				case "snapshot accessor":
+					file.Snapshot = nil
+				case "path":
+					file.File = new(LazyAccessor[string, *File])
+				case "snapshot":
+					file.Snapshot = new(LazyAccessor[bkcache.ImmutableRef, *File])
+				case "nil snapshot":
+					file.Snapshot.setValue(nil)
+				case "restore":
+					producer = &FileRestoreLazy{LazyState: NewLazyState()}
+				}
+				var original File
+				if file != nil {
+					original = *file
+				}
+				err := RecordCompletedProducer(file, producer)
+				if invalid != "" {
+					require.Error(t, err)
+					if file != nil {
+						require.Equal(t, original, *file)
+					}
+					return
+				}
+				require.NoError(t, err)
+				require.Same(t, producer, file.completedRecipe)
+				require.Nil(t, file.Lazy)
+				require.Same(t, original.File, file.File)
+				require.Same(t, original.Snapshot, file.Snapshot)
+				require.Error(t, RecordCompletedProducer(file, producer))
+				require.Same(t, producer, file.completedRecipe)
+			})
+		}
 	})
 	t.Run("existing completed kinds attach", func(t *testing.T) {
 		env := newPersistedFamiliesTestEnv(t, "completed-attach")
