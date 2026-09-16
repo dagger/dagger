@@ -135,6 +135,16 @@ func (d docker) ContainerExists(ctx context.Context, name string) (bool, error) 
 	return false, err
 }
 
+func (d docker) ContainerInspect(ctx context.Context, name string) (string, bool, error) {
+	cmd := exec.CommandContext(ctx, d.cmd, "container", "inspect", name, "--format", "{{ .ID }} {{ .State.Running }}")
+	stdout, _, err := traceexec.ExecOutput(ctx, cmd, telemetry.Encapsulated())
+	if err != nil {
+		return "", false, err
+	}
+	id, running, _ := strings.Cut(strings.TrimSpace(stdout), " ")
+	return id, running == "true", nil
+}
+
 func (d docker) ContainerLs(ctx context.Context) ([]string, error) {
 	cmd := exec.CommandContext(ctx, d.cmd, "ps", "-a", "--format", "{{.Names}}")
 	stdout, _, err := traceexec.ExecOutput(ctx, cmd)

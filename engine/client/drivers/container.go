@@ -98,6 +98,11 @@ type containerBackend interface {
 	ContainerRemove(ctx context.Context, name string) error
 	ContainerStart(ctx context.Context, name string) error
 	ContainerExists(ctx context.Context, name string) (bool, error)
+	// ContainerInspect resolves a container name to the identity the
+	// runtime gives it, which a later ContainerRemove accepts in place of
+	// the name, and reports whether it is running. A missing container is
+	// an error.
+	ContainerInspect(ctx context.Context, name string) (id string, running bool, err error)
 	ContainerLs(ctx context.Context) ([]string, error)
 }
 
@@ -251,6 +256,24 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		containerName = containerNamePrefix + id
 	}
 
+	// The common case is an engine that already exists: look it up by name,
+	// start it if it is stopped, and connect, instead of listing every
+	// container on the host first, which grows with the host and was most
+	// of a command's connect time. Leftovers from older versions are still
+	// swept, in the background. Only when the engine is missing does the
+	// command list before running a new one.
+	if id, running, err := d.backend.ContainerInspect(ctx, containerName); err == nil {
+		if !running {
+			if err := d.backend.ContainerStart(ctx, containerName); err != nil {
+				return nil, fmt.Errorf("failed to start container: %w", err)
+			}
+		}
+		d.sweepLeftoverEngines(ctx, opts.cleanup, containerName, id)
+		return &url.URL{Host: containerName}, nil
+	} else if errors.Is(err, context.Canceled) {
+		return nil, err
+	}
+
 	leftoverEngines, err := d.collectLeftoverEngines(ctx, containerName)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -337,6 +360,42 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	d.garbageCollectEngines(ctx, opts.cleanup, nil, leftoverEngines)
 
 	return &url.URL{Host: containerName}, nil
+}
+
+// sweepLeftoverEngines removes engines of other versions without holding
+// the command up. Candidates are resolved to their runtime identity and
+// removed by it, and the identity of the engine this command uses is never
+// removed, so a name that changes hands while the sweep runs cannot make
+// it remove the wrong container. The sweep runs for as long as the process
+// does; one cut short by exit is finished by a later command. The returned
+// channel closes when it is done.
+func (d *imageDriver) sweepLeftoverEngines(ctx context.Context, cleanup bool, current, currentID string) <-chan struct{} {
+	done := make(chan struct{})
+	if !cleanup || currentID == "" {
+		close(done)
+		return done
+	}
+	ctx = context.WithoutCancel(ctx)
+	go func() {
+		defer close(done)
+		leftoverEngines, err := d.collectLeftoverEngines(ctx)
+		if err != nil {
+			return
+		}
+		for _, name := range leftoverEngines {
+			if name == current {
+				continue
+			}
+			id, _, err := d.backend.ContainerInspect(ctx, name)
+			if err != nil || id == "" || id == currentID {
+				continue
+			}
+			if err := d.backend.ContainerRemove(ctx, id); err != nil && errors.Is(err, context.Canceled) {
+				return
+			}
+		}
+	}()
+	return done
 }
 
 func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, preserveNames, engines []string) {
