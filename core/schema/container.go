@@ -2455,7 +2455,7 @@ type containerWithMountedDirectoryArgs struct {
 	Expand       bool   `default:"false"`
 }
 
-func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (_ *core.Container, rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2475,14 +2475,24 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, ctr.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
 	if !parentPendingLazy {
-		_, err := ctr.WithMountedDirectory(ctx, parent, target, dir, owner, args.ReadOnly)
-		return ctr, err
+		if _, err := ctr.WithMountedDirectory(ctx, parent, target, dir, owner, args.ReadOnly); err != nil {
+			return nil, err
+		}
+		if err := core.RecordCompletedContainerMountProducer(ctr, &core.ContainerWithMountedDirectoryLazy{LazyState: core.NewLazyState(), Parent: parent, Source: dir, Target: target, Owner: owner, Readonly: args.ReadOnly}); err != nil {
+			return nil, err
+		}
+		return ctr, nil
 	}
 	ctr.Lazy = &core.ContainerWithMountedDirectoryLazy{
 		LazyState: core.NewLazyState(),
@@ -2680,7 +2690,7 @@ type containerWithMountedFileArgs struct {
 	Expand       bool   `default:"false"`
 }
 
-func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (_ *core.Container, rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2700,14 +2710,24 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, ctr.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
 	if !parentPendingLazy {
-		_, err := ctr.WithMountedFile(ctx, parent, target, file, owner, false)
-		return ctr, err
+		if _, err := ctr.WithMountedFile(ctx, parent, target, file, owner, false); err != nil {
+			return nil, err
+		}
+		if err := core.RecordCompletedContainerMountProducer(ctr, &core.ContainerWithMountedFileLazy{LazyState: core.NewLazyState(), Parent: parent, Source: file, Target: target, Owner: owner, Readonly: false}); err != nil {
+			return nil, err
+		}
+		return ctr, nil
 	}
 	ctr.Lazy = &core.ContainerWithMountedFileLazy{
 		LazyState: core.NewLazyState(),

@@ -3,12 +3,72 @@ package core
 import (
 	"context"
 	"fmt"
+	"path"
 	"reflect"
 	"slices"
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
+
+// RecordCompletedContainerMountProducer is a construction-only recorder for
+// the two eager schema mount operations. Its inputs remain borrowed results.
+func RecordCompletedContainerMountProducer(value *Container, producer Lazy[*Container]) error {
+	if value == nil || nilProducerValue(producer) {
+		return fmt.Errorf("record completed Container mount: nil value or producer")
+	}
+	if value.Lazy != nil || value.completedRecipe != nil || len(value.completedRecipeJSON) != 0 || value.acquiredOutput.Load() != nil || len(value.storedParts) != 0 {
+		return fmt.Errorf("record completed Container mount: pending, restored or already recorded value")
+	}
+	var target string
+	var directory bool
+	switch p := producer.(type) {
+	case *ContainerWithMountedDirectoryLazy:
+		if p.Parent.Self() == nil || p.Source.Self() == nil {
+			return fmt.Errorf("record completed Container mount: missing parent or source")
+		}
+		target, directory = p.Target, true
+	case *ContainerWithMountedFileLazy:
+		if p.Parent.Self() == nil || p.Source.Self() == nil {
+			return fmt.Errorf("record completed Container mount: missing parent or source")
+		}
+		target = p.Target
+	default:
+		return fmt.Errorf("record completed Container mount: unsupported producer %T", producer)
+	}
+	if !path.IsAbs(target) || path.Clean(target) != target {
+		return fmt.Errorf("record completed Container mount: unresolved target %q", target)
+	}
+	mount := value.mountAt(target)
+	if mount == nil {
+		return fmt.Errorf("record completed Container mount: missing target %q", target)
+	}
+	if directory {
+		if mount.DirectorySource == nil {
+			return fmt.Errorf("record completed Container mount: target is not a Directory")
+		}
+		dir, ok := mount.DirectorySource.Peek()
+		if !ok {
+			return fmt.Errorf("record completed Container mount: unset Directory")
+		}
+		if _, _, err := producedDirectoryOutput(dir); err != nil {
+			return err
+		}
+	} else {
+		if mount.FileSource == nil {
+			return fmt.Errorf("record completed Container mount: target is not a File")
+		}
+		file, ok := mount.FileSource.Peek()
+		if !ok {
+			return fmt.Errorf("record completed Container mount: unset File")
+		}
+		if _, _, err := producedFileOutput(file); err != nil {
+			return err
+		}
+	}
+	value.completedRecipe = producer
+	return nil
+}
 
 // RecordCompletedProducer records an operation on a fresh, exclusively owned
 // output before publication. It never evaluates or replaces an existing recipe.
