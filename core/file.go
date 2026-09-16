@@ -120,7 +120,7 @@ func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
 	if lazy == nil {
 		return nil
 	}
-	return func(ctx context.Context) error {
+	raw := func(ctx context.Context) error {
 		if err := lazy.Evaluate(ctx, file); err != nil {
 			return err
 		}
@@ -128,6 +128,12 @@ func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
 		defer file.outputMu.Unlock()
 		file.finishLazyLocked(lazy)
 		return nil
+	}
+	return func(ctx context.Context) error {
+		if host := file.partHost.Load(); host != nil {
+			return host.RunNative(ctx, dagql.LazyGroupWhole, []dagql.PartKey{"snapshot"}, raw)
+		}
+		return raw(ctx)
 	}
 }
 

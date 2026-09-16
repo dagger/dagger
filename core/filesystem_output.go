@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -12,6 +13,7 @@ import (
 // Lazy is cleared so direct callers are excluded until their body returns.
 // OutputRev is process-local and is read only through PersistedOutputRevision.
 type filesystemOutput struct {
+	partHost        atomic.Pointer[dagql.PartHost]
 	outputMu        sync.Mutex
 	OutputRev       dagql.OutputRevision
 	persistenceBody *LazyState
@@ -152,4 +154,8 @@ func (dir *Directory) clearLazy() {
 	dir.outputMu.Lock()
 	defer dir.outputMu.Unlock()
 	dir.finishLazyLocked(dir.Lazy)
+}
+
+func (out *filesystemOutput) BindPartHost(host *dagql.PartHost) {
+	out.partHost.CompareAndSwap(nil, host)
 }

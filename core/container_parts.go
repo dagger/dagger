@@ -432,6 +432,25 @@ func (container *Container) LazyEvalFuncForGroup(group dagql.LazyGroupKey) dagql
 // completion separately from consumed groups and immutable saved descriptors;
 // clearing this operational pointer is not its completion boundary.
 func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerParts, group dagql.LazyGroupKey) error {
+	if host := container.partHost.Load(); host != nil {
+		if !host.Admitted(ctx) {
+			if group == ContainerLazyGroupMetadata {
+				return host.Evaluate(ctx, ContainerPartMetadata)
+			}
+			if err := host.Evaluate(ctx, ContainerPartMetadata); err != nil {
+				return err
+			}
+		}
+		parts, err := container.nativeGroupParts(ctx, op, group)
+		if err != nil {
+			return err
+		}
+		return host.RunNative(ctx, group, parts, func(ctx context.Context) error { return container.runLazyGroupAdmitted(ctx, op, group) })
+	}
+	return container.runLazyGroupAdmitted(ctx, op, group)
+}
+
+func (container *Container) runLazyGroupAdmitted(ctx context.Context, op LazyContainerParts, group dagql.LazyGroupKey) error {
 	if err := op.EvaluateContainerGroup(ctx, container, group); err != nil {
 		return err
 	}
@@ -544,6 +563,9 @@ func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyCo
 // cache-side EvaluateParts. Used by internal reads that hold the
 // container value but not its attached result (metaFileContents).
 func (container *Container) evaluatePartsDirect(ctx context.Context, parts ...dagql.PartKey) error {
+	if host := container.partHost.Load(); host != nil && !host.Admitted(ctx) {
+		return host.Evaluate(ctx, parts...)
+	}
 	if container.transferPending != nil {
 		_, err := container.resolveTransferParts(parts)
 		return err
@@ -1043,4 +1065,25 @@ func copyContainerDirectoryAccessorValue(dst, cloned *LazyAccessor[*Directory, *
 	if dir, ok := cloned.Peek(); ok && dir != nil {
 		dst.SetValue(dir)
 	}
+}
+
+func (container *Container) BindPartHost(host *dagql.PartHost) {
+	container.partHost.CompareAndSwap(nil, host)
+}
+
+func (container *Container) nativeGroupParts(ctx context.Context, op LazyContainerParts, group dagql.LazyGroupKey) ([]dagql.PartKey, error) {
+	if group == ContainerLazyGroupMetadata {
+		return []dagql.PartKey{ContainerPartMetadata}, nil
+	}
+	var writes []dagql.PartKey
+	for _, part := range containerSnapshotParts(container) {
+		groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part})
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(groups, group) {
+			writes = append(writes, part)
+		}
+	}
+	return writes, nil
 }

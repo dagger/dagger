@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -63,6 +64,7 @@ type DefaultTerminalCmdOpts struct {
 
 // Container is a content-addressed container.
 type Container struct {
+	partHost        atomic.Pointer[dagql.PartHost]
 	transferPending *persistedContainerPayload
 	// fromContentDigestSafe tracks whether Container.From can give its result a
 	// content digest based only on the resolved image and platform. It is false
@@ -1104,6 +1106,14 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 	// between closure creation and call makes this a no-op through the
 	// op's own latch instead of a nil-interface call.
 	return func(ctx context.Context) error {
+		if host := container.partHost.Load(); host != nil {
+			if !host.Admitted(ctx) {
+				return host.Evaluate(ctx)
+			}
+			if _, refined := lazy.(LazyContainerParts); !refined {
+				return host.RunNative(ctx, dagql.LazyGroupWhole, append([]dagql.PartKey{ContainerPartMetadata}, containerSnapshotParts(container)...), func(ctx context.Context) error { return lazy.Evaluate(ctx, container) })
+			}
+		}
 		return lazy.Evaluate(ctx, container)
 	}
 }
