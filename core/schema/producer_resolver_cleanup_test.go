@@ -279,6 +279,7 @@ func resolverOutputFixture(t *testing.T) (context.Context, *dagql.Server, *dagql
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.File]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Container]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.HTTPState]{}))
+	dagql.Fields[*core.Query]{dagql.NodeFunc("__httpFile", (&httpSchema{}).httpFile).IsPersistable()}.Install(srv)
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitRepository]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitBundle]{}))
 	return ctx, srv, cache, server

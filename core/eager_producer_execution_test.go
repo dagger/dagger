@@ -66,6 +66,10 @@ func newExecutionFixture(t *testing.T) executionFixtureValues {
 	server := &producerExecutionServer{cacheVolumeTestQueryServer: &cacheVolumeTestQueryServer{mockServer: &mockServer{}, cacheManager: store.Manager}, srv: srv, store: store.Content}
 	server.locker = locker.New()
 	query.Server = server
+	srv.InstallObject(dagql.NewClass[*HTTPState](srv))
+	dagql.Fields[*Query]{dagql.Func("_httpState", func(_ context.Context, _ *Query, args struct{ URL string }) (*HTTPState, error) {
+		return &HTTPState{URL: args.URL}, nil
+	}).IsPersistable()}.Install(srv)
 	return executionFixtureValues{ctx: ctx, store: store, cache: cache, srv: srv, server: server}
 }
 
@@ -484,7 +488,11 @@ func TestHTTPProducerCleanup(t *testing.T) {
 			http.DefaultTransport = transport
 			defer func() { http.DefaultTransport = previousTransport }()
 			err := producer.Evaluate(ctx, output)
-			require.EqualValues(t, 1, closed.Load())
+			if exit == "checksum" {
+				require.Zero(t, closed.Load())
+			} else {
+				require.EqualValues(t, 1, closed.Load())
+			}
 			if exit == "close" || exit == "chmod" {
 				require.ErrorContains(t, err, exit)
 			}
@@ -493,6 +501,10 @@ func TestHTTPProducerCleanup(t *testing.T) {
 			}
 
 			switch exit {
+			case "checksum":
+				require.ErrorContains(t, err, "checksum mismatch")
+				require.Zero(t, manager.mutableReleases.Load())
+				require.Zero(t, manager.immutableReleases.Load())
 			case "success":
 				require.NoError(t, err)
 				require.Zero(t, manager.mutableReleases.Load())

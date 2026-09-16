@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
@@ -401,9 +402,19 @@ func (state *HTTPState) fileResult(
 	if state.snapshot == nil {
 		return nil, fmt.Errorf("http state %q has no snapshot", state.URL)
 	}
+	file, err := httpFileFromSnapshot(ctx, query, state.snapshot, name, permissions, query.Platform())
+	if err != nil {
+		return nil, err
+	}
+	return &HTTPFetchResult{File: file, ContentDigest: state.ContentDigest, LastModified: state.LastModified}, nil
+}
+
+// httpFileFromSnapshot derives a named output while the caller owns snapshot.
+// It preserves the canonical file's timestamp and applies the selected mode.
+func httpFileFromSnapshot(ctx context.Context, query *Query, snapshot bkcache.ImmutableRef, name string, permissions int, platform Platform) (_ *File, rerr error) {
 	newRef, err := query.SnapshotManager().New(
 		ctx,
-		state.snapshot,
+		snapshot,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("http state resolve %s", name)),
 	)
@@ -441,17 +452,13 @@ func (state *HTTPState) fileResult(
 	}
 	newRef = nil
 	file := &File{
-		Platform: query.Platform(),
+		Platform: platform,
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
 	file.SetPath(name)
 	file.SetSnapshot(snap)
-	return &HTTPFetchResult{
-		File:          file,
-		ContentDigest: state.ContentDigest,
-		LastModified:  state.LastModified,
-	}, nil
+	return file, nil
 }
 
 func FetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts) (*HTTPFetchResult, error) {
@@ -623,10 +630,10 @@ type persistedFileHTTPResolveLazy struct {
 func (p *persistedFileHTTPResolveLazy) validate() error {
 	dgst := digest.Digest(p.BodyDigest)
 	if err := dgst.Validate(); err != nil {
-		return fmt.Errorf("HTTP File producer body digest: %w", err)
+		return fmt.Errorf("HTTP File operation body digest: %w", err)
 	}
 	if dgst.Algorithm() != digest.SHA256 {
-		return fmt.Errorf("HTTP File producer body digest must be SHA-256")
+		return fmt.Errorf("HTTP File operation body digest must be SHA-256")
 	}
 	return nil
 }
@@ -644,7 +651,7 @@ func (lazy *FileHTTPResolveLazy) EncodePersisted(context.Context, *dagql.Persist
 func decodeFileHTTPResolveLazy(payload json.RawMessage) (Lazy[*File], error) {
 	var p persistedFileHTTPResolveLazy
 	if err := json.Unmarshal(payload, &p); err != nil {
-		return nil, fmt.Errorf("decode HTTP File producer: %w", err)
+		return nil, fmt.Errorf("decode HTTP File operation: %w", err)
 	}
 	if err := p.validate(); err != nil {
 		return nil, err
@@ -659,43 +666,117 @@ func (*FileHTTPResolveLazy) AttachDependencies(context.Context, func(dagql.AnyRe
 	return nil, nil
 }
 
-type HTTPProducerDigestMismatchError struct {
+type HTTPBodyDigestMismatchError struct {
 	Recorded digest.Digest
 	Fetched  digest.Digest
 }
 
-func (err *HTTPProducerDigestMismatchError) Error() string {
-	return fmt.Sprintf("HTTP File producer body mismatch: recorded %s, fetched %s", err.Recorded, err.Fetched)
+func (err *HTTPBodyDigestMismatchError) Error() string {
+	return fmt.Sprintf("HTTP File operation body mismatch: recorded %s, fetched %s", err.Recorded, err.Fetched)
+}
+
+// pinHTTPBody acquires independent ownership before releasing the state lock.
+// A changed or unavailable body is a miss; no validators are read or changed.
+func (state *HTTPState) pinHTTPBody(ctx context.Context, manager bkcache.SnapshotManager, bodyDigest digest.Digest) (bkcache.ImmutableRef, error) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if state.foreignUninitialized || state.ContentDigest != bodyDigest {
+		return nil, nil
+	}
+	id := state.snapshotID
+	if id == "" && state.snapshot != nil {
+		id = state.snapshot.SnapshotID()
+	}
+	if id == "" {
+		return nil, nil
+	}
+	ref, err := manager.PinSnapshot(ctx, id)
+	if httpSnapshotUnavailable(err) {
+		return nil, nil
+	}
+	return ref, err
+}
+
+func httpSnapshotUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, cause := range joined.Unwrap() {
+			if !httpSnapshotUnavailable(cause) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return httpSnapshotUnavailable(wrapped.Unwrap())
+	}
+	return bkcache.IsNotFound(err) || cerrdefs.IsNotFound(err)
 }
 
 func (lazy *FileHTTPResolveLazy) Evaluate(ctx context.Context, file *File) error {
-	var candidate *File
-	err := file.evaluateLazy(ctx, &lazy.LazyState, "HTTPState._resolve", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "Query.__httpFile", func(ctx context.Context) (rerr error) {
 		if err := validateProducedFileReceiver(file); err != nil {
 			return err
 		}
 		if err := (&persistedFileHTTPResolveLazy{BodyDigest: lazy.BodyDigest.String()}).validate(); err != nil {
 			return err
 		}
+		checksum, err := parseOptionalChecksum(lazy.Checksum)
+		if err != nil {
+			return fmt.Errorf("invalid checksum %q: %w", lazy.Checksum.Value, err)
+		}
+		if checksum != "" && checksum != lazy.BodyDigest {
+			return fmt.Errorf("http checksum mismatch: expected %s, recorded %s", checksum, lazy.BodyDigest)
+		}
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
 		}
-		fetched, err := fetchHTTPFile(ctx, query, FetchHTTPRequestOpts{URL: lazy.URL, Filename: lazy.Filename, Permissions: lazy.Permissions, Checksum: lazy.Checksum}, true)
+		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return err
 		}
-		candidate = fetched.File
+		var state dagql.ObjectResult[*HTTPState]
+		if err := srv.Select(ctx, srv.Root(), &state, dagql.Selector{Field: "_httpState", Args: []dagql.NamedInput{{Name: "url", Value: dagql.String(lazy.URL)}}}); err != nil {
+			return err
+		}
+		canonical, err := state.Self().pinHTTPBody(ctx, query.SnapshotManager(), lazy.BodyDigest)
+		if err != nil {
+			return err
+		}
+		var candidate *File
+		defer func() {
+			cleanup := context.WithoutCancel(ctx)
+			if candidate != nil {
+				rerr = errors.Join(rerr, candidate.OnRelease(cleanup))
+			}
+			if canonical != nil {
+				rerr = errors.Join(rerr, canonical.Release(cleanup))
+			}
+		}()
+		if canonical != nil {
+			candidate, err = httpFileFromSnapshot(ctx, query, canonical, lazy.Filename, lazy.Permissions, file.Platform)
+			if err != nil {
+				return err
+			}
+		} else {
+			fetched, err := fetchHTTPFile(ctx, query, FetchHTTPRequestOpts{URL: lazy.URL, Filename: lazy.Filename, Permissions: lazy.Permissions, Checksum: lazy.Checksum}, true)
+			if err != nil {
+				return err
+			}
+			candidate = fetched.File
+			if fetched.ContentDigest != lazy.BodyDigest {
+				return &HTTPBodyDigestMismatchError{Recorded: lazy.BodyDigest, Fetched: fetched.ContentDigest}
+			}
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if fetched.ContentDigest != lazy.BodyDigest {
-			return &HTTPProducerDigestMismatchError{Recorded: lazy.BodyDigest, Fetched: fetched.ContentDigest}
-		}
 		return moveProducedFile(file, candidate)
 	})
-	if candidate != nil {
-		err = errors.Join(err, candidate.OnRelease(context.WithoutCancel(ctx)))
-	}
-	return err
 }
