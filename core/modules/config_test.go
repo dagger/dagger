@@ -47,8 +47,7 @@ source = "./entrypoint"
 }
 
 // The entrypoint table is the only manifest version 2 selector. A manifest
-// without it is the pre-v2 format, and the manifestVersion key that manifest
-// version 2 used while it was in development is now rejected.
+// without it is the pre-v2 format.
 func TestParseModuleConfigSelectsFormatByEntrypoint(t *testing.T) {
 	t.Parallel()
 
@@ -98,32 +97,6 @@ source = "go"
 		require.Equal(t, "go", cfg.SDK.Source)
 		require.Equal(t, "latest", cfg.EngineVersion)
 	})
-
-	for _, tc := range []struct {
-		name string
-		cfg  string
-	}{
-		{
-			name: "with entrypoint",
-			cfg:  "manifestVersion = 2\nname = \"tiny\"\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\n",
-		},
-		{
-			name: "without entrypoint",
-			cfg:  "manifestVersion = 2\nname = \"tiny\"\n",
-		},
-		{
-			name: "unsupported version",
-			cfg:  "manifestVersion = 3\nname = \"tiny\"\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\n",
-		},
-	} {
-		t.Run("manifestVersion is rejected "+tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			_, err := ParseModuleConfigForFilename([]byte(tc.cfg), Filename)
-			require.ErrorContains(t, err, `dagger-module.toml does not support "manifestVersion"`)
-			require.ErrorContains(t, err, "the [entrypoint] table selects the manifest version 2 format")
-		})
-	}
 }
 
 func TestModuleManifestV2RoundTrip(t *testing.T) {
@@ -190,6 +163,11 @@ func TestParseModuleManifestV2RejectsInvalidFields(t *testing.T) {
 			name: "legacy field",
 			cfg:  "name = \"tiny\"\nengineVersion = \"latest\"\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\n",
 			want: "does not support \"engineVersion\"",
+		},
+		{
+			name: "version key",
+			cfg:  "manifestVersion = 2\nname = \"tiny\"\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\n",
+			want: "does not support \"manifestVersion\"",
 		},
 		{
 			name: "entrypoint field",
