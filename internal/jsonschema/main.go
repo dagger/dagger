@@ -13,6 +13,18 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 )
 
+type target struct {
+	output string
+	path   string
+	value  any
+}
+
+var targets = []target{
+	{"dagger.schema.json", "./core/modules", &modules.LegacyModuleConfigWithUserFields{}},
+	{"dagger-module.schema.json", "./core/modules", &modules.CurrentModuleConfigWithUserFields{}},
+	{"dagger-workspace.schema.json", "./core/workspace", &workspace.Config{}},
+}
+
 func main() {
 	if err := generate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -21,15 +33,6 @@ func main() {
 }
 
 func generate() error {
-	targets := []struct {
-		output string
-		path   string
-		value  any
-	}{
-		{"dagger.schema.json", "./core/modules", &modules.LegacyModuleConfigWithUserFields{}},
-		{"dagger-module.schema.json", "./core/modules", &modules.CurrentModuleConfigWithUserFields{}},
-		{"dagger-workspace.schema.json", "./core/workspace", &workspace.Config{}},
-	}
 	newline := regexp.MustCompile(`([^\n])\n([^\n])`)
 	for _, target := range targets {
 		r := new(jsonschema.Reflector)
