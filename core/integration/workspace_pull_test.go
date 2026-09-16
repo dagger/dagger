@@ -256,10 +256,14 @@ func (WorkspaceSuite) TestWorkspacePullShortSHAs(ctx context.Context, t *testctx
 	checkout, _ := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
 	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
-	source := base.WithNewFile("a", "a").WithCommit("a", workspaceCommitDate)
+	source := base.WithNewFile("a", "a").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "a", workspaceCommitDate)
+	})
 	a, err := source.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	source = source.WithNewFile("b", "b").WithCommit("b", workspaceCommitDate)
+	source = source.WithNewFile("b", "b").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "b", workspaceCommitDate)
+	})
 	b, err := source.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 
