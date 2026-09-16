@@ -19,9 +19,21 @@ func loadModuleRegistry() []registryModule {
 	return []registryModule{
 		{
 			Name:        "go",
-			Description: "Build, test, and lint Go projects with the Go toolchain",
+			Description: "Test and generate code for Go projects with the Go toolchain",
 			Repo:        "dagger.io/go",
 			Recommend:   SimpleRecommend("**/go.mod"),
+		},
+		{
+			Name:        "golangci-lint",
+			Description: "Lint Go projects with golangci-lint",
+			Repo:        "dagger.io/go/golangci-lint",
+			Recommend:   SimpleRecommend("**/.golangci.yml", "**/.golangci.yaml", "**/.golangci.toml", "**/.golangci.json"),
+		},
+		{
+			Name:        "staticcheck",
+			Description: "Lint Go projects with Staticcheck",
+			Repo:        "dagger.io/go/staticcheck",
+			Recommend:   SimpleRecommend("**/staticcheck.conf"),
 		},
 		{
 			Name:        "deno",

@@ -35,7 +35,9 @@ type Module struct {
 	// The module's SDKConfig, as set in the module config file
 	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK config used by this module."`
 
-	// Deps contains the module's dependency DAG.
+	// Deps contains the module's dependency DAG. Its SchemaBuilder may retain a
+	// query root and lazy schema, but never runtime authority; execution still
+	// requires the held ClientScope carried by the calling context.
 	Deps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
@@ -172,7 +174,7 @@ func argRequired(arg *FunctionArg) bool {
 // argument, used only as a fallback when the actual LLM! argument can't be
 // resolved. The base is identified by *type* — a single required LLM! arg — not
 // by name, so authors may call it `base`, `llm`, etc. (hack/designs/workspace-agents.md §3). The
-// compose fold (AgentGroup.Compose) fills that argument with the running
+// compose fold (AgentMiddlewareGroup.Compose) fills that argument with the running
 // accumulator explicitly.
 const agentBaseArgName = "base"
 

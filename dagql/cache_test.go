@@ -19,6 +19,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
+	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -321,6 +322,110 @@ func TestCacheRejectsEmptySessionIDForOwningEntrypoints(t *testing.T) {
 	})
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "empty session ID")
+}
+
+func TestSharedCallUsesOneClientScopeLeaseForAllWaiters(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			assert.Equal(t, kind, engine.ClientLeaseSharedWork)
+			assert.Assert(t, strings.HasPrefix(ownerID, "call/"))
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	assert.NilError(t, err)
+	ctx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	assert.NilError(t, err)
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+
+	frame := cacheTestIntCall("leased-singleflight")
+	req := &CallRequest{ResultCall: frame, ConcurrencyKey: "leased-singleflight"}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var executions atomic.Int32
+	call := func() (AnyResult, error) {
+		return cache.GetOrInitCall(ctx, "session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+			if executions.Add(1) == 1 {
+				close(started)
+			}
+			<-release
+			return cacheTestIntResult(frame, 1), nil
+		})
+	}
+
+	results := make(chan error, 2)
+	go func() { _, err := call(); results <- err }()
+	<-started
+	go func() { _, err := call(); results <- err }()
+	require.Eventually(t, func() bool {
+		cache.callsMu.Lock()
+		defer cache.callsMu.Unlock()
+		for _, ongoing := range cache.ongoingCalls {
+			if ongoing.waiters == 2 {
+				return true
+			}
+		}
+		return false
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), acquired.Load())
+	close(release)
+	assert.NilError(t, <-results)
+	assert.NilError(t, <-results)
+	assert.Equal(t, executions.Load(), int32(1))
+	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond)
+}
+
+func TestSharedCallReleasesLeaseWhenLastWaiterCancelsAfterCompletion(t *testing.T) {
+	t.Parallel()
+
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	assert.NilError(t, err)
+	baseCtx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	assert.NilError(t, err)
+	cache, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	baseCtx = ContextWithCache(baseCtx, cache)
+	ctx, cancel := context.WithCancelCause(baseCtx)
+	defer cancel(nil)
+
+	// The callback finishes successfully while its only waiter is still
+	// admitted, so it delegates publication and lease release to the waiters.
+	// That waiter is then canceled before it observes completion, which is what
+	// happens to every in-flight call of a query whose client disconnects.
+	waiterDone := make(chan struct{})
+	cache.testAfterCallbackWaiterCheck = func() {
+		cancel(errors.New("client disconnected"))
+		<-waiterDone
+	}
+
+	frame := cacheTestIntCall("orphaned-completion")
+	req := &CallRequest{ResultCall: frame, ConcurrencyKey: "orphaned-completion"}
+	_, err = cache.GetOrInitCall(ctx, "session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	close(waiterDone)
+	assert.ErrorContains(t, err, "client disconnected")
+	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond,
+		"shared-work lease orphaned: the callback saw a waiter and the waiter left without publishing")
 }
 
 func TestAttachResultAllowsAlreadyAttachedResultWithoutFrame(t *testing.T) {
@@ -3739,6 +3844,154 @@ func TestCacheHitRewrapsObjectResultForCurrentServer(t *testing.T) {
 	cacheTestReleaseSession(t, cacheIface, ctxA)
 }
 
+func TestClassNewRewrapsObjectResult(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cacheIface)
+	srvA := cacheTestObjectResolverServer(t, 1)
+	srvB := cacheTestObjectResolverServer(t, 2)
+	ctxA := srvToContext(ctx, srvA)
+	ctxB := srvToContext(ctx, srvB)
+
+	original, err := srvA.Root().Select(ctxA, srvA, Selector{Field: "obj"})
+	assert.NilError(t, err)
+	shared := original.cacheSharedResult()
+	originalFrame := shared.loadResultCall()
+	originalRecipe := cacheTestMustRecipeID(t, ctxA, original).Digest()
+	originalClass := shared.objClass.(Class[*cacheTestObject])
+	originalField, ok := originalClass.Field("marker", "")
+	assert.Assert(t, ok)
+	class, ok := srvB.ObjectType(original.Type().Name())
+	assert.Assert(t, ok)
+	rewrapped, err := class.New(original)
+	assert.NilError(t, err)
+	assert.Assert(t, rewrapped.cacheSharedResult() == shared)
+	assert.Assert(t, shared.loadResultCall() == originalFrame)
+	assert.Equal(t, originalRecipe, cacheTestMustRecipeID(t, ctxB, rewrapped).Digest())
+	assert.Equal(t, original.HitCache(), rewrapped.HitCache())
+	sharedField, ok := shared.objClass.(Class[*cacheTestObject]).Field("marker", "")
+	assert.Assert(t, ok)
+	assert.Assert(t, sharedField.Spec == originalField.Spec)
+	marker, err := rewrapped.Select(ctxB, srvB, Selector{Field: "marker"})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, cacheTestUnwrapInt(t, marker))
+
+	// Rewrapping changes only this object's class, not its attached value or
+	// the original wrapper's dispatch behavior.
+	originalID, err := original.ID()
+	assert.NilError(t, err)
+	rewrappedID, err := rewrapped.ID()
+	assert.NilError(t, err)
+	assert.Equal(t, originalID.EngineResultID(), rewrappedID.EngineResultID())
+	marker, err = original.(AnyObjectResult).Select(ctxA, srvA, Selector{Field: "marker"})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, cacheTestUnwrapInt(t, marker))
+
+	// A subsequent cache read still chooses its own server's class. With no
+	// matching class in the reader, reconstruction uses the original class.
+	for _, tc := range []struct {
+		srv  *Server
+		want int
+	}{{srvA, 1}, {srvB, 2}, {newDagqlServerForTest(t, cacheTestQuery{}), 1}} {
+		loaded, err := tc.srv.Load(ctx, originalID)
+		assert.NilError(t, err)
+		assert.Assert(t, loaded.cacheSharedResult() == shared)
+		marker, err := loaded.Select(ctx, tc.srv, Selector{Field: "marker"})
+		assert.NilError(t, err)
+		assert.Equal(t, tc.want, cacheTestUnwrapInt(t, marker))
+	}
+	cacheTestReleaseSession(t, cacheIface, ctxA)
+}
+
+// TestClassNewRewrapPreservesModuleCacheIsolation checks that rebinding keeps
+// receiver identity and ownership intact. The selected field's module provenance
+// must distinguish implementations while repeated calls still hit the cache.
+func TestClassNewRewrapPreservesModuleCacheIsolation(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+	srvA := cacheTestObjectResolverServer(t, 1)
+	srvB := cacheTestObjectResolverServer(t, 2)
+	ctx = srvToContext(ctx, srvA)
+	var releases atomic.Int32
+	Fields[cacheTestQuery]{
+		NodeFunc("trackedObj", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			return NewResultForCurrentCall(ctx, &cacheTestObject{onRelease: func(context.Context) error {
+				releases.Add(1)
+				return nil
+			}})
+		}),
+	}.Install(srvA)
+	var calls [2]int
+	for i, srv := range []*Server{srvA, srvB} {
+		moduleCall := cacheTestIntCall(fmt.Sprintf("module-%d", i))
+		module, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: moduleCall}, func(ctx context.Context) (AnyResult, error) {
+			return NewResultForCurrentCall(ctx, NewInt(i))
+		})
+		assert.NilError(t, err)
+		moduleRef, err := resultCallRefFromResult(ctx, module)
+		assert.NilError(t, err)
+		field := Func("cachedMarker", func(context.Context, *cacheTestObject, struct{}) (Int, error) {
+			calls[i]++
+			return NewInt(i + 1), nil
+		})
+		// Keep display metadata identical: the implementation result itself is
+		// the discriminating input, just as for reloaded user modules.
+		field.Spec.Module = &ResultCallModule{ResultRef: moduleRef, Name: "tools"}
+		Fields[*cacheTestObject]{field}.Install(srv)
+	}
+	original, err := srvA.Root().Select(ctx, srvA, Selector{Field: "trackedObj"})
+	assert.NilError(t, err)
+	class, ok := srvB.ObjectType(original.Type().Name())
+	assert.Assert(t, ok)
+	rewrapped, err := class.New(original)
+	assert.NilError(t, err)
+	assert.Assert(t, original.cacheSharedResult() == rewrapped.cacheSharedResult())
+	var resultIDs [2]uint64
+	for round := range 2 {
+		for i, obj := range []AnyObjectResult{original.(AnyObjectResult), rewrapped} {
+			// Deliberately dispatch both through A: the wrapper's selected
+			// field must supply B's provenance even in an older caller schema.
+			res, err := obj.Select(ctx, srvA, Selector{Field: "cachedMarker"})
+			assert.NilError(t, err)
+			assert.Equal(t, i+1, cacheTestUnwrapInt(t, res))
+			assert.Equal(t, round > 0, res.HitCache())
+			id, err := res.ID()
+			assert.NilError(t, err)
+			if round == 0 {
+				resultIDs[i] = id.EngineResultID()
+			} else {
+				assert.Equal(t, resultIDs[i], id.EngineResultID())
+			}
+		}
+	}
+	assert.Assert(t, resultIDs[0] != resultIDs[1])
+	assert.Equal(t, 1, calls[0])
+	assert.Equal(t, 1, calls[1])
+
+	// Attaching the rebound wrapper to another session must claim the same
+	// resource, keep it alive after the first session exits, and release once.
+	attached, err := cache.AttachResult(ctx, "rewrap-session", srvB, rewrapped)
+	assert.NilError(t, err)
+	assert.Assert(t, attached.cacheSharedResult() == original.cacheSharedResult())
+	cacheTestReleaseSession(t, cache, ctx)
+	assert.Equal(t, int32(0), releases.Load())
+	otherCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID: "rewrap-client", SessionID: "rewrap-session",
+	})
+	id, err := attached.ID()
+	assert.NilError(t, err)
+	loaded, err := srvB.Load(otherCtx, id)
+	assert.NilError(t, err)
+	assert.Assert(t, loaded.cacheSharedResult() == original.cacheSharedResult())
+	cacheTestReleaseSession(t, cache, otherCtx)
+	assert.Equal(t, int32(1), releases.Load())
+}
+
 func TestInputSpecsInputsFromResultCallArgs(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
@@ -6875,6 +7128,179 @@ func TestCacheResultCallFirstWriterWins(t *testing.T) {
 	assert.Assert(t, secondShared != nil)
 	assert.Assert(t, secondShared.resultCall != nil)
 	assert.Equal(t, "first", secondShared.resultCall.SyntheticOp)
+}
+
+func TestCacheArbitraryCallbackUsesOneClientScopeLease(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			if kind != engine.ClientLeaseSharedWork {
+				return nil, fmt.Errorf("arbitrary callback lease kind = %q", kind)
+			}
+			if ownerID != "arbitrary/arbitrary-client-scope" {
+				return nil, fmt.Errorf("arbitrary callback lease owner = %q", ownerID)
+			}
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "test-session",
+		ClientID:  "test-client",
+	}, rootLease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	require.NoError(t, err)
+
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.ReleaseSession(ctx, "test-session")) })
+
+	const key = "arbitrary-client-scope"
+	started := make(chan struct{})
+	unblock := make(chan struct{})
+	var executions atomic.Int32
+	initializer := func(callbackCtx context.Context) (any, error) {
+		execution := executions.Add(1)
+		if execution == 1 {
+			close(started)
+		}
+		<-unblock
+		if execution != 1 {
+			return nil, fmt.Errorf("initializer executed %d times", execution)
+		}
+		callbackScope, ok := engine.ClientScopeFromContext(callbackCtx)
+		if !ok {
+			return nil, errors.New("initializer callback missing client scope")
+		}
+		if callbackScope.Lease().Kind() != engine.ClientLeaseSharedWork {
+			return nil, fmt.Errorf("initializer callback lease kind = %q", callbackScope.Lease().Kind())
+		}
+		return "value", nil
+	}
+
+	type arbitraryCallResult struct {
+		res ArbitraryCachedResult
+		err error
+	}
+	results := make(chan arbitraryCallResult, 2)
+	call := func() {
+		res, err := cache.GetOrInitArbitrary(ctx, "test-session", key, initializer)
+		results <- arbitraryCallResult{res: res, err: err}
+	}
+	go call()
+	<-started
+	go call()
+
+	require.Eventually(t, func() bool {
+		cache.callsMu.Lock()
+		defer cache.callsMu.Unlock()
+		ongoing := cache.ongoingArbitraryCalls[key]
+		return ongoing != nil && ongoing.waiters == 2
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), acquired.Load())
+	require.Zero(t, released.Load())
+
+	close(unblock)
+	for range 2 {
+		result := <-results
+		require.NoError(t, result.err)
+		require.Equal(t, "value", result.res.Value())
+	}
+	require.Equal(t, int32(1), executions.Load())
+	// Lease release is ordered before waitCh closes, so every returning waiter
+	// deterministically observes the callback's terminal lifecycle transition.
+	require.Equal(t, int32(1), released.Load())
+
+	cache.callsMu.Lock()
+	completed := cache.completedArbitraryCalls[key]
+	_, ongoing := cache.ongoingArbitraryCalls[key]
+	cache.callsMu.Unlock()
+	require.NotNil(t, completed)
+	require.Nil(t, completed.cancel, "completed result must not retain the detached callback context")
+	require.False(t, ongoing)
+}
+
+func TestCacheArbitraryCallbackCancelsAfterLastWaiter(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "test-session",
+		ClientID:  "test-client",
+	}, rootLease)
+	require.NoError(t, err)
+	baseCtx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	require.NoError(t, err)
+	firstCtx, cancelFirst := context.WithCancel(baseCtx)
+	defer cancelFirst()
+	secondCtx, cancelSecond := context.WithCancel(baseCtx)
+	defer cancelSecond()
+
+	cache, err := NewCache(baseCtx, "", nil, nil)
+	require.NoError(t, err)
+
+	const key = "arbitrary-last-waiter-cancel"
+	started := make(chan struct{})
+	callbackDone := make(chan struct{})
+	initializer := func(ctx context.Context) (any, error) { //nolint:unparam // signature fixed by GetOrInitArbitrary
+		close(started)
+		<-ctx.Done()
+		close(callbackDone)
+		return nil, context.Cause(ctx)
+	}
+
+	results := make(chan error, 2)
+	go func() {
+		_, err := cache.GetOrInitArbitrary(firstCtx, "test-session", key, initializer)
+		results <- err
+	}()
+	<-started
+	go func() {
+		_, err := cache.GetOrInitArbitrary(secondCtx, "test-session", key, initializer)
+		results <- err
+	}()
+	require.Eventually(t, func() bool {
+		cache.callsMu.Lock()
+		defer cache.callsMu.Unlock()
+		ongoing := cache.ongoingArbitraryCalls[key]
+		return ongoing != nil && ongoing.waiters == 2
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), acquired.Load())
+
+	cancelFirst()
+	require.ErrorIs(t, <-results, context.Canceled)
+	select {
+	case <-callbackDone:
+		t.Fatal("shared callback canceled before its last waiter left")
+	default:
+	}
+	require.Zero(t, released.Load())
+
+	cancelSecond()
+	require.ErrorIs(t, <-results, context.Canceled)
+	select {
+	case <-callbackDone:
+	case <-time.After(time.Second):
+		t.Fatal("shared callback was not canceled after its last waiter left")
+	}
+	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond)
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {

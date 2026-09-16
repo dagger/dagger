@@ -1,0 +1,9 @@
+[modules.alpha-sdk]
+source = ".dagger/modules/alpha-sdk"
+
+[sdks.alpha]
+module = "alpha-sdk"
+
+[sdks.alpha.scopes."alpha"]
+is-module = true
+name = "alpha"

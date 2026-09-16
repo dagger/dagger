@@ -8,12 +8,15 @@ import (
 	"github.com/vito/tuist"
 )
 
-// QueuedMessageLabel displays a queued message (submitted while the shell is
-// busy) in gray above the prompt input. When there is no queued message it
-// renders zero lines.
+// QueuedMessageLabel displays a queued message in gray above the prompt
+// input: one held client-side behind a busy serial turn (recallable with
+// alt+up), or one already sent to the focused agent mid-turn (an interject,
+// absorbed at the agent's next step boundary -- on the record, so not
+// recallable). When there is no queued message it renders zero lines.
 type QueuedMessageLabel struct {
 	tuist.Compo
 	message string
+	sent    bool
 	profile termenv.Profile
 }
 
@@ -22,10 +25,27 @@ func NewQueuedMessageLabel(profile termenv.Profile) *QueuedMessageLabel {
 	return &QueuedMessageLabel{profile: profile}
 }
 
-// SetMessage sets the queued message to display. Pass "" to clear.
+// SetMessage sets a RECALLABLE queued message to display -- one still held
+// client-side, waiting for a serial turn to finish. Pass "" to clear.
 func (q *QueuedMessageLabel) SetMessage(msg string) {
 	q.message = msg
+	q.sent = false
 	q.Update()
+}
+
+// SetSentMessage displays a message that was already handed to the engine (a
+// mid-turn interject): it is on the record and will be absorbed at the
+// agent's next step boundary, so it shows as queued but cannot be recalled
+// for editing.
+func (q *QueuedMessageLabel) SetSentMessage(msg string) {
+	q.message = msg
+	q.sent = true
+	q.Update()
+}
+
+// Sent reports whether the displayed message was already sent to the engine.
+func (q *QueuedMessageLabel) Sent() bool {
+	return q.sent
 }
 
 // Message returns the current queued message.

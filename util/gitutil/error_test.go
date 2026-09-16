@@ -33,3 +33,19 @@ func TestTranslateErrorContextPassthrough(t *testing.T) {
 	err := translateError(context.Canceled, "")
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestTranslateErrorRemoteAccess(t *testing.T) {
+	for _, tc := range []struct {
+		stderr string
+		want   error
+	}{
+		{"git@github.com: Permission denied (publickey).", ErrGitAuthFailed},
+		{"fatal: Could not resolve host: git.example.test", ErrGitHostNotFound},
+		{"ssh: Could not resolve hostname git.example.test", ErrGitHostNotFound},
+		{"fatal: Failed to connect to localhost port 1: Could not connect to server", ErrGitConnectionFailed},
+		{"ssh: connect to host localhost port 1: Connection refused", ErrGitConnectionFailed},
+		{"ssh: connect to host localhost port 22: Connection timed out", ErrGitConnectionFailed},
+	} {
+		require.ErrorIs(t, translateError(errors.New("exit status 128"), tc.stderr), tc.want)
+	}
+}

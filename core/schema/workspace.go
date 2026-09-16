@@ -35,11 +35,17 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 		PassthroughTelemetry()
 
+	// Each invocation plans separately, but its result must remain attached so
+	// callers can save the plan ID and reuse the same preview for export.
 	migrateField := dagql.Func("migrate", s.migrate).
 		View(AfterVersion("v1.0.0-0")).
-		DoNotCache("Plans workspace migration against live host filesystem").
+		WithInput(dagql.PerCallInput).
 		Doc("Plan the explicit migration needed for the current workspace.",
+			"Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.",
 			"The returned plan has an empty changeset and no steps when no migration is needed.").
+		Args(
+			dagql.Arg("modules").Doc("Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
+		).
 		PassthroughTelemetry()
 
 	dagql.Fields[*core.Query]{
@@ -47,6 +53,20 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFunc("withInitialized", s.withInitialized).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with a native configuration, without changing an existing configuration.",
+				"Fail if legacy configuration needs workspace migration."),
+		dagql.Func("migrateModule", s.migrateModule).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerCallInput).
+			Doc("Plan migration of one local module without migrating its dependencies or creating a workspace configuration.",
+				"Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.").
+			Args(
+				dagql.Arg("path").Doc("Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
+			).
+			PassthroughTelemetry(),
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("__workspaceSDK", s.workspaceSDK).
@@ -204,6 +224,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Location of the mounted file. Relative paths resolve from the workspace cwd."),
 				dagql.Arg("source").Doc("File to mount."),
 			),
+		dagql.NodeFunc("withoutMount", s.withoutMount).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with the content mounted at the given path unmounted.",
+				"Removes directory and file mounts at or below the path, revealing the underlying workspace content. Other mounts and pending changes are preserved.").
+			Args(
+				dagql.Arg("path").Doc("Location of the mount to remove. Relative paths resolve from the workspace cwd. Use / to remove all mounts."),
+			),
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
 			// Env-sensitive writes: what this records depends on the client's env
@@ -224,7 +251,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return this workspace with a module removed from its config.",
 				"When the session selects an env, only that env's overlay entry is removed.").
 			Args(
-				dagql.Arg("name").Doc("Name of the installed module entry to remove."),
+				dagql.Arg("name").Doc("Installed module name or source to remove. Version selectors are not accepted."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("withSDK", s.withSDK).
@@ -245,6 +272,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
+		dagql.NodeFunc("withEntrypoint", s.withEntrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with an installed module selected as its entrypoint.",
+				"Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.").
+			Args(
+				dagql.Arg("name").Doc("Exact installed module name."),
+			),
+		dagql.NodeFunc("withoutEntrypoint", s.withoutEntrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with no module selected as its entrypoint."),
 		dagql.NodeFunc("withInitModule", s.withSDKModuleInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a location initialized as a module scope.",
@@ -253,6 +292,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use. Required."),
 				dagql.Arg("name").Doc("Module name. The engine infers it from path, the active config file, or the workspace root when omitted."),
 				dagql.Arg("path").Doc("Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config."),
+				dagql.Arg("install").View(AfterVersion("v1.0.0-0")).Doc("Install the module. When omitted, install only if path is omitted."),
+				dagql.Arg("entrypoint").View(AfterVersion("v1.0.0-0")).Doc("Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed."),
 				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope."),
 			),
 		dagql.NodeFunc("detectScope", s.sdkModuleDetectScope).
@@ -335,10 +376,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withUpdatedModules", s.withUpdatedModules).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with refreshed lockfile state for installed modules.",
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with updated module versions and lockfile state.",
 				"An SDK client scope is regenerated when it targets an updated module.").
 			Args(
-				dagql.Arg("names").Doc("Installed module names to refresh. An empty list refreshes all installed modules."),
+				dagql.Arg("names").Doc("Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules."),
+				dagql.Arg("version").View(AfterVersion("v1.0.0-0")).Doc("New version request for exactly one selected module. Cannot be combined with a version suffix."),
 			),
 		dagql.NodeFunc("sdks", s.sdks).
 			View(AfterVersion("v1.0.0-0")).
@@ -375,6 +418,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
 			),
+		dagql.Func("entrypoint", s.entrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Reads live config from host").
+			Doc("Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.",
+				"Reflects the selected env's effective view. Fails if several modules are selected."),
 		dagql.Func("envList", s.envList).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
@@ -436,10 +484,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include terminal targets matching the specified patterns"),
 			),
 		dagql.NodeFunc("agents", s.agents).
+			Experimental("Agent APIs are likely to change.").
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return all agent middlewares from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
+				dagql.Arg("exclude").Doc("Exclude agents matching the specified patterns"),
 			),
 		migrateField,
 	}.Install(srv)
@@ -1951,6 +2001,43 @@ func (s *workspaceSchema) withMountedFile(
 	return withMountedSource(ctx, parent, args.Path, args.Source, "withFile")
 }
 
+type workspaceWithoutMountArgs struct {
+	Path string
+}
+
+func (s *workspaceSchema) withoutMount(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithoutMountArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := parent.Self()
+	resolvedPath, err := resolveWorkspacePath(args.Path, ws.Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	mounts, ok := ws.MountsDir()
+	if !ok {
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.Clone())
+	}
+	if resolvedPath == "." {
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.WithoutMountedAt(dagql.ObjectResult[*core.Directory]{}, resolvedPath))
+	}
+	// withoutDirectory removes the path whatever its type, so this also
+	// removes mounted files and any mounts nested beneath the path.
+	var updated dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, mounts, &updated, dagql.Selector{
+		Field: "withoutDirectory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.WithoutMountedAt(updated, resolvedPath))
+}
+
 // withMountedSource is the shared implementation of withMountedDirectory and
 // withMountedFile: it attaches the given source (a Directory or File) into the
 // workspace's read-only mounts tree at the resolved workspace path via the
@@ -2569,6 +2656,24 @@ func (s *workspaceSchema) seedDeltaRootParents(
 		if !exists {
 			continue
 		}
+
+		// Parents from earlier edits are already in the accumulated delta.
+		// withNewDirectory commits a snapshot even when MkdirAll is a no-op,
+		// so only seed parents that are currently missing from the delta.
+		var alreadySeeded dagql.Boolean
+		if err := srv.Select(ctx, delta, &alreadySeeded, dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(dir)},
+				{Name: "expectedType", Value: dagql.Opt(core.ExistsTypeDirectory)},
+			},
+		}); err != nil {
+			return delta, fmt.Errorf("inspect overlay delta root parent %q: %w", dir, err)
+		}
+		if alreadySeeded {
+			continue
+		}
+
 		var info *core.Stat
 		if err := srv.Select(ctx, base, &info, dagql.Selector{
 			Field: "stat",
@@ -3719,7 +3824,82 @@ func (s *workspaceSchema) checks(
 		allChecks = append(allChecks, filtered...)
 	}
 
+	// loadWorkspaceConfigForOverlay hard-errors on a legacy compat workspace, so
+	// an unmigrated workspace must not reach it, and one without SDKs has
+	// nothing to derive anyway.
+	if !noGenerate && parent.ConfigFile != "" && len(cfg.SDKs) > 0 {
+		staged, err := s.loadWorkspaceConfigForOverlay(ctx, parent, workspaceConfigMustExist, false)
+		if err != nil {
+			return nil, err
+		}
+		derived, err := s.syntheticSDKGeneratorChecks(ctx, staged, include, skip, entrypoints, ignoreChecks, allChecks)
+		if err != nil {
+			return nil, err
+		}
+		allChecks = append(allChecks, derived...)
+	}
+
 	return &core.CheckGroup{Checks: allChecks, BoundWorkspace: parentResult}, nil
+}
+
+// syntheticSDKGeneratorChecks derives one check per configured SDK from the
+// engine-injected generators `dagger generate` already lists, so a workspace
+// keeps the generate-derived check it had when its SDK declared its own
+// +generate function. syntheticSDKGenerators applies the include patterns.
+func (s *workspaceSchema) syntheticSDKGeneratorChecks(
+	ctx context.Context,
+	staged *stagedWorkspaceConfig,
+	include []string,
+	skip []string,
+	entrypoints map[string]bool,
+	ignoreChecks map[string][]string,
+	existing []*core.Check,
+) ([]*core.Check, error) {
+	generators, err := s.syntheticSDKGenerators(ctx, staged, include, entrypoints)
+	if err != nil {
+		return nil, err
+	}
+
+	// An explicit +check at the same name wins, as it does for a function
+	// annotated with both +check and +generate.
+	taken := make(map[string]struct{}, len(existing))
+	for _, check := range existing {
+		taken[check.Name()] = struct{}{}
+	}
+
+	derived := make([]*core.Check, 0, len(generators))
+	for _, generator := range generators {
+		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
+		if _, exists := taken[check.Name()]; exists {
+			continue
+		}
+		// The generator is namespaced under its SDK's provider module, and an
+		// SDK names exactly one installed module, so that module's configured
+		// check skips apply to this check alone.
+		filtered, err := filterNodesByExclude(
+			ctx,
+			[]*core.Check{check},
+			ignoreChecks[generator.Node.Path()[0]],
+			true,
+			func(check *core.Check) *core.ModTreeNode { return check.Node },
+			func(check *core.Check) string { return check.Name() },
+			"check",
+		)
+		if err != nil {
+			return nil, err
+		}
+		derived = append(derived, filtered...)
+	}
+
+	return filterNodesByExclude(
+		ctx,
+		derived,
+		skip,
+		false,
+		func(check *core.Check) *core.ModTreeNode { return check.Node },
+		func(check *core.Check) string { return check.Name() },
+		"check",
+	)
 }
 
 type workspaceGeneratorModule struct {
@@ -4008,7 +4188,8 @@ func (s *workspaceSchema) terminals(
 		ctx,
 		s,
 		parentResult,
-		args.Include,
+		workspaceIncludePatterns(args.Include),
+		nil,
 		"terminal targets",
 		"terminal target",
 		terminalTargetsFromModule,
@@ -4026,23 +4207,25 @@ func (s *workspaceSchema) agents(
 	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Exclude dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
-) (*core.AgentGroup, error) {
+) (*core.AgentMiddlewareGroup, error) {
 	allAgents, err := collectWorkspaceModuleTargets(
 		ctx,
 		s,
 		parentResult,
-		args.Include,
+		workspaceIncludePatterns(args.Include),
+		workspaceIncludePatterns(args.Exclude),
 		"agents",
 		"agent",
 		agentTargetsFromModule,
-		func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
+		func(agent *core.AgentMiddleware) *core.ModTreeNode { return agent.Node },
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+	return &core.AgentMiddlewareGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
 }
 
 // workspaceTargetModules returns the workspace's primary modules as they
@@ -4073,19 +4256,19 @@ func (s *workspaceSchema) workspaceTargetModules(
 
 // collectWorkspaceModuleTargets composes one kind of target (agents, terminal
 // targets) from every primary module in the workspace, as seen through its
-// pending overlay, keeping only those matching the include patterns.
+// pending overlay, keeping only those matching the include patterns and not
+// matching the exclude patterns.
 func collectWorkspaceModuleTargets[T any](
 	ctx context.Context,
 	s *workspaceSchema,
 	parentResult dagql.ObjectResult[*core.Workspace],
-	includeArg dagql.Optional[dagql.ArrayInput[dagql.String]],
+	include []string,
+	exclude []string,
 	groupLabel string,
 	targetLabel string,
 	collect func(context.Context, dagql.ObjectResult[*core.Module]) (*core.ModTreeNode, []T, error),
 	node func(T) *core.ModTreeNode,
 ) ([]T, error) {
-	include := workspaceIncludePatterns(includeArg)
-
 	ctx, err := s.withWorkspaceClientContext(ctx, parentResult.Self())
 	if err != nil {
 		return nil, err
@@ -4100,6 +4283,7 @@ func collectWorkspaceModuleTargets[T any](
 		return nil, err
 	}
 
+	name := func(target T) string { return node(target).PathString() }
 	var all []T
 	for _, mod := range mods {
 		root, targets, err := collect(ctx, mod)
@@ -4107,14 +4291,11 @@ func collectWorkspaceModuleTargets[T any](
 			return nil, fmt.Errorf("%s from module %q: %w", groupLabel, mod.Self().Name(), err)
 		}
 		reparentWorkspaceTreeRoot(root, mod.Self().Name(), entrypoints[mod.Self().Name()])
-		filtered, err := filterNodesByInclude(
-			ctx,
-			targets,
-			include,
-			node,
-			func(target T) string { return node(target).PathString() },
-			targetLabel,
-		)
+		filtered, err := filterNodesByInclude(ctx, targets, include, node, name, targetLabel)
+		if err != nil {
+			return nil, err
+		}
+		filtered, err = filterNodesByExclude(ctx, filtered, exclude, false, node, name, targetLabel)
 		if err != nil {
 			return nil, err
 		}
@@ -4137,8 +4318,8 @@ func terminalTargetsFromModule(
 func agentTargetsFromModule(
 	ctx context.Context,
 	mod dagql.ObjectResult[*core.Module],
-) (*core.ModTreeNode, []*core.Agent, error) {
-	group, err := core.NewAgentGroup(ctx, mod, nil)
+) (*core.ModTreeNode, []*core.AgentMiddleware, error) {
+	group, err := core.NewAgentMiddlewareGroup(ctx, mod, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -4392,9 +4573,10 @@ func filterNodesByInclude[T any](
 	return filtered, nil
 }
 
-// withWorkspaceClientContext overrides the client metadata in context to the
-// workspace's owning client ID. This ensures host filesystem operations route
-// through the correct client session, even when called from a module context.
+// withWorkspaceClientContext stamps the workspace owner's immutable client
+// metadata for host/resource routing, even from a module context. It does not
+// replace ClientScope, so runtime-backed operations remain authorized by the
+// caller's held scope rather than metadata selecting another executable runtime.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	return withWorkspaceClientContext(ctx, ws)
 }
@@ -4420,9 +4602,8 @@ func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *
 	return dagql.WithNamedPerClientCacheScope(ctx, epoch), nil
 }
 
-// withWorkspaceClientContext overrides the client metadata in context to the
-// workspace's owning client ID. This ensures host filesystem operations route
-// through the correct client session, even when called from a module context.
+// withWorkspaceClientContext stamps owner metadata for host/resource routing;
+// the caller's ClientScope remains the only runtime execution authority.
 func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	if ws.IsValueWorkspace() {
 		return ctx, nil

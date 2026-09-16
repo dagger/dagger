@@ -513,6 +513,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			}
 		}
 
+		var accessErrors []error
 		for _, selectArgs := range try {
 			var repo dagql.ObjectResult[*core.GitRepository]
 			err := srv.Select(ctx, parent, &repo, dagql.Selector{
@@ -522,12 +523,14 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			})
 			if err != nil {
 				if errors.Is(err, gitutil.ErrGitAuthFailed) {
+					accessErrors = append(accessErrors, err)
 					continue
 				}
 				return inst, err
 			}
 			if _, err := repo.Self().LoadRemote(ctx); err != nil {
 				if errors.Is(err, gitutil.ErrGitAuthFailed) {
+					accessErrors = append(accessErrors, err)
 					continue
 				}
 				return inst, err
@@ -535,7 +538,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			return repo, nil
 		}
 
-		return inst, fmt.Errorf("failed to determine Git URL protocol")
+		return inst, fmt.Errorf("cannot access Git repository: %w", errors.Join(accessErrors...))
 	}
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse Git URL: %w", err)

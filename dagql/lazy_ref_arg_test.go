@@ -19,9 +19,9 @@ func (*moduleToolSet) Type() *ast.Type {
 }
 
 // TestObjectTypeForIDUsesModuleProvenance covers lazy references to user-module
-// objects when the loading server only has the bootstrap schema. The object's
-// recipe deliberately names no real field: resolving its type can only succeed
-// by loading its module provenance and must never evaluate the object recipe.
+// objects when the loading server lacks the type or has an older same-named
+// definition. The recipe deliberately names no real field: resolving its type
+// must use module provenance without evaluating the object recipe.
 func TestObjectTypeForIDUsesModuleProvenance(t *testing.T) {
 	cache := newCache(t)
 	ctx := dagql.ContextWithCache(testContext(), cache)
@@ -60,6 +60,188 @@ func TestObjectTypeForIDUsesModuleProvenance(t *testing.T) {
 	assert.Equal(t, "ModuleToolSet", objType.TypeName())
 	_, ok = objType.FieldSpec("check", "")
 	assert.Assert(t, ok)
+
+	// Reloading a module can leave an older definition of the same type in
+	// the caller's schema. The recipe's module, not that name match, must
+	// remain authoritative when a state-returning tool is rebound.
+	bootstrap.InstallObject(dagql.NewClass[*moduleToolSet](bootstrap))
+	dagql.Fields[*moduleToolSet]{
+		dagql.Func("oldCheck", func(context.Context, *moduleToolSet, struct{}) (string, error) {
+			return "old", nil
+		}),
+	}.Install(bootstrap)
+	objType, definingServer, ok, err = bootstrap.ObjectTypeAndServerForID(ctx, objectID)
+	assert.NilError(t, err)
+	assert.Assert(t, ok)
+	assert.Equal(t, moduleSchema, definingServer)
+	_, ok = objType.FieldSpec("check", "")
+	assert.Assert(t, ok)
+	_, ok = objType.FieldSpec("oldCheck", "")
+	assert.Assert(t, !ok)
+
+	// Without module provenance, ordinary/core type lookup still uses the
+	// caller's schema rather than inventing a defining module.
+	localID := call.New().Append((&moduleToolSet{}).Type(), "missingConstructor")
+	objType, definingServer, ok, err = bootstrap.ObjectTypeAndServerForID(ctx, localID)
+	assert.NilError(t, err)
+	assert.Assert(t, ok)
+	assert.Equal(t, bootstrap, definingServer)
+	_, ok = objType.FieldSpec("oldCheck", "")
+	assert.Assert(t, ok)
+}
+
+// TestLoadRecipeUsesModuleProvenance exercises the cold evaluation path, not
+// just type recovery: the constructor must run in the recorded module's schema,
+// including when the bootstrap schema has a same-named constructor.
+func TestLoadRecipeUsesModuleProvenance(t *testing.T) {
+	for _, shadow := range []bool{false, true} {
+		t.Run(map[bool]string{false: "missing constructor", true: "shadowed constructor"}[shadow], func(t *testing.T) {
+			ctx := dagql.ContextWithCache(testContext(), newCache(t))
+			bootstrap := newExternalDagqlServerForTest(t, Query{})
+			points.Install[Query](bootstrap)
+			moduleSchema := newExternalDagqlServerForTest(t, Query{})
+			moduleSchema.InstallObject(dagql.NewClass[*moduleToolSet](moduleSchema))
+
+			var constructorCalls, shadowCalls, schemaCalls int
+			constructor := dagql.Func("editor", func(ctx context.Context, _ Query, _ struct{}) (*moduleToolSet, error) {
+				assert.Equal(t, moduleSchema, dagql.CurrentDagqlServer(ctx))
+				constructorCalls++
+				return &moduleToolSet{}, nil
+			})
+			dagql.Fields[Query]{constructor}.Install(moduleSchema)
+			if shadow {
+				bootstrap.InstallObject(dagql.NewClass[*moduleToolSet](bootstrap))
+				dagql.Fields[Query]{
+					dagql.Func("editor", func(context.Context, Query, struct{}) (*moduleToolSet, error) {
+						shadowCalls++
+						return &moduleToolSet{}, nil
+					}),
+				}.Install(bootstrap)
+			}
+			bootstrap.SetResultServerForCall(func(ctx context.Context, frame *dagql.ResultCall) (*dagql.Server, error) {
+				schemaCalls++
+				assert.Assert(t, frame.Module != nil && frame.Module.ResultRef != nil)
+				assert.Assert(t, frame.Module.ResultRef.ResultID != 0)
+				assert.Equal(t, "editor", frame.Module.Name)
+				constructor.Spec.Module = frame.Module
+				return moduleSchema, nil
+			})
+
+			mod := recipeTestModule(1, "editor")
+			id := call.New().Append((&moduleToolSet{}).Type(), "editor", call.WithModule(mod))
+			loaded, err := bootstrap.Load(ctx, id)
+			assert.NilError(t, err)
+			assert.Equal(t, "ModuleToolSet", loaded.Type().Name())
+			assert.Equal(t, 1, constructorCalls)
+			assert.Equal(t, 0, shadowCalls)
+			assert.Equal(t, 1, schemaCalls)
+			loadedID, err := loaded.RecipeID(ctx)
+			assert.NilError(t, err)
+			assert.Equal(t, id.Digest(), loadedID.Digest())
+
+			// A warm digest hit must not load provenance or rebuild a schema.
+			_, err = bootstrap.Load(ctx, id)
+			assert.NilError(t, err)
+			assert.Equal(t, 1, constructorCalls)
+			assert.Equal(t, 1, schemaCalls)
+		})
+	}
+}
+
+// TestLoadRecipeModuleCoreCallsAndLazyRefs crosses module schemas with an eager
+// argument returning a core type. The module method must use its defining schema
+// to classify its lazy argument and leave that recipe untouched.
+func TestLoadRecipeModuleCoreCallsAndLazyRefs(t *testing.T) {
+	ctx := dagql.ContextWithCache(testContext(), newCache(t))
+	bootstrap := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](bootstrap)
+	first := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](first)
+	second := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](second)
+
+	first.InstallObject(dagql.NewClass[*moduleToolSet](first))
+	var firstCalls, secondCalls, combineCalls int
+	firstConstructor := dagql.Func("editor", func(ctx context.Context, _ Query, _ struct{}) (*moduleToolSet, error) {
+		assert.Equal(t, first, dagql.CurrentDagqlServer(ctx))
+		firstCalls++
+		return &moduleToolSet{}, nil
+	})
+	dagql.Fields[Query]{firstConstructor}.Install(first)
+	secondConstructor := dagql.Func("helper", func(ctx context.Context, _ Query, _ struct{}) (*points.Point, error) {
+		assert.Equal(t, second, dagql.CurrentDagqlServer(ctx))
+		secondCalls++
+		return &points.Point{X: 20}, nil
+	})
+	dagql.Fields[Query]{secondConstructor}.Install(second)
+	combine := dagql.Func("combine", func(ctx context.Context, _ *moduleToolSet, args struct {
+		Other dagql.ID[*points.Point]
+		Lazy  dagql.AnyID
+	}) (*points.Point, error) {
+		assert.Equal(t, first, dagql.CurrentDagqlServer(ctx))
+		combineCalls++
+		other, err := args.Other.Load(ctx, first)
+		if err != nil {
+			return nil, err
+		}
+		return &points.Point{X: 10 + other.Self().X}, nil
+	}).Args(dagql.Arg("lazy").LazyRef())
+	dagql.Fields[*moduleToolSet]{combine}.Install(first)
+
+	bootstrap.SetResultServerForCall(func(ctx context.Context, frame *dagql.ResultCall) (*dagql.Server, error) {
+		assert.Assert(t, frame.Module != nil && frame.Module.ResultRef != nil)
+		assert.Assert(t, frame.Module.ResultRef.ResultID != 0)
+		// The schema resolver is given only the defining module, not unrelated
+		// versions/modules from the receiver or arguments.
+		assert.Assert(t, frame.Receiver == nil)
+		assert.Equal(t, 0, len(frame.Args))
+		switch frame.Module.Name {
+		case "first":
+			firstConstructor.Spec.Module = frame.Module
+			combine.Spec.Module = frame.Module
+			return first, nil
+		case "second":
+			secondConstructor.Spec.Module = frame.Module
+			return second, nil
+		default:
+			t.Fatalf("unexpected module %q", frame.Module.Name)
+			return nil, nil
+		}
+	})
+
+	pointType := (&points.Point{}).Type()
+	firstModule := recipeTestModule(1, "first")
+	firstID := call.New().Append((&moduleToolSet{}).Type(), "editor", call.WithModule(firstModule))
+	secondModule := recipeTestModule(2, "second")
+	secondID := call.New().Append(pointType, "helper", call.WithModule(secondModule))
+	// This recipe cannot be evaluated; it is deliberately only a lazy ref.
+	lazyID := call.New().Append(pointType, "mustNotRun")
+	combinedID := firstID.Append(pointType, "combine",
+		call.WithModule(firstModule),
+		call.WithArgs(
+			call.NewArgument("other", call.NewLiteralID(secondID), false),
+			call.NewArgument("lazy", call.NewLiteralID(lazyID), false),
+		),
+	)
+	// A core call following the module method still works on the loaded class.
+	id := combinedID.Append(pointType, "shiftLeft")
+	loaded, err := bootstrap.Load(ctx, id)
+	assert.NilError(t, err)
+	var x int
+	assert.NilError(t, bootstrap.Select(ctx, loaded, &x, dagql.Selector{Field: "x"}))
+	assert.Equal(t, 29, x)
+	assert.Equal(t, 1, firstCalls)
+	assert.Equal(t, 1, secondCalls)
+	assert.Equal(t, 1, combineCalls)
+}
+
+// Core points stand in for module objects: their distinct, cold recipes can be
+// loaded by the bootstrap schema before the module-aware hook is called.
+func recipeTestModule(x int, name string) *call.Module {
+	id := call.New().Append((&points.Point{}).Type(), "point",
+		call.WithArgs(call.NewArgument("x", dagql.NewInt(x).ToLiteral(), false)),
+	)
+	return call.NewModule(id, name, "", "")
 }
 
 // TestLazyRefArgNotEvaluatedOnLoad reproduces the failure mode where

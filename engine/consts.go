@@ -34,9 +34,14 @@ const (
 	AllProxyEnvName   = "ALL_PROXY"
 
 	SessionAttachablesEndpoint = "/sessionAttachables"
-	InitEndpoint               = "/init"
-	QueryEndpoint              = "/query"
-	ShutdownEndpoint           = "/shutdown"
+
+	// NestedClientIDEnv carries the exec-created identity used by the injected
+	// /.init helper's attachables connection. Logical clients created by the
+	// nested process use their independently generated request client IDs.
+	NestedClientIDEnv = "_DAGGER_NESTED_CLIENT_ID"
+	InitEndpoint      = "/init"
+	QueryEndpoint     = "/query"
+	ShutdownEndpoint  = "/shutdown"
 
 	// Buildkit-interpreted session keys, can't change
 	SessionIDMetaKey         = "X-Docker-Expose-Session-Uuid"

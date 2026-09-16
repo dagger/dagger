@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"google.golang.org/grpc/metadata"
 )
 
 // TestEnvProviderRefresherError verifies that a failing refresher does not
@@ -29,6 +31,29 @@ func TestEnvProviderRefresherError(t *testing.T) {
 	}
 	if called != 1 {
 		t.Errorf("refresher called %d times, want 1", called)
+	}
+}
+
+func TestEnvProviderRejectedValueRefreshError(t *testing.T) {
+	t.Setenv("DAGGER_TEST_SECRET_ENV", "known-bad")
+	refreshErr := errors.New("token endpoint unreachable")
+	RegisterEnvRefresher(func(ctx context.Context, _ string) error {
+		if got := RejectedEnvValue(ctx); got != "fingerprint" {
+			t.Errorf("rejected value fingerprint = %q", got)
+		}
+		return refreshErr
+	})
+	t.Cleanup(func() { RegisterEnvRefresher(nil) })
+
+	outgoing := ContextWithRejectedEnvValue(t.Context(), "fingerprint")
+	md, _ := metadata.FromOutgoingContext(outgoing)
+	incoming := metadata.NewIncomingContext(t.Context(), md)
+	got, err := envProvider(incoming, "DAGGER_TEST_SECRET_ENV")
+	if !errors.Is(err, refreshErr) || got != nil {
+		t.Fatalf("rejected value must not mask refresh failure: got %q, %v", got, err)
+	}
+	if got := RejectedEnvValue(ContextWithRejectedEnvValue(incoming, "")); got != "" {
+		t.Fatalf("cleared rejection = %q", got)
 	}
 }
 

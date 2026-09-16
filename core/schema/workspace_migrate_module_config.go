@@ -83,11 +83,18 @@ func legacyModuleConfigAsCurrent(cfg *modules.ModuleConfig) ([]byte, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("module config is required")
 	}
-	cloned := *cfg
-	if cloned.Source == "." {
-		cloned.Source = ""
+	if cfg.SDK == nil || cfg.SDK.Source == "" {
+		cloned := *cfg
+		if cloned.Source == "." {
+			cloned.Source = ""
+		}
+		return modules.MarshalModuleConfigForFormat(&modules.ModuleConfigWithUserFields{
+			ModuleConfig: cloned,
+		}, modules.ConfigFormatCurrent)
 	}
-	return modules.MarshalModuleConfigForFormat(&modules.ModuleConfigWithUserFields{
-		ModuleConfig: cloned,
-	}, modules.ConfigFormatCurrent)
+	plan, err := workspace.PlanModuleMigration(cfg, false)
+	if err != nil {
+		return nil, err
+	}
+	return plan.ConfigData, nil
 }

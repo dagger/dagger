@@ -113,10 +113,21 @@ func exportOAuthCredential(provider string, p *llmconfig.Provider) {
 // exportOAuthEnv refreshes provider's token if it is due and exports the
 // result.
 func exportOAuthEnv(ctx context.Context, provider string) error {
-	if _, ok := oauthEnvVars[provider]; !ok {
+	vars, ok := oauthEnvVars[provider]
+	if !ok {
 		return nil
 	}
-	p, err := llmconfig.RefreshOAuthProviderIfNeeded(ctx, provider)
+	llmEnvMu.Lock()
+	current, set := os.LookupEnv(vars.token)
+	exported, ours := llmEnvExports[vars.token]
+	explicit := set && (!ours || exported != current)
+	llmEnvMu.Unlock()
+	if explicit {
+		// A user-supplied bearer is not the config's credential. In particular,
+		// its rejection must not rotate an unrelated subscription login.
+		return nil
+	}
+	p, err := llmconfig.RefreshOAuthProviderAfterRejection(ctx, provider, secretprovider.RejectedEnvValue(ctx))
 	if err != nil {
 		return err
 	}
@@ -357,9 +368,11 @@ func applyLLMConfigEnv() {
 			exportOAuthCredential(name, &p)
 			switch name {
 			case "anthropic":
+				exportLLMEnv("ANTHROPIC_SMALL_MODEL", p.SmallModel)
 				exportLLMEnv("ANTHROPIC_REASONING_EFFORT", p.ReasoningEffort)
 			case "openai-codex":
 				exportLLMEnv("OPENAI_CODEX_MODEL", p.Model)
+				exportLLMEnv("OPENAI_CODEX_SMALL_MODEL", p.SmallModel)
 				exportLLMEnv("OPENAI_CODEX_REASONING_EFFORT", p.ReasoningEffort)
 			}
 			continue
@@ -369,6 +382,7 @@ func applyLLMConfigEnv() {
 			exportLLMEnv("ANTHROPIC_API_KEY", p.APIKey)
 			exportLLMEnv("ANTHROPIC_BASE_URL", p.BaseURL)
 			exportLLMEnv("ANTHROPIC_MODEL", p.Model)
+			exportLLMEnv("ANTHROPIC_SMALL_MODEL", p.SmallModel)
 			exportLLMEnv("ANTHROPIC_REASONING_EFFORT", p.ReasoningEffort)
 		case "openai":
 			if name != openAISlotOwner {
@@ -377,10 +391,12 @@ func applyLLMConfigEnv() {
 			exportLLMEnv("OPENAI_API_KEY", p.APIKey)
 			exportLLMEnv("OPENAI_BASE_URL", p.BaseURL)
 			exportLLMEnv("OPENAI_MODEL", p.Model)
+			exportLLMEnv("OPENAI_SMALL_MODEL", p.SmallModel)
 		case "google", "gemini":
 			exportLLMEnv("GEMINI_API_KEY", p.APIKey)
 			exportLLMEnv("GEMINI_BASE_URL", p.BaseURL)
 			exportLLMEnv("GEMINI_MODEL", p.Model)
+			exportLLMEnv("GEMINI_SMALL_MODEL", p.SmallModel)
 			exportLLMEnv("GEMINI_REASONING_EFFORT", p.ReasoningEffort)
 		case "openrouter":
 			// OpenRouter is OpenAI-compatible; route it through the OpenAI vars.
@@ -389,6 +405,7 @@ func applyLLMConfigEnv() {
 			}
 			exportLLMEnv("OPENAI_API_KEY", p.APIKey)
 			exportLLMEnv("OPENAI_MODEL", p.Model)
+			exportLLMEnv("OPENAI_SMALL_MODEL", p.SmallModel)
 			base := p.BaseURL
 			if base == "" {
 				base = "https://openrouter.ai/api/v1"
@@ -400,6 +417,7 @@ func applyLLMConfigEnv() {
 			// here (e.g. Ollama on localhost).
 			exportLLMEnv("LOCAL_BASE_URL", p.BaseURL)
 			exportLLMEnv("LOCAL_MODEL", p.Model)
+			exportLLMEnv("LOCAL_SMALL_MODEL", p.SmallModel)
 			exportLLMEnv("LOCAL_API_COMPAT", p.APICompat)
 			exportLLMEnv("LOCAL_API_KEY", p.APIKey)
 		}

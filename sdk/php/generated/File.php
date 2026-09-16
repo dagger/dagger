@@ -193,8 +193,8 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     public function sync(): File
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\File::class, new \Dagger\Id((string)$id), 'File');
     }
 
     /**

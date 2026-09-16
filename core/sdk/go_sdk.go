@@ -13,6 +13,8 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -24,7 +26,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "fdf4c34a9a67d096aaeef79630017c9c7ff8fe8e" // v0.21.9
+	goSDKLibVersion = "f70383e0aa389216628d304482664359300c9be1" // v1.0.0-beta.12
 )
 
 /*
@@ -877,7 +879,13 @@ func gitConfigSelectors(ctx context.Context, bk *engineutil.Client) ([]dagql.Sel
 
 	gitconfig, err := bk.GetGitConfig(ctx)
 	if err != nil {
-		return nil, err
+		if status.Code(err) != codes.PermissionDenied {
+			return nil, err
+		}
+		// An in-engine SDK client has no host attachables by design. Its module
+		// dependencies must still be buildable; they simply do not inherit the
+		// caller's ambient Git configuration.
+		gitconfig = nil
 	}
 
 	for _, entry := range gitconfig {

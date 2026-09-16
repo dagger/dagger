@@ -28,6 +28,7 @@ type Query { doug: Doug! }
 type Workspace { id: ID! }
 type Changeset { id: ID! }
 type LLM { id: ID! }
+type Agent { id: ID! }
 type Container { id: ID! }
 type Directory { id: ID! }
 type Secret { id: ID! }
@@ -67,6 +68,12 @@ type Doug {
 
   "Note the conversation, if there is one — an optional LLM argument."
   annotate(llm: ID @expectedType(name: "LLM")): Doug!
+
+  "Poke the calling agent — MCP supplies the Agent argument."
+  poke(
+    caller: ID! @expectedType(name: "Agent"),
+    note: String!,
+  ): String!
 
   "Apply a changeset — requires a non-liftable object arg, so ineligible."
   apply(changes: ID! @expectedType(name: "Changeset")): Doug!
@@ -139,17 +146,19 @@ func TestObjectToolEligible(t *testing.T) {
 	// handle to pass.
 	require.False(t, objectToolEligible(fieldByName(doug, "apply"), nil, conversationToolArgs))
 
-	// The LLM handle is supplied by MCP at object-tool dispatch, so this
-	// required argument does not disqualify the method...
+	// LLM and Agent handles are supplied by MCP at object-tool dispatch, so
+	// these required arguments do not disqualify the methods...
 	require.True(t, objectToolEligible(fieldByName(doug, "compact"), nil, conversationToolArgs))
 	require.True(t, objectToolEligible(fieldByName(doug, "annotate"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "poke"), nil, conversationToolArgs))
 
-	// ...unless the tools are served without a conversation to fill it from
-	// (dagger mcp). Then an LLM argument is unsatisfiable like any other
-	// object argument: a required one disqualifies the method, an optional one
-	// is left to the caller.
+	// ...unless the tools are served without a conversation to fill them from
+	// (dagger mcp). Then an LLM or Agent argument is unsatisfiable like any
+	// other object argument: a required one disqualifies the method, an
+	// optional one is left to the caller.
 	require.False(t, objectToolEligible(fieldByName(doug, "compact"), nil, standaloneToolArgs))
 	require.True(t, objectToolEligible(fieldByName(doug, "annotate"), nil, standaloneToolArgs))
+	require.False(t, objectToolEligible(fieldByName(doug, "poke"), nil, standaloneToolArgs))
 
 	// ...or when the type is LIFTABLE: a required Container arg renders as an
 	// address string and is lifted via the core Address API at dispatch time.
@@ -195,8 +204,8 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.NoError(t, err)
 	props := readSchema["properties"].(map[string]any)
 
-	// Workspace remains contextual, while the LLM argument is filled directly
-	// by MCP. Neither is exposed to the model's tool schema.
+	// Workspace remains contextual, while LLM and Agent arguments are filled
+	// directly by MCP. None are exposed to the model's tool schema.
 	require.NotContains(t, props, "source")
 	compactSchema, err := objectMethodSchema(schema, fieldByName(doug, "compact"), conversationToolArgs)
 	require.NoError(t, err)
@@ -204,6 +213,10 @@ func TestObjectMethodSchema(t *testing.T) {
 	annotateSchema, err := objectMethodSchema(schema, fieldByName(doug, "annotate"), conversationToolArgs)
 	require.NoError(t, err)
 	require.NotContains(t, annotateSchema["properties"], "llm")
+	pokeSchema, err := objectMethodSchema(schema, fieldByName(doug, "poke"), conversationToolArgs)
+	require.NoError(t, err)
+	require.NotContains(t, pokeSchema["properties"], "caller")
+	require.Contains(t, pokeSchema["properties"], "note")
 
 	// Served without a conversation, MCP has nothing to fill an LLM argument
 	// from, so an optional one is exposed by ID like any other object.
@@ -552,11 +565,20 @@ func TestStandaloneToolsTreatLLMArgsAsUnsatisfiable(t *testing.T) {
 	require.ErrorContains(t, err, "requires the current conversation")
 }
 
+// TestBoundToolsUseTheirDefiningSchemaAuthoritatively covers both lazy bindings
+// restored from IDs and eager bindings created by workspace module discovery.
+// Even when the current workspace schema has a valid replacement definition for
+// the same type, the binding must keep the methods from the schema it was
+// composed with. The eager method call also proves dispatch remains callable
+// through the captured receiver after the workspace schema changes.
 func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	defining := newAddressLiftTestServer(t)
 	objType, ok := defining.ObjectType("LiftTestRunner")
 	require.True(t, ok)
 
+	// Install a different, valid definition of the same type in the current
+	// schema. Treating definingSchema as a missing-type fallback would silently
+	// replace the active tools with this method.
 	current := newCoreDagqlServerForTest(t, &Query{})
 	current.InstallObject(dagql.NewClass(current, dagql.ClassOpts[*liftTestRunner]{Typed: &liftTestRunner{}}))
 	dagql.Fields[*liftTestRunner]{
@@ -571,6 +593,7 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, toolsets, 1)
 		require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+
 		names := make([]string, 0, len(toolsets[0].tools))
 		for _, tool := range toolsets[0].tools {
 			names = append(names, tool.Name)
@@ -583,32 +606,74 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	t.Run("lazy", func(t *testing.T) {
 		assertDefiningTools(t, newMCP().WithLazyTools(nil, objType, defining.Schema(), nil))
 	})
-	t.Run("eager", func(t *testing.T) {
-		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "defining-schema-test", SessionID: "defining-schema-test"})
+
+	t.Run("dispatch", func(t *testing.T) {
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+			ClientID:  "defining-schema-test",
+			SessionID: "defining-schema-test",
+		})
 		cache, err := dagql.NewCache(ctx, "", nil, nil)
 		require.NoError(t, err)
 		ctx = dagql.ContextWithCache(ctx, cache)
+
 		var runner dagql.AnyObjectResult
 		require.NoError(t, defining.Select(ctx, defining.Root(), &runner, dagql.Selector{Field: "runner"}))
-		tools := assertDefiningTools(t, newMCP().WithTools(runner, defining.Schema(), nil))
-		for _, tool := range tools {
-			if tool.Name == "nullable" {
-				out, err := tool.Call(ctx, map[string]any{"date": "still active"})
-				require.NoError(t, err)
-				require.Equal(t, "still active", out)
-				return
-			}
+		for _, boundary := range []string{"eager", "lazy load", "state return", "dependency attachment"} {
+			t.Run(boundary, func(t *testing.T) {
+				mcp := newMCP().WithTools(runner, defining.Schema(), nil)
+				currentType, ok := current.ObjectType("LiftTestRunner")
+				require.True(t, ok)
+				switch boundary {
+				case "lazy load":
+					id, err := runner.ID()
+					require.NoError(t, err)
+					mcp = newMCP().WithLazyTools(id, objType, defining.Schema(), nil)
+				case "state return":
+					returned, err := currentType.New(runner)
+					require.NoError(t, err)
+					require.NoError(t, mcp.rebindBoundTool("LiftTestRunner", returned))
+				case "dependency attachment":
+					llm := &LLM{mcp: mcp}
+					deps, err := llm.AttachDependencyResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+						return currentType.New(res)
+					})
+					require.NoError(t, err)
+					require.Len(t, deps, 1)
+					dep, ok := deps[0].(dagql.AnyObjectResult)
+					require.True(t, ok)
+					_, ok = dep.ObjectType().FieldSpec("nullable", "")
+					require.True(t, ok)
+					_, ok = dep.ObjectType().FieldSpec("replacement", "")
+					require.False(t, ok)
+					out, err := dep.Select(ctx, current, dagql.Selector{
+						Field: "nullable",
+						Args:  []dagql.NamedInput{{Name: "date", Value: dagql.Opt(dagql.String("returned dependency"))}},
+					})
+					require.NoError(t, err)
+					require.Equal(t, dagql.String("returned dependency"), out.Unwrap())
+				}
+				tools := assertDefiningTools(t, mcp)
+				for _, tool := range tools {
+					if tool.Name != "nullable" {
+						continue
+					}
+					out, err := tool.Call(ctx, map[string]any{"date": "still active"})
+					require.NoError(t, err)
+					require.Equal(t, "still active", out)
+					return
+				}
+				t.Fatal("nullable tool not found")
+			})
 		}
-		t.Fatal("nullable tool not found")
 	})
 }
 
-// TestBuildObjectMethodSelectorAddressLift covers dispatch: a model-supplied
-// string for a liftable object arg first tries the ID decode (IDs from
-// previous tool results keep working), then falls back to lifting the string
-// through Query.address(value).<addressField>. Args of addressable types
-// outside the liftableTypes allowlist only ever take the ID path.
-func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
+// TestBuildObjectMethodSelector covers argument dispatch against a
+// real dagql field: nullable scalars accept explicit null, while model-supplied
+// strings for liftable object args first try ID decoding and then address
+// resolution. Args of addressable types outside the liftableTypes allowlist
+// only ever take the ID path.
+func TestBuildObjectMethodSelector(t *testing.T) {
 	// Select requires client metadata and a dagql cache in ctx (cache sessions
 	// are per-client).
 	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -223,6 +224,7 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, detail)
 	})
+	mux.HandleFunc("/timings", fe.consoleTimingsHandler)
 	mux.HandleFunc("/help", fe.consoleHelp)
 	mux.HandleFunc("/", fe.consoleHelp)
 
@@ -442,6 +444,117 @@ func (fe *frontendPretty) consoleSpanDetail(id dagui.SpanID) (string, bool) {
 	return b.String(), true
 }
 
+func (fe *frontendPretty) consoleTimingsHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	hex := q.Get("root")
+	sid, err := oteltrace.SpanIDFromHex(hex)
+	if err != nil {
+		http.Error(w, "want ?root=<span hex>: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	var minDuration time.Duration
+	if raw := q.Get("minDuration"); raw != "" {
+		minDuration, err = time.ParseDuration(raw)
+		if err != nil || minDuration < 0 {
+			http.Error(w, "minDuration must be a non-negative duration (e.g. 10ms)", http.StatusBadRequest)
+			return
+		}
+	}
+	limit := 200
+	if raw := q.Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			http.Error(w, "limit must be a non-negative integer (0 = unlimited)", http.StatusBadRequest)
+			return
+		}
+	}
+	fe.consoleMu.Lock()
+	defer fe.consoleMu.Unlock()
+	detail, ok := fe.consoleTimings(dagui.SpanID{SpanID: sid}, minDuration, limit, time.Now())
+	if !ok {
+		http.Error(w, fmt.Sprintf("span %s is not loaded", hex), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	io.WriteString(w, detail)
+}
+
+// consoleTimings reports raw parent/child timing, not the UI's filtered or
+// linked tree. It never fetches telemetry or logs. now is shared by all running
+// rows so their elapsed durations describe one snapshot.
+func (fe *frontendPretty) consoleTimings(id dagui.SpanID, minDuration time.Duration, limit int, now time.Time) (string, bool) {
+	root, ok := fe.db.Spans.Map[id]
+	if !ok || root == nil || !root.Received {
+		return "", false
+	}
+	children := make(map[dagui.SpanID][]*dagui.Span)
+	for _, sp := range fe.db.Spans.Order {
+		if sp.Received {
+			children[sp.ParentID] = append(children[sp.ParentID], sp)
+		}
+	}
+	var spans []*dagui.Span
+	seen := make(map[dagui.SpanID]bool)
+	pending := []*dagui.Span{root}
+	for len(pending) > 0 {
+		sp := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if seen[sp.ID] {
+			continue
+		}
+		seen[sp.ID] = true
+		spans = append(spans, sp)
+		pending = append(pending, children[sp.ID]...)
+	}
+	slices.SortFunc(spans, func(a, b *dagui.Span) int {
+		// Unknown starts sort last; equal starts have a stable ID tie-break.
+		if a.StartTime.IsZero() != b.StartTime.IsZero() {
+			if a.StartTime.IsZero() {
+				return 1
+			}
+			return -1
+		}
+		if cmp := a.StartTime.Compare(b.StartTime); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.ID.String(), b.ID.String())
+	})
+	var b strings.Builder
+	fmt.Fprintf(&b, "root: %s  %q\n", root.ID, root.Name)
+	fmt.Fprintln(&b, "Loaded spans only (including internal); incomplete if telemetry is missing or not fetched. No logs fetched.")
+	fmt.Fprintln(&b, "Durations are wall time, may overlap, and are not CPU self time; 'so far' uses the current clock. Unknown timings survive the duration filter.")
+	fmt.Fprintln(&b, "span_id  parent_id  start_offset  duration  name")
+	shown, filtered, capped := 0, 0, 0
+	for _, sp := range spans {
+		offset, duration := "unknown", "unknown"
+		if !sp.StartTime.IsZero() {
+			elapsed := sp.EndTime.Sub(sp.StartTime)
+			if sp.IsRunning() {
+				elapsed = now.Sub(sp.StartTime)
+			}
+			if elapsed < minDuration {
+				filtered++
+				continue
+			}
+			duration = elapsed.String()
+			if sp.IsRunning() {
+				duration += " (so far)"
+			}
+			if !root.StartTime.IsZero() {
+				offset = sp.StartTime.Sub(root.StartTime).String()
+			}
+		}
+		if limit > 0 && shown >= limit {
+			capped++
+			continue
+		}
+		fmt.Fprintf(&b, "%s  %s  %s  %s  %q\n", sp.ID, sp.ParentID, offset, duration, sp.Name)
+		shown++
+	}
+	fmt.Fprintf(&b, "shown: %d; omitted: %d (%d below minDuration, %d over limit); loaded subtree: %d\n", shown, filtered+capped, filtered, capped, len(spans))
+	return b.String(), true
+}
+
 func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	io.WriteString(w, "dagger TUI console — endpoints:\n"+
@@ -452,6 +565,7 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  POST /resize <CxR>   resize the terminal (e.g. 120x12), return frame\n"+
 		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
 		"  GET  /span?id=<hex>  span detail: status, timing, flags, parent chain\n"+
+		"  GET  /timings?root=<hex>[&minDuration=10ms&limit=200]  loaded subtree wall timings (0 limit = unlimited)\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
 		"r error origin · L logs · +/- verbosity · / search\n")

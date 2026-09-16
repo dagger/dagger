@@ -325,6 +325,25 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 	return err
 }
 
+// assignAgent exposes a portable conversation recipe as an LLM-valued shell
+// variable, ready to continue through an ordinary Dagger Shell pipeline.
+func (h *shellCallHandler) assignAgent(id dagger.ID) {
+	if h == nil || h.shellEnv == nil || h.state == nil {
+		return
+	}
+	st := ShellState{
+		Calls: []FunctionCall{{
+			Object:         "Query",
+			Name:           "node",
+			Arguments:      map[string]any{"id": string(id)},
+			ReturnObject:   "LLM",
+			InlineFragment: "LLM",
+		}},
+	}
+	key := h.state.Store(st)
+	h.shellEnv.setAgent(newStateToken(key))
+}
+
 // Function returns the last function in the chain, if not empty
 func (st ShellState) Function() FunctionCall {
 	if st.IsEmpty() {

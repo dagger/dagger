@@ -51,7 +51,11 @@ type mockServer struct {
 	lockWritable   bool
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
+func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
+	return engine.NewNestedClientTransport(nil), nil
+}
+
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
@@ -172,6 +176,8 @@ func (ms *mockServer) RegistryResolver(context.Context) (*serverresolver.Resolve
 }
 
 func (ms *mockServer) Services(context.Context) (*Services, error) { return nil, nil }
+
+func (ms *mockServer) Agents(context.Context) (*AgentRuntimes, error) { return nil, nil }
 
 func (ms *mockServer) Platform() Platform                  { return Platform{} }
 func (ms *mockServer) OCIStore() content.Store             { return nil }

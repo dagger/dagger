@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,7 +11,9 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/openai/openai-go"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/openai/openai-go/v3"
 )
 
 // Per-request credential resolution for LLM providers.
@@ -101,6 +104,12 @@ type CredentialSource struct {
 	cached    Credential
 	goodUntil time.Time
 
+	// rejected is the SHA-256 fingerprint of the token refused by the
+	// provider. Forward it on the next lookup so the client can refresh even
+	// when that token's advertised expiry is still in the future. Never send
+	// the bearer itself in RPC metadata.
+	rejected string
+
 	// now is this source's clock. Tests replace it to exercise the expiry
 	// horizon without sleeping through it.
 	now func() time.Time
@@ -135,6 +144,9 @@ func (src *CredentialSource) Credential(ctx context.Context) (Credential, error)
 		return src.cached, nil
 	}
 
+	if src.rejected != "" {
+		ctx = secretprovider.ContextWithRejectedEnvValue(ctx, src.rejected)
+	}
 	cred, err := src.resolve(ctx)
 	if err != nil {
 		if src.cached.Token != "" {
@@ -145,6 +157,7 @@ func (src *CredentialSource) Credential(ctx context.Context) (Credential, error)
 	if cred.Token != "" {
 		src.cached = cred
 		src.goodUntil = credentialHorizon(now, cred)
+		src.rejected = ""
 	}
 	return cred, nil
 }
@@ -159,6 +172,23 @@ func (src *CredentialSource) Invalidate() {
 	}
 	src.mu.Lock()
 	defer src.mu.Unlock()
+	src.invalidateLocked()
+}
+
+// reject only invalidates the credential used by this request. A late 401 from
+// a parallel request must not evict a newer token another request refreshed.
+func (src *CredentialSource) reject(token string) {
+	src.mu.Lock()
+	defer src.mu.Unlock()
+	if src.cached.Token == token {
+		src.invalidateLocked()
+	}
+}
+
+func (src *CredentialSource) invalidateLocked() {
+	if src.cached.Token != "" {
+		src.rejected = fmt.Sprintf("%x", sha256.Sum256([]byte(src.cached.Token)))
+	}
 	src.cached = Credential{}
 	src.goodUntil = time.Time{}
 }
@@ -228,24 +258,37 @@ func parseCredentialExpiry(value string) time.Time {
 	return expiresAt.UTC()
 }
 
-// detach re-bases resolution onto base, dropping the requesting context's
-// cancellation.
+// detach bounds resolution by the session's lifetime and a timeout, while
+// retaining execution authority from the request that needs the credential.
 //
-// A credential is resolved from whichever request happens to need one, but the
-// endpoint holding the source is memoized for the whole conversation and can
-// outlive that request by hours — a detached agent loop keeps stepping long
-// after the API call that routed its endpoint returned. Resolving against that
-// call's context would start failing the moment it completed. loadLLMRouter
-// passes a session-scoped base instead, so resolution stays alive for exactly
-// as long as the client's session; the timeout keeps one hung resolution from
-// hanging the LLM request behind it.
+// The endpoint can outlive the call that routed it by hours. Its session-scoped
+// base outlives that call's cancellation, but still carries the call's released
+// client lease. Use base only for session identity and cancellation. Each
+// resolution borrows a fresh scope from the active request or agent turn;
+// LoadClientConfig separately pins the client supplying the credential.
 func (resolve credentialResolver) detach(base context.Context) credentialResolver {
 	if resolve == nil {
 		return nil
 	}
-	return func(context.Context) (Credential, error) {
-		ctx, cancel := context.WithTimeout(base, credentialResolveTimeout)
+	return func(requestCtx context.Context) (Credential, error) {
+		if sessionScope, ok := engine.ClientScopeFromContext(base); ok {
+			requestScope, ok := engine.ClientScopeFromContext(requestCtx)
+			if !ok || requestScope.SessionID() != sessionScope.SessionID() {
+				return Credential{}, errors.New("LLM credential lookup requires a client scope from the routing session")
+			}
+		}
+		ctx, lease, err := engine.DetachClientScope(requestCtx, engine.ClientLeaseSharedWork, "llm-credential")
+		if err != nil {
+			return Credential{}, fmt.Errorf("acquire LLM credential client scope: %w", err)
+		}
+		defer lease.Release()
+		ctx, cancel := context.WithTimeout(ctx, credentialResolveTimeout)
 		defer cancel()
+		stop := context.AfterFunc(base, cancel)
+		defer stop()
+		if err := base.Err(); err != nil {
+			return Credential{}, err
+		}
 		return resolve(ctx)
 	}
 }
@@ -299,15 +342,19 @@ func (t *credentialTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	if err != nil {
 		return nil, fmt.Errorf("resolve LLM credential: %w", err)
 	}
-	if cred.Token != "" {
-		// RoundTrippers must not mutate the request they are handed.
-		req = req.Clone(req.Context())
-		t.apply(req, cred.Token)
+	if cred.Token == "" {
+		return nil, fmt.Errorf("resolve LLM credential: credential source returned an empty token")
 	}
-	// An empty resolution leaves the SDK's own header in place: the variable
-	// may simply have gone missing from the client's environment, and the
-	// credential the endpoint was routed with is a better guess than none.
-	return t.base.RoundTrip(req)
+	// RoundTrippers must not mutate the request they are handed. Never reuse
+	// the SDK's routing-time token when a live source cannot supply one: it
+	// may be the very credential that Invalidate just discarded after a 401.
+	req = req.Clone(req.Context())
+	t.apply(req, cred.Token)
+	resp, err := t.base.RoundTrip(req)
+	if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+		t.src.reject(cred.Token)
+	}
+	return resp, err
 }
 
 // credentialApplier returns how this endpoint's provider carries its
@@ -354,8 +401,8 @@ type expiredLoginError struct {
 }
 
 func (e *expiredLoginError) Error() string {
-	return fmt.Sprintf("%s rejected the subscription login: it has expired or been revoked — "+
-		"re-run `dagger llm setup` to log in again (%v)", e.provider, e.err)
+	return fmt.Sprintf("%s rejected the subscription access token after reloading credentials; "+
+		"if this persists, re-run `dagger llm setup` to log in again (%v)", e.provider, e.err)
 }
 
 func (e *expiredLoginError) Unwrap() error { return e.err }

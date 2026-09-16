@@ -32,6 +32,22 @@ class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Who put this message on the record, when it arrived through an agent mailbox.
+     *
+     * Null for the user's own prompts and for everything the model or tools produced.
+     */
+    public function origin(): ?LLMMessageOrigin
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('origin');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\LLMMessageOrigin::class, new \Dagger\Id((string)$id), 'LLMMessageOrigin');
+    }
+
+    /**
      * The role that produced this message.
      */
     public function role(): LLMMessageRole

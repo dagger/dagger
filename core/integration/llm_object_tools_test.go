@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 // TestObjectToolset locks in that the LLM's tools come from the objects it's
@@ -107,12 +108,110 @@ type Editor {
 			Text: "done",
 		}}))
 	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
-	transcript, err := ws.Agents().Compose(dagger.AgentGroupComposeOpts{Base: base}).
+	transcript, err := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
 		WithPrompt("track it").
 		Loop().
 		Transcript(ctx)
 	require.NoError(t, err)
 	require.Contains(t, transcript, "done")
+}
+
+// TestRestoredModuleTool loads a lazy module receiver that has never been
+// evaluated. A warm constructor cache would hide a dispatch through the core
+// schema, which is what broke tool calls after resuming an agent from a trace.
+func (LLMSuite) TestRestoredModuleTool(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := c.Directory().
+		WithNewFile("dagger.toml", "[modules.editor]\nsource = \"modules/editor\"\n").
+		WithNewFile("modules/editor/dagger.json", `{"name":"editor","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("modules/editor/main.dang", `
+type Editor {
+  marker: String!
+
+  new(marker: String! = "warm") {
+    self.marker = marker
+    self
+  }
+
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  readMarker: String! {
+    "loaded " + marker
+  }
+}
+`)
+	// Recover the real constructor's provenance from a portable composition,
+	// then give it a new argument so this receiver cannot already be cached.
+	portable, err := source.AsWorkspace().Agents().Compose().PortableID(ctx)
+	require.NoError(t, err)
+	id := new(call.ID)
+	require.NoError(t, id.Decode(string(portable)))
+	var receiver *call.ID
+	for cur := id; cur != nil; cur = cur.Receiver() {
+		if cur.Field() != "withTools" {
+			continue
+		}
+		for _, arg := range cur.Args() {
+			if arg.Name() == "object" {
+				receiver = arg.Value().(*call.LiteralID).Value()
+			}
+		}
+		if receiver != nil {
+			break
+		}
+	}
+	require.NotNil(t, receiver)
+	require.Equal(t, "editor", receiver.Field())
+	marker := identity.NewID()
+	receiver = receiver.With(call.WithArgs(call.NewArgument("marker", call.NewLiteralString(marker), false)))
+	objectID, err := receiver.Encode()
+	require.NoError(t, err)
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("before restore").
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "remembered"}}).
+		WithPrompt("read the marker").
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "readMarker",
+		}}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+	var res struct {
+		LLM struct {
+			WithTools struct {
+				PortableID string
+				Tools      string
+			}
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query: `query($model: String!, $object: ID!) {
+			llm(model: $model) { withTools(object: $object) { portableID tools } }
+		}`,
+		Variables: map[string]any{"model": model, "object": objectID},
+	}, &dagger.Response{Data: &res}))
+	require.Contains(t, res.LLM.WithTools.Tools, "## readMarker")
+	seed := dagger.Ref[*dagger.LLM](c, dagger.ID(res.LLM.WithTools.PortableID)).
+		WithPrompt("before restore").
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "remembered"}})
+	snapshot, err := seed.PortableID(ctx)
+	require.NoError(t, err)
+
+	// No modules are served into the restoring client's schema. Restore and
+	// tool listing can succeed without loading the receiver; the next turn must
+	// actually reconstruct it and invoke its module-defined method.
+	target := connect(ctx, t)
+	restored, err := rehydrateAgent(ctx, target, string(snapshot), identity.NewID(), "restored", "IDLE", "")
+	require.NoError(t, err)
+	_, reply, err := restored.sendAndWait(ctx, t, "read the marker")
+	require.NoError(t, err)
+	require.Equal(t, "done", reply)
+	transcript, _ := restored.snapshot(ctx, t)
+	require.Contains(t, transcript, "remembered")
+	require.Contains(t, transcript, "loaded "+marker)
+	require.NotContains(t, transcript, "load bound object")
 }
 
 // TestParallelChangesetToolsMergeResults locks in that Changeset-returning tools
@@ -599,6 +698,103 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		)).Stdout(ctx)
 		require.Error(t, err)
 	})
+}
+
+// TestReloadedToolsSurviveStateReturns exercises an actual module source change:
+// same-type state returns must retain the reloaded binding's defining schema.
+func (LLMSuite) TestReloadedToolsSurviveStateReturns(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const modulePath = ".dagger/modules/swapper/main.dang"
+	const source = `
+type Swapper {
+  let state: Int! = 0
+
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  reload(llm: LLM!): LLM! {
+    let ws = llm.workspace.withNewFile("` + modulePath + `", llm.workspace.file("next-source.txt").contents)
+    ws.agents.compose(base: llm.withWorkspace(ws))
+  }
+
+  advance: Swapper! {
+    state += 1
+    self
+  }
+%s
+}
+`
+	initialSource := fmt.Sprintf(source, "")
+	reloadedSource := fmt.Sprintf(source, `
+  added: String! {
+    "new tool state: " + toString(state)
+  }
+`)
+	base := workspaceFixture(t, c, "workspace-tool-return").
+		WithNewFile(modulePath, initialSource).
+		WithNewFile("next-source.txt", reloadedSource)
+
+	toolCall := func(id, name string) dagger.LLMContentBlockInput {
+		return dagger.LLMContentBlockInput{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: name}
+	}
+	timeout := func(id string) dagger.LLMContentBlockInput {
+		block := toolCall(id, "Timeout")
+		block.Arguments = dagger.JSON(`{"duration":"1m","tool":"added","arguments":{}}`)
+		return block
+	}
+	calls := []dagger.LLMContentBlockInput{
+		toolCall("reload", "reload"),
+		toolCall("before_state", "added"),
+		toolCall("advance", "advance"),
+		toolCall("after_state", "added"),
+		timeout("timeout"),
+	}
+	nextCalls := []dagger.LLMContentBlockInput{
+		toolCall("next_advance", "advance"),
+		timeout("next_timeout"),
+		toolCall("next_direct", "added"),
+	}
+	script := c.LLM().WithPrompt("reload and use the new tool")
+	for _, block := range calls {
+		script = script.WithResponse([]dagger.LLMContentBlockInput{block}).WithToolResult(block.CallID, "", false)
+	}
+	script = script.WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "first turn done"}}).
+		WithPrompt("use it again")
+	for _, block := range nextCalls {
+		script = script.WithResponse([]dagger.LLMContentBlockInput{block}).WithToolResult(block.CallID, "", false)
+	}
+	script = script.WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "second turn done"}})
+	model := cannedReplayModel(ctx, t, c, script)
+	// The shell starts with the original module installed in its schema. A
+	// core-only client would not exercise collisions between old and new
+	// definitions of the same Swapper type when state is rebound.
+	query := fmt.Sprintf(`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper)`, model)
+	run := func(query string) string {
+		t.Helper()
+		out, err := base.With(daggerShell(query)).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	require.NotContains(t, run(query+" | tools"), "## added\n")
+	query += ` | with-prompt "reload and use the new tool"`
+	for _, block := range calls {
+		query += " | step"
+		require.Contains(t, run(query+" | tools"), "## added\n", block.CallID)
+	}
+	query += " | loop"
+	transcript := run(query + " | transcript")
+	require.Contains(t, transcript, "Tools added: added")
+	require.Contains(t, transcript, "new tool state: 0")
+	require.Equal(t, 2, strings.Count(transcript, "new tool state: 1"))
+	require.Contains(t, transcript, "first turn done")
+
+	query += ` | with-prompt "use it again" | loop`
+	require.Contains(t, run(query+" | tools"), "## added\n")
+	transcript = run(query + " | transcript")
+	require.Equal(t, 2, strings.Count(transcript, "new tool state: 2"))
+	require.Contains(t, transcript, "second turn done")
+	require.NotContains(t, transcript, "is not available")
 }
 
 // TestAddressableToolArgs covers address lifting of object-typed tool args end

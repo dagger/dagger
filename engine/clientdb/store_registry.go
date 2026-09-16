@@ -17,26 +17,52 @@ import (
 // CollectGarbageAfter is the time after which a store is considered garbage.
 const CollectGarbageAfter = time.Hour
 
-// DBs owns the refcounted set of open per-client telemetry stores.
-// Stream files persist after the final Close and are recovered on the next
-// Open, including their ID sequences and span lookup maps.
+var errDBsClosed = errors.New("telemetry store registry is closed")
+
+// DBs owns the refcounted set of open per-client telemetry stores. Live client
+// runtimes and readers retain references; the final Close releases the streams.
 type DBs struct {
 	Root string
 
-	open map[string]*DB
-	mu   sync.RWMutex
+	open        map[string]*DB
+	opening     int
+	closed      bool
+	mu          sync.RWMutex
+	openingCond *sync.Cond
 
 	perStoreLock *locker.Locker
 	tailBudget   int64
+	openStore    func(context.Context, string, string, int64) (*DB, error)
+}
+
+// OpenStats is a measured snapshot of currently open telemetry stores.
+// Each referenced store owns exactly three stream handles.
+type OpenStats struct {
+	Stores  int
+	Streams int
+	Refs    int
+}
+
+func (r *DBs) OpenStats() OpenStats {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	stats := OpenStats{Stores: len(r.open), Streams: len(r.open) * 3}
+	for _, store := range r.open {
+		stats.Refs += store.refCount
+	}
+	return stats
 }
 
 func NewDBs(root string) *DBs {
-	return &DBs{
+	r := &DBs{
 		Root:         root,
 		open:         make(map[string]*DB),
 		perStoreLock: locker.New(),
 		tailBudget:   telemetryTailBudget,
+		openStore:    openStore,
 	}
+	r.openingCond = sync.NewCond(&r.mu)
+	return r
 }
 
 func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
@@ -44,46 +70,73 @@ func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
 	defer r.perStoreLock.Unlock(clientID)
 
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return nil, errDBsClosed
+	}
 	if store := r.open[clientID]; store != nil {
 		store.refCount++
 		r.mu.Unlock()
 		return store, nil
 	}
+	r.opening++
 	r.mu.Unlock()
 
-	store, err := openStore(ctx, r.Root, clientID, r.tailBudget)
+	store, err := r.openStore(ctx, r.Root, clientID, r.tailBudget)
+
+	r.mu.Lock()
+	r.opening--
+	r.openingCond.Broadcast()
 	if err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
+	if r.closed {
+		err = errors.Join(errDBsClosed, store.closeStreams())
+		r.mu.Unlock()
 		return nil, err
 	}
 	store.refCount = 1
 	store.closeFn = func() error {
 		return r.close(store)
 	}
-	r.mu.Lock()
 	r.open[clientID] = store
 	r.mu.Unlock()
 	return store, nil
 }
 
-// close assumes no registry mutex is held. The per-client lock covers the
-// refcount and prevents a reopen from racing the final stream flush.
+// close assumes no registry mutex is held. The per-client lock serializes
+// reference changes and keeps a new writer from opening until the old one closes.
 func (r *DBs) close(store *DB) error {
 	r.perStoreLock.Lock(store.clientID)
 	defer r.perStoreLock.Unlock(store.clientID)
 
+	r.mu.Lock()
 	if store.refCount <= 0 {
+		r.mu.Unlock()
 		return errStoreClosed
 	}
 	store.refCount--
 	if store.refCount > 0 {
+		r.mu.Unlock()
 		return nil
 	}
-
-	err := store.closeStreams()
-	r.mu.Lock()
 	delete(r.open, store.clientID)
 	r.mu.Unlock()
-	return err
+	return store.closeStreams()
+}
+
+// Close prevents new stores from opening and waits for in-flight opens.
+// Actively referenced stores remain usable and close their streams when their
+// final handle is released.
+func (r *DBs) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	for r.opening > 0 {
+		r.openingCond.Wait()
+	}
+	return nil
 }
 
 type storeGCGroup struct {
@@ -133,14 +186,15 @@ func (r *DBs) GC(keep map[string]bool) error {
 		}
 
 		r.perStoreLock.Lock(group.clientID)
-		r.mu.RLock()
-		_, open := r.open[group.clientID]
-		r.mu.RUnlock()
-		if open {
-			slog.Warn("skipping garbage collection of client telemetry store that is still open", "clientID", group.clientID)
+		r.mu.Lock()
+		store := r.open[group.clientID]
+		if store != nil {
+			slog.Warn("skipping garbage collection of referenced client telemetry store", "clientID", group.clientID)
+			r.mu.Unlock()
 			r.perStoreLock.Unlock(group.clientID)
 			continue
 		}
+		r.mu.Unlock()
 		for _, name := range group.names {
 			if err := os.RemoveAll(filepath.Join(r.Root, name)); err != nil {
 				result = errors.Join(result, fmt.Errorf("remove %s: %w", name, err))

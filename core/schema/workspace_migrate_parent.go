@@ -254,14 +254,14 @@ func workspaceMigrationInstallParentSDKModules(
 	// migrated runtime (short name, resolved to its real ref by the setup SDK
 	// fixup pass), so a discovered local module sharing the runtime reuses the
 	// same entry — one SDK install serves every module in the repo.
-	sdksByParent := map[string][]string{}
+	sdksByParent := map[string][]workspaceMigrationParentAssignment{}
 	for _, assignment := range assignments {
 		cfg := assignment.CompatWorkspace.Config
 		if cfg == nil || cfg.SDK == nil || cfg.SDK.Source == "" {
 			continue
 		}
 		parentRoot := assignment.ParentProjectRoot
-		sdksByParent[parentRoot] = append(sdksByParent[parentRoot], cfg.SDK.Source)
+		sdksByParent[parentRoot] = append(sdksByParent[parentRoot], assignment)
 	}
 	if len(sdksByParent) == 0 {
 		return parentPlans, nil
@@ -282,8 +282,14 @@ func workspaceMigrationInstallParentSDKModules(
 			if err != nil {
 				return nil, err
 			}
-			for _, source := range sources {
-				workspace.AddMigratedSDKInstall(cfg, source)
+			for _, assignment := range sources {
+				module := assignment.CompatWorkspace
+				modulePath, err := filepath.Rel(parentRoot, module.ProjectRoot)
+				if err != nil {
+					return nil, err
+				}
+				modulePath = filepath.ToSlash(modulePath)
+				workspace.AddMigratedModuleSDK(cfg, workspace.MigratedModuleSDKSource(module.Config, modulePath), modulePath, module.Config.Name, workspace.MigratedModuleClients(module.Config, modulePath)...)
 			}
 			return workspace.UpdateConfigBytes(data, cfg)
 		}); err != nil {
@@ -333,11 +339,11 @@ func workspaceMigrationInstallDiscoveredModuleSDKs(
 			return nil, fmt.Errorf("discovered module %q path: %w", compatWorkspace.ProjectRoot, err)
 		}
 		modulePath = filepath.ToSlash(filepath.Clean(modulePath))
-		sdkSource := compatWorkspace.Config.SDK.Source
+		sdkSource := workspace.MigratedModuleSDKSource(compatWorkspace.Config, modulePath)
 		moduleName := compatWorkspace.Config.Name
 
 		if err := targets.update(owner, func(data []byte) ([]byte, error) {
-			return workspaceMigrationConfigWithMigratedModuleSDK(data, sdkSource, modulePath, moduleName)
+			return workspaceMigrationConfigWithMigratedModuleSDK(data, sdkSource, modulePath, moduleName, workspace.MigratedModuleClients(compatWorkspace.Config, modulePath)...)
 		}); err != nil {
 			return nil, fmt.Errorf("install SDK for discovered module %q: %w", compatWorkspace.ProjectRoot, err)
 		}
@@ -345,12 +351,12 @@ func workspaceMigrationInstallDiscoveredModuleSDKs(
 	return parentPlans, nil
 }
 
-func workspaceMigrationConfigWithMigratedModuleSDK(configData []byte, sdkSource, modulePath, moduleName string) ([]byte, error) {
+func workspaceMigrationConfigWithMigratedModuleSDK(configData []byte, sdkSource, modulePath, moduleName string, clients ...string) ([]byte, error) {
 	cfg, err := workspace.ParseConfig(configData)
 	if err != nil {
 		return nil, err
 	}
-	workspace.AddMigratedModuleSDK(cfg, sdkSource, modulePath, moduleName)
+	workspace.AddMigratedModuleSDK(cfg, sdkSource, modulePath, moduleName, clients...)
 	return workspace.UpdateConfigBytes(configData, cfg)
 }
 

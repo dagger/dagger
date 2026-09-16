@@ -19,8 +19,8 @@ func appendTestSummaryLogRecords(logs map[dagui.SpanID]*Vterm, profile termenv.P
 		if skip {
 			continue
 		}
-		body := record.Body().AsString()
-		if body == "" {
+		body, ok := dagui.LogBodyString(record)
+		if !ok || body == "" {
 			continue
 		}
 		vt := logs[spanID]
@@ -40,9 +40,10 @@ func testSummaryLogRecordInfo(record sdklog.Record) (contentType string, skip bo
 	record.WalkAttributes(func(kv log.KeyValue) bool {
 		switch kv.Key {
 		case telemetry.ContentTypeAttr:
-			contentType = kv.Value.AsString()
+			contentType, _ = dagui.LogValueString(kv.Value)
 		case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr:
-			if kv.Value.AsBool() {
+			value, valid := dagui.LogValueBool(kv.Value)
+			if valid && value {
 				skip = true
 				return false
 			}

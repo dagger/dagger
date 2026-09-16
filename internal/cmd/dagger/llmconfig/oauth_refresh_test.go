@@ -2,6 +2,7 @@ package llmconfig
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -621,6 +622,83 @@ func TestRefreshWithShortExpiresIn(t *testing.T) {
 	provider := loaded.LLM.Providers["anthropic"]
 	if provider.TokenExpiresAt <= time.Now().UnixMilli() {
 		t.Errorf("persisted TokenExpiresAt %d is not in the future", provider.TokenExpiresAt)
+	}
+}
+
+// A provider may revoke an access token before its advertised expiry. Merely
+// invalidating the engine cache used to reload the same token without ever
+// trying the still-valid refresh grant.
+func TestRefreshOAuthProviderAfterRejection(t *testing.T) {
+	for _, name := range []string{"anthropic", "openai-codex"} {
+		t.Run(name, func(t *testing.T) {
+			srv := newFakeOAuthServer(t, "rt-0")
+			srv.install(t)
+			p := expiredOAuthProvider("rt-0")
+			p.TokenExpiresAt = time.Now().Add(time.Hour).UnixMilli()
+			useTempConfig(t, &Config{LLM: LLMConfig{Providers: map[string]Provider{name: p}}})
+
+			// Even a recent proactive attempt must not suppress the first
+			// recovery attempt for a token the API has explicitly rejected.
+			lastOAuthRefresh[ConfigFile+"\x00"+name] = time.Now()
+			rejected := fmt.Sprintf("%x", sha256.Sum256([]byte(p.AuthToken)))
+			for range 4 {
+				got, err := RefreshOAuthProviderAfterRejection(t.Context(), name, rejected)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got == nil || got.AuthToken != "access-1" {
+					t.Fatal("rejected credential was not replaced")
+				}
+			}
+			if got := srv.requestCount(); got != 1 {
+				t.Fatalf("refresh requests = %d, want one; later rejections must adopt the token on disk", got)
+			}
+			cfg, err := Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.LLM.Providers[name].RefreshToken != "rt-1" {
+				t.Fatal("rotated refresh grant was not persisted")
+			}
+		})
+	}
+}
+
+func TestRejectedOAuthRefreshFailureIsNotSilenced(t *testing.T) {
+	srv := newFakeOAuthServer(t, "rt-0")
+	srv.fail = true
+	srv.install(t)
+	p := expiredOAuthProvider("rt-0")
+	p.TokenExpiresAt = time.Now().Add(time.Hour).UnixMilli()
+	useTempConfig(t, &Config{LLM: LLMConfig{Providers: map[string]Provider{"anthropic": p}}})
+	rejected := fmt.Sprintf("%x", sha256.Sum256([]byte(p.AuthToken)))
+	for range 3 {
+		_, err := RefreshOAuthProviderAfterRejection(t.Context(), "anthropic", rejected)
+		if !IsTerminalOAuthRefreshError(err) {
+			t.Fatalf("refresh error = %v, want reauthentication required even during cooldown", err)
+		}
+	}
+	if got := srv.requestCount(); got != 1 {
+		t.Fatalf("refresh requests = %d, want one during cooldown", got)
+	}
+
+	// A login replaced on disk is immediately adopted, even while the old
+	// rejected token is in cooldown.
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.AuthToken = "replacement-login"
+	cfg.LLM.Providers["anthropic"] = p
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := RefreshOAuthProviderAfterRejection(t.Context(), "anthropic", rejected)
+	if err != nil || got == nil || got.AuthToken != p.AuthToken {
+		t.Fatalf("could not adopt replacement login: %v", err)
+	}
+	if got := srv.requestCount(); got != 1 {
+		t.Fatalf("refresh requests = %d, should not refresh replacement login", got)
 	}
 }
 

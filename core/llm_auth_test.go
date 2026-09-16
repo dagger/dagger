@@ -122,10 +122,15 @@ func newLLMEndpointTestCtx(t *testing.T) (context.Context, *llmEnv) {
 // path — what is under test is which token went out, not what came back.
 func anthropic401Server(t *testing.T, onRequest func(auth string)) *httptest.Server {
 	t.Helper()
+	return anthropicErrorServer(t, http.StatusUnauthorized, onRequest)
+}
+
+func anthropicErrorServer(t *testing.T, status int, onRequest func(auth string)) *httptest.Server {
+	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		onRequest(r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
+		w.WriteHeader(status)
 		//nolint:errcheck
 		w.Write([]byte(`{"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired"}}`))
 	}))
@@ -138,6 +143,70 @@ func llmTestHistory() []*LLMMessage {
 		Role:    LLMMessageRoleUser,
 		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "hi"}},
 	}}
+}
+
+func TestLLMEndpointCredentialOutlivesRoutingScope(t *testing.T) {
+	ctx, env := newLLMEndpointTestCtx(t)
+	var mu sync.Mutex
+	var seen []string
+	ts := anthropic401Server(t, func(auth string) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, auth)
+	})
+	env.set("env://ANTHROPIC_BASE_URL", ts.URL)
+	md, err := engine.ClientMetadataFromContext(ctx)
+	require.NoError(t, err)
+	var held atomic.Int64
+	var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+	newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
+		held.Add(1)
+		return engine.NewClientLifecycleLease(kind, owner, func() { held.Add(-1) }, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			return newLease(kind, owner), nil
+		})
+	}
+	withScope := func(owner string) (context.Context, *engine.ClientLifecycleLease) {
+		lease := newLease(engine.ClientLeaseRequest, owner)
+		t.Cleanup(lease.Release)
+		scope, err := engine.NewClientScope(md, lease)
+		require.NoError(t, err)
+		scoped, err := engine.ContextWithClientScope(ctx, scope)
+		require.NoError(t, err)
+		return scoped, lease
+	}
+	routingCtx, routingLease := withScope("routing")
+	query, err := CurrentQuery(routingCtx)
+	require.NoError(t, err)
+	llm, err := query.NewLLM(routingCtx, "claude-sonnet-4-5", "")
+	require.NoError(t, err)
+	ep, err := llm.Endpoint(routingCtx)
+	require.NoError(t, err)
+	clk := newTestClock()
+	ep.AuthTokenSource.now = clk.Now
+	_, err = ep.Client.SendQuery(routingCtx, llmTestHistory(), nil, &LLMCallOpts{})
+	require.Error(t, err) // The fixture responds with an authentication error.
+	routingLease.Release()
+	require.Zero(t, held.Load(), "memoizing an endpoint must not retain the routing client")
+
+	requestCtx, requestLease := withScope("agent-turn")
+	for _, token := range []string{"token-v2", "token-v3"} {
+		env.set("env://ANTHROPIC_AUTH_TOKEN", token)
+		clk.Advance(credentialRefreshTTL + time.Second)
+		_, err := ep.Client.SendQuery(requestCtx, llmTestHistory(), nil, &LLMCallOpts{})
+		require.Error(t, err)
+		require.EqualValues(t, 1, held.Load(), "credential lookup must release its temporary scope")
+	}
+	mu.Lock()
+	require.Equal(t, []string{"Bearer token-v1", "Bearer token-v2", "Bearer token-v3"}, seen)
+	mu.Unlock()
+	again, err := llm.Endpoint(requestCtx)
+	require.NoError(t, err)
+	require.Same(t, ep, again, "refresh must preserve the memoized endpoint")
+	requestLease.Release()
+	require.Zero(t, held.Load())
+	ep.AuthTokenSource.Invalidate()
+	_, err = ep.AuthTokenSource.Credential(requestCtx)
+	require.ErrorContains(t, err, "client scope lease is not held")
 }
 
 // TestLLMEndpointResolvesCredentialPerRequest is the core of the fix. The
@@ -237,7 +306,9 @@ func TestLLMEndpointHonorsReportedExpiry(t *testing.T) {
 
 	var mu sync.Mutex
 	var seen []string
-	ts := anthropic401Server(t, func(auth string) {
+	// A 401 intentionally bypasses the expiry horizon; use a non-auth error
+	// to isolate the normal time-based refresh behavior.
+	ts := anthropicErrorServer(t, http.StatusBadRequest, func(auth string) {
 		mu.Lock()
 		defer mu.Unlock()
 		seen = append(seen, auth)
@@ -493,7 +564,7 @@ func TestLLMCredentialResolvesAgainstLoadingClient(t *testing.T) {
 
 	// The request that needs the credential comes from a nested client, which
 	// has no login of its own. Resolution must still land on the host's.
-	cred, err := router.reloadAnthropicAuthToken(withClient("nested-agent"))
+	cred, err := router.reloadAnthropicAuthToken.detach(withClient("host"))(withClient("nested-agent"))
 	require.NoError(t, err)
 	assert.Equal(t, "token-of-host", cred.Token)
 }

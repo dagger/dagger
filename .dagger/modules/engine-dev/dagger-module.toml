@@ -10,24 +10,24 @@ include = ["../../../engine/distconsts/**/*", "../../../sdk/typescript/runtime/*
   source = "../../../modules/alpine"
 
 [[dependencies]]
-  name = "codegen"
-  source = "../../../cmd/codegen"
-
-[[dependencies]]
   name = "dagger-cli"
   source = "../cli-dev"
+
+[[dependencies]]
+  name = "codegen"
+  source = "../../../cmd/codegen"
 
 [[dependencies]]
   name = "go"
   source = "../go"
 
 [[dependencies]]
-  name = "wolfi"
-  source = "../../../modules/wolfi"
-
-[[dependencies]]
   name = "notify"
   source = "notify"
+
+[[dependencies]]
+  name = "wolfi"
+  source = "../../../modules/wolfi"
 
 [codegen]
   automaticGitignore = false

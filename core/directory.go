@@ -1098,7 +1098,7 @@ func (lazy *DirectoryWithTimestampsLazy) EncodePersisted(ctx context.Context, ca
 
 func (lazy *DirectoryWithNewDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return lazy.LazyState.Evaluate(ctx, "Directory.withNewDirectory", func(ctx context.Context) error {
-		return dir.WithNewDirectory(ctx, lazy.Parent, lazy.Dest, lazy.Permissions)
+		return dir.WithNewDirectory(ctx, lazy.Parent, dagql.CurrentCall(ctx), lazy.Dest, lazy.Permissions)
 	})
 }
 
@@ -2885,7 +2885,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectRes
 	return nil
 }
 
-func (dir *Directory) WithNewDirectory(ctx context.Context, parent dagql.ObjectResult[*Directory], dest string, permissions fs.FileMode) error {
+func (dir *Directory) WithNewDirectory(ctx context.Context, parent dagql.ObjectResult[*Directory], opCall *dagql.ResultCall, dest string, permissions fs.FileMode) error {
 	dest = path.Clean(dest)
 	if strings.HasPrefix(dest, "../") {
 		return fmt.Errorf("cannot create directory outside parent: %s", dest)
@@ -2914,6 +2914,59 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, parent dagql.ObjectR
 	parentSnapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 	if err != nil {
 		return err
+	}
+	// MkdirAll leaves existing directories (including their permissions) alone.
+	// Check before allocating a mutable snapshot so repeated calls cannot grow
+	// the overlay layer chain without changing any files.
+	var alreadyExists bool
+	err = MountRef(ctx, parentSnapshot, func(root string, _ *mount.Mount) error {
+		resolvedDir, err := containerdfs.RootPath(root, path.Join(parentDir, dest))
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(resolvedDir)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return TrimErrPathPrefix(err, root)
+		}
+		alreadyExists = info.IsDir()
+		return nil
+	}, mountRefAsReadOnly)
+	if err != nil {
+		return err
+	}
+	if alreadyExists {
+		if parentSnapshot == nil {
+			scratchDir, scratchSnapshot, err := loadCanonicalScratchDirectory(ctx)
+			if err != nil {
+				return err
+			}
+			dir.Dir.setValue(scratchDir)
+			dir.Snapshot.setValue(scratchSnapshot)
+		} else {
+			// Each Directory owns its snapshot handle. Reopen it so collecting
+			// this result cannot release the parent's still-cached handle.
+			reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, parentSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+			if err != nil {
+				return err
+			}
+			dir.Snapshot.setValue(reopened)
+		}
+		if opCall != nil {
+			clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return fmt.Errorf("directory no-op equivalence client metadata: %w", err)
+			}
+			if clientMetadata.SessionID == "" {
+				return fmt.Errorf("directory no-op equivalence: empty session ID")
+			}
+			if err := cache.TeachCallEquivalentToResult(ctx, clientMetadata.SessionID, opCall, parent); err != nil {
+				return fmt.Errorf("teach directory withNewDirectory no-op equivalence: %w", err)
+			}
+		}
+		return nil
 	}
 	newRef, err := query.SnapshotManager().New(
 		ctx,

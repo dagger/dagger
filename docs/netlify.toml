@@ -2459,6 +2459,178 @@
 
 ## end: migration 1.0 -> reference section ##
 
+## start: migration PHP API reference removal ##
+##
+## The generated PHP API reference (Doctum HTML under /reference/php) was
+## removed. It was not versioned: every docs version linked to one copy, built
+## from main. Send old links to the PHP SDK page. The target is not live at /
+## yet; it arrives when the current docs become the default version.
+
+[[redirects]]
+  from = "/reference/php"
+  to = "/reference/sdks/php"
+  status = 301
+
+[[redirects]]
+  from = "/reference/php/*"
+  to = "/reference/sdks/php"
+  status = 301
+
+## end: migration PHP API reference removal ##
+
+## start: migration 1.0 cleanup leftovers ##
+##
+## Pages cut or re-nested after the 0.21 -> 1.0 and reference-section
+## migrations, but never given a rule. Without one they fell through to the
+## /* -> /0.21/ fallback below and 404ed there.
+##
+## The /next/* rule is the important one. Every rule in this file is written
+## without a version prefix, so a /next/<old path> URL never matches any of
+## them and always fell through to the fallback (as /0.21/next/..., which the
+## loop guard turns into a 404). Stripping the prefix re-enters the chain
+## above. Unforced rules are shadowed by real files, so this is inert for any
+## page that still exists under /next/. Keep it in this trailing block: it is
+## a wildcard, and it must come after every specific rule.
+
+[[redirects]]
+  from = "/next/*"
+  to = "/:splat"
+  status = 301
+
+# How Dagger Works was cut with no replacement. Send each page to the closest
+# surviving guide; the rest of the section goes to the module developer guide.
+[[redirects]]
+  from = "/extending/how-dagger-works/workspaces"
+  to = "/config"
+  status = 301
+
+[[redirects]]
+  from = "/extending/how-dagger-works/functions"
+  to = "/using/calling-functions"
+  status = 301
+
+[[redirects]]
+  from = "/extending/how-dagger-works/checks"
+  to = "/using/checking"
+  status = 301
+
+[[redirects]]
+  from = "/extending/how-dagger-works/*"
+  to = "/reference/sdks"
+  status = 301
+
+[[redirects]]
+  from = "/extending/how-dagger-works"
+  to = "/reference/sdks"
+  status = 301
+
+# The type-system section and the orphaned testing page were cut. The SDK
+# guide covers designing a module's API.
+[[redirects]]
+  from = "/extending/type-system/*"
+  to = "/reference/sdks"
+  status = 301
+
+[[redirects]]
+  from = "/extending/type-system"
+  to = "/reference/sdks"
+  status = 301
+
+[[redirects]]
+  from = "/extending/testing"
+  to = "/reference/sdks"
+  status = 301
+
+# Secrets moved into the Configuration section; observability was cut and
+# Cloud Checks is the surviving Cloud page.
+[[redirects]]
+  from = "/adopting/secrets"
+  to = "/config/secrets"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/observability"
+  to = "/cloud-checks"
+  status = 301
+
+# The CurrentModule SDK helper types were dropped from the type reference.
+# The 0.21 -> 1.0 block chains /extending/types/current-module-as-sdk* here.
+[[redirects]]
+  from = "/reference/api/current-module-as-sdk"
+  to = "/reference/api/current-module"
+  status = 301
+
+[[redirects]]
+  from = "/reference/api/current-module-as-sdk-client"
+  to = "/reference/api/current-module"
+  status = 301
+
+[[redirects]]
+  from = "/reference/api/current-module-as-sdk-module"
+  to = "/reference/api/current-module"
+  status = 301
+
+# Environments were removed from the workspace configuration docs. The
+# 0.21 -> 1.0 block still chains /cli/environments here.
+[[redirects]]
+  from = "/config/environments"
+  to = "/config"
+  status = 301
+
+# The module guides were re-nested by language. The reference-section block
+# chains /modules/<x> to /reference/modules/<x>, which then lands here.
+[[redirects]]
+  from = "/reference/modules/biomejs"
+  to = "/reference/modules/js/biome"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/deno"
+  to = "/reference/modules/js/deno"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/eslint"
+  to = "/reference/modules/js/eslint"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/jest"
+  to = "/reference/modules/js/jest"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/playwright"
+  to = "/reference/modules/js/playwright"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/prettier"
+  to = "/reference/modules/js/prettier"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/vitest"
+  to = "/reference/modules/js/vitest"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/pytest"
+  to = "/reference/modules/python/pytest"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/psscriptanalyzer"
+  to = "/reference/modules/dotnet/PsScriptAnalyzer"
+  status = 301
+
+[[redirects]]
+  from = "/reference/modules/helm"
+  to = "/reference/modules/kubernetes/helm"
+  status = 301
+
+## end: migration 1.0 cleanup leftovers ##
+
 ## start: 1.0 fallback (keep last) ##
 ##
 ## The site default at / is the 1.0 beta, which dropped many 0.21-era pages.

@@ -236,6 +236,27 @@ func TestParseRefString(t *testing.T) {
 	}
 }
 
+func TestParseRefStringRemoteFailure(t *testing.T) {
+	// A malformed known-host reference fails without needing network access.
+	remote := "github.com/missing@v1"
+	parsed, err := ParseRefString(t.Context(), neverExistsFS{}, remote, "")
+	require.Nil(t, parsed)
+	require.ErrorContains(t, err, `resolve remote module "github.com/missing@v1"`)
+	require.ErrorContains(t, err, "invalid github.com/ import path")
+	require.NotContains(t, err.Error(), "local path")
+
+	exists := StatFSFunc(func(context.Context, string) (string, *Stat, error) {
+		return remote, &Stat{FileType: FileTypeDirectory}, nil
+	})
+	parsed, err = ParseRefString(t.Context(), exists, remote, "")
+	require.NoError(t, err)
+	require.Equal(t, ModuleSourceKindLocal, parsed.Kind)
+
+	parsed, err = ParseRefString(t.Context(), neverExistsFS{}, "./"+remote, "")
+	require.NoError(t, err)
+	require.Equal(t, ModuleSourceKindLocal, parsed.Kind)
+}
+
 type neverExistsFS struct {
 }
 

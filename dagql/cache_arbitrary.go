@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/dagger/dagger/engine"
 )
 
 func ArbitraryValueFunc(v any) func(context.Context) (any, error) {
@@ -30,7 +32,10 @@ type sharedArbitraryResult struct {
 
 	onRelease OnReleaseFunc
 
-	waitCh  chan struct{}
+	waitCh chan struct{}
+	// cancel is live only while the initializer callback is running. It must be
+	// cleared at callback completion because the cancel closure retains the
+	// detached context and all of its Query/server/engine capabilities.
 	cancel  context.CancelCauseFunc
 	waiters int
 
@@ -124,8 +129,22 @@ func (c *Cache) getOrInitArbitrary(
 		return c.waitArbitrary(ctx, sessionID, res, false)
 	}
 
+	// Arbitrary initializers are detached executable callbacks. Production
+	// callers capture runtime-backed Query and engine capabilities, so one
+	// shared-work scope must cover the callback regardless of how many waiters
+	// join it. DetachClientScope preserves the existing last-waiter cancellation
+	// semantics by removing caller cancellation before cancel is installed below.
 	callCtx := context.WithValue(ctx, arbitraryCacheContextKey{callKey: callKey}, struct{}{})
-	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	sharedWorkCtx, clientScopeLease, err := engine.DetachClientScope(
+		callCtx,
+		engine.ClientLeaseSharedWork,
+		"arbitrary/"+callKey,
+	)
+	if err != nil {
+		c.callsMu.Unlock()
+		return nil, fmt.Errorf("acquire arbitrary client scope: %w", err)
+	}
+	callCtx, cancel := context.WithCancelCause(sharedWorkCtx)
 	c.nextArbitraryResultID++
 	res := &sharedArbitraryResult{
 		id:      c.nextArbitraryResultID,
@@ -138,7 +157,12 @@ func (c *Cache) getOrInitArbitrary(
 	c.ongoingArbitraryCalls[callKey] = res
 
 	go func() {
-		defer close(res.waitCh)
+		defer func() {
+			// Release lifecycle ownership before publishing callback completion so
+			// every waiter observes the terminal lease transition on return.
+			clientScopeLease.Release()
+			close(res.waitCh)
+		}()
 		val, err := fn(callCtx)
 		res.err = err
 		if err == nil {
@@ -147,6 +171,13 @@ func (c *Cache) getOrInitArbitrary(
 				res.onRelease = onReleaser.OnRelease
 			}
 		}
+
+		// The callback no longer needs cancellation. Drop the cancel closure
+		// before this result can become a completed cache entry so the cache does
+		// not turn its detached runtime context into a cold capability.
+		c.callsMu.Lock()
+		res.cancel = nil
+		c.callsMu.Unlock()
 	}()
 
 	c.callsMu.Unlock()
@@ -172,7 +203,7 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 
 	c.callsMu.Lock()
 	res.waiters--
-	if res.waiters == 0 {
+	if res.waiters == 0 && res.cancel != nil {
 		res.cancel(err)
 	}
 

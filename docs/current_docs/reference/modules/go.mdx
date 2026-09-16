@@ -1,12 +1,12 @@
 ---
 title: "Go"
 slug: /reference/modules/go
-description: "Run Go tests, lint, and generators across a workspace."
+description: "Run Go tests and generators across a workspace."
 ---
 
 # Go
 
-The Go module gives a Go workspace one shared way to test, lint, and run
+The Go module gives a Go workspace one shared way to test and run
 `go generate`. It scans the workspace for `go.mod` files, treats each one as a Go
 module, and exposes workspace-level functions that run across all of them. That
 makes it a good fit for monorepos, service repos, and libraries with generated
@@ -22,16 +22,14 @@ dagger module install dagger.io/go
 ## Run the checks
 
 ```bash
-dagger check              # run every check in the workspace
-dagger check go:test-all  # run Go tests across every module
-dagger check go:lint-all  # run golangci-lint across every module
+dagger check             # run every check in the workspace
+dagger check go:test-all # run Go tests across every module
 ```
 
-`test-all` and `lint-all` discover every `go.mod` in the workspace, treat each as
-a Go module, and run against all of them. Tests run through an
+`test-all` discovers every `go.mod` in the workspace, treats each as
+a Go module, and runs tests against all of them. Tests run through an
 OpenTelemetry-aware runner, so individual Go tests appear as spans in the Dagger
-TUI and Dagger Cloud. Lint runs a pinned `golangci-lint` and picks up each
-module's `.golangci.*` config.
+TUI and Dagger Cloud.
 
 ## Generate code
 
@@ -54,15 +52,14 @@ List the current settings with `dagger module settings go`, then change one with
 
 - `version` (default `1.26`) is the Go toolchain version used to build the test
   and generate containers (`golang:<version>-alpine`). Set this so every module
-  is tested and generated against the same Go version. Lint uses a pinned
-  `golangci-lint` image and is unaffected.
+  is tested and generated against the same Go version.
 - `includeExtraFiles` (default empty) are extra workspace-root path patterns
   mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`,
   and `testdata/` directories are already included automatically; use this for
   inputs those patterns miss, such as embedded non-Go assets, generator inputs,
   or fixtures kept outside `testdata/`.
-- `lint`, `test`, and `generate` (each defaults to `["**"]`) are module-root
-  selector arrays for `lint-all`, `test-all`, and `generate-all`.
+- `test` and `generate` (each defaults to `["**"]`) are module-root
+  selector arrays for `test-all` and `generate-all`.
   A bare pattern includes modules, a `!`-prefixed pattern excludes them, and
   exclusions always win. `"**"` and `"*"` match every module; `"path"` and
   `"path/**"` match the module at `path` and any modules below it. With no
@@ -80,7 +77,6 @@ List-valued settings are edited directly in `dagger.toml`:
 [modules.go.settings]
 version = "1.25"
 includeExtraFiles = ["Makefile", "tools/**"]
-lint = ["!**"] # Disable linting for all modules
 test = ["**", "!legacy-service"] # Test all modules except legacy-service and modules below it
 ```
 
@@ -90,6 +86,9 @@ Reach for this module whenever the repo contains one or more Go modules,
 especially when they should share the same Go version and CI checks. To exclude a
 single module from a workflow, add a `!`-prefixed module path to the corresponding
 selector array rather than splitting the repo into separate check systems.
+
+For Go lint checks, install [golangci-lint](./go/golangci-lint.mdx) or
+[Staticcheck](./go/staticcheck.mdx) alongside this module.
 
 When the tests need a service the module cannot start, such as a database, wire
 a container with that service bound into the `base` setting.

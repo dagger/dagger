@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -59,22 +59,28 @@ func TestLlmConfig(t *testing.T) {
 		"env://ANTHROPIC_API_KEY":             "anthropic-api-key",
 		"env://ANTHROPIC_BASE_URL":            "anthropic-base-url",
 		"env://ANTHROPIC_MODEL":               "anthropic-model",
+		"env://ANTHROPIC_SMALL_MODEL":         "anthropic-small-model",
 		"env://ANTHROPIC_AUTH_TOKEN":          "anthropic-auth-token",
 		"env://ANTHROPIC_REASONING_EFFORT":    "anthropic-reasoning-effort",
+		"env://ANTHROPIC_CLAUDE_CODE_VERSION": "2.1.999",
 		"env://OPENAI_API_KEY":                "openai-api-key",
 		"env://OPENAI_AZURE_VERSION":          "openai-azure-version",
 		"env://OPENAI_BASE_URL":               "openai-base-url",
 		"env://OPENAI_MODEL":                  "openai-model",
+		"env://OPENAI_SMALL_MODEL":            "openai-small-model",
 		"env://OPENAI_DISABLE_STREAMING":      "t",
 		"env://OPENAI_CODEX_AUTH_TOKEN":       "openai-codex-auth-token",
 		"env://OPENAI_CODEX_MODEL":            "openai-codex-model",
+		"env://OPENAI_CODEX_SMALL_MODEL":      "openai-codex-small-model",
 		"env://OPENAI_CODEX_REASONING_EFFORT": "openai-codex-reasoning-effort",
 		"env://GEMINI_API_KEY":                "gemini-api-key",
 		"env://GEMINI_BASE_URL":               "gemini-base-url",
 		"env://GEMINI_MODEL":                  "gemini-model",
+		"env://GEMINI_SMALL_MODEL":            "gemini-small-model",
 		"env://GEMINI_REASONING_EFFORT":       "gemini-reasoning-effort",
 		"env://LOCAL_BASE_URL":                "local-base-url",
 		"env://LOCAL_MODEL":                   "local-model",
+		"env://LOCAL_SMALL_MODEL":             "local-small-model",
 		"env://LOCAL_API_COMPAT":              "openai",
 		"env://LOCAL_API_KEY":                 "local-api-key",
 	}
@@ -102,22 +108,28 @@ func TestLlmConfig(t *testing.T) {
 	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
 	assert.Equal(t, "anthropic-base-url", r.AnthropicBaseURL)
 	assert.Equal(t, "anthropic-model", r.AnthropicModel)
+	assert.Equal(t, "anthropic-small-model", r.AnthropicSmallModel)
 	assert.Equal(t, "openai-api-key", r.OpenAIAPIKey)
 	assert.Equal(t, "openai-azure-version", r.OpenAIAzureVersion)
 	assert.Equal(t, "openai-base-url", r.OpenAIBaseURL)
 	assert.Equal(t, "openai-model", r.OpenAIModel)
+	assert.Equal(t, "openai-small-model", r.OpenAISmallModel)
 	assert.True(t, r.OpenAIDisableStreaming)
 	assert.Equal(t, "openai-codex-auth-token", r.OpenAICodexAuthToken)
 	assert.Equal(t, "openai-codex-model", r.OpenAICodexModel)
+	assert.Equal(t, "openai-codex-small-model", r.OpenAICodexSmallModel)
 	assert.Equal(t, "openai-codex-reasoning-effort", r.OpenAICodexReasoningEffort)
 	assert.Equal(t, "anthropic-auth-token", r.AnthropicAuthToken)
 	assert.Equal(t, "anthropic-reasoning-effort", r.AnthropicReasoningEffort)
+	assert.Equal(t, "2.1.999", r.AnthropicClaudeCodeVersion)
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
+	assert.Equal(t, "gemini-small-model", r.GeminiSmallModel)
 	assert.Equal(t, "gemini-reasoning-effort", r.GeminiReasoningEffort)
 	assert.Equal(t, "local-base-url", r.LocalBaseURL)
 	assert.Equal(t, "local-model", r.LocalModel)
+	assert.Equal(t, "local-small-model", r.LocalSmallModel)
 	assert.Equal(t, "openai", r.LocalAPICompat)
 	assert.Equal(t, "local-api-key", r.LocalAPIKey)
 }
@@ -307,6 +319,43 @@ func TestCodexModelRouting(t *testing.T) {
 	assert.Equal(t, "gpt-5.3-codex", epNamed.Model)
 }
 
+func TestSmallModelRouting(t *testing.T) {
+	t.Run("configured model wins and provider remains concrete", func(t *testing.T) {
+		r := &LLMRouter{OpenAISmallModel: "my-fast-model"}
+		model, ok := r.SmallModel(OpenAI)
+		require.True(t, ok)
+		assert.Equal(t, "my-fast-model", model)
+
+		ep, err := r.Route(model, string(OpenAI))
+		require.NoError(t, err)
+		assert.Equal(t, OpenAI, ep.Provider)
+		assert.Equal(t, "my-fast-model", ep.Model)
+	})
+
+	t.Run("catalog fallback follows provider", func(t *testing.T) {
+		r := new(LLMRouter)
+		model, ok := r.SmallModel(Anthropic)
+		require.True(t, ok)
+		assert.Equal(t, "claude-haiku-4-5-20251001", model)
+	})
+
+	t.Run("local and unknown providers safely retain their route", func(t *testing.T) {
+		r := new(LLMRouter)
+		for _, provider := range []LLMProvider{Local, Other, "unknown"} {
+			model, ok := r.SmallModel(provider)
+			assert.False(t, ok)
+			assert.Empty(t, model)
+		}
+	})
+
+	t.Run("configured local model is supported", func(t *testing.T) {
+		r := &LLMRouter{LocalSmallModel: "qwen3:small"}
+		model, ok := r.SmallModel(Local)
+		require.True(t, ok)
+		assert.Equal(t, "qwen3:small", model)
+	})
+}
+
 func TestExplicitProviderRouting(t *testing.T) {
 	r := &LLMRouter{
 		AnthropicAPIKey: "ak",
@@ -388,6 +437,24 @@ func TestOpenAIRequestUsesNonStrictNullableToolSchema(t *testing.T) {
 	require.Contains(t, date, "default")
 	require.Nil(t, date["default"])
 	require.Equal(t, []any{"filePath"}, parameters["required"])
+}
+
+func TestOpenAIConvertToolCalls(t *testing.T) {
+	history := []*LLMMessage{{
+		Role: LLMMessageRoleAssistant,
+		Content: []*LLMContentBlock{
+			{Kind: LLMContentToolCall, CallID: "call_1", ToolName: "read", Arguments: JSON(`{"path":"/x"}`)},
+			{Kind: LLMContentToolCall, CallID: "call_2", ToolName: "noargs"},
+		},
+	}}
+	messages := convertHistoryToOpenAI(history)
+	require.Len(t, messages, 1)
+	data, err := json.Marshal(messages[0].OfAssistant.ToolCalls)
+	require.NoError(t, err)
+	assert.JSONEq(t, `[
+		{"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"/x\"}"}},
+		{"id":"call_2","type":"function","function":{"name":"noargs","arguments":"{}"}}
+	]`, string(data))
 }
 
 func TestContentBlockInputRoundTrip(t *testing.T) {
@@ -553,6 +620,33 @@ func TestCodexConvertEmptyToolArgs(t *testing.T) {
 	require.Len(t, items, 1)
 	require.NotNil(t, items[0].OfFunctionCall)
 	assert.Equal(t, "{}", items[0].OfFunctionCall.Arguments)
+}
+
+func TestCodexConvertToolResults(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		text    string
+		errored bool
+		want    string
+	}{
+		{"success", "contents", false, `{"type":"function_call_output","call_id":"call_1","output":"contents"}`},
+		{"empty", "", false, `{"type":"function_call_output","call_id":"call_1","output":""}`},
+		{"error", "not found", true, `{"type":"function_call_output","call_id":"call_1","output":"error: not found"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			history := []*LLMMessage{{
+				Role: LLMMessageRoleUser,
+				Content: []*LLMContentBlock{{
+					Kind: LLMContentToolResult, CallID: "call_1", Text: tc.text, Errored: tc.errored,
+				}},
+			}}
+			_, items := convertToCodexResponsesFormat(history)
+			require.Len(t, items, 1)
+			data, err := json.Marshal(items[0])
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(data))
+		})
+	}
 }
 
 func TestLlmConfigDisableStreaming(t *testing.T) {

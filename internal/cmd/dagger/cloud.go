@@ -26,13 +26,14 @@ var cloudCmd = &cobra.Command{
 }
 
 var cloudLoginCmd = newLoginCmd(false)
+var cloudSignupCmd = newSignupCmd()
 var loginCmd = newLoginCmd(true)
 
 var cloudLogoutCmd = newLogoutCmd(false)
 var logoutCmd = newLogoutCmd(true)
 
 func init() {
-	cloudCmd.AddCommand(cloudLoginCmd, cloudLogoutCmd)
+	cloudCmd.AddCommand(cloudLoginCmd, cloudSignupCmd, cloudLogoutCmd)
 	rootCmd.AddCommand(cloudCmd, loginCmd, logoutCmd)
 }
 
@@ -64,7 +65,6 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	outW := cmd.OutOrStdout()
-	errW := cmd.ErrOrStderr()
 
 	var orgName string
 	if len(args) > 0 {
@@ -93,13 +93,26 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	return finishCloudLogin(cmd, orgName, client, true)
+}
+
+// Login always permits organization creation, as it did before signup was
+// added. Only non-interactive signup disables the browser step.
+func finishCloudLogin(cmd *cobra.Command, orgName string, client *cloud.Client, allowCreateOrg bool) error {
+	ctx := cmd.Context()
+	outW := cmd.OutOrStdout()
+	errW := cmd.ErrOrStderr()
 	user, err := client.User(ctx)
 	if err != nil {
 		return err
 	}
+
 	var selectedOrg *auth.Org
 	switch len(user.Orgs) {
 	case 0:
+		if !allowCreateOrg {
+			return fmt.Errorf("human action required: create an organization at https://dagger.cloud/traces/setup, then run dagger cloud %s again", cmd.Name())
+		}
 		fmt.Fprintln(errW, "You are not a member of any Dagger Cloud organizations.")
 		selectedOrg, err = createNewOrg(ctx, client, errW)
 		if err != nil {

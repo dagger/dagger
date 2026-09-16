@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  `dagger workspace migrate` and `dagger config unset` no longer leave blank
+  lines or out-of-date comments in `dagger.toml` when they remove a table.
+  The comment block directly above a removed table is removed with it. A
+  comment block at the top of the file stays.
+time: 2026-09-11T20:50:36Z
+custom:
+  Author: shykes

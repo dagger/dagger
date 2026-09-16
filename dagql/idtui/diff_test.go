@@ -1,306 +1,222 @@
 package idtui
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 )
 
-func TestLineLevelDiff(t *testing.T) {
-	old := `func hello() {
-	fmt.Println("hello")
-}`
-	new := `func hello() {
-	fmt.Println("hello world")
-	fmt.Println("goodbye")
-}`
-
-	lines := lineLevelDiff(old, new)
-
-	// Verify we get context, removed, and added lines.
-	var ctx, rem, add int
-	for _, l := range lines {
-		switch l.Kind {
-		case diffContext:
-			ctx++
-		case diffRemoved:
-			rem++
-		case diffAdded:
-			add++
-		}
+func TestHighlightDiffPreservesPatchExactly(t *testing.T) {
+	patches := map[string]string{
+		"multi-file with trailing newline": `diff --git a/main.go b/main.go
+index 1111111..2222222 100644
+--- a/main.go
++++ b/main.go
+@@ -1,2 +1,2 @@
+ package main
+-func old() string { return "old" }
++func next() string { return "new" }
+diff --git a/main.py b/main.py
+index 3333333..4444444 100644
+--- a/main.py
++++ b/main.py
+@@ -1,2 +1,2 @@
+-def old():
++def next():
+     return "value"
+`,
+		"no trailing newline": `diff --git a/app.js b/app.js
+--- a/app.js
++++ b/app.js
+@@ -1 +1 @@
+-const old = "before";
++const next = "after";`,
+		"crlf": "diff --git a/a.go b/a.go\r\n--- a/a.go\r\n+++ b/a.go\r\n@@ -1 +1 @@\r\n-var old = 1\r\n+var next = 2\r\n",
 	}
 
-	if ctx == 0 {
-		t.Error("expected context lines")
-	}
-	if rem == 0 {
-		t.Error("expected removed lines")
-	}
-	if add == 0 {
-		t.Error("expected added lines")
-	}
-
-	// The first line "func hello() {" should be context.
-	if lines[0].Kind != diffContext {
-		t.Errorf("expected first line to be context, got %v", lines[0].Kind)
-	}
-	if lines[0].Content != "func hello() {" {
-		t.Errorf("unexpected first line content: %q", lines[0].Content)
-	}
-}
-
-func TestPairForIntraline(t *testing.T) {
-	lines := []diffLine{
-		{OldNo: 1, NewNo: 1, Kind: diffContext, Content: "a"},
-		{OldNo: 2, Kind: diffRemoved, Content: "old1"},
-		{OldNo: 3, Kind: diffRemoved, Content: "old2"},
-		{NewNo: 2, Kind: diffAdded, Content: "new1"},
-		{NewNo: 3, Kind: diffAdded, Content: "new2"},
-		{NewNo: 4, Kind: diffAdded, Content: "new3"},
-		{OldNo: 4, NewNo: 5, Kind: diffContext, Content: "b"},
-	}
-
-	pairs := pairForIntraline(lines)
-
-	// Context lines should have no pair.
-	if pairs[0] != nil {
-		t.Error("context line 0 should have nil pair")
-	}
-	if pairs[6] != nil {
-		t.Error("context line 6 should have nil pair")
-	}
-
-	// removed[0] paired with added[0], removed[1] paired with added[1]
-	if pairs[1] == nil || pairs[1].Content != "new1" {
-		t.Error("removed line 1 should pair with added new1")
-	}
-	if pairs[2] == nil || pairs[2].Content != "new2" {
-		t.Error("removed line 2 should pair with added new2")
-	}
-	if pairs[3] == nil || pairs[3].Content != "old1" {
-		t.Error("added line 3 should pair with removed old1")
-	}
-	if pairs[4] == nil || pairs[4].Content != "old2" {
-		t.Error("added line 4 should pair with removed old2")
-	}
-
-	// Third added line has no removed partner.
-	if pairs[5] != nil {
-		t.Error("added line 5 (new3) should have nil pair (no removed partner)")
-	}
-}
-
-func TestRenderEditDiffWidth(t *testing.T) {
-	old := `fmt.Println("hello")`
-	new := `fmt.Println("hello world")`
-
-	result := renderEditDiff(0, "test.go", old, new, 80)
-
-	for i, line := range splitLines(result) {
-		if line == "" {
-			continue
-		}
-		w := ansi.StringWidth(line)
-		if w > 80 {
-			t.Errorf("line %d: visible width %d > 80: %q", i, w, line)
-		}
-	}
-}
-
-func TestRenderEditDiffTabWidth(t *testing.T) {
-	// Simulate real Go source code with tab indentation, similar to what
-	// an LLM edit tool call would produce.
-	old := "\t\t\treturn ToValue(centered)\n\t\t})\n"
-	new := "\t\t\treturn ToValue(centered)\n\t\t})\n\n" +
-		"\t\t// String.reverse method: reverse -> String!\n" +
-		"\t\tMethod(StringType, \"reverse\").\n" +
-		"\t\t\tDoc(\"reverses the characters in the string\").\n" +
-		"\t\t\tReturns(NonNull(StringType)).\n" +
-		"\t\t\tImpl(func(ctx context.Context, self Value, args Args) (Value, error) {\n" +
-		"\t\t\t\trunes := []rune(self.(StringValue).Val)\n" +
-		"\t\t\t\tfor i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {\n" +
-		"\t\t\t\t\trunes[i], runes[j] = runes[j], runes[i]\n" +
-		"\t\t\t\t}\n" +
-		"\t\t\t\treturn ToValue(string(runes))\n" +
-		"\t\t\t})\n"
-
-	for _, totalWidth := range []int{80, 120, 160, 200} {
-		t.Run(fmt.Sprintf("width=%d", totalWidth), func(t *testing.T) {
-			result := renderEditDiff(0, "test.go", old, new, totalWidth)
-			for i, line := range splitLines(result) {
-				if line == "" {
-					continue
-				}
-				rendered := terminalRenderWidth(line)
-				if rendered > totalWidth {
-					t.Errorf("line %d: rendered width %d > %d (ansi.StringWidth=%d): %q",
-						i, rendered, totalWidth, ansi.StringWidth(line), line)
-				}
+	for name, patch := range patches {
+		t.Run(name, func(t *testing.T) {
+			got := highlightDiff(termenv.ANSI, patch)
+			if stripped := ansi.Strip(got); stripped != patch {
+				t.Fatalf("ANSI-stripped output changed patch\nwant: %q\n got: %q", patch, stripped)
 			}
 		})
 	}
 }
 
-func TestRenderEditDiffUnifiedFormat(t *testing.T) {
-	old := "hello world\n"
-	new := "hello there\ngoodbye\n"
+func TestHighlightDiffMultipleLanguagesAndExactNames(t *testing.T) {
+	patch := `diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -1 +1 @@
+-func old() string { return "old" }
++func greet() string { return "hello" }
+diff --git a/tool.py b/tool.py
+--- a/tool.py
++++ b/tool.py
+@@ -1 +1 @@
+-def old(): return "old"
++def greet(): return "hello"
+diff --git a/Dockerfile b/Dockerfile
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1 +1 @@
+-FROM busybox
++FROM alpine
+`
+	got := highlightDiff(termenv.ANSI, patch)
 
-	result := renderEditDiff(0, "test.txt", old, new, 80)
-
-	// Should contain removed and added markers.
-	if !strings.Contains(result, "- ") {
-		t.Error("expected removed line marker '- '")
-	}
-	if !strings.Contains(result, "+ ") {
-		t.Error("expected added line marker '+ '")
-	}
-
-	// Should be unified (single column), not side-by-side.
-	// Each non-empty line should start with a line number gutter.
-	for i, line := range splitLines(result) {
-		if line == "" {
-			continue
+	for _, line := range []string{
+		`+func greet() string { return "hello" }`,
+		`+def greet(): return "hello"`,
+		`+FROM alpine`,
+	} {
+		source := highlightedSourceLine(t, got, line)
+		if !strings.Contains(source, "\x1b[") {
+			t.Errorf("source for %q was not syntax highlighted: %q", line, source)
 		}
-		// Should have the gutter pattern: digits/spaces in first 10 chars.
-		if len(line) < 12 {
-			t.Errorf("line %d too short: %q", i, line)
+	}
+
+	// The green addition marker is reset before Chroma's source styling. In
+	// particular, Go's keyword must not inherit the marker's green colour.
+	goLine := highlightedLine(t, got, `+func greet() string { return "hello" }`)
+	if !strings.Contains(goLine, "\x1b[32m+\x1b[0m") {
+		t.Fatalf("addition marker is not independently styled: %q", goLine)
+	}
+	if strings.Contains(goLine, "\x1b[32m+func") {
+		t.Fatalf("addition colour leaked into source: %q", goLine)
+	}
+}
+
+func TestHighlightDiffAddedAndDeletedFiles(t *testing.T) {
+	patch := `diff --git a/new.py b/new.py
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/new.py
+@@ -0,0 +1,2 @@
++def hello():
++    return "hi"
+diff --git a/old.go b/old.go
+deleted file mode 100644
+index 2222222..0000000
+--- a/old.go
++++ /dev/null
+@@ -1,2 +0,0 @@
+-package old
+-func goodbye() {}
+`
+	got := highlightDiff(termenv.ANSI, patch)
+	if stripped := ansi.Strip(got); stripped != patch {
+		t.Fatalf("ANSI-stripped output changed patch\nwant: %q\n got: %q", patch, stripped)
+	}
+
+	for _, line := range []string{`+def hello():`, `-func goodbye() {}`} {
+		if source := highlightedSourceLine(t, got, line); !strings.Contains(source, "\x1b[") {
+			t.Errorf("source for %q was not highlighted: %q", line, source)
 		}
 	}
 }
 
-// TestRenderUnifiedLineWideGutter guards against the gutter overflowing the
-// terminal width once line numbers reach 5+ digits: the gutter width must be
-// derived from the actual field width (numW), not a hard-coded constant, and
-// content must be truncated to what's left over.
-func TestRenderUnifiedLineWideGutter(t *testing.T) {
-	out := NewOutput(new(strings.Builder), termenv.WithProfile(termenv.Ascii))
+func TestHighlightDiffUsesSeparateOldAndNewSourceStreams(t *testing.T) {
+	patch := `diff --git a/comment.go b/comment.go
+--- a/comment.go
++++ b/comment.go
+@@ -1,2 +1,2 @@
+-/* deleted comment
+-still deleted */
++/* added comment
++still added */
+`
+	got := highlightDiff(termenv.ANSI, patch)
 
-	// A 5-digit line number widens the gutter past the old hard-coded 12.
-	dl := diffLine{
-		OldNo:   12345,
-		NewNo:   12345,
-		Kind:    diffContext,
-		Content: strings.Repeat("x", 200),
-	}
-	numW := len(strconv.Itoa(dl.OldNo)) // 5
-
-	for _, width := range []int{20, 40, 80} {
-		line := renderUnifiedLine(out, dl, nil, numW, width)
-		if w := ansi.StringWidth(line); w > width {
-			t.Errorf("width=%d: rendered width %d > %d: %q", width, w, width, line)
-		}
-		// The full line-number gutter must survive (never truncated away).
-		if !strings.Contains(line, "12345 12345") {
-			t.Errorf("width=%d: 5-digit gutter missing/truncated: %q", width, line)
+	// These continuation lines only lex as comments when each side of the hunk
+	// is presented to Chroma as a source stream rather than one line at a time.
+	for _, line := range []string{`-still deleted */`, `+still added */`} {
+		if source := highlightedSourceLine(t, got, line); !strings.Contains(source, "\x1b[3m\x1b[95m") {
+			t.Errorf("multiline comment %q did not retain comment syntax: %q", line, source)
 		}
 	}
 }
 
-// TestAddFileContextTrailingNewline verifies the after-context isn't shifted
-// down by one (silently skipping a line) when oldText ends in a newline.
-func TestAddFileContextTrailingNewline(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "f.txt")
-	// Lines a..g, whole file terminated by a newline.
-	if err := os.WriteFile(file, []byte("a\nb\nc\nd\ne\nf\ng\n"), 0o644); err != nil {
-		t.Fatal(err)
+func TestHighlightDiffUnknownExtension(t *testing.T) {
+	patch := `diff --git a/data.unknown-extension b/data.unknown-extension
+--- a/data.unknown-extension
++++ b/data.unknown-extension
+@@ -1 +1 @@
+-before value
++after value
+`
+	got := highlightDiff(termenv.ANSI, patch)
+	if stripped := ansi.Strip(got); stripped != patch {
+		t.Fatalf("ANSI-stripped output changed patch\nwant: %q\n got: %q", patch, stripped)
 	}
 
-	// oldText covers lines c,d and ends with a trailing newline.
-	oldText := "c\nd\n"
-	lines := []diffLine{
-		{OldNo: 1, NewNo: 1, Kind: diffContext, Content: "c"},
-		{OldNo: 2, Kind: diffRemoved, Content: "d"},
-		{NewNo: 2, Kind: diffAdded, Content: "D"},
-	}
-
-	got := addFileContext(file, oldText, lines)
-
-	// The line immediately after the edit ("e") must appear as after-context,
-	// not be skipped. It should be numbered 5 in both columns.
-	var foundE bool
-	for _, dl := range got {
-		if dl.Kind == diffContext && dl.Content == "e" {
-			foundE = true
-			if dl.OldNo != 5 || dl.NewNo != 5 {
-				t.Errorf("line 'e' has wrong numbers: OldNo=%d NewNo=%d (want 5/5)", dl.OldNo, dl.NewNo)
-			}
+	for _, line := range []string{`-before value`, `+after value`} {
+		if source := highlightedSourceLine(t, got, line); strings.Contains(source, "\x1b[") {
+			t.Errorf("unknown source for %q unexpectedly received syntax colours: %q", line, source)
 		}
-	}
-	if !foundE {
-		var contents []string
-		for _, dl := range got {
-			contents = append(contents, dl.Content)
-		}
-		t.Errorf("after-context skipped line 'e'; got lines: %q", contents)
 	}
 }
 
-// terminalRenderWidth computes the actual visual width of a string as a
-// terminal would render it, expanding tabs to the next tab stop (every 8
-// columns) and skipping ANSI escape sequences.
-func terminalRenderWidth(s string) int {
-	col := 0
-	i := 0
-	for i < len(s) {
-		if s[i] == '\x1b' {
-			// Skip ANSI escape sequence.
-			j := i + 1
-			for j < len(s) && (s[j] < 'A' || s[j] > 'Z') && (s[j] < 'a' || s[j] > 'z') {
-				j++
-			}
-			if j < len(s) {
-				j++ // include final letter
-			}
-			i = j
-			continue
-		}
-		if s[i] == '\t' {
-			col += 8 - (col % 8) // advance to next tab stop
-			i++
-			continue
-		}
-		// Decode UTF-8 rune and count as 1 column of width.
-		_, size := utf8.DecodeRuneInString(s[i:])
-		col++
-		i += size
+func TestHighlightDiffMetadataAndNoNewlineMarker(t *testing.T) {
+	patch := `diff --git a/name.txt b/renamed.txt
+similarity index 88%
+rename from name.txt
+rename to renamed.txt
+index 1111111..2222222 100644
+--- a/name.txt
++++ b/renamed.txt
+@@ -1 +1 @@
+-old value
+\ No newline at end of file
++new value
+\ No newline at end of file`
+	got := highlightDiff(termenv.ANSI, patch)
+	if stripped := ansi.Strip(got); stripped != patch {
+		t.Fatalf("ANSI-stripped output changed patch\nwant: %q\n got: %q", patch, stripped)
 	}
-	return col
+
+	for _, line := range []string{
+		"diff --git a/name.txt b/renamed.txt",
+		"similarity index 88%",
+		"rename from name.txt",
+		"@@ -1 +1 @@",
+		`\ No newline at end of file`,
+	} {
+		if rendered := highlightedLine(t, got, line); !strings.Contains(rendered, "\x1b[") {
+			t.Errorf("metadata %q was not styled: %q", line, rendered)
+		}
+	}
 }
 
-func splitLines(s string) []string {
-	if s == "" {
-		return nil
+func TestHighlightDiffAsciiReturnsInputUnchanged(t *testing.T) {
+	patch := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-\x1b[31mold\x1b[0m\n+new\n"
+	if got := highlightDiff(termenv.Ascii, patch); got != patch {
+		t.Fatalf("ASCII profile changed patch\nwant: %q\n got: %q", patch, got)
 	}
-	return split(s, '\n')
 }
 
-func split(s string, sep byte) []string {
-	var parts []string
-	for {
-		i := indexByte(s, sep)
-		if i < 0 {
-			parts = append(parts, s)
-			break
-		}
-		parts = append(parts, s[:i])
-		s = s[i+1:]
+func highlightedSourceLine(t *testing.T, output, plain string) string {
+	t.Helper()
+	line := highlightedLine(t, output, plain)
+	reset := strings.Index(line, "\x1b[0m")
+	if reset < 0 {
+		t.Fatalf("diff marker for %q was not styled: %q", plain, line)
 	}
-	return parts
+	return line[reset+len("\x1b[0m"):]
 }
 
-func indexByte(s string, c byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == c {
-			return i
+func highlightedLine(t *testing.T, output, plain string) string {
+	t.Helper()
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if ansi.Strip(line) == plain {
+			return line
 		}
 	}
-	return -1
+	t.Fatalf("line %q not found in output", plain)
+	return ""
 }

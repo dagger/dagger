@@ -1,6 +1,8 @@
 package daggercmd
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -8,9 +10,9 @@ import (
 
 func TestSearchModuleRegistry(t *testing.T) {
 	reg := []registryModule{
-		{Name: "wolfi", Description: "Wolfi Linux base images", Repo: "github.com/dagger/wolfi"},
-		{Name: "apko", Description: "Build OCI images with apko", Repo: "github.com/example/apko"},
-		{Name: "golang", Description: "Go toolchain helpers", Repo: "github.com/example/golang"},
+		{Name: "wolfi", Description: "Wolfi Linux base images", Repo: "dagger.io/wolfi"},
+		{Name: "apko", Description: "Build OCI images with apko", Repo: "dagger.io/apko"},
+		{Name: "golang", Description: "Go toolchain helpers", Repo: "dagger.io/golang"},
 	}
 
 	tests := []struct {
@@ -35,6 +37,20 @@ func TestSearchModuleRegistry(t *testing.T) {
 			require.Equal(t, tt.want, names)
 		})
 	}
+}
+
+func TestModuleSearchOutputSortedBySource(t *testing.T) {
+	reg := []registryModule{
+		{Name: "alpha", Description: "First module", Repo: "dagger.io/zulu"},
+		{Name: "zulu", Description: "Second module", Repo: "dagger.io/alpha"},
+	}
+
+	var output bytes.Buffer
+	require.NoError(t, printModuleSearchResults(&output, searchModuleRegistry(reg, "")))
+	require.Less(t,
+		strings.Index(output.String(), "dagger.io/alpha"),
+		strings.Index(output.String(), "dagger.io/zulu"),
+	)
 }
 
 func TestLoadSearchRegistryIncludesSDKsUnlessFiltered(t *testing.T) {

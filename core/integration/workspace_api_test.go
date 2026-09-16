@@ -395,7 +395,9 @@ func (WorkspaceAPISuite) TestRootlessCurrentWorkspaceIgnoresIrrelevantDaggerJSON
 }
 `)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	// JSON is written to stdout. Compatibility diagnostics on stderr are not
+	// part of the query response.
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 	require.JSONEq(t, `{
 		"currentWorkspace": {
@@ -729,6 +731,104 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 		require.Equal(t, "staged", string(got))
 		_, err = os.Stat(filepath.Join(workdir, ".refs"))
 		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+}
+
+func (WorkspaceAPISuite) TestWorkspaceWithoutMount(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := c.Directory().
+		WithNewFile("deps/source.txt", "source").
+		WithNewFile("note.txt", "source note").
+		AsWorkspace()
+	overlay := base.WithNewFile("deps/pending.txt", "pending")
+	mounted := overlay.
+		WithMountedDirectory("deps", c.Directory().WithNewFile("mounted.txt", "mounted")).
+		WithMountedDirectory("deps/nested", c.Directory().WithNewFile("nested.txt", "nested")).
+		WithMountedDirectory("deps-other", c.Directory().WithNewFile("sibling.txt", "sibling")).
+		WithMountedFile("note.txt", c.Directory().WithNewFile("note.txt", "mounted note").File("note.txt"))
+
+	t.Run("directory restores source and pending changes", func(ctx context.Context, t *testctx.T) {
+		ws := mounted.WithoutMount("deps")
+		entries, err := ws.Directory("deps").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"pending.txt", "source.txt"}, entries)
+		contents, err := ws.File("deps/source.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "source", contents)
+		contents, err = ws.File("deps/pending.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "pending", contents)
+		empty, err := ws.Changes(dagger.WorkspaceChangesOpts{From: overlay}).IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, empty)
+		// Both the removed mount and nested mount are writable again.
+		contents, err = ws.WithNewFile("deps/nested/new.txt", "new").File("deps/nested/new.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new", contents)
+		contents, err = ws.File("deps-other/sibling.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "sibling", contents)
+		_, err = ws.WithNewFile("deps-other/new.txt", "no").File("deps-other/new.txt").Contents(ctx)
+		require.ErrorContains(t, err, "read-only mount")
+		// Unmounting does not mutate the original workspace.
+		contents, err = mounted.File("deps/nested/nested.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "nested", contents)
+	})
+
+	t.Run("file restores source", func(ctx context.Context, t *testctx.T) {
+		ws := mounted.WithoutMount("note.txt")
+		contents, err := ws.File("note.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "source note", contents)
+		contents, err = ws.WithNewFile("note.txt", "edited").File("note.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "edited", contents)
+	})
+
+	t.Run("paths resolve from cwd", func(ctx context.Context, t *testctx.T) {
+		for _, path := range []string{"./nested/..", "../deps", "/deps"} {
+			entries, err := mounted.WithWorkdir("deps").WithoutMount(path).Directory(".").Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"pending.txt", "source.txt"}, entries)
+		}
+		_, err := mounted.WithoutMount("../outside").Directory("/").Entries(ctx)
+		require.ErrorContains(t, err, "escapes workspace root")
+	})
+
+	t.Run("root removes all mounts", func(ctx context.Context, t *testctx.T) {
+		for _, path := range []string{"/", "."} {
+			ws := mounted.WithoutMount(path)
+			entries, err := ws.Directory("/").Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"deps/", "note.txt"}, entries)
+			contents, err := ws.File("note.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "source note", contents)
+		}
+	})
+
+	t.Run("ancestor removes mounts beneath it", func(ctx context.Context, t *testctx.T) {
+		ws := base.
+			WithMountedDirectory("refs/a", c.Directory().WithNewFile("a.txt", "a")).
+			WithMountedFile("refs/b.txt", c.Directory().WithNewFile("b.txt", "b").File("b.txt")).
+			WithoutMount("refs")
+		entries, err := ws.Directory("/").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"deps/", "note.txt"}, entries)
+	})
+
+	t.Run("missing mount is a no-op", func(ctx context.Context, t *testctx.T) {
+		for _, ws := range []*dagger.Workspace{base, mounted} {
+			before, err := ws.Directory("/").Entries(ctx)
+			require.NoError(t, err)
+			after, err := ws.WithoutMount("missing").Directory("/").Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+		}
+		contents, err := base.WithoutMount("note.txt").File("note.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "source note", contents)
 	})
 }
 

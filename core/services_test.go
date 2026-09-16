@@ -17,6 +17,43 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
+func TestServiceRetainsOneLaunchingScopeUntilExit(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "client",
+	}, rootLease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(context.Background(), scope)
+	require.NoError(t, err)
+
+	services := core.NewServices()
+	stub := newStartable("leased")
+	stub.Succeed()
+	first, err := services.Start(ctx, stub.Digest(), stub, false)
+	require.NoError(t, err)
+	second, err := services.Start(ctx, stub.Digest(), stub, false)
+	require.NoError(t, err)
+	require.Same(t, first, second)
+	require.Equal(t, int32(1), acquired.Load(), "waiters and binders must share the service's launching scope")
+	require.Zero(t, released.Load())
+
+	stub.Exit(nil)
+	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond)
+}
+
 func TestServicesStartHappy(t *testing.T) {
 	t.Parallel()
 

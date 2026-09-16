@@ -138,13 +138,15 @@ func boundWorkspaceInput(ctx context.Context, srv *dagql.Server, arg dagql.Input
 	return val, true
 }
 
-// workspaceClientContext switches ctx to a live Workspace's owning client so
-// client-scoped resolvers use that client's served modules. Callers handle
-// value workspaces separately because they have no owning client.
+// workspaceHostRoutingContext stamps the Workspace owner's immutable metadata
+// onto ctx for record and host-routing operations. It deliberately does not
+// replace the held ClientScope: metadata is not runtime execution authority, so
+// schema/module operations continue to execute under the caller's leased scope.
+// Synthetic/value workspaces have no owning client and leave ctx unchanged.
 //
 // This mirrors core/schema's withWorkspaceClientContext without a core→schema
 // import.
-func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context, error) {
+func workspaceHostRoutingContext(ctx context.Context, ws *Workspace) (context.Context, error) {
 	if ws.ClientID == "" {
 		return ctx, nil
 	}
@@ -163,7 +165,7 @@ func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context
 // loads its served modules. MCP.baseServer calls this only for live workspaces;
 // value workspaces use core directly and never load the caller's modules.
 func loadWorkspaceOwnerContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
-	wsCtx, err := workspaceClientContext(ctx, ws.Self())
+	wsCtx, err := workspaceHostRoutingContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err
 	}

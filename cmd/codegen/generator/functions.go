@@ -118,11 +118,11 @@ func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) (bool, error)
 // unless it's an ID that will be converted which needs to be formatted
 // as an input (for chaining).
 func (c *CommonFunctions) FormatReturnType(f introspection.Field, scopes ...string) (string, error) {
-	if c.ConvertID(f) {
-		// When converting an ID return to an object (e.g. sync),
-		// use the parent object's name as the return type.
+	if handle := c.IDHandleType(f); handle != "" {
+		// An ID handle is returned as the object it loads (e.g. sync
+		// returns the parent, LLM.spawn returns an Agent).
 		scope := strings.Join(scopes, "")
-		return c.formatTypeFuncs.WithScope(scope).FormatKindObject("", f.ParentObject.Name, false), nil
+		return c.formatTypeFuncs.WithScope(scope).FormatKindObject("", handle, false), nil
 	}
 	return c.formatType(f.TypeRef, strings.Join(scopes, ""), false)
 }
@@ -184,28 +184,38 @@ func (c *CommonFunctions) GetArrayField(f *introspection.Field) ([]*introspectio
 }
 
 // ConvertID returns true if the field returns an ID that should be
-// converted into an object.
+// converted into an object: see IDHandleType.
 func (c *CommonFunctions) ConvertID(f introspection.Field) bool {
+	return c.IDHandleType(f) != ""
+}
+
+// IDHandleType returns the name of the object an ID-returning field loads
+// in the SDK, or "" when the field hands back the ID as-is (including the
+// id field itself).
+//
+// The @expectedType directive names the object: sync-likes return their
+// parent, and a field like LLM.spawn returns an Agent rather than an
+// Agent's ID. Without the directive, the legacy FooID scalar suffix
+// convention names the parent.
+func (c *CommonFunctions) IDHandleType(f introspection.Field) string {
 	if f.Name == "id" {
-		return false
+		return ""
 	}
 	ref := f.TypeRef
 	if ref.Kind == introspection.TypeKindNonNull {
 		ref = ref.OfType
 	}
 	if ref.Kind != introspection.TypeKindScalar {
-		return false
+		return ""
 	}
-	// Check for @expectedType directive on the field.
-	// This replaces the old FooID suffix check.
-	expectedType := f.Directives.ExpectedType()
-	if expectedType != "" {
-		// Only convert if the expected type matches the parent object.
-		// This is for sync-like methods that return the object's own ID.
-		return expectedType == f.ParentObject.Name
+	if expectedType := f.Directives.ExpectedType(); expectedType != "" {
+		return expectedType
 	}
 	// Legacy fallback: check FooID suffix pattern.
-	return ref.Name == f.ParentObject.Name+"ID"
+	if ref.Name == f.ParentObject.Name+"ID" {
+		return f.ParentObject.Name
+	}
+	return ""
 }
 
 // FormatInputType formats a GraphQL type into the SDK language input

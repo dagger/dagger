@@ -2417,6 +2417,30 @@ type FunctionCall struct {
 	// and backs Query.currentNode so a module can reference the object that
 	// received the call. Nil for top-level / constructor calls.
 	parentTyped dagql.AnyResult
+
+	// callerAgent is the agent whose turn dispatched this function call,
+	// carried engine-side only (not persisted, not sent to the module), like
+	// parentTyped. It backs core.CallerAgent for the nested API calls the
+	// function makes: message provenance and the waits-for deadlock guard
+	// both need to know which agent is acting, and a Go context value cannot
+	// cross the module-execution boundary. Stamped by modfunc from its own
+	// CallerAgent resolution, so it propagates through arbitrarily nested
+	// module calls. Zero when the call did not originate from an agent turn.
+	callerAgent dagql.ObjectResult[*Agent]
+}
+
+// CallerAgent returns the agent whose turn dispatched this function call, if
+// the call originated from one.
+func (fnCall *FunctionCall) CallerAgent() (dagql.ObjectResult[*Agent], bool) {
+	if fnCall == nil || fnCall.callerAgent.Self() == nil {
+		return dagql.ObjectResult[*Agent]{}, false
+	}
+	return fnCall.callerAgent, true
+}
+
+// SetCallerAgent stamps the agent whose turn dispatched this function call.
+func (fnCall *FunctionCall) SetCallerAgent(agent dagql.ObjectResult[*Agent]) {
+	fnCall.callerAgent = agent
 }
 
 // ParentTyped returns the receiver object the function was called on (with its

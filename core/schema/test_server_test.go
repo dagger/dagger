@@ -98,7 +98,11 @@ func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Ha
 	return nil
 }
 
-func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
+func (s *currentTypeDefsTestServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
+	return engine.NewNestedClientTransport(nil), nil
+}
+
+func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {
@@ -118,6 +122,10 @@ func (s *currentTypeDefsTestServer) Services(context.Context) (*core.Services, e
 }
 
 func (s *currentTypeDefsTestServer) Platform() core.Platform { return s.platform }
+
+func (s *currentTypeDefsTestServer) Agents(context.Context) (*core.AgentRuntimes, error) {
+	return nil, nil
+}
 
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
 

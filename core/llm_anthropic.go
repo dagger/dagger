@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -20,6 +21,30 @@ type AnthropicClient struct {
 	endpoint *LLMEndpoint
 }
 
+// defaultClaudeCodeVersion is the Claude Code release the subscription OAuth
+// client identifies as in its user-agent. Anthropic gates newly released
+// models on a minimum Claude Code version — older clients get a 400 with
+// error_code claude_code_version_too_old — so this has to track the current
+// release. Check it with `npm view @anthropic-ai/claude-code version`; don't
+// read it off a local `claude --version`, since the stable channel lags
+// latest and an installed copy is often below the floor a new model needs.
+// Between Dagger releases, users can override it with
+// ANTHROPIC_CLAUDE_CODE_VERSION (see LLMRouter.LoadConfig).
+const defaultClaudeCodeVersion = "2.1.273"
+
+// claudeCodeVersionPattern is the shape ANTHROPIC_CLAUDE_CODE_VERSION must
+// take: a bare X.Y.Z, exactly as Claude Code itself reports it.
+var claudeCodeVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// claudeCodeUserAgent formats the user-agent Claude Code sends, for the given
+// release or defaultClaudeCodeVersion when empty.
+func claudeCodeUserAgent(version string) string {
+	if version == "" {
+		version = defaultClaudeCodeVersion
+	}
+	return fmt.Sprintf("claude-cli/%s (external, cli)", version)
+}
+
 func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 	var opts []option.RequestOption
 	switch {
@@ -33,7 +58,7 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 		opts = append(opts,
 			option.WithAuthToken(endpoint.AuthToken),
 			option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20"),
-			option.WithHeader("user-agent", "claude-cli/2.1.2 (external, cli)"),
+			option.WithHeader("user-agent", claudeCodeUserAgent(endpoint.ClaudeCodeVersion)),
 			option.WithHeader("x-app", "cli"),
 		)
 	case endpoint.Key != "":
@@ -367,7 +392,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				}
 			case "input_json_delta":
 				if p := dp.Phase(ev.Index); p != nil {
-					fmt.Fprint(p.Stdio.Stdout, ev.Delta.PartialJSON)
+					p.writeToolArgs(ev.Delta.PartialJSON)
 				}
 			}
 		case anthropic.ContentBlockStopEvent:
