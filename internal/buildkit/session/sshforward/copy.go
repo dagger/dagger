@@ -72,6 +72,20 @@ func CopyWithMetrics(
 		for {
 			buf := make([]byte, 32*1024)
 			n, err := conn.Read(buf)
+			if n > 0 {
+				select {
+				case <-ctx.Done():
+					return context.Cause(ctx)
+				default:
+				}
+				p := &BytesMessage{Data: buf[:n]}
+				if sendErr := stream.SendMsg(p); sendErr != nil {
+					return errors.WithStack(sendErr)
+				}
+				if connToStream != nil {
+					connToStream(int64(n))
+				}
+			}
 			switch {
 			case err == io.EOF:
 				if closeStream != nil {
@@ -80,18 +94,6 @@ func CopyWithMetrics(
 				return nil
 			case err != nil:
 				return errors.WithStack(err)
-			}
-			select {
-			case <-ctx.Done():
-				return context.Cause(ctx)
-			default:
-			}
-			p := &BytesMessage{Data: buf[:n]}
-			if err := stream.SendMsg(p); err != nil {
-				return errors.WithStack(err)
-			}
-			if connToStream != nil {
-				connToStream(int64(n))
 			}
 		}
 	})
