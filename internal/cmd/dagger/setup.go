@@ -1,21 +1,15 @@
 package daggercmd
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/mattn/go-isatty"
 	toml "github.com/pelletier/go-toml"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/attribute"
@@ -169,64 +163,3 @@ func workspaceRootFromCwd(wd, workspaceCwd string) (string, error) {
 }
 
 // --- Confirm prompt helper ---
-
-// confirm prompts the user with question and returns true if they accept.
-// With --auto-apply, returns true without prompting.
-// In non-interactive mode (no TTY on stdin), returns false (the safe default
-// — skip rather than mutate state silently).
-//
-// The read is performed on a goroutine and races against ctx.Done() so a
-// SIGINT during the prompt cancels cleanly rather than blocking on stdin
-// forever. A read error other than EOF is reported to stderr instead of
-// being silently treated as "user said no."
-func confirm(cmd *cobra.Command, question string) bool {
-	if autoApply {
-		return true
-	}
-	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s [skipped: non-interactive — use --auto-apply to accept]\n", question)
-		return false
-	}
-	// Install the TUI passthrough before advertising that input is accepted.
-	in := promptInput(cmd)
-	fmt.Fprintf(cmd.OutOrStdout(), "%s [Y/n] ", question)
-
-	type readResult struct {
-		line string
-		err  error
-	}
-	done := make(chan readResult, 1)
-	go func() {
-		reader := bufio.NewReader(in)
-		line, err := reader.ReadString('\n')
-		done <- readResult{line: line, err: err}
-	}()
-
-	ctx := cmd.Context()
-	select {
-	case <-ctx.Done():
-		fmt.Fprintln(cmd.OutOrStdout())
-		return false
-	case r := <-done:
-		if r.err != nil && !errors.Is(r.err, io.EOF) {
-			fmt.Fprintf(cmd.ErrOrStderr(), "prompt read error: %v\n", r.err)
-			return false
-		}
-		line := strings.TrimSpace(strings.ToLower(r.line))
-		return line == "" || line == "y" || line == "yes"
-	}
-}
-
-// promptInput is stdin for prompts that run after the TUI. Its terminal keeps
-// the only reader on stdin and discards input once stopped, so read what it
-// forwards instead.
-func promptInput(cmd *cobra.Command) io.Reader {
-	in := cmd.InOrStdin()
-	if in != os.Stdin {
-		return in
-	}
-	if fe, ok := Frontend.(idtui.TerminalStdin); ok {
-		return fe.Stdin()
-	}
-	return in
-}

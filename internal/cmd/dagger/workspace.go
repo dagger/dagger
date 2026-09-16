@@ -1548,15 +1548,12 @@ func ensureUserInOrg(ctx context.Context, client *cloudapi.Client, orgName, repo
 // otherwise a clear error explaining that repo is owned by a different Dagger
 // Cloud organization (listing the user's own orgs for context).
 func userOrgMembershipError(user *cloudapi.UserResponse, orgName, repo string) error {
-	names := make([]string, 0, len(user.Orgs))
 	for _, org := range user.Orgs {
 		if strings.EqualFold(org.Name, orgName) {
 			return nil
 		}
-		names = append(names, org.Name)
 	}
-	msg := fmt.Sprintf("%s is owned by another Dagger Cloud organization which you are not a member of. Contact the organization administrator to get access", repo)
-	return errors.New(msg)
+	return fmt.Errorf("%s is owned by another Dagger Cloud organization which you are not a member of. Contact the organization administrator to get access", repo)
 }
 
 // isCloudUnauthorized reports whether a Cloud API error is an authorization
