@@ -78,7 +78,9 @@ func TestPartSessionlessOwnSubset(t *testing.T) {
 			require.NoError(t, err)
 			c.egraphMu.Lock()
 			before := donor.cacheSharedResult().incomingOwnershipCount
-			source, err := c.newSessionlessPartSourceLeaseLocked(ctx, receiver.cacheSharedResult(), donor.cacheSharedResult(), address, address, *probe)
+			c.egraphMu.Unlock()
+			source, err := c.newSessionlessPartSourceLease(ctx, receiver.cacheSharedResult(), donor.cacheSharedResult(), address, address, *probe)
+			c.egraphMu.Lock()
 			if mode == "offer-only" || mode == "native-receiver" {
 				require.Error(t, err)
 				require.Nil(t, source)
@@ -223,4 +225,38 @@ func TestPartProducerMissingOutputStopsOnce(t *testing.T) {
 	}})
 	require.ErrorContains(t, err, "left required output snapshot unset")
 	require.Equal(t, 1, calls)
+}
+
+// CheckSessionlessRestoredDirectoryForTest is test-only so the external test
+// can use core's actual Directory codec without adding a dagql -> core import.
+func CheckSessionlessRestoredDirectoryForTest(t *testing.T, ctx context.Context, c *Cache, receiverID, donorID uint64) {
+	t.Helper()
+	receiver, donor := c.resultsByID[sharedResultID(receiverID)], c.resultsByID[sharedResultID(donorID)]
+	require.NotNil(t, receiver)
+	require.NotNil(t, donor)
+	require.True(t, receiver.imported)
+	frame := receiver.loadResultCall()
+	require.NotNil(t, frame.Receiver)
+	require.NotZero(t, frame.Receiver.ResultID)
+	require.Nil(t, frame.Receiver.shared)
+	address := PersistedPartAddress{Part: "snapshot"}
+	_, _, probe, err := c.probePart(ctx, donor, address)
+	require.NoError(t, err)
+	require.NotNil(t, probe)
+	before := donor.incomingOwnershipCount
+	source, err := c.newSessionlessPartSourceLease(ctx, receiver, donor, address, address, *probe)
+	require.NoError(t, err)
+	require.Equal(t, before+1, donor.incomingOwnershipCount)
+	require.NoError(t, source.Release(ctx))
+	require.Equal(t, before, donor.incomingOwnershipCount)
+	// Preparation never grants authority over a replacement call frame.
+	lookup, err := c.partLookupFor(receiver)
+	require.NoError(t, err)
+	receiver.storeResultCall(frame.clone())
+	c.egraphMu.Lock()
+	source, err = c.newSessionlessPartSourceLeaseLocked(ctx, receiver, donor, address, address, *probe, lookup)
+	c.egraphMu.Unlock()
+	require.ErrorIs(t, err, ErrPartReselect)
+	require.Nil(t, source)
+	require.Equal(t, before, donor.incomingOwnershipCount)
 }

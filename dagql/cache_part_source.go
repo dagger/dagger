@@ -555,9 +555,30 @@ func (c *Cache) ownPartRequirementsFitLocked(receiver, dependency *sharedResult)
 	return receiver.requiredSessionResources != nil && receiver.requiredSessionResources.Subset(dependency.requiredSessionResources)
 }
 
-// E held; the caller has already probed held rows outside E. This is the
-// sessionless Ready-sharing admission boundary; it takes its own donor hold.
-func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receiver, donor *sharedResult, target, address PersistedPartAddress, probe PartProbe) (*PartSourceLease, error) {
+// The caller holds the rows and probes outside E. Lookup preparation can
+// resolve persisted numeric references, so it must precede the E section.
+func (c *Cache) newSessionlessPartSourceLease(ctx context.Context, receiver, donor *sharedResult, target, address PersistedPartAddress, probe PartProbe) (*PartSourceLease, error) {
+	if receiver == nil || donor == nil {
+		return nil, fmt.Errorf("sessionless part source requires receiver and donor")
+	}
+	lookup, err := c.partLookupFor(receiver)
+	if err != nil {
+		return nil, err
+	}
+	if probe.captured == nil {
+		return nil, ErrPartReselect
+	}
+	if err := probe.captured.version.check(donor); err != nil {
+		return nil, err
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	return c.newSessionlessPartSourceLeaseLocked(ctx, receiver, donor, target, address, probe, lookup)
+}
+
+// E held; lookup was prepared outside E. This admission boundary revalidates
+// the frame and current own requirements before taking its own donor hold.
+func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receiver, donor *sharedResult, target, address PersistedPartAddress, probe PartProbe, lookup partLookup) (*PartSourceLease, error) {
 	if receiver == nil || donor == nil || !receiver.imported || c.resultsByID[receiver.id] != receiver || c.resultsByID[donor.id] != donor {
 		return nil, fmt.Errorf("sessionless part source requires registered rows and an imported receiver")
 	}
@@ -572,10 +593,7 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 	if err != nil || key != probedKey || !probe.LocalComplete || probe.Busy || probe.captured == nil || probe.captured.row != donor {
 		return nil, ErrPartReselect
 	}
-	lookup, err := c.partLookupFor(receiver)
-	if err != nil {
-		return nil, err
-	}
+
 	// Resource filtering is performed below using only the receiver's current
 	// own set. The normal collector and foreground session filter stay intact.
 	route, eligible := c.sessionlessPartEquivalentLocked(receiver, donor, lookup)
@@ -598,6 +616,9 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 }
 
 func (c *Cache) sessionlessPartEquivalentLocked(receiver, donor *sharedResult, lookup partLookup) (CacheHitRoute, bool) {
+	if receiver.loadResultCall() != lookup.frame {
+		return "", false
+	}
 	for _, candidate := range c.collectPartCandidatesWithAdmissionLocked(receiver, lookup, func(row *sharedResult) bool { return c.ownPartRequirementsFitLocked(receiver, row) }) {
 		if candidate.row == donor {
 			return candidate.route, true
