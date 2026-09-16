@@ -17,11 +17,12 @@ import (
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
-	Key       string
-	Namespace string
-	Source    dagql.Nullable[dagql.ObjectResult[*Directory]]
-	Sharing   CacheSharingMode
-	Owner     string
+	foreignUninitialized bool
+	Key                  string
+	Namespace            string
+	Source               dagql.Nullable[dagql.ObjectResult[*Directory]]
+	Sharing              CacheSharingMode
+	Owner                string
 
 	mu              sync.Mutex
 	snapshot        bkcache.MutableRef
@@ -296,6 +297,7 @@ func (s *cacheVolumeStore) release(ctx context.Context, snapshotID string) error
 }
 
 type persistedCacheVolumePayload struct {
+	Form           string           `json:"form"`
 	Key            string           `json:"key"`
 	Namespace      string           `json:"namespace,omitempty"`
 	SourceResultID uint64           `json:"sourceResultID,omitempty"`
@@ -335,6 +337,7 @@ func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, enc *dagql.
 	}
 	cache.mu.Unlock()
 	payload, err := json.Marshal(persistedCacheVolumePayload{
+		Form:           persistedBackingForm(cache.foreignUninitialized, len(snapshotLinks) != 0),
 		Key:            cache.Key,
 		Namespace:      cache.Namespace,
 		SourceResultID: sourceResultID,
@@ -419,6 +422,7 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dec *dagql.Persis
 		persisted.Sharing,
 		persisted.Owner,
 	)
+	cache.foreignUninitialized = persisted.Form == foreignUninitialized
 	cache.selector = persisted.Selector
 	if cache.selector == "" {
 		cache.selector = "/"

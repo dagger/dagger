@@ -14,7 +14,8 @@ import (
 )
 
 type RemoteGitMirror struct {
-	RemoteURL string
+	foreignUninitialized bool
+	RemoteURL            string
 
 	mu       sync.Mutex
 	snapshot bkcache.MutableRef
@@ -102,6 +103,7 @@ func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context, _ dagql.Cache
 }
 
 type persistedRemoteGitMirrorPayload struct {
+	Form      string `json:"form"`
 	RemoteURL string `json:"remoteURL"`
 }
 
@@ -121,6 +123,7 @@ func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, enc *d
 	}
 	mirror.mu.Unlock()
 	payload, err := json.Marshal(persistedRemoteGitMirrorPayload{
+		Form:      persistedBackingForm(mirror.foreignUninitialized, len(links) != 0),
 		RemoteURL: mirror.RemoteURL,
 	})
 	if err != nil {
@@ -138,6 +141,13 @@ func (*RemoteGitMirror) DecodePersistedObject(ctx context.Context, dec *dagql.Pe
 		return nil, fmt.Errorf("decode persisted remote git mirror payload: %w", err)
 	}
 	mirror := NewRemoteGitMirror(persisted.RemoteURL)
+	mirror.foreignUninitialized = persisted.Form == foreignUninitialized
+	if persisted.Form == foreignUninitialized {
+		if err := foreignFamilyCodec("RemoteGitMirror").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload}); err != nil {
+			return nil, err
+		}
+		return mirror, nil
+	}
 	if dec.ResultID() == 0 {
 		return mirror, nil
 	}

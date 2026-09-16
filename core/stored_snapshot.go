@@ -94,7 +94,7 @@ func (file *File) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.PartKey {
 // PathOrEval returns saved metadata without opening its snapshot. Fresh values
 // still need evaluation, even when their path accessor has been prefilled.
 func (dir *Directory) PathOrEval(ctx context.Context, self dagql.ObjectResult[*Directory]) (string, error) {
-	if dir.stored != nil {
+	if dir.stored != nil || dir.transferPending != nil && dir.transferPending.ValueKnown {
 		if path, ok := dir.Dir.Peek(); ok {
 			return path, nil
 		}
@@ -104,7 +104,7 @@ func (dir *Directory) PathOrEval(ctx context.Context, self dagql.ObjectResult[*D
 }
 
 func (file *File) PathOrEval(ctx context.Context, self dagql.ObjectResult[*File]) (string, error) {
-	if file.stored != nil {
+	if file.stored != nil || file.transferPending != nil && file.transferPending.ValueKnown {
 		if path, ok := file.File.Peek(); ok {
 			return path, nil
 		}
@@ -117,7 +117,7 @@ func (file *File) PathOrEval(ctx context.Context, self dagql.ObjectResult[*File]
 func SourceFilePaths(ctx context.Context, files []dagql.ObjectResult[*File]) ([]string, error) {
 	var fresh []dagql.AnyResult
 	for _, file := range files {
-		if file.Self().stored == nil {
+		if file.Self().stored == nil && (file.Self().transferPending == nil || !file.Self().transferPending.ValueKnown) {
 			fresh = append(fresh, file)
 		}
 	}

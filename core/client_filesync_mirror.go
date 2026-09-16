@@ -18,9 +18,10 @@ import (
 )
 
 type ClientFilesyncMirror struct {
-	StableClientID string
-	Drive          string
-	EphemeralID    string
+	foreignUninitialized bool
+	StableClientID       string
+	Drive                string
+	EphemeralID          string
 
 	mu sync.Mutex
 
@@ -97,6 +98,7 @@ func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context, _ dagql.Cache
 }
 
 type persistedClientFilesyncMirrorPayload struct {
+	Form           string `json:"form"`
 	StableClientID string `json:"stableClientID"`
 	Drive          string `json:"drive,omitempty"`
 }
@@ -120,6 +122,7 @@ func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, enc *d
 	}
 	m.mu.Unlock()
 	payload, err := json.Marshal(persistedClientFilesyncMirrorPayload{
+		Form:           persistedBackingForm(m.foreignUninitialized, len(links) != 0),
 		StableClientID: m.StableClientID,
 		Drive:          m.Drive,
 	})
@@ -138,8 +141,15 @@ func (*ClientFilesyncMirror) DecodePersistedObject(ctx context.Context, dec *dag
 		return nil, fmt.Errorf("decode persisted client filesync mirror payload: %w", err)
 	}
 	mirror := &ClientFilesyncMirror{
-		StableClientID: persisted.StableClientID,
-		Drive:          persisted.Drive,
+		foreignUninitialized: persisted.Form == foreignUninitialized,
+		StableClientID:       persisted.StableClientID,
+		Drive:                persisted.Drive,
+	}
+	if persisted.Form == foreignUninitialized {
+		if err := foreignFamilyCodec("ClientFilesyncMirror").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload}); err != nil {
+			return nil, err
+		}
+		return mirror, nil
 	}
 	if dec.ResultID() == 0 {
 		return mirror, nil

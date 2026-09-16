@@ -455,7 +455,7 @@ var persistedClientFilesyncMirrorVisitor = persistedStructVisitor(dagql.Persiste
 
 var persistedRemoteGitMirrorVisitor = persistedStructVisitor(dagql.PersistedRefLocalBacking, func(*persistedRemoteGitMirrorPayload, *persistedRefWalker) error { return nil })
 
-var persistedHTTPStateVisitor = persistedStructVisitor(dagql.PersistedRefOutputRole, func(*persistedHTTPStatePayload, *persistedRefWalker) error { return nil })
+var persistedHTTPStateVisitor = persistedStructVisitor(dagql.PersistedRefLocalBacking, func(*persistedHTTPStatePayload, *persistedRefWalker) error { return nil })
 
 var persistedGitRepositoryVisitor = persistedStructVisitor("", func(p *persistedGitRepositoryPayload, w *persistedRefWalker) error {
 	if p.Local != nil {

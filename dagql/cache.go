@@ -155,6 +155,7 @@ var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
 var ErrCacheSessionNotReleased = errors.New("cache session release not started")
 var ErrCacheClosed = errors.New("cache closed")
+var ErrUnavailablePart = errors.New("imported filesystem part is unavailable")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
 // errAttachRefusedByProducerRelease classifies a dependency-attachment
@@ -3505,8 +3506,8 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
-func (r Result[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
-	return r.WithContentDigest(ctx, customDigest)
+func (r Result[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest, additionalLabels ...string) (AnyResult, error) {
+	return r.WithContentDigest(ctx, customDigest, additionalLabels...)
 }
 
 func (r Result[T]) WithSessionResourceHandleAny(ctx context.Context, handle SessionResourceHandle) (AnyResult, error) {
@@ -3649,8 +3650,8 @@ func (r ObjectResult[T]) WithSessionResourceHandle(ctx context.Context, handle S
 
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
-func (r ObjectResult[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
-	res, err := r.Result.WithContentDigest(ctx, customDigest)
+func (r ObjectResult[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest, additionalLabels ...string) (AnyResult, error) {
+	res, err := r.Result.WithContentDigest(ctx, customDigest, additionalLabels...)
 	if err != nil {
 		return nil, err
 	}

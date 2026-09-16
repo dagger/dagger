@@ -33,7 +33,8 @@ import (
 
 // File is a content-addressed file.
 type File struct {
-	Platform Platform
+	transferPending *persistedFilePayload
+	Platform        Platform
 
 	// Services necessary to provision the file.
 	Services ServiceBindings
@@ -106,6 +107,9 @@ func (file *File) AttachDependencyResultsKinds(
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
+	if file != nil && file.transferPending != nil {
+		return func(context.Context) error { return fmt.Errorf("%w: File.snapshot", dagql.ErrUnavailablePart) }
+	}
 	if file == nil || file.Lazy == nil {
 		return nil
 	}
@@ -193,22 +197,29 @@ const (
 )
 
 type persistedFilePayload struct {
-	Form     string                    `json:"form"`
-	File     string                    `json:"file,omitempty"`
-	Platform Platform                  `json:"platform"`
-	Services []persistedServiceBinding `json:"services,omitempty"`
-	LazyKind string                    `json:"lazyKind,omitempty"`
-	LazyJSON json.RawMessage           `json:"lazyJSON,omitempty"`
+	ValueKnown    bool                      `json:"valueKnown,omitempty"`
+	ProducerState string                    `json:"producerState,omitempty"`
+	Form          string                    `json:"form"`
+	File          string                    `json:"file,omitempty"`
+	Platform      Platform                  `json:"platform"`
+	Services      []persistedServiceBinding `json:"services,omitempty"`
+	LazyKind      string                    `json:"lazyKind,omitempty"`
+	LazyJSON      json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
 func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if file == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted file: nil file")
 	}
+	if file.transferPending != nil {
+		return encodePersistedObjectPayload(file.transferPending)
+	}
+	valueKnown := false
 	filePath := ""
 	if file.File != nil {
 		if peekedPath, ok := file.File.Peek(); ok {
 			filePath = peekedPath
+			valueKnown = true
 		}
 	}
 	services, err := encodePersistedServiceBindings(enc, "file", file.Services)
@@ -216,9 +227,10 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload := persistedFilePayload{
-		File:     filePath,
-		Platform: file.Platform,
-		Services: services,
+		ValueKnown: valueKnown,
+		File:       filePath,
+		Platform:   file.Platform,
+		Services:   services,
 	}
 	if identity, ok := file.snapshotIdentity(); ok {
 		payload.Form = persistedFileFormSnapshot
@@ -282,10 +294,19 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	if persisted.File != "" {
+	if persisted.File != "" && persisted.Form != transferPending {
 		file.File.setValue(persisted.File)
 	}
 	switch persisted.Form {
+	case transferPending:
+		if err := foreignFamilyCodec("File").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call()}); err != nil {
+			return nil, err
+		}
+		file.transferPending = &persisted
+		if persisted.ValueKnown {
+			file.File.setValue(persisted.File)
+		}
+		return file, nil
 	case persistedFileFormSnapshot:
 		link, err := loadPersistedSnapshotLinkByResultID(ctx, dec, "file", snapshotRole)
 		if err != nil {

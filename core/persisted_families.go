@@ -11,20 +11,20 @@ import "github.com/dagger/dagger/dagql"
 // unfinished type fails loudly instead of persisting an unreadable payload.
 var persistedObjectFamilies = []dagql.PersistedObjectFamily{
 	// Filesystems and resources.
-	{Name: "core.Container", Typed: (*Container)(nil), Visitor: persistedContainerVisitor},
-	{Name: "core.Directory", Typed: (*Directory)(nil), Visitor: persistedDirectoryVisitor},
-	{Name: "core.File", Typed: (*File)(nil), Visitor: persistedFileVisitor},
+	{Name: "core.Container", Typed: (*Container)(nil), Visitor: persistedContainerVisitor, Transfer: foreignFamilyCodec("Container")},
+	{Name: "core.Directory", Typed: (*Directory)(nil), Visitor: persistedDirectoryVisitor, Transfer: foreignFamilyCodec("Directory")},
+	{Name: "core.File", Typed: (*File)(nil), Visitor: persistedFileVisitor, Transfer: foreignFamilyCodec("File")},
 	{Name: "core.Service", Typed: (*Service)(nil), Visitor: persistedServiceVisitor},
 	{Name: "core.Volume", Typed: (*Volume)(nil), Visitor: persistedVolumeVisitor},
 	{Name: "core.Secret", Typed: (*Secret)(nil), Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.Socket", Typed: (*Socket)(nil), Visitor: dagql.PersistedNoReferences{}},
-	{Name: "core.CacheVolume", Typed: (*CacheVolume)(nil), Visitor: persistedCacheVolumeVisitor},
-	{Name: "core.ClientFilesyncMirror", Typed: (*ClientFilesyncMirror)(nil), Visitor: persistedClientFilesyncMirrorVisitor},
-	{Name: "core.RemoteGitMirror", Typed: (*RemoteGitMirror)(nil), Visitor: persistedRemoteGitMirrorVisitor},
+	{Name: "core.CacheVolume", Typed: (*CacheVolume)(nil), Visitor: persistedCacheVolumeVisitor, Transfer: foreignFamilyCodec("CacheVolume")},
+	{Name: "core.ClientFilesyncMirror", Typed: (*ClientFilesyncMirror)(nil), Visitor: persistedClientFilesyncMirrorVisitor, Transfer: foreignFamilyCodec("ClientFilesyncMirror")},
+	{Name: "core.RemoteGitMirror", Typed: (*RemoteGitMirror)(nil), Visitor: persistedRemoteGitMirrorVisitor, Transfer: foreignFamilyCodec("RemoteGitMirror")},
 
 	// Module, workspace and action state.
 	{Name: "core.Module", Typed: (*Module)(nil), Visitor: persistedModuleVisitor},
-	{Name: "core.ModuleSource", Typed: (*ModuleSource)(nil), Visitor: persistedModuleSourceVisitor},
+	{Name: "core.ModuleSource", Typed: (*ModuleSource)(nil), Visitor: persistedModuleSourceVisitor, Transfer: foreignFamilyCodec("ModuleSource")},
 	{Name: "core.ModuleObject", Typed: (*ModuleObject)(nil), Visitor: persistedModuleObjectVisitor},
 	{Name: "core.Workspace", Typed: (*Workspace)(nil), Visitor: persistedWorkspaceVisitor},
 	{Name: "core.WorkspaceGit", Typed: (*WorkspaceGit)(nil), Visitor: persistedWorkspaceGitVisitor},
@@ -39,7 +39,7 @@ var persistedObjectFamilies = []dagql.PersistedObjectFamily{
 	{Name: "core.GitRef", Typed: (*GitRef)(nil), Visitor: persistedGitRefVisitor},
 	{Name: "core.GitCommit", Typed: (*GitCommit)(nil), Visitor: persistedGitCommitVisitor},
 	{Name: "core.GitBundle", Typed: (*GitBundle)(nil), Visitor: persistedGitBundleVisitor},
-	{Name: "core.HTTPState", Typed: (*HTTPState)(nil), Visitor: persistedHTTPStateVisitor},
+	{Name: "core.HTTPState", Typed: (*HTTPState)(nil), Visitor: persistedHTTPStateVisitor, Transfer: foreignFamilyCodec("HTTPState")},
 	{Name: "core.Changeset", Typed: (*Changeset)(nil), Visitor: persistedChangesetVisitor},
 	{Name: "core.GeneratedCode", Typed: (*GeneratedCode)(nil), Visitor: persistedGeneratedCodeVisitor},
 	{Name: "core.SearchResult", Typed: (*SearchResult)(nil), Visitor: dagql.PersistedNoReferences{}},

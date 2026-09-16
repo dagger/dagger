@@ -43,7 +43,8 @@ import (
 
 // Directory is a content-addressed directory.
 type Directory struct {
-	Platform Platform
+	transferPending *persistedDirectoryPayload
+	Platform        Platform
 	// Services necessary to provision the directory.
 	Services ServiceBindings
 
@@ -115,6 +116,9 @@ func (dir *Directory) AttachDependencyResultsKinds(
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
+	if dir != nil && dir.transferPending != nil {
+		return func(context.Context) error { return fmt.Errorf("%w: Directory.snapshot", dagql.ErrUnavailablePart) }
+	}
 	if dir == nil || dir.Lazy == nil {
 		return nil
 	}
@@ -206,22 +210,29 @@ const (
 )
 
 type persistedDirectoryPayload struct {
-	Form     string                    `json:"form"`
-	Dir      string                    `json:"dir,omitempty"`
-	Platform Platform                  `json:"platform"`
-	Services []persistedServiceBinding `json:"services,omitempty"`
-	LazyKind string                    `json:"lazyKind,omitempty"`
-	LazyJSON json.RawMessage           `json:"lazyJSON,omitempty"`
+	ValueKnown    bool                      `json:"valueKnown,omitempty"`
+	ProducerState string                    `json:"producerState,omitempty"`
+	Form          string                    `json:"form"`
+	Dir           string                    `json:"dir,omitempty"`
+	Platform      Platform                  `json:"platform"`
+	Services      []persistedServiceBinding `json:"services,omitempty"`
+	LazyKind      string                    `json:"lazyKind,omitempty"`
+	LazyJSON      json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
 func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if dir == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted directory: nil directory")
 	}
+	if dir.transferPending != nil {
+		return encodePersistedObjectPayload(dir.transferPending)
+	}
+	valueKnown := false
 	dirPath := ""
 	if dir.Dir != nil {
 		if peekedDir, ok := dir.Dir.Peek(); ok {
 			dirPath = peekedDir
+			valueKnown = true
 		}
 	}
 	services, err := encodePersistedServiceBindings(enc, "directory", dir.Services)
@@ -229,9 +240,10 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload := persistedDirectoryPayload{
-		Dir:      dirPath,
-		Platform: dir.Platform,
-		Services: services,
+		ValueKnown: valueKnown,
+		Dir:        dirPath,
+		Platform:   dir.Platform,
+		Services:   services,
 	}
 	if identity, ok := dir.snapshotIdentity(); ok {
 		payload.Form = persistedDirectoryFormSnapshot
@@ -301,10 +313,19 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	if persisted.Dir != "" {
+	if persisted.Dir != "" && persisted.Form != transferPending {
 		dir.Dir.setValue(persisted.Dir)
 	}
 	switch persisted.Form {
+	case transferPending:
+		if err := foreignFamilyCodec("Directory").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call()}); err != nil {
+			return nil, err
+		}
+		dir.transferPending = &persisted
+		if persisted.ValueKnown {
+			dir.Dir.setValue(persisted.Dir)
+		}
+		return dir, nil
 	case persistedDirectoryFormSnapshot:
 		link, err := loadPersistedSnapshotLinkByResultID(ctx, dec, "directory", snapshotRole)
 		if err != nil {

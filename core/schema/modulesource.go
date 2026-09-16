@@ -3471,7 +3471,7 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, err
 	}
-	return inst.WithContentDigest(ctx, scopedDigest)
+	return inst.WithContentDigest(ctx, scopedDigest, call.ExtraDigestLabelRemoteCache)
 }
 
 // resolveDefaultPathContextSource selects the context for legacy default paths

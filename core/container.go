@@ -63,6 +63,7 @@ type DefaultTerminalCmdOpts struct {
 
 // Container is a content-addressed container.
 type Container struct {
+	transferPending *persistedContainerPayload
 	// fromContentDigestSafe tracks whether Container.From can give its result a
 	// content digest based only on the resolved image and platform. It is false
 	// by default so derived containers conservatively retain their call identity.
@@ -536,9 +537,10 @@ const (
 )
 
 type persistedContainerPayload struct {
-	Metadata persistedContainerMetadata               `json:"metadata"`
-	Parts    map[dagql.PartKey]persistedContainerPart `json:"parts"`
-	LazyJSON json.RawMessage                          `json:"lazyJSON,omitempty"`
+	ProducerState string                                   `json:"producerState,omitempty"`
+	Metadata      persistedContainerMetadata               `json:"metadata"`
+	Parts         map[dagql.PartKey]persistedContainerPart `json:"parts"`
+	LazyJSON      json.RawMessage                          `json:"lazyJSON,omitempty"`
 }
 
 type persistedContainerMetadata struct {
@@ -1546,6 +1548,18 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
 		VolatileEnv:        slices.Clone(persisted.VolatileEnv),
 		DefaultArgs:        persisted.DefaultArgs,
+	}
+	if envelope.ProducerState != "" {
+		if err := foreignFamilyCodec("Container").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call(), SnapshotLinks: links}); err != nil {
+			return nil, err
+		}
+		container.transferPending = &envelope
+		for part, descriptor := range envelope.Parts {
+			if descriptor.Kind == containerPartAbsent {
+				container.setAbsentTransferPart(part)
+			}
+		}
+		return container, nil
 	}
 	var recipe Lazy[*Container]
 	pending := !envelope.Metadata.Consumed

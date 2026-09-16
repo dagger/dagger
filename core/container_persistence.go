@@ -23,11 +23,12 @@ const (
 // Snapshot identity lives in the envelope's ordinary role links. The part
 // record carries the detached value needed to construct its accessor later.
 type persistedContainerPart struct {
-	Kind     string                    `json:"kind"`
-	Role     string                    `json:"role,omitempty"`
-	Path     string                    `json:"path,omitempty"`
-	Platform *Platform                 `json:"platform,omitempty"`
-	Services []persistedServiceBinding `json:"services,omitempty"`
+	ValueKind string                    `json:"valueKind,omitempty"`
+	Kind      string                    `json:"kind"`
+	Role      string                    `json:"role,omitempty"`
+	Path      string                    `json:"path,omitempty"`
+	Platform  *Platform                 `json:"platform,omitempty"`
+	Services  []persistedServiceBinding `json:"services,omitempty"`
 }
 
 type containerStoredPart struct {
@@ -42,6 +43,9 @@ type containerStoredPart struct {
 func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
+	}
+	if container.transferPending != nil {
+		return encodePersistedObjectPayload(container.transferPending)
 	}
 	unlock, err := container.lockForPersistence(enc.Quiescent())
 	if err != nil {

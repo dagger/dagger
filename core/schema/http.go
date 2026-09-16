@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
@@ -240,7 +241,7 @@ func (s *httpSchema) newHTTPFileResult(
 		_ = fetched.File.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
-	inst, err = inst.WithContentDigest(ctx, outputDigest)
+	inst, err = inst.WithContentDigest(ctx, outputDigest, call.ExtraDigestLabelRemoteCache)
 	if err != nil {
 		_ = fetched.File.OnRelease(context.WithoutCancel(ctx))
 		return inst, err

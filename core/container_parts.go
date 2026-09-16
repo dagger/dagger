@@ -364,6 +364,9 @@ func (container *Container) consumeLazyOp() {
 // and never demand sibling groups) and then delegates the mapping to
 // the op.
 func (container *Container) ResolveLazyEvalGroups(ctx context.Context, self dagql.AnyResult, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	if container != nil && container.transferPending != nil {
+		return container.resolveTransferParts(parts)
+	}
 	if container == nil {
 		return nil, nil
 	}
