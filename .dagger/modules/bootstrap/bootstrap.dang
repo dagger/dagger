@@ -7,11 +7,7 @@ type Bootstrap {
   Run a single lint check (go linting) against a dev build of the engine
   """
   goLint(ws: Workspace!): Void @check {
-    runChecks(
-      ws,
-      checks:["golang:lint-all"],
-      include: ["**/*.go", "**/go.mod", "**/go.sum", "dagger.toml", ".dagger/modules", "**/.golangci.yml"]
-    )
+    runChecks(ws, checks: ["golangci-lint:lint-all"])
   }
 
 
@@ -38,7 +34,7 @@ type Bootstrap {
     exclude: [String!]
   ): Void {
     engineDev(ws: ws)
-      .installClient()
+      .installClient(client: wolfi.container(packages: ["git"]))
       .withMountedDirectory("/ws", ws.directory("/", gitignore: true, include: include, exclude: exclude))
       .withWorkdir("/ws")
       # TODO: change back to `.withExec(["dagger check"] + checks)`
