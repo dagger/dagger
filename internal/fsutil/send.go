@@ -27,11 +27,18 @@ type Stream interface {
 }
 
 func Send(ctx context.Context, conn Stream, fs FS, progressCb func(int, bool)) error {
+	return SendWithDataCallback(ctx, conn, fs, progressCb, nil)
+}
+
+// SendWithDataCallback reports file-content bytes after their packets have
+// been accepted by the stream. The callback may be invoked concurrently.
+func SendWithDataCallback(ctx context.Context, conn Stream, fs FS, progressCb func(int, bool), dataCb func(int)) error {
 	s := &sender{
 		conn:         &syncStream{Stream: conn},
 		fs:           WithHardlinkReset(fs),
 		files:        make(map[uint32]string),
 		progressCb:   progressCb,
+		dataCb:       dataCb,
 		sendpipeline: make(chan *sendHandle, 128),
 	}
 	return s.run(ctx)
@@ -50,6 +57,7 @@ type sender struct {
 	progressCb        func(int, bool)
 	progressCurrent   int
 	progressCurrentMu sync.Mutex
+	dataCb            func(int)
 	sendpipeline      chan *sendHandle
 }
 
@@ -199,6 +207,9 @@ func (fs *fileSender) Write(dt []byte) (int, error) {
 	p := &types.Packet{Type: types.PACKET_DATA, ID: fs.id, Data: dt}
 	if err := fs.sender.conn.SendMsg(p); err != nil {
 		return 0, err
+	}
+	if fs.sender.dataCb != nil {
+		fs.sender.dataCb(len(dt))
 	}
 	fs.sender.updateProgress(p.Size(), false)
 	return len(dt), nil
