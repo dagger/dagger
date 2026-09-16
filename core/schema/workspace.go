@@ -97,7 +97,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.",
 				"Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.").
 			Args(
-				dagql.Arg("changes").Doc("Changeset to commit, for example git.uncommitted.filter(...). Paths are rooted at the repository; rename sides are determined by the changeset."),
+				dagql.Arg("changes").Doc("Changeset to commit, for example git.uncommitted.filter(...). Paths are rooted at the repository; rename sides are determined by the changeset. Git metadata (.git) is ignored; metadata-only changes fail with nothing to commit."),
 				dagql.Arg("message").Doc("Commit message."),
 				dagql.Arg("date").Doc("RFC3339 author and committer date. Required for reproducible commits."),
 				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),

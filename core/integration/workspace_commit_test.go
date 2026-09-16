@@ -507,15 +507,69 @@ func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context
 				require.Empty(t, added)
 				require.Empty(t, modified)
 			}
+			// External before/after trees are retained in a stable recipe too;
+			// replay must neither sample host state nor rerun the commit boundary.
+			recipe, err := c.LLM().WithWorkspace(got).PortableID(ctx)
+			require.NoError(t, err)
+			recipeID := new(call.ID)
+			require.NoError(t, recipeID.Decode(string(recipe)))
+			dag, err := recipeID.ToProto()
+			require.NoError(t, err)
+			for _, vertex := range dag.GetRecipe().CallsByDigest {
+				require.NotContains(t, []string{"currentWorkspace", "checkpoint", "withCommit", "branch"}, vertex.Field)
+			}
+			restored := dagger.Ref[*dagger.LLM](c, recipe).Workspace()
+			content, err := restored.File("base.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "incoming\n", content)
+			sha, err := got.Git().Head().CommitSHA(ctx)
+			require.NoError(t, err)
+			restoredSHA, err := restored.Git().Head().CommitSHA(ctx)
+			require.NoError(t, err)
+			require.Equal(t, sha, restoredSHA)
 			_, err = got.WithCommit(incoming, "already in HEAD", workspaceCommitDate).ID(ctx)
 			require.ErrorContains(t, err, "nothing to commit")
 			_, err = ws.WithCommit(before.Changes(before), "empty", workspaceCommitDate).ID(ctx)
 			require.ErrorContains(t, err, "nothing to commit")
-			content, err := ws.File("base.txt").Contents(ctx)
+			content, err = ws.File("base.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "base\n", content, "the receiver is immutable")
 		})
 	}
+}
+
+func (WorkspaceSuite) TestWorkspaceWithCommitIgnoresGitMetadata(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	before := c.Directory().WithNewFile("base.txt", "base")
+	daemon, url := gitService(ctx, t, c, before)
+	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	metadata := before.WithNewFile(".git/HEAD", "ref: refs/heads/injected\n").
+		WithNewFile(".git/config", "[remote \"origin\"]\nurl = file:///injected\n")
+	_, err := ws.WithCommit(metadata.Changes(before), "metadata only", workspaceCommitDate).ID(ctx)
+	require.ErrorContains(t, err, "nothing to commit")
+	id, err := ws.WithCommit(metadata.WithNewFile("base.txt", "changed").Changes(before), "mixed input", workspaceCommitDate).ID(ctx)
+	require.NoError(t, err)
+	got := dagger.Ref[*dagger.Workspace](c, id)
+	content, err := got.File("base.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "changed", content)
+	head, err := got.Git().Directory().File("HEAD").Contents(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, head, "injected")
+	config, err := got.Git().Directory().File("config").Contents(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, config, "injected")
+	origin, err := got.Git().Head().AsRepository().URL(ctx)
+	require.NoError(t, err)
+	require.Equal(t, url, origin)
+	for _, tree := range []*dagger.Directory{got.Directory("/"), got.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})} {
+		exists, err := tree.Exists(ctx, ".git")
+		require.NoError(t, err)
+		require.False(t, exists)
+	}
+	pending, err := got.Git().Uncommitted().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, pending)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitMergeConflicts(ctx context.Context, t *testctx.T) {
