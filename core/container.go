@@ -135,10 +135,9 @@ type Container struct {
 	// into schema children. Accessors hold only values opened in this process.
 	storedParts map[dagql.PartKey]containerStoredPart
 
-	// Keep producer inputs after Lazy clears. Completed rows restored from disk
-	// keep bytes so loading their value does not decode the producer's parents.
-	completedRecipe     Lazy[*Container]
-	completedRecipeJSON json.RawMessage
+	// Retained operation bytes let restored values open snapshots without
+	// decoding the operation's inputs.
+	lazyJSON json.RawMessage
 
 	// lazyOpMu protects routing reads of the operation independently of its
 	// body latch. It is held only for pointer access, never across a body.
@@ -1184,10 +1183,6 @@ func (container *Container) AttachDependencyResultsKinds(
 
 	container.lazyOpMu.Lock()
 	lazy := container.Lazy
-	if lazy == nil {
-		// Completed live recipes retain their inputs as direct dependencies.
-		lazy = container.completedRecipe
-	}
 	container.lazyOpMu.Unlock()
 	owned := make([]dagql.DependencyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets)+len(container.Services))
 	for i := range container.Mounts {
@@ -1653,7 +1648,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		pending = pending || part.Kind == containerPartPending
 	}
 	if !pending {
-		container.completedRecipeJSON = slices.Clone(envelope.LazyJSON)
+		container.lazyJSON = slices.Clone(envelope.LazyJSON)
 	} else if len(envelope.LazyJSON) != 0 {
 		if dec.Call() == nil {
 			return nil, fmt.Errorf("decode persisted container: missing call for recipe")
@@ -3759,7 +3754,7 @@ func (lazy *ContainerWithMountedDirectoryLazy) EvaluateContainerGroup(ctx contex
 			return nil
 		})
 	case ContainerLazyGroupWrite:
-		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedDirectory", group, func(ctx context.Context) error {
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedDirectory", group, func(ctx context.Context) (rerr error) {
 			source := lazy.Source
 			var err error
 			if lazy.Owner != "" {
@@ -3779,12 +3774,18 @@ func (lazy *ContainerWithMountedDirectoryLazy) EvaluateContainerGroup(ctx contex
 			if err != nil {
 				return err
 			}
+			defer func() {
+				if detached != nil {
+					rerr = stderrors.Join(rerr, detached.OnRelease(context.WithoutCancel(ctx)))
+				}
+			}()
 			target := absPath(container.Config.WorkingDir, lazy.Target)
 			mnt := container.mountAt(target)
 			if mnt == nil || mnt.DirectorySource == nil {
 				return fmt.Errorf("container withMountedDirectory: no directory mount at target %q", target)
 			}
 			mnt.DirectorySource.SetValue(detached)
+			detached = nil
 			return nil
 		})
 	default:
@@ -3859,7 +3860,7 @@ func (lazy *ContainerWithMountedFileLazy) EvaluateContainerGroup(ctx context.Con
 			return nil
 		})
 	case ContainerLazyGroupWrite:
-		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedFile", group, func(ctx context.Context) error {
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedFile", group, func(ctx context.Context) (rerr error) {
 			source := lazy.Source
 			var err error
 			if lazy.Owner != "" {
@@ -3879,12 +3880,18 @@ func (lazy *ContainerWithMountedFileLazy) EvaluateContainerGroup(ctx context.Con
 			if err != nil {
 				return err
 			}
+			defer func() {
+				if detached != nil {
+					rerr = stderrors.Join(rerr, detached.OnRelease(context.WithoutCancel(ctx)))
+				}
+			}()
 			target := absPath(container.Config.WorkingDir, lazy.Target)
 			mnt := container.mountAt(target)
 			if mnt == nil || mnt.FileSource == nil {
 				return fmt.Errorf("container withMountedFile: no file mount at target %q", target)
 			}
 			mnt.FileSource.SetValue(detached)
+			detached = nil
 			return nil
 		})
 	default:

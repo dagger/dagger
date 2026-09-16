@@ -53,10 +53,9 @@ type Directory struct {
 	stored            *storedSnapshot
 	Lazy              Lazy[*Directory]
 
-	// Keep the producer independently of the operational lazy pointer.
-	completedRecipe     Lazy[*Directory]
-	completedRecipeKind string
-	completedRecipeJSON json.RawMessage
+	// Retained operation bytes for snapshot restore and acquired values.
+	lazyKind string
+	lazyJSON json.RawMessage
 
 	Dir      *LazyAccessor[string, *Directory] // a selected subdir of the rootfs of the on-disk Result, if any
 	Snapshot *LazyAccessor[bkcache.ImmutableRef, *Directory]
@@ -113,7 +112,7 @@ func (dir *Directory) AttachDependencyResultsKinds(
 	if dir == nil {
 		return nil, nil
 	}
-	return attachFilesystemDependencyResultsKinds(ctx, "directory", dir.Services, dir.Lazy, dir.completedRecipe, attach)
+	return attachFilesystemDependencyResultsKinds(ctx, "directory", dir.Services, dir.Lazy, attach)
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
@@ -270,10 +269,10 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 	}
 	if identity, ok := dir.snapshotIdentityLocked(); ok {
 		payload.Form = persistedDirectoryFormSnapshot
-		payload.LazyKind = dir.completedRecipeKind
-		payload.LazyJSON = dir.completedRecipeJSON
-		recipe := dir.completedRecipe
-		if recipe == nil && dir.Lazy != nil {
+		payload.LazyKind = dir.lazyKind
+		payload.LazyJSON = dir.lazyJSON
+		var recipe Lazy[*Directory]
+		if dir.Lazy != nil {
 			if _, restored := dir.Lazy.(*DirectoryRestoreLazy); !restored {
 				recipe = dir.Lazy
 			}
@@ -360,8 +359,8 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 			return nil, err
 		}
 		dir.stored = &storedSnapshot{SnapshotID: link.RefKey}
-		dir.completedRecipeKind = persisted.LazyKind
-		dir.completedRecipeJSON = slices.Clone(persisted.LazyJSON)
+		dir.lazyKind = persisted.LazyKind
+		dir.lazyJSON = slices.Clone(persisted.LazyJSON)
 		dir.storedDiagnostics = newStoredSnapshotDiagnostics()
 		dir.SetPath(persisted.Dir)
 		dir.Lazy = &DirectoryRestoreLazy{LazyState: NewLazyState()}

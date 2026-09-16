@@ -842,6 +842,14 @@ func materializeContainerMetadataFromParent(ctx context.Context, dst *Container,
 		return fmt.Errorf("materialize container metadata: nil parent container")
 	}
 
+	CopyContainerMetadata(dst, parentCtr)
+	return nil
+}
+
+// CopyContainerMetadata copies plain metadata and mount shape. The caller must
+// first demand the parent's metadata. Existing matching source accessors stay
+// stable; newly introduced source accessors hold no snapshot refs.
+func CopyContainerMetadata(dst, parentCtr *Container) {
 	existingMounts := make(map[string]*ContainerMount, len(dst.Mounts))
 	for i := range dst.Mounts {
 		existingMounts[dst.Mounts[i].Target] = &dst.Mounts[i]
@@ -883,7 +891,6 @@ func materializeContainerMetadataFromParent(ctx context.Context, dst *Container,
 	dst.DefaultTerminalCmd = parentCtr.DefaultTerminalCmd
 	dst.SystemEnvNames = slices.Clone(parentCtr.SystemEnvNames)
 	dst.DefaultArgs = parentCtr.DefaultArgs
-	return nil
 }
 
 // delegateContainerPart evaluates the parent's part and copies its value

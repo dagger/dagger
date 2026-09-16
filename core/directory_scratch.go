@@ -9,8 +9,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-// DirectoryScratchLazy restores only the output of eager Query.directory.
-// Platform belongs to the receiver's persisted value, not the recipe.
+// DirectoryScratchLazy opens the canonical empty directory on first use.
+// Platform belongs to the receiver's persisted value.
 type DirectoryScratchLazy struct{ LazyState }
 
 type persistedDirectoryScratchLazy struct{}

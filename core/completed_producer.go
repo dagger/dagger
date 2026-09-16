@@ -3,108 +3,12 @@ package core
 import (
 	"context"
 	"fmt"
-	"path"
 	"reflect"
 	"slices"
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
-
-// RecordCompletedContainerMountProducer is a construction-only recorder for
-// the two eager schema mount operations. Its inputs remain borrowed results.
-func RecordCompletedContainerMountProducer(value *Container, producer Lazy[*Container]) error {
-	if value == nil || nilProducerValue(producer) {
-		return fmt.Errorf("record completed Container mount: nil value or producer")
-	}
-	if value.Lazy != nil || value.completedRecipe != nil || len(value.completedRecipeJSON) != 0 || value.acquiredOutput.Load() != nil || len(value.storedParts) != 0 {
-		return fmt.Errorf("record completed Container mount: operation already recorded or pending/restored value")
-	}
-	var target string
-	var directory bool
-	switch p := producer.(type) {
-	case *ContainerWithMountedDirectoryLazy:
-		if p.Parent.Self() == nil || p.Source.Self() == nil {
-			return fmt.Errorf("record completed Container mount: missing parent or source")
-		}
-		target, directory = p.Target, true
-	case *ContainerWithMountedFileLazy:
-		if p.Parent.Self() == nil || p.Source.Self() == nil {
-			return fmt.Errorf("record completed Container mount: missing parent or source")
-		}
-		target = p.Target
-	default:
-		return fmt.Errorf("record completed Container mount: unsupported producer %T", producer)
-	}
-	if !path.IsAbs(target) || path.Clean(target) != target {
-		return fmt.Errorf("record completed Container mount: unresolved target %q", target)
-	}
-	mount := value.mountAt(target)
-	if mount == nil {
-		return fmt.Errorf("record completed Container mount: missing target %q", target)
-	}
-	if directory {
-		if mount.DirectorySource == nil {
-			return fmt.Errorf("record completed Container mount: target is not a Directory")
-		}
-		dir, ok := mount.DirectorySource.Peek()
-		if !ok {
-			return fmt.Errorf("record completed Container mount: unset Directory")
-		}
-		if _, _, err := producedDirectoryOutput(dir); err != nil {
-			return err
-		}
-	} else {
-		if mount.FileSource == nil {
-			return fmt.Errorf("record completed Container mount: target is not a File")
-		}
-		file, ok := mount.FileSource.Peek()
-		if !ok {
-			return fmt.Errorf("record completed Container mount: unset File")
-		}
-		if _, _, err := producedFileOutput(file); err != nil {
-			return err
-		}
-	}
-	value.completedRecipe = producer
-	return nil
-}
-
-// RecordCompletedProducer records an operation on a fresh, exclusively owned
-// output before publication. It never evaluates or replaces an existing recipe.
-func RecordCompletedProducer[T interface {
-	dagql.Typed
-	*Directory | *File
-}](value T, producer Lazy[T]) error {
-	if value == nil || nilProducerValue(producer) {
-		return fmt.Errorf("record completed producer: nil value or producer")
-	}
-	switch value := any(value).(type) {
-	case *Directory:
-		if value.Lazy != nil || value.completedRecipe != nil || value.completedRecipeKind != "" || len(value.completedRecipeJSON) != 0 {
-			return fmt.Errorf("record completed Directory producer: operation already recorded")
-		}
-		if _, ok := any(producer).(*DirectoryRestoreLazy); ok {
-			return fmt.Errorf("record completed Directory producer: restore-only operation")
-		}
-		if _, _, err := producedDirectoryOutput(value); err != nil {
-			return fmt.Errorf("record completed Directory producer: %w", err)
-		}
-		value.completedRecipe = any(producer).(Lazy[*Directory])
-	case *File:
-		if value.Lazy != nil || value.completedRecipe != nil || value.completedRecipeKind != "" || len(value.completedRecipeJSON) != 0 {
-			return fmt.Errorf("record completed File producer: operation already recorded")
-		}
-		if _, ok := any(producer).(*FileRestoreLazy); ok {
-			return fmt.Errorf("record completed File producer: restore-only operation")
-		}
-		if _, _, err := producedFileOutput(value); err != nil {
-			return fmt.Errorf("record completed File producer: %w", err)
-		}
-		value.completedRecipe = any(producer).(Lazy[*File])
-	}
-	return nil
-}
 
 func nilProducerValue(value any) bool {
 	if value == nil {
@@ -222,24 +126,18 @@ func attachCompletedProducerInput[T dagql.Typed](attach func(dagql.AnyResult) (d
 
 // attachFilesystemDependencyResultsKinds is the shared body of the Directory
 // and File AttachDependencyResultsKinds methods: the service bindings' results
-// first, then the live recipe's (or, once published, the completed recipe's)
-// dependencies as liveness-only receiver/prerequisite links.
+// first, then the lazy recipe's dependencies as liveness-only
+// receiver/prerequisite links.
 func attachFilesystemDependencyResultsKinds[T dagql.Typed](
 	ctx context.Context,
 	label string,
 	services ServiceBindings,
 	lazy Lazy[T],
-	completedRecipe Lazy[T],
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.DependencyResult, error) {
 	serviceDeps, err := services.AttachDependencyResults(label, attach)
 	if err != nil {
 		return nil, err
-	}
-	if lazy == nil {
-		// A live recipe belongs to exactly one value. Concurrent publication of
-		// one shared value is out of scope; attachment updates the recipe's inputs.
-		lazy = completedRecipe
 	}
 	if lazy == nil {
 		return serviceDeps, nil

@@ -106,8 +106,8 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			if dir, ok := value.(*Directory); ok {
 				derived, err := dir.Subdirectory(ctx, child.(dagql.ObjectResult[*Directory]), "another")
 				require.NoError(t, err)
-				require.Nil(t, derived.completedRecipe)
-				require.Empty(t, derived.completedRecipeJSON)
+				require.False(t, derived.Lazy.IsEvaluated())
+				require.Empty(t, derived.lazyJSON)
 				encoded, err := derived.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 				require.NoError(t, err)
 				var own persistedDirectoryPayload

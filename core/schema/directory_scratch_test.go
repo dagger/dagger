@@ -153,8 +153,9 @@ func TestScratchDirectoryProducer(t *testing.T) {
 	store.Manager = observed
 	ctx, cache, srv := scratchTestCache(t, store, "", "eager")
 	result := scratchSelect(t, ctx, srv)
-	require.Nil(t, result.Self().Lazy)
-	require.EqualValues(t, 1, observed.calls.Load())
+	require.IsType(t, &core.DirectoryScratchLazy{}, result.Self().Lazy)
+	require.False(t, result.Self().Lazy.IsEvaluated())
+	require.Zero(t, observed.calls.Load())
 	record, err := cache.CapturePersistedRecord(ctx, result)
 	require.NoError(t, err)
 	var payload struct {
@@ -163,7 +164,7 @@ func TestScratchDirectoryProducer(t *testing.T) {
 		Platform       core.Platform
 	}
 	require.NoError(t, json.Unmarshal(record.Envelope.ObjectJSON, &payload))
-	require.Equal(t, "snapshot", payload.Form)
+	require.Equal(t, "lazy", payload.Form)
 	require.Equal(t, "scratch", payload.LazyKind)
 	require.Equal(t, "{}", string(payload.LazyJSON))
 	var withoutRecipe map[string]json.RawMessage
@@ -172,7 +173,7 @@ func TestScratchDirectoryProducer(t *testing.T) {
 	delete(withoutRecipe, "lazyJSON")
 	baseline, err := json.Marshal(withoutRecipe)
 	require.NoError(t, err)
-	t.Logf("scratch recipe-json-bytes=%d native-payload-added-bytes=%d eager-scratch-calls=%d", len(payload.LazyJSON), len(record.Envelope.ObjectJSON)-len(baseline), observed.calls.Load())
+	t.Logf("scratch recipe-json-bytes=%d native-payload-added-bytes=%d construction-scratch-calls=%d", len(payload.LazyJSON), len(record.Envelope.ObjectJSON)-len(baseline), observed.calls.Load())
 	require.Equal(t, "linux/arm64", payload.Platform.Format())
 	require.Nil(t, record.Call.Receiver)
 	require.Len(t, record.Call.ImplicitInputs, 1)
@@ -251,6 +252,7 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			var donor *scratchObservedRef
 			if mode == "warm" {
 				local := scratchSelect(t, ctx, srv)
+				require.NoError(t, b.Evaluate(ctx, local))
 				ref, _ := local.Self().Snapshot.Peek()
 				donor = ref.(*scratchObservedRef)
 			} else if mode == "canonical-only" {
@@ -397,20 +399,32 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 }
 
 func TestScratchDirectoryNativeReopen(t *testing.T) {
+	for _, evaluated := range []bool{false, true} {
+		t.Run(map[bool]string{false: "pending", true: "evaluated"}[evaluated], func(t *testing.T) {
+			testScratchDirectoryNativeReopen(t, evaluated)
+		})
+	}
+}
+
+func testScratchDirectoryNativeReopen(t *testing.T, evaluated bool) {
 	store := testutil.NewStore(t)
 	observed := &scratchObservedManager{SnapshotManager: store.Manager}
 	store.Manager = observed
 	path := filepath.Join(t.TempDir(), "native.db")
 	ctx, cache, srv := scratchTestCache(t, store, path, "native")
 	result := scratchSelect(t, ctx, srv)
+	if evaluated {
+		require.NoError(t, cache.Evaluate(ctx, result))
+	}
+	require.EqualValues(t, map[bool]int{false: 0, true: 1}[evaluated], observed.calls.Load())
 	record, err := cache.CapturePersistedRecord(ctx, result)
 	require.NoError(t, err)
-	// Keep the actual eager Directory as the dependency of a persisted root.
+	// Keep the Directory as the dependency of a persisted root.
 	// This changes neither its field options nor its recorded call.
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "keepScratch", Type: dagql.NewResultCallType(dagql.Int(1).Type()), Args: []*dagql.ResultCallArg{{Name: "directory", Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindResultRef, ResultRef: &dagql.ResultCallRef{ResultID: record.ResultID}}}}}
 	_, err = cache.GetOrInitCall(ctx, "native", srv, &dagql.CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) { return dagql.NewResultForCall(dagql.Int(1), frame) })
 	require.NoError(t, err)
-	for range 2 {
+	for attempt := range 2 {
 		require.NoError(t, cache.ReleaseSession(ctx, "native"))
 		require.NoError(t, cache.Close(ctx))
 		store.Reload(t)
@@ -425,7 +439,13 @@ func TestScratchDirectoryNativeReopen(t *testing.T) {
 		require.JSONEq(t, string(record.Envelope.ObjectJSON), string(restored.Envelope.ObjectJSON))
 		require.Empty(t, observed.refs, "capture opened a local ref")
 		require.NoError(t, cache.Evaluate(ctx, loaded))
-		require.Zero(t, observed.calls.Load())
+		if !evaluated && attempt == 0 {
+			require.EqualValues(t, 1, observed.calls.Load())
+		} else {
+			require.Zero(t, observed.calls.Load())
+		}
+		record, err = cache.CapturePersistedRecord(ctx, loaded)
+		require.NoError(t, err)
 		require.Zero(t, scratchCount(t, ctx, cache, "native", record.ResultID))
 	}
 }

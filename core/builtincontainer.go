@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
@@ -13,26 +12,13 @@ import (
 )
 
 func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string) (*Container, error) {
+	manifestDigest, err := digest.Parse(blobDigest)
+	if err != nil {
+		return nil, fmt.Errorf("builtin Container manifest digest: %w", err)
+	}
 	container := NewContainer(platform)
-	manifestDigest := digest.Digest(blobDigest)
-	if err := builtinContainerInto(ctx, container, platform, manifestDigest); err != nil {
-		return nil, errors.Join(err, container.OnRelease(context.WithoutCancel(ctx)))
-	}
-	if err := recordCompletedBuiltinProducer(container, &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: platform, ManifestDigest: manifestDigest}); err != nil {
-		return nil, errors.Join(err, container.OnRelease(context.WithoutCancel(ctx)))
-	}
+	container.Lazy = &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: platform, ManifestDigest: manifestDigest}
 	return container, nil
-}
-
-func recordCompletedBuiltinProducer(container *Container, producer *ContainerBuiltinLazy) error {
-	if container == nil || producer == nil {
-		return fmt.Errorf("record builtin Container producer: nil value or producer")
-	}
-	if container.Lazy != nil || container.completedRecipe != nil || len(container.completedRecipeJSON) != 0 {
-		return fmt.Errorf("record builtin Container producer: operation already recorded")
-	}
-	container.completedRecipe = producer
-	return nil
 }
 
 func builtinContainerInto(ctx context.Context, container *Container, platform Platform, manifestDigest digest.Digest) error {

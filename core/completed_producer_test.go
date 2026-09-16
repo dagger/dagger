@@ -11,224 +11,61 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var scratchRecordBenchmarkOutput *Directory
+// Codec fixtures start with their output accessors already populated. Run the
+// state transition without I/O, then retain the typed operation on the value.
+func evaluatedLazyFixture[T interface {
+	dagql.Typed
+	*Directory | *File | *Container
+}](value T, op Lazy[T]) error {
+	switch value := any(value).(type) {
+	case *Directory:
+		value.Lazy = any(op).(Lazy[*Directory])
+	case *File:
+		value.Lazy = any(op).(Lazy[*File])
+	case *Container:
+		value.Lazy = any(op).(Lazy[*Container])
+	}
+	return any(op).(interface{ ContainerLazyState() *LazyState }).ContainerLazyState().Evaluate(context.Background(), "codec fixture", nil)
+}
 
-// Isolate recording's allocation/latency cost from the existing Scratch I/O.
-func BenchmarkScratchCompletedRecording(b *testing.B) {
-	for _, record := range []bool{false, true} {
-		name := "eager-output"
-		if record {
-			name = "eager-output-and-recipe"
+var scratchLazyBenchmarkOutput *Directory
+
+func BenchmarkScratchLazyConstruction(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		dir := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]), Lazy: &DirectoryScratchLazy{LazyState: NewLazyState()}}
+		dir.SetPath("/")
+		scratchLazyBenchmarkOutput = dir
+	}
+}
+
+func TestLazyInputAttachment(t *testing.T) {
+	t.Run("existing completed kinds attach", func(t *testing.T) {
+		env := newPersistedFamiliesTestEnv(t, "completed-attach")
+		ctx, cache, srv := env.open(t)
+		parent := env.attach(t, ctx, cache, srv, "parent", containerPersistenceTestDirectory("parent", "/")).(dagql.ObjectResult[*Directory])
+		dir := containerPersistenceTestDirectory("child", "/selected")
+		directoryProducer := &DirectorySubdirectoryLazy{LazyState: NewLazyState(), Parent: parent}
+		require.NoError(t, evaluatedLazyFixture(dir, directoryProducer))
+		file := &File{}
+		require.NoError(t, evaluatedLazyFixture(file, &FileSubfileLazy{LazyState: NewLazyState(), Parent: parent}))
+		for _, value := range []interface {
+			AttachDependencyResultsKinds(context.Context, dagql.AnyResult, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.DependencyResult, error)
+		}{dir, file} {
+			calls := 0
+			deps, err := value.AttachDependencyResultsKinds(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+				calls++
+				require.Same(t, parent.Self(), res.(dagql.ObjectResult[*Directory]).Self())
+				return res, nil
+			})
+			require.NoError(t, err)
+			require.Equal(t, 1, calls)
+			require.Len(t, deps, 1)
+			require.False(t, deps[0].Owned)
+			require.Same(t, parent.Self(), deps[0].Result.(dagql.ObjectResult[*Directory]).Self())
 		}
-		b.Run(name, func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				dir := containerPersistenceTestDirectory("scratch", "/")
-				if record {
-					if err := RecordCompletedProducer(dir, &DirectoryScratchLazy{LazyState: NewLazyState()}); err != nil {
-						b.Fatal(err)
-					}
-				}
-				scratchRecordBenchmarkOutput = dir
-			}
-		})
-	}
-}
-
-func TestRecordCompletedProducer(t *testing.T) {
-	t.Run("scratch", testRecordCompletedProducerScratch)
-	t.Run("Directory", testRecordCompletedProducerDirectory)
-	t.Run("File", testRecordCompletedProducerFile)
-	t.Run("existing completed kinds attach", testRecordCompletedProducerExistingKindsAttach)
-}
-
-func testRecordCompletedProducerScratch(t *testing.T) {
-	dir := containerPersistenceTestDirectory("scratch", "/")
-	path, snapshot := dir.Dir, dir.Snapshot
-	lazy := &DirectoryScratchLazy{LazyState: NewLazyState()}
-	require.NoError(t, RecordCompletedProducer(dir, lazy))
-	require.Nil(t, dir.Lazy)
-	require.Same(t, lazy, dir.completedRecipe)
-	require.Same(t, path, dir.Dir)
-	require.Same(t, snapshot, dir.Snapshot)
-	require.False(t, lazy.lazyInitComplete.Load())
-	require.Error(t, RecordCompletedProducer(dir, &DirectoryScratchLazy{LazyState: NewLazyState()}))
-	require.Same(t, lazy, dir.completedRecipe)
-}
-
-func testRecordCompletedProducerDirectory(t *testing.T) {
-	for _, invalid := range []string{"", "nil value", "nil producer", "typed nil producer", "pending", "recorded", "kind", "json", "path accessor", "snapshot accessor", "path", "snapshot", "nil snapshot", "restore"} {
-		t.Run(invalid, func(t *testing.T) {
-			dir := containerPersistenceTestDirectory("ready", "/selected")
-			producer := Lazy[*Directory](&DirectorySubdirectoryLazy{LazyState: NewLazyState()})
-			switch invalid {
-			case "nil value":
-				dir = nil
-			case "nil producer":
-				producer = nil
-			case "typed nil producer":
-				producer = (*DirectorySubdirectoryLazy)(nil)
-			case "pending":
-				dir.Lazy = &DirectorySubdirectoryLazy{LazyState: NewLazyState()}
-			case "recorded":
-				dir.completedRecipe = &DirectorySubdirectoryLazy{LazyState: NewLazyState()}
-			case "kind":
-				dir.completedRecipeKind = "saved"
-			case "json":
-				dir.completedRecipeJSON = []byte(`{}`)
-			case "path accessor":
-				dir.Dir = nil
-			case "snapshot accessor":
-				dir.Snapshot = nil
-			case "path":
-				dir.Dir = new(LazyAccessor[string, *Directory])
-			case "snapshot":
-				dir.Snapshot = new(LazyAccessor[bkcache.ImmutableRef, *Directory])
-			case "nil snapshot":
-				dir.Snapshot.setValue(nil)
-			case "restore":
-				producer = &DirectoryRestoreLazy{LazyState: NewLazyState()}
-			}
-			var original *Directory
-			if dir != nil {
-				// Snapshot every field without copying the fresh fixture's
-				// zero-valued output mutex. Compare through pointers below.
-				original = &Directory{
-					filesystemOutput: filesystemOutput{
-						OutputRev:       dir.OutputRev,
-						persistenceBody: dir.persistenceBody,
-					},
-					transferPending:     dir.transferPending,
-					Platform:            dir.Platform,
-					Services:            dir.Services,
-					storedDiagnostics:   dir.storedDiagnostics,
-					stored:              dir.stored,
-					Lazy:                dir.Lazy,
-					completedRecipe:     dir.completedRecipe,
-					completedRecipeKind: dir.completedRecipeKind,
-					completedRecipeJSON: dir.completedRecipeJSON,
-					Dir:                 dir.Dir,
-					Snapshot:            dir.Snapshot,
-				}
-			}
-			err := RecordCompletedProducer(dir, producer)
-			if invalid != "" {
-				require.Error(t, err)
-				if dir != nil {
-					require.Equal(t, original, dir)
-				}
-				return
-			}
-			require.NoError(t, err)
-			require.Same(t, producer, dir.completedRecipe)
-			require.Nil(t, dir.Lazy)
-			require.Same(t, original.Dir, dir.Dir)
-			require.Same(t, original.Snapshot, dir.Snapshot)
-			require.Error(t, RecordCompletedProducer(dir, producer))
-			require.Same(t, producer, dir.completedRecipe)
-		})
-	}
-}
-
-func testRecordCompletedProducerFile(t *testing.T) {
-	for _, invalid := range []string{"", "nil value", "nil producer", "typed nil producer", "pending", "recorded", "kind", "json", "path accessor", "snapshot accessor", "path", "snapshot", "nil snapshot", "restore"} {
-		t.Run(invalid, func(t *testing.T) {
-			file := freshProducerFile()
-			file.File.setValue("data")
-			file.Snapshot.setValue(&cacheVolumeTestImmutableRef{})
-			producer := Lazy[*File](&FileBlobLazy{LazyState: NewLazyState()})
-			switch invalid {
-			case "nil value":
-				file = nil
-			case "nil producer":
-				producer = nil
-			case "typed nil producer":
-				producer = (*FileBlobLazy)(nil)
-			case "pending":
-				file.Lazy = &FileBlobLazy{LazyState: NewLazyState()}
-			case "recorded":
-				file.completedRecipe = &FileBlobLazy{LazyState: NewLazyState()}
-			case "kind":
-				file.completedRecipeKind = "saved"
-			case "json":
-				file.completedRecipeJSON = []byte(`{}`)
-			case "path accessor":
-				file.File = nil
-			case "snapshot accessor":
-				file.Snapshot = nil
-			case "path":
-				file.File = new(LazyAccessor[string, *File])
-			case "snapshot":
-				file.Snapshot = new(LazyAccessor[bkcache.ImmutableRef, *File])
-			case "nil snapshot":
-				file.Snapshot.setValue(nil)
-			case "restore":
-				producer = &FileRestoreLazy{LazyState: NewLazyState()}
-			}
-			var original *File
-			if file != nil {
-				// Keep the same full-value comparison without copying a mutex.
-				original = &File{
-					filesystemOutput: filesystemOutput{
-						OutputRev:       file.OutputRev,
-						persistenceBody: file.persistenceBody,
-					},
-					transferPending:     file.transferPending,
-					Platform:            file.Platform,
-					Services:            file.Services,
-					storedDiagnostics:   file.storedDiagnostics,
-					stored:              file.stored,
-					Lazy:                file.Lazy,
-					completedRecipe:     file.completedRecipe,
-					completedRecipeKind: file.completedRecipeKind,
-					completedRecipeJSON: file.completedRecipeJSON,
-					File:                file.File,
-					Snapshot:            file.Snapshot,
-				}
-			}
-			err := RecordCompletedProducer(file, producer)
-			if invalid != "" {
-				require.Error(t, err)
-				if file != nil {
-					require.Equal(t, original, file)
-				}
-				return
-			}
-			require.NoError(t, err)
-			require.Same(t, producer, file.completedRecipe)
-			require.Nil(t, file.Lazy)
-			require.Same(t, original.File, file.File)
-			require.Same(t, original.Snapshot, file.Snapshot)
-			require.Error(t, RecordCompletedProducer(file, producer))
-			require.Same(t, producer, file.completedRecipe)
-		})
-	}
-}
-
-func testRecordCompletedProducerExistingKindsAttach(t *testing.T) {
-	env := newPersistedFamiliesTestEnv(t, "completed-attach")
-	ctx, cache, srv := env.open(t)
-	parent := env.attach(t, ctx, cache, srv, "parent", containerPersistenceTestDirectory("parent", "/")).(dagql.ObjectResult[*Directory])
-	dir := containerPersistenceTestDirectory("child", "/selected")
-	directoryProducer := &DirectorySubdirectoryLazy{LazyState: NewLazyState(), Parent: parent}
-	dir.completedRecipe = directoryProducer
-	file := &File{completedRecipe: &FileSubfileLazy{LazyState: NewLazyState(), Parent: parent}}
-	for _, value := range []interface {
-		AttachDependencyResultsKinds(context.Context, dagql.AnyResult, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.DependencyResult, error)
-	}{dir, file} {
-		calls := 0
-		deps, err := value.AttachDependencyResultsKinds(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
-			calls++
-			require.Same(t, parent.Self(), res.(dagql.ObjectResult[*Directory]).Self())
-			return res, nil
-		})
-		require.NoError(t, err)
-		require.Equal(t, 1, calls)
-		require.Len(t, deps, 1)
-		require.False(t, deps[0].Owned)
-		require.Same(t, parent.Self(), deps[0].Result.(dagql.ObjectResult[*Directory]).Self())
-	}
-	require.Same(t, directoryProducer, dir.completedRecipe)
+		require.Same(t, directoryProducer, dir.Lazy)
+	})
 }
 
 func TestCompletedProducerAttachmentBeforePublication(t *testing.T) {

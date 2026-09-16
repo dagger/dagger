@@ -1115,6 +1115,9 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 
 //nolint:gocyclo
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return inst, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
@@ -1467,6 +1470,9 @@ func (s *containerSchema) build(
 	parent dagql.ObjectResult[*core.Container],
 	args containerBuildArgs,
 ) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1513,6 +1519,9 @@ type containerWithRootFSArgs struct {
 }
 
 func (s *containerSchema) withRootfs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithRootFSArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1568,6 +1577,9 @@ func (s *containerSchema) pipeline(ctx context.Context, parent *core.Container, 
 }
 
 func (s *containerSchema) rootfs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (dagql.ObjectResult[*core.Directory], error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
@@ -1756,6 +1768,9 @@ type containerWithSymlinkArgs struct {
 }
 
 func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithSymlinkArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return inst, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
@@ -2031,6 +2046,9 @@ type containerWithWorkdirArgs struct {
 }
 
 func (s *containerSchema) withWorkdir(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithWorkdirArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
@@ -2456,6 +2474,9 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (_ *core.Container, rerr error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2471,30 +2492,16 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 		return nil, err
 	}
 
-	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
-	if err != nil {
-		return nil, err
+	ctr := &core.Container{
+		FS:           new(core.LazyAccessor[*core.Directory, *core.Container]),
+		MetaSnapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Container]),
 	}
-	clonedMounts := slices.Clone(ctr.Mounts)
-	defer func() {
-		if rerr != nil {
-			rerr = errors.Join(rerr, releaseFailedContainerMount(ctx, ctr, clonedMounts))
-		}
-	}()
+	core.CopyContainerMetadata(ctr, parent.Self())
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
-	if !parentPendingLazy {
-		if _, err := ctr.WithMountedDirectory(ctx, parent, target, dir, owner, args.ReadOnly); err != nil {
-			return nil, err
-		}
-		if err := core.RecordCompletedContainerMountProducer(ctr, &core.ContainerWithMountedDirectoryLazy{LazyState: core.NewLazyState(), Parent: parent, Source: dir, Target: target, Owner: owner, Readonly: args.ReadOnly}); err != nil {
-			return nil, err
-		}
-		return ctr, nil
-	}
 	ctr.Lazy = &core.ContainerWithMountedDirectoryLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -2692,6 +2699,9 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (_ *core.Container, rerr error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2707,30 +2717,16 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
-	if err != nil {
-		return nil, err
+	ctr := &core.Container{
+		FS:           new(core.LazyAccessor[*core.Directory, *core.Container]),
+		MetaSnapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Container]),
 	}
-	clonedMounts := slices.Clone(ctr.Mounts)
-	defer func() {
-		if rerr != nil {
-			rerr = errors.Join(rerr, releaseFailedContainerMount(ctx, ctr, clonedMounts))
-		}
-	}()
+	core.CopyContainerMetadata(ctr, parent.Self())
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
-	if !parentPendingLazy {
-		if _, err := ctr.WithMountedFile(ctx, parent, target, file, owner, false); err != nil {
-			return nil, err
-		}
-		if err := core.RecordCompletedContainerMountProducer(ctr, &core.ContainerWithMountedFileLazy{LazyState: core.NewLazyState(), Parent: parent, Source: file, Target: target, Owner: owner, Readonly: false}); err != nil {
-			return nil, err
-		}
-		return ctr, nil
-	}
 	ctr.Lazy = &core.ContainerWithMountedFileLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -2861,6 +2857,9 @@ func (s *containerSchema) withMountedCacheDynamicInputs(
 	args containerWithMountedCacheArgs,
 	req *dagql.CallRequest,
 ) error {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return err
+	}
 	hasSourceArg := req.HasArg("source")
 	hasSharingArg := req.HasArg("sharing")
 	hasOwnerArg := req.HasArg("owner")
@@ -2964,6 +2963,9 @@ func (s *containerSchema) withMountedCacheDynamicInputs(
 }
 
 func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedCacheArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -3014,6 +3016,9 @@ type containerWithMountedVolumeArgs struct {
 }
 
 func (s *containerSchema) withMountedVolume(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedVolumeArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -3065,6 +3070,9 @@ type containerWithMountedTempArgs struct {
 }
 
 func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedTempArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
@@ -3100,6 +3108,9 @@ type containerWithoutMountArgs struct {
 }
 
 func (s *containerSchema) withoutMount(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutMountArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
@@ -3330,6 +3341,9 @@ type containerDirectoryArgs struct {
 
 //nolint:dupl // symmetric with (*containerSchema).file; sharing hides Directory vs File specifics
 func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
@@ -3363,6 +3377,9 @@ type containerFileArgs struct {
 
 //nolint:dupl // symmetric with (*containerSchema).directory; sharing hides File vs Directory specifics
 func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFileArgs) (dagql.ObjectResult[*core.File], error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return dagql.ObjectResult[*core.File]{}, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.File]{}, err
@@ -3430,25 +3447,18 @@ func inheritedOwner(parent dagql.ObjectResult[*core.Container], owner string, in
 
 // An eager mount can shadow cloned parent mounts before recording rejects it.
 // Those detached clones are no longer reachable from the failed child.
-func releaseFailedContainerMount(ctx context.Context, child *core.Container, cloned core.ContainerMounts) (rerr error) {
-	ctx = context.WithoutCancel(ctx)
-	rerr = child.OnRelease(ctx)
-	for _, mount := range cloned {
-		if mount.DirectorySource != nil && !slices.ContainsFunc(child.Mounts, func(current core.ContainerMount) bool { return current.DirectorySource == mount.DirectorySource }) {
-			if dir, ok := mount.DirectorySource.Peek(); ok && dir != nil {
-				rerr = errors.Join(rerr, dir.OnRelease(ctx))
-			}
-		}
-		if mount.FileSource != nil && !slices.ContainsFunc(child.Mounts, func(current core.ContainerMount) bool { return current.FileSource == mount.FileSource }) {
-			if file, ok := mount.FileSource.Peek(); ok && file != nil {
-				rerr = errors.Join(rerr, file.OnRelease(ctx))
-			}
-		}
+func evaluateContainerMetadata(ctx context.Context, parent dagql.ObjectResult[*core.Container]) error {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
 	}
-	return rerr
+	return cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata)
 }
 
 func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult[*core.Container]) (*core.Container, bool, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, false, err
+	}
 	// Foreign shells report pending work here too, so the child's ordinary
 	// producer keeps its parent dependency and delegates unresolved parts.
 	parentPendingLazy := dagql.HasPendingLazyEvaluation(parent)
@@ -3597,6 +3607,9 @@ type containerWithMountedSecretArgs struct {
 }
 
 func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedSecretArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -3667,6 +3680,9 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -3713,6 +3729,9 @@ type containerWithFileArgs struct {
 }
 
 func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return inst, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
@@ -3767,6 +3786,9 @@ type containerWithFilesArgs struct {
 }
 
 func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithFilesArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return inst, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
@@ -3833,6 +3855,9 @@ type containerWithoutDirectoryArgs struct {
 
 //nolint:dupl // symmetric with withoutFile; the distinct argument types preserve the schema operations
 func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutDirectoryArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return inst, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
@@ -3866,6 +3891,9 @@ type containerWithoutFileArgs struct {
 
 //nolint:dupl // symmetric with withoutDirectory; the distinct argument types preserve the schema operations
 func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return inst, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
@@ -3898,6 +3926,9 @@ type containerWithoutFilesArgs struct {
 }
 
 func (s *containerSchema) withoutFiles(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutFilesArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return inst, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
@@ -3937,6 +3968,9 @@ type containerWithNewFileArgs struct {
 }
 
 func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithNewFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return inst, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
@@ -4049,6 +4083,9 @@ type containerWithUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithUnixSocketArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -4130,6 +4167,9 @@ type containerWithoutUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withoutUnixSocket(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutUnixSocketArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err

@@ -53,7 +53,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	defer unlock()
-	lazy, completedRecipe, recipeJSON := container.lazyOpsForPersistence()
+	lazy, recipeJSON := container.lazyForPersistence()
 	metadata, err := container.encodeContainerMetadata(enc)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
@@ -69,9 +69,6 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 	recipe := lazy
 	if restore, ok := recipe.(*ContainerRestoreLazy); ok {
 		recipe = restore.recipe
-	}
-	if !pending && recipe == nil {
-		recipe = completedRecipe
 	}
 	if pending && recipe == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
@@ -99,11 +96,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 // each registered group's mutex excludes runners that already passed LazyMu.
 // No evaluation is started, and sibling groups still run in parallel normally.
 func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
-	lazy, completedRecipe, _ := container.lazyOpsForPersistence()
-	if lazy == nil {
-		// Compatibility for eager values until their constructors use Lazy.
-		lazy = completedRecipe
-	}
+	lazy, _ := container.lazyForPersistence()
 	if lazy == nil {
 		return func() {}, nil
 	}
@@ -145,10 +138,10 @@ func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
 	return unlock, nil
 }
 
-func (container *Container) lazyOpsForPersistence() (Lazy[*Container], Lazy[*Container], json.RawMessage) {
+func (container *Container) lazyForPersistence() (Lazy[*Container], json.RawMessage) {
 	container.lazyOpMu.Lock()
 	defer container.lazyOpMu.Unlock()
-	return container.Lazy, container.completedRecipe, container.completedRecipeJSON
+	return container.Lazy, container.lazyJSON
 }
 
 func containerStoredOpenGroup(part dagql.PartKey) dagql.LazyGroupKey {

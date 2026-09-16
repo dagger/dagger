@@ -134,7 +134,7 @@ func TestEagerProducerCodecs(t *testing.T) {
 				if ready {
 					dir.Dir.setValue("/saved")
 					dir.Snapshot.setValue(&cacheVolumeTestImmutableRef{id: "saved", snapshotID: "saved"})
-					require.NoError(t, RecordCompletedProducer(dir, formRecipe))
+					require.NoError(t, evaluatedLazyFixture(dir, formRecipe))
 				} else {
 					dir.Lazy = formRecipe
 				}
@@ -148,8 +148,8 @@ func TestEagerProducerCodecs(t *testing.T) {
 				require.NoError(t, err)
 				output := value.(*Directory)
 				if ready {
-					require.Equal(t, kind, output.completedRecipeKind)
-					require.JSONEq(t, string(raw), string(output.completedRecipeJSON))
+					require.Equal(t, kind, output.lazyKind)
+					require.JSONEq(t, string(raw), string(output.lazyJSON))
 					require.IsType(t, &DirectoryRestoreLazy{}, output.Lazy)
 				} else {
 					require.IsType(t, recipe, output.Lazy)
@@ -199,7 +199,7 @@ func TestEagerProducerCodecs(t *testing.T) {
 				if ready {
 					file.File.setValue(original.Filename)
 					file.Snapshot.setValue(&cacheVolumeTestImmutableRef{id: "http-saved", snapshotID: "http-saved"})
-					require.NoError(t, RecordCompletedProducer(file, formRecipe))
+					require.NoError(t, evaluatedLazyFixture(file, formRecipe))
 				} else {
 					file.Lazy = formRecipe
 				}
@@ -212,8 +212,8 @@ func TestEagerProducerCodecs(t *testing.T) {
 				restored, err := file.DecodePersistedObject(f.ctx, dagql.NewPersistDecodeContext(f.srv, rowID, call), encoded.JSON)
 				require.NoError(t, err)
 				if ready {
-					require.Equal(t, kind, restored.(*File).completedRecipeKind)
-					require.JSONEq(t, string(raw), string(restored.(*File).completedRecipeJSON))
+					require.Equal(t, kind, restored.(*File).lazyKind)
+					require.JSONEq(t, string(raw), string(restored.(*File).lazyJSON))
 				} else {
 					require.IsType(t, original, restored.(*File).Lazy)
 				}
@@ -254,7 +254,7 @@ func TestEagerProducerCodecs(t *testing.T) {
 			container := NewContainer(producer.Platform)
 			if ready {
 				container.FS.setValue(containerPersistenceTestDirectory("builtin-codec", "/"))
-				require.NoError(t, recordCompletedBuiltinProducer(container, producer))
+				require.NoError(t, evaluatedLazyFixture(container, producer))
 			} else {
 				container.Lazy = producer
 			}
@@ -266,7 +266,7 @@ func TestEagerProducerCodecs(t *testing.T) {
 			require.NoError(t, err)
 			restored := value.(*Container)
 			if ready {
-				require.JSONEq(t, string(raw), string(restored.completedRecipeJSON))
+				require.JSONEq(t, string(raw), string(restored.lazyJSON))
 			} else {
 				require.IsType(t, producer, restored.Lazy)
 				require.NotSame(t, producer, restored.Lazy)
@@ -274,13 +274,7 @@ func TestEagerProducerCodecs(t *testing.T) {
 		}
 		_, err = persistedContainerRecipeVisitors[call.Field](raw, newPersistedRefWalker(func(*dagql.PersistedRef) error { t.Fatal("builtin recipe declared a child"); return nil }, dagql.PersistedRefPath{}))
 		require.NoError(t, err)
-		ctr := NewContainer(producer.Platform)
-		require.NoError(t, recordCompletedBuiltinProducer(ctr, producer))
-		require.Error(t, recordCompletedBuiltinProducer(ctr, producer))
-		require.Same(t, producer, ctr.completedRecipe)
-		for _, ctr := range []*Container{nil, {Lazy: producer}, {completedRecipe: producer}, {completedRecipeJSON: json.RawMessage(`{}`)}} {
-			require.Error(t, recordCompletedBuiltinProducer(ctr, producer))
-		}
+
 	})
 	t.Run("exact equivalent input", func(t *testing.T) {
 		original := f.recipes[0].(*DirectoryGitCleanedLazy).Repo
@@ -308,8 +302,8 @@ func TestEagerProducerCodecs(t *testing.T) {
 		require.Empty(t, payload.LazyJSON)
 		value, err := dir.DecodePersistedObject(f.ctx, dagql.NewPersistDecodeContext(f.srv, rec.ResultID, rec.Call), rec.Envelope.ObjectJSON)
 		require.NoError(t, err)
-		require.Nil(t, value.(*Directory).completedRecipe)
-		require.Empty(t, value.(*Directory).completedRecipeJSON)
+		require.IsType(t, &DirectoryRestoreLazy{}, value.(*Directory).Lazy)
+		require.Empty(t, value.(*Directory).lazyJSON)
 	})
 
 	_, err := decodePersistedDirectoryLazy(f.ctx, dec, "unknown", json.RawMessage(`{}`))
@@ -322,7 +316,7 @@ func TestEagerProducerRelocation(t *testing.T) {
 	f := newEagerProducerFixture(t)
 	for i, recipe := range f.recipes {
 		dir := containerPersistenceTestDirectory(fmt.Sprintf("output-%d", i), "/")
-		require.NoError(t, RecordCompletedProducer(dir, recipe))
+		require.NoError(t, evaluatedLazyFixture(dir, recipe))
 		result := attachEagerProducerDirectory(t, f, dir, recipe)
 		refs := assertPersistedRefsMatchOwnership(t, f.ctx, f.cache, result)
 		if _, scratch := recipe.(*DirectoryScratchLazy); scratch {
@@ -355,7 +349,7 @@ func TestEagerProducerRelocation(t *testing.T) {
 	stateA := f.env.attach(t, f.ctx, f.cache, f.srv, "http-state-a", &HTTPState{URL: "https://origin/saved"})
 	stateB := f.env.attach(t, f.ctx, f.cache, f.srv, "http-state-b", &HTTPState{URL: "https://origin/saved"})
 	file := storedSnapshotTestValue("File", "http-frame", "data", false).(*File)
-	require.NoError(t, RecordCompletedProducer(file, &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: "https://origin/saved", Filename: "data", BodyDigest: digest.FromString("body")}))
+	require.NoError(t, evaluatedLazyFixture(file, &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: "https://origin/saved", Filename: "data", BodyDigest: digest.FromString("body")}))
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "_resolve", Type: dagql.NewResultCallType(file.Type()), Receiver: &dagql.ResultCallRef{ResultID: persistedRowID(t, f.cache, stateA)}}
 	result, err := f.cache.GetOrInitCall(f.ctx, f.env.session, f.srv, &dagql.CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
 		return dagql.NewObjectResultForCall(file, f.srv, frame)
@@ -375,7 +369,7 @@ func TestEagerProducerSaveReopen(t *testing.T) {
 	records := []dagql.PersistedRecord{}
 	for i, recipe := range f.recipes {
 		dir := containerPersistenceTestDirectory(fmt.Sprintf("saved-%d", i), "/saved")
-		require.NoError(t, RecordCompletedProducer(dir, recipe))
+		require.NoError(t, evaluatedLazyFixture(dir, recipe))
 		res := attachEagerProducerDirectory(t, f, dir, recipe)
 		rec, err := f.cache.CapturePersistedRecord(f.ctx, res)
 		require.NoError(t, err)
@@ -383,7 +377,7 @@ func TestEagerProducerSaveReopen(t *testing.T) {
 	}
 	state := f.env.attach(t, f.ctx, f.cache, f.srv, "saved-state", &HTTPState{URL: "https://origin/saved"})
 	httpFile := storedSnapshotTestValue("File", "saved-http", "../data", false).(*File)
-	require.NoError(t, RecordCompletedProducer(httpFile, &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: "https://origin/saved", Filename: "../data", Permissions: 0600, BodyDigest: digest.FromString("saved")}))
+	require.NoError(t, evaluatedLazyFixture(httpFile, &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: "https://origin/saved", Filename: "../data", Permissions: 0600, BodyDigest: digest.FromString("saved")}))
 	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "_resolve", Receiver: &dagql.ResultCallRef{ResultID: persistedRowID(t, f.cache, state)}, Type: dagql.NewResultCallType(httpFile.Type())}
 	httpRes, err := f.cache.GetOrInitCall(f.ctx, f.env.session, f.srv, &dagql.CallRequest{ResultCall: call, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
 		return dagql.NewObjectResultForCall(httpFile, f.srv, call)
@@ -393,14 +387,14 @@ func TestEagerProducerSaveReopen(t *testing.T) {
 	require.NoError(t, err)
 	records = append(records, rec)
 	schema := storedSnapshotTestValue("File", "saved-schema", "schema.json", false).(*File)
-	require.NoError(t, RecordCompletedProducer(schema, &FileBlobLazy{LazyState: NewLazyState(), Filename: "schema.json", Contents: []byte(`{"saved":true}`), Permissions: 0644}))
+	require.NoError(t, evaluatedLazyFixture(schema, &FileBlobLazy{LazyState: NewLazyState(), Filename: "schema.json", Contents: []byte(`{"saved":true}`), Permissions: 0644}))
 	schemaRes := f.env.attach(t, f.ctx, f.cache, f.srv, "saved-schema", schema)
 	rec, err = f.cache.CapturePersistedRecord(f.ctx, schemaRes)
 	require.NoError(t, err)
 	records = append(records, rec)
 	builtin := NewContainer(Platform{OS: "linux", Architecture: "amd64"})
 	builtin.FS.setValue(containerPersistenceTestDirectory("saved-builtin", "/"))
-	require.NoError(t, recordCompletedBuiltinProducer(builtin, &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: Platform{OS: "linux", Architecture: "arm64"}, ManifestDigest: digest.FromString("saved-manifest")}))
+	require.NoError(t, evaluatedLazyFixture(builtin, &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: Platform{OS: "linux", Architecture: "arm64"}, ManifestDigest: digest.FromString("saved-manifest")}))
 	builtinRes := f.env.attach(t, f.ctx, f.cache, f.srv, "_builtinContainer", builtin)
 	rec, err = f.cache.CapturePersistedRecord(f.ctx, builtinRes)
 	require.NoError(t, err)
@@ -417,16 +411,16 @@ func TestEagerProducerSaveReopen(t *testing.T) {
 			require.NoError(t, err)
 			switch value := res.Unwrap().(type) {
 			case *Directory:
-				require.Nil(t, value.completedRecipe)
-				require.NotEmpty(t, value.completedRecipeJSON)
+				require.NotNil(t, value.Lazy)
+				require.NotEmpty(t, value.lazyJSON)
 				require.Zero(t, f.env.manager.openCount(value.stored.SnapshotID))
 			case *File:
-				require.Nil(t, value.completedRecipe)
-				require.NotEmpty(t, value.completedRecipeJSON)
+				require.NotNil(t, value.Lazy)
+				require.NotEmpty(t, value.lazyJSON)
 				require.Zero(t, f.env.manager.openCount(value.stored.SnapshotID))
 			case *Container:
-				require.Nil(t, value.completedRecipe)
-				require.NotEmpty(t, value.completedRecipeJSON)
+				require.NotNil(t, value.Lazy)
+				require.NotEmpty(t, value.lazyJSON)
 				require.Zero(t, f.env.manager.openCount("saved-builtin"))
 			default:
 				t.Fatalf("unexpected output %T", value)

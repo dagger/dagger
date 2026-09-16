@@ -47,7 +47,7 @@ type producerCleanupManager struct {
 }
 
 func (*producerCleanupManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
-	return nil, nil
+	return &cacheVolumeTestImmutableRef{}, nil
 }
 
 func producerCleanupContext(t *testing.T, ref *producerCleanupRef) context.Context {
@@ -121,7 +121,7 @@ func TestProducerPathCleanup(t *testing.T) {
 		dir.Snapshot.setValue(&cacheVolumeTestImmutableRef{release: func(context.Context) error { borrowedReleases++; return nil }})
 		ancestor := attachTransferObject(t, ctx, cache, srv, "cleanup", "ancestor", containerPersistenceTestDirectory("ancestor", "/"))
 		existing := &DirectorySubdirectoryLazy{LazyState: NewLazyState(), Parent: ancestor, Subdir: "."}
-		dir.completedRecipe = existing
+		require.NoError(t, evaluatedLazyFixture(dir, existing))
 		parent := attachTransferObject(t, ctx, cache, srv, "cleanup", "directory", dir)
 		ancestorID := persistedRowID(t, cache, ancestor)
 		ownership := func() int64 {
@@ -140,13 +140,14 @@ func TestProducerPathCleanup(t *testing.T) {
 		require.Equal(t, 1, ref.releases)
 		require.Zero(t, ref.commits)
 		require.Zero(t, borrowedReleases)
-		require.Same(t, existing, dir.completedRecipe)
+		require.Same(t, existing, dir.Lazy)
 		call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "cleanedAlias", Type: dagql.NewResultCallType(dir.Type())}
 		alias, err := cache.GetOrInitCall(ctx, "cleanup", srv, &dagql.CallRequest{ResultCall: call}, func(context.Context) (dagql.AnyResult, error) { return result, nil })
 		require.NoError(t, err)
 		require.Equal(t, persistedRowID(t, cache, parent), persistedRowID(t, cache, alias))
 		require.Equal(t, before, ownership(), "alias attachment added another input owner")
-		require.Same(t, existing, dir.completedRecipe)
+		require.Same(t, existing, dir.Lazy)
+
 	})
 }
 

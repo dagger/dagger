@@ -257,7 +257,12 @@ func TestContainerDefaultPlatformCacheIdentity(t *testing.T) {
 func TestCloneContainerForSchemaChildDisablesFromContentDigest(t *testing.T) {
 	t.Parallel()
 
-	dag, err := dagql.NewServer(t.Context(), &core.Query{})
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "clone", SessionID: "clone"})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.CloseDiscardingPersistence()) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	dag, err := dagql.NewServer(ctx, &core.Query{})
 	require.NoError(t, err)
 	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Container]{Typed: &core.Container{}}))
 
@@ -269,7 +274,10 @@ func TestCloneContainerForSchemaChildDisablesFromContentDigest(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, parent.Self().CanUseFromContentDigest())
 
-	child, _, err := cloneContainerForSchemaChild(t.Context(), parent)
+	attached, err := cache.AttachResult(ctx, "clone", dag, parent)
+	require.NoError(t, err)
+	parent = attached.(dagql.ObjectResult[*core.Container])
+	child, _, err := cloneContainerForSchemaChild(ctx, parent)
 	require.NoError(t, err)
 	require.False(t, child.CanUseFromContentDigest())
 }
@@ -312,6 +320,10 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		attached, err := cache.AttachResult(ctx, sessionID, dag, parent)
+		require.NoError(t, err)
+		parent = attached.(dagql.ObjectResult[*core.Container])
+
 		child, err := schema.withoutMount(ctx, parent, containerWithoutMountArgs{Path: "/old"})
 		require.NoError(t, err)
 		require.Nil(t, child.Lazy)
@@ -326,6 +338,10 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
 		})
 		require.NoError(t, err)
+
+		attached, err := cache.AttachResult(ctx, sessionID, dag, parent)
+		require.NoError(t, err)
+		parent = attached.(dagql.ObjectResult[*core.Container])
 
 		child, err := schema.withMountedTemp(ctx, parent, containerWithMountedTempArgs{Path: "/tmp"})
 		require.NoError(t, err)
@@ -345,6 +361,10 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
 		})
 		require.NoError(t, err)
+
+		attached, err := cache.AttachResult(ctx, sessionID, dag, parent)
+		require.NoError(t, err)
+		parent = attached.(dagql.ObjectResult[*core.Container])
 
 		child, err := schema.withMountedVolume(ctx, parent, containerWithMountedVolumeArgs{
 			Path:     "/volume",
@@ -370,6 +390,10 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		attached, err := cache.AttachResult(ctx, sessionID, dag, parent)
+		require.NoError(t, err)
+		parent = attached.(dagql.ObjectResult[*core.Container])
+
 		child, err := schema.withMountedSecret(ctx, parent, containerWithMountedSecretArgs{
 			Path:   "/secret",
 			Source: dagql.NewID[*core.Secret](secretID),
@@ -394,6 +418,10 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		attached, err := cache.AttachResult(ctx, sessionID, dag, parent)
+		require.NoError(t, err)
+		parent = attached.(dagql.ObjectResult[*core.Container])
+
 		child, err := schema.withUnixSocket(ctx, parent, containerWithUnixSocketArgs{
 			Path:   "/socket",
 			Source: dagql.NewID[*core.Socket](socketID),
@@ -416,6 +444,10 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
 		})
 		require.NoError(t, err)
+
+		attached, err := cache.AttachResult(ctx, sessionID, dag, parent)
+		require.NoError(t, err)
+		parent = attached.(dagql.ObjectResult[*core.Container])
 
 		child, err := schema.withoutUnixSocket(ctx, parent, containerWithoutUnixSocketArgs{Path: "/old.sock"})
 		require.NoError(t, err)

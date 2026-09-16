@@ -36,6 +36,7 @@ func TestPartWholeProducerMixedRestart(t *testing.T) {
 	ctr, err := BuiltInContainer(actx, Platform{OS: "linux", Architecture: "amd64"}, manifest.Digest.String())
 	require.NoError(t, err)
 	original := attachTransferObject(t, actx, a, asrv, "producer-execution", "_builtinContainer", ctr)
+	require.NoError(t, a.Evaluate(actx, original))
 	dbPath := filepath.Join(t.TempDir(), "mixed.db")
 	open := func(session string) (context.Context, *dagql.Cache, *dagql.Server) {
 		ctx, cache, srv := transferCache(t, bStore, dbPath, session)

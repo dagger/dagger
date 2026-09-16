@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRecordCompletedContainerMountProducer(t *testing.T) {
+func TestMountedLazyRepresentations(t *testing.T) {
 	for _, file := range []bool{false, true} {
 		t.Run(map[bool]string{false: "Directory", true: "File"}[file], func(t *testing.T) {
 			ctx, store, cache, srv, _ := executionFixture(t)
@@ -27,66 +27,28 @@ func TestRecordCompletedContainerMountProducer(t *testing.T) {
 			sourceFile := attachTransferObject(t, ctx, cache, srv, "producer-execution", "sourceFile", freshFile)
 			makeValue := func() (*Container, Lazy[*Container], string) {
 				ctr := NewContainer(dir.Platform)
+				CopyContainerMetadata(ctr, parent.Self())
 				if file {
-					_, err := ctr.WithMountedFile(ctx, parent, "/target", sourceFile, "", false)
-					require.NoError(t, err)
-					return ctr, &ContainerWithMountedFileLazy{LazyState: NewLazyState(), Parent: parent, Source: sourceFile, Target: "/target"}, "withMountedFile"
+					op := &ContainerWithMountedFileLazy{LazyState: NewLazyState(), Parent: parent, Source: sourceFile, Target: "/target"}
+					ctr.Lazy = op
+					ctr.Mounts = ctr.Mounts.With(ContainerMount{Target: "/target", FileSource: new(LazyAccessor[*File, *Container])})
+					return ctr, op, "withMountedFile"
 				}
-				_, err := ctr.WithMountedDirectory(ctx, parent, "/target", sourceDir, "", true)
-				require.NoError(t, err)
-				return ctr, &ContainerWithMountedDirectoryLazy{LazyState: NewLazyState(), Parent: parent, Source: sourceDir, Target: "/target", Readonly: true}, "withMountedDirectory"
+				op := &ContainerWithMountedDirectoryLazy{LazyState: NewLazyState(), Parent: parent, Source: sourceDir, Target: "/target", Readonly: true}
+				ctr.Lazy = op
+				ctr.Mounts = ctr.Mounts.With(ContainerMount{Target: "/target", Readonly: true, DirectorySource: new(LazyAccessor[*Directory, *Container])})
+				return ctr, op, "withMountedDirectory"
 			}
-			for _, mode := range []string{"nil", "typed-nil", "wrong-kind", "missing-parent", "missing-source", "missing-target", "pending", "imported", "encoded", "success"} {
+			for _, mode := range []string{"pending", "evaluated"} {
 				t.Run(mode, func(t *testing.T) {
-					ctr, producer, field := makeValue()
+					ctr, op, field := makeValue()
 					defer func() { require.NoError(t, ctr.OnRelease(context.WithoutCancel(ctx))) }()
-					before := ctr.Mounts[0]
-					switch mode {
-					case "nil":
-						producer = nil
-					case "typed-nil":
-						producer = (*ContainerWithMountedFileLazy)(nil)
-					case "wrong-kind":
-						producer = &ContainerBuiltinLazy{LazyState: NewLazyState()}
-					case "missing-parent":
-						if p, ok := producer.(*ContainerWithMountedFileLazy); ok {
-							p.Parent = dagql.ObjectResult[*Container]{}
-						} else {
-							producer.(*ContainerWithMountedDirectoryLazy).Parent = dagql.ObjectResult[*Container]{}
-						}
-					case "missing-source":
-						if p, ok := producer.(*ContainerWithMountedFileLazy); ok {
-							p.Source = dagql.ObjectResult[*File]{}
-						} else {
-							producer.(*ContainerWithMountedDirectoryLazy).Source = dagql.ObjectResult[*Directory]{}
-						}
-					case "missing-target":
-						if p, ok := producer.(*ContainerWithMountedFileLazy); ok {
-							p.Target = "/absent"
-						} else {
-							producer.(*ContainerWithMountedDirectoryLazy).Target = "/absent"
-						}
-					case "pending":
-						ctr.Lazy = producer
-					case "imported":
-						ctr.acquiredOutput.Store(&containerAcquiredOutput{})
-					case "encoded":
-						ctr.completedRecipeJSON = json.RawMessage(`{}`)
+					if mode == "evaluated" {
+						require.NoError(t, ctr.Evaluate(ctx))
 					}
-					err := RecordCompletedContainerMountProducer(ctr, producer)
-					if mode != "success" {
-						require.Error(t, err)
-						require.Nil(t, ctr.completedRecipe)
-						require.Equal(t, before, ctr.Mounts[0])
-						return
-					}
-					require.NoError(t, err)
-					require.Same(t, producer, ctr.completedRecipe)
-					require.Nil(t, ctr.Lazy)
-					require.Equal(t, before, ctr.Mounts[0])
-					require.Error(t, RecordCompletedContainerMountProducer(ctr, producer))
-					// The synthetic frame has no receiver or args: attachment must own
-					// both exact inputs through the completed-recipe fallback.
+					require.Same(t, op, ctr.Lazy)
+					// The synthetic frame has no receiver or arguments. Direct operation
+					// inputs must keep the exact parent and source alive after publication.
 					attached := attachTransferObject(t, ctx, cache, srv, "producer-execution", field, ctr)
 					record, err := cache.CapturePersistedRecord(ctx, attached)
 					require.NoError(t, err)
@@ -139,5 +101,4 @@ func TestRecordCompletedContainerMountProducer(t *testing.T) {
 			}
 		})
 	}
-	require.Error(t, RecordCompletedContainerMountProducer(nil, &ContainerWithMountedFileLazy{}))
 }

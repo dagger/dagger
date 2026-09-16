@@ -202,9 +202,8 @@ func (s *filePartStore) Publish() {
 	r.Services = n.Services
 	r.stored = n.stored
 	r.storedDiagnostics = n.storedDiagnostics
-	r.completedRecipeKind = n.completedRecipeKind
-	r.completedRecipeJSON = n.completedRecipeJSON
-	r.completedRecipe = nil
+	r.lazyKind = n.lazyKind
+	r.lazyJSON = n.lazyJSON
 	r.Lazy = nil
 	r.transferPending = nil
 	r.OutputRev++
@@ -261,9 +260,8 @@ func (s *directoryPartStore) Publish() {
 	r.Services = n.Services
 	r.stored = n.stored
 	r.storedDiagnostics = n.storedDiagnostics
-	r.completedRecipeKind = n.completedRecipeKind
-	r.completedRecipeJSON = n.completedRecipeJSON
-	r.completedRecipe = nil
+	r.lazyKind = n.lazyKind
+	r.lazyJSON = n.lazyJSON
 	r.Lazy = nil
 	r.transferPending = nil
 	r.OutputRev++
@@ -301,9 +299,6 @@ func (ctr *Container) PersistedOutputRevision() (dagql.OutputRevision, error) {
 	}
 	defer unlock()
 	lazy := ctr.Lazy
-	if lazy == nil {
-		lazy = ctr.completedRecipe
-	}
 	if provider, ok := lazy.(interface{ ContainerLazyState() *LazyState }); ok {
 		return dagql.OutputRevision(provider.ContainerLazyState().outputRevision.Load()), nil
 	}
@@ -575,9 +570,6 @@ func (ctr *Container) tryPartPublicationGuard() (func(), error) {
 		return nil, dagql.ErrPersistStateNotReady
 	}
 	lazy := ctr.Lazy
-	if lazy == nil {
-		lazy = ctr.completedRecipe
-	}
 	if lazy == nil {
 		return ctr.lazyOpMu.Unlock, nil
 	}

@@ -44,10 +44,9 @@ type File struct {
 	stored            *storedSnapshot
 	Lazy              Lazy[*File]
 
-	// Keep the producer independently of the operational lazy pointer.
-	completedRecipe     Lazy[*File]
-	completedRecipeKind string
-	completedRecipeJSON json.RawMessage
+	// Retained operation bytes for snapshot restore and acquired values.
+	lazyKind string
+	lazyJSON json.RawMessage
 
 	File     *LazyAccessor[string, *File]
 	Snapshot *LazyAccessor[bkcache.ImmutableRef, *File]
@@ -104,7 +103,7 @@ func (file *File) AttachDependencyResultsKinds(
 	if file == nil {
 		return nil, nil
 	}
-	return attachFilesystemDependencyResultsKinds(ctx, "file", file.Services, file.Lazy, file.completedRecipe, attach)
+	return attachFilesystemDependencyResultsKinds(ctx, "file", file.Services, file.Lazy, attach)
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
@@ -256,10 +255,10 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 	}
 	if identity, ok := file.snapshotIdentityLocked(); ok {
 		payload.Form = persistedFileFormSnapshot
-		payload.LazyKind = file.completedRecipeKind
-		payload.LazyJSON = file.completedRecipeJSON
-		recipe := file.completedRecipe
-		if recipe == nil && file.Lazy != nil {
+		payload.LazyKind = file.lazyKind
+		payload.LazyJSON = file.lazyJSON
+		var recipe Lazy[*File]
+		if file.Lazy != nil {
 			if _, restored := file.Lazy.(*FileRestoreLazy); !restored {
 				recipe = file.Lazy
 			}
@@ -340,8 +339,8 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 			return nil, err
 		}
 		file.stored = &storedSnapshot{SnapshotID: link.RefKey}
-		file.completedRecipeKind = persisted.LazyKind
-		file.completedRecipeJSON = slices.Clone(persisted.LazyJSON)
+		file.lazyKind = persisted.LazyKind
+		file.lazyJSON = slices.Clone(persisted.LazyJSON)
 		file.storedDiagnostics = newStoredSnapshotDiagnostics()
 		file.SetPath(persisted.File)
 		file.Lazy = &FileRestoreLazy{LazyState: NewLazyState()}
