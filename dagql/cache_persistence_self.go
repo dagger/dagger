@@ -187,6 +187,13 @@ func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContex
 		if !ok {
 			return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: type %q (%T) has no registered persisted object family", value.Type().Name(), self)
 		}
+		if versions, ok := ctx.Value(capturedOutputVersionsKey{}).(*capturedOutputVersions); ok {
+			if output, ok := self.(PersistedOutputVersion); ok {
+				if err := versions.record(output); err != nil {
+					return PersistedResultEncoding{}, err
+				}
+			}
+		}
 		objectEncoding, err := encoder.EncodePersistedObject(ctx, enc)
 		if err != nil {
 			return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: %w", err)

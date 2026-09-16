@@ -710,8 +710,8 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	dir.Dir.setValue("/")
-	dir.Snapshot.setValue(snap)
+	dir.SetPath("/")
+	dir.SetSnapshot(snap)
 	return dir, nil
 }
 

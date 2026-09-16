@@ -445,8 +445,8 @@ func (state *HTTPState) fileResult(
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	file.File.setValue(name)
-	file.Snapshot.setValue(snap)
+	file.SetPath(name)
+	file.SetSnapshot(snap)
 	return &HTTPFetchResult{
 		File:          file,
 		ContentDigest: state.ContentDigest,
@@ -559,8 +559,8 @@ func fetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts,
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	file.File.setValue(opts.Filename)
-	file.Snapshot.setValue(snap)
+	file.SetPath(opts.Filename)
+	file.SetSnapshot(snap)
 
 	return &HTTPFetchResult{
 		File:          file,

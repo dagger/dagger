@@ -202,7 +202,7 @@ func (s *fileSchema) blob(
 		File:     new(core.LazyAccessor[string, *core.File]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
-	file.File.SetValue(filepath.Join("/", args.Name))
+	file.SetPath(filepath.Join("/", args.Name))
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
@@ -277,7 +277,7 @@ func (s *fileSchema) withName(ctx context.Context, parent dagql.ObjectResult[*co
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 	if parentPath, ok := parent.Self().File.Peek(); ok {
-		file.File.SetValue(filepath.Join(filepath.Dir(parentPath), args.Name))
+		file.SetPath(filepath.Join(filepath.Dir(parentPath), args.Name))
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
@@ -320,7 +320,7 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 	if parentPath, ok := parent.Self().File.Peek(); ok {
-		file.File.SetValue(parentPath)
+		file.SetPath(parentPath)
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
@@ -384,7 +384,7 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 	if parentPath, ok := parent.Self().File.Peek(); ok {
-		f.File.SetValue(parentPath)
+		f.SetPath(parentPath)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
@@ -415,7 +415,7 @@ func (s *fileSchema) chown(
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
 	if parentPath, ok := parent.Self().File.Peek(); ok {
-		f.File.SetValue(parentPath)
+		f.SetPath(parentPath)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }

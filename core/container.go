@@ -887,7 +887,7 @@ func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Director
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
 	if dirPath, ok := src.Dir.Peek(); ok {
-		cp.Dir.setValue(dirPath)
+		cp.SetPath(dirPath)
 	}
 
 	snapshot, ok := src.Snapshot.Peek()
@@ -903,7 +903,7 @@ func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Director
 	if err != nil {
 		return nil, err
 	}
-	cp.Snapshot.setValue(reopened)
+	cp.SetSnapshot(reopened)
 	return cp, nil
 }
 
@@ -923,7 +923,7 @@ func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File,
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
 	if filePath, ok := src.File.Peek(); ok {
-		cp.File.setValue(filePath)
+		cp.SetPath(filePath)
 	}
 
 	snapshot, ok := src.Snapshot.Peek()
@@ -939,7 +939,7 @@ func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File,
 	if err != nil {
 		return nil, err
 	}
-	cp.Snapshot.setValue(reopened)
+	cp.SetSnapshot(reopened)
 	return cp, nil
 }
 
@@ -3052,12 +3052,12 @@ func (lazy *ContainerRootFSLazy) Evaluate(ctx context.Context, dir *Directory) e
 				dir.Platform = detached.Platform
 				dir.Services = slices.Clone(detached.Services)
 				if dirPath, ok := detached.Dir.Peek(); ok {
-					dir.Dir.setValue(dirPath)
+					dir.SetPath(dirPath)
 				}
 				if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
-					dir.Snapshot.setValue(snapshot)
+					dir.SetSnapshot(snapshot)
 				}
-				dir.Lazy = nil
+				dir.clearLazy()
 				return nil
 			}
 		}
@@ -3066,9 +3066,9 @@ func (lazy *ContainerRootFSLazy) Evaluate(ctx context.Context, dir *Directory) e
 		if err != nil {
 			return err
 		}
-		dir.Dir.setValue(scratchDir)
-		dir.Snapshot.setValue(scratchSnapshot)
-		dir.Lazy = nil
+		dir.SetPath(scratchDir)
+		dir.SetSnapshot(scratchSnapshot)
+		dir.clearLazy()
 		return nil
 	})
 }
@@ -3258,12 +3258,12 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 				dir.Platform = detached.Platform
 				dir.Services = slices.Clone(detached.Services)
 				if dirPath, ok := detached.Dir.Peek(); ok {
-					dir.Dir.setValue(dirPath)
+					dir.SetPath(dirPath)
 				}
 				if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
-					dir.Snapshot.setValue(snapshot)
+					dir.SetSnapshot(snapshot)
 				}
-				dir.Lazy = nil
+				dir.clearLazy()
 				return nil
 			}
 			mountedDirPath, ok := mountedDir.Dir.Peek()
@@ -3301,9 +3301,9 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			}
 			dir.Platform = mountedDir.Platform
 			dir.Services = slices.Clone(mountedDir.Services)
-			dir.Dir.setValue(finalDir)
-			dir.Snapshot.setValue(reopened)
-			dir.Lazy = nil
+			dir.SetPath(finalDir)
+			dir.SetSnapshot(reopened)
+			dir.clearLazy()
 			return nil
 		case mnt.FileSource != nil:
 			return notADirectoryError{fmt.Errorf("path %s is a file, not a directory", lazy.Path)}
@@ -3326,12 +3326,12 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 		dir.Platform = detached.Platform
 		dir.Services = slices.Clone(detached.Services)
 		if dirPath, ok := detached.Dir.Peek(); ok {
-			dir.Dir.setValue(dirPath)
+			dir.SetPath(dirPath)
 		}
 		if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
-			dir.Snapshot.setValue(snapshot)
+			dir.SetSnapshot(snapshot)
 		}
-		dir.Lazy = nil
+		dir.clearLazy()
 		return nil
 	})
 }
@@ -3446,9 +3446,9 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 			}
 			file.Platform = mountedDir.Platform
 			file.Services = slices.Clone(mountedDir.Services)
-			file.File.setValue(finalFile)
-			file.Snapshot.setValue(reopened)
-			file.Lazy = nil
+			file.SetPath(finalFile)
+			file.SetSnapshot(reopened)
+			file.clearLazy()
 			return nil
 		case mnt.FileSource != nil:
 			if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartMount(mnt.Target)); err != nil {
@@ -3468,12 +3468,12 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 			file.Platform = detached.Platform
 			file.Services = slices.Clone(detached.Services)
 			if filePath, ok := detached.File.Peek(); ok {
-				file.File.setValue(filePath)
+				file.SetPath(filePath)
 			}
 			if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
-				file.Snapshot.setValue(snapshot)
+				file.SetSnapshot(snapshot)
 			}
-			file.Lazy = nil
+			file.clearLazy()
 			return nil
 		default:
 			return fmt.Errorf("container file lazy: invalid path %s in container mounts", lazy.Path)
@@ -3494,12 +3494,12 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 		file.Platform = detached.Platform
 		file.Services = slices.Clone(detached.Services)
 		if filePath, ok := detached.File.Peek(); ok {
-			file.File.setValue(filePath)
+			file.SetPath(filePath)
 		}
 		if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
-			file.Snapshot.setValue(snapshot)
+			file.SetSnapshot(snapshot)
 		}
-		file.Lazy = nil
+		file.clearLazy()
 		return nil
 	})
 }
@@ -5290,8 +5290,8 @@ func (container *Container) FromCanonicalRef(
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	rootfsDir.Dir.setValue("/")
-	rootfsDir.Snapshot.setValue(ref)
+	rootfsDir.SetPath("/")
+	rootfsDir.SetSnapshot(ref)
 	container.FS.setValue(rootfsDir)
 
 	return nil
@@ -5521,8 +5521,8 @@ func (container *Container) ensureRootFS(ctx context.Context) error {
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	rootfs.Dir.setValue(scratchDir)
-	rootfs.Snapshot.setValue(scratchSnapshot)
+	rootfs.SetPath(scratchDir)
+	rootfs.SetSnapshot(scratchSnapshot)
 	container.FS.setValue(rootfs)
 	return nil
 }
@@ -5630,8 +5630,8 @@ func (container *Container) WithFile(
 				Dir:      new(LazyAccessor[string, *Directory]),
 				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			}
-			rootfs.Dir.setValue(scratchDir)
-			rootfs.Snapshot.setValue(scratchSnapshot)
+			rootfs.SetPath(scratchDir)
+			rootfs.SetSnapshot(scratchSnapshot)
 			container.FS.setValue(rootfs)
 		}
 	}
@@ -5798,8 +5798,8 @@ func (container *Container) WithSymlink(ctx context.Context, parent dagql.Object
 				Dir:      new(LazyAccessor[string, *Directory]),
 				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			}
-			rootfs.Dir.setValue(scratchDir)
-			rootfs.Snapshot.setValue(scratchSnapshot)
+			rootfs.SetPath(scratchDir)
+			rootfs.SetSnapshot(scratchSnapshot)
 			container.FS.setValue(rootfs)
 		}
 	}
@@ -6067,8 +6067,8 @@ func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResul
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	dir.Dir.setValue(path.Join(sourceDirPath, sourcePath))
-	dir.Snapshot.setValue(reopened)
+	dir.SetPath(path.Join(sourceDirPath, sourcePath))
+	dir.SetSnapshot(reopened)
 	return dir, nil
 }
 
@@ -6101,8 +6101,8 @@ func detachedFileAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Di
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	file.File.setValue(path.Join(sourceDirPath, sourcePath))
-	file.Snapshot.setValue(reopened)
+	file.SetPath(path.Join(sourceDirPath, sourcePath))
+	file.SetSnapshot(reopened)
 	return file, nil
 }
 

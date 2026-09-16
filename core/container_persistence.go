@@ -588,9 +588,9 @@ func (container *Container) openStoredContainerPart(ctx context.Context, part da
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			Platform: stored.Platform, Services: slices.Clone(stored.Services),
 		}
-		dir.Dir.setValue(stored.Path)
+		dir.SetPath(stored.Path)
 		publish = func(ref bkcache.ImmutableRef) {
-			dir.Snapshot.setValue(ref)
+			dir.SetSnapshot(ref)
 			dest.setValue(dir)
 		}
 	case containerPartFile:
@@ -604,9 +604,9 @@ func (container *Container) openStoredContainerPart(ctx context.Context, part da
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 			Platform: stored.Platform, Services: slices.Clone(stored.Services),
 		}
-		file.File.setValue(stored.Path)
+		file.SetPath(stored.Path)
 		publish = func(ref bkcache.ImmutableRef) {
-			file.Snapshot.setValue(ref)
+			file.SetSnapshot(ref)
 			mnt.FileSource.setValue(file)
 		}
 	default:

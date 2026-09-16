@@ -58,7 +58,6 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 			shared.lazyMu.Unlock()
 		}
 	}()
-	armed := shared.lazyWhole.eval != nil
 	if shared.lazyWhole.attempt != nil || shared.lazyWhole.syncPending {
 		return PersistedRecord{}, fmt.Errorf("%w: result %d whole evaluation", ErrPersistStateNotReady, shared.id)
 	}
@@ -66,7 +65,6 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		if group.attempt != nil || group.syncPending {
 			return PersistedRecord{}, fmt.Errorf("%w: result %d group %q", ErrPersistStateNotReady, shared.id, key)
 		}
-		armed = armed || group.eval != nil
 	}
 
 	payload := shared.loadPayloadState()
@@ -80,16 +78,12 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 	}
 	captured.storeResultCall(frame)
 	value := Result[Typed]{shared: captured}
-	// Parts may have unstarted work before a cache-side group exists. Consult
-	// the object callback too, but only after ruling out a published attempt.
-	if payload.persistedEnvelope != nil || shared.lazyEvalComplete || (!armed && lazyEvalFuncOfResult(value) == nil) {
-		shared.lazyMu.Unlock()
-		locked = false
-	}
 	if err := context.Cause(ctx); err != nil {
 		return PersistedRecord{}, err
 	}
 
+	versions := new(capturedOutputVersions)
+	ctx = context.WithValue(ctx, capturedOutputVersionsKey{}, versions)
 	var encoding PersistedResultEncoding
 	if payload.persistedEnvelope != nil {
 		encoding = PersistedResultEncoding{
@@ -107,6 +101,9 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		}
 	}
 	if err := context.Cause(ctx); err != nil {
+		return PersistedRecord{}, err
+	}
+	if err := versions.check(); err != nil {
 		return PersistedRecord{}, err
 	}
 	encoding.Envelope.Imported, encoding.Envelope.PendingOffers = imported, offers

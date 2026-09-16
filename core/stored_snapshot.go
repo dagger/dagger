@@ -28,7 +28,7 @@ func (lazy *DirectoryRestoreLazy) Evaluate(ctx context.Context, dir *Directory) 
 		if err != nil {
 			return err
 		}
-		dir.Snapshot.setValue(snapshot)
+		dir.SetSnapshot(snapshot)
 		dir.storedDiagnostics.opened()
 		return nil
 	})
@@ -52,7 +52,7 @@ func (lazy *FileRestoreLazy) Evaluate(ctx context.Context, file *File) error {
 		if err != nil {
 			return err
 		}
-		file.Snapshot.setValue(snapshot)
+		file.SetSnapshot(snapshot)
 		file.storedDiagnostics.opened()
 		return nil
 	})

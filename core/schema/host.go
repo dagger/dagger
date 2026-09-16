@@ -358,8 +358,8 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.Dir.SetValue("/")
-	dir.Snapshot.SetValue(ref)
+	dir.SetPath("/")
+	dir.SetSnapshot(ref)
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
