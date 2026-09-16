@@ -448,9 +448,10 @@ func lazySyncState(shared *sharedResult) (pending, complete bool) {
 	return shared.lazyWhole.syncPending, shared.lazyEvalComplete
 }
 
-// A callback body consumes its object-side lazy state (mirroring how core
-// types clear their Lazy pointer) before the attempt's snapshot-lease
-// bookkeeping settles. During that window a second Evaluate must join the
+// A callback body reports object-side completion before the attempt's snapshot-lease
+// bookkeeping settles. Core types retain their operation; this generic test
+// value discards its callback after its body succeeds. During that window a
+// second Evaluate must join the
 // running attempt rather than observe the nil object-side callback and
 // report success. A failed bookkeeping step must stay retryable instead of
 // being swallowed as completed evaluation, and the retry must not re-run

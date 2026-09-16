@@ -3445,8 +3445,7 @@ func inheritedOwner(parent dagql.ObjectResult[*core.Container], owner string, in
 	return parent.Self().Config.User, nil
 }
 
-// An eager mount can shadow cloned parent mounts before recording rejects it.
-// Those detached clones are no longer reachable from the failed child.
+// Demand metadata before reading Container configuration, platform or mount shape.
 func evaluateContainerMetadata(ctx context.Context, parent dagql.ObjectResult[*core.Container]) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {

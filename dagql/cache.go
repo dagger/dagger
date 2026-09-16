@@ -1081,9 +1081,9 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 		return false
 	}
 	// Attempt and pending-bookkeeping checks come before object-side state:
-	// a callback body clears its object-side pointer while its attempt is
-	// still running cache-side bookkeeping, so object-side state is only
-	// trustworthy when no attempt is in flight. Any group with an attempt,
+	// body completion becomes visible through the retained operation's state
+	// while its attempt is still running cache-side bookkeeping. Object-side
+	// completion is sufficient only when no attempt is in flight. Any group with an attempt,
 	// pending bookkeeping, or an armed stored callback is pending work.
 	if g := &shared.lazyWhole; g.attempt != nil || g.syncPending || g.eval != nil {
 		return true
@@ -1113,7 +1113,7 @@ func HasPendingLazyComputation(res AnyResult) bool {
 }
 
 // Read attempts and owed bookkeeping before object consumption. Their purpose
-// belongs to the typed value and stays valid after its operation is cleared.
+// belongs to the typed value and stays valid after its retained operation completes.
 func pendingLazyComputationLocked(shared *sharedResult, reporting HasLazyEvaluationReporting) bool {
 	if shared.lazyEvalComplete {
 		return false

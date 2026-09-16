@@ -245,8 +245,8 @@ func TestHTTPPinLockCost(t *testing.T) {
 	started := make(chan struct{})
 	done := make(chan time.Duration, 1)
 	go func() {
-		close(started)
 		start := time.Now()
+		close(started)
 		pin, err := state.pinHTTPBody(ctx, store.Manager, digest.FromString("saved"))
 		if err == nil {
 			err = pin.Release(ctx)
