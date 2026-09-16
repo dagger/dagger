@@ -345,7 +345,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 	// unknown up front (the diff streams), so this renders as a climbing
 	// byte count, and an unchanged directory emits nothing. Parent-dir
 	// syncs transfer only directory entries and are skipped.
-	var uploadedBytes atomic.Int64
+	var uploadedBytes int64
+	var uploadedBytesMu sync.Mutex
 	upload := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
 	network, err := enginetelemetry.NewNetworkRecorder(ctx, enginetelemetry.NetworkRX)
 	if err != nil {
@@ -355,9 +356,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 		if forParents {
 			return
 		}
-		current := uploadedBytes.Add(written)
-		upload.Update(current)
-		network.Record(current)
+		uploadedBytesMu.Lock()
+		defer uploadedBytesMu.Unlock()
+		uploadedBytes += written
+		upload.Update(uploadedBytes)
+		network.Record(uploadedBytes)
 	}
 	defer upload.Finish()
 
