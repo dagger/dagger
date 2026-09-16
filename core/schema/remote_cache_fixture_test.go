@@ -66,6 +66,12 @@ func TestRemoteCacheFixture(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(callOperation(srv, "report")), &report))
 	require.Len(t, report.Bodies, 1)
 	require.Equal(t, uint64(3), report.Bodies[0].Count)
+	// Restart diagnostics remain available without resolving a saved handle.
+	require.NoError(t, os.WriteFile(filepath.Join(root, "persistence.json"), []byte(`{"persistenceResetReason":"unclean_shutdown","localCacheResetReason":"dagql_unclean_shutdown","removedPersistedRootCount":3}`), 0600))
+	require.NoError(t, json.Unmarshal([]byte(callOperation(srv, "report")), &report))
+	require.Equal(t, dagql.CachePersistenceResetUncleanShutdown, report.Persistence.PersistenceResetReason)
+	require.Equal(t, "dagql_unclean_shutdown", report.Persistence.LocalCacheResetReason)
+	require.Equal(t, 3, report.Persistence.RemovedPersistedRootCount)
 	// Repeating the same GraphQL import must allocate another fresh root.
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Address]{}))
 	address := &core.Address{Value: "recorded"}

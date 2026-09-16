@@ -20,7 +20,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-const remoteCacheFixtureGate = "_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT"
+const remoteCacheFixtureGate = core.RemoteCacheFixtureRootEnv
 
 type remoteCacheFixtureArgs struct {
 	Operation string
@@ -45,7 +45,8 @@ type remoteCacheBodyCount struct {
 }
 type remoteCacheFixtureReport struct {
 	dagql.TransferFixtureReport
-	Bodies []remoteCacheBodyCount `json:"bodies"`
+	Bodies      []remoteCacheBodyCount             `json:"bodies"`
+	Persistence core.RemoteCacheFixturePersistence `json:"persistence"`
 }
 
 func installRemoteCacheFixture(srv *dagql.Server) error {
@@ -308,6 +309,15 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		}
 	case "report":
 		var report remoteCacheFixtureReport
+		report.Persistence.PersistenceResetReason = cache.PersistenceResetReason()
+		fixture, openErr := os.OpenRoot(path)
+		if openErr != nil {
+			return nil, openErr
+		}
+		defer fixture.Close()
+		if err := readFixtureJSON(fixture, "persistence.json", &report.Persistence); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
 		report.TransferFixtureReport, err = cache.TransferFixtureSnapshot(ctx, md.SessionID, ids)
 		if err != nil {
 			return nil, err

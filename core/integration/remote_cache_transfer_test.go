@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
+	enginecore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -32,8 +34,9 @@ type transferFixtureMapping struct {
 	Handle   string                `json:"handle"`
 }
 type transferFixtureReport struct {
-	Rows   []dagql.TransferFixtureRow `json:"rows"`
-	Bodies []struct {
+	Persistence enginecore.RemoteCacheFixturePersistence `json:"persistence"`
+	Rows        []dagql.TransferFixtureRow               `json:"rows"`
+	Bodies      []struct {
 		Parent, Function, Client string
 		Receiver, Count          uint64
 	} `json:"bodies"`
@@ -95,15 +98,15 @@ func(r *Report) NoteDirectory(ctx context.Context,
 `
 
 func (RemoteCacheTransferSuite) TestSchemaRecovery(ctx context.Context, t *testctx.T) {
-	runTransferSchemaRecovery(ctx, t, false)
+	runTransferSchemaRecovery(ctx, t, false, false)
 }
 
 func (RemoteCacheTransferSuite) TestSchemaRecoveryCold(ctx context.Context, t *testctx.T) {
 	t.Skip("addendum 2: fully cold import needs batch 4 acquisition through local-equivalent selection or the batch 1 builtin producer; batch 7 owns acceptance")
-	runTransferSchemaRecovery(ctx, t, true)
+	runTransferSchemaRecovery(ctx, t, true, false)
 }
 
-func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold bool) {
+func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultGC bool) {
 	outer := connect(ctx, t)
 	newCheckout := func(t *testctx.T) string {
 		t.Helper()
@@ -137,11 +140,14 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold bool) {
 		}
 	}
 	start := func(t *testctx.T, state string, volume *dagger.CacheVolume, checkout string) *running {
-		// Match the persistence suite's limits so host disk pressure does not
-		// evict the saved handles whose restart behavior this test measures.
-		ctr := devEngineContainerWithStateKey(outer, state, engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0")), func(ctr *dagger.Container) *dagger.Container {
+		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
+		if !defaultGC {
+			// Match the persistence suite's bounds when measuring retention
+			// across restart independently of host disk pressure.
+			ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
+		}
 		e := &running{upstream: devEngineContainerAsService(ctr)}
 		var err error
 		e.tunnel, err = outer.Host().Tunnel(e.upstream).Start(ctx)
@@ -193,7 +199,11 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold bool) {
 	var native struct{ Node struct{ NoteFile string } }
 	require.NoError(t, a.client.Do(ctx, &dagger.Request{Query: `query($id:ID!){node(id:$id){... on CacheProbeReport{noteFile}}}`, Variables: map[string]any{"id": aID}}, &dagger.Response{Data: &native}))
 	require.Equal(t, "producer notes", native.Node.NoteFile)
-	for _, order := range []string{"before", "after"} {
+	orders := []string{"before", "after"}
+	if defaultGC {
+		orders = []string{"after"}
+	}
+	for _, order := range orders {
 		t.Run(order, func(ctx context.Context, t *testctx.T) {
 			bDir := newCheckout(t)
 			bVolume := outer.CacheVolume("b2-transfer-b-" + identity.NewID())
@@ -247,11 +257,65 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold bool) {
 			}
 			loadNotes("noteFile", "consumer file notes")
 			transferBoundToolControl(ctx, t, b.client, saved)
+			var checkpoint transferFixtureReport
+			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{saved}, &checkpoint))
+			require.Len(t, checkpoint.Rows, 1)
+			require.True(t, checkpoint.Rows[0].Imported)
+			require.True(t, checkpoint.Rows[0].Persisted)
+			if defaultGC {
+				// A bounded temporary file outside engine state supplies actual disk
+				// pressure; the default policy and imported root remain unchanged.
+				pressure := outer.Container().From(alpineImage).WithMountedCache("/fixture", bVolume)
+				defer func() {
+					_, err := pressure.WithEnvVariable("CLEANUP", identity.NewID()).WithExec([]string{"rm", "-f", "/fixture/gc-pressure"}).Sync(context.WithoutCancel(ctx))
+					require.NoError(t, err)
+				}()
+				minimum, err := b.client.Engine().LocalCache().MinFreeSpace(ctx)
+				require.NoError(t, err)
+				require.Positive(t, minimum, "default disk policy must define its free-space target")
+				stats, err := pressure.WithEnvVariable("STAT", identity.NewID()).WithExec([]string{"stat", "-f", "-c", "%a %S", "/fixture"}).Stdout(ctx)
+				require.NoError(t, err)
+				var blocks, blockSize int64
+				_, err = fmt.Sscanf(stats, "%d %d", &blocks, &blockSize)
+				require.NoError(t, err)
+				available := blocks * blockSize
+				pressureBytes := max(int64(0), available-int64(minimum)) + 2<<30
+				t.Logf("default policy pressure: minFree=%d available=%d temporaryBytes=%d cap=%d", minimum, available, pressureBytes, int64(8<<30))
+				require.LessOrEqual(t, pressureBytes, int64(8<<30), "diagnostic would exceed its temporary disk allocation cap")
+				count := (pressureBytes + (1 << 20) - 1) / (1 << 20)
+				_, err = pressure.WithEnvVariable("PRESSURE", identity.NewID()).WithExec([]string{"dd", "if=/dev/zero", "of=/fixture/gc-pressure", "bs=1048576", "count=" + strconv.FormatInt(count, 10), "conv=fsync"}).Sync(ctx)
+				require.NoError(t, err)
+			}
 			stop(t, b)
 			b = start(t, bState, bVolume, bDir)
 			var restored transferFixtureReport
+			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &restored))
+			t.Logf("restart persistence diagnostics: %+v", restored.Persistence)
+			require.Equal(t, dagql.CachePersistenceResetNone, restored.Persistence.PersistenceResetReason)
+			require.Empty(t, restored.Persistence.LocalCacheResetReason)
+			if defaultGC {
+				root := checkpoint.Rows[0].ResultID
+				t.Logf("default policy saved report: resultID=%d persisted=%t beforeRemoved=%d afterRemoved=%d", root, checkpoint.Rows[0].Persisted, checkpoint.Persistence.RemovedPersistedRootCount, restored.Persistence.RemovedPersistedRootCount)
+				if restored.Persistence.RemovedPersistedRootCount == checkpoint.Persistence.RemovedPersistedRootCount {
+					retained := false
+					for _, row := range restored.Rows {
+						retained = retained || (row.ResultID == root && row.Imported && row.Persisted)
+					}
+					require.True(t, retained, "saved root lost without a reset or a prune decision")
+					t.Skip("default disk-derived policy did not remove a persisted root under current host pressure")
+				}
+				require.Greater(t, restored.Persistence.RemovedPersistedRootCount, checkpoint.Persistence.RemovedPersistedRootCount)
+				decisions := restored.Persistence.DiskPrunedResults[len(checkpoint.Persistence.DiskPrunedResults):]
+				require.Contains(t, decisions, fmt.Sprintf("dagql.result.%d", root))
+				for _, row := range restored.Rows {
+					require.NotEqual(t, root, row.ResultID, "pruned saved report must be absent after restart")
+				}
+				return
+			}
+			require.Zero(t, restored.Persistence.RemovedPersistedRootCount)
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{saved}, &restored), "saved row must be present immediately after clean restart")
 			require.Len(t, restored.Rows, 1)
+			require.True(t, restored.Rows[0].Persisted)
 			// Module-aware request installs the consumer's current operational Module.
 			require.NoError(t, b.client.ModuleSource(".").AsModule().Serve(ctx))
 			loadNotes("noteDirectory", "consumer directory notes after restart")
@@ -304,6 +368,9 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold bool) {
 		})
 	}
 
+	if defaultGC {
+		return
+	}
 	t.Run("foreign context", func(ctx context.Context, t *testctx.T) {
 		volume := outer.CacheVolume("b2-transfer-foreign-" + identity.NewID())
 		foreign := start(t, "b2-transfer-foreign-state-"+identity.NewID(), volume, newCheckout(t))
