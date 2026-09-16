@@ -290,6 +290,73 @@ func TestGitBundleCompletedProducerEvaluate(t *testing.T) {
 				}))
 			}
 			if incremental {
+				t.Run("advanced prerequisite hint on decoded repository", func(t *testing.T) {
+					base := t.TempDir()
+					require.NoError(t, MountRef(ctx, source, func(root string, _ *mount.Mount) error {
+						producerGit(t, base, "clone", "--bare", root, "origin.git")
+						return nil
+					}))
+					gitPath, err := exec.LookPath("git")
+					require.NoError(t, err)
+					origin := httptest.NewServer(&cgi.Handler{Path: gitPath, Args: []string{"http-backend"}, Env: []string{"GIT_PROJECT_ROOT=" + base, "GIT_HTTP_EXPORT_ALL=1"}})
+					defer origin.Close()
+					url, err := gitutil.ParseURL(origin.URL + "/origin.git")
+					require.NoError(t, err)
+					srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*RemoteGitMirror]{}))
+					mirror := attachTransferObject(t, ctx, cache, srv, "producer-execution", "bundleHintMirror", NewRemoteGitMirror(url.Remote()))
+					capturedRepo := &GitRepository{Backend: &RemoteGitRepository{URL: url, Mirror: mirror, Platform: Platform{OS: "linux", Architecture: "amd64"}}, Remote: &gitutil.Remote{}}
+					encoded, err := capturedRepo.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
+					require.NoError(t, err)
+					require.Equal(t, second, producerGit(t, filepath.Join(base, "origin.git"), "rev-parse", "main"))
+
+					value, err := capturedRepo.DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, 0, nil), encoded.JSON)
+					require.NoError(t, err)
+					decodedRepo := value.(*GitRepository)
+					require.NotSame(t, capturedRepo, decodedRepo)
+					require.Nil(t, decodedRepo.Remote.Refs)
+					decodedRow := attachTransferObject(t, ctx, cache, srv, "producer-execution", "decodedBundleHintRepo", decodedRepo)
+					kind, recipeJSON, err := encodePersistedDirectoryLazy(ctx, dagql.NewPersistEncodeContext(cache, 0, nil), &DirectoryGitBundleImportLazy{LazyState: NewLazyState(), Repo: decodedRow, Bundle: bundleRes, PrerequisiteRef: "main"})
+					require.NoError(t, err)
+
+					producerGit(t, base, "clone", filepath.Join(base, "origin.git"), "advanced")
+					work := filepath.Join(base, "advanced")
+					require.NoError(t, os.WriteFile(filepath.Join(work, "tracked"), []byte("advanced hint"), 0644))
+					producerGit(t, work, "add", ".")
+					producerGit(t, work, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "advance hint")
+					advanced := producerGit(t, work, "rev-parse", "HEAD")
+					producerGit(t, work, "push", "origin", "main")
+					require.NotEqual(t, second, advanced)
+
+					recipe, err := decodePersistedDirectoryLazy(ctx, dagql.NewPersistDecodeContext(srv, 0, nil), kind, recipeJSON)
+					require.NoError(t, err)
+					pending := recipe.(*DirectoryGitBundleImportLazy)
+					require.Same(t, decodedRepo, pending.Repo.Self())
+					require.Equal(t, "main", pending.PrerequisiteRef)
+					require.Equal(t, []string{first}, pending.Bundle.Self().PrerequisiteSHAs)
+					// Observe the resolved name and exact SHA while forwarding all Git work.
+					observed := &bundlePrerequisiteObserver{GitRepositoryBackend: decodedRepo.Backend}
+					decodedRepo.Backend = observed
+					defer func() { decodedRepo.Backend = observed.GitRepositoryBackend }()
+					private := freshProducerDirectory()
+					require.NoError(t, pending.Evaluate(ctx, private))
+					defer private.OnRelease(ctx)
+					hint, err := decodedRepo.Remote.Lookup("main")
+					require.NoError(t, err)
+					require.Equal(t, advanced, hint.SHA)
+					require.Equal(t, []gitutil.Ref{{Name: "refs/heads/main", SHA: first}}, observed.requested)
+					require.Equal(t, []string{first}, pending.Bundle.Self().PrerequisiteSHAs)
+					_, snapshot, err := producedDirectoryOutput(private)
+					require.NoError(t, err)
+					require.NoError(t, MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
+						for _, ref := range bundle.Refs {
+							require.Equal(t, ref.SHA, producerGit(t, root, "rev-parse", ref.Name))
+							require.Equal(t, first, producerGit(t, root, "rev-parse", ref.Name+"^"))
+						}
+						require.Equal(t, first, producerGit(t, root, "rev-parse", first+"^{commit}"))
+						require.Equal(t, "second", producerGit(t, root, "show", "refs/heads/main:tracked"))
+						return nil
+					}))
+				})
 				missingSnapshot := producerGitSnapshot(t, ctx, store, func(root string) { producerGit(t, root, "init", "--bare") })
 				missingDir := producerDirectoryResult(t, ctx, cache, srv, "missingPrerequisiteDirectory", "/", missingSnapshot)
 				missingRepo := producerLocalRepo(t, ctx, cache, srv, "missingPrerequisiteRepo", missingDir)
@@ -350,4 +417,14 @@ func TestGitBundleCompletedProducerEvaluate(t *testing.T) {
 			}
 		})
 	}
+}
+
+type bundlePrerequisiteObserver struct {
+	GitRepositoryBackend
+	requested []gitutil.Ref
+}
+
+func (repo *bundlePrerequisiteObserver) Get(ctx context.Context, target *gitutil.Ref) (GitRefBackend, error) {
+	repo.requested = append(repo.requested, *target)
+	return repo.GitRepositoryBackend.Get(ctx, target)
 }
