@@ -268,24 +268,25 @@ func validateOfferReferences(offer PersistedPartOffer) error {
 		return nil
 	})
 }
-func clonePartOffers(offers []PersistedPartOffer) []PersistedPartOffer {
+func clonePartOffers(offers []PersistedPartOffer) ([]PersistedPartOffer, error) {
 	if offers == nil {
-		return nil
+		return nil, nil
 	}
-	// All fields are JSON records; the copy includes layer annotations and maps.
+	// The JSON round trip deliberately copies every nested map and slice,
+	// including layer annotations, before reference relocation can mutate them.
 	data, err := json.Marshal(offers)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("%w: copy pending offers: %v", ErrPersistStateNotReady, err)
 	}
 	var cloned []PersistedPartOffer
 	if err := json.Unmarshal(data, &cloned); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("%w: copy pending offers: %v", ErrPersistStateNotReady, err)
 	}
-	return cloned
+	return cloned, nil
 }
-func (res *sharedResult) pendingOffersLocked() []PersistedPartOffer {
+func (res *sharedResult) pendingOffersLocked() ([]PersistedPartOffer, error) {
 	if len(res.partOffers) == 0 {
-		return nil
+		return nil, nil
 	}
 	keys := make([]string, 0, len(res.partOffers))
 	for key := range res.partOffers {

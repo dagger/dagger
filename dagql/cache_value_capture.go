@@ -87,8 +87,12 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 			return fmt.Errorf("transfer capture: row %d has no transferable frame", res.id)
 		}
 		seen[res.id] = 1
+		offers, err := res.pendingOffersLocked()
+		if err != nil {
+			return err
+		}
 		c.incrementIncomingOwnershipLocked(ctx, res)
-		row := &capturedTransferRow{shared: res, imported: res.imported, frame: frame, offers: res.pendingOffersLocked(), expiry: res.expiresAtUnix, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
+		row := &capturedTransferRow{shared: res, imported: res.imported, frame: frame, offers: offers, expiry: res.expiresAtUnix, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
 		capture.rows[res.id] = row
 		for id := range res.deps {
 			row.deps = append(row.deps, uint64(id))

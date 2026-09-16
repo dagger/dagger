@@ -365,7 +365,8 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 			require.Empty(t, roles, "an empty copied map is authoritative")
 			value.release = func(context.Context) error { losingReleases.Add(1); return nil }
 			row.payloadMu.Lock()
-			next := clonePersistedEnvelope(*row.persistedEnvelope)
+			next, err := clonePersistedEnvelope(*row.persistedEnvelope)
+			require.NoError(t, err)
 			next.ObjectJSON = json.RawMessage(`{"text":"new"}`)
 			row.persistedEnvelope = &next
 			row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}

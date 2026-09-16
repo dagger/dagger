@@ -39,7 +39,12 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		c.egraphMu.Unlock()
 		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
 	}
-	imported, offers := shared.imported, shared.pendingOffersLocked()
+	offers, err := shared.pendingOffersLocked()
+	if err != nil {
+		c.egraphMu.Unlock()
+		return PersistedRecord{}, err
+	}
+	imported := shared.imported
 	c.incrementIncomingOwnershipLocked(ctx, shared)
 	c.egraphMu.Unlock()
 	defer func() {
@@ -119,21 +124,32 @@ func (c *Cache) captureHeldPersistedRecord(ctx context.Context, shared *sharedRe
 		return PersistedRecord{}, err
 	}
 	encoding.Envelope.Imported, encoding.Envelope.PendingOffers = imported, offers
+	envelope, err := clonePersistedEnvelope(encoding.Envelope)
+	if err != nil {
+		return PersistedRecord{}, err
+	}
 	return PersistedRecord{
 		ResultID:      uint64(shared.id),
-		Envelope:      clonePersistedEnvelope(encoding.Envelope),
+		Envelope:      envelope,
 		Call:          frame,
 		SnapshotLinks: slices.Clone(encoding.SnapshotLinks),
 	}, nil
 }
 
-func clonePersistedEnvelope(env PersistedResultEnvelope) PersistedResultEnvelope {
-	env.PendingOffers = clonePartOffers(env.PendingOffers)
+func clonePersistedEnvelope(env PersistedResultEnvelope) (PersistedResultEnvelope, error) {
+	var err error
+	env.PendingOffers, err = clonePartOffers(env.PendingOffers)
+	if err != nil {
+		return PersistedResultEnvelope{}, err
+	}
 	env.ObjectJSON = slices.Clone(env.ObjectJSON)
 	env.ScalarJSON = slices.Clone(env.ScalarJSON)
 	env.Items = slices.Clone(env.Items)
 	for i := range env.Items {
-		env.Items[i] = clonePersistedEnvelope(env.Items[i])
+		env.Items[i], err = clonePersistedEnvelope(env.Items[i])
+		if err != nil {
+			return PersistedResultEnvelope{}, err
+		}
 	}
-	return env
+	return env, nil
 }

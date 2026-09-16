@@ -134,7 +134,11 @@ func mapTransferredOutputs(rec PersistedRecord) ([]CapturedCodecOutput, error) {
 	return outputs, err
 }
 func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
-	rec.Envelope = clonePersistedEnvelope(rec.Envelope)
+	var err error
+	rec.Envelope, err = clonePersistedEnvelope(rec.Envelope)
+	if err != nil {
+		return PersistedRecord{}, err
+	}
 	rec.Call = rec.Call.clone()
 	if err := walkTransferCalls(rec.Call, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
 		return PersistedRecord{}, err

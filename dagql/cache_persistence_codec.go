@@ -595,7 +595,11 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 	if !root && (env.Imported || len(env.PendingOffers) != 0) {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: root metadata on inline value", path)
 	}
-	env.PendingOffers = clonePartOffers(env.PendingOffers)
+	var err error
+	env.PendingOffers, err = clonePartOffers(env.PendingOffers)
+	if err != nil {
+		return PersistedResultEnvelope{}, err
+	}
 	for i := range env.PendingOffers {
 		if err := visitPersistedPartOffer(&env.PendingOffers[i], path.Field("pendingOffers").Index(i), visit); err != nil {
 			return PersistedResultEnvelope{}, err

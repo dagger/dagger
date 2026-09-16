@@ -132,7 +132,11 @@ func (c *Cache) TransferFixtureSnapshot(ctx context.Context, sessionID string, i
 		if frame == nil {
 			continue
 		}
-		entry := TransferFixtureRow{ResultID: uint64(id), Call: frame.clone(), Imported: row.imported, Offers: row.pendingOffersLocked()}
+		offers, err := row.pendingOffersLocked()
+		if err != nil {
+			return report, err
+		}
+		entry := TransferFixtureRow{ResultID: uint64(id), Call: frame.clone(), Imported: row.imported, Offers: offers}
 		for dep := range row.deps {
 			entry.DependencyIDs = append(entry.DependencyIDs, uint64(dep))
 		}

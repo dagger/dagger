@@ -4,9 +4,43 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/stretchr/testify/require"
 )
+
+func TestValueTransferOfferCopyFailure(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "pending"})
+	dep := persistedListTestResult(t, ctx, c, srv, "dep", String("dep"))
+	transferTestOffer(t, c, ctx, root, dep)
+	row := root.cacheSharedResult()
+	invalid := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+	c.egraphMu.Lock()
+	for _, offer := range row.partOffers {
+		offer.record.Chain.Layers = []snapshots.ExportLayer{{CreatedAt: &invalid}}
+	}
+	before := row.incomingOwnershipCount
+	c.egraphMu.Unlock()
+	_, err := c.CapturePersistedRecord(ctx, root)
+	require.ErrorIs(t, err, ErrPersistStateNotReady)
+	err = c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error {
+		t.Fatal("invalid offer must not reach consumer")
+		return nil
+	})
+	require.ErrorIs(t, err, ErrPersistStateNotReady)
+	// Both failed captures released the graph lock and leaked no capture hold.
+	c.egraphMu.Lock()
+	require.Equal(t, before, row.incomingOwnershipCount)
+	for _, offer := range row.partOffers {
+		offer.record.Chain.Layers = nil
+	}
+	c.egraphMu.Unlock()
+	_, err = c.CapturePersistedRecord(ctx, root)
+	require.NoError(t, err)
+}
 
 func TestValueTransferOfferOwners(t *testing.T) {
 	ctx, c, srv := persistedListTestCache(t, "")

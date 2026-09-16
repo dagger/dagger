@@ -88,6 +88,11 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 
+		offers, err := res.pendingOffersLocked()
+		if err != nil {
+			c.egraphMu.RUnlock()
+			return persistStateSnapshot{}, err
+		}
 		payload := res.loadPayloadState()
 		if payload.snapshotLinkIntent != nil {
 			payload.snapshotOwnerLinks = slices.Clone(payload.snapshotLinkIntent.Links)
@@ -95,7 +100,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:              resultID,
 			imported:              res.imported,
-			pendingOffers:         res.pendingOffersLocked(),
+			pendingOffers:         offers,
 			frame:                 res.loadResultCall().clone(),
 			self:                  payload.self,
 			isObject:              payload.isObject,
@@ -476,7 +481,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	defer func() {
 		if rerr == nil && snapshot != nil {
 			encoding.Envelope.Imported = snapshot.imported
-			encoding.Envelope.PendingOffers = clonePartOffers(snapshot.pendingOffers)
+			encoding.Envelope.PendingOffers, rerr = clonePartOffers(snapshot.pendingOffers)
 		}
 	}()
 	if snapshot != nil && snapshot.persistedEnvelope != nil {
