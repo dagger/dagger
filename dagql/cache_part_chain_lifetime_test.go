@@ -173,3 +173,116 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 }
 
 func (lifetimeChainSource) Available(PersistedPartOffer, int64) bool { return true }
+
+var lifetimeImportReleaseFailure = errors.New("ImportChain returned ref release failed")
+
+type lifetimeImportManager struct {
+	snapshots.SnapshotManager
+	imports, releases, syncs atomic.Int32
+	fail                     atomic.Bool
+	leaseID                  string
+	store                    *testutil.Store
+}
+
+func (m *lifetimeImportManager) ImportChain(ctx context.Context, chain *snapshots.ExportChain) (snapshots.ImmutableRef, error) {
+	m.imports.Add(1)
+	ref, err := m.SnapshotManager.ImportChain(ctx, chain)
+	if err != nil {
+		return nil, err
+	}
+	all, err := m.store.Leases.List(ctx)
+	if err != nil {
+		return nil, errors.Join(err, ref.Release(ctx))
+	}
+	for _, l := range all {
+		if l.Labels["dagger.io/snapshot-transfer"] == "true" {
+			m.leaseID = l.ID
+		}
+	}
+	return &lifetimeImportRef{ImmutableRef: ref, manager: m}, nil
+}
+func (m *lifetimeImportManager) AttachLease(ctx context.Context, id, ref string) error {
+	m.syncs.Add(1)
+	return m.SnapshotManager.AttachLease(ctx, id, ref)
+}
+
+type lifetimeImportRef struct {
+	snapshots.ImmutableRef
+	manager *lifetimeImportManager
+}
+
+func (r *lifetimeImportRef) Release(ctx context.Context) error {
+	r.manager.releases.Add(1)
+	if r.manager.fail.Swap(false) {
+		return lifetimeImportReleaseFailure
+	}
+	return r.ImmutableRef.Release(ctx)
+}
+func TestPartImportChainRefCleanupHandoff(t *testing.T) {
+	for _, mode := range []string{"retry", "collect"} {
+		t.Run(mode, func(t *testing.T) {
+			a, b := testutil.NewStore(t), testutil.NewStore(t)
+			ref, _ := a.Build(t, nil, "payload", "import cleanup bytes")
+			chain, err := ref.ExportChain(t.Context(), config.RefConfig{Compression: compression.New(compression.Uncompressed)})
+			require.NoError(t, err)
+			defer func() { require.NoError(t, chain.Release(context.Background())) }()
+			ctx, c, srv := transferTestCache(t)
+			manager := &lifetimeImportManager{SnapshotManager: b.Manager, store: b}
+			manager.fail.Store(true)
+			c.snapshotManager = manager
+			receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+			partEncodedReceiver(t, ctx, c, receiver)
+			row := receiver.cacheSharedResult()
+			address := PersistedPartAddress{Part: "snapshot"}
+			record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}, Chain: OfferedChain{Layers: chain.Layers}}
+			c.egraphMu.Lock()
+			owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
+			require.NoError(t, err)
+			require.NoError(t, c.attachPartOfferLocked(row, address, &partOffer{record: record, owner: owner}))
+			c.egraphMu.Unlock()
+			provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+			c.SetPartContentSource(lifetimeChainSource{provider})
+			err = c.RunLazyTask(ctx, receiver, "obtain:cleanup", LazyTaskSpec{Body: func(ctx context.Context) error {
+				source, err := c.AcquireEquivalentPartSource(ctx, receiver, address)
+				if err != nil {
+					return err
+				}
+				permit, _, err := c.TryAcquire(ctx, receiver, address, PartTaskFromContext(ctx))
+				if err != nil {
+					return errors.Join(err, source.Release(ctx))
+				}
+				return c.installChainPart(ctx, receiver, source, permit, &PartDemandState{})
+			}})
+			require.ErrorIs(t, err, lifetimeImportReleaseFailure)
+			require.NotEmpty(t, manager.leaseID)
+			leasePresent := func() bool {
+				all, err := b.Leases.List(ctx)
+				require.NoError(t, err)
+				for _, l := range all {
+					if l.ID == manager.leaseID {
+						return true
+					}
+				}
+				return false
+			}
+			require.True(t, leasePresent())
+			require.Zero(t, manager.syncs.Load(), "import ref cleanup precedes owner sync")
+			require.Len(t, row.loadPayloadState().snapshotLinkIntent.Links, 1, "installed output survives cleanup failure")
+			if mode == "retry" {
+				require.NoError(t, c.RunLazyTask(ctx, receiver, "obtain:cleanup", LazyTaskSpec{Body: func(context.Context) error { return errors.New("body must not repeat") }}))
+				require.False(t, leasePresent())
+				require.Positive(t, manager.syncs.Load())
+			}
+			require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+			_, err = c.removePersistedEdge(ctx, row.id)
+			require.NoError(t, err)
+			require.False(t, leasePresent(), "collection retries retained cleanup without a graph self-hold")
+			require.EqualValues(t, 2, manager.releases.Load())
+			require.EqualValues(t, 1, manager.imports.Load())
+			require.EqualValues(t, 1, provider.Reads.Load())
+			c.egraphMu.RLock()
+			require.Nil(t, c.resultsByID[row.id])
+			c.egraphMu.RUnlock()
+		})
+	}
+}

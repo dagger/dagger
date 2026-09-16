@@ -45,22 +45,22 @@ func (p *partProtection) release(ctx context.Context) error {
 }
 
 type PreparedReadyPart struct {
-	cache            *Cache
-	receiver         *sharedResult
-	source           *PartSourceLease
-	permit           *PartPermit
-	version          capturedRowRevision
-	next             PersistedRecord
-	store            PreparedPartStore
-	deps             []*sharedResult
-	protection       *partProtection
-	accessor         snapshots.ImmutableRef
-	consumed         atomic.Bool
-	original         *OriginalPermit
-	addresses        []PersistedPartAddress
-	extraProtections []*partProtection
-	extraAccessors   []snapshots.ImmutableRef
-	privateCleanup   *partCleanup
+	cache             *Cache
+	receiver          *sharedResult
+	source            *PartSourceLease
+	permit            *PartPermit
+	version           capturedRowRevision
+	next              PersistedRecord
+	store             PreparedPartStore
+	deps              []*sharedResult
+	protection        *partProtection
+	accessor          snapshots.ImmutableRef
+	consumed          atomic.Bool
+	original          *OriginalPermit
+	addresses         []PersistedPartAddress
+	extraProtections  []*partProtection
+	extraAccessors    []snapshots.ImmutableRef
+	beforeSyncCleanup *partCleanup
 }
 type ReadyPartReceipt struct {
 	cache      *Cache
@@ -449,8 +449,8 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	for _, protection := range protections {
 		row.onRelease = joinOnRelease(row.onRelease, protection.release)
 	}
-	if p.privateCleanup != nil {
-		row.onRelease = joinOnRelease(row.onRelease, p.privateCleanup.release)
+	if p.beforeSyncCleanup != nil {
+		row.onRelease = joinOnRelease(row.onRelease, p.beforeSyncCleanup.release)
 	}
 	row.snapshotLinkIntent = &snapshotLinkIntent{Links: cloneSnapshotRefLinks(p.next.SnapshotLinks)}
 	if p.store == nil {
@@ -480,8 +480,8 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		installed.outputs = append(installed.outputs, installedPartOutput{address: clonePartAddress(address), installation: installation})
 	}
 	installed.protections = append(installed.protections, protections...)
-	if p.privateCleanup != nil {
-		installed.beforeSync = append(installed.beforeSync, p.privateCleanup)
+	if p.beforeSyncCleanup != nil {
+		installed.beforeSync = append(installed.beforeSync, p.beforeSyncCleanup)
 	}
 
 	token.installed.Store(installed)

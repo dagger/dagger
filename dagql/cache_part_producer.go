@@ -59,7 +59,7 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 	if err != nil {
 		return nil, err
 	}
-	p := &PreparedReadyPart{cache: c, original: original, privateCleanup: cleanup, source: &PartSourceLease{cache: c, sessionID: session}}
+	p := &PreparedReadyPart{cache: c, original: original, beforeSyncCleanup: cleanup, source: &PartSourceLease{cache: c, sessionID: session}}
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, p.Release(ctx))

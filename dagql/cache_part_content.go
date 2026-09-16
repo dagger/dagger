@@ -178,7 +178,8 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		}
 		return err
 	}
-	defer func() { rerr = errors.Join(rerr, imported.Release(context.WithoutCancel(ctx))) }()
+	cleanup := &partCleanup{fn: imported.Release}
+	defer func() { rerr = errors.Join(rerr, cleanup.release(ctx)) }()
 	source.descriptor.SnapshotID = imported.SnapshotID()
 	// Keep admitted authority across a stale receiver preparation. Its donor
 	// can disappear during download; re-preparation must not require re-admission.
@@ -194,7 +195,20 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		c.retainOfferOwnerLocked(source.offerOwner)
 		selected := &PartSourceLease{cache: c, sourceID: source.sourceID, offerOwner: source.offerOwner, descriptor: source.Descriptor(), target: clonePartAddress(source.target), offer: source.offer, readiness: PartDownloadable, route: source.route, offerRev: source.offerRev, sessionID: source.sessionID, record: source.record}
 		c.egraphMu.Unlock()
-		err := c.InstallReadyPart(ctx, receiver, selected, permit)
+		prepared, err := c.PrepareReadyPart(ctx, receiver, selected, permit)
+		if err == nil {
+			// Commit transfers this retryable cleanup to the installed row and
+			// its continuation, without retaining another graph hold.
+			prepared.beforeSyncCleanup = cleanup
+			receipt, outcome, commitErr := c.CommitReadyPart(ctx, prepared)
+			err = commitErr
+			if outcome == PartInstalled {
+				return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
+			}
+			if outcome == PartInstallRefused && err == nil {
+				err = ErrPartReselect
+			}
+		}
 		if !partCanReselect(err) {
 			return err
 		}
