@@ -61,11 +61,7 @@ var cloudCheckStatusCmd = &cobra.Command{
 
 func init() {
 	cloudCheckListCmd.Flags().BoolVar(&cloudCheckListFailed, "failed", false, "Only list failed checks")
-	// Enabling a Cloud check needs the Cloud Checks feature plus Cloud
-	// Modules (org-scoped source lookups are gated on it); missing features
-	// are offered together as one trial at enforcement time. Other commands
-	// can declare their own requirements the same way.
-	requireCloudFeatures(cloudCheckOnCmd, featureCloudChecks, featureCloudModules)
+	requireCloudFeatures(cloudCheckOnCmd, cloudChecksRequiredFeatures...)
 	cloudCheckOnCmd.Flags().Bool(startTrialFlag, false, "Start a free trial when a required Cloud feature is not enabled yet")
 	cloudCheckCmd.AddCommand(cloudCheckOnCmd, cloudCheckOffCmd, cloudCheckListCmd, cloudCheckStatusCmd)
 	cloudCmd.AddCommand(cloudCheckCmd)
@@ -74,8 +70,24 @@ func init() {
 // runCloudCheckSet returns a RunE that sets the workspace autocheck flag for
 // the selected remote. The optional name arg is accepted but not used —
 // today's underlying API only models a single autocheck per remote.
+// cloudChecksRequiredFeatures are the org features enabling a Cloud check
+// needs: Cloud Checks itself plus Cloud Modules (org-scoped source lookups are
+// gated on it). Missing ones are offered together as one trial at enforcement
+// time. Other commands can declare their own requirements the same way via
+// requireCloudFeatures.
+var cloudChecksRequiredFeatures = []cloudFeature{featureCloudChecks, featureCloudModules, featureCloudEngines}
+
 func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		// The feature requirements (and their trial gate) are declared as
+		// annotations on the checks-on command itself. This flow can also run
+		// under a different command — e.g. the `dagger init` next-steps offer
+		// invokes it with init's cobra command — so carry the requirements
+		// over, otherwise the gate silently no-ops and the trial prompt never
+		// appears.
+		if enabled && len(commandCloudFeatures(cmd)) == 0 {
+			requireCloudFeatures(cmd, cloudChecksRequiredFeatures...)
+		}
 		var remote workspaceRemoteAddress
 		if len(args) > 0 {
 			remote.CloneRef = args[0]
@@ -189,7 +201,7 @@ func prepareCloudChecksIntegration(cmd *cobra.Command, args []string) error {
 	if err := browser.OpenURL(setup.URL); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Could not open a browser. Open the URL above.")
 	}
-	if !confirm(cmd, "Have you completed the manual GitHub step?") {
+	if !confirmManualStep(cmd, "Have you completed the manual GitHub step?") {
 		return required
 	}
 	return nil
@@ -212,10 +224,23 @@ func cloudSetupCommand(args string) string {
 func confirmSetupCommand(cmd *cobra.Command, title, command string) bool {
 	selected := true
 	form := huh.NewForm(huh.NewGroup(setupCommandChoice(title, command, &selected)))
-	if err := idtui.RunStandaloneForm(cmd.Context(), form); err != nil {
+	if err := idtui.RunStandaloneForm(cmd.Context(), Frontend, form); err != nil {
 		return false
 	}
 	return selected
+}
+
+// confirmManualStep asks whether a browser-side manual step is complete,
+// rendered with the same explicit-choice style as the other setup prompts.
+func confirmManualStep(cmd *cobra.Command, title string) bool {
+	confirmed := true
+	form := huh.NewForm(huh.NewGroup(
+		idtui.NewExplicitConfirm("Done", "Cancel", &confirmed).Title(title),
+	))
+	if err := idtui.RunStandaloneForm(cmd.Context(), Frontend, form); err != nil {
+		return false
+	}
+	return confirmed
 }
 
 // prepareCloudChecksAppInstall handles a connected GitHub identity whose
@@ -227,14 +252,14 @@ func prepareCloudChecksAppInstall(cmd *cobra.Command, args []string) error {
 	required := cloudChecksPrerequisiteError(cmd, args,
 		fmt.Sprintf("Cloud checks need the Dagger Cloud GitHub App installed for this repository's owner (install it here: %s)", installURL),
 		"")
-	if !canPromptForCloudChecks() || !confirm(cmd, "Install the Dagger Cloud GitHub App in the browser?") {
+	if !canPromptForCloudChecks() || !confirmSetupCommand(cmd, "Install the Dagger Cloud GitHub App in the browser?", installURL) {
 		return required
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Manual step: install the app for this repository's owner, then return here:\n%s\n", installURL)
 	if err := browser.OpenURL(installURL); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Could not open a browser. Open the URL above.")
 	}
-	if !confirm(cmd, "Have you completed the manual GitHub step?") {
+	if !confirmManualStep(cmd, "Have you completed the manual GitHub step?") {
 		return required
 	}
 	return nil
@@ -245,14 +270,14 @@ func prepareCloudChecksAppInstall(cmd *cobra.Command, args []string) error {
 // waits for confirmation. Without a prompt (non-interactive), it returns the
 // actionable error as-is.
 func prepareCloudChecksRepoAccess(cmd *cobra.Command, accessErr *repoAccessError) error {
-	if !canPromptForCloudChecks() || !confirm(cmd, "Grant the GitHub App access to this repository in the browser?") {
+	if !canPromptForCloudChecks() || !confirmSetupCommand(cmd, "Repository permissions not found for the GitHub App. Open browser to configure?", "open "+accessErr.settingsURL) {
 		return accessErr
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Manual step: grant access to this repository, then return here:\n%s\n", accessErr.settingsURL)
 	if err := browser.OpenURL(accessErr.settingsURL); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Could not open a browser. Open the URL above.")
 	}
-	if !confirm(cmd, "Have you completed the manual GitHub step?") {
+	if !confirmManualStep(cmd, "Have you completed the manual GitHub step?") {
 		return accessErr
 	}
 	return nil
@@ -315,6 +340,16 @@ func runCloudCheckList(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		remote.Version = args[0]
 		address = gitref.RefString(remote.CloneRef, remote.Path, remote.Version)
+	} else {
+		// Checks are recorded against the commit the engine resolved, and the
+		// lookup matches module_version exactly. The inferred workspace
+		// version is a symbolic ref (branch name) whenever HEAD is not
+		// detached, which never matches; resolve it to the commit for the
+		// query. Best-effort: a remote workspace (-W) has no local HEAD, and
+		// the branch name stays in the printed address either way.
+		if sha, err := localHeadCommitSHA(cmd.Context(), workspaceRef); err == nil && sha != "" {
+			remote.Version = sha
+		}
 	}
 	rows, err := loadWorkspaceModuleCheckRows(cmd.Context(), remote)
 	if errors.Is(err, errCloudNotAuthenticated) {
