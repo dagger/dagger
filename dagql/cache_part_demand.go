@@ -39,7 +39,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	gate := row.partGate.gate.Load()
-	if !row.imported && len(row.partOffers) == 0 && gate == nil {
+	if !row.imported && !row.partGate.restoredDelegation.Load() && len(row.partOffers) == 0 && gate == nil {
 		return false
 	}
 	if gate == nil {
@@ -50,7 +50,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if gate.managed {
 		return true
 	}
-	if !row.imported && len(row.partOffers) == 0 {
+	if !row.imported && !row.partGate.restoredDelegation.Load() && len(row.partOffers) == 0 {
 		return false
 	}
 	for _, group := range gate.groups {
@@ -142,6 +142,11 @@ func (c *Cache) joinPartInstallation(ctx context.Context, res AnyResult, token *
 	return c.evaluateGroup(ctx, res, token.row, token.key, parts)
 }
 func (c *Cache) demandPart(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
+	var err error
+	ctx, err = enterPartDemand(ctx, res.cacheSharedResult(), address)
+	if err != nil {
+		return err
+	}
 	demand := &PartDemandState{}
 	ctx = context.WithValue(ctx, partDemandContextKey{}, demand)
 	for {
@@ -195,7 +200,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					}
 					continue
 				}
-				source, err := c.AcquireEquivalentPartSource(ctx, res, address)
+				source, pendingParent, err := c.selectDemandPartSource(ctx, res, address, route)
 				if partCanReselect(err) {
 					continue
 				}
@@ -207,7 +212,11 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					if source.readiness == PartDownloadable {
 						kind = "selected-chain"
 					}
-					c.recordPartFixture(row, address, kind)
+					if source.delegation != nil {
+						c.recordPartFixtureDelegation(row, address, "selected-delegation", source.delegation)
+					} else {
+						c.recordPartFixture(row, address, kind)
+					}
 					var ownership atomic.Uint32 // 0 caller, 1 body, 2 caller released before body entry
 					err = c.RunLazyTask(ctx, res, partTaskKey("obtain", address), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 						if !ownership.CompareAndSwap(0, 1) {
@@ -239,6 +248,15 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 						continue
 					}
 					return err
+				}
+				if pendingParent != nil {
+					if err := c.demandDelegatedParent(ctx, pendingParent); err != nil {
+						if partCanReselect(err) {
+							continue
+						}
+						return err
+					}
+					continue
 				}
 				if !route.HasProducer {
 					return errors.Join(fmt.Errorf("%w: %s", ErrUnavailablePart, key), demand.causes())

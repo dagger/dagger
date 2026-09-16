@@ -11,11 +11,12 @@ import (
 
 // PartGateCell is a stable row attachment. Merely binding it allocates no gate.
 type PartGateCell struct {
-	gate     atomic.Pointer[PartWriterGate]
-	active   atomic.Bool
-	hostOnce sync.Once
-	host     PartHost
-	server   atomic.Pointer[Server]
+	gate               atomic.Pointer[PartWriterGate]
+	active             atomic.Bool
+	restoredDelegation atomic.Bool
+	hostOnce           sync.Once
+	host               PartHost
+	server             atomic.Pointer[Server]
 }
 
 func (cell *PartGateCell) loadOrCreate() *PartWriterGate {

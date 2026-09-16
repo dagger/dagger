@@ -12,11 +12,17 @@ import (
 // TransferFixturePartEvent is populated only after the gated fixture enables
 // acquisition observation. It does not participate in cache decisions.
 type TransferFixturePartEvent struct {
-	Kind       string               `json:"kind"`
-	ResultID   uint64               `json:"resultID"`
-	Field      string               `json:"field"`
-	Address    PersistedPartAddress `json:"address"`
-	SnapshotID string               `json:"snapshotID,omitempty"`
+	Kind       string                     `json:"kind"`
+	ResultID   uint64                     `json:"resultID"`
+	Field      string                     `json:"field"`
+	Address    PersistedPartAddress       `json:"address"`
+	SnapshotID string                     `json:"snapshotID,omitempty"`
+	Source     *TransferFixturePartSource `json:"source,omitempty"`
+}
+
+type TransferFixturePartSource struct {
+	ResultID uint64               `json:"resultID"`
+	Address  PersistedPartAddress `json:"address"`
 }
 type partFixtureState struct {
 	mu     sync.Mutex
@@ -30,11 +36,23 @@ func (c *Cache) recordPartFixture(row *sharedResult, address PersistedPartAddres
 	c.recordPartFixtureSnapshot(row, address, kind, "")
 }
 func (c *Cache) recordPartFixtureSnapshot(row *sharedResult, address PersistedPartAddress, kind, snapshotID string) {
+	c.recordPartFixtureEvent(row, address, kind, snapshotID, nil)
+}
+func (c *Cache) recordPartFixtureDelegation(row *sharedResult, address PersistedPartAddress, kind string, proof *partDelegationProof) {
+	if c.partFixture.Load() == nil {
+		return
+	}
+	c.recordPartFixtureEvent(row, address, kind, "", &TransferFixturePartSource{ResultID: uint64(proof.parent.id), Address: clonePartAddress(proof.source)})
+}
+func (c *Cache) recordPartFixtureEvent(row *sharedResult, address PersistedPartAddress, kind, snapshotID string, source *TransferFixturePartSource) {
 	state := c.partFixture.Load()
 	if state == nil {
 		return
 	}
 	event := TransferFixturePartEvent{Kind: kind, Address: clonePartAddress(address), SnapshotID: snapshotID}
+	if kind == "selected-delegation" || kind == "installed-delegation" {
+		event.Source = source
+	}
 	if row != nil {
 		event.ResultID = uint64(row.id)
 		if frame := row.loadResultCall(); frame != nil {
@@ -78,6 +96,9 @@ func (c *Cache) partFixtureEvents() []TransferFixturePartEvent {
 	for i, e := range state.events {
 		events[i] = e
 		events[i].Address = clonePartAddress(e.Address)
+		if e.Source != nil {
+			events[i].Source = &TransferFixturePartSource{ResultID: e.Source.ResultID, Address: clonePartAddress(e.Source.Address)}
+		}
 	}
 	return events
 }

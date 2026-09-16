@@ -1604,13 +1604,28 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		VolatileEnv:        slices.Clone(persisted.VolatileEnv),
 		DefaultArgs:        persisted.DefaultArgs,
 	}
-	if envelope.ProducerState != "" {
+	// Local persistence may contain an unchanged pending part without a recipe.
+	// Admit only the same closed, recorded-parent mapping used after transfer.
+	delegated := false
+	for key, part := range envelope.Parts {
+		if part.Kind != containerPartPending || envelope.ProducerState != "" {
+			continue
+		}
+		mapping, err := containerPartDelegation(dagql.PersistedPayloadVisit{Call: dec.Call(), SnapshotLinks: links}, envelope, key)
+		if err != nil {
+			return nil, err
+		}
+		delegated = delegated || mapping != nil
+	}
+	if envelope.ProducerState != "" || delegated {
 		kind := ""
 		if dec.Call() != nil && len(envelope.LazyJSON) > 0 {
 			kind = dec.Call().Field
 		}
-		if err := validateTransferProducer(envelope.ProducerState, kind, envelope.LazyJSON); err != nil {
-			return nil, err
+		if envelope.ProducerState != "" {
+			if err := validateTransferProducer(envelope.ProducerState, kind, envelope.LazyJSON); err != nil {
+				return nil, err
+			}
 		}
 		if _, err := mapContainerTransferParts(dagql.PersistedPayloadVisit{SnapshotLinks: links}, envelope); err != nil {
 			return nil, err

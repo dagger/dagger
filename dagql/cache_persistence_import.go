@@ -488,6 +488,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				continue
 			}
 			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
+				markRestoredPartDelegation(res, *state.persistedEnvelope, call, state.snapshotOwnerLinks)
 				c.bindPartHost(res, decoded)
 				res.self = decoded.Unwrap()
 				res.hasValue = true
@@ -836,6 +837,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				continue
 			}
 			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
+				markRestoredPartDelegation(res, *state.persistedEnvelope, call, roles)
 				c.bindPartHost(res, decoded)
 				res.self = decoded.Unwrap()
 				res.hasValue = true

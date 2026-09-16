@@ -9,6 +9,44 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+// This closed inventory describes already captured metadata effects. No
+// arguments are interpreted, and no operation or recipe is reconstructed.
+func containerPartDelegation(v dagql.PersistedPayloadVisit, p persistedContainerPayload, demand dagql.PartKey) (*dagql.PartDelegation, error) {
+	if len(p.LazyJSON) != 0 || !p.Metadata.Consumed || demand == ContainerPartMetadata {
+		return nil, nil
+	}
+	if v.Call == nil {
+		return nil, nil
+	}
+	switch v.Call.Field {
+	case "withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withMountedCache", "withoutMount", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable":
+	default:
+		return nil, nil
+	}
+	if v.Call.Kind != dagql.ResultCallKindField || v.Call.Module != nil || v.Call.Nth != 0 {
+		return nil, nil
+	}
+	if v.Call.Type == nil || v.Call.Type.NamedType != "Container" || v.Call.Type.Elem != nil {
+		return nil, fmt.Errorf("Container delegation: invalid result type")
+	}
+	if v.Call.Receiver == nil || v.Call.Receiver.ResultID == 0 || v.Call.Receiver.Call != nil {
+		return nil, fmt.Errorf("Container delegation: missing exact receiver")
+	}
+	outputs, err := mapContainerTransferParts(v, p)
+	if err != nil {
+		return nil, err
+	}
+	for _, output := range outputs {
+		if output.Address.Part == demand {
+			if output.State == containerPartAbsent {
+				return nil, nil
+			}
+			return &dagql.PartDelegation{ParentResultID: v.Call.Receiver.ResultID, Address: dagql.PersistedPartAddress{Part: demand}}, nil
+		}
+	}
+	return nil, fmt.Errorf("Container delegation: undeclared part %q", demand)
+}
+
 // RouteParts describes the saved producer without resolving references or
 // constructing an operational lazy state. Mount keys are always target paths.
 func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, demand dagql.PartKey) (dagql.PartProducerRoute, error) {
@@ -57,7 +95,9 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 			return route, err
 		}
 		if len(p.LazyJSON) == 0 {
-			return route, nil
+			delegation, err := containerPartDelegation(v, p, demand)
+			route.Delegation = delegation
+			return route, err
 		}
 		if v.Call == nil {
 			return route, fmt.Errorf("Container producer: missing recorded call")

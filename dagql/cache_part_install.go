@@ -125,6 +125,9 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 	}
 	c.egraphMu.Lock()
 	row, err := c.validatePartTaskLocked(receiver, permit.task)
+	if err == nil && source.delegation != nil && !source.delegation.currentLocked(c, source, row) {
+		err = ErrPartReselect
+	}
 	if err == nil {
 		c.incrementIncomingOwnershipLocked(ctx, row)
 		p.receiver = row
@@ -326,7 +329,11 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 			} else if p.source.readiness == PartDownloadable {
 				kind = "installed-chain"
 			}
-			c.recordPartFixture(p.receiver, p.permit.address, kind)
+			if p.source.delegation != nil {
+				c.recordPartFixtureDelegation(p.receiver, p.permit.address, "installed-delegation", p.source.delegation)
+			} else {
+				c.recordPartFixture(p.receiver, p.permit.address, kind)
+			}
 		}
 	}()
 	if err := context.Cause(ctx); err != nil {
@@ -336,6 +343,11 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		return nil, PartInstallRefused, ErrPartReselect
 	}
 	source := p.source
+	if source.delegation != nil {
+		if err := source.delegation.childVersion.check(p.receiver); err != nil {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+	}
 	if p.original == nil && source.readiness == PartReady {
 		if err := source.version.check(source.source); err != nil {
 			return nil, PartInstallRefused, ErrPartReselect
@@ -352,7 +364,9 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 			return nil, PartInstallRefused, ErrPartReselect
 		}
 		found := false
-		if source.sessionlessShare {
+		if source.delegation != nil {
+			found = source.delegation.currentLocked(c, source, row)
+		} else if source.sessionlessShare {
 			_, found = c.sessionlessPartEquivalentLocked(row, source.source, source.lookup)
 			found = found && row.imported
 		} else {

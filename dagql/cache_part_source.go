@@ -61,6 +61,7 @@ type PartSourceLease struct {
 	route                                              CacheHitRoute
 	descriptorRev, offerRev, resourceRev, ownershipRev uint64
 	sessionlessShare                                   bool
+	delegation                                         *partDelegationProof
 	record                                             PersistedRecord
 	version                                            capturedRowRevision
 	facts                                              partSourceFacts
