@@ -31,12 +31,12 @@ type PartDescriptor struct {
 	DependencyIDs []uint64
 }
 type PartProbe struct {
-	Descriptor                                    PartDescriptor
-	LocalComplete, RestoreOnly, HasProducer, Busy bool
-	DescriptorRev                                 uint64
-	OutputRev                                     OutputRevision
-	OfferRev                                      uint64
-	captured                                      *partProbeCapture
+	Descriptor                                         PartDescriptor
+	LocalComplete, RestoreOnly, HasLazyOperation, Busy bool
+	DescriptorRev                                      uint64
+	OutputRev                                          OutputRevision
+	OfferRev                                           uint64
+	captured                                           *partProbeCapture
 }
 
 type partProbeCapture struct {
@@ -312,7 +312,7 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 			state := gate.outputs[key]
 			probe.Busy = state.phase == PartOutputInstalled
 			for _, group := range gate.groups {
-				if group.phase == ProducerRunning && containsPart(group.writeSet, address) {
+				if group.phase == LazyEvaluationRunning && containsPart(group.writeSet, address) {
 					probe.Busy = true
 				}
 			}

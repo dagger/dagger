@@ -194,13 +194,13 @@ func TestPartReadyRevalidationAndCanceledFinish(t *testing.T) {
 	}
 }
 
-func TestPartProducerMissingOutputStopsOnce(t *testing.T) {
+func TestPartLazyOperationMissingOutputStopsOnce(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	receiver := persistedListTestResult(t, ctx, c, srv, "missing-output", &transferTestValue{Text: "pending"})
 	address := PersistedPartAddress{Part: "snapshot"}
 	calls := 0
-	err := c.RunLazyTask(ctx, receiver, "producer:missing-output", LazyTaskSpec{Body: func(ctx context.Context) error {
-		drain, _, err := c.PrepareOriginal(ctx, receiver, ProducerAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, PartTaskFromContext(ctx))
+	err := c.RunLazyTask(ctx, receiver, "lazy:missing-output", LazyTaskSpec{Body: func(ctx context.Context) error {
+		drain, _, err := c.PrepareOriginal(ctx, receiver, LazyGroupAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, PartTaskFromContext(ctx))
 		if err != nil {
 			return err
 		}
@@ -221,7 +221,7 @@ func TestPartProducerMissingOutputStopsOnce(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return c.publishProducedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }})
+		return c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }})
 	}})
 	require.ErrorContains(t, err, "left required output snapshot unset")
 	require.Equal(t, 1, calls)

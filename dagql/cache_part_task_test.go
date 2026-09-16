@@ -92,9 +92,9 @@ func TestPartGateFiniteDrain(t *testing.T) {
 	decisionStarted := make(chan struct{})
 	decisionDone := make(chan error, 1)
 	go func() {
-		decisionDone <- c.RunLazyTask(ctx, receiver, "producer:execOutputs", LazyTaskSpec{Body: func(ctx context.Context) error {
+		decisionDone <- c.RunLazyTask(ctx, receiver, "lazy:execOutputs", LazyTaskSpec{Body: func(ctx context.Context) error {
 			token := PartTaskFromContext(ctx)
-			drain, outcome, err := c.PrepareOriginal(ctx, receiver, ProducerAddress{Group: "execOutputs"}, []PersistedPartAddress{fs, meta}, token)
+			drain, outcome, err := c.PrepareOriginal(ctx, receiver, LazyGroupAddress{Group: "execOutputs"}, []PersistedPartAddress{fs, meta}, token)
 			require.NoError(t, err)
 			require.Equal(t, GateGranted, outcome)
 			close(decisionStarted)

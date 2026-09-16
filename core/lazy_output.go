@@ -10,7 +10,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
-func nilProducerValue(value any) bool {
+func isNilValue(value any) bool {
 	if value == nil {
 		return true
 	}
@@ -21,7 +21,7 @@ func nilProducerValue(value any) bool {
 	return false
 }
 
-func producedDirectoryOutput(dir *Directory) (string, bkcache.ImmutableRef, error) {
+func directoryOutput(dir *Directory) (string, bkcache.ImmutableRef, error) {
 	if dir == nil || dir.Dir == nil || dir.Snapshot == nil {
 		return "", nil, fmt.Errorf("missing Directory accessors")
 	}
@@ -30,13 +30,13 @@ func producedDirectoryOutput(dir *Directory) (string, bkcache.ImmutableRef, erro
 		return "", nil, fmt.Errorf("Directory path is unset")
 	}
 	snapshot, ok := dir.Snapshot.Peek()
-	if !ok || nilProducerValue(snapshot) {
+	if !ok || isNilValue(snapshot) {
 		return "", nil, fmt.Errorf("Directory snapshot is unset")
 	}
 	return path, snapshot, nil
 }
 
-func producedFileOutput(file *File) (string, bkcache.ImmutableRef, error) {
+func fileOutput(file *File) (string, bkcache.ImmutableRef, error) {
 	if file == nil || file.File == nil || file.Snapshot == nil {
 		return "", nil, fmt.Errorf("missing File accessors")
 	}
@@ -45,45 +45,45 @@ func producedFileOutput(file *File) (string, bkcache.ImmutableRef, error) {
 		return "", nil, fmt.Errorf("File path is unset")
 	}
 	snapshot, ok := file.Snapshot.Peek()
-	if !ok || nilProducerValue(snapshot) {
+	if !ok || isNilValue(snapshot) {
 		return "", nil, fmt.Errorf("File snapshot is unset")
 	}
 	return path, snapshot, nil
 }
 
-func validateProducedDirectoryReceiver(dir *Directory) error {
+func validateLazyDirectoryReceiver(dir *Directory) error {
 	if dir == nil || dir.Dir == nil || dir.Snapshot == nil {
-		return fmt.Errorf("producer receiver: missing Directory accessors")
+		return fmt.Errorf("operation receiver: missing Directory accessors")
 	}
-	if snapshot, ok := dir.Snapshot.Peek(); ok && !nilProducerValue(snapshot) {
-		return fmt.Errorf("producer receiver: Directory snapshot already installed")
+	if snapshot, ok := dir.Snapshot.Peek(); ok && !isNilValue(snapshot) {
+		return fmt.Errorf("operation receiver: Directory snapshot already installed")
 	}
 	if dir.stored != nil {
-		return fmt.Errorf("producer receiver: Directory has stored snapshot")
+		return fmt.Errorf("operation receiver: Directory has stored snapshot")
 	}
 	return nil
 }
 
-func validateProducedFileReceiver(file *File) error {
+func validateLazyFileReceiver(file *File) error {
 	if file == nil || file.File == nil || file.Snapshot == nil {
-		return fmt.Errorf("producer receiver: missing File accessors")
+		return fmt.Errorf("operation receiver: missing File accessors")
 	}
-	if snapshot, ok := file.Snapshot.Peek(); ok && !nilProducerValue(snapshot) {
-		return fmt.Errorf("producer receiver: File snapshot already installed")
+	if snapshot, ok := file.Snapshot.Peek(); ok && !isNilValue(snapshot) {
+		return fmt.Errorf("operation receiver: File snapshot already installed")
 	}
 	if file.stored != nil {
-		return fmt.Errorf("producer receiver: File has stored snapshot")
+		return fmt.Errorf("operation receiver: File has stored snapshot")
 	}
 	return nil
 }
 
-// moveProducedDirectory transfers the ref owned by a temporary output. Neither
+// moveDirectoryOutput transfers the ref owned by a temporary output. Neither
 // value may be published, and the source must not be a borrowed dependency.
-func moveProducedDirectory(dst, src *Directory) error {
-	if err := validateProducedDirectoryReceiver(dst); err != nil {
+func moveDirectoryOutput(dst, src *Directory) error {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return err
 	}
-	path, snapshot, err := producedDirectoryOutput(src)
+	path, snapshot, err := directoryOutput(src)
 	if err != nil {
 		return err
 	}
@@ -94,11 +94,11 @@ func moveProducedDirectory(dst, src *Directory) error {
 	return nil
 }
 
-func moveProducedFile(dst, src *File) error {
-	if err := validateProducedFileReceiver(dst); err != nil {
+func moveFileOutput(dst, src *File) error {
+	if err := validateLazyFileReceiver(dst); err != nil {
 		return err
 	}
-	path, snapshot, err := producedFileOutput(src)
+	path, snapshot, err := fileOutput(src)
 	if err != nil {
 		return err
 	}
@@ -109,8 +109,8 @@ func moveProducedFile(dst, src *File) error {
 	return nil
 }
 
-func attachCompletedProducerInput[T dagql.Typed](attach func(dagql.AnyResult) (dagql.AnyResult, error), input dagql.ObjectResult[T], label string) (dagql.ObjectResult[T], error) {
-	if nilProducerValue(input.Self()) {
+func attachLazyInput[T dagql.Typed](attach func(dagql.AnyResult) (dagql.AnyResult, error), input dagql.ObjectResult[T], label string) (dagql.ObjectResult[T], error) {
+	if isNilValue(input.Self()) {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("%s: missing input", label)
 	}
 	attached, err := attach(input)
@@ -118,7 +118,7 @@ func attachCompletedProducerInput[T dagql.Typed](attach func(dagql.AnyResult) (d
 		return dagql.ObjectResult[T]{}, fmt.Errorf("%s: %w", label, err)
 	}
 	typed, ok := attached.(dagql.ObjectResult[T])
-	if !ok || nilProducerValue(typed.Self()) {
+	if !ok || isNilValue(typed.Self()) {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
 	}
 	return typed, nil

@@ -456,7 +456,7 @@ func (container *Container) consumeFinalParentDelegations(ctx context.Context, o
 	for _, part := range containerSnapshotParts(container) {
 		delegation := containerDelegationGroup(part)
 		// Delegation groups are exactly the snapshot groups whose key is the
-		// part key. Producer groups such as execOutputs and write never match.
+		// part key. LazyOperation groups such as execOutputs and write never match.
 		groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part})
 		if err != nil {
 			return err

@@ -160,7 +160,7 @@ func (c *Cache) releasePartRow(ctx context.Context, row *sharedResult) error {
 }
 
 func isPartTaskKey(key LazyGroupKey) bool {
-	return strings.HasPrefix(string(key), "obtain:") || strings.HasPrefix(string(key), "acquire:") || strings.HasPrefix(string(key), "producer:")
+	return strings.HasPrefix(string(key), "obtain:") || strings.HasPrefix(string(key), "acquire:") || strings.HasPrefix(string(key), "lazy:")
 }
 
 func (t *PartTaskToken) openOwnerSync() {

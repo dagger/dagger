@@ -47,10 +47,10 @@ func containerPartDelegation(v dagql.PersistedPayloadVisit, p persistedContainer
 	return nil, fmt.Errorf("Container delegation: undeclared part %q", demand)
 }
 
-// RouteParts describes the saved producer without resolving references or
+// RouteParts describes the saved operation without resolving references or
 // constructing an operational lazy state. Mount keys are always target paths.
-func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, demand dagql.PartKey) (dagql.PartProducerRoute, error) {
-	route := dagql.PartProducerRoute{Group: dagql.ProducerAddress{OutputPath: slices.Clone(v.Path)}}
+func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, demand dagql.PartKey) (dagql.LazyOperationRoute, error) {
+	route := dagql.LazyOperationRoute{Group: dagql.LazyGroupAddress{OutputPath: slices.Clone(v.Path)}}
 	add := func(part dagql.PartKey) {
 		route.WriteSet = append(route.WriteSet, dagql.PersistedPartAddress{OutputPath: slices.Clone(v.Path), Part: part})
 	}
@@ -64,12 +64,12 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 			return route, nil
 		}
 		if _, ok := persistedDirectoryLazyVisitors[p.LazyKind]; !ok {
-			return route, fmt.Errorf("unknown Directory producer %q", p.LazyKind)
+			return route, fmt.Errorf("unknown Directory operation %q", p.LazyKind)
 		}
 		if demand != "snapshot" {
 			return route, fmt.Errorf("unknown Directory part %q", demand)
 		}
-		route.HasProducer = true
+		route.HasLazyOperation = true
 		route.Group.Group = dagql.LazyGroupWhole
 		add("snapshot")
 	case "File":
@@ -81,12 +81,12 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 			return route, nil
 		}
 		if _, ok := persistedFileLazyVisitors[p.LazyKind]; !ok {
-			return route, fmt.Errorf("unknown File producer %q", p.LazyKind)
+			return route, fmt.Errorf("unknown File operation %q", p.LazyKind)
 		}
 		if demand != "snapshot" {
 			return route, fmt.Errorf("unknown File part %q", demand)
 		}
-		route.HasProducer = true
+		route.HasLazyOperation = true
 		route.Group.Group = dagql.LazyGroupWhole
 		add("snapshot")
 	case "Container":
@@ -100,13 +100,13 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 			return route, err
 		}
 		if v.Call == nil {
-			return route, fmt.Errorf("Container producer: missing recorded call")
+			return route, fmt.Errorf("Container lazy: missing recorded call")
 		}
 		field := v.Call.Field
 		if _, ok := persistedContainerRecipeVisitors[field]; !ok {
-			return route, fmt.Errorf("unknown Container producer %q", field)
+			return route, fmt.Errorf("unknown Container operation %q", field)
 		}
-		route.HasProducer = true
+		route.HasLazyOperation = true
 		ctr, err := containerRoutingMetadata(p.Metadata.Value)
 		if err != nil {
 			return route, err
@@ -128,7 +128,7 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 			return route, err
 		}
 		if len(groups) != 1 {
-			return route, fmt.Errorf("Container producer: part maps to %d groups", len(groups))
+			return route, fmt.Errorf("Container lazy: part maps to %d groups", len(groups))
 		}
 		route.Group.Group = groups[0]
 		if demand == ContainerPartMetadata {
@@ -145,7 +145,7 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 			}
 		}
 	default:
-		return route, fmt.Errorf("no part producer for %s", family)
+		return route, fmt.Errorf("no part operation for %s", family)
 	}
 	return route, nil
 }

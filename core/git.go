@@ -1520,7 +1520,7 @@ func (lazy *DirectoryGitTreeLazy) Evaluate(ctx context.Context, dir *Directory) 
 func evaluateGitTreeInto(ctx context.Context, state *LazyState, op string, dir *Directory, produce func(context.Context, *dagql.Server) (*Directory, error)) error {
 	var unmoved *Directory
 	err := dir.evaluateLazy(ctx, state, op, func(ctx context.Context) error {
-		if err := validateProducedDirectoryReceiver(dir); err != nil {
+		if err := validateLazyDirectoryReceiver(dir); err != nil {
 			return err
 		}
 		srv, err := CurrentDagqlServer(ctx)
@@ -1537,20 +1537,20 @@ func evaluateGitTreeInto(ctx context.Context, state *LazyState, op string, dir *
 }
 
 func gitRefTreeInto(ctx context.Context, dst *Directory, input *GitRef, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
-	if err := validateProducedDirectoryReceiver(dst); err != nil {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return nil, err
 	}
 	src, err := input.Tree(ctx, srv, discardGitDir, depth, includeTags)
 	if err != nil {
 		return nil, err
 	}
-	if err := moveProducedDirectory(dst, src); err != nil {
+	if err := moveDirectoryOutput(dst, src); err != nil {
 		return src, err
 	}
 	return nil, nil
 }
 func (lazy *DirectoryGitTreeLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	ref, err := attachCompletedProducerInput(attach, lazy.Ref, "DirectoryGitTreeLazy.Ref")
+	ref, err := attachLazyInput(attach, lazy.Ref, "DirectoryGitTreeLazy.Ref")
 	if err != nil {
 		return nil, err
 	}
@@ -1613,20 +1613,20 @@ func (lazy *DirectoryGitCommitTreeLazy) Evaluate(ctx context.Context, dir *Direc
 }
 
 func gitCommitTreeInto(ctx context.Context, dst *Directory, input *GitCommit, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
-	if err := validateProducedDirectoryReceiver(dst); err != nil {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return nil, err
 	}
 	src, err := input.Tree(ctx, srv, discardGitDir, depth, includeTags)
 	if err != nil {
 		return nil, err
 	}
-	if err := moveProducedDirectory(dst, src); err != nil {
+	if err := moveDirectoryOutput(dst, src); err != nil {
 		return src, err
 	}
 	return nil, nil
 }
 func (lazy *DirectoryGitCommitTreeLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	commit, err := attachCompletedProducerInput(attach, lazy.Commit, "DirectoryGitCommitTreeLazy.Commit")
+	commit, err := attachLazyInput(attach, lazy.Commit, "DirectoryGitCommitTreeLazy.Commit")
 	if err != nil {
 		return nil, err
 	}

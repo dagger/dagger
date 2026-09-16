@@ -14,27 +14,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type producerCleanupRef struct {
+type operationCleanupRef struct {
 	*cacheVolumeTestMutableRef
 	root                string
 	mountErr, commitErr error
 	releases, commits   int
 }
 
-func (r *producerCleanupRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
+func (r *operationCleanupRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
 	if r.mountErr != nil {
 		return nil, r.mountErr
 	}
-	return producerTreeMount(r.root), nil
+	return operationTreeMount(r.root), nil
 }
-func (r *producerCleanupRef) Commit(context.Context) (bkcache.ImmutableRef, error) {
+func (r *operationCleanupRef) Commit(context.Context) (bkcache.ImmutableRef, error) {
 	r.commits++
 	if r.commitErr != nil {
 		return nil, r.commitErr
 	}
-	return &producerTreeRef{cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "committed", snapshotID: "committed"}, root: r.root}, nil
+	return &operationTreeRef{cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "committed", snapshotID: "committed"}, root: r.root}, nil
 }
-func (r *producerCleanupRef) Release(ctx context.Context) error {
+func (r *operationCleanupRef) Release(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return errors.New("cleanup context canceled")
 	}
@@ -42,33 +42,33 @@ func (r *producerCleanupRef) Release(ctx context.Context) error {
 	return nil
 }
 
-type producerCleanupManager struct {
+type operationCleanupManager struct {
 	*cacheVolumeTestSnapshotManager
 }
 
-func (*producerCleanupManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+func (*operationCleanupManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
 	return &cacheVolumeTestImmutableRef{}, nil
 }
 
-func producerCleanupContext(t *testing.T, ref *producerCleanupRef) context.Context {
+func operationCleanupContext(t *testing.T, ref *operationCleanupRef) context.Context {
 	t.Helper()
-	mgr := &producerCleanupManager{&cacheVolumeTestSnapshotManager{newResult: ref}}
+	mgr := &operationCleanupManager{&cacheVolumeTestSnapshotManager{newResult: ref}}
 	return ContextWithQuery(t.Context(), &Query{Server: &cacheVolumeTestQueryServer{mockServer: &mockServer{}, cacheManager: mgr}})
 }
 
-func TestProducerPathCleanup(t *testing.T) {
+func TestLazyOperationPathCleanup(t *testing.T) {
 	fault := errors.New("injected path failure")
 	for _, body := range []string{"blob", "http"} {
 		for _, exit := range []string{"mount", "write", "commit", "success"} {
 			t.Run(body+"/"+exit, func(t *testing.T) {
-				ref := &producerCleanupRef{cacheVolumeTestMutableRef: &cacheVolumeTestMutableRef{}, root: t.TempDir()}
+				ref := &operationCleanupRef{cacheVolumeTestMutableRef: &cacheVolumeTestMutableRef{}, root: t.TempDir()}
 				if exit == "mount" {
 					ref.mountErr = fault
 				}
 				if exit == "commit" {
 					ref.commitErr = fault
 				}
-				ctx := producerCleanupContext(t, ref)
+				ctx := operationCleanupContext(t, ref)
 				var err error
 				if body == "blob" {
 					if exit == "write" {
@@ -104,10 +104,10 @@ func TestProducerPathCleanup(t *testing.T) {
 		}
 	}
 	t.Run("cleaned bare alias", func(t *testing.T) {
-		ref := &producerCleanupRef{cacheVolumeTestMutableRef: &cacheVolumeTestMutableRef{}, root: t.TempDir()}
+		ref := &operationCleanupRef{cacheVolumeTestMutableRef: &cacheVolumeTestMutableRef{}, root: t.TempDir()}
 		out, err := exec.Command("git", "init", "--bare", ref.root).CombinedOutput()
 		require.NoError(t, err, string(out))
-		ctx := producerCleanupContext(t, ref)
+		ctx := operationCleanupContext(t, ref)
 		cache, err := dagql.NewCache(ctx, "", nil, nil)
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, cache.CloseDiscardingPersistence()) })
@@ -151,7 +151,7 @@ func TestProducerPathCleanup(t *testing.T) {
 	})
 }
 
-func TestProducerTemporaryIndexCleanup(t *testing.T) {
+func TestLazyOperationTemporaryIndexCleanup(t *testing.T) {
 	for _, exit := range []string{"copy", "close", "command", "success"} {
 		t.Run(exit, func(t *testing.T) {
 			tmp, err := os.CreateTemp(t.TempDir(), "dagger-git-index-")

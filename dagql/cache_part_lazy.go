@@ -28,12 +28,12 @@ func (p *partCleanup) release(ctx context.Context) error {
 	p.done = true
 	return nil
 }
-func (c *Cache) publishProducedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) error {
+func (c *Cache) publishEvaluatedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) error {
 	for {
 		if err := context.Cause(ctx); err != nil {
 			return err
 		}
-		prepared, err := c.prepareProducedParts(ctx, res, demanded, produced, original, cleanup)
+		prepared, err := c.prepareEvaluatedParts(ctx, res, demanded, produced, original, cleanup)
 		if partCanReselect(err) {
 			continue
 		}
@@ -53,7 +53,7 @@ func (c *Cache) publishProducedParts(ctx context.Context, res AnyResult, demande
 		return err
 	}
 }
-func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) (_ *PreparedReadyPart, rerr error) {
+func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) (_ *PreparedReadyPart, rerr error) {
 	row := res.cacheSharedResult()
 	session, err := partSession(ctx)
 	if err != nil {
@@ -68,13 +68,13 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 	c.egraphMu.Lock()
 	if c.resultsByID[row.id] != row || original.task != PartTaskFromContext(ctx) {
 		c.egraphMu.Unlock()
-		return nil, fmt.Errorf("producer publication: invalid owner")
+		return nil, fmt.Errorf("operation publication: invalid owner")
 	}
 	c.incrementIncomingOwnershipLocked(ctx, row)
 	p.receiver = row
 	original.gate.mu.Lock()
-	group := original.gate.groups[producerAddressKey(original.group)]
-	if group == nil || group.phase != ProducerRunning || group.task != original.task {
+	group := original.gate.groups[lazyGroupAddressKey(original.group)]
+	if group == nil || group.phase != LazyEvaluationRunning || group.task != original.task {
 		original.gate.mu.Unlock()
 		c.egraphMu.Unlock()
 		return nil, ErrPartReselect
@@ -97,7 +97,7 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 	}
 	demandedKey, _ := partAddressKey(demanded)
 	if !producedParts[demandedKey].LocalComplete {
-		return nil, fmt.Errorf("saved producer left required output %s unset", demanded.Part)
+		return nil, fmt.Errorf("saved operation left required output %s unset", demanded.Part)
 	}
 	currentProbes, err := describePartRecord(current)
 	if err != nil {
@@ -118,7 +118,7 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 		}
 		probe, ok := producedParts[key]
 		if !ok || !probe.LocalComplete {
-			return nil, fmt.Errorf("saved producer left write-set output %s unset", address.Part)
+			return nil, fmt.Errorf("saved operation left write-set output %s unset", address.Part)
 		}
 		d := probe.Descriptor
 		d.Address = clonePartAddress(address)
@@ -159,7 +159,7 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 	for _, id := range ids {
 		dep := c.resultsByID[sharedResultID(id)]
 		if dep == nil {
-			err = fmt.Errorf("producer publication: missing reference %d", id)
+			err = fmt.Errorf("operation publication: missing reference %d", id)
 			break
 		}
 		c.incrementIncomingOwnershipLocked(ctx, dep)
@@ -188,13 +188,13 @@ func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demande
 		if len(descriptors) > 1 {
 			store, ok := UnwrapAs[PartBatchStorePreparer](value)
 			if !ok {
-				return nil, fmt.Errorf("producer publication: no batch store")
+				return nil, fmt.Errorf("operation publication: no batch store")
 			}
 			p.store, err = store.PreparePartStores(ctx, dec, local, descriptors, refs)
 		} else {
 			store, ok := UnwrapAs[PartStorePreparer](value)
 			if !ok {
-				return nil, fmt.Errorf("producer publication: no store")
+				return nil, fmt.Errorf("operation publication: no store")
 			}
 			p.store, err = store.PreparePartStore(ctx, dec, local, descriptors[0], refs[0])
 		}

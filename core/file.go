@@ -213,14 +213,14 @@ const (
 )
 
 type persistedFilePayload struct {
-	ValueKnown    bool                      `json:"valueKnown,omitempty"`
-	ProducerState string                    `json:"producerState,omitempty"`
-	Form          string                    `json:"form"`
-	File          string                    `json:"file,omitempty"`
-	Platform      Platform                  `json:"platform"`
-	Services      []persistedServiceBinding `json:"services,omitempty"`
-	LazyKind      string                    `json:"lazyKind,omitempty"`
-	LazyJSON      json.RawMessage           `json:"lazyJSON,omitempty"`
+	ValueKnown     bool                      `json:"valueKnown,omitempty"`
+	OperationState string                    `json:"operationState,omitempty"`
+	Form           string                    `json:"form"`
+	File           string                    `json:"file,omitempty"`
+	Platform       Platform                  `json:"platform"`
+	Services       []persistedServiceBinding `json:"services,omitempty"`
+	LazyKind       string                    `json:"lazyKind,omitempty"`
+	LazyJSON       json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
 func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {

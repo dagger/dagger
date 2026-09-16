@@ -138,7 +138,7 @@ func scratchCount(t *testing.T, ctx context.Context, cache *dagql.Cache, session
 		}
 		require.NotEqual(t, "provider-read", event.Kind)
 		require.NotEqual(t, "installed-chain", event.Kind)
-		if event.Kind == "producer-enter" {
+		if event.Kind == "lazy-enter" {
 			require.Equal(t, "directory", event.Field)
 			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, event.Address)
 			count++
@@ -147,7 +147,7 @@ func scratchCount(t *testing.T, ctx context.Context, cache *dagql.Cache, session
 	return count
 }
 
-func TestScratchDirectoryProducer(t *testing.T) {
+func TestScratchDirectoryLazyOperation(t *testing.T) {
 	store := testutil.NewStore(t)
 	observed := &scratchObservedManager{SnapshotManager: store.Manager}
 	store.Manager = observed

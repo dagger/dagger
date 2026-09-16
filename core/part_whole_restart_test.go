@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPartWholeProducerMixedRestart(t *testing.T) {
+func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 	actx, _, a, asrv, aServer := executionFixture(t)
 	_, bStore, _, _, bServer := executionFixture(t)
 	packaged, err := local.NewStore(t.TempDir())
@@ -35,7 +35,7 @@ func TestPartWholeProducerMixedRestart(t *testing.T) {
 	require.NoError(t, content.WriteBlob(actx, packaged, "manifest", bytes.NewReader(raw), manifest))
 	ctr, err := BuiltInContainer(actx, Platform{OS: "linux", Architecture: "amd64"}, manifest.Digest.String())
 	require.NoError(t, err)
-	original := attachTransferObject(t, actx, a, asrv, "producer-execution", "_builtinContainer", ctr)
+	original := attachTransferObject(t, actx, a, asrv, "operation-execution", "_builtinContainer", ctr)
 	require.NoError(t, a.Evaluate(actx, original))
 	dbPath := filepath.Join(t.TempDir(), "mixed.db")
 	open := func(session string) (context.Context, *dagql.Cache, *dagql.Server) {
@@ -99,22 +99,22 @@ func TestPartWholeProducerMixedRestart(t *testing.T) {
 		require.Len(t, view.Links, 1)
 		require.Equal(t, fsID, view.Links[0].RefKey)
 		require.JSONEq(t, string(savedRecipe), string(view.Payload.LazyJSON))
-		require.Equal(t, reads, provider.Reads.Load(), "whole producer must preserve the already downloaded FS")
+		require.Equal(t, reads, provider.Reads.Load(), "whole operation must preserve the already downloaded FS")
 		report, err = b.TransferFixtureSnapshot(bctx, "after", nil)
 		require.NoError(t, err)
-		var producers, releases int
+		var operations, releases int
 		for _, event := range report.Parts {
 			if event.ResultID != imported[0].ResultID {
 				continue
 			}
 			switch event.Kind {
-			case "producer-enter":
-				producers++
-			case "producer-ref-released":
+			case "lazy-enter":
+				operations++
+			case "lazy-ref-released":
 				releases++
 			}
 		}
-		require.Equal(t, 1, producers)
+		require.Equal(t, 1, operations)
 		require.Equal(t, 1, releases)
 		return nil
 	}))
@@ -149,15 +149,15 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 		require.Empty(t, observed.opens)
 		report, err := b.TransferFixtureSnapshot(bctx, "b", nil)
 		require.NoError(t, err)
-		var producerEntries int
+		var operationEntries int
 		for _, event := range report.Parts {
 			require.NotEqual(t, "provider-read", event.Kind)
-			if event.Kind == "producer-enter" {
-				producerEntries++
+			if event.Kind == "lazy-enter" {
+				operationEntries++
 				require.Equal(t, ContainerPartMetadata, event.Address.Part)
 			}
 		}
-		require.Equal(t, 1, producerEntries)
+		require.Equal(t, 1, operationEntries)
 		return nil
 	}))
 }

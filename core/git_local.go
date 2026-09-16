@@ -122,7 +122,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 }
 
 func (repo *LocalGitRepository) cleanedInto(ctx context.Context, dst *Directory) (unchanged bool, rerr error) {
-	if err := validateProducedDirectoryReceiver(dst); err != nil {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return false, err
 	}
 	query, err := CurrentQuery(ctx)
@@ -448,7 +448,7 @@ func (lazy *DirectoryGitCleanedLazy) EvaluateForCall(ctx context.Context, dir *D
 
 func (lazy *DirectoryGitCleanedLazy) evaluate(ctx context.Context, dir *Directory) error {
 	return dir.evaluateLazy(ctx, &lazy.LazyState, "GitRepository.__cleaned", func(ctx context.Context) error {
-		if err := validateProducedDirectoryReceiver(dir); err != nil {
+		if err := validateLazyDirectoryReceiver(dir); err != nil {
 			return err
 		}
 		if lazy.Repo.Self() == nil {
@@ -469,7 +469,7 @@ func (lazy *DirectoryGitCleanedLazy) evaluate(ctx context.Context, dir *Director
 	})
 }
 func (lazy *DirectoryGitCleanedLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	repo, err := attachCompletedProducerInput(attach, lazy.Repo, "DirectoryGitCleanedLazy.Repo")
+	repo, err := attachLazyInput(attach, lazy.Repo, "DirectoryGitCleanedLazy.Repo")
 	if err != nil {
 		return nil, err
 	}

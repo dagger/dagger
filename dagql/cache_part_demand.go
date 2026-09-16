@@ -11,15 +11,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// PartOutputOpener opens a final local descriptor without evaluating a producer
+// PartOutputOpener opens a final local descriptor without evaluating an operation
 // or changing the output's meaning. The cache has already joined its owner.
 type PartOutputOpener interface {
 	OpenPart(context.Context, PersistedPartAddress) error
 }
-type PersistedPartProducerFactory interface {
-	PreparePartProducer(context.Context, *PersistDecodeContext, PersistedRecord, PartProducerRoute) (PartProducerInvocation, error)
+type PersistedLazyOperationFactory interface {
+	PrepareLazyOperation(context.Context, *PersistDecodeContext, PersistedRecord, LazyOperationRoute) (LazyOperationInvocation, error)
 }
-type PartProducerInvocation interface {
+type LazyOperationInvocation interface {
 	Run(context.Context) error
 	Capture(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error)
 	Release(context.Context) error
@@ -54,7 +54,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 		return false
 	}
 	for _, group := range gate.groups {
-		if group.phase == ProducerRunning {
+		if group.phase == LazyEvaluationRunning {
 			return false
 		}
 	}
@@ -123,11 +123,11 @@ func partTaskKey(prefix string, address PersistedPartAddress) LazyGroupKey {
 	key, _ := partAddressKey(address)
 	return LazyGroupKey(prefix + ":" + key)
 }
-func producerTaskKey(address ProducerAddress) LazyGroupKey {
+func lazyEvaluationTaskKey(address LazyGroupAddress) LazyGroupKey {
 	if len(address.OutputPath) == 0 {
-		return LazyGroupKey("producer:" + string(address.Group))
+		return LazyGroupKey("lazy:" + string(address.Group))
 	}
-	return LazyGroupKey("producer:" + producerAddressKey(address))
+	return LazyGroupKey("lazy:" + lazyGroupAddressKey(address))
 }
 func (c *Cache) joinPartInstallation(ctx context.Context, res AnyResult, token *PartTaskToken) error {
 	if isPartTaskKey(token.key) {
@@ -228,7 +228,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 							return err
 						}
 						if outcome == GateBusy || outcome == GateExecutionStarted {
-							return errPartProducerBusy
+							return errLazyEvaluationBusy
 						}
 						if outcome != GateGranted {
 							return ErrPartReselect
@@ -241,8 +241,8 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					if ownership.CompareAndSwap(0, 2) {
 						err = errors.Join(err, source.Release(ctx))
 					}
-					if errors.Is(err, errPartProducerBusy) {
-						err = c.joinPartProducer(ctx, res, address)
+					if errors.Is(err, errLazyEvaluationBusy) {
+						err = c.joinLazyEvaluation(ctx, res, address)
 					}
 					if err == nil || partCanReselect(err) {
 						continue
@@ -258,10 +258,10 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					}
 					continue
 				}
-				if !route.HasProducer {
+				if !route.HasLazyOperation {
 					return errors.Join(fmt.Errorf("%w: %s", ErrUnavailablePart, key), demand.causes())
 				}
-				err = c.runPartProducerDecision(ctx, res, address, route, demand)
+				err = c.runLazyOperationDecision(ctx, res, address, route, demand)
 				if partCanReselect(err) {
 					continue
 				}
@@ -277,8 +277,8 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 	}
 }
 
-func routePartRecord(record PersistedRecord, address PersistedPartAddress) (PartProducerRoute, error) {
-	var route PartProducerRoute
+func routePartRecord(record PersistedRecord, address PersistedPartAddress) (LazyOperationRoute, error) {
+	var route LazyOperationRoute
 	found := false
 	err := walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, nil, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if !slices.Equal(v.Path, address.OutputPath) {
@@ -286,7 +286,7 @@ func routePartRecord(record PersistedRecord, address PersistedPartAddress) (Part
 		}
 		router, ok := f.Transfer.(PersistedPartRouter)
 		if !ok {
-			return nil, fmt.Errorf("part demand: no producer router")
+			return nil, fmt.Errorf("part demand: no operation router")
 		}
 		var err error
 		route, err = router.RouteParts(v, address.Part)
@@ -365,15 +365,15 @@ func (c *Cache) sourceCheckCurrentLocked(check *SourceCheck) bool {
 	}
 	return true
 }
-func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, address PersistedPartAddress, route PartProducerRoute, demand *PartDemandState) error {
-	return c.RunLazyTask(ctx, res, producerTaskKey(route.Group), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
+func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, address PersistedPartAddress, route LazyOperationRoute, demand *PartDemandState) error {
+	return c.RunLazyTask(ctx, res, lazyEvaluationTaskKey(route.Group), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 		task := PartTaskFromContext(ctx)
 		drain, outcome, err := c.PrepareOriginal(ctx, res, route.Group, route.WriteSet, task)
 		if err != nil {
 			return err
 		}
 		if outcome == GateExecutionStarted {
-			return fmt.Errorf("producer consumed without required output %s", address.Part)
+			return fmt.Errorf("operation consumed without required output %s", address.Part)
 		}
 		if outcome != GateGranted {
 			return ErrPartReselect
@@ -382,7 +382,7 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 			return err
 		}
 		row := res.cacheSharedResult()
-		ctx = c.partFixtureProducerContext(ctx, row, address)
+		ctx = c.partFixtureLazyContext(ctx, row, address)
 		var version capturedRowRevision
 		record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
 		if err != nil {
@@ -394,13 +394,13 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 		}
 		family, ok := PersistedObjectFamilyByName(local.Envelope.ObjectCodec)
 		if !ok {
-			return fmt.Errorf("producer: unsupported output family")
+			return fmt.Errorf("lazy: unsupported output family")
 		}
-		factory, ok := family.Transfer.(PersistedPartProducerFactory)
+		factory, ok := family.Transfer.(PersistedLazyOperationFactory)
 		if !ok {
-			return fmt.Errorf("producer: family has no saved invoker")
+			return fmt.Errorf("lazy: family has no saved invoker")
 		}
-		invocation, err := factory.PreparePartProducer(ctx, c.partDecodeContext(ctx, row, record).atPath(address.OutputPath), local, route)
+		invocation, err := factory.PrepareLazyOperation(ctx, c.partDecodeContext(ctx, row, record).atPath(address.OutputPath), local, route)
 		if err != nil {
 			return err
 		}
@@ -442,7 +442,7 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 			if outcome != GateGranted {
 				return ErrPartReselect
 			}
-			c.recordPartFixture(row, address, "producer-enter")
+			c.recordPartFixture(row, address, "lazy-enter")
 			if err := invocation.Run(ctx); err != nil {
 				return err
 			}
@@ -456,20 +456,20 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 			if err != nil {
 				return err
 			}
-			return c.publishProducedParts(ctx, res, address, produced, original, cleanup)
+			return c.publishEvaluatedParts(ctx, res, address, produced, original, cleanup)
 		}
 		return ErrPartReselect
 	}})
 }
 
-var errPartProducerBusy = errors.New("part producer owns admission")
+var errLazyEvaluationBusy = errors.New("part operation owns admission")
 
-func (c *Cache) joinPartProducer(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
+func (c *Cache) joinLazyEvaluation(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
 	gate := res.cacheSharedResult().partGate.loadOrCreate()
 	gate.mu.Lock()
 	var token *PartTaskToken
 	for _, group := range gate.groups {
-		if group.phase != ProducerOpen && containsPart(group.writeSet, address) {
+		if group.phase != LazyEvaluationOpen && containsPart(group.writeSet, address) {
 			token = group.task
 			break
 		}

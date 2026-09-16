@@ -227,14 +227,14 @@ const (
 )
 
 type persistedDirectoryPayload struct {
-	ValueKnown    bool                      `json:"valueKnown,omitempty"`
-	ProducerState string                    `json:"producerState,omitempty"`
-	Form          string                    `json:"form"`
-	Dir           string                    `json:"dir,omitempty"`
-	Platform      Platform                  `json:"platform"`
-	Services      []persistedServiceBinding `json:"services,omitempty"`
-	LazyKind      string                    `json:"lazyKind,omitempty"`
-	LazyJSON      json.RawMessage           `json:"lazyJSON,omitempty"`
+	ValueKnown     bool                      `json:"valueKnown,omitempty"`
+	OperationState string                    `json:"operationState,omitempty"`
+	Form           string                    `json:"form"`
+	Dir            string                    `json:"dir,omitempty"`
+	Platform       Platform                  `json:"platform"`
+	Services       []persistedServiceBinding `json:"services,omitempty"`
+	LazyKind       string                    `json:"lazyKind,omitempty"`
+	LazyJSON       json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
 func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {

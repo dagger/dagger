@@ -1,31 +1,25 @@
 # Acquiring missing filesystem outputs
 
-A learned result is an ordinary cached lazy result with metadata about where its missing output can be downloaded. The remote fallback below applies to parts carrying that description. A local saved snapshot that is missing without a remote description keeps today's error; this work adds no local recomputation fallback.
+An imported result is an ordinary cached value whose pending parts carry operation data and optional download offers. Acquisition uses the existing Lazy operation and the same publication transaction as ready-output installation. A local stored snapshot without a foreign description keeps its existing missing-content error.
 
 ## Demand path
 
-Within the existing lazy part evaluation:
+`DescribeParts` and `RouteParts` inspect encoded data without evaluating it. The demand path checks the receiver's available part, eligible equivalent local parts, admitted chains and equivalent pending operation routes. It then uses the receiver's recorded operation when available. The closed metadata-transform table additionally permits delegation to the exact recorded parent. Delegation carries its active path per demand in private context, never in shared demand state.
 
-1. Use its available local snapshot.
-2. If supplied remote-chain metadata exists, import that chain through the existing snapshot manager.
-3. If it cannot supply the part, run the original lazy producer.
+Directory and File have an operation route only with a registered `lazyKind` and valid `lazyJSON`. Container uses its existing field-indexed codec table and nonempty valid operation JSON. A field name alone supplies no execution authority. Private evaluation uses fresh operation state, exact saved inputs and the receiver's persisted platform.
 
-A lookup, metadata read or decode does not pull filesystem contents. A normal cache miss does not synchronously ask a remote service for an offer. Expired or unusable download addresses permit the ordinary computation fallback.
+Chain providers validate fixed-address reads and record exhaustion against the admitted offer revision. A replacement offer is not exhausted by an earlier one. Unavailable content may lead to another route; cancellation, local ownership failures and cleanup errors keep their classifications and accumulated causes.
 
-Offers for already-created but unstarted work and refreshing an expired address for known content were discussed in Erik's September 10 answers (order 5077). Preserve them as explicit follow-ups: the concrete update/API behavior must be reviewed before implementation. Interrupting an already-running exec remains deferred. No address-refresh RPC is part of the present engine-only slice.
+## Publication and ownership
 
-Retain the existing output groups and delegation. An exec still produces its current group when executed; downloading one supplied part does not force unrelated parts or the full dependency graph to download. Nondeterministic output differences keep the behavior Erik explicitly accepted.
+The writer gate excludes conflicting native bodies, imports and private evaluation. `PrepareReadyPart`, `CommitReadyPart` and `FinishReadyPart` preserve their transaction stages. Commit installs only the selected missing outputs, retaining the receiver's complete encoded view, operation identity, pending siblings and scoped snapshot links. Finish retains cleanup ownership through retries and acknowledges owner synchronization before settlement.
 
-## Ownership and persistence
+Each installed ref is independently owned. Inline list outputs use the `(result_id, output_path, role)` key, through encoding, visitors, typed collection, owner synchronization and boot restoration. Native completion also settles pending offers. Every initialized boot reconciles the desired lease set, including an empty store and an import-failure reset.
 
-Attach an imported snapshot using the existing snapshot/result ownership paths. Release an unsuccessful attachment's temporary resources through their existing cleanup. Persist the supplied chain metadata and original producer inputs so a restarted engine can follow the same demand path.
+Private exec evaluation may create filesystem and exec metadata together. If filesystem content is already installed, publication keeps it and releases the redundant private ref. The release-observing fixture decorator applies only to that private filesystem handle. Fixture events are `lazy-enter`, `installed-lazy`, `lazy-ref-released` and `lazy-ref-release-error`; their counters retain the same exact row, group and part meanings. Delegation remains separately reported by its selected/installed events and gated source address.
 
-Use the current per-part synchronization. Introduce an additional state transition only when a concrete import/computation race requires it. There is no separate global acquisition coordinator, private replacement-value protocol or read-consistency lifecycle.
+## Limits and verification
 
-Local-only behavior, digest joining, service keys and pruning remain unchanged. The transfer annotation on extra digests belongs at metadata export/import; it is not a new equality rule.
+No remote service lookup, offer-renewal RPC, background sharing implementation or cached-scalar backing check is added. Existing digest equivalence, resource admission and ownership rules continue to apply. See [Lazy values](lazy-values.md) for changed constructor timing, internal identities and the format cut.
 
-## Checks
-
-Exercise a real local open, a real chain import, and an unavailable-chain fallback that executes the original producer. Verify repeated demand shares the existing lazy operation, cancellation cleans up its existing holds, and restart retains enough metadata to perform the same operation. From-image metadata reads must not unpack layers.
-
-Status: implement through existing lazy evaluation and chain APIs. No public remote service or background acquisition is included.
+Verification covers real local opens, admitted-chain import/failure, private operation fallback, scoped inline installation, cancellation, cleanup and synchronization retries, restart, mixed exec outputs and native cold/warm controls. The later sharing batches retain the preparation, revision, exact-input and publication interfaces described here.

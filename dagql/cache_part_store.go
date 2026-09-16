@@ -22,7 +22,7 @@ type PartStorePreparer interface {
 	PreparePartStore(context.Context, *PersistDecodeContext, PersistedRecord, PartDescriptor, snapshots.ImmutableRef) (PreparedPartStore, error)
 }
 
-// A producer publishes its complete missing write set in one transaction.
+// A operation publishes its complete missing write set in one transaction.
 type PartBatchStorePreparer interface {
 	PreparePartStores(context.Context, *PersistDecodeContext, PersistedRecord, []PartDescriptor, []snapshots.ImmutableRef) (PreparedPartStore, error)
 }

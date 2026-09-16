@@ -16,7 +16,7 @@ func (family foreignFamilyCodec) DescribeParts(v dagql.PersistedPayloadVisit) ([
 		if err != nil {
 			return nil, err
 		}
-		p := dagql.PartProbe{Descriptor: dagql.PartDescriptor{Address: out.Address, Value: out.Value, Absent: out.State == "absent", SnapshotID: out.SnapshotID}, LocalComplete: out.State == "completed" || out.State == "absent" || out.State == "metadata", RestoreOnly: out.SnapshotID != "", HasProducer: route.HasProducer}
+		p := dagql.PartProbe{Descriptor: dagql.PartDescriptor{Address: out.Address, Value: out.Value, Absent: out.State == "absent", SnapshotID: out.SnapshotID}, LocalComplete: out.State == "completed" || out.State == "absent" || out.State == "metadata", RestoreOnly: out.SnapshotID != "", HasLazyOperation: route.HasLazyOperation}
 		if out.Value != nil {
 			for _, svc := range out.Value.Services {
 				p.Descriptor.DependencyIDs = append(p.Descriptor.DependencyIDs, svc.ServiceResultID)

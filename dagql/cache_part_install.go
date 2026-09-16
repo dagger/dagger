@@ -325,7 +325,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		if outcome == PartInstalled {
 			kind := "installed-ready"
 			if p.original != nil {
-				kind = "installed-producer"
+				kind = "installed-lazy"
 			} else if p.source.readiness == PartDownloadable {
 				kind = "installed-chain"
 			}
@@ -420,8 +420,8 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		}
 	}
 	if p.original != nil {
-		group := gate.groups[producerAddressKey(p.original.group)]
-		if group == nil || group.phase != ProducerRunning || group.task != p.permit.task {
+		group := gate.groups[lazyGroupAddressKey(p.original.group)]
+		if group == nil || group.phase != LazyEvaluationRunning || group.task != p.permit.task {
 			return nil, PartInstallRefused, ErrPartReselect
 		}
 	}

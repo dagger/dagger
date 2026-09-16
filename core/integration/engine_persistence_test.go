@@ -175,17 +175,17 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		t.Logf("%s: %s", checkpoint, data)
 	}
 
-	t.Run("eager producers survive restart", func(ctx context.Context, t *testctx.T) {
+	t.Run("eager operations survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		requests := atomic.Int64{}
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); fmt.Fprint(w, "saved HTTP body\n") }))
 		defer origin.Close()
 		port := origin.Listener.Addr().(*net.TCPAddr).Port
-		const hostname = "saved-producer-origin"
+		const hostname = "saved-operation-origin"
 		source := c.Host().Service([]dagger.PortForward{{Backend: port, Frontend: port}}).WithHostname(hostname)
 		opts := snapshotTestOptions(ctx, t)
 		opts = append(opts, func(ctr *dagger.Container) *dagger.Container { return ctr.WithServiceBinding(hostname, source) })
-		stateKey := "eager-producers-" + identity.NewID()
+		stateKey := "eager-operations-" + identity.NewID()
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
 		file := a.HTTP(fmt.Sprintf("http://%s:%d/data", hostname, port))
@@ -240,9 +240,9 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.EqualValues(t, 1, rowsB[builtinRowID].Value.Counts["storedOpen:fs"])
 	})
 
-	t.Run("changeset merge producer survives restart", func(ctx context.Context, t *testctx.T) {
+	t.Run("changeset merge operation survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "changeset-producer-" + identity.NewID()
+		stateKey := "changeset-operation-" + identity.NewID()
 		opts := snapshotTestOptions(ctx, t)
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })

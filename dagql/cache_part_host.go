@@ -52,7 +52,7 @@ func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
 		eg, groupCtx := errgroup.WithContext(ctx)
 		for _, group := range groups {
 			eg.Go(func() error {
-				return host.cache.RunLazyTask(groupCtx, root, producerTaskKey(ProducerAddress{OutputPath: host.path, Group: group}), LazyTaskSpec{Body: func(ctx context.Context) error {
+				return host.cache.RunLazyTask(groupCtx, root, lazyEvaluationTaskKey(LazyGroupAddress{OutputPath: host.path, Group: group}), LazyTaskSpec{Body: func(ctx context.Context) error {
 					var body LazyEvalFunc
 					if isRefined {
 						body = refined.LazyEvalFuncForGroup(group)
@@ -88,8 +88,8 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	c.egraphMu.Lock()
 	gate := host.row.partGate.loadOrCreate()
 	gate.mu.Lock()
-	groupAddress := ProducerAddress{OutputPath: host.path, Group: group}
-	key := producerAddressKey(groupAddress)
+	groupAddress := LazyGroupAddress{OutputPath: host.path, Group: group}
+	key := lazyGroupAddressKey(groupAddress)
 	if gate.managed {
 		gate.mu.Unlock()
 		c.egraphMu.Unlock()
@@ -106,7 +106,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 			return ErrLazyTaskBusy
 		}
 	}
-	gate.groups[key] = &partProducerState{phase: ProducerRunning, task: token, writeSet: writes}
+	gate.groups[key] = &partLazyEvaluationState{phase: LazyEvaluationRunning, task: token, writeSet: writes}
 	gate.revision++
 	gate.mu.Unlock()
 	c.egraphMu.Unlock()
@@ -117,7 +117,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	current := gate.groups[key]
 	if current.task == token {
 		if err == nil {
-			current.phase = ProducerConsumed
+			current.phase = LazyEvaluationEvaluated
 			installed := &InstalledOutputs{}
 			for _, address := range writes {
 				output, _ := partAddressKey(address)
@@ -126,7 +126,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 			}
 			token.installed.Store(installed)
 		} else {
-			current.phase = ProducerOpen
+			current.phase = LazyEvaluationOpen
 		}
 		gate.revision++
 	}

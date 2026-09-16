@@ -32,7 +32,7 @@ func TestPartDelegationPureRoutes(t *testing.T) {
 			for _, part := range []dagql.PartKey{"fs", "execMeta", "mount:/kept"} {
 				route, err := foreignFamilyCodec("Container").RouteParts(visit, part)
 				require.NoError(t, err)
-				require.False(t, route.HasProducer)
+				require.False(t, route.HasLazyOperation)
 				require.Empty(t, route.WriteSet)
 				require.Equal(t, visit.Path, route.Group.OutputPath)
 				require.Equal(t, &dagql.PartDelegation{ParentResultID: 42, Address: dagql.PersistedPartAddress{Part: part}}, route.Delegation)

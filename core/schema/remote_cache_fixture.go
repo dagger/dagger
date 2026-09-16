@@ -185,7 +185,7 @@ func fixtureMappings(bundle dagql.ValueBundle, values []dagql.ImportedValue) ([]
 
 // ImportValues returns roots, after reserving one contiguous ID interval for
 // the closure and relocating ordinal n to firstID+n-1. The gated fixture also
-// reports dependency rows so observations can name exact imported producers.
+// reports dependency rows so observations can name exact imported operations.
 // Keep roots first for existing fixture callers that select the first root.
 func fixtureImportedMappings(bundle dagql.ValueBundle, roots []dagql.ImportedValue, rows []dagql.TransferFixtureRow) ([]remoteCacheFixtureMapping, error) {
 	if len(roots) == 0 || roots[0].ResultID < uint64(roots[0].Ordinal) {

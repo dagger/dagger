@@ -30,4 +30,4 @@ The insertion must support persistence and restart using B-local references. Err
 
 Use two live caches with deliberately different row IDs. Transfer an object graph, call through the ordinary cache, inspect actual returned fields, and save/restart it on B. Assert no filesystem download occurs at admission or a metadata-only lookup. Exercise real insertion failure and cleanup where the implementation changes those paths.
 
-Status: implement with the producer and lazy-chain work so imported metadata has a concrete demand path. The remote service is outside this scope.
+Status: implement with Lazy operation acquisition so imported metadata has a concrete demand path. The remote service is outside this scope.

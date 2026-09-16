@@ -22,7 +22,7 @@ func (transferTestCodec) DescribeParts(v PersistedPayloadVisit) ([]PartProbe, er
 			snapshot = link.RefKey
 		}
 	}
-	return []PartProbe{{Descriptor: PartDescriptor{SnapshotID: snapshot, Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, Absent: p.Text == "ready"}, LocalComplete: p.Text == "ready" || snapshot != "", HasProducer: p.Text != "ready"}}, nil
+	return []PartProbe{{Descriptor: PartDescriptor{SnapshotID: snapshot, Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, Absent: p.Text == "ready"}, LocalComplete: p.Text == "ready" || snapshot != "", HasLazyOperation: p.Text != "ready"}}, nil
 }
 func (transferTestCodec) PreparePartRecord(receiver, source PersistedRecord, descriptor PartDescriptor, _ PersistedPartAddress) (PersistedRecord, error) {
 	if descriptor.SnapshotID != "" {
@@ -182,9 +182,9 @@ func TestPartDecisionFinalSource(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 	address := PersistedPartAddress{Part: "snapshot"}
-	require.NoError(t, c.RunLazyTask(ctx, receiver, "producer:whole", LazyTaskSpec{Body: func(ctx context.Context) error {
+	require.NoError(t, c.RunLazyTask(ctx, receiver, "lazy:whole", LazyTaskSpec{Body: func(ctx context.Context) error {
 		task := PartTaskFromContext(ctx)
-		drain, outcome, err := c.PrepareOriginal(ctx, receiver, ProducerAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, task)
+		drain, outcome, err := c.PrepareOriginal(ctx, receiver, LazyGroupAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, task)
 		require.NoError(t, err)
 		require.Equal(t, GateGranted, outcome)
 		require.NoError(t, drain.Wait(ctx))

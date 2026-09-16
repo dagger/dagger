@@ -277,7 +277,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			gate.mu.Lock()
 			var drain *DrainTicket
 			for _, group := range gate.groups {
-				if group.task == task && group.phase == ProducerPreparing && containsPart(group.writeSet, source.target) {
+				if group.task == task && group.phase == LazyEvaluationPreparing && containsPart(group.writeSet, source.target) {
 					drain = group.drain
 					break
 				}

@@ -66,21 +66,21 @@ func (c *Cache) recordPartFixtureEvent(row *sharedResult, address PersistedPartA
 
 type partFixtureReleaseKey struct{}
 
-// TransferFixtureProducerReleaseObserver is present only during a private
-// producer invoked with the environment-gated fixture enabled.
-func TransferFixtureProducerReleaseObserver(ctx context.Context) func(string, error) {
+// TransferFixtureLazyReleaseObserver is present only during a private
+// operation invoked with the environment-gated fixture enabled.
+func TransferFixtureLazyReleaseObserver(ctx context.Context) func(string, error) {
 	observer, _ := ctx.Value(partFixtureReleaseKey{}).(func(string, error))
 	return observer
 }
 
-func (c *Cache) partFixtureProducerContext(ctx context.Context, row *sharedResult, address PersistedPartAddress) context.Context {
+func (c *Cache) partFixtureLazyContext(ctx context.Context, row *sharedResult, address PersistedPartAddress) context.Context {
 	if c.partFixture.Load() == nil {
 		return ctx
 	}
 	return context.WithValue(ctx, partFixtureReleaseKey{}, func(id string, err error) {
-		kind := "producer-ref-released"
+		kind := "lazy-ref-released"
 		if err != nil {
-			kind = "producer-ref-release-error"
+			kind = "lazy-ref-release-error"
 		}
 		c.recordPartFixtureSnapshot(row, address, kind, id)
 	})

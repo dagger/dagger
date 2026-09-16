@@ -15,25 +15,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var partProducerPreparationHooks sync.Map
+var partLazyPreparationHooks sync.Map
 
-func (transferTestCodec) PreparePartProducer(ctx context.Context, dec *PersistDecodeContext, _ PersistedRecord, _ PartProducerRoute) (PartProducerInvocation, error) {
-	if hook, ok := partProducerPreparationHooks.Load(dec.ResultID()); ok {
-		return hook.(func(context.Context) (PartProducerInvocation, error))(ctx)
+func (transferTestCodec) PrepareLazyOperation(ctx context.Context, dec *PersistDecodeContext, _ PersistedRecord, _ LazyOperationRoute) (LazyOperationInvocation, error) {
+	if hook, ok := partLazyPreparationHooks.Load(dec.ResultID()); ok {
+		return hook.(func(context.Context) (LazyOperationInvocation, error))(ctx)
 	}
-	return nil, errors.New("test producer preparation hook missing")
+	return nil, errors.New("test operation preparation hook missing")
 }
 
-type boundaryProducer struct{ runs, releases atomic.Int32 }
+type boundaryLazyOperation struct{ runs, releases atomic.Int32 }
 
-func (p *boundaryProducer) Run(context.Context) error {
+func (p *boundaryLazyOperation) Run(context.Context) error {
 	p.runs.Add(1)
 	return errors.New("unexpected private body")
 }
-func (p *boundaryProducer) Capture(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
+func (p *boundaryLazyOperation) Capture(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	return PersistedObjectEncoding{}, errors.New("unexpected private capture")
 }
-func (p *boundaryProducer) Release(context.Context) error { p.releases.Add(1); return nil }
+func (p *boundaryLazyOperation) Release(context.Context) error { p.releases.Add(1); return nil }
 
 func partEncodedReceiver(t *testing.T, ctx context.Context, c *Cache, receiver AnyResult) {
 	t.Helper()
@@ -91,7 +91,7 @@ func TestPartReadyPreparationBoundaries(t *testing.T) {
 			donor := persistedListTestResult(t, ctx, c, srv, "donor", value)
 			if mode == "missing-local-descriptor" {
 				// Model a descriptor whose local backing disappeared after ordinary
-				// attachment. The ranking pass must not substitute a producer.
+				// attachment. The ranking pass must not substitute an operation.
 				value.links = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "missing-ready-snapshot"}}
 				value.rev.Add(1)
 			}
@@ -152,9 +152,9 @@ func TestPartDecisionPreparationArrival(t *testing.T) {
 			partEncodedReceiver(t, ctx, c, receiver)
 			address := PersistedPartAddress{Part: "snapshot"}
 			row := receiver.cacheSharedResult()
-			producer := new(boundaryProducer)
+			operation := new(boundaryLazyOperation)
 			var manager *boundaryPinManager
-			partProducerPreparationHooks.Store(uint64(row.id), func(context.Context) (PartProducerInvocation, error) {
+			partLazyPreparationHooks.Store(uint64(row.id), func(context.Context) (LazyOperationInvocation, error) {
 				if mode == "chain" {
 					record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}, Chain: OfferedChain{Layers: chain.Layers, RenewalKey: "late-chain"}}
 					c.egraphMu.Lock()
@@ -176,10 +176,10 @@ func TestPartDecisionPreparationArrival(t *testing.T) {
 						c.snapshotManager = manager
 					}
 				}
-				return producer, nil
+				return operation, nil
 			})
-			defer partProducerPreparationHooks.Delete(uint64(row.id))
-			err = c.runPartProducerDecision(ctx, receiver, address, PartProducerRoute{Group: ProducerAddress{Group: LazyGroupWhole}, WriteSet: []PersistedPartAddress{address}, HasProducer: true}, &PartDemandState{})
+			defer partLazyPreparationHooks.Delete(uint64(row.id))
+			err = c.runLazyOperationDecision(ctx, receiver, address, LazyOperationRoute{Group: LazyGroupAddress{Group: LazyGroupWhole}, WriteSet: []PersistedPartAddress{address}, HasLazyOperation: true}, &PartDemandState{})
 			if mode == "second-refusal" {
 				require.ErrorIs(t, err, ErrPartReselect)
 				require.EqualValues(t, 2, manager.pins.Load())
@@ -194,8 +194,8 @@ func TestPartDecisionPreparationArrival(t *testing.T) {
 				testutil.CheckFile(t, opened, "payload", "late source bytes")
 				require.NoError(t, opened.Release(ctx))
 			}
-			require.Zero(t, producer.runs.Load())
-			require.EqualValues(t, 1, producer.releases.Load(), "prepared private shell released without Running")
+			require.Zero(t, operation.runs.Load())
+			require.EqualValues(t, 1, operation.releases.Load(), "prepared private shell released without Running")
 		})
 	}
 }
@@ -212,9 +212,9 @@ func TestPartDecisionInlineAdmissionAndPendingSync(t *testing.T) {
 	var token *PartTaskToken
 	done := make(chan error, 1)
 	go func() {
-		done <- c.RunLazyTask(ctx, receiver, "producer:decision", LazyTaskSpec{OwnerSyncReady: syncReady, Body: func(ctx context.Context) error {
+		done <- c.RunLazyTask(ctx, receiver, "lazy:decision", LazyTaskSpec{OwnerSyncReady: syncReady, Body: func(ctx context.Context) error {
 			token = PartTaskFromContext(ctx)
-			drain, _, err := c.PrepareOriginal(ctx, receiver, ProducerAddress{Group: "execOutputs"}, []PersistedPartAddress{fs, meta}, token)
+			drain, _, err := c.PrepareOriginal(ctx, receiver, LazyGroupAddress{Group: "execOutputs"}, []PersistedPartAddress{fs, meta}, token)
 			if err != nil {
 				return err
 			}
@@ -251,7 +251,7 @@ func TestPartDecisionInlineAdmissionAndPendingSync(t *testing.T) {
 			return nil
 		}}))
 	}
-	require.ErrorIs(t, c.RunLazyTask(ctx, receiver, "producer:decision", LazyTaskSpec{NoJoin: true}), ErrLazyTaskBusy)
+	require.ErrorIs(t, c.RunLazyTask(ctx, receiver, "lazy:decision", LazyTaskSpec{NoJoin: true}), ErrLazyTaskBusy)
 	close(leave)
 	require.Eventually(t, func() bool { return !token.active.Load() }, time.Second, time.Millisecond)
 	require.False(t, token.settled.Load())
@@ -270,8 +270,8 @@ func TestPartDecisionOfferAfterRunning(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 	address := PersistedPartAddress{Part: "snapshot"}
-	require.NoError(t, c.RunLazyTask(ctx, receiver, "producer:running", LazyTaskSpec{Body: func(ctx context.Context) error {
-		drain, _, err := c.PrepareOriginal(ctx, receiver, ProducerAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, PartTaskFromContext(ctx))
+	require.NoError(t, c.RunLazyTask(ctx, receiver, "lazy:running", LazyTaskSpec{Body: func(ctx context.Context) error {
+		drain, _, err := c.PrepareOriginal(ctx, receiver, LazyGroupAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, PartTaskFromContext(ctx))
 		require.NoError(t, err)
 		require.NoError(t, drain.Wait(ctx))
 		scan, err := c.CheckPartSources(ctx, receiver, address, drain, &PartDemandState{})
@@ -289,7 +289,7 @@ func TestPartDecisionOfferAfterRunning(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, GateExecutionStarted, outcome)
 		original.gate.mu.Lock()
-		require.Equal(t, ProducerRunning, original.gate.groups[producerAddressKey(original.group)].phase)
+		require.Equal(t, LazyEvaluationRunning, original.gate.groups[lazyGroupAddressKey(original.group)].phase)
 		original.gate.mu.Unlock()
 		return nil
 	}}))

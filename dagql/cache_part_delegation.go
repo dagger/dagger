@@ -93,7 +93,7 @@ func validatePartDelegationTopology(child, parent PersistedRecord, target, sourc
 
 // Keep AcquireEquivalentPartSource's public meaning unchanged. This selector
 // adds the exact parent's Ready view after ordinary Ready ties, before chains.
-func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, address PersistedPartAddress, route PartProducerRoute) (_ *PartSourceLease, pending *PartSourceLease, rerr error) {
+func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, address PersistedPartAddress, route LazyOperationRoute) (_ *PartSourceLease, pending *PartSourceLease, rerr error) {
 	ordinary, err := c.AcquireEquivalentPartSource(ctx, receiver, address)
 	if err != nil || route.Delegation == nil || (ordinary != nil && ordinary.readiness == PartReady) {
 		return ordinary, nil, err

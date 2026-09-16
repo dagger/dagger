@@ -151,7 +151,7 @@ type persistedEdge struct {
 // reused), so they are wiped rather than imported.
 // Schema 20 includes canonical output_path and the (result_id, output_path,
 // role) storage key. Earlier private schema-20 stores reset on import failure.
-const cachePersistenceSchemaVersion = "20"
+const cachePersistenceSchemaVersion = "21"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")

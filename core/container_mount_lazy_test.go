@@ -16,15 +16,15 @@ func TestMountedLazyRepresentations(t *testing.T) {
 		t.Run(map[bool]string{false: "Directory", true: "File"}[file], func(t *testing.T) {
 			ctx, store, cache, srv, _ := executionFixture(t)
 			ref, _ := store.Build(t, nil, "selected/payload", "mount bytes")
-			parent := attachTransferObject(t, ctx, cache, srv, "producer-execution", "parent", NewContainer(Platform{OS: "linux", Architecture: "amd64"}))
+			parent := attachTransferObject(t, ctx, cache, srv, "operation-execution", "parent", NewContainer(Platform{OS: "linux", Architecture: "amd64"}))
 			dir := partTestDirectory(ref, "/selected")
-			sourceDir := attachTransferObject(t, ctx, cache, srv, "producer-execution", "sourceDirectory", dir)
+			sourceDir := attachTransferObject(t, ctx, cache, srv, "operation-execution", "sourceDirectory", dir)
 			freshFile := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: dir.Platform}
 			freshFile.SetPath("/selected/payload")
 			fileRef, err := store.Manager.GetBySnapshotID(ctx, ref.SnapshotID())
 			require.NoError(t, err)
 			freshFile.SetSnapshot(fileRef)
-			sourceFile := attachTransferObject(t, ctx, cache, srv, "producer-execution", "sourceFile", freshFile)
+			sourceFile := attachTransferObject(t, ctx, cache, srv, "operation-execution", "sourceFile", freshFile)
 			makeValue := func() (*Container, Lazy[*Container], string) {
 				ctr := NewContainer(dir.Platform)
 				CopyContainerMetadata(ctr, parent.Self())
@@ -49,7 +49,7 @@ func TestMountedLazyRepresentations(t *testing.T) {
 					require.Same(t, op, ctr.Lazy)
 					// The synthetic frame has no receiver or arguments. Direct operation
 					// inputs must keep the exact parent and source alive after publication.
-					attached := attachTransferObject(t, ctx, cache, srv, "producer-execution", field, ctr)
+					attached := attachTransferObject(t, ctx, cache, srv, "operation-execution", field, ctr)
 					record, err := cache.CapturePersistedRecord(ctx, attached)
 					require.NoError(t, err)
 					var payload persistedContainerPayload

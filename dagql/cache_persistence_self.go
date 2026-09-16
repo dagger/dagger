@@ -31,7 +31,7 @@ const (
 // name their codec family; list items naming another row are result_ref
 // envelopes without a duplicated body.
 // 4: root origin and independent pending offer ownership.
-const persistedResultEnvelopeVersion = 4
+const persistedResultEnvelopeVersion = 5
 
 // PersistedResultEnvelope is the shared on-disk payload envelope for persisted
 // result self values.

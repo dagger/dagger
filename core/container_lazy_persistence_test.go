@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestContainerCompletedProducerAttachesParentAtPublication(t *testing.T) {
+func TestContainerEvaluatedLazyOperationAttachesParentAtPublication(t *testing.T) {
 	env := newPersistedFamiliesTestEnv(t, "completed-container-publication")
 	ctx, cache, srv := env.open(t)
 	platform := Platform{OS: "linux", Architecture: "amd64"}
-	parentRes := env.attach(t, ctx, cache, srv, "producer-parent", NewContainer(platform)).(dagql.ObjectResult[*Container])
+	parentRes := env.attach(t, ctx, cache, srv, "operation-parent", NewContainer(platform)).(dagql.ObjectResult[*Container])
 	parentID := persistedRowID(t, cache, parentRes)
 	child := NewContainer(platform)
 	recipe := &ContainerWithLabelLazy{LazyState: NewLazyState(), Parent: parentRes, Name: "retained", Value: "yes"}
@@ -37,15 +37,15 @@ func TestContainerCompletedProducerAttachesParentAtPublication(t *testing.T) {
 	t.Fatal("published child missing from cache graph")
 }
 
-func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
+func TestContainerEvaluatedLazyOperationPersistsWithoutLoadingParents(t *testing.T) {
 	env := newPersistedFamiliesTestEnv(t, "completed-container")
 	ctx, cache, srv := env.open(t)
 	platform := Platform{OS: "linux", Architecture: "amd64"}
 	parent := NewContainer(platform)
-	parent.FS.setValue(containerPersistenceTestDirectory("producer-fs", "/selected"))
-	parent.MetaSnapshot.setValue(&cacheVolumeTestImmutableRef{id: "producer-meta", snapshotID: "producer-meta"})
-	parentRes := env.attach(t, ctx, cache, srv, "producer-parent", parent).(dagql.ObjectResult[*Container])
-	otherParent := env.attach(t, ctx, cache, srv, "producer-other-parent", NewContainer(platform))
+	parent.FS.setValue(containerPersistenceTestDirectory("operation-fs", "/selected"))
+	parent.MetaSnapshot.setValue(&cacheVolumeTestImmutableRef{id: "operation-meta", snapshotID: "operation-meta"})
+	parentRes := env.attach(t, ctx, cache, srv, "operation-parent", parent).(dagql.ObjectResult[*Container])
+	otherParent := env.attach(t, ctx, cache, srv, "operation-other-parent", NewContainer(platform))
 	parentID := persistedRowID(t, cache, parentRes)
 	otherParentID := persistedRowID(t, cache, otherParent)
 	child := NewContainer(platform)
@@ -70,8 +70,8 @@ func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
 	var payload persistedContainerPayload
 	require.NoError(t, json.Unmarshal(rec.Envelope.ObjectJSON, &payload))
 	require.JSONEq(t, string(pendingRecipe), string(payload.LazyJSON))
-	fsOpens := env.manager.openCount("producer-fs")
-	metaOpens := env.manager.openCount("producer-meta")
+	fsOpens := env.manager.openCount("operation-fs")
+	metaOpens := env.manager.openCount("operation-meta")
 
 	ctx, cache, srv = env.restart(t, ctx, cache)
 	assertParentsUnloaded := func() {
@@ -95,12 +95,12 @@ func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
 	assertParentsUnloaded()
 	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartMetadata))
 	require.Equal(t, "yes", restored.Config.Labels["retained"])
-	require.Equal(t, fsOpens, env.manager.openCount("producer-fs"))
-	require.Equal(t, metaOpens, env.manager.openCount("producer-meta"))
+	require.Equal(t, fsOpens, env.manager.openCount("operation-fs"))
+	require.Equal(t, metaOpens, env.manager.openCount("operation-meta"))
 
 	wantErr := errors.New("local snapshot unavailable")
 	env.manager.beforeOpen = func(_ context.Context, id string) error {
-		if id == "producer-fs" {
+		if id == "operation-fs" {
 			return wantErr
 		}
 		return nil
@@ -108,12 +108,12 @@ func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
 	require.ErrorIs(t, cache.EvaluateParts(ctx, loaded, ContainerPartFS), wantErr)
 	assertParentsUnloaded()
 	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartExecMeta))
-	require.Equal(t, metaOpens+1, env.manager.openCount("producer-meta"))
+	require.Equal(t, metaOpens+1, env.manager.openCount("operation-meta"))
 	_, fsReady := restored.FS.Peek()
 	require.False(t, fsReady)
 	env.manager.beforeOpen = nil
 	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartFS))
-	require.Equal(t, fsOpens+2, env.manager.openCount("producer-fs"))
+	require.Equal(t, fsOpens+2, env.manager.openCount("operation-fs"))
 	require.NotNil(t, restored.lazyOpForRouting())
 	require.Nil(t, restored.LazyEvalFunc())
 	require.JSONEq(t, string(pendingRecipe), string(restored.lazyJSON))
@@ -123,7 +123,7 @@ func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
 	require.JSONEq(t, string(rec.Envelope.ObjectJSON), string(reencoded.JSON))
 	assertParentsUnloaded()
 
-	t.Run("completed producer references relocate without loading", func(t *testing.T) {
+	t.Run("completed operation references relocate without loading", func(t *testing.T) {
 		reloc := &relocationVisitor{mapping: map[uint64]uint64{rec.ResultID: rec.ResultID, parentID: otherParentID}}
 		out, err := dagql.VisitEncodedReferences(rec, reloc.visit)
 		require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
 		assertParentsUnloaded()
 	})
 
-	t.Run("old complete rows without producer bytes", func(t *testing.T) {
+	t.Run("old complete rows without operation bytes", func(t *testing.T) {
 		payload.LazyJSON = nil
 		oldJSON, err := json.Marshal(payload)
 		require.NoError(t, err)

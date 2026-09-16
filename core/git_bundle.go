@@ -723,7 +723,7 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 
 //nolint:gocyclo // bundle import verifies prerequisites, refs, and connectivity in one pass
 func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepository, bundle *GitBundle, prerequisiteRef string) (rerr error) {
-	if err := validateProducedDirectoryReceiver(dst); err != nil {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return err
 	}
 
@@ -1000,21 +1000,21 @@ func (p *persistedDirectoryGitBundleImportLazy) validate() error {
 }
 func (lazy *DirectoryGitBundleImportLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return dir.evaluateLazy(ctx, &lazy.LazyState, "GitRepository.__withBundleDirectory", func(ctx context.Context) error {
-		if err := validateProducedDirectoryReceiver(dir); err != nil {
+		if err := validateLazyDirectoryReceiver(dir); err != nil {
 			return err
 		}
 		if lazy.Repo.Self() == nil || lazy.Bundle.Self() == nil {
-			return fmt.Errorf("git bundle producer: missing Repo or Bundle")
+			return fmt.Errorf("git bundle lazy: missing Repo or Bundle")
 		}
 		return importGitBundleInto(ctx, dir, lazy.Repo.Self(), lazy.Bundle.Self(), lazy.PrerequisiteRef)
 	})
 }
 func (lazy *DirectoryGitBundleImportLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	repo, err := attachCompletedProducerInput(attach, lazy.Repo, "DirectoryGitBundleImportLazy.Repo")
+	repo, err := attachLazyInput(attach, lazy.Repo, "DirectoryGitBundleImportLazy.Repo")
 	if err != nil {
 		return nil, err
 	}
-	bundle, err := attachCompletedProducerInput(attach, lazy.Bundle, "DirectoryGitBundleImportLazy.Bundle")
+	bundle, err := attachLazyInput(attach, lazy.Bundle, "DirectoryGitBundleImportLazy.Bundle")
 	if err != nil {
 		return nil, err
 	}

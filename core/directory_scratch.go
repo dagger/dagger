@@ -18,10 +18,10 @@ type persistedDirectoryScratchLazy struct{}
 func validateDirectoryScratchPayload(raw json.RawMessage) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		return fmt.Errorf("scratch Directory producer: expected empty JSON object: %w", err)
+		return fmt.Errorf("scratch Directory lazy: expected empty JSON object: %w", err)
 	}
 	if fields == nil || len(fields) != 0 {
-		return fmt.Errorf("scratch Directory producer: expected empty JSON object")
+		return fmt.Errorf("scratch Directory lazy: expected empty JSON object")
 	}
 	return nil
 }
@@ -36,7 +36,7 @@ func (*DirectoryScratchLazy) EncodePersisted(context.Context, *dagql.PersistEnco
 
 func (lazy *DirectoryScratchLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return dir.evaluateLazy(ctx, &lazy.LazyState, "Query.directory", func(ctx context.Context) (rerr error) {
-		if err := validateProducedDirectoryReceiver(dir); err != nil {
+		if err := validateLazyDirectoryReceiver(dir); err != nil {
 			return err
 		}
 		path, ref, err := loadCanonicalScratchDirectory(ctx)

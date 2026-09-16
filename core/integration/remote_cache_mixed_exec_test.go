@@ -89,14 +89,14 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	require.NotEmpty(t, metadata)
 	before := readReport()
 	require.Empty(t, rootEvents(before, "provider-read"), "known metadata must not demand a layer")
-	require.Empty(t, rootEvents(before, "producer-enter"), "known metadata must not enter a producer")
+	require.Empty(t, rootEvents(before, "lazy-enter"), "known metadata must not enter an operation")
 	contents, err := loaded.File("/payload").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "downloaded filesystem", contents)
 	fsOnly := readReport()
 	require.Len(t, rootEvents(fsOnly, "installed-chain"), 1)
 	require.Positive(t, len(rootEvents(fsOnly, "provider-read")))
-	require.Empty(t, rootEvents(fsOnly, "producer-enter"))
+	require.Empty(t, rootEvents(fsOnly, "lazy-enter"))
 	for _, link := range fsOnly.Rows[0].SnapshotLinks {
 		require.NotEqual(t, "meta", link.Role, "FS-only demand cannot complete execMeta")
 	}
@@ -108,21 +108,21 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	latency := time.Since(started)
 	after := readReport()
 	require.Equal(t, originalFS, fsSnapshot(after), "first installed filesystem wins")
-	require.Len(t, rootEvents(after, "producer-enter"), 1)
-	require.Len(t, rootEvents(after, "installed-producer"), 1)
-	require.Equal(t, dagql.PartKey("execMeta"), rootEvents(after, "installed-producer")[0].Address.Part)
-	released := rootEvents(after, "producer-ref-released")
+	require.Len(t, rootEvents(after, "lazy-enter"), 1)
+	require.Len(t, rootEvents(after, "installed-lazy"), 1)
+	require.Equal(t, dagql.PartKey("execMeta"), rootEvents(after, "installed-lazy")[0].Address.Part)
+	released := rootEvents(after, "lazy-ref-released")
 	require.Len(t, released, 1, "the actual redundant private FS ref must be released once")
 	require.NotEmpty(t, released[0].SnapshotID)
 	require.NotEqual(t, originalFS, released[0].SnapshotID)
-	require.Empty(t, rootEvents(after, "producer-ref-release-error"))
+	require.Empty(t, rootEvents(after, "lazy-ref-release-error"))
 	var releaseSeen, syncSeen, settlementSeen bool
 	for _, event := range after.Parts[len(fsOnly.Parts):] {
 		if event.ResultID != rowID {
 			continue
 		}
 		switch event.Kind {
-		case "producer-ref-released":
+		case "lazy-ref-released":
 			releaseSeen = true
 		case "owner-sync":
 			require.True(t, releaseSeen, "redundant ref release precedes owner sync")
@@ -140,6 +140,6 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	contents, err = loaded.File("/payload").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "downloaded filesystem", contents)
-	require.Len(t, rootEvents(readReport(), "producer-enter"), 1)
-	t.Logf("mixed private exec latency=%s originalFS=%s redundantFS=%s rootEvents=%v", latency, originalFS, released[0].SnapshotID, rootEvents(after, "producer-enter"))
+	require.Len(t, rootEvents(readReport(), "lazy-enter"), 1)
+	t.Logf("mixed private exec latency=%s originalFS=%s redundantFS=%s rootEvents=%v", latency, originalFS, released[0].SnapshotID, rootEvents(after, "lazy-enter"))
 }

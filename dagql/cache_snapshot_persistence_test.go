@@ -460,9 +460,10 @@ func TestCachePersistenceWorkerUsesEncodedSnapshotLinks(t *testing.T) {
 	rows, err := c.pdb.ListMirrorResultSnapshotLinks(ctx)
 	assert.NilError(t, err)
 	assert.DeepEqual(t, rows, []persistdb.MirrorResultSnapshotLink{{
-		ResultID: int64(resultID),
-		RefKey:   "snapshot-after",
-		Role:     "snapshot",
+		ResultID:   int64(resultID),
+		RefKey:     "snapshot-after",
+		OutputPath: "[]",
+		Role:       "snapshot",
 	}})
 }
 

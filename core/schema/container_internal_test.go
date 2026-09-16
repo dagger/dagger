@@ -34,7 +34,6 @@ func (op *containerImagePartsConcurrencyTestOp) Evaluate(ctx context.Context, ct
 	if err := op.EvaluateContainerGroup(ctx, ctr, core.ContainerLazyGroupWrite); err != nil {
 		return err
 	}
-	ctr.Lazy = nil
 	return nil
 }
 
@@ -157,7 +156,10 @@ func TestEvaluateContainerImagePartsRunsContainersConcurrently(t *testing.T) {
 		t.Fatal("timed out waiting for image part evaluation")
 	}
 	for _, ctr := range containers {
-		require.Nil(t, ctr.Self().Lazy)
+		require.NotNil(t, ctr.Self().Lazy)
+		op := ctr.Self().Lazy.(*containerImagePartsConcurrencyTestOp)
+		require.True(t, op.GroupConsumed(core.ContainerLazyGroupMetadata))
+		require.True(t, op.GroupConsumed(core.ContainerLazyGroupWrite))
 	}
 }
 

@@ -42,9 +42,9 @@ func TestValueTransferForeignForms(t *testing.T) {
 		{"HTTPState", `{"form":"foreign_uninitialized","url":"url","contentDigest":"old"}`},
 		{"ClientFilesyncMirror", `{"stableClientID":"alice"}`},
 		{"RemoteGitMirror", `{"remoteURL":"url"}`},
-		{"File", `{"form":"transfer_pending","platform":"linux/amd64","producerState":"pending"}`},
-		{"File", `{"form":"transfer_pending","platform":"linux/amd64","producerState":"none","lazyKind":"file.blob","lazyJSON":{}}`},
-		{"Directory", `{"form":"transfer_pending","platform":"linux/amd64","producerState":"completed","lazyKind":"unknown","lazyJSON":{}}`},
+		{"File", `{"form":"transfer_pending","platform":"linux/amd64","operationState":"pending"}`},
+		{"File", `{"form":"transfer_pending","platform":"linux/amd64","operationState":"none","lazyKind":"file.blob","lazyJSON":{}}`},
+		{"Directory", `{"form":"transfer_pending","platform":"linux/amd64","operationState":"evaluated","lazyKind":"unknown","lazyJSON":{}}`},
 	} {
 		require.Error(t, foreignFamilyCodec(tc.family).ValidateForeign(dagql.PersistedPayloadVisit{Payload: json.RawMessage(tc.invalid)}), "%s: %s", tc.family, tc.invalid)
 	}
@@ -83,4 +83,38 @@ func TestValueTransferParts(t *testing.T) {
 	encoded, err := file.EncodePersistedObject(t.Context(), nil)
 	require.NoError(t, err)
 	require.JSONEq(t, string(normalized.JSON), string(encoded.JSON))
+}
+
+func TestLazyOperationTransferState(t *testing.T) {
+	for _, form := range []string{"lazy", "snapshot"} {
+		t.Run(form, func(t *testing.T) {
+			codec := foreignFamilyCodec("Directory")
+			v := dagql.PersistedPayloadVisit{Payload: json.RawMessage(`{"form":"` + form + `","dir":"/","platform":"linux/amd64","lazyKind":"scratch","lazyJSON":{}}`)}
+			out, err := codec.NormalizeForeign(v)
+			require.NoError(t, err)
+			var payload persistedDirectoryPayload
+			require.NoError(t, json.Unmarshal(out.JSON, &payload))
+			want := "pending"
+			if form == "snapshot" {
+				want = "evaluated"
+			}
+			require.Equal(t, want, payload.OperationState)
+			require.Equal(t, transferPending, payload.Form)
+			v.Payload = out.JSON
+			route, err := codec.RouteParts(v, "snapshot")
+			require.NoError(t, err)
+			require.True(t, route.HasLazyOperation)
+			probes, err := codec.DescribeParts(v)
+			require.NoError(t, err)
+			require.Len(t, probes, 1)
+			require.False(t, probes[0].LocalComplete, "A's evaluated operation never marks B's part ready")
+		})
+	}
+	for _, invalid := range []string{
+		`{"form":"transfer_pending","operationState":"completed","lazyKind":"scratch","lazyJSON":{}}`,
+		`{"form":"transfer_pending","operationState":"evaluated","lazyKind":"scratch","lazyJSON":{},"unknown":true}`,
+		`{"form":"transfer_pending","operationState":"invented","lazyKind":"scratch","lazyJSON":{}}`,
+	} {
+		require.Error(t, foreignFamilyCodec("Directory").ValidateForeign(dagql.PersistedPayloadVisit{Payload: json.RawMessage(invalid)}))
+	}
 }

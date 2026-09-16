@@ -15,7 +15,7 @@ const transferPending = "transfer_pending"
 const foreignUninitialized = "foreign_uninitialized"
 const nativeBacking = "native"
 
-// foreignFamilyCodec reads only persisted data. Producer JSON stays raw and
+// foreignFamilyCodec reads only persisted data. Lazy operation JSON stays raw and
 // reference validation uses the same registered visitors as local persistence.
 type foreignFamilyCodec string
 
@@ -39,7 +39,7 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 			return dagql.ForeignPayload{}, err
 		}
 		if p.Form != transferPending {
-			p.ProducerState = transferProducerState(p.Form == persistedFileFormSnapshot, p.LazyKind != "")
+			p.OperationState = transferOperationState(p.Form == persistedFileFormSnapshot, p.LazyKind != "")
 			p.ValueKnown = p.ValueKnown || p.Form == persistedFileFormSnapshot
 			p.Form = transferPending
 		}
@@ -50,7 +50,7 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 			return dagql.ForeignPayload{}, err
 		}
 		if p.Form != transferPending {
-			p.ProducerState = transferProducerState(p.Form == persistedDirectoryFormSnapshot, p.LazyKind != "")
+			p.OperationState = transferOperationState(p.Form == persistedDirectoryFormSnapshot, p.LazyKind != "")
 			p.ValueKnown = p.ValueKnown || p.Form == persistedDirectoryFormSnapshot
 			p.Form = transferPending
 		}
@@ -60,12 +60,12 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 		if err := readForeignPayload(v.Payload, &p); err != nil {
 			return dagql.ForeignPayload{}, err
 		}
-		if p.ProducerState == "" {
+		if p.OperationState == "" {
 			completed := p.Metadata.Consumed
 			for _, part := range p.Parts {
 				completed = completed && part.Kind != containerPartPending
 			}
-			p.ProducerState = transferProducerState(completed, len(p.LazyJSON) != 0)
+			p.OperationState = transferOperationState(completed, len(p.LazyJSON) != 0)
 		}
 		for key, part := range p.Parts {
 			switch part.Kind {
@@ -129,27 +129,27 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 	}
 	return dagql.ForeignPayload{JSON: raw}, nil
 }
-func transferProducerState(completed, hasProducer bool) string {
-	if !hasProducer {
+func transferOperationState(completed, hasLazyOperation bool) string {
+	if !hasLazyOperation {
 		return "none"
 	}
 	if completed {
-		return "completed"
+		return "evaluated"
 	}
 	return "pending"
 }
-func validateTransferProducer(state, kind string, raw json.RawMessage) error {
+func validateTransferOperation(state, kind string, raw json.RawMessage) error {
 	switch state {
 	case "none":
 		if kind != "" || len(raw) != 0 {
-			return fmt.Errorf("producer state none carries a producer")
+			return fmt.Errorf("operation state none carries an operation")
 		}
-	case "pending", "completed":
+	case "pending", "evaluated":
 		if kind == "" || len(raw) == 0 || !json.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			return fmt.Errorf("producer state %s requires a valid kind and payload", state)
+			return fmt.Errorf("operation state %s requires a valid kind and payload", state)
 		}
 	default:
-		return fmt.Errorf("invalid producer state %q", state)
+		return fmt.Errorf("invalid operation state %q", state)
 	}
 	return nil
 }
@@ -168,7 +168,7 @@ func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) 
 		if p.Form != transferPending {
 			return fmt.Errorf("foreign file requires transfer_pending")
 		}
-		if err := validateTransferProducer(p.ProducerState, p.LazyKind, p.LazyJSON); err != nil {
+		if err := validateTransferOperation(p.OperationState, p.LazyKind, p.LazyJSON); err != nil {
 			return err
 		}
 	case "Directory":
@@ -179,7 +179,7 @@ func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) 
 		if p.Form != transferPending {
 			return fmt.Errorf("foreign directory requires transfer_pending")
 		}
-		if err := validateTransferProducer(p.ProducerState, p.LazyKind, p.LazyJSON); err != nil {
+		if err := validateTransferOperation(p.OperationState, p.LazyKind, p.LazyJSON); err != nil {
 			return err
 		}
 	case "Container":
@@ -191,11 +191,11 @@ func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) 
 		if len(p.LazyJSON) > 0 && v.Call != nil {
 			kind = v.Call.Field
 		}
-		if err := validateTransferProducer(p.ProducerState, kind, p.LazyJSON); err != nil {
+		if err := validateTransferOperation(p.OperationState, kind, p.LazyJSON); err != nil {
 			return err
 		}
-		if !p.Metadata.Consumed && p.ProducerState == "none" {
-			return fmt.Errorf("pending metadata requires producer")
+		if !p.Metadata.Consumed && p.OperationState == "none" {
+			return fmt.Errorf("pending metadata requires operation")
 		}
 		for key, part := range p.Parts {
 			if part.Kind != containerPartPending && part.Kind != containerPartAbsent {

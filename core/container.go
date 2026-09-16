@@ -536,10 +536,10 @@ const (
 )
 
 type persistedContainerPayload struct {
-	ProducerState string                                   `json:"producerState,omitempty"`
-	Metadata      persistedContainerMetadata               `json:"metadata"`
-	Parts         map[dagql.PartKey]persistedContainerPart `json:"parts"`
-	LazyJSON      json.RawMessage                          `json:"lazyJSON,omitempty"`
+	OperationState string                                   `json:"operationState,omitempty"`
+	Metadata       persistedContainerMetadata               `json:"metadata"`
+	Parts          map[dagql.PartKey]persistedContainerPart `json:"parts"`
+	LazyJSON       json.RawMessage                          `json:"lazyJSON,omitempty"`
 }
 
 type persistedContainerMetadata struct {
@@ -1611,7 +1611,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 	// Admit only the same closed, recorded-parent mapping used after transfer.
 	delegated := false
 	for key, part := range envelope.Parts {
-		if part.Kind != containerPartPending || envelope.ProducerState != "" {
+		if part.Kind != containerPartPending || envelope.OperationState != "" {
 			continue
 		}
 		mapping, err := containerPartDelegation(dagql.PersistedPayloadVisit{Call: dec.Call(), SnapshotLinks: links}, envelope, key)
@@ -1620,13 +1620,13 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		}
 		delegated = delegated || mapping != nil
 	}
-	if envelope.ProducerState != "" || delegated {
+	if envelope.OperationState != "" || delegated {
 		kind := ""
 		if dec.Call() != nil && len(envelope.LazyJSON) > 0 {
 			kind = dec.Call().Field
 		}
-		if envelope.ProducerState != "" {
-			if err := validateTransferProducer(envelope.ProducerState, kind, envelope.LazyJSON); err != nil {
+		if envelope.OperationState != "" {
+			if err := validateTransferOperation(envelope.OperationState, kind, envelope.LazyJSON); err != nil {
 				return nil, err
 			}
 		}

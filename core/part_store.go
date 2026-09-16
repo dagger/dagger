@@ -26,7 +26,7 @@ func (family foreignFamilyCodec) PreparePartRecord(receiver, source dagql.Persis
 			return receiver, err
 		}
 		p.Form = persistedDirectoryFormSnapshot
-		p.ProducerState = ""
+		p.OperationState = ""
 		p.ValueKnown = true
 		p.Dir = d.Value.Path
 		p.Platform = Platform(*d.Value.Platform)
@@ -45,7 +45,7 @@ func (family foreignFamilyCodec) PreparePartRecord(receiver, source dagql.Persis
 			return receiver, err
 		}
 		p.Form = persistedFileFormSnapshot
-		p.ProducerState = ""
+		p.OperationState = ""
 		p.ValueKnown = true
 		p.File = d.Value.Path
 		p.Platform = Platform(*d.Value.Platform)
@@ -60,8 +60,8 @@ func (family foreignFamilyCodec) PreparePartRecord(receiver, source dagql.Persis
 		if err := json.Unmarshal(receiver.Envelope.ObjectJSON, &p); err != nil {
 			return receiver, err
 		}
-		if p.ProducerState == "" {
-			p.ProducerState = transferProducerState(false, len(p.LazyJSON) != 0)
+		if p.OperationState == "" {
+			p.OperationState = transferOperationState(false, len(p.LazyJSON) != 0)
 		}
 		if target.Part == ContainerPartMetadata {
 			var donor persistedContainerPayload
@@ -281,8 +281,8 @@ func (dir *Directory) PreparePartStore(ctx context.Context, dec *dagql.PersistDe
 	return &directoryPartStore{receiver: dir, next: n, expected: revision, path: path, ref: ref}, nil
 }
 
-// An adapter-owned Container publishes payload, producer and all desired roles
-// as one immutable value, without borrowing a native producer latch.
+// An adapter-owned Container publishes payload, operation and all desired roles
+// as one immutable value, without borrowing a native operation latch.
 type containerAcquiredOutput struct {
 	Payload  persistedContainerPayload
 	Links    []dagql.PersistedSnapshotRefLink

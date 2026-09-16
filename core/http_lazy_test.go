@@ -179,7 +179,7 @@ func TestHTTPLocalBodyFailures(t *testing.T) {
 				}
 			}
 			server.cacheManager = manager
-			file := freshProducerFile()
+			file := freshLazyOperationFile()
 			lazy := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: origin.URL, Filename: "data", Permissions: 0644, BodyDigest: digest.FromString("saved")}
 			before := requests.Load()
 			err := lazy.Evaluate(ctx, file)

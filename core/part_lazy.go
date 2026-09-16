@@ -9,20 +9,20 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
-type privatePartProducer struct {
+type privateLazyOperation struct {
 	run     func(context.Context) error
 	capture func(context.Context, *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error)
 	release func(context.Context) error
 }
 
-func (p *privatePartProducer) Run(ctx context.Context) error { return p.run(ctx) }
-func (p *privatePartProducer) Capture(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+func (p *privateLazyOperation) Run(ctx context.Context) error { return p.run(ctx) }
+func (p *privateLazyOperation) Capture(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	return p.capture(ctx, enc)
 }
-func (p *privatePartProducer) Release(ctx context.Context) error { return p.release(ctx) }
-func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *dagql.PersistDecodeContext, record dagql.PersistedRecord, route dagql.PartProducerRoute) (dagql.PartProducerInvocation, error) {
-	if !route.HasProducer {
-		return nil, fmt.Errorf("missing saved producer")
+func (p *privateLazyOperation) Release(ctx context.Context) error { return p.release(ctx) }
+func (family foreignFamilyCodec) PrepareLazyOperation(ctx context.Context, dec *dagql.PersistDecodeContext, record dagql.PersistedRecord, route dagql.LazyOperationRoute) (dagql.LazyOperationInvocation, error) {
+	if !route.HasLazyOperation {
+		return nil, fmt.Errorf("missing saved operation")
 	}
 	ctx = dagql.ContextWithCall(ctx, record.Call)
 	switch family {
@@ -40,7 +40,7 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 			return nil, err
 		}
 		dir := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]), Platform: p.Platform, Services: services, Lazy: lazy}
-		return &privatePartProducer{run: func(ctx context.Context) error { return dir.LazyEvalFunc()(ctx) }, capture: dir.EncodePersistedObject, release: dir.OnRelease}, nil
+		return &privateLazyOperation{run: func(ctx context.Context) error { return dir.LazyEvalFunc()(ctx) }, capture: dir.EncodePersistedObject, release: dir.OnRelease}, nil
 	case "File":
 		var p persistedFilePayload
 		if err := json.Unmarshal(record.Envelope.ObjectJSON, &p); err != nil {
@@ -55,7 +55,7 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 			return nil, err
 		}
 		file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: p.Platform, Services: services, Lazy: lazy}
-		return &privatePartProducer{run: func(ctx context.Context) error { return file.LazyEvalFunc()(ctx) }, capture: file.EncodePersistedObject, release: file.OnRelease}, nil
+		return &privateLazyOperation{run: func(ctx context.Context) error { return file.LazyEvalFunc()(ctx) }, capture: file.EncodePersistedObject, release: file.OnRelease}, nil
 	case "Container":
 		var p persistedContainerPayload
 		if err := json.Unmarshal(record.Envelope.ObjectJSON, &p); err != nil {
@@ -70,7 +70,7 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 		}
 		// Decode scalar configuration and exact handles into a private shell. The
 		// recipe's own fresh latches compute metadata again inside Running.
-		p.ProducerState = transferProducerState(false, true)
+		p.OperationState = transferOperationState(false, true)
 		raw, err := json.Marshal(p)
 		if err != nil {
 			return nil, err
@@ -85,7 +85,7 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 		run := func(ctx context.Context) (rerr error) {
 			// Only the gated integration fixture observes the private FS handle.
 			// Its wrapper reports after the real ref's Release returns.
-			if observe := dagql.TransferFixtureProducerReleaseObserver(ctx); observe != nil {
+			if observe := dagql.TransferFixtureLazyReleaseObserver(ctx); observe != nil {
 				defer func() {
 					if rerr == nil {
 						observePrivateContainerFSRelease(ctr, observe)
@@ -98,7 +98,7 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 			}
 			op, ok := lazy.(LazyContainerParts)
 			if !ok {
-				return fmt.Errorf("private Container: refined route has whole producer")
+				return fmt.Errorf("private Container: refined route has whole operation")
 			}
 			if err := ctr.runLazyGroup(ctx, op, ContainerLazyGroupMetadata); err != nil {
 				return err
@@ -108,9 +108,9 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 			}
 			return nil
 		}
-		return &privatePartProducer{run: run, capture: ctr.EncodePersistedObject, release: ctr.OnRelease}, nil
+		return &privateLazyOperation{run: run, capture: ctr.EncodePersistedObject, release: ctr.OnRelease}, nil
 	default:
-		return nil, fmt.Errorf("no saved producer for %s", family)
+		return nil, fmt.Errorf("no saved operation for %s", family)
 	}
 }
 
@@ -126,7 +126,7 @@ func (r *partFixtureReleaseRef) Release(ctx context.Context) error {
 	return err
 }
 
-// Only the private producer's FS handle is decorated; installed receiver,
+// Only the private operation's FS handle is decorated; installed receiver,
 // metadata and mount accessors retain their own concrete ref types.
 func observePrivateContainerFSRelease(ctr *Container, observe func(string, error)) {
 	if dir, ok := ctr.FS.Peek(); ok && dir != nil {

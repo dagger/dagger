@@ -63,7 +63,7 @@ func TestPartPureRoutes(t *testing.T) {
 		require.NoError(t, err)
 		route, err := foreignFamilyCodec("Directory").RouteParts(dagql.PersistedPayloadVisit{Path: path, Payload: raw}, "snapshot")
 		require.NoError(t, err)
-		require.True(t, route.HasProducer)
+		require.True(t, route.HasLazyOperation)
 		require.Equal(t, []dagql.PersistedPartAddress{{OutputPath: path, Part: "snapshot"}}, route.WriteSet)
 	}
 	for kind := range persistedFileLazyVisitors {
@@ -71,7 +71,7 @@ func TestPartPureRoutes(t *testing.T) {
 		require.NoError(t, err)
 		route, err := foreignFamilyCodec("File").RouteParts(dagql.PersistedPayloadVisit{Path: path, Payload: raw}, "snapshot")
 		require.NoError(t, err)
-		require.True(t, route.HasProducer)
+		require.True(t, route.HasLazyOperation)
 		require.Equal(t, []dagql.PersistedPartAddress{{OutputPath: path, Part: "snapshot"}}, route.WriteSet)
 	}
 }

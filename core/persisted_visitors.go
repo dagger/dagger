@@ -381,7 +381,7 @@ var persistedFileVisitor = persistedStructVisitor(dagql.PersistedRefOutputRole, 
 })
 
 // persistedContainerVisitor walks metadata references, per-part service
-// bindings and producer payloads selected by the recorded call's field,
+// bindings and operation payloads selected by the recorded call's field,
 // which pending container decode also dispatches on.
 var persistedContainerVisitor = persistedPayloadVisitorFunc(func(v dagql.PersistedPayloadVisit, visit dagql.PersistedRefVisitor) (json.RawMessage, error) {
 	if err := newPersistedRefWalker(visit, v.Path).roles(dagql.PersistedRefOutputRole, v.SnapshotLinks); err != nil {

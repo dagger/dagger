@@ -127,7 +127,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".dagger"), 0755))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "dagger.json"), []byte(`{"name":"cache-probe","engineVersion":"latest","sdk":{"source":"go"},"source":".dagger"}`), 0644))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, ".dagger", "main.go"), []byte(transferProbeSource), 0644))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("producer notes"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("operation notes"), 0644))
 		return dir
 	}
 	type running struct {
@@ -218,7 +218,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	// The same contextual call succeeds on the native object without import.
 	var native struct{ Node struct{ NoteFile string } }
 	require.NoError(t, a.client.Do(ctx, &dagger.Request{Query: `query($id:ID!){node(id:$id){... on CacheProbeReport{noteFile}}}`, Variables: map[string]any{"id": aID}}, &dagger.Response{Data: &native}))
-	require.Equal(t, "producer notes", native.Node.NoteFile)
+	require.Equal(t, "operation notes", native.Node.NoteFile)
 	orders := []string{"before", "after"}
 	if cold {
 		orders = []string{"before"}
@@ -264,7 +264,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			builtinRoute := 0
 			for _, event := range acquisition.Parts {
 				counters[event.Kind]++
-				if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-producer") {
+				if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
 					builtinRoute++
 				}
 			}
@@ -535,7 +535,7 @@ func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, import
 		}
 		require.NotEqual(t, "provider-read", event.Kind)
 		require.NotEqual(t, "selected-chain", event.Kind)
-		if event.Kind == "producer-enter" {
+		if event.Kind == "lazy-enter" {
 			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, event.Address)
 			entries++
 		}
@@ -544,8 +544,8 @@ func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, import
 	if cold {
 		want = 1
 	}
-	require.Equal(t, want, entries, "scratch saved-producer entries")
-	t.Logf("acquisition scratch cold=%t ordinal=%d row=%d address={\"part\":\"snapshot\"} group=%s platform=%s producer-enter=%d provider-reads=0", cold, mapping[scratch.ResultID].Ordinal, scratch.ResultID, dagql.LazyGroupWhole, platform, entries)
+	require.Equal(t, want, entries, "scratch saved-operation entries")
+	t.Logf("acquisition scratch cold=%t ordinal=%d row=%d address={\"part\":\"snapshot\"} group=%s platform=%s lazy-enter=%d provider-reads=0", cold, mapping[scratch.ResultID].Ordinal, scratch.ResultID, dagql.LazyGroupWhole, platform, entries)
 	return mapping[scratch.ResultID].Handle
 }
 
@@ -566,13 +566,13 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 		require.NoError(t, err)
 		return key{event.ResultID, string(raw)}
 	}
-	selected, installed, producers := map[key]int{}, map[key]int{}, map[key]int{}
+	selected, installed, operations := map[key]int{}, map[key]int{}, map[key]int{}
 	fsFields := map[string]int{}
 	mountWriters := map[string]int{}
 	for _, event := range report.Parts {
 		k := keyOf(event)
-		if event.Kind == "producer-enter" {
-			producers[k]++
+		if event.Kind == "lazy-enter" {
+			operations[k]++
 		}
 		if event.Kind != "selected-delegation" && event.Kind != "installed-delegation" {
 			require.Nil(t, event.Source, "ordinary events cannot carry delegation provenance")
@@ -600,15 +600,15 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 	for k, count := range installed {
 		require.Equal(t, 1, count, "duplicate delegation installation: %+v", k)
 		require.Positive(t, selected[k])
-		for p, bodies := range producers {
+		for p, bodies := range operations {
 			if p.row == k.row {
-				require.Zero(t, bodies, "metadata-only child entered a producer: %+v", p)
+				require.Zero(t, bodies, "metadata-only child entered a Lazy operation: %+v", p)
 			}
 		}
 	}
 	require.GreaterOrEqual(t, fsFields["withMountedCache"], 2, "both SDK cache children delegate inherited fs")
 	require.GreaterOrEqual(t, fsFields["__withSystemEnvVariable"], 2, "both SDK environment children delegate inherited fs")
-	for k, count := range producers {
+	for k, count := range operations {
 		row := rows[k.row]
 		if row.Call == nil {
 			continue
@@ -617,12 +617,12 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 		require.NoError(t, json.Unmarshal([]byte(k.address), &address))
 		if row.Call.Field == "withMountedFile" || row.Call.Field == "withMountedDirectory" {
 			require.NotNil(t, row.Call.Receiver)
-			t.Logf("producer mount-route row=%d address=%s field=%s parent=%d entries=%d", k.row, k.address, row.Call.Field, row.Call.Receiver.ResultID, count)
+			t.Logf("operation mount-route row=%d address=%s field=%s parent=%d entries=%d", k.row, k.address, row.Call.Field, row.Call.Receiver.ResultID, count)
 		}
 		if (row.Call.Field == "withMountedFile" && address.Part == "mount:/schema.json") || (row.Call.Field == "withMountedDirectory" && address.Part == "mount:/src") {
-			require.Equal(t, 1, count, "mount write producer repeats: %+v", k)
+			require.Equal(t, 1, count, "mount write operation repeats: %+v", k)
 			mountWriters[row.Call.Field]++
-			t.Logf("producer mount-write row=%d address=%s field=%s entries=%d", k.row, k.address, row.Call.Field, count)
+			t.Logf("operation mount-write row=%d address=%s field=%s entries=%d", k.row, k.address, row.Call.Field, count)
 		}
 	}
 	require.Positive(t, mountWriters["withMountedFile"])
@@ -662,7 +662,7 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 		hostMatches++
 	}
 	require.Positive(t, hostMatches)
-	t.Logf("acquisition SDK inherited-fs hops=%v; producer mount-writer rows=%v", fsFields, mountWriters)
+	t.Logf("acquisition SDK inherited-fs hops=%v; operation mount-writer rows=%v", fsFields, mountWriters)
 }
 
 func transferContextTool(ctx context.Context, t *testctx.T, client *dagger.Client, handle string) string {

@@ -23,24 +23,24 @@ func (cell *PartGateCell) loadOrCreate() *PartWriterGate {
 	if gate := cell.gate.Load(); gate != nil {
 		return gate
 	}
-	gate := &PartWriterGate{outputs: make(map[string]partOutputState), groups: make(map[string]*partProducerState), writers: make(map[*writerTicket]*PartPermit)}
+	gate := &PartWriterGate{outputs: make(map[string]partOutputState), groups: make(map[string]*partLazyEvaluationState), writers: make(map[*writerTicket]*PartPermit)}
 	if cell.gate.CompareAndSwap(nil, gate) {
 		return gate
 	}
 	return cell.gate.Load()
 }
 
-type ProducerAddress struct {
+type LazyGroupAddress struct {
 	OutputPath PersistedRefPath
 	Group      LazyGroupKey
 }
-type ProducerPhase uint8
+type LazyEvaluationPhase uint8
 
 const (
-	ProducerOpen ProducerPhase = iota
-	ProducerPreparing
-	ProducerRunning
-	ProducerConsumed
+	LazyEvaluationOpen LazyEvaluationPhase = iota
+	LazyEvaluationPreparing
+	LazyEvaluationRunning
+	LazyEvaluationEvaluated
 )
 
 type PartOutputPhase uint8
@@ -64,7 +64,7 @@ const (
 type PartWriterGate struct {
 	mu       sync.Mutex
 	outputs  map[string]partOutputState
-	groups   map[string]*partProducerState
+	groups   map[string]*partLazyEvaluationState
 	writers  map[*writerTicket]*PartPermit
 	revision uint64
 	managed  bool
@@ -74,8 +74,8 @@ type partOutputState struct {
 	task         *PartTaskToken
 	installation uint64
 }
-type partProducerState struct {
-	phase    ProducerPhase
+type partLazyEvaluationState struct {
+	phase    LazyEvaluationPhase
 	task     *PartTaskToken
 	writeSet []PersistedPartAddress
 	drain    *DrainTicket
@@ -90,14 +90,14 @@ type PartPermit struct {
 }
 type DrainTicket struct {
 	task     *PartTaskToken
-	group    ProducerAddress
+	group    LazyGroupAddress
 	writeSet []PersistedPartAddress
 	writers  []<-chan struct{}
 	gate     *PartWriterGate
 }
 type OriginalPermit struct {
 	task     *PartTaskToken
-	group    ProducerAddress
+	group    LazyGroupAddress
 	writeSet []PersistedPartAddress
 	gate     *PartWriterGate
 }
@@ -114,7 +114,7 @@ type SourceCheck struct {
 	checked        bool
 }
 
-func producerAddressKey(address ProducerAddress) string {
+func lazyGroupAddressKey(address LazyGroupAddress) string {
 	raw, _ := json.Marshal(address)
 	return string(raw)
 }
@@ -169,9 +169,9 @@ func (c *Cache) TryAcquire(ctx context.Context, receiver AnyResult, address Pers
 			continue
 		}
 		switch group.phase {
-		case ProducerRunning, ProducerConsumed:
+		case LazyEvaluationRunning, LazyEvaluationEvaluated:
 			return nil, GateExecutionStarted, nil
-		case ProducerPreparing:
+		case LazyEvaluationPreparing:
 			return nil, GateBusy, nil
 		}
 	}
@@ -207,12 +207,12 @@ func (permit *PartPermit) releaseLocked() {
 	close(permit.ticket.done)
 	permit.gate.revision++
 }
-func (c *Cache) PrepareOriginal(ctx context.Context, receiver AnyResult, group ProducerAddress, writeSet []PersistedPartAddress, task *PartTaskToken) (*DrainTicket, GateOutcome, error) {
+func (c *Cache) PrepareOriginal(ctx context.Context, receiver AnyResult, group LazyGroupAddress, writeSet []PersistedPartAddress, task *PartTaskToken) (*DrainTicket, GateOutcome, error) {
 	if err := context.Cause(ctx); err != nil {
 		return nil, GateReselect, err
 	}
 	if len(writeSet) == 0 {
-		return nil, GateReselect, fmt.Errorf("producer: empty write set")
+		return nil, GateReselect, fmt.Errorf("lazy: empty write set")
 	}
 	for _, address := range writeSet {
 		if _, err := partAddressKey(address); err != nil {
@@ -229,17 +229,17 @@ func (c *Cache) PrepareOriginal(ctx context.Context, receiver AnyResult, group P
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	for _, current := range gate.groups {
-		if current.phase != ProducerOpen && overlapsParts(current.writeSet, writeSet) {
-			if current.task == task && current.phase == ProducerPreparing {
+		if current.phase != LazyEvaluationOpen && overlapsParts(current.writeSet, writeSet) {
+			if current.task == task && current.phase == LazyEvaluationPreparing {
 				return current.drain, GateGranted, nil
 			}
-			if current.phase == ProducerConsumed {
+			if current.phase == LazyEvaluationEvaluated {
 				return nil, GateExecutionStarted, nil
 			}
 			return nil, GateBusy, nil
 		}
 	}
-	drain := &DrainTicket{task: task, group: ProducerAddress{OutputPath: slices.Clone(group.OutputPath), Group: group.Group}, gate: gate}
+	drain := &DrainTicket{task: task, group: LazyGroupAddress{OutputPath: slices.Clone(group.OutputPath), Group: group.Group}, gate: gate}
 	for _, address := range writeSet {
 		drain.writeSet = append(drain.writeSet, clonePartAddress(address))
 	}
@@ -248,13 +248,13 @@ func (c *Cache) PrepareOriginal(ctx context.Context, receiver AnyResult, group P
 			drain.writers = append(drain.writers, ticket.done)
 		}
 	}
-	gate.groups[producerAddressKey(group)] = &partProducerState{phase: ProducerPreparing, task: task, writeSet: drain.writeSet, drain: drain}
+	gate.groups[lazyGroupAddressKey(group)] = &partLazyEvaluationState{phase: LazyEvaluationPreparing, task: task, writeSet: drain.writeSet, drain: drain}
 	gate.revision++
 	return drain, GateGranted, nil
 }
 func (drain *DrainTicket) Wait(ctx context.Context) error {
 	if drain == nil {
-		return fmt.Errorf("producer: missing drain")
+		return fmt.Errorf("lazy: missing drain")
 	}
 	for _, done := range drain.writers {
 		select {
@@ -266,8 +266,8 @@ func (drain *DrainTicket) Wait(ctx context.Context) error {
 	return context.Cause(ctx)
 }
 func (drain *DrainTicket) currentLocked() bool {
-	current := drain.gate.groups[producerAddressKey(drain.group)]
-	return current != nil && current.drain == drain && current.task == drain.task && current.phase == ProducerPreparing && drain.task.active.Load()
+	current := drain.gate.groups[lazyGroupAddressKey(drain.group)]
+	return current != nil && current.drain == drain && current.task == drain.task && current.phase == LazyEvaluationPreparing && drain.task.active.Load()
 }
 func (drain *DrainTicket) drainedLocked() bool {
 	for _, writer := range drain.gate.writers {
@@ -288,7 +288,7 @@ func (c *Cache) TryAcquireForDecision(ctx context.Context, receiver AnyResult, a
 		return nil, GateReselect, err
 	}
 	if drain == nil || drain.task != task || drain.gate != row.partGate.gate.Load() || !containsPart(drain.writeSet, address) {
-		return nil, GateReselect, fmt.Errorf("producer: invalid decision permit")
+		return nil, GateReselect, fmt.Errorf("lazy: invalid decision permit")
 	}
 	gate := drain.gate
 	gate.mu.Lock()
@@ -307,13 +307,13 @@ func (c *Cache) BeginOriginal(ctx context.Context, check *SourceCheck) (*Origina
 		return nil, GateReselect, err
 	}
 	if check == nil || check.drain == nil {
-		return nil, GateReselect, fmt.Errorf("producer: missing source check")
+		return nil, GateReselect, fmt.Errorf("lazy: missing source check")
 	}
 	drain := check.drain
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	if c.resultsByID[drain.task.row.id] != drain.task.row {
-		return nil, GateReselect, fmt.Errorf("producer: unregistered receiver")
+		return nil, GateReselect, fmt.Errorf("lazy: unregistered receiver")
 	}
 	if !c.sourceCheckCurrentLocked(check) {
 		return nil, GateReselect, nil
@@ -324,7 +324,7 @@ func (c *Cache) BeginOriginal(ctx context.Context, check *SourceCheck) (*Origina
 	if !drain.currentLocked() || !drain.drainedLocked() || gate.revision != check.gateRevision {
 		return nil, GateReselect, nil
 	}
-	gate.groups[producerAddressKey(drain.group)].phase = ProducerRunning
+	gate.groups[lazyGroupAddressKey(drain.group)].phase = LazyEvaluationRunning
 	gate.revision++
 	return &OriginalPermit{task: drain.task, group: drain.group, writeSet: drain.writeSet, gate: gate}, GateGranted, nil
 }
@@ -345,10 +345,10 @@ func (c *Cache) endPartTaskBody(task *PartTaskToken, success bool) {
 		if group.task != task {
 			continue
 		}
-		if success && (group.phase == ProducerRunning || group.phase == ProducerConsumed) {
-			group.phase = ProducerConsumed
+		if success && (group.phase == LazyEvaluationRunning || group.phase == LazyEvaluationEvaluated) {
+			group.phase = LazyEvaluationEvaluated
 		} else {
-			group.phase = ProducerOpen
+			group.phase = LazyEvaluationOpen
 			group.writeSet = nil
 			group.drain = nil
 		}

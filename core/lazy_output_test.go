@@ -45,8 +45,8 @@ func TestLazyInputAttachment(t *testing.T) {
 		ctx, cache, srv := env.open(t)
 		parent := env.attach(t, ctx, cache, srv, "parent", containerPersistenceTestDirectory("parent", "/")).(dagql.ObjectResult[*Directory])
 		dir := containerPersistenceTestDirectory("child", "/selected")
-		directoryProducer := &DirectorySubdirectoryLazy{LazyState: NewLazyState(), Parent: parent}
-		require.NoError(t, evaluatedLazyFixture(dir, directoryProducer))
+		directoryLazyOperation := &DirectorySubdirectoryLazy{LazyState: NewLazyState(), Parent: parent}
+		require.NoError(t, evaluatedLazyFixture(dir, directoryLazyOperation))
 		file := &File{}
 		require.NoError(t, evaluatedLazyFixture(file, &FileSubfileLazy{LazyState: NewLazyState(), Parent: parent}))
 		for _, value := range []interface {
@@ -64,18 +64,18 @@ func TestLazyInputAttachment(t *testing.T) {
 			require.False(t, deps[0].Owned)
 			require.Same(t, parent.Self(), deps[0].Result.(dagql.ObjectResult[*Directory]).Self())
 		}
-		require.Same(t, directoryProducer, dir.Lazy)
+		require.Same(t, directoryLazyOperation, dir.Lazy)
 	})
 }
 
-func TestCompletedProducerAttachmentBeforePublication(t *testing.T) {
+func TestEvaluatedLazyOperationAttachmentBeforePublication(t *testing.T) {
 	env := newPersistedFamiliesTestEnv(t, "detached-completion")
 	ctx, cache, srv := env.open(t)
 	root := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(root, "selected"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "selected", "data"), []byte("data"), 0644))
 	source := containerPersistenceTestDirectory("source-tree", "/")
-	source.Snapshot.setValue(&producerTreeRef{cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "source-tree", snapshotID: "source-tree"}, root: root})
+	source.Snapshot.setValue(&operationTreeRef{cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "source-tree", snapshotID: "source-tree"}, root: root})
 	parent := env.attach(t, ctx, cache, srv, "source", source).(dagql.ObjectResult[*Directory])
 	dir, err := source.Subdirectory(ctx, parent, "selected")
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestMoveProducedOutputs(t *testing.T) {
 	dst.Dir.setValue("preseeded")
 	directoryRevisionBefore, err := dst.PersistedOutputRevision()
 	require.NoError(t, err)
-	require.NoError(t, moveProducedDirectory(dst, src))
+	require.NoError(t, moveDirectoryOutput(dst, src))
 	directoryRevisionAfter, err := dst.PersistedOutputRevision()
 	require.NoError(t, err)
 	require.NotEqual(t, directoryRevisionBefore, directoryRevisionAfter)
@@ -119,7 +119,7 @@ func TestMoveProducedOutputs(t *testing.T) {
 	require.Zero(t, releases)
 	src.Services[0].Hostname = "changed"
 	require.Equal(t, "saved", dst.Services[0].Hostname)
-	require.Error(t, moveProducedDirectory(dst, src))
+	require.Error(t, moveDirectoryOutput(dst, src))
 	require.NoError(t, dst.OnRelease(t.Context()))
 	require.Equal(t, 1, releases)
 	file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
@@ -128,7 +128,7 @@ func TestMoveProducedOutputs(t *testing.T) {
 	output := &File{Platform: platform, File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
 	fileRevisionBefore, err := output.PersistedOutputRevision()
 	require.NoError(t, err)
-	require.NoError(t, moveProducedFile(output, file))
+	require.NoError(t, moveFileOutput(output, file))
 	fileRevisionAfter, err := output.PersistedOutputRevision()
 	require.NoError(t, err)
 	require.NotEqual(t, fileRevisionBefore, fileRevisionAfter)

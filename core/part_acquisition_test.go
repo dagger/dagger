@@ -49,7 +49,7 @@ func (m *partObservedManager) New(ctx context.Context, parent bkcache.ImmutableR
 	return m.SnapshotManager.New(ctx, parent, opts...)
 }
 
-var partInjectedBodyFailure = errors.New("private producer failed")
+var partInjectedBodyFailure = errors.New("private operation failed")
 var partInjectedProviderFailure = errors.New("supplied blob unavailable")
 
 var partInjectedOwnerFailure = errors.New("injected owner acknowledgement failure")
@@ -95,7 +95,7 @@ func (s partTestContentSource) Provider(context.Context, dagql.PersistedPartOffe
 	return s.provider
 }
 func TestPartAcquisitionRootRoutes(t *testing.T) {
-	for _, mode := range []string{"ready", "chain", "chain-sync-retry", "chain-sync-restart", "chain-pin-release-retry", "chain-fallback", "chain-fallback-producer-failure", "producer"} {
+	for _, mode := range []string{"ready", "chain", "chain-sync-retry", "chain-sync-restart", "chain-pin-release-retry", "chain-fallback", "chain-fallback-operation-failure", "operation"} {
 		t.Run(mode, func(t *testing.T) {
 			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 			actx, a, asrv := transferCache(t, aStore, filepath.Join(t.TempDir(), "a.db"), "a")
@@ -104,7 +104,7 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 			bPath := filepath.Join(t.TempDir(), "b.db")
 			bctx, b, bsrv := transferCache(t, bStore, bPath, "b")
 			platform := Platform{OS: "linux", Architecture: "amd64"}
-			file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: platform, Lazy: &FileBlobLazy{LazyState: NewLazyState(), Filename: "produced.txt", Contents: []byte("producer bytes"), Permissions: 0644}}
+			file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: platform, Lazy: &FileBlobLazy{LazyState: NewLazyState(), Filename: "produced.txt", Contents: []byte("operation bytes"), Permissions: 0644}}
 			file.SetPath("/pending-preseed")
 			original := attachTransferObject(t, actx, a, asrv, "a", "partFile", file)
 			var selections []dagql.SelectedValueOutput
@@ -139,7 +139,7 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 				observed.ownerAttempts.Store(0)
 				observed.pins.Store(0)
 				started := time.Now()
-				if mode == "chain-fallback-producer-failure" {
+				if mode == "chain-fallback-operation-failure" {
 					observed.failBody.Store(true)
 					err := b.Evaluate(bctx, result)
 					require.ErrorIs(t, err, partInjectedProviderFailure)
@@ -196,10 +196,10 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 					require.Equal(t, "ready bytes", string(got))
 					require.Equal(t, "/donor/selected.txt", mustTransferPath(t, bctx, result))
 				} else {
-					require.Equal(t, "producer bytes", string(got))
+					require.Equal(t, "operation bytes", string(got))
 					require.Equal(t, "/produced.txt", mustTransferPath(t, bctx, result))
 				}
-				if mode == "producer" || mode == "chain-fallback" {
+				if mode == "operation" || mode == "chain-fallback" {
 					require.EqualValues(t, 1, observed.bodies.Load())
 				} else {
 					require.Zero(t, observed.bodies.Load())
@@ -352,7 +352,7 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 	ctr := NewContainer(platform)
 	originalLazy := &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: platform, ManifestDigest: manifest.Digest}
 	ctr.Lazy = originalLazy
-	original := attachTransferObject(t, ctx, cache, srv, "producer-execution", "_builtinContainer", ctr)
+	original := attachTransferObject(t, ctx, cache, srv, "operation-execution", "_builtinContainer", ctr)
 	require.NoError(t, cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
 		imported, err := cache.ImportValues(ctx, exported.Bundle)
 		require.NoError(t, err)

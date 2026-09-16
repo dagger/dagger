@@ -720,7 +720,7 @@ func httpSnapshotUnavailable(err error) bool {
 
 func (lazy *FileHTTPResolveLazy) Evaluate(ctx context.Context, file *File) error {
 	return file.evaluateLazy(ctx, &lazy.LazyState, "Query.__httpFile", func(ctx context.Context) (rerr error) {
-		if err := validateProducedFileReceiver(file); err != nil {
+		if err := validateLazyFileReceiver(file); err != nil {
 			return err
 		}
 		if err := (&persistedFileHTTPResolveLazy{BodyDigest: lazy.BodyDigest.String()}).validate(); err != nil {
@@ -777,6 +777,6 @@ func (lazy *FileHTTPResolveLazy) Evaluate(ctx context.Context, file *File) error
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return moveProducedFile(file, candidate)
+		return moveFileOutput(file, candidate)
 	})
 }
