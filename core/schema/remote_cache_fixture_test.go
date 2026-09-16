@@ -137,6 +137,18 @@ func TestRemoteCacheFixture(t *testing.T) {
 	require.Equal(t, "fixtureChild", byID[closure[0].ResultID].Call.Field)
 	require.Equal(t, closure[1].ResultID, byID[closure[0].ResultID].Call.Receiver.ResultID)
 	require.Equal(t, "fixtureAddress", byID[closure[1].ResultID].Call.Field)
+	// Root IDs alone cannot establish the dependency mapping. Validate the
+	// base against an independently reported non-root row, then corrupt it.
+	bundleRaw, err = os.ReadFile(filepath.Join(root, "bundles", "value.json"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(bundleRaw, &bundle))
+	importedRoots := []dagql.ImportedValue{{Ordinal: closure[0].Ordinal, ResultID: closure[0].ResultID}}
+	reported := []dagql.TransferFixtureRow{byID[closure[0].ResultID], byID[closure[1].ResultID]}
+	_, err = fixtureImportedMappings(bundle, importedRoots, reported)
+	require.NoError(t, err)
+	reported[1].ResultID += 1000
+	_, err = fixtureImportedMappings(bundle, importedRoots, reported)
+	require.ErrorContains(t, err, "reported non-root")
 	const count = 16
 	var wg sync.WaitGroup
 	errs := make(chan error, count)

@@ -376,3 +376,48 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 func (partTestContentSource) Available(dagql.PersistedPartOffer, int64) bool { return true }
 
 func (partSelectingContentSource) Available(dagql.PersistedPartOffer, int64) bool { return true }
+
+type partFixtureTestRef struct {
+	bkcache.ImmutableRef
+	id       string
+	releases int
+}
+
+func (r *partFixtureTestRef) SnapshotID() string            { return r.id }
+func (r *partFixtureTestRef) Release(context.Context) error { r.releases++; return nil }
+
+func TestPartFixtureReleaseObserverPrivateFS(t *testing.T) {
+	ordinary := NewContainer(Platform{OS: "linux", Architecture: "amd64"})
+	ordinaryRef := &partFixtureTestRef{id: "ordinary-fs"}
+	ordinary.FS.setValue(partTestDirectory(ordinaryRef, "/"))
+	private := NewContainer(ordinary.Platform)
+	fs, meta, mount := &partFixtureTestRef{id: "private-fs"}, &partFixtureTestRef{id: "private-meta"}, &partFixtureTestRef{id: "private-mount"}
+	private.FS.setValue(partTestDirectory(fs, "/"))
+	private.MetaSnapshot.setValue(meta)
+	mountDir := new(LazyAccessor[*Directory, *Container])
+	mountDir.setValue(partTestDirectory(mount, "/"))
+	private.Mounts = []ContainerMount{{Target: "/mount", DirectorySource: mountDir}}
+	observations := 0
+	observePrivateContainerFSRelease(private, func(id string, err error) {
+		require.NoError(t, err)
+		require.Equal(t, "private-fs", id)
+		require.Equal(t, 1, fs.releases, "observer runs after the underlying release")
+		observations++
+	})
+	dir, _ := private.FS.Peek()
+	wrapped, _ := dir.Snapshot.Peek()
+	require.IsType(t, &partFixtureReleaseRef{}, wrapped)
+	originalDir, _ := ordinary.FS.Peek()
+	originalRef, _ := originalDir.Snapshot.Peek()
+	require.Same(t, ordinaryRef, originalRef)
+	gotMeta, _ := private.MetaSnapshot.Peek()
+	require.Same(t, meta, gotMeta)
+	gotMount, _ := mountDir.Peek()
+	gotMountRef, _ := gotMount.Snapshot.Peek()
+	require.Same(t, mount, gotMountRef)
+	require.NoError(t, wrapped.Release(t.Context()))
+	require.Equal(t, 1, observations)
+	require.Zero(t, ordinaryRef.releases)
+	require.Zero(t, meta.releases)
+	require.Zero(t, mount.releases)
+}

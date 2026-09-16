@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -186,7 +187,7 @@ func fixtureMappings(bundle dagql.ValueBundle, values []dagql.ImportedValue) ([]
 // the closure and relocating ordinal n to firstID+n-1. The gated fixture also
 // reports dependency rows so observations can name exact imported producers.
 // Keep roots first for existing fixture callers that select the first root.
-func fixtureImportedMappings(bundle dagql.ValueBundle, roots []dagql.ImportedValue) ([]remoteCacheFixtureMapping, error) {
+func fixtureImportedMappings(bundle dagql.ValueBundle, roots []dagql.ImportedValue, rows []dagql.TransferFixtureRow) ([]remoteCacheFixtureMapping, error) {
 	if len(roots) == 0 || roots[0].ResultID < uint64(roots[0].Ordinal) {
 		return nil, fmt.Errorf("missing fixture import allocation")
 	}
@@ -199,10 +200,31 @@ func fixtureImportedMappings(bundle dagql.ValueBundle, roots []dagql.ImportedVal
 		}
 		seen[root.Ordinal] = true
 	}
+	byID := make(map[uint64]dagql.TransferFixtureRow, len(rows))
+	for _, row := range rows {
+		byID[row.ResultID] = row
+	}
+	hasNonRoot, validatedNonRoot := false, false
 	for _, value := range bundle.Values {
 		if !seen[value.Ordinal] {
-			values = append(values, dagql.ImportedValue{Ordinal: value.Ordinal, ResultID: base + uint64(value.Ordinal)})
+			hasNonRoot = true
+			id := base + uint64(value.Ordinal)
+			if row, ok := byID[id]; ok {
+				if !row.Imported || row.Call == nil || value.Record.Call == nil || row.Call.Field != value.Record.Call.Field || !reflect.DeepEqual(row.Call.Type, value.Record.Call.Type) {
+					return nil, fmt.Errorf("fixture non-root allocation mismatch at ordinal %d", value.Ordinal)
+				}
+				if ref := value.Record.Call.Receiver; ref != nil && ref.ResultID != 0 {
+					if row.Call.Receiver == nil || row.Call.Receiver.ResultID != base+ref.ResultID {
+						return nil, fmt.Errorf("fixture non-root receiver mismatch at ordinal %d", value.Ordinal)
+					}
+				}
+				validatedNonRoot = true
+			}
+			values = append(values, dagql.ImportedValue{Ordinal: value.Ordinal, ResultID: id})
 		}
+	}
+	if hasNonRoot && !validatedNonRoot {
+		return nil, fmt.Errorf("fixture import allocation lacks a reported non-root row")
 	}
 	return fixtureMappings(bundle, values)
 }
@@ -364,7 +386,11 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		var values []dagql.ImportedValue
 		values, err = cache.ImportValues(ctx, bundle)
 		if err == nil {
-			response, err = fixtureImportedMappings(bundle, values)
+			var report dagql.TransferFixtureReport
+			report, err = cache.TransferFixtureSnapshot(ctx, md.SessionID, nil)
+			if err == nil {
+				response, err = fixtureImportedMappings(bundle, values, report.Rows)
+			}
 		}
 	case "report":
 		var report remoteCacheFixtureReport

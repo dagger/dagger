@@ -88,11 +88,7 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 			if observe := dagql.TransferFixtureProducerReleaseObserver(ctx); observe != nil {
 				defer func() {
 					if rerr == nil {
-						if dir, ok := ctr.FS.Peek(); ok && dir != nil {
-							if ref, ok := dir.Snapshot.Peek(); ok && ref != nil {
-								dir.Snapshot.setValue(&partFixtureReleaseRef{ImmutableRef: ref, observe: observe})
-							}
-						}
+						observePrivateContainerFSRelease(ctr, observe)
 					}
 				}()
 			}
@@ -128,4 +124,14 @@ func (r *partFixtureReleaseRef) Release(ctx context.Context) error {
 	err := r.ImmutableRef.Release(ctx)
 	r.observe(id, err)
 	return err
+}
+
+// Only the private producer's FS handle is decorated; installed receiver,
+// metadata and mount accessors retain their own concrete ref types.
+func observePrivateContainerFSRelease(ctr *Container, observe func(string, error)) {
+	if dir, ok := ctr.FS.Peek(); ok && dir != nil {
+		if ref, ok := dir.Snapshot.Peek(); ok && ref != nil {
+			dir.Snapshot.setValue(&partFixtureReleaseRef{ImmutableRef: ref, observe: observe})
+		}
+	}
 }
