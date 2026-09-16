@@ -62,6 +62,7 @@ func TestLlmConfig(t *testing.T) {
 		"env://ANTHROPIC_SMALL_MODEL":         "anthropic-small-model",
 		"env://ANTHROPIC_AUTH_TOKEN":          "anthropic-auth-token",
 		"env://ANTHROPIC_REASONING_EFFORT":    "anthropic-reasoning-effort",
+		"env://ANTHROPIC_CLAUDE_CODE_VERSION": "2.1.999",
 		"env://OPENAI_API_KEY":                "openai-api-key",
 		"env://OPENAI_AZURE_VERSION":          "openai-azure-version",
 		"env://OPENAI_BASE_URL":               "openai-base-url",
@@ -120,6 +121,7 @@ func TestLlmConfig(t *testing.T) {
 	assert.Equal(t, "openai-codex-reasoning-effort", r.OpenAICodexReasoningEffort)
 	assert.Equal(t, "anthropic-auth-token", r.AnthropicAuthToken)
 	assert.Equal(t, "anthropic-reasoning-effort", r.AnthropicReasoningEffort)
+	assert.Equal(t, "2.1.999", r.AnthropicClaudeCodeVersion)
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)

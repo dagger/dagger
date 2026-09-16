@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  `dagger agent` no longer fails with `claude_code_version_too_old` on newer
+  Anthropic models when signed in with a Claude subscription. The Claude Code
+  release the engine identifies as has been bumped to the current one, and can
+  be overridden between Dagger releases with `ANTHROPIC_CLAUDE_CODE_VERSION=X.Y.Z`.
+time: 2026-09-15T12:00:00Z
+custom:
+  Author: vito
+  PR: 14161
