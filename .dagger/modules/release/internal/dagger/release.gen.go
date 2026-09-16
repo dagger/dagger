@@ -72,15 +72,6 @@ func (r *Release) GetMaintainers(ctx context.Context, githubOrgName string, opts
 	return response, q.Execute(ctx)
 }
 
-// Regenerate Go SDK files that reference the target Dagger Engine version.
-func (r *Release) GoSDKTargetVersion() *Changeset {
-	q := r.query.Select("goSdkTargetVersion")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Regenerate Helm chart files that reference the target Dagger Engine version.
 func (r *Release) HelmTargetVersion() *Changeset {
 	q := r.query.Select("helmTargetVersion")

@@ -337,13 +337,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).GetMaintainers(&parent, ctx, githubOrgName, githubToken)
-		case "GoSdkTargetVersion":
-			var parent Release
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Release).GoSdkTargetVersion(&parent, ctx)
 		case "HelmTargetVersion":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -717,7 +710,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("ElixirSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate Elixir SDK files that reference the target Dagger Engine version.").
-							WithSourceMap(dag.SourceMap("generate.go", 129, 1)).
+							WithSourceMap(dag.SourceMap("generate.go", 111, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("GetMaintainers",
@@ -726,12 +719,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithSourceMap(dag.SourceMap("changie.go", 24, 1)).
 							WithArg("githubOrgName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("changie.go", 27, 2)}).
 							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("changie.go", 28, 2)})).
-					WithFunction(
-						dag.Function("GoSdkTargetVersion",
-							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Regenerate Go SDK files that reference the target Dagger Engine version.").
-							WithSourceMap(dag.SourceMap("generate.go", 70, 1)).
-							WithGenerator()).
 					WithFunction(
 						dag.Function("HelmTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
@@ -742,7 +729,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("JavaSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate Java SDK files that reference the target Dagger Engine version.").
-							WithSourceMap(dag.SourceMap("generate.go", 198, 1)).
+							WithSourceMap(dag.SourceMap("generate.go", 180, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("Notify",
@@ -758,7 +745,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("PhpSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate PHP SDK files that reference the target Dagger Engine version.").
-							WithSourceMap(dag.SourceMap("generate.go", 116, 1)).
+							WithSourceMap(dag.SourceMap("generate.go", 98, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("Publish",
@@ -808,19 +795,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("PythonSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate Python SDK files that reference the target Dagger Engine version.").
-							WithSourceMap(dag.SourceMap("generate.go", 88, 1)).
+							WithSourceMap(dag.SourceMap("generate.go", 70, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("RustSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate Rust SDK files that reference the target Dagger Engine version.").
-							WithSourceMap(dag.SourceMap("generate.go", 149, 1)).
+							WithSourceMap(dag.SourceMap("generate.go", 131, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("TypescriptSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate TypeScript SDK files that reference the target Dagger Engine version.").
-							WithSourceMap(dag.SourceMap("generate.go", 101, 1)).
+							WithSourceMap(dag.SourceMap("generate.go", 83, 1)).
 							WithGenerator()).
 					WithConstructor(
 						dag.Function("New",

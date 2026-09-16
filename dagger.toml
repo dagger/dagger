@@ -44,6 +44,7 @@ generate = [
   "engine/**",
   "internal/**",
   "docs/current_docs/reference/cli",
+  "sdk/go/engineconn",
 ]
 test = ["e2e/**"]
 
