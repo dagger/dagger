@@ -15,8 +15,10 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/realm"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	telemetry "github.com/dagger/otel-go"
@@ -26,6 +28,8 @@ import (
 
 const httpStateCanonicalPath = "contents"
 const httpStateCanonicalPermissions = 0o600
+
+var daggerHTTPTransport = realm.NewTransport(http.DefaultTransport.(*http.Transport))
 
 type HTTPState struct {
 	URL string
@@ -260,6 +264,7 @@ func (state *HTTPState) Resolve(
 		state.snapshot = snapshot
 	}
 
+	ctx = realm.WithDefault(ctx, realm.Userland)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, state.URL, nil)
 	if err != nil {
 		return nil, err
@@ -276,7 +281,7 @@ func (state *HTTPState) Resolve(
 		return nil, err
 	}
 	client := http.Client{
-		Transport: netconfhttp.NewTransport(http.DefaultTransport, dns),
+		Transport: netconfhttp.NewTransport(daggerHTTPTransport, dns),
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -309,7 +314,10 @@ func (state *HTTPState) Resolve(
 		return state.fileResult(ctx, query, name, permissions)
 	}
 
-	resp.Body = bkcache.NewProgressReader(ctx, state.URL, resp.ContentLength, resp.Body)
+	resp.Body, err = bkcache.NewNetworkProgressReader(ctx, state.URL, resp.ContentLength, resp.Body, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, fmt.Errorf("create HTTP network progress reader: %w", err)
+	}
 	newCanonical, newDigest, newLastModified, newETag, err := writeHTTPStateSnapshot(ctx, query, state.URL, resp)
 	if err != nil {
 		return nil, err
@@ -476,7 +484,10 @@ func FetchHTTPFile(
 	if err != nil {
 		return nil, err
 	}
-	resp.Body = bkcache.NewProgressReader(ctx, opts.URL, resp.ContentLength, resp.Body)
+	resp.Body, err = bkcache.NewNetworkProgressReader(ctx, opts.URL, resp.ContentLength, resp.Body, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, fmt.Errorf("create HTTP network progress reader: %w", err)
+	}
 	defer resp.Body.Close()
 
 	bkref, err := query.SnapshotManager().New(ctx, nil,
@@ -546,12 +557,14 @@ func FetchHTTPFile(
 }
 
 func doHTTPClientRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
+	ctx = realm.WithDefault(ctx, realm.Userland)
+	req = req.Clone(ctx)
 	dns, err := DNSConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 	client := http.Client{
-		Transport: netconfhttp.NewTransport(http.DefaultTransport, dns),
+		Transport: netconfhttp.NewTransport(daggerHTTPTransport, dns),
 	}
 	resp, err := client.Do(req)
 	if err != nil {

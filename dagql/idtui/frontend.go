@@ -986,6 +986,10 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 	}
 
 	if metricsByName := r.db.MetricsBySpan[span.ID]; metricsByName != nil {
+		// Native operation network stats
+		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkRxBytes, "Network Rx", humanizeBytes)
+		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkTxBytes, "Network Tx", humanizeBytes)
+
 		// LLM Stats
 		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "Input Tokens", humanizeTokens)
 		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "Output Tokens", humanizeTokens)
