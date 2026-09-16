@@ -414,11 +414,12 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 			if scan.Source != nil {
 				permit, outcome, err := c.TryAcquireForDecision(ctx, res, address, drain, task)
 				if err != nil {
-					_ = scan.Source.Release(ctx)
-					return err
+					return errors.Join(err, scan.Source.Release(ctx))
 				}
 				if outcome != GateGranted {
-					_ = scan.Source.Release(ctx)
+					if err := scan.Source.Release(ctx); err != nil {
+						return err
+					}
 					if outcome == GateAlreadyInstalled {
 						return nil
 					}

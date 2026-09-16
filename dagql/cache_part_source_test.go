@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/containerd/containerd/v2/core/content"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -201,4 +203,63 @@ func TestPartDecisionFinalSource(t *testing.T) {
 		require.NoError(t, scan.Source.Release(ctx))
 		return nil
 	}}))
+}
+
+type partAvailabilityHook struct {
+	once sync.Once
+	fn   func()
+}
+
+func (h *partAvailabilityHook) Available(PersistedPartOffer, int64) bool {
+	h.once.Do(h.fn)
+	return true
+}
+func (*partAvailabilityHook) Provider(context.Context, PersistedPartOffer, *PartDemandState) content.InfoReaderProvider {
+	panic("probe must not open provider")
+}
+
+func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
+	for _, mode := range []string{"ready", "chain"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, c, srv := transferTestCache(t)
+			receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+			text := "pending"
+			if mode == "ready" {
+				text = "ready"
+			}
+			winner := persistedListTestResult(t, ctx, c, srv, "winner", &transferTestValue{Text: text})
+			failure := errors.New("unselected candidate final release")
+			releases := 0
+			loser := persistedListTestResult(t, ctx, c, srv, "loser", &transferTestValue{Text: "pending", release: func(context.Context) error { releases++; return failure }})
+			partTestEquivalent(t, ctx, c, receiver, winner)
+			partTestEquivalent(t, ctx, c, receiver, loser)
+			address := PersistedPartAddress{Part: "snapshot"}
+			var winnerOwner *offerOwner
+			c.egraphMu.Lock()
+			for _, row := range []*sharedResult{winner.cacheSharedResult(), loser.cacheSharedResult()} {
+				owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{})
+				require.NoError(t, err)
+				require.NoError(t, c.attachPartOfferLocked(row, address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner}))
+				if row == winner.cacheSharedResult() {
+					winnerOwner = owner
+				}
+			}
+			c.egraphMu.Unlock()
+			c.SetPartContentSource(&partAvailabilityHook{fn: func() {
+				require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+				_, err := c.removePersistedEdge(ctx, loser.cacheSharedResult().id)
+				require.NoError(t, err, "the scan still holds the loser")
+			}})
+			source, _, err := c.scanPartSources(ctx, receiver, address, nil)
+			require.ErrorIs(t, err, failure)
+			require.Nil(t, source, "no winning ownership escapes an error")
+			require.Equal(t, 1, releases)
+			c.egraphMu.RLock()
+			require.Nil(t, c.resultsByID[loser.cacheSharedResult().id])
+			require.Equal(t, winnerOwner.slots, winnerOwner.holds)
+			// Only the durable edge remains; both probe and selected Ready holds ended.
+			require.EqualValues(t, 1, winner.cacheSharedResult().incomingOwnershipCount)
+			c.egraphMu.RUnlock()
+		})
+	}
 }

@@ -339,7 +339,7 @@ func (c *Cache) AcquireEquivalentPartSource(ctx context.Context, receiver AnyRes
 
 // scanPartSources holds every candidate only for the metadata scan. A Ready
 // selection retains its donor; an admitted chain retains only its offer owner.
-func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address PersistedPartAddress, demand *PartDemandState) (_ *PartSourceLease, _ []partCandidate, rerr error) {
+func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address PersistedPartAddress, demand *PartDemandState) (source *PartSourceLease, _ []partCandidate, rerr error) {
 	if _, err := partAddressKey(address); err != nil {
 		return nil, nil, err
 	}
@@ -364,6 +364,12 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 			candidate := &candidates[i]
 			s := &PartSourceLease{cache: c, source: candidate.row, offerOwner: candidate.owner}
 			rerr = errors.Join(rerr, s.Release(ctx))
+		}
+		// On error no ownership escapes, including a winner selected before
+		// an unselected candidate's final-release callback failed.
+		if rerr != nil {
+			rerr = errors.Join(rerr, source.Release(ctx))
+			source = nil
 		}
 	}()
 	for i := range candidates {
@@ -450,7 +456,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		c.egraphMu.Unlock()
 		return nil, candidates, ErrPartReselect
 	}
-	source := &PartSourceLease{cache: c, sourceID: uint64(selected.row.id), target: clonePartAddress(address), readiness: rank, route: selected.route, record: selected.record, version: selected.version, facts: selected.facts, lookup: lookup, sessionID: session, descriptorRev: selected.facts.payload, offerRev: selected.facts.offers, resourceRev: selected.facts.resources, ownershipRev: selected.facts.ownership}
+	source = &PartSourceLease{cache: c, sourceID: uint64(selected.row.id), target: clonePartAddress(address), readiness: rank, route: selected.route, record: selected.record, version: selected.version, facts: selected.facts, lookup: lookup, sessionID: session, descriptorRev: selected.facts.payload, offerRev: selected.facts.offers, resourceRev: selected.facts.resources, ownershipRev: selected.facts.ownership}
 	if rank == PartReady {
 		source.source = selected.row
 		selected.row = nil
