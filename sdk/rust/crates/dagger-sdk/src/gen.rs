@@ -18340,7 +18340,7 @@ impl WorkspaceModuleSetting {
         let query = self.selection.select("key");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The configured value after applying the selected workspace environment, or empty when unset.
+    /// The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
     pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await

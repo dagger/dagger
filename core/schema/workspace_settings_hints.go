@@ -20,6 +20,10 @@ type constructorArgHint struct {
 	IsObject     bool
 	Description  string
 	ExampleValue string
+	// DefaultValue is the constructor default in the same output form that
+	// config reads use (bare strings, [a, b] lists), or empty when there is
+	// no default.
+	DefaultValue string
 }
 
 func workspaceSettingsHintIntrospectionContext(
@@ -159,6 +163,7 @@ func buildHintFromArg(arg *core.FunctionArg) (constructorArgHint, bool) {
 		IsObject:     arg.TypeDef.Self().Kind == core.TypeDefKindObject,
 		Description:  arg.Description,
 		ExampleValue: exampleValue,
+		DefaultValue: formatDefaultAsOutput(arg.DefaultValue),
 	}, true
 }
 
@@ -278,6 +283,56 @@ func formatDefaultAsToml(defaultValue core.JSON) string {
 		return ""
 	default:
 		return ""
+	}
+}
+
+// formatDefaultAsOutput renders a constructor default the way config reads
+// render a stored value: strings bare, lists as [a, b]. Defaults that are not
+// flat scalars or scalar lists render as empty.
+func formatDefaultAsOutput(defaultValue core.JSON) string {
+	raw := defaultValue.Bytes()
+	if len(raw) == 0 {
+		return ""
+	}
+
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		return ""
+	}
+
+	switch v := value.(type) {
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			formatted, ok := formatDefaultScalarAsOutput(item)
+			if !ok {
+				return ""
+			}
+			parts = append(parts, formatted)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		formatted, _ := formatDefaultScalarAsOutput(v)
+		return formatted
+	}
+}
+
+func formatDefaultScalarAsOutput(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case bool:
+		if v {
+			return "true", true
+		}
+		return "false", true
+	case json.Number:
+		return v.String(), true
+	default:
+		return "", false
 	}
 }
 

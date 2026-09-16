@@ -18980,7 +18980,7 @@ func (r *WorkspaceModuleSetting) Key(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The configured value after applying the selected workspace environment, or empty when unset.
+// The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
 func (r *WorkspaceModuleSetting) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil

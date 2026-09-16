@@ -246,7 +246,9 @@ func (s *workspaceSchema) moduleSettings(
 	settings := make([]*core.WorkspaceModuleSetting, 0, len(hints))
 	effectiveConfigBytes := workspace.SerializeConfig(effectiveCfg)
 	for _, hint := range hints {
-		value := ""
+		// Unset settings report the constructor default so readers see the
+		// effective value rather than a blank.
+		value := hint.DefaultValue
 		if _, ok := effectiveCfg.Modules[parent.Self().Name].Settings[hint.Name]; ok {
 			value, err = workspace.ReadConfigValue(effectiveConfigBytes, workspaceSettingConfigKey(parent.Self().Name, hint.Name))
 			if err != nil {

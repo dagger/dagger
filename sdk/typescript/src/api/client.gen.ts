@@ -17452,7 +17452,7 @@ export class WorkspaceModuleSetting extends BaseClient {
   }
 
   /**
-   * The configured value after applying the selected workspace environment, or empty when unset.
+   * The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
    */
   value = async (): Promise<string> => {
     if (this._value) {

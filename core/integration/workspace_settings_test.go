@@ -151,6 +151,9 @@ secretKey = "op://vault/aws"
 		require.Contains(t, output, "op://vault/aws")
 		require.NotContains(t, output, "source")
 		require.NotContains(t, output, "entrypoint")
+
+		// An unset setting shows its constructor default rather than a blank.
+		require.Regexp(t, `(?m)^aws\s+format\s+json\s+Output format for commands\.`, output)
 	})
 
 	t.Run("settings MODULE skips args not configurable from workspace settings", func(ctx context.Context, t *testctx.T) {
@@ -235,6 +238,42 @@ region = "us-west-2"
 		out, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "region")
 		require.NoError(t, err)
 		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
+	})
+
+	t.Run("settings MODULE KEY shows the constructor default when unset", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "modules/aws"
+
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		out, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "format")
+		require.NoError(t, err)
+		require.Equal(t, "json", strings.TrimSpace(string(out)))
+
+		// The default is not stored: raw config reads still report it unset.
+		_, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.aws.settings.format")
+		require.Error(t, err)
+		requireErrOut(t, err, `key "modules.aws.settings.format" is not set`)
+
+		// A configured value wins over the default, and unsetting restores it.
+		_, err = hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "format", "yaml")
+		require.NoError(t, err)
+		out, err = hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "format")
+		require.NoError(t, err)
+		require.Equal(t, "yaml", strings.TrimSpace(string(out)))
+
+		_, err = hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "format", "--unset")
+		require.NoError(t, err)
+		out, err = hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "format")
+		require.NoError(t, err)
+		require.Equal(t, "json", strings.TrimSpace(string(out)))
+
+		// A setting with no default still reads as empty when unset.
+		out, err = hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "secretKey")
+		require.NoError(t, err)
+		require.Empty(t, strings.TrimSpace(string(out)))
 	})
 
 	t.Run("settings MODULE KEY with env reads the effective env value with base fallback", func(ctx context.Context, t *testctx.T) {
@@ -693,9 +732,51 @@ retries = 0
 		_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "vitest", "tags", "smoke,regression")
 		require.NoError(t, err)
 
+		// The elements are stored as a native array, not a comma-joined string.
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, []any{"smoke", "regression"}, cfg.Modules["vitest"].Settings["tags"])
+
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "tags", "--json")
 		require.NoError(t, err)
 		require.JSONEq(t, `["smoke", "regression"]`, strings.TrimSpace(string(out)))
+	})
+
+	t.Run("a single trailing value for a list setting stores a one-element array", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "vitest", "tags", ".")
+		require.NoError(t, err)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, []any{"."}, cfg.Modules["vitest"].Settings["tags"])
+
+		out, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "vitest", "tags")
+		require.NoError(t, err)
+		require.Equal(t, "[.]", strings.TrimSpace(string(out)))
+
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "tags", "--json")
+		require.NoError(t, err)
+		require.JSONEq(t, `["."]`, strings.TrimSpace(string(out)))
+	})
+
+	t.Run("a bracketed single value for a list setting is read as an array literal", func(ctx context.Context, t *testctx.T) {
+		for _, literal := range []string{`["smoke", "regression"]`, `[smoke, regression]`} {
+			workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+			_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "vitest", "tags", literal)
+			require.NoError(t, err, literal)
+
+			cfg := readInstalledWorkspaceConfig(t, workdir)
+			require.Equal(t, []any{"smoke", "regression"}, cfg.Modules["vitest"].Settings["tags"], literal)
+		}
+	})
+
+	t.Run("an empty value for a list setting fails and points at --unset", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "vitest", "tags", "")
+		require.Error(t, err)
+		requireErrOut(t, err, `setting "tags" of module "vitest" needs at least one value; use --unset to remove it`)
 	})
 
 	t.Run("multiple values for a scalar setting fail clearly", func(ctx context.Context, t *testctx.T) {

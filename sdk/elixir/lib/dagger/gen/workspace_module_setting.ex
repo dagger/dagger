@@ -71,7 +71,7 @@ defmodule Dagger.WorkspaceModuleSetting do
   end
 
   @doc """
-  The configured value after applying the selected workspace environment, or empty when unset.
+  The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
   """
   @spec value(t()) :: {:ok, String.t()} | {:error, term()}
   def value(%__MODULE__{} = workspace_module_setting) do

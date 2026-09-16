@@ -18019,8 +18019,9 @@ class WorkspaceModuleSetting(Type):
         return await _ctx.execute(str)
 
     async def value(self) -> str:
-        """The configured value after applying the selected workspace
-        environment, or empty when unset.
+        """The effective value: the configured value after applying the selected
+        workspace environment, falling back to the constructor default, or
+        empty when neither is set.
 
         Returns
         -------

@@ -1320,3 +1320,30 @@ func TestUndefinedEnvErrorExtensions(t *testing.T) {
 	require.Equal(t, UndefinedEnvErrorType, ext.Extensions()["_type"])
 	require.Equal(t, "prdo", ext.Extensions()["env"])
 }
+
+func TestParseListValue(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"single element", ".", []string{"."}},
+		{"comma-separated", "smoke, regression", []string{"smoke", "regression"}},
+		{"bracketed bare elements", "[.]", []string{"."}},
+		{"bracketed comma-separated", "[a, b]", []string{"a", "b"}},
+		{"toml array literal", `["smoke", "regression"]`, []string{"smoke", "regression"}},
+		{"toml array keeps commas inside quotes", `["a,b", "c"]`, []string{"a,b", "c"}},
+		{"toml array of numbers", "[1, 2]", []string{"1", "2"}},
+		{"glob-looking element is not an array", "[abc]*", []string{"[abc]*"}},
+		{"empty", "", []string{}},
+		{"empty array", "[]", []string{}},
+		{"whitespace is trimmed", "  a , b  ", []string{"a", "b"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, ParseListValue(tc.in))
+		})
+	}
+}

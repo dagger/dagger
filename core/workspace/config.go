@@ -1436,6 +1436,57 @@ func preferredExampleFieldName(t reflect.Type) string {
 	return names[0]
 }
 
+// ParseListValue splits the single-value form of a list write into its
+// elements so callers can store a native TOML array instead of a bare string.
+// A bracketed value is read as an array literal: TOML syntax when it parses
+// (["a,b", "c"] keeps the comma inside the quoted element), and otherwise a
+// comma-separated list with the brackets stripped ([a, b] and [.] both work).
+// An unbracketed value is comma-split, matching the auto-detection that
+// WriteConfigValue applies to string values. Elements are trimmed of
+// surrounding whitespace.
+func ParseListValue(rawValue string) []string {
+	rawValue = strings.TrimSpace(rawValue)
+	bracketed := strings.HasPrefix(rawValue, "[") && strings.HasSuffix(rawValue, "]")
+	if bracketed {
+		if elements, ok := parseTOMLArrayLiteral(rawValue); ok {
+			return elements
+		}
+		rawValue = strings.TrimSpace(rawValue[1 : len(rawValue)-1])
+	}
+	if rawValue == "" {
+		return []string{}
+	}
+	items := strings.Split(rawValue, ",")
+	elements := make([]string, 0, len(items))
+	for _, item := range items {
+		elements = append(elements, strings.TrimSpace(item))
+	}
+	return elements
+}
+
+// parseTOMLArrayLiteral reads a TOML array of scalars into its elements'
+// output form. It reports false for anything that is not a flat scalar array.
+func parseTOMLArrayLiteral(literal string) ([]string, bool) {
+	tree, err := toml.Load("value = " + literal)
+	if err != nil {
+		return nil, false
+	}
+	items, ok := tree.Get("value").([]any)
+	if !ok {
+		return nil, false
+	}
+	elements := make([]string, 0, len(items))
+	for _, item := range items {
+		switch item.(type) {
+		case string, bool, int64, float64:
+			elements = append(elements, formatScalarOutput(item))
+		default:
+			return nil, false
+		}
+	}
+	return elements, true
+}
+
 func parseValueString(parts []string, rawValue string) any {
 	if (len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path")) ||
 		(len(parts) == 1 && (parts[0] == "defaults_from_dotenv" || parts[0] == "check-generated")) {

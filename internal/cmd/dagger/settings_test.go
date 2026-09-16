@@ -18,14 +18,36 @@ func TestWorkspaceSettingWriteValue(t *testing.T) {
 	listSetting := workspaceSetting{Module: "vitest", Key: "tags", IsList: true}
 	scalarSetting := workspaceSetting{Module: "aws", Key: "region"}
 
-	t.Run("a single value passes through unchanged", func(t *testing.T) {
-		for _, setting := range []workspaceSetting{listSetting, scalarSetting} {
-			for _, value := range []string{"plain", "a,b", "[abc]*", ""} {
-				got, values, err := workspaceSettingWriteValue(setting, []string{value})
-				require.NoError(t, err)
-				require.Equal(t, value, got)
-				require.Nil(t, values)
-			}
+	t.Run("a single value for a scalar setting passes through unchanged", func(t *testing.T) {
+		for _, value := range []string{"plain", "a,b", "[abc]*", ""} {
+			got, values, err := workspaceSettingWriteValue(scalarSetting, []string{value})
+			require.NoError(t, err)
+			require.Equal(t, value, got)
+			require.Nil(t, values)
+		}
+	})
+
+	t.Run("a single value for a list setting becomes an explicit list", func(t *testing.T) {
+		for value, want := range map[string][]string{
+			".":                 {"."},
+			"a,b":               {"a", "b"},
+			"[.]":               {"."},
+			"[a, b]":            {"a", "b"},
+			`["a,b", "c"]`:      {"a,b", "c"},
+			"[abc]*":            {"[abc]*"},
+			"smoke, regression": {"smoke", "regression"},
+		} {
+			got, values, err := workspaceSettingWriteValue(listSetting, []string{value})
+			require.NoError(t, err, value)
+			require.Empty(t, got, value)
+			require.Equal(t, want, values, value)
+		}
+	})
+
+	t.Run("an empty value for a list setting fails and points at --unset", func(t *testing.T) {
+		for _, value := range []string{"", "[]", "  "} {
+			_, _, err := workspaceSettingWriteValue(listSetting, []string{value})
+			require.ErrorContains(t, err, `setting "tags" of module "vitest" needs at least one value; use --unset to remove it`)
 		}
 	})
 

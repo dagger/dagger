@@ -305,18 +305,28 @@ func isUnknownGraphQLFieldError(err error) bool {
 }
 
 // workspaceSettingWriteValue maps trailing CLI args onto WithConfigValue's
-// value/values split. A single value passes through unchanged so existing
-// scalar and comma-separated forms keep their behavior. Multiple values are
-// only valid for list settings and are passed as an explicit list so elements
-// round-trip exactly, without comma-splitting.
+// value/values split. A scalar setting takes a single value, passed through
+// unchanged so auto-detection keeps its behavior. A list setting always
+// writes an explicit list so the config stores a TOML array: multiple values
+// are its elements verbatim, and a single value is split into elements
+// (comma-separated or a bracketed literal) so "." stores as ["."] rather than
+// ".". Engines that predate isList report every setting as scalar, and there
+// the single-value form falls back to the string write.
 func workspaceSettingWriteValue(setting workspaceSetting, args []string) (string, []string, error) {
-	if len(args) == 1 {
-		return args[0], nil, nil
-	}
 	if !setting.IsList {
+		if len(args) == 1 {
+			return args[0], nil, nil
+		}
 		return "", nil, fmt.Errorf("setting %q of module %q is not a list and accepts a single value", setting.Key, setting.Module)
 	}
-	return "", args, nil
+	values := args
+	if len(args) == 1 {
+		values = workspacepkg.ParseListValue(args[0])
+	}
+	if len(values) == 0 {
+		return "", nil, fmt.Errorf("setting %q of module %q needs at least one value; use --unset to remove it", setting.Key, setting.Module)
+	}
+	return "", values, nil
 }
 
 type workspaceSettingsState struct {

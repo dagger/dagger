@@ -59,7 +59,7 @@ class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdA
     }
 
     /**
-     * The configured value after applying the selected workspace environment, or empty when unset.
+     * The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
      */
     public function value(): string
     {
