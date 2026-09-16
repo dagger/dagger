@@ -181,6 +181,31 @@ func fixtureMappings(bundle dagql.ValueBundle, values []dagql.ImportedValue) ([]
 	}
 	return out, nil
 }
+
+// ImportValues returns roots, after reserving one contiguous ID interval for
+// the closure and relocating ordinal n to firstID+n-1. The gated fixture also
+// reports dependency rows so observations can name exact imported producers.
+// Keep roots first for existing fixture callers that select the first root.
+func fixtureImportedMappings(bundle dagql.ValueBundle, roots []dagql.ImportedValue) ([]remoteCacheFixtureMapping, error) {
+	if len(roots) == 0 || roots[0].ResultID < uint64(roots[0].Ordinal) {
+		return nil, fmt.Errorf("missing fixture import allocation")
+	}
+	base := roots[0].ResultID - uint64(roots[0].Ordinal)
+	seen := map[dagql.TransferOrdinal]bool{}
+	values := append([]dagql.ImportedValue(nil), roots...)
+	for _, root := range roots {
+		if root.ResultID != base+uint64(root.Ordinal) {
+			return nil, fmt.Errorf("inconsistent fixture import allocation")
+		}
+		seen[root.Ordinal] = true
+	}
+	for _, value := range bundle.Values {
+		if !seen[value.Ordinal] {
+			values = append(values, dagql.ImportedValue{Ordinal: value.Ordinal, ResultID: base + uint64(value.Ordinal)})
+		}
+	}
+	return fixtureMappings(bundle, values)
+}
 func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 	dir, err := root.Open(".")
 	if err != nil {
@@ -339,7 +364,7 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		var values []dagql.ImportedValue
 		values, err = cache.ImportValues(ctx, bundle)
 		if err == nil {
-			response, err = fixtureMappings(bundle, values)
+			response, err = fixtureImportedMappings(bundle, values)
 		}
 	case "report":
 		var report remoteCacheFixtureReport

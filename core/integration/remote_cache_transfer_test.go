@@ -249,6 +249,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.NoError(t, err)
 			var imported []transferFixtureMapping
 			require.NoError(t, transferFixture(ctx, b.client, "import", "report.json", []string{}, &imported))
+			t.Logf("acquisition imported closure rows=%d cold=%t order=%s", len(imported), cold, order)
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"))
 			if order == "before" {
 				if cold {
@@ -285,6 +286,16 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"), "ordinary call must use transferred result")
 			callReport(t, b.client, "different")
 			require.Equal(t, uint64(1), countBody(t, b.client, "report"), "changed argument enters function")
+			t.Logf("acquisition changed-argument control cold=%t report-body-count=1", cold)
+			// The scratch demand happens inside the changed-argument body, after
+			// the earlier acquisition report was captured.
+			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
+			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold)
+			entries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(scratchHandle)).Entries(ctx)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
+			assertScratchAcquisition(t, acquisition, imported, cold)
 			reportType := ""
 			for _, value := range imported {
 				if strings.HasSuffix(value.Type.NamedType, "Report") {
@@ -308,6 +319,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.Len(t, checkpoint.Rows, 1)
 			require.True(t, checkpoint.Rows[0].Imported)
 			require.True(t, checkpoint.Rows[0].Persisted)
+			t.Logf("acquisition later controls cold=%t noteFile=passed bound-tool=passed saved-row=%d persisted=true", cold, checkpoint.Rows[0].ResultID)
 			if defaultGC {
 				// A bounded temporary file outside engine state supplies actual disk
 				// pressure; the default policy and imported root remain unchanged.
@@ -368,6 +380,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.NoError(t, b.client.ModuleSource(".").AsModule().Serve(ctx))
 			loadNotes("noteDirectory", "consumer directory notes after restart")
 			require.Equal(t, uint64(1), countBody(t, b.client, "report"))
+			t.Logf("acquisition clean-restart control cold=%t saved-row=%d noteDirectory=passed report-body-count=1", cold, restored.Rows[0].ResultID)
 			// Create a higher native comparison row after import, then read its
 			// result from a client with no installed module candidates.
 			writer, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
@@ -413,6 +426,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			text := transferContextTool(ctx, t, bare, nativeID)
 			require.Contains(t, text, "consumer directory notes after restart")
 			require.NotContains(t, text, "local module context belongs to another engine")
+			t.Logf("acquisition native-recorded-module control cold=%t recorded-row=%d lower-imported-equivalent=true passed", cold, recorded)
 		})
 	}
 
@@ -489,6 +503,50 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		// The recorded row is ineligible; its earlier imported equivalent is used.
 		assertForeign(importBundle("expired.json"))
 	})
+}
+
+func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, imported []transferFixtureMapping, cold bool) string {
+	t.Helper()
+	mapping := map[uint64]transferFixtureMapping{}
+	for _, value := range imported {
+		mapping[value.ResultID] = value
+	}
+	var scratch *dagql.TransferFixtureRow
+	for i := range report.Rows {
+		row := &report.Rows[i]
+		if _, ok := mapping[row.ResultID]; !ok || !row.Imported || row.Call == nil || row.Call.Type.NamedType != "Directory" || row.Call.Field != "directory" || row.Call.Receiver != nil {
+			continue
+		}
+		require.Nil(t, scratch, "ambiguous imported Query.directory row")
+		scratch = row
+	}
+	require.NotNil(t, scratch)
+	platform := ""
+	for _, input := range scratch.Call.ImplicitInputs {
+		if input.Name == "engineDefaultPlatform" {
+			platform = input.Value.StringValue
+		}
+	}
+	require.Equal(t, "linux/amd64", platform)
+	entries := 0
+	for _, event := range report.Parts {
+		if event.ResultID != scratch.ResultID {
+			continue
+		}
+		require.NotEqual(t, "provider-read", event.Kind)
+		require.NotEqual(t, "selected-chain", event.Kind)
+		if event.Kind == "producer-enter" {
+			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, event.Address)
+			entries++
+		}
+	}
+	want := 0
+	if cold {
+		want = 1
+	}
+	require.Equal(t, want, entries, "scratch saved-producer entries")
+	t.Logf("acquisition scratch cold=%t ordinal=%d row=%d address={\"part\":\"snapshot\"} group=%s platform=%s producer-enter=%d provider-reads=0", cold, mapping[scratch.ResultID].Ordinal, scratch.ResultID, dagql.LazyGroupWhole, platform, entries)
+	return mapping[scratch.ResultID].Handle
 }
 
 // Keep acquisition hops separate from body entries. Every observation is
