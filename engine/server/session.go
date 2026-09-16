@@ -2572,7 +2572,7 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 			}
 		}
 	}
-	_, err := srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, false, func() {
+	_, err := srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, core.ModuleLoadStrict, func() {
 		// Consume only after a successful load, but before modulesMu is
 		// released, so another request cannot claim the one-shot scope.
 		if scopeApplied {

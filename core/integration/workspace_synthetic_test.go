@@ -272,8 +272,18 @@ source = "./modules/bad"
 	require.Len(t, loadFailures, 1)
 	require.Contains(t, loadFailures[0], `module "bad"`)
 
-	_, err = ws.Checks().List(ctx)
-	require.ErrorContains(t, err, `module "bad"`)
+	// checks loads best-effort too, but reports a module it cannot load as a
+	// check that fails rather than as an error (see
+	// TestChecksReportUnloadableModules).
+	checks, err := ws.Checks().List(ctx)
+	require.NoError(t, err)
+	checkNames := make([]string, 0, len(checks))
+	for _, check := range checks {
+		checkName, err := check.Name(ctx)
+		require.NoError(t, err)
+		checkNames = append(checkNames, checkName)
+	}
+	require.Contains(t, checkNames, "bad:load")
 
 	selected, err := ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"good"}}).List(ctx)
 	require.NoError(t, err)

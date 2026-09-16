@@ -1339,10 +1339,12 @@ func (GeneratorsSuite) TestWorkspaceCheckNarrowsToRequestedModule(ctx context.Co
 	})
 
 	t.Run("checking across all modules still loads the broken module", func(ctx context.Context, t *testctx.T) {
+		// Listing is best-effort now (see TestChecksReportUnloadableModules),
+		// so it succeeds and names the broken module instead of aborting.
 		out, err := base.
-			With(daggerExecFail("check", "-l")).
+			With(daggerExec("check", "-l")).
 			CombinedOutput(ctx)
-		require.NoError(t, err)
+		require.NoError(t, err, out)
 		require.Contains(t, out, "bad")
 	})
 }

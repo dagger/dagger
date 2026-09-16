@@ -1,0 +1,11 @@
+kind: Changed
+body: |
+  `dagger check` no longer aborts on a workspace module that cannot load. It
+  runs the checks of every module that does load, and reports each module it
+  could not load as a `<module>:load` check that fails. The run still exits
+  non-zero, so a check that never ran cannot be read as a check that passed,
+  and `dagger check -l` lists the remaining checks instead of failing outright.
+time: 2026-09-14T16:01:00Z
+custom:
+  Author: eunomie
+  PR: "14140"
