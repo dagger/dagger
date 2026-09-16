@@ -86,14 +86,15 @@ func (c *Cache) transferFixtureRowLocked(sessionID string, id *call.ID) (*shared
 }
 
 type TransferFixtureRow struct {
-	ResultID      uint64               `json:"resultID"`
-	Call          *ResultCall          `json:"call"`
-	Imported      bool                 `json:"imported"`
-	Persisted     bool                 `json:"persisted"`
-	DependencyIDs []uint64             `json:"dependencyIDs"`
-	Offers        []PersistedPartOffer `json:"offers"`
-	OutputClasses []uint64             `json:"outputClasses"`
-	TermIDs       []uint64             `json:"termIDs"`
+	ResultID      uint64                     `json:"resultID"`
+	Call          *ResultCall                `json:"call"`
+	Imported      bool                       `json:"imported"`
+	Persisted     bool                       `json:"persisted"`
+	DependencyIDs []uint64                   `json:"dependencyIDs"`
+	Offers        []PersistedPartOffer       `json:"offers"`
+	OutputClasses []uint64                   `json:"outputClasses"`
+	TermIDs       []uint64                   `json:"termIDs"`
+	SnapshotLinks []PersistedSnapshotRefLink `json:"snapshotLinks,omitempty"`
 }
 type TransferFixtureReport struct {
 	Parts  []TransferFixturePartEvent `json:"parts,omitempty"`
@@ -140,6 +141,7 @@ func (c *Cache) TransferFixtureSnapshot(ctx context.Context, sessionID string, i
 			return report, err
 		}
 		entry := TransferFixtureRow{ResultID: uint64(id), Call: frame.clone(), Imported: row.imported, Offers: offers}
+		entry.SnapshotLinks = cloneSnapshotRefLinks(row.loadPayloadState().snapshotOwnerLinks)
 		_, entry.Persisted = c.persistedEdgesByResult[id]
 		for dep := range row.deps {
 			entry.DependencyIDs = append(entry.DependencyIDs, uint64(dep))

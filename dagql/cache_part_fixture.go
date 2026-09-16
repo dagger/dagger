@@ -12,10 +12,11 @@ import (
 // TransferFixturePartEvent is populated only after the gated fixture enables
 // acquisition observation. It does not participate in cache decisions.
 type TransferFixturePartEvent struct {
-	Kind     string               `json:"kind"`
-	ResultID uint64               `json:"resultID"`
-	Field    string               `json:"field"`
-	Address  PersistedPartAddress `json:"address"`
+	Kind       string               `json:"kind"`
+	ResultID   uint64               `json:"resultID"`
+	Field      string               `json:"field"`
+	Address    PersistedPartAddress `json:"address"`
+	SnapshotID string               `json:"snapshotID,omitempty"`
 }
 type partFixtureState struct {
 	mu     sync.Mutex
@@ -26,11 +27,14 @@ func (c *Cache) EnableTransferFixtureParts() {
 	c.partFixture.CompareAndSwap(nil, new(partFixtureState))
 }
 func (c *Cache) recordPartFixture(row *sharedResult, address PersistedPartAddress, kind string) {
+	c.recordPartFixtureSnapshot(row, address, kind, "")
+}
+func (c *Cache) recordPartFixtureSnapshot(row *sharedResult, address PersistedPartAddress, kind, snapshotID string) {
 	state := c.partFixture.Load()
 	if state == nil {
 		return
 	}
-	event := TransferFixturePartEvent{Kind: kind, Address: clonePartAddress(address)}
+	event := TransferFixturePartEvent{Kind: kind, Address: clonePartAddress(address), SnapshotID: snapshotID}
 	if row != nil {
 		event.ResultID = uint64(row.id)
 		if frame := row.loadResultCall(); frame != nil {
@@ -40,6 +44,28 @@ func (c *Cache) recordPartFixture(row *sharedResult, address PersistedPartAddres
 	state.mu.Lock()
 	state.events = append(state.events, event)
 	state.mu.Unlock()
+}
+
+type partFixtureReleaseKey struct{}
+
+// TransferFixtureProducerReleaseObserver is present only during a private
+// producer invoked with the environment-gated fixture enabled.
+func TransferFixtureProducerReleaseObserver(ctx context.Context) func(string, error) {
+	observer, _ := ctx.Value(partFixtureReleaseKey{}).(func(string, error))
+	return observer
+}
+
+func (c *Cache) partFixtureProducerContext(ctx context.Context, row *sharedResult, address PersistedPartAddress) context.Context {
+	if c.partFixture.Load() == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, partFixtureReleaseKey{}, func(id string, err error) {
+		kind := "producer-ref-released"
+		if err != nil {
+			kind = "producer-ref-release-error"
+		}
+		c.recordPartFixtureSnapshot(row, address, kind, id)
+	})
 }
 func (c *Cache) partFixtureEvents() []TransferFixturePartEvent {
 	state := c.partFixture.Load()

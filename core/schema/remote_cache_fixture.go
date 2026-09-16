@@ -286,10 +286,15 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 				selection := dagql.ValueSelection{Roots: roots}
 				for _, output := range outputs {
 					typ := output.Type().Name()
-					if typ != "Directory" && typ != "File" {
-						return fmt.Errorf("selected fixture output must be Directory or File")
+					part := dagql.PartKey("snapshot")
+					switch typ {
+					case "Container":
+						part = core.ContainerPartFS
+					case "Directory", "File":
+					default:
+						return fmt.Errorf("selected fixture output must be Directory, File or Container")
 					}
-					selection.Outputs = append(selection.Outputs, dagql.SelectedValueOutput{Result: output, Address: dagql.PersistedPartAddress{Part: "snapshot"}})
+					selection.Outputs = append(selection.Outputs, dagql.SelectedValueOutput{Result: output, Address: dagql.PersistedPartAddress{Part: part}})
 				}
 				return cache.WithExportedValues(ctx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(ctx context.Context, values *dagql.ExportedValues) error {
 					if err := writeFixtureChains(ctx, path, values.Chains); err != nil {

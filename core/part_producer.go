@@ -82,7 +82,20 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 		ctr := typed.(*Container)
 		ctr.acquiredOutput.Store(nil)
 		ctr.Lazy = lazy
-		run := func(ctx context.Context) error {
+		run := func(ctx context.Context) (rerr error) {
+			// Only the gated integration fixture observes the private FS handle.
+			// Its wrapper reports after the real ref's Release returns.
+			if observe := dagql.TransferFixtureProducerReleaseObserver(ctx); observe != nil {
+				defer func() {
+					if rerr == nil {
+						if dir, ok := ctr.FS.Peek(); ok && dir != nil {
+							if ref, ok := dir.Snapshot.Peek(); ok && ref != nil {
+								dir.Snapshot.setValue(&partFixtureReleaseRef{ImmutableRef: ref, observe: observe})
+							}
+						}
+					}
+				}()
+			}
 			ctx = dagql.ContextWithCall(ctx, record.Call)
 			if route.Group.Group == dagql.LazyGroupWhole {
 				return ctr.Evaluate(ctx)
@@ -103,4 +116,16 @@ func (family foreignFamilyCodec) PreparePartProducer(ctx context.Context, dec *d
 	default:
 		return nil, fmt.Errorf("no saved producer for %s", family)
 	}
+}
+
+type partFixtureReleaseRef struct {
+	bkcache.ImmutableRef
+	observe func(string, error)
+}
+
+func (r *partFixtureReleaseRef) Release(ctx context.Context) error {
+	id := r.SnapshotID()
+	err := r.ImmutableRef.Release(ctx)
+	r.observe(id, err)
+	return err
 }

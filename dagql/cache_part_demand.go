@@ -364,6 +364,7 @@ func (c *Cache) runPartProducerDecision(ctx context.Context, res AnyResult, addr
 			return err
 		}
 		row := res.cacheSharedResult()
+		ctx = c.partFixtureProducerContext(ctx, row, address)
 		var version capturedRowRevision
 		record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
 		if err != nil {
