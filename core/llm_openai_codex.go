@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -323,8 +323,10 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 						}
 						items = append(items, responses.ResponseInputItemUnionParam{
 							OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-								CallID: block.CallID,
-								Output: output,
+								CallID: param.NewOpt(block.CallID),
+								Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+									OfString: param.NewOpt(output),
+								},
 							},
 						})
 					}

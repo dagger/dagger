@@ -13,7 +13,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
-	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/v3"
 )
 
 // Per-request credential resolution for LLM providers.

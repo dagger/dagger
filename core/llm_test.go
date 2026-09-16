@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -437,6 +437,24 @@ func TestOpenAIRequestUsesNonStrictNullableToolSchema(t *testing.T) {
 	require.Equal(t, []any{"filePath"}, parameters["required"])
 }
 
+func TestOpenAIConvertToolCalls(t *testing.T) {
+	history := []*LLMMessage{{
+		Role: LLMMessageRoleAssistant,
+		Content: []*LLMContentBlock{
+			{Kind: LLMContentToolCall, CallID: "call_1", ToolName: "read", Arguments: JSON(`{"path":"/x"}`)},
+			{Kind: LLMContentToolCall, CallID: "call_2", ToolName: "noargs"},
+		},
+	}}
+	messages := convertHistoryToOpenAI(history)
+	require.Len(t, messages, 1)
+	data, err := json.Marshal(messages[0].OfAssistant.ToolCalls)
+	require.NoError(t, err)
+	assert.JSONEq(t, `[
+		{"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"/x\"}"}},
+		{"id":"call_2","type":"function","function":{"name":"noargs","arguments":"{}"}}
+	]`, string(data))
+}
+
 func TestContentBlockInputRoundTrip(t *testing.T) {
 	// Regression: content block InputObjects must be built via the decoder so
 	// their fields are populated. A bare struct literal leaves fields nil and
@@ -600,6 +618,33 @@ func TestCodexConvertEmptyToolArgs(t *testing.T) {
 	require.Len(t, items, 1)
 	require.NotNil(t, items[0].OfFunctionCall)
 	assert.Equal(t, "{}", items[0].OfFunctionCall.Arguments)
+}
+
+func TestCodexConvertToolResults(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		text    string
+		errored bool
+		want    string
+	}{
+		{"success", "contents", false, `{"type":"function_call_output","call_id":"call_1","output":"contents"}`},
+		{"empty", "", false, `{"type":"function_call_output","call_id":"call_1","output":""}`},
+		{"error", "not found", true, `{"type":"function_call_output","call_id":"call_1","output":"error: not found"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			history := []*LLMMessage{{
+				Role: LLMMessageRoleUser,
+				Content: []*LLMContentBlock{{
+					Kind: LLMContentToolResult, CallID: "call_1", Text: tc.text, Errored: tc.errored,
+				}},
+			}}
+			_, items := convertToCodexResponsesFormat(history)
+			require.Len(t, items, 1)
+			data, err := json.Marshal(items[0])
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(data))
+		})
+	}
 }
 
 func TestLlmConfigDisableStreaming(t *testing.T) {
