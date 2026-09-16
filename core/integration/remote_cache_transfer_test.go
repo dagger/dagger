@@ -557,6 +557,10 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 		}
 		var address dagql.PersistedPartAddress
 		require.NoError(t, json.Unmarshal([]byte(k.address), &address))
+		if row.Call.Field == "withMountedFile" || row.Call.Field == "withMountedDirectory" {
+			require.NotNil(t, row.Call.Receiver)
+			t.Logf("producer mount-route row=%d address=%s field=%s parent=%d entries=%d", k.row, k.address, row.Call.Field, row.Call.Receiver.ResultID, count)
+		}
 		if (row.Call.Field == "withMountedFile" && address.Part == "mount:/schema.json") || (row.Call.Field == "withMountedDirectory" && address.Part == "mount:/src") {
 			require.Equal(t, 1, count, "mount write producer repeats: %+v", k)
 			mountWriters[row.Call.Field]++
