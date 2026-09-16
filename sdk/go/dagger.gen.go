@@ -11161,12 +11161,50 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// LLMTranscriptOpts contains options for LLM.Transcript
+type LLMTranscriptOpts struct {
+	// Maximum number of matching messages from the start, after offset. Must be non-negative. Mutually exclusive with last; zero returns an empty transcript. Omit both to return all matching messages after offset.
+	Limit int
+	// Maximum number of matching messages from the end, after offset. Must be non-negative. Mutually exclusive with limit; zero returns an empty transcript.
+	Last int
+	// Number of matching messages to skip. Skips from the end when last is set, otherwise from the start. Must be non-negative.
+	Offset int
+	// Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing.
+	Roles []LLMMessageRole
+	// Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots.
+	ContentKinds []LLMContentBlockKind
+}
+
 // The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
-func (r *LLM) Transcript(ctx context.Context) (string, error) {
+//
+// Filters are applied before pagination. Only messages with renderable content count; content blocks within a message stay grouped. Selected messages are always returned in chronological order.
+func (r *LLM) Transcript(ctx context.Context, opts ...LLMTranscriptOpts) (string, error) {
 	if r.transcript != nil {
 		return *r.transcript, nil
 	}
 	q := r.query.Select("transcript")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+		// `last` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Last) {
+			q = q.Arg("last", opts[i].Last)
+		}
+		// `offset` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Offset) {
+			q = q.Arg("offset", opts[i].Offset)
+		}
+		// `roles` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Roles) {
+			q = q.Arg("roles", opts[i].Roles)
+		}
+		// `contentKinds` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ContentKinds) {
+			q = q.Arg("contentKinds", opts[i].ContentKinds)
+		}
+	}
 
 	var response string
 

@@ -10750,6 +10750,24 @@ pub struct LlmStepOpts {
     pub max_tokens: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct LlmTranscriptOpts {
+    /// Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots.
+    #[builder(setter(into, strip_option), default)]
+    pub content_kinds: Option<Vec<LlmContentBlockKind>>,
+    /// Maximum number of matching messages from the end, after offset. Must be non-negative. Mutually exclusive with limit; zero returns an empty transcript.
+    #[builder(setter(into, strip_option), default)]
+    pub last: Option<isize>,
+    /// Maximum number of matching messages from the start, after offset. Must be non-negative. Mutually exclusive with last; zero returns an empty transcript. Omit both to return all matching messages after offset.
+    #[builder(setter(into, strip_option), default)]
+    pub limit: Option<isize>,
+    /// Number of matching messages to skip. Skips from the end when last is set, otherwise from the start. Must be non-negative.
+    #[builder(setter(into, strip_option), default)]
+    pub offset: Option<isize>,
+    /// Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing.
+    #[builder(setter(into, strip_option), default)]
+    pub roles: Option<Vec<LlmMessageRole>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithModelOpts<'a> {
     /// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
     #[builder(setter(into, strip_option), default)]
@@ -11077,8 +11095,38 @@ impl Llm {
         query.execute(self.graphql_client.clone()).await
     }
     /// The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+    /// Filters are applied before pagination. Only messages with renderable content count; content blocks within a message stay grouped. Selected messages are always returned in chronological order.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn transcript(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("transcript");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+    /// Filters are applied before pagination. Only messages with renderable content count; content blocks within a message stay grouped. Selected messages are always returned in chronological order.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn transcript_opts(&self, opts: LlmTranscriptOpts) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("transcript");
+        if let Some(limit) = opts.limit {
+            query = query.arg("limit", limit);
+        }
+        if let Some(last) = opts.last {
+            query = query.arg("last", last);
+        }
+        if let Some(offset) = opts.offset {
+            query = query.arg("offset", offset);
+        }
+        if let Some(roles) = opts.roles {
+            query = query.arg("roles", roles);
+        }
+        if let Some(content_kinds) = opts.content_kinds {
+            query = query.arg("contentKinds", content_kinds);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Add an external MCP server to the LLM

@@ -234,10 +234,32 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 
     /**
      * The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+     *
+     * Filters are applied before pagination. Only messages with renderable content count; content blocks within a message stay grouped. Selected messages are always returned in chronological order.
      */
-    public function transcript(): string
-    {
+    public function transcript(
+        ?int $limit = null,
+        ?int $last = null,
+        ?int $offset = 0,
+        ?array $roles = null,
+        ?array $contentKinds = null,
+    ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('transcript');
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        if (null !== $last) {
+        $leafQueryBuilder->setArgument('last', $last);
+        }
+        if (null !== $offset) {
+        $leafQueryBuilder->setArgument('offset', $offset);
+        }
+        if (null !== $roles) {
+        $leafQueryBuilder->setArgument('roles', $roles);
+        }
+        if (null !== $contentKinds) {
+        $leafQueryBuilder->setArgument('contentKinds', $contentKinds);
+        }
         return (string)$this->queryLeaf($leafQueryBuilder, 'transcript');
     }
 

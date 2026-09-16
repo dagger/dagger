@@ -2278,6 +2278,33 @@ export type LLMStepOpts = {
   maxTokens?: number
 }
 
+export type LLMTranscriptOpts = {
+  /**
+   * Maximum number of matching messages from the start, after offset. Must be non-negative. Mutually exclusive with last; zero returns an empty transcript. Omit both to return all matching messages after offset.
+   */
+  limit?: number
+
+  /**
+   * Maximum number of matching messages from the end, after offset. Must be non-negative. Mutually exclusive with limit; zero returns an empty transcript.
+   */
+  last?: number
+
+  /**
+   * Number of matching messages to skip. Skips from the end when last is set, otherwise from the start. Must be non-negative.
+   */
+  offset?: number
+
+  /**
+   * Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing.
+   */
+  roles?: LLMMessageRole[]
+
+  /**
+   * Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots.
+   */
+  contentKinds?: LLMContentBlockKind[]
+}
+
 export type LLMWithModelOpts = {
   /**
    * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
@@ -11715,13 +11742,20 @@ export class LLM extends BaseClient {
 
   /**
    * The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+   *
+   * Filters are applied before pagination. Only messages with renderable content count; content blocks within a message stay grouped. Selected messages are always returned in chronological order.
+   * @param opts.limit Maximum number of matching messages from the start, after offset. Must be non-negative. Mutually exclusive with last; zero returns an empty transcript. Omit both to return all matching messages after offset.
+   * @param opts.last Maximum number of matching messages from the end, after offset. Must be non-negative. Mutually exclusive with limit; zero returns an empty transcript.
+   * @param opts.offset Number of matching messages to skip. Skips from the end when last is set, otherwise from the start. Must be non-negative.
+   * @param opts.roles Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing.
+   * @param opts.contentKinds Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots.
    */
-  transcript = async (): Promise<string> => {
+  transcript = async (opts?: LLMTranscriptOpts): Promise<string> => {
     if (this._transcript) {
       return this._transcript
     }
 
-    const ctx = this._ctx.select("transcript")
+    const ctx = this._ctx.select("transcript", { ...opts })
 
     const response: Awaited<string> = await ctx.execute()
 

@@ -4174,8 +4174,46 @@ type LLM implements Node & Syncer {
 
   """
   The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+
+  Filters are applied before pagination. Only messages with renderable content
+  count; content blocks within a message stay grouped. Selected messages are
+  always returned in chronological order.
   """
-  transcript: String!
+  transcript(
+    """
+    Maximum number of matching messages from the start, after offset. Must be
+    non-negative. Mutually exclusive with last; zero returns an empty
+    transcript. Omit both to return all matching messages after offset.
+    """
+    limit: Int
+
+    """
+    Maximum number of matching messages from the end, after offset. Must be
+    non-negative. Mutually exclusive with limit; zero returns an empty
+    transcript.
+    """
+    last: Int
+
+    """
+    Number of matching messages to skip. Skips from the end when last is set,
+    otherwise from the start. Must be non-negative.
+    """
+    offset: Int = 0
+
+    """
+    Only include these message roles. Omitted includes USER and ASSISTANT;
+    explicitly include SYSTEM to request system prompts. An empty list matches
+    nothing.
+    """
+    roles: [LLMMessageRole!]
+
+    """
+    Only render these content block kinds. Omitted includes all renderable
+    kinds; an empty list matches nothing. Messages without matching renderable
+    content do not consume pagination slots.
+    """
+    contentKinds: [LLMContentBlockKind!]
+  ): String!
 
   """Add an external MCP server to the LLM"""
   withMCPServer(
