@@ -999,7 +999,7 @@ func (p *persistedDirectoryGitBundleImportLazy) validate() error {
 	return nil
 }
 func (lazy *DirectoryGitBundleImportLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "GitRepository.__withBundleDirectory", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "GitRepository.__withBundleDirectory", func(ctx context.Context) error {
 		if err := validateProducedDirectoryReceiver(dir); err != nil {
 			return err
 		}

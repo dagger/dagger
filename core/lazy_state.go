@@ -13,6 +13,7 @@ import (
 )
 
 type Lazy[T dagql.Typed] interface {
+	IsEvaluated() bool
 	Evaluate(context.Context, T) error
 	AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error)
 	EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error)
@@ -55,16 +56,16 @@ func NewLazyState() LazyState {
 	}
 }
 
+// IsEvaluated reports successful whole-operation completion. Named groups
+// retain their separate completion state, queried through GroupConsumed.
+func (lazy *LazyState) IsEvaluated() bool {
+	return lazy != nil && lazy.lazyInitComplete.Load()
+}
+
 func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(context.Context) error) (rerr error) {
 	if lazy.lazyInitComplete.Load() {
 		return nil
 	}
-	if run == nil {
-		lazy.outputRevision.Add(1)
-		lazy.lazyInitComplete.Store(true)
-		return nil
-	}
-
 	if lazy.LazyMu == nil {
 		return fmt.Errorf("invalid %s: missing LazyMu", typeName)
 	}
@@ -92,8 +93,10 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 	}()
 
 	defer lazy.outputRevision.Add(1)
-	if rerr = run(ctx); rerr != nil {
-		return rerr
+	if run != nil {
+		if rerr = run(ctx); rerr != nil {
+			return rerr
+		}
 	}
 	lazy.lazyInitComplete.Store(true)
 	return nil

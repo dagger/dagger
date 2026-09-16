@@ -226,11 +226,12 @@ func TestContainerRestoreIndependentParts(t *testing.T) {
 	require.NoError(t, cache.EvaluateParts(ctx, res, ContainerPartExecMeta))
 	require.Equal(t, 1, manager.openCount("rootfs"))
 	require.Equal(t, 1, manager.openCount("exec-meta"))
-	require.Nil(t, ctr.lazyOpForRouting())
+	require.NotNil(t, ctr.lazyOpForRouting())
+	require.Nil(t, ctr.LazyEvalFunc())
 	require.Len(t, ctr.storedParts, 2)
 }
 
-func TestContainerRestoreDirectMetadataSweep(t *testing.T) {
+func TestContainerRestoreAttachedMetadataLeavesFSUntouched(t *testing.T) {
 	manager := newContainerPersistenceTestSnapshots()
 	server := &cacheVolumeTestQueryServer{mockServer: &mockServer{}, cacheManager: manager}
 	ctx, cache, srv, session := newContainerPartsTestCtxWithQueryServer(t, server)
@@ -254,6 +255,8 @@ func TestContainerRestoreDirectMetadataSweep(t *testing.T) {
 	require.False(t, op.GroupConsumed(containerDelegationGroup(ContainerPartFS)))
 	require.Equal(t, 1, manager.openCount("parent-fs"))
 	require.NoError(t, child.evaluatePartsDirect(ctx, ContainerPartMetadata))
+	require.False(t, op.GroupConsumed(containerDelegationGroup(ContainerPartFS)))
+	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartFS))
 	require.True(t, op.GroupConsumed(containerDelegationGroup(ContainerPartFS)))
 	require.True(t, child.containerPartComputed(ctx, op, ContainerPartFS))
 	require.Equal(t, 2, manager.openCount("parent-fs")) // the available parent copy owns another handle
@@ -294,7 +297,8 @@ func TestContainerRestoreConcurrentParts(t *testing.T) {
 	require.NoError(t, <-done)
 	require.NoError(t, <-done)
 	require.Equal(t, 1, manager.openCount("rootfs"))
-	require.Nil(t, ctr.lazyOpForRouting())
+	require.NotNil(t, ctr.lazyOpForRouting())
+	require.Nil(t, ctr.LazyEvalFunc())
 }
 
 func TestContainerRestoreOpenFailureKeepsRecipeConsumed(t *testing.T) {
@@ -324,7 +328,8 @@ func TestContainerRestoreOpenFailureKeepsRecipeConsumed(t *testing.T) {
 	require.Zero(t, recipe.fsRuns.Load())
 	require.EqualValues(t, 1, recipe.execMetaRuns.Load())
 	require.Equal(t, 2, manager.openCount("rootfs"))
-	require.Nil(t, ctr.lazyOpForRouting())
+	require.NotNil(t, ctr.lazyOpForRouting())
+	require.Nil(t, ctr.LazyEvalFunc())
 	require.Contains(t, ctr.storedParts, ContainerPartFS)
 }
 
@@ -377,7 +382,8 @@ func TestContainerPersistedJointOutputsSeedOriginalAndOpenIndependently(t *testi
 	require.NoError(t, cache.Evaluate(ctx, res))
 	require.Equal(t, 1, manager.openCount("joint-fs"))
 	require.Equal(t, 1, manager.openCount("joint-meta"))
-	require.Nil(t, ctr.lazyOpForRouting())
+	require.NotNil(t, ctr.lazyOpForRouting())
+	require.Nil(t, ctr.LazyEvalFunc())
 }
 
 func TestContainerPersistedPartsRejectMissingCompletedValue(t *testing.T) {
@@ -457,7 +463,7 @@ func TestContainerRestoreReportingAndBookkeepingRetry(t *testing.T) {
 			consumerCtx, consumer := tracer.Start(ctx, "read saved filesystem")
 			require.ErrorIs(t, cache.EvaluateParts(consumerCtx, res, ContainerPartFS), cleanupErr)
 			require.Equal(t, 1, manager.openCount("saved"))
-			require.Equal(t, pendingSibling, ctr.lazyOpForRouting() != nil)
+			require.NotNil(t, ctr.lazyOpForRouting())
 			require.Equal(t, pendingSibling, dagql.HasPendingLazyComputation(res))
 			require.True(t, dagql.HasPendingLazyEvaluation(res), "bookkeeping remains retryable after body consumption")
 			require.NoError(t, cache.EvaluateParts(consumerCtx, res, ContainerPartFS))
@@ -600,7 +606,8 @@ func TestContainerPersistedDetachedFileAndDirectoryPaths(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "/nested/source.txt", path)
 	require.Equal(t, platform, openedFile.Platform)
-	require.Nil(t, openedFile.Lazy)
+	require.NotNil(t, openedFile.Lazy)
+	require.Nil(t, openedFile.LazyEvalFunc())
 	require.Zero(t, manager.openCount("dir"))
 	require.Zero(t, manager.openCount("root"))
 	require.NoError(t, cache.Evaluate(ctx, res))

@@ -131,7 +131,7 @@ type Container struct {
 	Lazy Lazy[*Container]
 
 	// storedParts records completed values decoded from persistence. It is
-	// immutable after construction, survives Lazy clearing, and is not copied
+	// immutable after construction, survives operation evaluation, and is not copied
 	// into schema children. Accessors hold only values opened in this process.
 	storedParts map[dagql.PartKey]containerStoredPart
 
@@ -140,11 +140,8 @@ type Container struct {
 	completedRecipe     Lazy[*Container]
 	completedRecipeJSON json.RawMessage
 
-	// lazyOpMu orders the op-pointer reads that no group-state guard
-	// covers (the resolution-phase read and the direct narrow force,
-	// which run before any group state is consulted) against the refined
-	// per-group clear. Held only for the pointer access, never across
-	// any body. See lazyOpForRouting and clearLazyWhenConsumed.
+	// lazyOpMu protects routing reads of the operation independently of its
+	// body latch. It is held only for pointer access, never across a body.
 	lazyOpMu sync.Mutex
 }
 
@@ -879,8 +876,17 @@ func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Director
 	if src == nil {
 		return nil, nil
 	}
-	if src.Lazy != nil {
+	if src.Lazy != nil && !src.Lazy.IsEvaluated() {
 		return nil, fmt.Errorf("clone detached directory for container result: directory must be materialized, got lazy %T", src.Lazy)
+	}
+
+	if src.Dir == nil || src.Snapshot == nil {
+		return nil, fmt.Errorf("clone detached directory: missing accessors")
+	}
+	selectedPath, pathSet := src.Dir.Peek()
+	snapshot, snapshotSet := src.Snapshot.Peek()
+	if !pathSet || !snapshotSet {
+		return nil, fmt.Errorf("clone detached directory: output is not installed")
 	}
 
 	cp := &Directory{
@@ -889,12 +895,9 @@ func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Director
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	if dirPath, ok := src.Dir.Peek(); ok {
-		cp.SetPath(dirPath)
-	}
-
-	snapshot, ok := src.Snapshot.Peek()
-	if !ok || snapshot == nil {
+	cp.SetPath(selectedPath)
+	if snapshot == nil {
+		cp.SetSnapshot(nil)
 		return cp, nil
 	}
 
@@ -915,8 +918,17 @@ func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File,
 	if src == nil {
 		return nil, nil
 	}
-	if src.Lazy != nil {
+	if src.Lazy != nil && !src.Lazy.IsEvaluated() {
 		return nil, fmt.Errorf("clone detached file for container result: file must be materialized, got lazy %T", src.Lazy)
+	}
+
+	if src.File == nil || src.Snapshot == nil {
+		return nil, fmt.Errorf("clone detached file: missing accessors")
+	}
+	selectedPath, pathSet := src.File.Peek()
+	snapshot, snapshotSet := src.Snapshot.Peek()
+	if !pathSet || !snapshotSet {
+		return nil, fmt.Errorf("clone detached file: output is not installed")
 	}
 
 	cp := &File{
@@ -925,12 +937,9 @@ func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File,
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	if filePath, ok := src.File.Peek(); ok {
-		cp.SetPath(filePath)
-	}
-
-	snapshot, ok := src.Snapshot.Peek()
-	if !ok || snapshot == nil {
+	cp.SetPath(selectedPath)
+	if snapshot == nil {
+		cp.SetSnapshot(nil)
 		return cp, nil
 	}
 
@@ -1107,8 +1116,13 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 	}
 
 	lazy := container.lazyOpForRouting()
-	if lazy == nil {
+	if lazy == nil || lazy.IsEvaluated() {
 		return nil
+	}
+	if op, ok := lazy.(LazyContainerParts); ok {
+		if done, err := container.lazyGroupsEvaluated(context.Background(), op); err == nil && done {
+			return nil
+		}
 	}
 	// The captured op runs, not a re-read: a concurrent consumption
 	// between closure creation and call makes this a no-op through the
@@ -1129,6 +1143,9 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 func (container *Container) Evaluate(ctx context.Context) error {
 	if container == nil {
 		return nil
+	}
+	if host := container.partHost.Load(); host != nil && !host.Admitted(ctx) {
+		return host.Evaluate(ctx)
 	}
 	if lazy := container.LazyEvalFunc(); lazy != nil {
 		return lazy(ctx)
@@ -3097,7 +3114,7 @@ func (lazy *ContainerWithDefaultTerminalCmdLazy) EncodePersisted(ctx context.Con
 }
 
 func (lazy *ContainerRootFSLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.rootfs", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Container.rootfs", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
@@ -3123,10 +3140,10 @@ func (lazy *ContainerRootFSLazy) Evaluate(ctx context.Context, dir *Directory) e
 				if dirPath, ok := detached.Dir.Peek(); ok {
 					dir.SetPath(dirPath)
 				}
-				if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
+				if snapshot, ok := detached.Snapshot.Peek(); ok {
 					dir.SetSnapshot(snapshot)
 				}
-				dir.clearLazy()
+
 				return nil
 			}
 		}
@@ -3137,7 +3154,7 @@ func (lazy *ContainerRootFSLazy) Evaluate(ctx context.Context, dir *Directory) e
 		}
 		dir.SetPath(scratchDir)
 		dir.SetSnapshot(scratchSnapshot)
-		dir.clearLazy()
+
 		return nil
 	})
 }
@@ -3262,7 +3279,7 @@ func (lazy *ContainerWithRootFSLazy) EncodePersisted(ctx context.Context, enc *d
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.directory", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Container.directory", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
@@ -3329,10 +3346,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 				if dirPath, ok := detached.Dir.Peek(); ok {
 					dir.SetPath(dirPath)
 				}
-				if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
+				if snapshot, ok := detached.Snapshot.Peek(); ok {
 					dir.SetSnapshot(snapshot)
 				}
-				dir.clearLazy()
+
 				return nil
 			}
 			mountedDirPath, ok := mountedDir.Dir.Peek()
@@ -3372,7 +3389,7 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			dir.Services = slices.Clone(mountedDir.Services)
 			dir.SetPath(finalDir)
 			dir.SetSnapshot(reopened)
-			dir.clearLazy()
+
 			return nil
 		case mnt.FileSource != nil:
 			return notADirectoryError{fmt.Errorf("path %s is a file, not a directory", lazy.Path)}
@@ -3397,10 +3414,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 		if dirPath, ok := detached.Dir.Peek(); ok {
 			dir.SetPath(dirPath)
 		}
-		if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
+		if snapshot, ok := detached.Snapshot.Peek(); ok {
 			dir.SetSnapshot(snapshot)
 		}
-		dir.clearLazy()
+
 		return nil
 	})
 }
@@ -3427,7 +3444,7 @@ func (lazy *ContainerDirectoryLazy) EncodePersisted(ctx context.Context, enc *da
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.file", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "Container.file", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
@@ -3517,7 +3534,7 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 			file.Services = slices.Clone(mountedDir.Services)
 			file.SetPath(finalFile)
 			file.SetSnapshot(reopened)
-			file.clearLazy()
+
 			return nil
 		case mnt.FileSource != nil:
 			if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartMount(mnt.Target)); err != nil {
@@ -3539,10 +3556,10 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 			if filePath, ok := detached.File.Peek(); ok {
 				file.SetPath(filePath)
 			}
-			if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
+			if snapshot, ok := detached.Snapshot.Peek(); ok {
 				file.SetSnapshot(snapshot)
 			}
-			file.clearLazy()
+
 			return nil
 		default:
 			return fmt.Errorf("container file lazy: invalid path %s in container mounts", lazy.Path)
@@ -3565,10 +3582,10 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 		if filePath, ok := detached.File.Peek(); ok {
 			file.SetPath(filePath)
 		}
-		if snapshot, ok := detached.Snapshot.Peek(); ok && snapshot != nil {
+		if snapshot, ok := detached.Snapshot.Peek(); ok {
 			file.SetSnapshot(snapshot)
 		}
-		file.clearLazy()
+
 		return nil
 	})
 }
@@ -4430,7 +4447,6 @@ func (lazy *ContainerImportLazy) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return err
 		}
-		container.consumeLazyOp()
 		return nil
 	})
 }

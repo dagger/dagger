@@ -108,7 +108,8 @@ func TestContainerDirectorySelectorLeavesSiblingMountsPending(t *testing.T) {
 	dirPath, ok := dir.Dir.Peek()
 	require.True(t, ok)
 	require.Equal(t, "/", dirPath)
-	require.Nil(t, dir.Lazy)
+	require.NotNil(t, dir.Lazy)
+	require.Nil(t, dir.LazyEvalFunc())
 }
 
 // The rootfs view evaluates exactly the parent's fs part: mounted

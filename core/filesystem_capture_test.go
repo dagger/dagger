@@ -85,7 +85,17 @@ func TestFilesystemPersistenceRetainsBodyLatch(t *testing.T) {
 		state   *LazyState
 		clear   func()
 		version dagql.PersistedOutputVersion
-	}{{"File", &fileOp.LazyState, file.clearLazy, file}, {"Directory", &dirOp.LazyState, dir.clearLazy, dir}} {
+	}{{"File", &fileOp.LazyState, func() {
+		file.outputMu.Lock()
+		defer file.outputMu.Unlock()
+		file.rememberBodyLocked(file.Lazy)
+		file.Lazy = nil
+	}, file}, {"Directory", &dirOp.LazyState, func() {
+		dir.outputMu.Lock()
+		defer dir.outputMu.Unlock()
+		dir.rememberBodyLocked(dir.Lazy)
+		dir.Lazy = nil
+	}, dir}} {
 		t.Run(test.name, func(t *testing.T) {
 			test.state.LazyMu.Lock()
 			test.clear()

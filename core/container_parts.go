@@ -326,34 +326,15 @@ func (lazy *ContainerWithSymlinkLazy) ContainerLazyParent() dagql.ObjectResult[*
 
 // lazyOpForRouting reads the current Lazy op under lazyOpMu. One rule
 // covers every access: after construction, the op pointer is only ever
-// read or cleared under lazyOpMu, each a short hold with no body ever
+// read under lazyOpMu, each a short hold with no body ever
 // under it. (Construction-time sets - schema shells, WithExec, persisted
 // decode - precede publication and therefore any concurrent access.)
-// nil means the op is consumed - callers treat it exactly like a value
-// with no deferred work (and the cache side independently routes any
-// pending bookkeeping, see evaluateResolved).
+// A present operation can be evaluated. Completion comes from its state;
+// the cache independently routes any pending bookkeeping.
 func (container *Container) lazyOpForRouting() Lazy[*Container] {
 	container.lazyOpMu.Lock()
 	defer container.lazyOpMu.Unlock()
 	return container.Lazy
-}
-
-// consumeLazyOp is the locked-store half of the one-rule contract: every
-// post-construction clear of the op pointer - unrefined bodies consuming
-// themselves, and the refined all-groups-consumed clear - goes through
-// here. Safe to call while holding an op's LazyMu (the lock order is
-// LazyMu, then lazyOpMu, one way).
-func (container *Container) consumeLazyOp() {
-	container.lazyOpMu.Lock()
-	recipe := container.Lazy
-	if restore, ok := recipe.(*ContainerRestoreLazy); ok {
-		recipe = restore.recipe
-	}
-	if recipe != nil {
-		container.completedRecipe = recipe
-	}
-	container.Lazy = nil
-	container.lazyOpMu.Unlock()
 }
 
 // ResolveLazyEvalGroups implements dagql.HasLazyEvaluationParts. An
@@ -426,11 +407,8 @@ func (container *Container) LazyEvalFuncForGroup(group dagql.LazyGroupKey) dagql
 	}
 }
 
-// runLazyGroup runs one group's body and clears container.Lazy once the
-// op's last group is consumed. LazyEvalFunc() != nil continues to mean that
-// computation or opening a saved output is still deferred. Persistence captures
-// completion separately from consumed groups and immutable saved descriptors;
-// clearing this operational pointer is not its completion boundary.
+// runLazyGroup evaluates one group through native admission. The operation
+// stays attached; body and bookkeeping completion remain separate.
 func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerParts, group dagql.LazyGroupKey) error {
 	if host := container.partHost.Load(); host != nil {
 		if !host.Admitted(ctx) {
@@ -459,7 +437,8 @@ func (container *Container) runLazyGroupAdmitted(ctx context.Context, op LazyCon
 	if err := container.consumeFinalParentDelegations(ctx, op); err != nil {
 		return err
 	}
-	return container.clearLazyWhenConsumed(ctx, op)
+	_, err := container.lazyGroupsEvaluated(ctx, op)
+	return err
 }
 
 // consumeFinalParentDelegations copies every remaining delegated snapshot
@@ -508,7 +487,7 @@ func containerParentPartFinal(ctx context.Context, parent *Container, part dagql
 		return err == nil, nil
 	}
 	lazy := parent.lazyOpForRouting()
-	if lazy == nil {
+	if lazy == nil || lazy.IsEvaluated() {
 		return true, nil
 	}
 	parentOp, ok := lazy.(LazyContainerParts)
@@ -530,31 +509,25 @@ func containerParentPartFinal(ctx context.Context, parent *Container, part dagql
 	return parentOp.ContainerLazyState().GroupConsumed(groups[0]), nil
 }
 
-// clearLazyWhenConsumed clears container.Lazy when every group of the op
-// is consumed. Callable only after some group body succeeded, which
-// implies metadata is settled and the op's group set is final.
-//
-// The consumed-check and the clear happen under one LazyMu hold: two
-// sibling groups finishing concurrently may both observe full
-// consumption, and the mutex serializes their writes. The store itself
-// goes through consumeLazyOp, per the one-rule contract on the op
-// pointer (see lazyOpForRouting): after construction, every read and
-// every clear of container.Lazy happens under lazyOpMu.
-func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyContainerParts) error {
+// lazyGroupsEvaluated checks the complete mapping only after metadata is final.
+// The operation stays attached after every group has completed.
+func (container *Container) lazyGroupsEvaluated(ctx context.Context, op LazyContainerParts) (bool, error) {
+	state := op.ContainerLazyState()
+	if !state.GroupConsumed(ContainerLazyGroupMetadata) {
+		return false, nil
+	}
 	groups, err := op.ContainerLazyGroups(ctx, container, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
-	state := op.ContainerLazyState()
 	state.LazyMu.Lock()
 	defer state.LazyMu.Unlock()
 	for _, group := range groups {
 		if !state.groupConsumedLocked(group) {
-			return nil
+			return false, nil
 		}
 	}
-	container.consumeLazyOp()
-	return nil
+	return true, nil
 }
 
 // evaluatePartsDirect is the direct object-side narrow force: settle

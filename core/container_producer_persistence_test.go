@@ -20,8 +20,9 @@ func TestContainerCompletedProducerAttachesParentAtPublication(t *testing.T) {
 	recipe := &ContainerWithLabelLazy{LazyState: NewLazyState(), Parent: parentRes, Name: "retained", Value: "yes"}
 	child.Lazy = recipe
 	require.NoError(t, child.Evaluate(ctx))
-	require.Nil(t, child.lazyOpForRouting())
-	require.Same(t, recipe, child.completedRecipe)
+	require.NotNil(t, child.lazyOpForRouting())
+	require.Nil(t, child.LazyEvalFunc())
+	require.Same(t, recipe, child.Lazy)
 
 	// This synthetic call has no receiver or arguments, so only the retained
 	// recipe can supply the parent's direct dependency at publication.
@@ -61,8 +62,9 @@ func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
 	require.True(t, dagql.HasPendingLazyEvaluation(childRes))
 	require.NoError(t, cache.Evaluate(ctx, childRes))
 	require.Equal(t, "yes", child.Config.Labels["retained"])
-	require.Nil(t, child.lazyOpForRouting())
-	require.NotNil(t, child.completedRecipe)
+	require.NotNil(t, child.lazyOpForRouting())
+	require.Nil(t, child.LazyEvalFunc())
+	require.NotNil(t, child.Lazy)
 	rec, err := cache.CapturePersistedRecord(ctx, childRes)
 	require.NoError(t, err)
 	var payload persistedContainerPayload
@@ -112,7 +114,8 @@ func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
 	env.manager.beforeOpen = nil
 	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartFS))
 	require.Equal(t, fsOpens+2, env.manager.openCount("producer-fs"))
-	require.Nil(t, restored.lazyOpForRouting())
+	require.NotNil(t, restored.lazyOpForRouting())
+	require.Nil(t, restored.LazyEvalFunc())
 	require.JSONEq(t, string(pendingRecipe), string(restored.completedRecipeJSON))
 	enc := dagql.NewPersistEncodeContext(cache, rec.ResultID, rec.Call)
 	reencoded, err := restored.EncodePersistedObject(ctx, enc)

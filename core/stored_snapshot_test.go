@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -109,7 +110,7 @@ func TestRestoredSnapshotRoundTrip(t *testing.T) {
 					require.False(t, dagql.HasPendingLazyComputation(res))
 					links := res.Unwrap().(dagql.PersistedSnapshotRefLinkProvider).PersistedSnapshotRefLinks()
 					require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "saved"}}, links)
-					require.Contains(t, manager.owners, "dagql/result/"+fmt.Sprint(id)+"/snapshot")
+					require.Contains(t, manager.owners, "dagql/result/"+fmt.Sprint(id)+"/"+url.PathEscape(`[[],"snapshot"]`))
 					encoded, err := res.Unwrap().(dagql.PersistedObject).EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 					require.NoError(t, err)
 					require.Equal(t, original, encoded)

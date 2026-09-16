@@ -1519,7 +1519,7 @@ func (lazy *DirectoryGitTreeLazy) Evaluate(ctx context.Context, dir *Directory) 
 // release whatever the producer left unmoved.
 func evaluateGitTreeInto(ctx context.Context, state *LazyState, op string, dir *Directory, produce func(context.Context, *dagql.Server) (*Directory, error)) error {
 	var unmoved *Directory
-	err := state.Evaluate(ctx, op, func(ctx context.Context) error {
+	err := dir.evaluateLazy(ctx, state, op, func(ctx context.Context) error {
 		if err := validateProducedDirectoryReceiver(dir); err != nil {
 			return err
 		}

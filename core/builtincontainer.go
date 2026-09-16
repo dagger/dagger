@@ -89,7 +89,6 @@ func (lazy *ContainerBuiltinLazy) Evaluate(ctx context.Context, container *Conta
 		if err := builtinContainerInto(ctx, container, lazy.Platform, lazy.ManifestDigest); err != nil {
 			return err
 		}
-		container.consumeLazyOp()
 		return nil
 	})
 }

@@ -101,8 +101,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
 	lazy, completedRecipe, _ := container.lazyOpsForPersistence()
 	if lazy == nil {
-		// An unrefined body may have cleared Lazy before returning. Its
-		// retained producer still carries the latch held by that body.
+		// Compatibility for eager values until their constructors use Lazy.
 		lazy = completedRecipe
 	}
 	if lazy == nil {
@@ -116,9 +115,8 @@ func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
 	if state == nil || state.LazyMu == nil {
 		return nil, fmt.Errorf("encode persisted container: missing lazy mutex for %T", lazy)
 	}
-	// The op is only cleared after publication, never replaced, and restore
-	// wrappers share their recipe's state. Drop lazyOpMu before acquiring
-	// LazyMu: consumption takes those locks in the opposite order.
+	// Restore wrappers share their operation's state. Release lazyOpMu
+	// before taking the body latch; bodies can read the routing pointer.
 	if quiescent {
 		// Operations have drained; a diagnostic reader may still briefly
 		// hold this latch. Waiting preserves ordinary shutdown persistence.
@@ -218,7 +216,7 @@ func (container *Container) containerPartComputedLocked(ctx context.Context, laz
 	if _, stored := container.storedParts[part]; stored {
 		return true
 	}
-	if lazy == nil {
+	if lazy == nil || lazy.IsEvaluated() {
 		return true
 	}
 	if restore, ok := lazy.(*ContainerRestoreLazy); ok {
@@ -314,7 +312,7 @@ func hasStoredContainerPart(ctr *Container, part dagql.PartKey) bool {
 
 // containerPartValue describes the container-owned value, without evaluating
 // an accessor or opening a snapshot. Stored descriptors remain authoritative
-// after opening, and after the restore operation has been cleared.
+// after opening the stored snapshot.
 func (container *Container) containerPartValue(part dagql.PartKey) (containerStoredPart, error) {
 	if stored, ok := container.storedParts[part]; ok {
 		return stored, nil

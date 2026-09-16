@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -10,7 +11,7 @@ import (
 )
 
 // filesystemOutput guards typed publication. The body latch is retained after
-// Lazy is cleared so direct callers are excluded until their body returns.
+// acquisition replaces Lazy so direct callers are excluded until their body returns.
 // OutputRev is process-local and is read only through PersistedOutputRevision.
 type filesystemOutput struct {
 	partHost        atomic.Pointer[dagql.PartHost]
@@ -83,24 +84,30 @@ func (file *File) SetSnapshot(value bkcache.ImmutableRef) {
 	file.OutputRev++
 }
 
-func (file *File) finishLazyLocked(lazy Lazy[*File]) {
-	if lazy == nil {
-		return
-	}
-	file.rememberBodyLocked(lazy)
-	if _, restored := lazy.(*FileRestoreLazy); !restored {
-		file.completedRecipe = lazy
-	}
-	if file.Lazy == lazy {
-		file.Lazy = nil
-	}
-	file.OutputRev++
-}
-
-func (file *File) clearLazy() {
-	file.outputMu.Lock()
-	defer file.outputMu.Unlock()
-	file.finishLazyLocked(file.Lazy)
+// evaluateLazy validates output and reports completion under the winning body
+// latch. Repeated or concurrent calls do not advance the output revision.
+func (file *File) evaluateLazy(ctx context.Context, state *LazyState, name string, run func(context.Context) error) error {
+	return state.Evaluate(ctx, name, func(ctx context.Context) error {
+		if run != nil {
+			if err := run(ctx); err != nil {
+				return err
+			}
+		}
+		file.outputMu.Lock()
+		defer file.outputMu.Unlock()
+		if file.File == nil || file.Snapshot == nil {
+			return fmt.Errorf("evaluate %s: missing File accessors", name)
+		}
+		if _, ok := file.File.Peek(); !ok {
+			return fmt.Errorf("evaluate %s: File path is unset", name)
+		}
+		if _, ok := file.Snapshot.Peek(); !ok {
+			return fmt.Errorf("evaluate %s: File snapshot is unset", name)
+		}
+		file.persistenceBody = state
+		file.OutputRev++
+		return nil
+	})
 }
 
 func (dir *Directory) lockForPersistence() (func(), error) {
@@ -137,24 +144,30 @@ func (dir *Directory) SetSnapshot(value bkcache.ImmutableRef) {
 	dir.OutputRev++
 }
 
-func (dir *Directory) finishLazyLocked(lazy Lazy[*Directory]) {
-	if lazy == nil {
-		return
-	}
-	dir.rememberBodyLocked(lazy)
-	if _, restored := lazy.(*DirectoryRestoreLazy); !restored {
-		dir.completedRecipe = lazy
-	}
-	if dir.Lazy == lazy {
-		dir.Lazy = nil
-	}
-	dir.OutputRev++
-}
-
-func (dir *Directory) clearLazy() {
-	dir.outputMu.Lock()
-	defer dir.outputMu.Unlock()
-	dir.finishLazyLocked(dir.Lazy)
+// evaluateLazy validates output and reports completion under the winning body
+// latch. Repeated or concurrent calls do not advance the output revision.
+func (dir *Directory) evaluateLazy(ctx context.Context, state *LazyState, name string, run func(context.Context) error) error {
+	return state.Evaluate(ctx, name, func(ctx context.Context) error {
+		if run != nil {
+			if err := run(ctx); err != nil {
+				return err
+			}
+		}
+		dir.outputMu.Lock()
+		defer dir.outputMu.Unlock()
+		if dir.Dir == nil || dir.Snapshot == nil {
+			return fmt.Errorf("evaluate %s: missing Directory accessors", name)
+		}
+		if _, ok := dir.Dir.Peek(); !ok {
+			return fmt.Errorf("evaluate %s: Directory path is unset", name)
+		}
+		if _, ok := dir.Snapshot.Peek(); !ok {
+			return fmt.Errorf("evaluate %s: Directory snapshot is unset", name)
+		}
+		dir.persistenceBody = state
+		dir.OutputRev++
+		return nil
+	})
 }
 
 func (out *filesystemOutput) BindPartHost(host *dagql.PartHost) {

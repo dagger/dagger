@@ -136,18 +136,10 @@ func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
 			return fmt.Errorf("%w: Directory.snapshot", dagql.ErrUnavailablePart)
 		}
 	}
-	if lazy == nil {
+	if lazy == nil || lazy.IsEvaluated() {
 		return nil
 	}
-	raw := func(ctx context.Context) error {
-		if err := lazy.Evaluate(ctx, dir); err != nil {
-			return err
-		}
-		dir.outputMu.Lock()
-		defer dir.outputMu.Unlock()
-		dir.finishLazyLocked(lazy)
-		return nil
-	}
+	raw := func(ctx context.Context) error { return lazy.Evaluate(ctx, dir) }
 	return func(ctx context.Context) error {
 		if host := dir.partHost.Load(); host != nil {
 			return host.RunNative(ctx, dagql.LazyGroupWhole, []dagql.PartKey{"snapshot"}, raw)
@@ -973,7 +965,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 }
 
 func (lazy *DirectoryWithDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withDirectory", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withDirectory", func(ctx context.Context) error {
 		return dir.WithDirectory(ctx, lazy.Parent, lazy.DestDir, lazy.Source, lazy.Filter, lazy.Owner, lazy.Permissions)
 	})
 }
@@ -1012,7 +1004,7 @@ func (lazy *DirectoryWithDirectoryLazy) EncodePersisted(ctx context.Context, enc
 }
 
 func (lazy *DirectoryWithDirectoryDockerfileCompatLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withDirectoryDockerfileCompat", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withDirectoryDockerfileCompat", func(ctx context.Context) error {
 		return dir.WithDirectoryDockerfileCompat(
 			ctx,
 			lazy.Parent,
@@ -1075,7 +1067,7 @@ func (lazy *DirectoryWithDirectoryDockerfileCompatLazy) EncodePersisted(ctx cont
 }
 
 func (lazy *DirectoryWithPatchFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withPatchFile", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withPatchFile", func(ctx context.Context) error {
 		return dir.applyPatchFileResult(ctx, lazy.Parent, lazy.Patch, lazy.OnConflict)
 	})
 }
@@ -1107,7 +1099,7 @@ func (lazy *DirectoryWithPatchFileLazy) EncodePersisted(ctx context.Context, enc
 }
 
 func (lazy *DirectoryWithNewFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withNewFile", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withNewFile", func(ctx context.Context) error {
 		return dir.WithNewFile(ctx, lazy.Parent, lazy.Dest, lazy.Content, lazy.Permissions, lazy.Ownership)
 	})
 }
@@ -1136,7 +1128,7 @@ func (lazy *DirectoryWithNewFileLazy) EncodePersisted(ctx context.Context, enc *
 }
 
 func (lazy *DirectoryWithFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withFile", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withFile", func(ctx context.Context) error {
 		return dir.WithFile(ctx, lazy.Parent, lazy.DestPath, lazy.Source, lazy.Permissions, lazy.Owner, lazy.DoNotCreateDestPath, lazy.AttemptUnpackDockerCompatibility)
 	})
 }
@@ -1176,7 +1168,7 @@ func (lazy *DirectoryWithFileLazy) EncodePersisted(ctx context.Context, enc *dag
 }
 
 func (lazy *DirectoryWithTimestampsLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withTimestamps", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withTimestamps", func(ctx context.Context) error {
 		return dir.WithTimestamps(ctx, lazy.Parent, lazy.Timestamp)
 	})
 }
@@ -1199,7 +1191,7 @@ func (lazy *DirectoryWithTimestampsLazy) EncodePersisted(ctx context.Context, en
 }
 
 func (lazy *DirectoryWithNewDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withNewDirectory", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withNewDirectory", func(ctx context.Context) error {
 		return dir.WithNewDirectory(ctx, lazy.Parent, dagql.CurrentCall(ctx), lazy.Dest, lazy.Permissions)
 	})
 }
@@ -1222,7 +1214,7 @@ func (lazy *DirectoryWithNewDirectoryLazy) EncodePersisted(ctx context.Context, 
 }
 
 func (lazy *DirectorySubdirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.directory", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.directory", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
@@ -1307,7 +1299,7 @@ func (lazy *DirectorySubdirectoryLazy) EncodePersisted(ctx context.Context, enc 
 }
 
 func (lazy *DirectoryDiffLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.diff", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.diff", func(ctx context.Context) error {
 		return dir.Diff(ctx, lazy.Parent, lazy.Other)
 	})
 }
@@ -1339,7 +1331,7 @@ func (lazy *DirectoryDiffLazy) EncodePersisted(ctx context.Context, enc *dagql.P
 }
 
 func (lazy *DirectoryWithChangesLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withChanges", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withChanges", func(ctx context.Context) error {
 		return dir.WithChanges(ctx, lazy.Parent, lazy.Changes)
 	})
 }
@@ -1375,7 +1367,7 @@ func (lazy *DirectoryWithChangesLazy) EncodePersisted(ctx context.Context, enc *
 }
 
 func (lazy *DirectoryWithoutLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.without", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.without", func(ctx context.Context) error {
 		return dir.Without(ctx, lazy.Parent, dagql.CurrentCall(ctx), true, lazy.Paths...)
 	})
 }
@@ -1398,7 +1390,7 @@ func (lazy *DirectoryWithoutLazy) EncodePersisted(ctx context.Context, enc *dagq
 }
 
 func (lazy *DirectoryWithSymlinkLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withSymlink", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withSymlink", func(ctx context.Context) error {
 		return dir.WithSymlink(ctx, lazy.Parent, lazy.Target, lazy.LinkName)
 	})
 }
@@ -1421,7 +1413,7 @@ func (lazy *DirectoryWithSymlinkLazy) EncodePersisted(ctx context.Context, enc *
 }
 
 func (lazy *DirectoryChownLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.chown", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.chown", func(ctx context.Context) error {
 		return dir.Chown(ctx, lazy.Parent, lazy.ChownPath, lazy.Owner)
 	})
 }
@@ -2410,7 +2402,7 @@ func materializedDirectorySnapshotAndPath(dir *Directory) (bkcache.ImmutableRef,
 	if dir == nil {
 		return nil, "", fmt.Errorf("materialized directory: nil directory")
 	}
-	if dir.Lazy != nil {
+	if dir.Lazy != nil && !dir.Lazy.IsEvaluated() {
 		return nil, "", fmt.Errorf("materialized directory: still lazy %T", dir.Lazy)
 	}
 	dirRef, ok := dir.Snapshot.Peek()

@@ -127,18 +127,10 @@ func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
 			return fmt.Errorf("%w: File.snapshot", dagql.ErrUnavailablePart)
 		}
 	}
-	if lazy == nil {
+	if lazy == nil || lazy.IsEvaluated() {
 		return nil
 	}
-	raw := func(ctx context.Context) error {
-		if err := lazy.Evaluate(ctx, file); err != nil {
-			return err
-		}
-		file.outputMu.Lock()
-		defer file.outputMu.Unlock()
-		file.finishLazyLocked(lazy)
-		return nil
-	}
+	raw := func(ctx context.Context) error { return lazy.Evaluate(ctx, file) }
 	return func(ctx context.Context) error {
 		if host := file.partHost.Load(); host != nil {
 			return host.RunNative(ctx, dagql.LazyGroupWhole, []dagql.PartKey{"snapshot"}, raw)
@@ -568,7 +560,7 @@ func decodePersistedFileLazy(ctx context.Context, dec *dagql.PersistDecodeContex
 }
 
 func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.blob", func(ctx context.Context) (rerr error) {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.blob", func(ctx context.Context) (rerr error) {
 		if dir, _ := filepath.Split(lazy.Filename); dir != "" {
 			return fmt.Errorf("file name %q must not contain a directory", lazy.Filename)
 		}
@@ -637,7 +629,7 @@ func (lazy *FileBlobLazy) EncodePersisted(context.Context, *dagql.PersistEncodeC
 }
 
 func (lazy *FileSubfileLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.file", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.file", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
@@ -705,7 +697,7 @@ func (lazy *FileSubfileLazy) EncodePersisted(ctx context.Context, enc *dagql.Per
 }
 
 func (lazy *FileWithReplacedLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.withReplaced", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.withReplaced", func(ctx context.Context) error {
 		return file.WithReplaced(ctx, lazy.Parent, lazy.Search, lazy.Replacement, lazy.FirstFrom, lazy.All)
 	})
 }
@@ -734,7 +726,7 @@ func (lazy *FileWithReplacedLazy) EncodePersisted(ctx context.Context, enc *dagq
 }
 
 func (lazy *FileWithNameLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.withName", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.withName", func(ctx context.Context) error {
 		return file.WithName(ctx, lazy.Parent, lazy.Filename)
 	})
 }
@@ -757,7 +749,7 @@ func (lazy *FileWithNameLazy) EncodePersisted(ctx context.Context, enc *dagql.Pe
 }
 
 func (lazy *FileWithTimestampsLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.withTimestamps", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.withTimestamps", func(ctx context.Context) error {
 		return file.WithTimestamps(ctx, lazy.Parent, lazy.Timestamp)
 	})
 }
@@ -780,7 +772,7 @@ func (lazy *FileWithTimestampsLazy) EncodePersisted(ctx context.Context, enc *da
 }
 
 func (lazy *FileChownLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.chown", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.chown", func(ctx context.Context) error {
 		return file.Chown(ctx, lazy.Parent, lazy.Owner)
 	})
 }

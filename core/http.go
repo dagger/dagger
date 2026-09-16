@@ -670,7 +670,7 @@ func (err *HTTPProducerDigestMismatchError) Error() string {
 
 func (lazy *FileHTTPResolveLazy) Evaluate(ctx context.Context, file *File) error {
 	var candidate *File
-	err := lazy.LazyState.Evaluate(ctx, "HTTPState._resolve", func(ctx context.Context) error {
+	err := file.evaluateLazy(ctx, &lazy.LazyState, "HTTPState._resolve", func(ctx context.Context) error {
 		if err := validateProducedFileReceiver(file); err != nil {
 			return err
 		}

@@ -80,8 +80,9 @@ func TestContainerShutdownPersistenceWaitsForReader(t *testing.T) {
 			require.NoError(t, op.EvaluateContainerGroup(ctx, ctr, ContainerLazyGroupMetadata))
 			if completed {
 				require.NoError(t, ctr.Evaluate(ctx))
-				require.Nil(t, ctr.lazyOpForRouting())
-				require.Same(t, op, ctr.completedRecipe)
+				require.NotNil(t, ctr.lazyOpForRouting())
+				require.Nil(t, ctr.LazyEvalFunc())
+				require.Same(t, op, ctr.Lazy)
 			}
 			res := env.attach(t, ctx, cache, srv, "withLabel", ctr)
 			before, err := cache.CapturePersistedRecord(ctx, res)

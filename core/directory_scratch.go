@@ -35,7 +35,7 @@ func (*DirectoryScratchLazy) EncodePersisted(context.Context, *dagql.PersistEnco
 }
 
 func (lazy *DirectoryScratchLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Query.directory", func(ctx context.Context) (rerr error) {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Query.directory", func(ctx context.Context) (rerr error) {
 		if err := validateProducedDirectoryReceiver(dir); err != nil {
 			return err
 		}

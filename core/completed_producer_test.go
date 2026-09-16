@@ -255,10 +255,10 @@ func TestCompletedProducerAttachmentBeforePublication(t *testing.T) {
 		require.False(t, deps[0].Owned)
 		require.Equal(t, persistedRowID(t, cache, parent), persistedRowID(t, cache, deps[0].Result))
 	}
-	require.Nil(t, dir.Lazy)
-	require.IsType(t, &DirectorySubdirectoryLazy{}, dir.completedRecipe)
-	require.Nil(t, file.Lazy)
-	require.IsType(t, &FileSubfileLazy{}, file.completedRecipe)
+	require.IsType(t, &DirectorySubdirectoryLazy{}, dir.Lazy)
+	require.True(t, dir.Lazy.IsEvaluated())
+	require.IsType(t, &FileSubfileLazy{}, file.Lazy)
+	require.True(t, file.Lazy.IsEvaluated())
 }
 
 func TestMoveProducedOutputs(t *testing.T) {
