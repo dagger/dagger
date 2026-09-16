@@ -57,12 +57,12 @@ func CopyWithMetrics(
 			default:
 			}
 			n, err := conn.Write(p.Data)
+			if n > 0 && streamToConn != nil {
+				streamToConn(int64(n))
+			}
 			if err != nil {
 				conn.Close()
 				return errors.WithStack(err)
-			}
-			if streamToConn != nil {
-				streamToConn(int64(n))
 			}
 			p.Data = p.Data[:0]
 		}
