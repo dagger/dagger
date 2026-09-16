@@ -80,6 +80,11 @@ func TestWorkspaceGitCheckoutReuse(t *testing.T) {
 					Backend: backend,
 					Ref:     &gitutil.Ref{Name: sha, SHA: sha},
 				})
+				// Publish the synthetic fixture before sharing it across calls, as
+				// a production GitRef returned by the schema would be published.
+				attachedRef, err := cache.AttachResult(ctx, "checkout-test", srv, ref)
+				require.NoError(t, err)
+				ref = attachedRef.(dagql.ObjectResult[*core.GitRef])
 				base := &core.Workspace{}
 				base.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
 				overlay := &core.Workspace{}
