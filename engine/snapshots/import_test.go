@@ -783,3 +783,79 @@ func TestPinSnapshotIndependentOwner(t *testing.T) {
 	_, err = store.Manager.PinSnapshot(ctx, "missing-snapshot")
 	require.Error(t, err)
 }
+
+type alteredChainProvider struct {
+	content.InfoReaderProvider
+	mode string
+}
+
+func (p alteredChainProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	reader, err := p.InfoReaderProvider.ReaderAt(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	raw, err := io.ReadAll(content.NewReader(reader))
+	if err != nil {
+		return nil, err
+	}
+	if p.mode == "short" {
+		raw = raw[:len(raw)/2]
+	} else {
+		raw[0] ^= 1
+	}
+	return chainBytesReader{bytes.NewReader(raw)}, nil
+}
+
+type chainBytesReader struct{ *bytes.Reader }
+
+func (r chainBytesReader) Close() error { return nil }
+func TestChainContentClassification(t *testing.T) {
+	for _, mode := range []string{"missing", "short", "checksum", "apply", "lease", "cancel"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+			ref, _ := producer.Build(t, nil, "payload", "chain bytes")
+			chain := exportChain(t, ref)
+			var provider content.InfoReaderProvider = chain.Provider
+			failure := errors.New("injected local failure")
+			switch mode {
+			case "missing":
+				provider = nil
+			case "short", "checksum":
+				provider = alteredChainProvider{InfoReaderProvider: provider, mode: mode}
+			case "apply":
+				consumer.BeforeApply = func(context.Context, ocispecs.Descriptor) error { return failure }
+			case "lease":
+				consumer.BeforeAdd = func(context.Context, leases.Lease, leases.Resource) error { return failure }
+			case "cancel":
+				cancel()
+			}
+			imported, err := consumer.Manager.ImportChain(ctx, supplied(chain, provider))
+			require.Nil(t, imported)
+			require.Error(t, err)
+			var contentErr *bkcache.ChainContentError
+			switch mode {
+			case "lease":
+				require.ErrorIs(t, err, failure)
+				require.False(t, errors.As(err, &contentErr))
+			case "cancel":
+				require.ErrorIs(t, err, context.Canceled)
+				require.False(t, errors.As(err, &contentErr))
+			default:
+				require.ErrorAs(t, err, &contentErr)
+				require.Equal(t, chain.Layers[0].Descriptor.Digest, contentErr.Layer)
+				stage := "copy"
+				if mode == "missing" {
+					stage = "provider"
+				}
+				if mode == "apply" {
+					stage = "apply"
+					require.ErrorIs(t, err, failure)
+				}
+				require.Equal(t, stage, contentErr.Stage)
+			}
+		})
+	}
+}

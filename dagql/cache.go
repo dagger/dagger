@@ -1970,8 +1970,9 @@ type Cache struct {
 	traceSeq        uint64
 	traceImportRuns uint64
 
-	snapshotManager bkcache.SnapshotManager
-	snapshotGC      func(context.Context) error
+	snapshotManager   bkcache.SnapshotManager
+	partContentSource atomic.Pointer[partContentSourceBinding]
+	snapshotGC        func(context.Context) error
 
 	// Test hooks are nil in production. Tests use them to pause inside or
 	// between lifecycle critical sections without timing-based coordination.

@@ -86,6 +86,13 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 		t.cleaned = true
 	}
 	if !t.settled {
+		if installed := t.token.installed.Load(); installed != nil {
+			for _, output := range installed.outputs {
+				if err := c.settlePart(ctx, row, output.address, t.token, output.installation); err != nil {
+					return err
+				}
+			}
+		}
 		if t.spec.Settled != nil {
 			if err := t.spec.Settled(ctx); err != nil {
 				return err

@@ -318,7 +318,7 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 	return record, version, probe, nil
 }
 func (c *Cache) AcquireEquivalentPartSource(ctx context.Context, receiver AnyResult, address PersistedPartAddress) (*PartSourceLease, error) {
-	source, _, err := c.scanPartSources(ctx, receiver, address, nil)
+	source, _, err := c.scanPartSources(ctx, receiver, address, partDemandFromContext(ctx))
 	return source, err
 }
 
@@ -464,6 +464,8 @@ var ErrPartReselect = errors.New("part sources changed; reselect")
 type PartDemandState struct {
 	mu               sync.Mutex
 	exhaustedContent map[string]struct{}
+	failures         []partContentFailure
+	revision         uint64
 }
 
 func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer) string {

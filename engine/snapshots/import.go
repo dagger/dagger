@@ -29,7 +29,7 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 		}
 	}()
 	for _, layer := range chain.Layers {
-		next, err := cm.importLayer(ctx, layer.Descriptor, current, chain.Provider, ImportImageOpts{})
+		next, err := cm.importLayer(ctx, layer.Descriptor, current, chain.Provider, ImportImageOpts{}, true)
 		if err != nil {
 			return nil, err
 		}

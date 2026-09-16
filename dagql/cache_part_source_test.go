@@ -129,3 +129,38 @@ func TestReadyPartReceipt(t *testing.T) {
 	require.True(t, receipt.task.settled.Load())
 	require.Contains(t, string(row.loadPayloadState().persistedEnvelope.ObjectJSON), "ready")
 }
+
+func TestPartSettlementRetiresReplacement(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	first := persistedListTestResult(t, ctx, c, srv, "first", String("one"))
+	second := persistedListTestResult(t, ctx, c, srv, "second", String("two"))
+	transferTestOffer(t, c, ctx, receiver, first)
+	address := PersistedPartAddress{Part: "snapshot"}
+	row := receiver.cacheSharedResult()
+	gate := row.partGate.loadOrCreate()
+	task := &PartTaskToken{row: row, generation: 1}
+	key, _ := partAddressKey(address)
+	c.egraphMu.Lock()
+	gate.mu.Lock()
+	gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: task, installation: 9}
+	record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(second.cacheSharedResult().id)}}}
+	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
+	require.NoError(t, err)
+	queue, err := c.replacePartOfferLocked(ctx, row, address, &partOffer{record: record, owner: owner})
+	require.NoError(t, err)
+	gate.mu.Unlock()
+	callbacks, err := c.collectUnownedResultsLocked(ctx, queue)
+	c.egraphMu.Unlock()
+	require.NoError(t, err)
+	require.NoError(t, runOnReleaseFuncs(ctx, callbacks))
+	require.NoError(t, c.settlePart(ctx, row, address, task, 9))
+	require.NoError(t, c.settlePart(ctx, row, address, task, 9))
+	c.egraphMu.RLock()
+	require.Empty(t, row.partOffers)
+	require.Empty(t, c.offerOwners)
+	c.egraphMu.RUnlock()
+	gate.mu.Lock()
+	require.Equal(t, PartComplete, gate.outputs[key].phase)
+	gate.mu.Unlock()
+}

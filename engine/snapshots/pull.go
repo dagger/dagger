@@ -60,7 +60,7 @@ func (cm *snapshotManager) ImportImage(
 	}()
 
 	for _, layer := range img.Layers {
-		next, err := cm.importLayer(ctx, layer, current, nil, opts)
+		next, err := cm.importLayer(ctx, layer, current, nil, opts, false)
 		if err != nil {
 			return nil, err
 		}
@@ -144,6 +144,7 @@ func (cm *snapshotManager) importLayer(
 	parent ImmutableRef,
 	provider content.Provider,
 	opts ImportImageOpts,
+	chainMode bool,
 ) (ImmutableRef, error) {
 	diffID, err := diffIDFromDescriptor(desc)
 	if err != nil {
@@ -207,7 +208,7 @@ func (cm *snapshotManager) importLayer(
 		cm.mu.Unlock()
 	}
 
-	if err := cm.importLayerContent(ctx, desc, provider); err != nil {
+	if err := cm.importLayerContent(ctx, desc, provider, chainMode); err != nil {
 		return nil, err
 	}
 	if parent != nil {
@@ -251,7 +252,7 @@ func (cm *snapshotManager) importLayer(
 	}
 	if _, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...); err != nil {
 		_ = unmount()
-		return nil, err
+		return nil, chainError(ctx, chainMode, desc, "apply", err)
 	}
 	if unpack != nil {
 		// a successful apply consumed the whole blob even if the
@@ -407,13 +408,13 @@ func setImportedImageMetadata(ref *immutableRef, opts ImportImageOpts) error {
 // importLayerContent pins local bytes before asking the supplied provider.
 // Writer acquisition checks again, before ReaderAt, if another key supplied
 // the same blob since our first lookup.
-func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider) (rerr error) {
+func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool) (rerr error) {
 	present, err := cm.pinContent(ctx, desc)
 	if err != nil || present {
 		return err
 	}
 	if provider == nil {
-		return errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest)
+		return chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
 	}
 	ref := "snapshot-import-" + identity.NewID()
 	writer, err := content.OpenWriter(ctx, cm.ContentStore, content.WithRef(ref), content.WithDescriptor(desc))
@@ -431,8 +432,11 @@ func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs
 	}()
 	reader, err := provider.ReaderAt(ctx, desc)
 	if err != nil {
-		return err
+		return chainError(ctx, chainMode, desc, "provider", err)
 	}
 	defer reader.Close()
+	if chainMode {
+		return copyChainContent(ctx, writer, reader, desc)
+	}
 	return content.Copy(ctx, writer, io.NewSectionReader(reader, 0, reader.Size()), desc.Size, desc.Digest)
 }

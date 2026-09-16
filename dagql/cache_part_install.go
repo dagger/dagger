@@ -21,21 +21,27 @@ const (
 )
 
 type partProtection struct {
-	once sync.Once
-	ref  snapshots.ImmutableRef
-	err  error
+	mu       sync.Mutex
+	ref      snapshots.ImmutableRef
+	released bool
 }
 
 func (p *partProtection) release(ctx context.Context) error {
 	if p == nil {
 		return nil
 	}
-	p.once.Do(func() {
-		if p.ref != nil {
-			p.err = p.ref.Release(context.WithoutCancel(ctx))
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.released {
+		return nil
+	}
+	if p.ref != nil {
+		if err := p.ref.Release(context.WithoutCancel(ctx)); err != nil {
+			return err
 		}
-	})
-	return p.err
+	}
+	p.released = true
+	return nil
 }
 
 type PreparedReadyPart struct {
