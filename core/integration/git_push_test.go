@@ -256,7 +256,9 @@ func (GitSuite) TestPushCallerURLRewrite(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	pushService, pushURL := gitPushHTTPService(ctx, t, c)
 	fetchRepo := c.Git(fetchURL, dagger.GitOpts{ExperimentalServiceHost: fetchService})
-	head := fetchRepo.Branch("main").AsWorkspace().WithNewFile("change", "committed").WithCommit("push rewrite", workspaceCommitDate).Git().Head()
+	head := fetchRepo.Branch("main").AsWorkspace().WithNewFile("change", "committed").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "push rewrite", workspaceCommitDate)
+	}).Git().Head()
 	sha, err := head.CommitSHA(ctx)
 	require.NoError(t, err)
 	// The fetch transport needs no credentials, while the rewritten push URL

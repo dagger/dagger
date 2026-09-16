@@ -335,7 +335,9 @@ func (WorkspaceSuite) TestWorkspaceWithResetPreservesTree(ctx context.Context, t
 	require.NoError(t, err)
 	draft := base.WithNewFile("src/change.txt", "after").
 		WithNewFile("added.txt", "added in draft").WithoutFile("removed.txt").
-		WithCommit("draft", workspaceCommitDate).Git().Head()
+		With(func(ws *dagger.Workspace) *dagger.Workspace {
+			return ws.WithCommit(ws.Git().Uncommitted(), "draft", workspaceCommitDate)
+		}).Git().Head()
 
 	for _, tc := range []struct {
 		name string
