@@ -13,6 +13,9 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -149,17 +152,18 @@ func TestHTTPLocalBodyFailures(t *testing.T) {
 	snapshot, _ := store.Build(t, nil, "contents", "saved")
 	fault := errors.New("injected pin or release failure")
 	for _, test := range []struct {
-		name                                  string
-		pinErr                                error
-		wantFetch                             bool
-		wantErr                               error
-		foreign, advanced, absent, derivation bool
+		name                                              string
+		pinErr                                            error
+		wantFetch                                         bool
+		wantErr                                           error
+		foreign, advanced, absent, derivation, pinRelease bool
 	}{
 		{name: "matching"}, {name: "absent", absent: true, wantFetch: true}, {name: "foreign", foreign: true, wantFetch: true}, {name: "advanced", advanced: true, wantFetch: true},
 		{name: "unavailable", pinErr: cerrdefs.ErrNotFound, wantFetch: true},
 		{name: "pin error", pinErr: fault, wantErr: fault}, {name: "cancel", pinErr: context.Canceled, wantErr: context.Canceled},
 		{name: "unavailable plus cleanup", pinErr: errors.Join(cerrdefs.ErrNotFound, fault), wantErr: fault},
 		{name: "derivation plus cleanup", derivation: true, wantErr: fault},
+		{name: "successful derivation cleanup", pinRelease: true, wantErr: fault},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state.snapshotID = snapshot.SnapshotID()
@@ -172,10 +176,18 @@ func TestHTTPLocalBodyFailures(t *testing.T) {
 				state.ContentDigest = digest.FromString("other")
 			}
 			manager := &httpPinManager{SnapshotManager: store.Manager, pinErr: test.pinErr}
+			derived := &observedLazyOperationManager{SnapshotManager: store.Manager}
 			if test.derivation {
 				manager.beforeNew = func(bkcache.ImmutableRef) error {
 					manager.pinned.releaseErr = fault
 					return errors.New("derive failure")
+				}
+			}
+			if test.pinRelease {
+				manager.SnapshotManager = derived
+				manager.beforeNew = func(bkcache.ImmutableRef) error {
+					manager.pinned.releaseErr = fault
+					return nil
 				}
 			}
 			server.cacheManager = manager
@@ -201,6 +213,17 @@ func TestHTTPLocalBodyFailures(t *testing.T) {
 			require.Equal(t, want, requests.Load()-before)
 			if manager.pinned != nil {
 				require.EqualValues(t, 1, manager.pinned.releases.Load())
+			}
+			if test.pinRelease {
+				require.EqualValues(t, 1, derived.immutableReleases.Load(), "uninstalled derived output is released")
+				require.False(t, lazy.IsEvaluated())
+				manager.beforeNew = nil
+				require.NoError(t, lazy.Evaluate(ctx, file), "cleanup failure leaves the same receiver retryable")
+				require.True(t, lazy.IsEvaluated())
+				require.EqualValues(t, 1, manager.pinned.releases.Load())
+				require.EqualValues(t, 1, derived.immutableReleases.Load(), "successful retry retains its output")
+				require.NoError(t, file.OnRelease(ctx))
+				require.EqualValues(t, 2, derived.immutableReleases.Load())
 			}
 		})
 	}
@@ -235,4 +258,48 @@ func TestHTTPPinLockCost(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	state.mu.Unlock()
 	t.Logf("HTTP local pin average=%s; acquisition with a 20ms occupied state lock=%s", elapsed/20, <-done)
+}
+
+func TestHTTPChainAvoidsOperation(t *testing.T) {
+	actx, _, a, asrv, _ := executionFixture(t)
+	bStore := testutil.NewStore(t)
+	bctx, b, bsrv := transferCache(t, bStore, "", "http-chain")
+	b.EnableTransferFixtureParts()
+	var requests atomic.Int64
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests.Add(1); fmt.Fprint(w, "chain bytes") }))
+	defer origin.Close()
+	file := freshLazyOperationFile()
+	file.Lazy = &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: origin.URL, Filename: "data", Permissions: 0644, BodyDigest: digest.FromString("chain bytes")}
+	result := attachTransferObject(t, actx, a, asrv, "http-chain-a", "httpChainFile", file)
+	require.NoError(t, a.Evaluate(actx, result))
+	require.EqualValues(t, 1, requests.Load())
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{result}, Outputs: []dagql.SelectedValueOutput{{Result: result, Address: dagql.PersistedPartAddress{Part: "snapshot"}}}}
+	require.NoError(t, a.WithExportedValues(actx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
+		require.Len(t, exported.Chains.Entries, 1)
+		provider := &testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}
+		b.SetPartContentSource(partTestContentSource{provider})
+		imported, err := b.ImportValues(bctx, exported.Bundle)
+		require.NoError(t, err)
+		loaded, err := b.LoadResultByResultID(bctx, "http-chain", bsrv, imported[0].ResultID)
+		require.NoError(t, err)
+		value := loaded.(dagql.ObjectResult[*File])
+		require.NoError(t, b.Evaluate(bctx, value))
+		body, err := value.Self().Contents(bctx, value, nil, nil)
+		require.NoError(t, err)
+		require.Equal(t, "chain bytes", string(body))
+		require.EqualValues(t, 1, requests.Load(), "chain acquisition cannot read the origin")
+		require.Positive(t, provider.Reads.Load())
+		report, err := b.TransferFixtureSnapshot(bctx, "http-chain", nil)
+		require.NoError(t, err)
+		installed := 0
+		for _, event := range report.Parts {
+			require.NotEqual(t, "lazy-enter", event.Kind)
+			if event.Kind == "installed-chain" {
+				installed++
+			}
+		}
+		require.Equal(t, 1, installed)
+		t.Logf("HTTP offered chain: operation entries=0 operation GETs=0 provider reads=%d", provider.Reads.Load())
+		return nil
+	}))
 }

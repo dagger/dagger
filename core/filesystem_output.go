@@ -36,18 +36,69 @@ func (out *filesystemOutput) tryPersistenceLocked(lazy any) (func(), error) {
 		out.outputMu.Unlock()
 		return nil, fmt.Errorf("encode filesystem output: missing lazy state for %T", lazy)
 	}
-	if state != nil && state.LazyMu != nil {
+	lockBody := state != nil && state.LazyMu != nil && !state.IsEvaluated()
+	if lockBody {
 		if !state.LazyMu.TryLock() {
 			out.outputMu.Unlock()
 			return nil, fmt.Errorf("%w: filesystem body in use", dagql.ErrPersistStateNotReady)
 		}
 	}
 	return func() {
-		if state != nil && state.LazyMu != nil {
+		if lockBody {
 			state.LazyMu.Unlock()
 		}
 		out.outputMu.Unlock()
 	}, nil
+}
+
+// Only ownership reads outside graph locks may wait. A body can publish through
+// outputMu, so release it before waiting on that body's latch and read anew.
+func (out *filesystemOutput) lockSnapshotOwnerRead(lazy func() any) (func(), error) {
+	for {
+		out.outputMu.Lock()
+		op := lazy()
+		out.rememberBodyLocked(op)
+		state := out.persistenceBody
+		if op != nil && (state == nil || state.LazyMu == nil) {
+			out.outputMu.Unlock()
+			return nil, fmt.Errorf("filesystem ownership read: missing lazy state for %T", op)
+		}
+		if state == nil || state.LazyMu == nil || state.IsEvaluated() {
+			return out.outputMu.Unlock, nil
+		}
+		if state.LazyMu.TryLock() {
+			return func() { state.LazyMu.Unlock(); out.outputMu.Unlock() }, nil
+		}
+		out.outputMu.Unlock()
+		state.LazyMu.Lock()
+		state.LazyMu.Unlock()
+	}
+}
+
+func (file *File) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
+	unlock, err := file.lockSnapshotOwnerRead(func() any { return file.Lazy })
+	if err != nil {
+		return 0, nil, err
+	}
+	defer unlock()
+	var links []dagql.PersistedSnapshotRefLink
+	if id, ok := file.snapshotIdentityLocked(); ok {
+		links = []dagql.PersistedSnapshotRefLink{{RefKey: id, Role: "snapshot"}}
+	}
+	return file.OutputRev, links, nil
+}
+
+func (dir *Directory) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
+	unlock, err := dir.lockSnapshotOwnerRead(func() any { return dir.Lazy })
+	if err != nil {
+		return 0, nil, err
+	}
+	defer unlock()
+	var links []dagql.PersistedSnapshotRefLink
+	if id, ok := dir.snapshotIdentityLocked(); ok {
+		links = []dagql.PersistedSnapshotRefLink{{RefKey: id, Role: "snapshot"}}
+	}
+	return dir.OutputRev, links, nil
 }
 
 func (file *File) lockForPersistence() (func(), error) {

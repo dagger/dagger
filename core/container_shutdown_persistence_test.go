@@ -45,7 +45,7 @@ func awaitContainerPersistenceLatch(t *testing.T, done <-chan error) {
 		}
 		buf := make([]byte, 256<<10)
 		for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
-			if strings.Contains(stack, "[sync.Mutex.Lock]") && strings.Contains(stack, "(*Container).lockForPersistence(") {
+			if strings.Contains(stack, "[sync.Mutex.Lock]") && strings.Contains(stack, "(*Container).lockLazyForPersistence(") {
 				waiting = stack
 				return true
 			}

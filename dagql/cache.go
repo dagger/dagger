@@ -1617,6 +1617,17 @@ func desiredSnapshotLinksForResult(res *sharedResult) ([]PersistedSnapshotRefLin
 	return cloneSnapshotRefLinks(state.snapshotOwnerLinks), nil
 }
 
+func snapshotLinksForOwnerSync(res *sharedResult) ([]PersistedSnapshotRefLink, error) {
+	state := res.loadPayloadState()
+	if state.hasValue && state.self != nil {
+		return snapshotOwnerLinksForSync(state.self, res.loadResultCall())
+	}
+	if state.snapshotLinkIntent != nil {
+		return cloneSnapshotRefLinks(state.snapshotLinkIntent.Links), nil
+	}
+	return cloneSnapshotRefLinks(state.snapshotOwnerLinks), nil
+}
+
 func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 	if c == nil || c.snapshotManager == nil || res == nil {
 		return nil
@@ -1662,7 +1673,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	res.leaseSyncMu.Lock()
 	defer res.leaseSyncMu.Unlock()
 
-	links, err := desiredSnapshotLinksForResult(res)
+	links, err := snapshotLinksForOwnerSync(res)
 	if err != nil {
 		return err
 	}

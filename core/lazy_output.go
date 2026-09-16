@@ -77,8 +77,9 @@ func validateLazyFileReceiver(file *File) error {
 	return nil
 }
 
-// moveDirectoryOutput transfers the ref owned by a temporary output. Neither
-// value may be published, and the source must not be a borrowed dependency.
+// moveDirectoryOutput transfers the ref owned by a private temporary output.
+// A published destination must be inside its admitted Lazy evaluation; the
+// source must not be a borrowed dependency.
 func moveDirectoryOutput(dst, src *Directory) error {
 	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return err

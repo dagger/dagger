@@ -175,7 +175,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		t.Logf("%s: %s", checkpoint, data)
 	}
 
-	t.Run("eager operations survive restart", func(ctx context.Context, t *testctx.T) {
+	t.Run("lazy values survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		requests := atomic.Int64{}
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); fmt.Fprint(w, "saved HTTP body\n") }))
@@ -185,7 +185,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		source := c.Host().Service([]dagger.PortForward{{Backend: port, Frontend: port}}).WithHostname(hostname)
 		opts := snapshotTestOptions(ctx, t)
 		opts = append(opts, func(ctr *dagger.Container) *dagger.Container { return ctr.WithServiceBinding(hostname, source) })
-		stateKey := "eager-operations-" + identity.NewID()
+		stateKey := "lazy-operations-" + identity.NewID()
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
 		file := a.HTTP(fmt.Sprintf("http://%s:%d/data", hostname, port))
@@ -212,9 +212,10 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		fileRowID := snapshotResultID(t, string(fileID))
 		schemaRowID := snapshotResultID(t, string(sdk.Schema.ID))
 		builtinRowID := snapshotResultID(t, string(sdk.Builtin.ID))
-		require.Equal(t, "_resolve", rowsA[fileRowID].Call.Field)
+		require.Equal(t, "__httpFile", rowsA[fileRowID].Call.Field)
 		require.Equal(t, "__schemaJSONFile", rowsA[schemaRowID].Call.Field)
 		require.Equal(t, "_builtinContainer", rowsA[builtinRowID].Call.Field)
+		require.Empty(t, rowsA[builtinRowID].Links, "unused builtin must remain pending across the first shutdown")
 		requestsBefore := requests.Load()
 		stopEngine(ctx, t, upA, tunnelA, a)
 		upA = nil
@@ -237,7 +238,8 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		rowsB := readSnapshotRows(ctx, t, c, upB)
 		require.EqualValues(t, 1, rowsB[fileRowID].Value.Counts["storedOpen"])
 		require.EqualValues(t, 1, rowsB[schemaRowID].Value.Counts["storedOpen"])
-		require.EqualValues(t, 1, rowsB[builtinRowID].Value.Counts["storedOpen:fs"])
+		require.Zero(t, rowsB[builtinRowID].Value.Counts["storedOpen:fs"], "pending builtin evaluates its saved operation after restart")
+		require.NotEmpty(t, rowsB[builtinRowID].Links)
 	})
 
 	t.Run("changeset merge operation survives restart", func(ctx context.Context, t *testctx.T) {

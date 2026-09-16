@@ -755,12 +755,17 @@ func (lazy *FileHTTPResolveLazy) Evaluate(ctx context.Context, file *File) error
 			if candidate != nil {
 				rerr = errors.Join(rerr, candidate.OnRelease(cleanup))
 			}
-			if canonical != nil {
-				rerr = errors.Join(rerr, canonical.Release(cleanup))
-			}
 		}()
 		if canonical != nil {
-			candidate, err = httpFileFromSnapshot(ctx, query, canonical, lazy.Filename, lazy.Permissions, file.Platform)
+			err = func() (rerr error) {
+				// Finish temporary ownership before installing output, so a
+				// release failure leaves this pending receiver retryable.
+				defer func() {
+					rerr = errors.Join(rerr, canonical.Release(context.WithoutCancel(ctx)))
+				}()
+				candidate, rerr = httpFileFromSnapshot(ctx, query, canonical, lazy.Filename, lazy.Permissions, file.Platform)
+				return rerr
+			}()
 			if err != nil {
 				return err
 			}

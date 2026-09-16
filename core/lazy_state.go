@@ -92,12 +92,15 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 		slog.InfoContext(ctx, "end lazy evaluation", args...)
 	}()
 
-	defer lazy.outputRevision.Add(1)
 	if run != nil {
 		if rerr = run(ctx); rerr != nil {
+			lazy.outputRevision.Add(1)
 			return rerr
 		}
 	}
+	// Publish the revision before completion permits readers to bypass the
+	// body latch. Nothing belonging to this body changes after completion.
+	lazy.outputRevision.Add(1)
 	lazy.lazyInitComplete.Store(true)
 	return nil
 }
@@ -154,10 +157,11 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 		slog.InfoContext(ctx, "end lazy group evaluation", args...)
 	}()
 
-	defer lazy.outputRevision.Add(1)
 	if rerr = run(ctx); rerr != nil {
+		lazy.outputRevision.Add(1)
 		return rerr
 	}
+	lazy.outputRevision.Add(1)
 	g.done.Store(true)
 	return nil
 }

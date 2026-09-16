@@ -317,6 +317,73 @@ func (ctr *Container) PersistedSnapshotRefLinksChecked() ([]dagql.PersistedSnaps
 	return ctr.PersistedSnapshotRefLinks(), nil
 }
 
+func (ctr *Container) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
+	if view := ctr.acquiredOutput.Load(); view != nil {
+		return view.Revision, dagql.ClonePersistedSnapshotLinks(view.Links), nil
+	}
+	unlock, err := ctr.lockSnapshotOwnerRead()
+	if err != nil {
+		return 0, nil, err
+	}
+	defer unlock()
+	if view := ctr.acquiredOutput.Load(); view != nil {
+		return view.Revision, dagql.ClonePersistedSnapshotLinks(view.Links), nil
+	}
+	var revision dagql.OutputRevision
+	if provider, ok := ctr.Lazy.(interface{ ContainerLazyState() *LazyState }); ok {
+		revision = dagql.OutputRevision(provider.ContainerLazyState().outputRevision.Load())
+	}
+	return revision, ctr.PersistedSnapshotRefLinks(), nil
+}
+
+// Owner synchronization holds no graph lock. Readers may wait on one another,
+// but must drop the pointer/state latches before waiting for a group body: the
+// body can consult either latch. Each restart follows an actual body-latch wait.
+func (ctr *Container) lockSnapshotOwnerRead() (func(), error) {
+	for {
+		ctr.lazyOpMu.Lock()
+		lazy := ctr.Lazy
+		if lazy == nil {
+			return ctr.lazyOpMu.Unlock, nil
+		}
+		provider, ok := lazy.(interface{ ContainerLazyState() *LazyState })
+		if !ok || provider.ContainerLazyState() == nil || provider.ContainerLazyState().LazyMu == nil {
+			ctr.lazyOpMu.Unlock()
+			return nil, fmt.Errorf("Container ownership read: missing native latch")
+		}
+		state := provider.ContainerLazyState()
+		state.LazyMu.Lock()
+		var held []*lazyGroupOnce
+		unlock := func() {
+			for _, group := range held {
+				group.mu.Unlock()
+			}
+			state.LazyMu.Unlock()
+			ctr.lazyOpMu.Unlock()
+		}
+		if state.IsEvaluated() {
+			return unlock, nil
+		}
+		var running *lazyGroupOnce
+		for _, group := range state.groups {
+			if group.done.Load() {
+				continue
+			}
+			if !group.mu.TryLock() {
+				running = group
+				break
+			}
+			held = append(held, group)
+		}
+		if running == nil {
+			return unlock, nil
+		}
+		unlock()
+		running.mu.Lock()
+		running.mu.Unlock()
+	}
+}
+
 type containerPartStore struct {
 	receiver, next *Container
 	view, previous *containerAcquiredOutput
@@ -567,7 +634,7 @@ func (s *containerPartStore) prepareAssignments() {
 // holding the cache gate. Native activation takes all of them by try-lock.
 func (ctr *Container) tryPartPublicationGuard() (func(), error) {
 	if !ctr.lazyOpMu.TryLock() {
-		return nil, dagql.ErrPersistStateNotReady
+		return nil, fmt.Errorf("%w: Container operation pointer busy", dagql.ErrPersistStateNotReady)
 	}
 	lazy := ctr.Lazy
 	if lazy == nil {
@@ -585,7 +652,7 @@ func (ctr *Container) tryPartPublicationGuard() (func(), error) {
 	}
 	if !state.LazyMu.TryLock() {
 		ctr.lazyOpMu.Unlock()
-		return nil, dagql.ErrPersistStateNotReady
+		return nil, fmt.Errorf("%w: Container %T state busy (evaluated=%t)", dagql.ErrPersistStateNotReady, lazy, state.IsEvaluated())
 	}
 	var held []*lazyGroupOnce
 	unlock := func() {
@@ -595,10 +662,13 @@ func (ctr *Container) tryPartPublicationGuard() (func(), error) {
 		state.LazyMu.Unlock()
 		ctr.lazyOpMu.Unlock()
 	}
-	for _, group := range state.groups {
+	for key, group := range state.groups {
+		if group.done.Load() {
+			continue
+		}
 		if !group.mu.TryLock() {
 			unlock()
-			return nil, dagql.ErrPersistStateNotReady
+			return nil, fmt.Errorf("%w: Container %T group %q busy (consumed=%t)", dagql.ErrPersistStateNotReady, lazy, key, group.done.Load())
 		}
 		held = append(held, group)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,8 +45,10 @@ func TestHTTPResolvedCall(t *testing.T) {
 		cctx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: session, SessionID: session})
 		var result dagql.ObjectResult[*core.File]
 		before := requests.Load()
+		rowsBefore := cache.Size()
 		require.NoError(t, srv.Select(cctx, srv.Root(), &result, dagql.Selector{Field: "http", Args: []dagql.NamedInput{{Name: "url", Value: dagql.String(origin.URL)}, {Name: "name", Value: dagql.Optional[dagql.String]{Valid: true, Value: dagql.String(name)}}, {Name: "permissions", Value: dagql.Optional[dagql.Int]{Valid: true, Value: 0644}}}}))
 		require.EqualValues(t, 1, requests.Load()-before, "outer resolution in %s", session)
+		t.Logf("HTTP selection %s: retained rows before=%d after=%d delta=%d", session, rowsBefore, cache.Size(), cache.Size()-rowsBefore)
 		return result
 	}
 	first := selectFile("http-first")
@@ -92,4 +95,79 @@ func TestHTTPResolvedCall(t *testing.T) {
 	require.NoError(t, cache.Evaluate(ctx, miss))
 	require.Equal(t, before, requests.Load())
 	t.Log("HTTP requests: miss outer=1 operation=0; pending hit outer=1 operation=0; completed hit outer=1 operation=0")
+}
+
+func TestHTTPPendingInternalHits(t *testing.T) {
+	for _, mode := range []string{"absent", "advanced", "changed-body"} {
+		t.Run(mode, func(t *testing.T) {
+			store := testutil.NewStore(t)
+			ctx, cache, srv := scratchTestCache(t, store, "", "http-pending-hit")
+			query, err := core.CurrentQuery(ctx)
+			require.NoError(t, err)
+			query.Server = &httpLazyServer{query.Server.(*scratchTestServer)}
+			srv.InstallObject(dagql.NewClass[*core.File](srv))
+			(&httpSchema{}).Install(srv)
+			var requests atomic.Int64
+			var body atomic.Value
+			body.Store("saved")
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				require.Empty(t, r.Header.Get("If-None-Match"))
+				require.Empty(t, r.Header.Get("If-Modified-Since"))
+				w.Header().Set("ETag", body.Load().(string))
+				fmt.Fprint(w, body.Load().(string))
+			}))
+			defer origin.Close()
+			selectSaved := func() dagql.ObjectResult[*core.File] {
+				var result dagql.ObjectResult[*core.File]
+				require.NoError(t, srv.Select(ctx, srv.Root(), &result, dagql.Selector{Field: "__httpFile", Args: []dagql.NamedInput{
+					{Name: "url", Value: dagql.String(origin.URL)}, {Name: "bodyDigest", Value: dagql.String(digest.FromString("saved"))},
+					{Name: "name", Value: dagql.String("data")}, {Name: "permissions", Value: dagql.Int(0644)},
+					{Name: "lastModified", Value: dagql.String("")}, {Name: "platform", Value: core.Platform{OS: "linux", Architecture: "amd64"}},
+				}}))
+				return result
+			}
+			first := selectSaved()
+			require.False(t, first.Self().Lazy.IsEvaluated())
+			pending := selectSaved()
+			require.Same(t, first.Self(), pending.Self())
+			require.Zero(t, requests.Load(), "constructing or hitting the internal call performs no resolution")
+			outerRequests := int64(0)
+			if mode != "absent" {
+				body.Store("advanced")
+				var advanced dagql.ObjectResult[*core.File]
+				require.NoError(t, srv.Select(ctx, srv.Root(), &advanced, dagql.Selector{Field: "http", Args: []dagql.NamedInput{{Name: "url", Value: dagql.String(origin.URL)}}}))
+				outerRequests = requests.Load()
+				require.EqualValues(t, 1, outerRequests)
+				if mode == "advanced" {
+					body.Store("saved")
+				}
+			}
+			var state dagql.ObjectResult[*core.HTTPState]
+			require.NoError(t, srv.Select(ctx, srv.Root(), &state, dagql.Selector{Field: "_httpState", Args: []dagql.NamedInput{{Name: "url", Value: dagql.String(origin.URL)}}}))
+			before, err := cache.CapturePersistedRecord(ctx, state)
+			require.NoError(t, err)
+			err = cache.Evaluate(ctx, pending)
+			if mode == "changed-body" {
+				var mismatch *core.HTTPBodyDigestMismatchError
+				require.ErrorAs(t, err, &mismatch)
+				require.False(t, pending.Self().Lazy.IsEvaluated())
+				_, installed := pending.Self().Snapshot.Peek()
+				require.False(t, installed)
+			} else {
+				require.NoError(t, err)
+				bytes, err := pending.Self().Contents(ctx, pending, nil, nil)
+				require.NoError(t, err)
+				require.Equal(t, "saved", string(bytes))
+				completed := selectSaved()
+				require.Same(t, pending.Self(), completed.Self())
+				require.NoError(t, cache.Evaluate(ctx, completed))
+			}
+			require.EqualValues(t, 1, requests.Load()-outerRequests)
+			after, err := cache.CapturePersistedRecord(ctx, state)
+			require.NoError(t, err)
+			require.Equal(t, before.Envelope, after.Envelope, "the operation cannot change state validators or identity")
+			t.Logf("HTTP pending hit %s: outer=%d operation=1; completed usable hit operation=0 when evaluation succeeds", mode, outerRequests)
+		})
+	}
 }

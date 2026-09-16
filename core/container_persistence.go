@@ -48,12 +48,14 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 		raw, err := json.Marshal(view.Payload)
 		return dagql.PersistedObjectEncoding{JSON: raw, SnapshotLinks: dagql.ClonePersistedSnapshotLinks(view.Links)}, err
 	}
-	unlock, err := container.lockForPersistence(enc.Quiescent())
+	// Read the operation before its state latch. Re-taking lazyOpMu while
+	// holding LazyMu would invert the blocking ownership reader's lock order.
+	lazy, recipeJSON := container.lazyForPersistence()
+	unlock, err := container.lockLazyForPersistence(lazy, enc.Quiescent())
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	defer unlock()
-	lazy, recipeJSON := container.lazyForPersistence()
 	metadata, err := container.encodeContainerMetadata(enc)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
@@ -97,6 +99,10 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 // No evaluation is started, and sibling groups still run in parallel normally.
 func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
 	lazy, _ := container.lazyForPersistence()
+	return container.lockLazyForPersistence(lazy, quiescent)
+}
+
+func (container *Container) lockLazyForPersistence(lazy Lazy[*Container], quiescent bool) (func(), error) {
 	if lazy == nil {
 		return func() {}, nil
 	}
@@ -127,6 +133,9 @@ func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
 		state.LazyMu.Unlock()
 	}
 	for key, group := range state.groups {
+		if group.done.Load() {
+			continue
+		}
 		// Bodies may consult LazyMu. A busy group must release every lock
 		// immediately, rather than waiting with LazyMu held.
 		if !group.mu.TryLock() {

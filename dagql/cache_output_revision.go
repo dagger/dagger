@@ -12,6 +12,20 @@ type PersistedOutputVersion interface {
 	PersistedOutputRevision() (OutputRevision, error)
 }
 
+// SnapshotOwnerReader reads a coherent revision and link set while waiting on
+// the value's publication/body latches. Only owner synchronization, outside
+// graph locks, may use it. Capture, boot and import keep the nonblocking reads.
+type SnapshotOwnerReader interface {
+	ReadSnapshotOwner() (OutputRevision, []PersistedSnapshotRefLink, error)
+}
+
+type snapshotOwnerVersion struct{ SnapshotOwnerReader }
+
+func (v snapshotOwnerVersion) PersistedOutputRevision() (OutputRevision, error) {
+	revision, _, err := v.ReadSnapshotOwner()
+	return revision, err
+}
+
 type capturedOutputVersionsKey struct{}
 type capturedOutputVersion struct {
 	value    PersistedOutputVersion

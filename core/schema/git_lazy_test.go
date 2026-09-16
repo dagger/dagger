@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/gitutil"
@@ -64,7 +65,9 @@ func TestGitResolvedFrames(t *testing.T) {
 				selector.Args = append(selector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(override)})
 			}
 			var result dagql.ObjectResult[*core.GitRef]
+			rowsBefore := cache.Size()
 			require.NoError(t, srv.Select(ctx, parent, &result, selector))
+			t.Logf("Git %s selection: retained rows before=%d after=%d delta=%d", test.name, rowsBefore, cache.Size(), cache.Size()-rowsBefore)
 			wantSHA := sha
 			if test.fixed {
 				wantSHA = override
@@ -84,7 +87,9 @@ func TestGitResolvedFrames(t *testing.T) {
 				require.Equal(t, map[string]string{"name": test.wantName, "commit": wantSHA}, args)
 			}
 			var output dagql.ObjectResult[*core.Directory]
+			rowsBefore = cache.Size()
 			require.NoError(t, srv.Select(ctx, result, &output, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}, {Name: "depth", Value: dagql.Int(3)}, {Name: "includeTags", Value: dagql.Boolean(true)}}}))
+			t.Logf("Git %s tree: retained row delta=%d", test.name, cache.Size()-rowsBefore)
 			lazy := output.Self().Lazy.(*core.DirectoryGitTreeLazy)
 			require.False(t, lazy.IsEvaluated())
 			require.Equal(t, wantSHA, lazy.Ref.Self().Ref.SHA)
@@ -103,6 +108,60 @@ func TestGitResolvedFrames(t *testing.T) {
 			require.NoError(t, json.Unmarshal(payload.LazyJSON, &inputs))
 			require.Equal(t, record.ResultID, inputs.RefResultID)
 			require.Empty(t, server.manager.outputs, "tree handle construction must not check out files")
+		})
+	}
+}
+
+func TestGitFixedCommitAndLockFrames(t *testing.T) {
+	for _, mode := range []string{"commit", "ref", "locked branch"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, srv, cache, server := resolverOutputFixture(t)
+			srv.View = workspaceLockingVersion
+			srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
+			srv.InstallObject(dagql.NewClass[*core.GitCommit](srv))
+			s := &gitSchema{}
+			dagql.Fields[*core.GitRepository]{dagql.NodeFunc("__resolvedRef", s.resolvedRef).View(AllVersion).IsPersistable(), dagql.NodeFunc("branch", s.branch).View(AllVersion), dagql.NodeFunc("ref", s.ref).View(AllVersion), dagql.NodeFunc("commit", s.commit).View(AllVersion)}.Install(srv)
+			u, err := gitutil.ParseURL("https://unreachable.invalid/repository.git")
+			require.NoError(t, err)
+			repo := &core.GitRepository{Backend: &core.RemoteGitRepository{URL: u}, URL: dagql.NonNull(dagql.String(u.Remote()))}
+			parent := resolverAttach(t, ctx, srv, cache, "repository", repo)
+			sha := strings.Repeat("c", 40)
+			var result dagql.AnyResult
+			if mode == "commit" {
+				var commit dagql.ObjectResult[*core.GitCommit]
+				require.NoError(t, srv.Select(ctx, parent, &commit, dagql.Selector{Field: "commit", View: srv.View, Args: []dagql.NamedInput{{Name: "id", Value: dagql.String(sha)}}}))
+				require.Equal(t, sha, commit.Self().Ref.SHA)
+				require.Empty(t, commit.Self().FetchRef.Name)
+				result = commit
+			} else {
+				selector := dagql.Selector{Field: "ref", View: srv.View, Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(sha)}}}
+				if mode == "locked branch" {
+					lock := workspace.NewLock()
+					inputs, err := gitLockInputs(repo, "refs/heads/main")
+					require.NoError(t, err)
+					require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationGitSHA, inputs, sha))
+					ctx = withWorkspaceLookupLockOverride(ctx, lock)
+					selector.Field = "branch"
+					selector.Args[0].Value = dagql.String("main")
+				}
+				var ref dagql.ObjectResult[*core.GitRef]
+				require.NoError(t, srv.Select(ctx, parent, &ref, selector))
+				require.Equal(t, sha, ref.Self().Ref.SHA)
+				result = ref
+			}
+			record, err := cache.CapturePersistedRecord(ctx, result)
+			require.NoError(t, err)
+			wantField := mode
+			if mode == "locked branch" {
+				wantField = "__resolvedRef"
+			}
+			require.Equal(t, wantField, record.Call.Field)
+			require.Nil(t, repo.Remote, "fixed and locked paths must not resolve the remote")
+			require.Empty(t, server.manager.outputs)
+			parentID, err := cache.PersistedResultID(parent)
+			require.NoError(t, err)
+			require.Equal(t, parentID, record.Call.Receiver.ResultID)
+			require.Empty(t, record.Call.ImplicitInputs)
 		})
 	}
 }

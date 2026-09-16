@@ -239,6 +239,25 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				operational = b.client.ModuleSource(".").AsModule()
 				operational, err = operational.Sync(ctx)
 				require.NoError(t, err)
+				// Schema Files now use FileBlobLazy, so warming the SDK no longer
+				// evaluates an ordinary empty Directory as an incidental input.
+				// Warm that local donor explicitly for both import orders.
+				warmScratch, err := b.client.Directory().Sync(ctx)
+				require.NoError(t, err)
+				warmScratchID, err := warmScratch.ID(ctx)
+				require.NoError(t, err)
+				var warmReport transferFixtureReport
+				require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{string(warmScratchID)}, &warmReport))
+				require.Len(t, warmReport.Rows, 1)
+				warmRow := warmReport.Rows[0]
+				require.False(t, warmRow.Imported)
+				require.NotNil(t, warmRow.Call)
+				require.Equal(t, "directory", warmRow.Call.Field)
+				require.Nil(t, warmRow.Call.Receiver)
+				require.Len(t, warmRow.SnapshotLinks, 1)
+				require.Equal(t, "snapshot", warmRow.SnapshotLinks[0].Role)
+				require.NotEmpty(t, warmRow.SnapshotLinks[0].RefKey)
+				t.Logf("acquisition warm scratch donor row=%d ref=%s order=%s", warmRow.ResultID, warmRow.SnapshotLinks[0].RefKey, order)
 			}
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"))
 			if order == "after" {

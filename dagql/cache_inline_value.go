@@ -66,6 +66,16 @@ func inlineValueAt(res AnyResult, frame *ResultCall, path PersistedRefPath) (Any
 }
 
 func snapshotOwnerLinksFromTyped(self Typed, frame *ResultCall) ([]PersistedSnapshotRefLink, error) {
+	return collectSnapshotOwnerLinks(self, frame, false)
+}
+
+// snapshotOwnerLinksForSync is only called outside graph locks. The ordinary
+// collector remains nonblocking for capture, boot and import.
+func snapshotOwnerLinksForSync(self Typed, frame *ResultCall) ([]PersistedSnapshotRefLink, error) {
+	return collectSnapshotOwnerLinks(self, frame, true)
+}
+
+func collectSnapshotOwnerLinks(self Typed, frame *ResultCall, forSync bool) ([]PersistedSnapshotRefLink, error) {
 	if self == nil {
 		return nil, nil
 	}
@@ -73,6 +83,15 @@ func snapshotOwnerLinksFromTyped(self Typed, frame *ResultCall) ([]PersistedSnap
 	var versions capturedOutputVersions
 	err := walkInlineValues(newDetachedResult(frame, self), frame, nil, true, func(value AnyResult, path PersistedRefPath) error {
 		self := value.Unwrap()
+		if reader, ok := self.(SnapshotOwnerReader); forSync && ok {
+			revision, local, err := reader.ReadSnapshotOwner()
+			if err != nil {
+				return err
+			}
+			versions = append(versions, capturedOutputVersion{snapshotOwnerVersion{reader}, revision})
+			links = append(links, prefixSnapshotLinks(local, path)...)
+			return nil
+		}
 		if version, ok := self.(PersistedOutputVersion); ok {
 			if err := versions.record(version); err != nil {
 				return err
