@@ -1194,3 +1194,72 @@ func TestModuleObjectNestedNumbersSurvivePersistenceAndSDKConversion(t *testing.
 	assert.NilError(t, err)
 	assert.Assert(t, string(roundedJSON) != bigInt, "untyped decoding must lose the large integer; got %s", string(roundedJSON))
 }
+
+func TestModuleObjectAttachDependencyResultsPreservesInlineMap(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	sc := cacheIface
+	root := &Query{}
+	testSrv := &moduleObjectTestServer{
+		mockServer: &mockServer{},
+		cache:      sc,
+		root:       root,
+	}
+	root.Server = testSrv
+	dag := newCoreDagqlServerForTest(t, root)
+	testSrv.dag = dag
+	ctx = dagql.ContextWithCache(ctx, sc)
+	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "module-object-rewrite-client",
+		SessionID: "module-object-rewrite-session",
+	})
+	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
+
+	childObjDef := NewObjectTypeDef("Child", "", nil)
+	childObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildObj", childObjDef)
+	parentObjDef := NewObjectTypeDef("Parent", "", nil)
+	childTypeDef := newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes))
+	parentObjDef.Fields = append(parentObjDef.Fields, newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildField", NewFieldTypeDef("child", childTypeDef, "", nil)))
+	parentObjDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectRewriteParentObj", parentObjDef)
+	mod := &Module{
+		NameField: "test",
+		Deps:      NewSchemaBuilder(nil, nil),
+		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{
+			newTypeDefDetachedResult(t, dag, "moduleObjectRewriteChildTopTypeDef", (&TypeDef{}).WithObjectTypeDef(childObjDefRes)),
+			newTypeDefDetachedResult(t, dag, "moduleObjectRewriteParentTopTypeDef", (&TypeDef{}).WithObjectTypeDef(parentObjDefRes)),
+		},
+	}
+	modRes, err := dagql.NewObjectResultForCall(mod, dag, moduleObjectTestSyntheticCall("moduleObjectRewriteStoredResultsModule", mod))
+	assert.NilError(t, err)
+	parentCall := moduleObjectTestSyntheticCall("moduleObjectParent", &ModuleObject{TypeDef: parentObjDef})
+	ctx = dagql.ContextWithCall(ctx, parentCall)
+
+	inline := map[string]any{"name": "child"}
+	obj := &ModuleObject{Module: modRes, TypeDef: parentObjDef, Fields: map[string]any{"child": inline}}
+	parent, err := dagql.NewResultForCall(obj, parentCall)
+	assert.NilError(t, err)
+	before, err := json.Marshal(obj.Fields)
+	assert.NilError(t, err)
+	deps, err := obj.AttachDependencyResults(ctx, parent, func(value dagql.AnyResult) (dagql.AnyResult, error) {
+		// Use an independent child call: this test invokes the attachment
+		// hook directly rather than from the cache's parent-registration phase.
+		detached, err := dagql.NewResultForCall(value.Unwrap(), moduleObjectTestSyntheticCall("inlineChild", value.Unwrap()))
+		if err != nil {
+			return nil, err
+		}
+		return sc.AttachResult(ctx, "test-session", dag, detached)
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, len(deps), 1)
+	assert.DeepEqual(t, obj.Fields["child"], inline)
+	// ParentFields is sent as raw JSON to the SDK function. It must remain
+	// an inline object, even though attachment created a dependency result.
+	after, err := json.Marshal(obj.Fields)
+	assert.NilError(t, err)
+	assert.Equal(t, string(after), string(before))
+}

@@ -608,11 +608,15 @@ func attachTypedModuleObjectValue(
 		if err != nil {
 			return nil, nil, err
 		}
-		// Keep the declared object reference in its attached form. An SDK
-		// handle string would otherwise serialize as an opaque scalar and
-		// retain the producing engine's row ID during transfer. SDK input
-		// conversion already accepts this attached form.
-		return attached, []dagql.AnyResult{attached}, nil
+		// Handles must retain the attached reference so persistence can relocate
+		// them. Inline object maps keep their SDK representation while the
+		// attached result still supplies the dependency edge.
+		switch val.(type) {
+		case dagql.AnyResult, dagql.IDable, string:
+			return attached, []dagql.AnyResult{attached}, nil
+		default:
+			return val, []dagql.AnyResult{attached}, nil
+		}
 	default:
 		return val, nil, nil
 	}
