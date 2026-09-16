@@ -41,7 +41,7 @@ func EntrypointModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("get entrypoint schema: %w", err)
 	}
-	clientMetadata, nestedClientMetadata, err := dangshared.NewNestedClientMetadata(ctx)
+	nestedClientMetadata, err := dangshared.NewNestedClientMetadata(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -53,8 +53,7 @@ func EntrypointModuleTypes(
 		entrySrc,
 		schemaJSONFile,
 		nestedClientMetadata,
-		clientMetadata.ClientID,
-		true,
+		true, /* inert attachables */
 		nil,
 		moduleContext,
 		runEntrypointDir,
@@ -131,7 +130,7 @@ func (r *entrypointRuntime) Call(
 	if err != nil {
 		return fmt.Errorf("get entrypoint schema: %w", err)
 	}
-	clientMetadata, nestedClientMetadata, err := dangshared.NewNestedClientMetadata(ctx)
+	nestedClientMetadata, err := dangshared.NewNestedClientMetadata(ctx)
 	if err != nil {
 		return err
 	}
@@ -146,8 +145,7 @@ func (r *entrypointRuntime) Call(
 		entrySrc,
 		schemaJSONFile,
 		nestedClientMetadata,
-		clientMetadata.ClientID,
-		true,
+		true, /* inert attachables */
 		fnCall,
 		moduleContext,
 		runEntrypointDir,
