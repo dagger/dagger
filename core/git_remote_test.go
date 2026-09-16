@@ -64,7 +64,7 @@ func gitMirrorTestSource(t *testing.T) (source, base, next string) {
 	gitMirrorTestRun(t, source, "add", ".")
 	commit("next")
 	next = gitMirrorTestRun(t, source, "rev-parse", "HEAD")
-	return
+	return source, base, next
 }
 
 func gitMirrorTestRepo(t *testing.T, source string) (*RemoteGitRepository, *gitutil.GitCLI, string) {
