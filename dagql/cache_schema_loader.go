@@ -47,7 +47,12 @@ func (c *Cache) schemaModuleLookup(ctx context.Context, sessionID string, record
 	for _, candidate := range installed {
 		operational := c.resultsByID[sharedResultID(candidate.ModuleResultID)]
 		scoped := c.resultsByID[sharedResultID(candidate.ScopedResultID)]
-		if operational == nil || scoped == nil || operational.attachmentState() != resultAttachmentClean || scoped.attachmentState() != resultAttachmentClean || !c.sessionSatisfiesResourceRequirementsLocked(sessionID, operational) || !c.sessionSatisfiesResourceRequirementsLocked(sessionID, scoped) {
+		if operational == nil || scoped == nil || operational.attachmentState() != resultAttachmentClean || scoped.attachmentState() != resultAttachmentClean {
+			continue
+		}
+		// An inaccessible installed candidate does not suppress the recorded
+		// row or the ordinary canonical fallback.
+		if !c.sessionSatisfiesResourceRequirementsLocked(sessionID, operational) || !c.sessionSatisfiesResourceRequirementsLocked(sessionID, scoped) {
 			continue
 		}
 		for scopedClass := range c.outputEqClassesForResultLocked(scoped.id) {

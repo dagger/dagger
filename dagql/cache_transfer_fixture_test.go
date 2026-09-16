@@ -82,6 +82,42 @@ func TestSchemaModuleSelectionFallback(t *testing.T) {
 	require.ErrorIs(t, err, ErrCacheSessionReleased)
 }
 
+func TestSchemaModuleSelectionSkipsInaccessibleInstalled(t *testing.T) {
+	for _, inaccessible := range []string{"operational", "scoped"} {
+		t.Run(inaccessible, func(t *testing.T) {
+			ctx, c, srv := transferTestCache(t)
+			lower := persistedListTestResult(t, ctx, c, srv, "lower", String("lower"))
+			recorded := persistedListTestResult(t, ctx, c, srv, "recorded", String("recorded"))
+			operational := persistedListTestResult(t, ctx, c, srv, "operational", String("operational"))
+			scoped := persistedListTestResult(t, ctx, c, srv, "scoped", String("scoped"))
+			for _, value := range []AnyResult{lower, recorded, scoped} {
+				_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"), call.ExtraDigestLabelRemoteCache)
+				require.NoError(t, err)
+			}
+			c.egraphMu.Lock()
+			blocked := operational.cacheSharedResult()
+			if inaccessible == "scoped" {
+				blocked = scoped.cacheSharedResult()
+			}
+			blocked.sessionResourceHandle = "unbound-socket"
+			_, err := c.recomputeRequiredSessionResourcesLocked(blocked)
+			c.egraphMu.Unlock()
+			require.NoError(t, err)
+			candidates := []SchemaModuleCandidate{{ModuleResultID: uint64(operational.cacheSharedResult().id), ScopedResultID: uint64(scoped.cacheSharedResult().id)}}
+			id := uint64(recorded.cacheSharedResult().id)
+			got, err := c.LoadResultByResultIDForSchema(ctx, "test-session", srv, id, candidates)
+			require.NoError(t, err)
+			require.Same(t, recorded.cacheSharedResult(), got.cacheSharedResult())
+			c.egraphMu.Lock()
+			recorded.cacheSharedResult().expiresAtUnix = time.Now().Add(-time.Hour).Unix()
+			c.egraphMu.Unlock()
+			got, err = c.LoadResultByResultIDForSchema(ctx, "test-session", srv, id, candidates)
+			require.NoError(t, err)
+			require.Same(t, lower.cacheSharedResult(), got.cacheSharedResult())
+		})
+	}
+}
+
 func testValueTransferCaptureConcurrent(t *testing.T) {
 	t.Run("concurrent replacement and pruning", func(t *testing.T) {
 		ctx, c, srv := transferTestCache(t)
