@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -89,6 +90,66 @@ func TestPartDecodeBeforeExternalFinish(t *testing.T) {
 	encoded, err := c.CapturePersistedRecord(ctx, loaded)
 	require.NoError(t, err)
 	require.JSONEq(t, string(json.RawMessage(`{"text":"snapshot"}`)), string(encoded.Envelope.ObjectJSON))
+}
+
+func TestReadyPartDonorBackreferenceReleasedBeforeSync(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	var released atomic.Int32
+	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "ready", release: func(context.Context) error { released.Add(1); return nil }})
+	transferTestDependency(c, ctx, donor, receiver)
+	partTestEquivalent(t, ctx, c, receiver, donor)
+	partEncodedReceiver(t, ctx, c, receiver)
+	demandCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{SessionID: "demand", ClientID: "demand"})
+	barrier := make(chan struct{})
+	receipts := make(chan *ReadyPartReceipt, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- c.RunLazyTask(demandCtx, receiver, "obtain:ready-backref", LazyTaskSpec{OwnerSyncReady: barrier, Body: func(ctx context.Context) error {
+			address := PersistedPartAddress{Part: "snapshot"}
+			source, err := c.AcquireEquivalentPartSource(ctx, receiver, address)
+			if err != nil {
+				return err
+			}
+			permit, _, err := c.TryAcquire(ctx, receiver, address, PartTaskFromContext(ctx))
+			if err != nil {
+				return err
+			}
+			prepared, err := c.PrepareReadyPart(ctx, receiver, source, permit)
+			if err != nil {
+				return err
+			}
+			receipt, _, err := c.CommitReadyPart(ctx, prepared)
+			if err == nil {
+				receipts <- receipt
+			}
+			return err
+		}})
+	}()
+	var receipt *ReadyPartReceipt
+	select {
+	case receipt = <-receipts:
+	case err := <-done:
+		require.NoError(t, err)
+		t.Fatal("no receipt")
+	}
+	require.False(t, receipt.task.settled.Load())
+	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+	_, err := c.removePersistedEdge(ctx, donor.cacheSharedResult().id)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, released.Load(), "Ready donor must collect before receiver bookkeeping despite donor-to-receiver backreference")
+	c.egraphMu.RLock()
+	require.Nil(t, c.resultsByID[donor.cacheSharedResult().id])
+	require.NotContains(t, receiver.cacheSharedResult().deps, donor.cacheSharedResult().id)
+	c.egraphMu.RUnlock()
+	require.NoError(t, c.FinishReadyPart(demandCtx, receipt))
+	require.NoError(t, waitLazyRetryError(t, done, "ready backreference Finish"))
+	require.NoError(t, c.ReleaseSession(demandCtx, "demand"))
+	_, err = c.removePersistedEdge(ctx, receiver.cacheSharedResult().id)
+	require.NoError(t, err)
+	c.egraphMu.RLock()
+	require.Nil(t, c.resultsByID[receiver.cacheSharedResult().id])
+	c.egraphMu.RUnlock()
 }
 
 func TestPartDecodeLosesToInstalledRevision(t *testing.T) {
