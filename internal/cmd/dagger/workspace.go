@@ -998,6 +998,18 @@ func inferCleanLocalWorkspaceRemoteAddress(ctx context.Context, address string) 
 // This is intentionally narrower than the workspace-git API: it only projects
 // a local checkout into a copy/pasteable remote workspace address, without
 // starting the engine or modeling full Git state.
+// localHeadCommitSHA resolves the commit HEAD points at for the local
+// workspace at address (the current directory when empty). Cloud checks are
+// keyed by commit, so lookups must use this rather than the symbolic ref that
+// currentGitRef prefers for display.
+func localHeadCommitSHA(ctx context.Context, address string) (string, error) {
+	info, err := localWorkspaceRemoteInfoForAddress(ctx, address)
+	if err != nil {
+		return "", err
+	}
+	return gitOutput(ctx, info.repoRoot, "rev-parse", "HEAD")
+}
+
 func currentGitRef(ctx context.Context, repoRoot string) (string, error) {
 	ref, err := gitOutput(ctx, repoRoot, "symbolic-ref", "--quiet", "--short", "HEAD")
 	if err == nil && ref != "" {

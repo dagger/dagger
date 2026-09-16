@@ -97,6 +97,7 @@ type frontendPretty struct {
 	term        tuist.Terminal
 	termStopped bool
 	termStdin   io.Reader
+	termStdinPW *io.PipeWriter
 	tui         *tuist.TUI
 	run         func(context.Context) (cleanups.CleanupF, error)
 	runCtx      context.Context
@@ -2771,8 +2772,33 @@ func (fe *frontendPretty) Stdin() io.Reader {
 		pr, pw := io.Pipe()
 		fe.term.SetInputPassthrough(pw)
 		fe.termStdin = pr
+		fe.termStdinPW = pw
 	}
 	return fe.termStdin
+}
+
+// StandaloneFormInput hands the terminal's input stream to one standalone
+// prompt at a time. Each prompt gets a fresh pipe so a reader goroutine its
+// program fails to shut down blocks on a closed pipe instead of stealing a
+// later prompt's keystrokes; restore re-routes input to the long-lived prompt
+// reader (if Stdin was handed out) or back to discard.
+func (fe *frontendPretty) StandaloneFormInput() (io.Reader, func(), bool) {
+	if !fe.termStopped {
+		// The terminal never ran (or is still running): os.Stdin has no
+		// competing reader from us, so the form can own it directly.
+		return nil, nil, false
+	}
+	pr, pw := io.Pipe()
+	fe.term.SetInputPassthrough(pw)
+	restore := func() {
+		if fe.termStdinPW != nil {
+			fe.term.SetInputPassthrough(fe.termStdinPW)
+		} else {
+			fe.term.SetInputPassthrough(nil)
+		}
+		pw.Close()
+	}
+	return pr, restore, true
 }
 
 func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {

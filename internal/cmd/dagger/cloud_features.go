@@ -17,6 +17,7 @@ type cloudFeature string
 
 const (
 	featureCloudChecks  cloudFeature = "CLOUD_CHECKS"
+	featureCloudEngines cloudFeature = "CLOUD_ENGINES"
 	featureCloudModules cloudFeature = "CLOUD_MODULES"
 )
 
@@ -178,7 +179,7 @@ func confirmFeatureTrial(cmd *cobra.Command, details *cloudapi.OrgDetails, missi
 			TitleLink(fmt.Sprintf("https://dagger.cloud/%s/settings", details.Name)).
 			Description(fmt.Sprintf("Organization %q does not have %s enabled.\nMore info: https://dagger.cloud/%s/settings", details.Name, joinFeatures(missing), details.Name)),
 	))
-	if err := idtui.RunStandaloneForm(cmd.Context(), form); err != nil {
+	if err := idtui.RunStandaloneForm(cmd.Context(), Frontend, form); err != nil {
 		return false, err
 	}
 	return choice == featureTrialStart, nil
