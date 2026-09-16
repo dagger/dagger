@@ -146,8 +146,8 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	} else if resp.Body != nil {
 		// Non-streaming: buffer, log, and replace.
 		captured, fullBody, readErr := captureBody(resp.Body)
+		enginetelemetry.RecordNetworkRX(req.Context(), int64(len(fullBody)))
 		if readErr == nil {
-			enginetelemetry.RecordNetworkRX(req.Context(), int64(len(fullBody)))
 			resp.Body = io.NopCloser(bytes.NewReader(fullBody))
 			fmt.Fprintf(stdio.Stdout, "<<< %d\n%s\n", resp.StatusCode, captured)
 		}
@@ -276,7 +276,7 @@ func captureBody(r io.ReadCloser) (captured string, full []byte, err error) {
 	full, err = io.ReadAll(r)
 	r.Close()
 	if err != nil {
-		return "", nil, err
+		return "", full, err
 	}
 	if len(full) <= maxBodyCapture {
 		return string(full), full, nil
