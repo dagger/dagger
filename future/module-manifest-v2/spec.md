@@ -66,6 +66,25 @@ The presence of the `entrypoint` table selects this format. A
 `dagger-module.toml` that has no `entrypoint` table is the previous format.
 There is no `manifestVersion` key.
 
+One transitional rule qualifies this. Version 2 has no dependency list, and the
+SDKs still need one, so a dependency list keeps a manifest on the previous
+format even when it declares an entrypoint:
+
+| `entrypoint` | `dependencies` | `runtime` | Format |
+| --- | --- | --- | --- |
+| absent | any | any | Previous |
+| present | absent | any | Version 2, previous fields ignored |
+| present | present | present | Previous, entrypoint ignored |
+| present | present | absent | Error, neither format can load it |
+
+A manifest that carries an entrypoint table and the previous fields at the same
+time is a fat manifest. It loads on an engine that supports entrypoints and on
+an engine that does not, because the older engine ignores the entrypoint table.
+A version 2 read ignores the previous fields rather than rejecting them.
+
+This rule disappears once version 2 covers dependencies. The engine keeps it in
+`core/modules/config_fat_manifest.go`, which names the steps to remove it.
+
 A version 2 manifest accepts `name` and `entrypoint` and nothing else, so a
 `manifestVersion` key is rejected as an unsupported key. An earlier draft of
 this design required that key, but no released engine ever read or wrote it,

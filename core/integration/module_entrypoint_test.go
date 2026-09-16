@@ -21,37 +21,10 @@ source = ".dagger/modules/tiny"
 kind = "dang"
 source = "entrypoint"
 `).
-		WithNewFile(".dagger/modules/tiny/entrypoint/main.dang", `type Entrypoint implements ModuleEntrypoint {
-  pub types(workspace: Workspace!): [TypeDef!]! {
-    [
-      typeDef
-        .withObject("Tiny")
-        .withConstructor(function("", typeDef.withObject("Tiny")))
-        .withFunction(
-          function("Hello", typeDef.withKind(TypeDefKind.STRING_KIND)),
-        ),
-    ]
-  }
-
-  pub call(
-    workspace: Workspace!,
-    receiverType: String!,
-    receiverValue: JSON,
-    fnName: String!,
-    fnArgs: JSON!,
-  ): JSON! {
-    if (receiverType != "Tiny") {
-      raise "unknown receiver type: " + receiverType
-    } else if (fnName == "") {
-      ("{}" :: JSON!)
-    } else if (fnName == "Hello") {
-      ("\"hello\"" :: JSON!)
-    } else {
-      raise "unknown function: " + fnName
-    }
-  }
-}
-`).
+		WithDirectory(
+			".dagger/modules/tiny/entrypoint",
+			c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+		).
 		With(daggerCallAt("tiny", "hello"))
 
 	out, err := ctr.Stdout(ctx)
@@ -72,37 +45,10 @@ source = ".dagger/modules/tiny"
 kind = "dang"
 source = "./entrypoint"
 `).
-		WithNewFile(".dagger/modules/tiny/entrypoint/main.dang", `type Entrypoint implements ModuleEntrypoint {
-  pub types(workspace: Workspace!): [TypeDef!]! {
-    [
-      typeDef
-        .withObject("Tiny")
-        .withConstructor(function("", typeDef.withObject("Tiny")))
-        .withFunction(
-          function("Hello", typeDef.withKind(TypeDefKind.STRING_KIND)),
-        ),
-    ]
-  }
-
-  pub call(
-    workspace: Workspace!,
-    receiverType: String!,
-    receiverValue: JSON,
-    fnName: String!,
-    fnArgs: JSON!,
-  ): JSON! {
-    if (receiverType != "Tiny") {
-      raise "unknown receiver type: " + receiverType
-    } else if (fnName == "") {
-      ("{}" :: JSON!)
-    } else if (fnName == "Hello") {
-      ("\"hello\"" :: JSON!)
-    } else {
-      raise "unknown function: " + fnName
-    }
-  }
-}
-`).
+		WithDirectory(
+			".dagger/modules/tiny/entrypoint",
+			c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+		).
 		WithNewFile("sub/dir/.keep", "").
 		WithWorkdir("sub/dir").
 		With(daggerCallAt("tiny", "hello"))
