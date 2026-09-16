@@ -108,6 +108,9 @@ ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(cont
 				dir.SetSnapshot(borrowed)
 				ctr := core.NewContainer(platform)
 				ctr.FS.SetValue(dir)
+				old := new(core.LazyAccessor[*core.Directory, *core.Container])
+				old.SetValue(dir)
+				ctr.Mounts = core.ContainerMounts{{Target: "/target", DirectorySource: old}}
 				parent := resolverAttach(t, ctx, srv, cache, "mountParent", ctr)
 				if site == "mounted Directory" {
 					source := resolverAttach(t, ctx, srv, cache, "mountSourceDirectory", dir)

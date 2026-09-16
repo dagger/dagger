@@ -2475,9 +2475,10 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts := slices.Clone(ctr.Mounts)
 	defer func() {
 		if rerr != nil {
-			rerr = errors.Join(rerr, ctr.OnRelease(context.WithoutCancel(ctx)))
+			rerr = errors.Join(rerr, releaseFailedContainerMount(ctx, ctr, clonedMounts))
 		}
 	}()
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
@@ -2710,9 +2711,10 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return nil, err
 	}
+	clonedMounts := slices.Clone(ctr.Mounts)
 	defer func() {
 		if rerr != nil {
-			rerr = errors.Join(rerr, ctr.OnRelease(context.WithoutCancel(ctx)))
+			rerr = errors.Join(rerr, releaseFailedContainerMount(ctx, ctr, clonedMounts))
 		}
 	}()
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
@@ -3424,6 +3426,26 @@ func inheritedOwner(parent dagql.ObjectResult[*core.Container], owner string, in
 		return "", errors.New("cannot set both owner and inheritOwner")
 	}
 	return parent.Self().Config.User, nil
+}
+
+// An eager mount can shadow cloned parent mounts before recording rejects it.
+// Those detached clones are no longer reachable from the failed child.
+func releaseFailedContainerMount(ctx context.Context, child *core.Container, cloned core.ContainerMounts) (rerr error) {
+	ctx = context.WithoutCancel(ctx)
+	rerr = child.OnRelease(ctx)
+	for _, mount := range cloned {
+		if mount.DirectorySource != nil && !slices.ContainsFunc(child.Mounts, func(current core.ContainerMount) bool { return current.DirectorySource == mount.DirectorySource }) {
+			if dir, ok := mount.DirectorySource.Peek(); ok && dir != nil {
+				rerr = errors.Join(rerr, dir.OnRelease(ctx))
+			}
+		}
+		if mount.FileSource != nil && !slices.ContainsFunc(child.Mounts, func(current core.ContainerMount) bool { return current.FileSource == mount.FileSource }) {
+			if file, ok := mount.FileSource.Peek(); ok && file != nil {
+				rerr = errors.Join(rerr, file.OnRelease(ctx))
+			}
+		}
+	}
+	return rerr
 }
 
 func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult[*core.Container]) (*core.Container, bool, error) {
