@@ -473,14 +473,14 @@ For `Directory` and `File`, persisted object encoding chooses between:
 - a snapshot form when a concrete snapshot is already available
 - a lazy form when the object is still deferred
 
-The snapshot form also retains the completed producer's original inputs in
+The snapshot form also retains the completed Lazy operation's original inputs in
 `lazyKind` and `lazyJSON`, when present. Decode keeps those raw bytes without
-loading producer ancestors.
+loading the operation's input values.
 
 `Container` has one payload: consumed metadata, pending/absent/completed records
-for snapshot parts, and the original producer inputs even after computation
-completes. Completed-row decode retains the producer's raw bytes without
-decoding its ancestors.
+for snapshot parts, and the original Lazy operation inputs even after computation
+completes. Completed-row decode retains the operation's raw bytes without
+decoding its input values.
 Completed directory/file values inside the container carry path, platform,
 services, and a snapshot role link. Decode leaves their accessors closed and
 seeds original completed group latches before publication. `ContainerRestoreLazy`
