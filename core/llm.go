@@ -134,6 +134,11 @@ type LLMEndpoint struct {
 	AuthToken string
 	IsOAuth   bool
 
+	// ClaudeCodeVersion overrides the Claude Code release the Anthropic OAuth
+	// client identifies as (see defaultClaudeCodeVersion). Empty means the
+	// built-in default.
+	ClaudeCodeVersion string
+
 	// AuthTokenSource, when set, supersedes AuthToken at request time: the
 	// endpoint's HTTP client asks it for the current bearer token before
 	// every provider request and overwrites the Authorization header with
@@ -731,13 +736,14 @@ const (
 
 // A LLM routing configuration
 type LLMRouter struct {
-	AnthropicAPIKey          string
-	AnthropicAuthToken       string
-	AnthropicIsOAuth         bool
-	AnthropicBaseURL         string
-	AnthropicModel           string
-	AnthropicSmallModel      string
-	AnthropicReasoningEffort string
+	AnthropicAPIKey            string
+	AnthropicAuthToken         string
+	AnthropicIsOAuth           bool
+	AnthropicBaseURL           string
+	AnthropicModel             string
+	AnthropicSmallModel        string
+	AnthropicReasoningEffort   string
+	AnthropicClaudeCodeVersion string
 
 	OpenAIAPIKey           string
 	OpenAIAzureVersion     string
@@ -835,13 +841,14 @@ func (r *LLMRouter) getReplay(model string) ([]*LLMMessage, error) {
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 	endpoint := &LLMEndpoint{
-		BaseURL:         r.AnthropicBaseURL,
-		Key:             r.AnthropicAPIKey,
-		Provider:        Anthropic,
-		AuthToken:       r.AnthropicAuthToken,
-		IsOAuth:         r.AnthropicIsOAuth,
-		AuthTokenSource: newCredentialSource(r.reloadAnthropicAuthToken),
-		ReasoningEffort: r.AnthropicReasoningEffort,
+		BaseURL:           r.AnthropicBaseURL,
+		Key:               r.AnthropicAPIKey,
+		Provider:          Anthropic,
+		AuthToken:         r.AnthropicAuthToken,
+		IsOAuth:           r.AnthropicIsOAuth,
+		AuthTokenSource:   newCredentialSource(r.reloadAnthropicAuthToken),
+		ReasoningEffort:   r.AnthropicReasoningEffort,
+		ClaudeCodeVersion: r.AnthropicClaudeCodeVersion,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 
@@ -1136,6 +1143,12 @@ func (r *LLMRouter) loadConfig(ctx context.Context, getenv, reloadEnv func(conte
 	eg.Go(func() error {
 		return save("ANTHROPIC_REASONING_EFFORT", &r.AnthropicReasoningEffort)
 	})
+	eg.Go(func() error {
+		// Claude Code release to present when authenticating with a
+		// subscription OAuth token; unblocks newly gated models between
+		// Dagger releases. See defaultClaudeCodeVersion.
+		return save("ANTHROPIC_CLAUDE_CODE_VERSION", &r.AnthropicClaudeCodeVersion)
+	})
 
 	eg.Go(func() error {
 		return save("OPENAI_API_KEY", &r.OpenAIAPIKey)
@@ -1233,6 +1246,14 @@ func (r *LLMRouter) loadConfig(ctx context.Context, getenv, reloadEnv func(conte
 			return false, err
 		}
 		r.OpenAIDisableStreaming = v
+	}
+
+	// The version is embedded verbatim in the Claude Code user-agent, so a
+	// malformed value would present a client that never existed. Fail loudly
+	// rather than silently falling back to the default the user was trying
+	// to replace.
+	if v := r.AnthropicClaudeCodeVersion; v != "" && !claudeCodeVersionPattern.MatchString(v) {
+		return false, fmt.Errorf("ANTHROPIC_CLAUDE_CODE_VERSION must be a bare X.Y.Z version, got %q", v)
 	}
 
 	// API key and subscription OAuth token are alternative credentials for

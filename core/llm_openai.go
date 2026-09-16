@@ -6,9 +6,9 @@ import (
 
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/azure"
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/azure"
+	"github.com/openai/openai-go/v3/option"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -80,7 +80,7 @@ func convertHistoryToOpenAI(history []*LLMMessage) []openai.ChatCompletionMessag
 			}
 		case LLMMessageRoleAssistant:
 			assistantMsg := openai.AssistantMessage(msg.TextContent())
-			var calls []openai.ChatCompletionMessageToolCallParam
+			var calls []openai.ChatCompletionMessageToolCallUnionParam
 			for _, block := range msg.Content {
 				if block.Kind != LLMContentToolCall {
 					continue
@@ -89,11 +89,13 @@ func convertHistoryToOpenAI(history []*LLMMessage) []openai.ChatCompletionMessag
 				if args == "" {
 					args = "{}"
 				}
-				calls = append(calls, openai.ChatCompletionMessageToolCallParam{
-					ID: block.CallID,
-					Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name:      block.ToolName,
-						Arguments: args,
+				calls = append(calls, openai.ChatCompletionMessageToolCallUnionParam{
+					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: block.CallID,
+						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name:      block.ToolName,
+							Arguments: args,
+						},
 					},
 				})
 			}
@@ -164,15 +166,13 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	}
 
 	if len(tools) > 0 {
-		var toolParams []openai.ChatCompletionToolParam
+		var toolParams []openai.ChatCompletionToolUnionParam
 		for _, tool := range tools {
-			toolParams = append(toolParams, openai.ChatCompletionToolParam{
-				Function: openai.FunctionDefinitionParam{
-					Name:        tool.Name,
-					Description: openai.Opt(tool.Description),
-					Parameters:  openai.FunctionParameters(tool.Schema),
-				},
-			})
+			toolParams = append(toolParams, openai.ChatCompletionFunctionTool(openai.FunctionDefinitionParam{
+				Name:        tool.Name,
+				Description: openai.Opt(tool.Description),
+				Parameters:  openai.FunctionParameters(tool.Schema),
+			}))
 		}
 		params.Tools = toolParams
 	}
