@@ -14,6 +14,20 @@ type Stream interface {
 }
 
 func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStream func() error) error {
+	return CopyWithMetrics(ctx, conn, stream, closeStream, nil, nil)
+}
+
+// CopyWithMetrics proxies a bidirectional stream and reports payload bytes in
+// each direction. streamToConn receives bytes delivered to conn; connToStream
+// receives bytes sent from conn.
+func CopyWithMetrics(
+	ctx context.Context,
+	conn io.ReadWriteCloser,
+	stream Stream,
+	closeStream func() error,
+	streamToConn func(int64),
+	connToStream func(int64),
+) error {
 	defer conn.Close()
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -42,7 +56,11 @@ func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStre
 				return context.Cause(ctx)
 			default:
 			}
-			if _, err := conn.Write(p.Data); err != nil {
+			n, err := conn.Write(p.Data)
+			if n > 0 && streamToConn != nil {
+				streamToConn(int64(n))
+			}
+			if err != nil {
 				conn.Close()
 				return errors.WithStack(err)
 			}
@@ -54,6 +72,20 @@ func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStre
 		for {
 			buf := make([]byte, 32*1024)
 			n, err := conn.Read(buf)
+			if n > 0 {
+				select {
+				case <-ctx.Done():
+					return context.Cause(ctx)
+				default:
+				}
+				p := &BytesMessage{Data: buf[:n]}
+				if sendErr := stream.SendMsg(p); sendErr != nil {
+					return errors.WithStack(sendErr)
+				}
+				if connToStream != nil {
+					connToStream(int64(n))
+				}
+			}
 			switch {
 			case err == io.EOF:
 				if closeStream != nil {
@@ -61,15 +93,6 @@ func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStre
 				}
 				return nil
 			case err != nil:
-				return errors.WithStack(err)
-			}
-			select {
-			case <-ctx.Done():
-				return context.Cause(ctx)
-			default:
-			}
-			p := &BytesMessage{Data: buf[:n]}
-			if err := stream.SendMsg(p); err != nil {
 				return errors.WithStack(err)
 			}
 		}

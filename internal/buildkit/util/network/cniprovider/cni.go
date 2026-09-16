@@ -9,6 +9,7 @@ import (
 	"time"
 
 	cni "github.com/containerd/go-cni"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -63,10 +64,18 @@ func New(opt Opt) (network.Provider, error) {
 		CNI:  cniHandle,
 		root: opt.Root,
 	}
+	if accounting, err := nettracer.New(); err != nil {
+		bklog.L.Debugf("scoped network accounting unavailable: %s", err)
+	} else {
+		cp.netAccounting = accounting
+	}
 	cleanOldNamespaces(cp)
 
 	cp.nsPool = &cniPool{targetSize: opt.PoolSize, provider: cp}
 	if err := cp.initNetwork(true); err != nil {
+		if cp.netAccounting != nil {
+			_ = cp.netAccounting.Close()
+		}
 		return nil, err
 	}
 	go cp.nsPool.fillPool(context.TODO())
@@ -75,9 +84,10 @@ func New(opt Opt) (network.Provider, error) {
 
 type cniProvider struct {
 	cni.CNI
-	root    string
-	nsPool  *cniPool
-	release func() error
+	root          string
+	nsPool        *cniPool
+	release       func() error
+	netAccounting *nettracer.Tracer
 }
 
 func (c *cniProvider) initNetwork(lock bool) error {
@@ -97,10 +107,16 @@ func (c *cniProvider) initNetwork(lock bool) error {
 
 func (c *cniProvider) Close() error {
 	c.nsPool.close()
-	if c.release != nil {
-		return c.release()
+	var accountingErr error
+	if c.netAccounting != nil {
+		accountingErr = c.netAccounting.Close()
 	}
-	return nil
+	if c.release != nil {
+		if err := c.release(); err != nil {
+			return err
+		}
+	}
+	return accountingErr
 }
 
 func initLock() (func() error, error) {
@@ -306,6 +322,14 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 		opts:     nsOpts,
 		vethName: vethName,
 	}
+	if c.netAccounting != nil && ns.vethName != "" {
+		accounting, err := c.netAccounting.AttachInterface(ns.vethName)
+		if err != nil {
+			bklog.G(ctx).Debugf("scoped network accounting unavailable for %s: %s", ns.vethName, err)
+		} else {
+			ns.netAccounting = accounting
+		}
+	}
 
 	if ns.vethName != "" {
 		sample, err := ns.sample()
@@ -319,16 +343,17 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 }
 
 type cniNS struct {
-	pool         *cniPool
-	handle       cni.CNI
-	id           string
-	nativeID     string
-	opts         []cni.NamespaceOpts
-	lastUsed     time.Time
-	vethName     string
-	canSample    bool
-	offsetSample *resourcestypes.NetworkSample
-	prevSample   *resourcestypes.NetworkSample
+	pool          *cniPool
+	handle        cni.CNI
+	id            string
+	nativeID      string
+	opts          []cni.NamespaceOpts
+	lastUsed      time.Time
+	vethName      string
+	canSample     bool
+	offsetSample  *resourcestypes.NetworkSample
+	prevSample    *resourcestypes.NetworkSample
+	netAccounting *nettracer.Attachment
 }
 
 func (ns *cniNS) Set(s *specs.Spec) error {
@@ -372,13 +397,26 @@ func (ns *cniNS) Sample() (*resourcestypes.NetworkSample, error) {
 		s.RxErrors -= ns.offsetSample.RxErrors
 		s.TxDropped -= ns.offsetSample.TxDropped
 		s.RxDropped -= ns.offsetSample.RxDropped
+		s.InternalRxBytes -= ns.offsetSample.InternalRxBytes
+		s.InternalTxBytes -= ns.offsetSample.InternalTxBytes
+		s.ExternalRxBytes -= ns.offsetSample.ExternalRxBytes
+		s.ExternalTxBytes -= ns.offsetSample.ExternalTxBytes
 	}
 	return s, nil
 }
 
 func (ns *cniNS) release() error {
 	bklog.L.Tracef("releasing cni network namespace %s", ns.id)
-	err := ns.handle.Remove(context.TODO(), ns.id, ns.nativeID, ns.opts...)
+	var err error
+	if ns.netAccounting != nil {
+		err = withDetachedNetNSIfAny(context.TODO(), func(context.Context) error {
+			return ns.netAccounting.Close()
+		})
+		ns.netAccounting = nil
+	}
+	if err1 := ns.handle.Remove(context.TODO(), ns.id, ns.nativeID, ns.opts...); err == nil {
+		err = err1
+	}
 	if err1 := unmountNetNS(ns.nativeID); err1 != nil && err == nil {
 		err = err1
 	}

@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -940,22 +941,28 @@ func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final b
 }
 
 var metricsVerbosity = map[string]int{
-	telemetry.IOStatDiskReadBytes:      3,
-	telemetry.IOStatDiskWriteBytes:     3,
-	telemetry.IOStatPressureSomeTotal:  3,
-	telemetry.CPUStatPressureSomeTotal: 3,
-	telemetry.CPUStatPressureFullTotal: 3,
-	telemetry.MemoryCurrentBytes:       3,
-	telemetry.MemoryPeakBytes:          3,
-	telemetry.NetstatRxBytes:           3,
-	telemetry.NetstatTxBytes:           3,
-	telemetry.NetstatRxDropped:         3,
-	telemetry.NetstatTxDropped:         3,
-	telemetry.NetstatRxPackets:         3,
-	telemetry.NetstatTxPackets:         3,
-	telemetry.LLMInputTokens:           1,
-	telemetry.LLMOutputTokens:          1,
-	telemetry.FilesyncWrittenBytes:     3,
+	telemetry.IOStatDiskReadBytes:         3,
+	telemetry.IOStatDiskWriteBytes:        3,
+	telemetry.IOStatPressureSomeTotal:     3,
+	telemetry.CPUStatPressureSomeTotal:    3,
+	telemetry.CPUStatPressureFullTotal:    3,
+	telemetry.MemoryCurrentBytes:          3,
+	telemetry.MemoryPeakBytes:             3,
+	telemetry.NetstatRxBytes:              3,
+	telemetry.NetstatTxBytes:              3,
+	telemetry.NetstatRxDropped:            3,
+	telemetry.NetstatTxDropped:            3,
+	telemetry.NetstatRxPackets:            3,
+	telemetry.NetstatTxPackets:            3,
+	telemetryattrs.NetworkRxBytes:         3,
+	telemetryattrs.NetworkTxBytes:         3,
+	telemetryattrs.NetworkInternalRxBytes: 3,
+	telemetryattrs.NetworkInternalTxBytes: 3,
+	telemetryattrs.NetworkExternalRxBytes: 3,
+	telemetryattrs.NetworkExternalTxBytes: 3,
+	telemetry.LLMInputTokens:              1,
+	telemetry.LLMOutputTokens:             1,
+	telemetry.FilesyncWrittenBytes:        3,
 }
 
 func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
@@ -975,12 +982,23 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 			r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
 
 			// Network Stats
-			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
-			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+			// Legacy netstat is sampled from the host side of the veth, so its
+			// packet and drop directions are opposite to the operation-oriented
+			// canonical byte metrics.
+			r.renderNetworkMetric(out, metricsByName, telemetryattrs.NetworkRxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Rx")
+			r.renderNetworkMetric(out, metricsByName, telemetryattrs.NetworkTxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Tx")
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalRxBytes, "External Rx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalTxBytes, "External Tx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalRxBytes, "Internal Rx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalTxBytes, "Internal Tx", humanizeBytes)
 		}
 	}
 
 	if metricsByName := r.db.MetricsBySpan[span.ID]; metricsByName != nil {
+		// Native operation network stats
+		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkRxBytes, "Network Rx", humanizeBytes)
+		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkTxBytes, "Network Tx", humanizeBytes)
+
 		// LLM Stats
 		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "Input Tokens", humanizeTokens)
 		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "Output Tokens", humanizeTokens)

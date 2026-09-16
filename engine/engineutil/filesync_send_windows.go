@@ -8,8 +8,8 @@ import (
 	"github.com/dagger/dagger/internal/fsutil"
 )
 
-func sendDiffCopyToCaller(stream filesync.FileSend_DiffCopyClient, fs fsutil.FS, progress func(int, bool)) error {
+func sendDiffCopyToCaller(stream filesync.FileSend_DiffCopyClient, fs fsutil.FS, progress func(int, bool), data func(int)) error {
 	winio.EnableProcessPrivileges([]string{winio.SeBackupPrivilege})
 	defer winio.DisableProcessPrivileges([]string{winio.SeBackupPrivilege})
-	return fsutil.Send(stream.Context(), stream, fs, progress)
+	return fsutil.SendWithDataCallback(stream.Context(), stream, fs, progress, data)
 }

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
@@ -120,15 +121,31 @@ func (pt *ProgressTracker) Finish() {
 // means the size is unknown (indeterminate). The final state is emitted
 // when the reader sees EOF or is closed.
 func NewProgressReader(ctx context.Context, item string, total int64, r io.ReadCloser) io.ReadCloser {
+	return newProgressReader(ctx, item, total, r, nil)
+}
+
+// NewNetworkProgressReader reports both display progress and operation-level
+// network bytes while the response body is consumed.
+func NewNetworkProgressReader(ctx context.Context, item string, total int64, r io.ReadCloser, direction enginetelemetry.NetworkDirection) (io.ReadCloser, error) {
+	recorder, err := enginetelemetry.NewNetworkRecorder(ctx, direction)
+	if err != nil {
+		return nil, err
+	}
+	return newProgressReader(ctx, item, total, r, recorder), nil
+}
+
+func newProgressReader(ctx context.Context, item string, total int64, r io.ReadCloser, recorder *enginetelemetry.NetworkRecorder) io.ReadCloser {
 	return &progressReader{
-		r:       r,
-		tracker: NewProgressTracker(ctx, item, total, "bytes"),
+		r:        r,
+		tracker:  NewProgressTracker(ctx, item, total, "bytes"),
+		recorder: recorder,
 	}
 }
 
 type progressReader struct {
-	r       io.ReadCloser
-	tracker *ProgressTracker
+	r        io.ReadCloser
+	tracker  *ProgressTracker
+	recorder *enginetelemetry.NetworkRecorder
 
 	read int64
 	done bool
@@ -139,6 +156,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	if n > 0 {
 		pr.read += int64(n)
 		pr.tracker.Update(pr.read)
+		pr.recorder.Record(pr.read)
 	}
 	if err == io.EOF {
 		pr.emitFinal()
