@@ -51,13 +51,24 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		rerr = errors.Join(rerr, decErr, collectErr, runOnReleaseFuncs(cleanupCtx, releases))
 	}()
 
+	version := new(capturedRowRevision)
+	record, err := c.captureHeldPersistedRecord(ctx, shared, imported, offers, version)
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	if err := version.check(shared); err != nil {
+		return PersistedRecord{}, err
+	}
+	return record, nil
+}
+
+// The operation and row ownership are already held by the caller. Only this
+// row's lazyMu is acquired here, never a dependency's mutex or a new admission.
+func (c *Cache) captureHeldPersistedRecord(ctx context.Context, shared *sharedResult, imported bool, offers []PersistedPartOffer, version *capturedRowRevision) (PersistedRecord, error) {
+	var err error
 	shared.lazyMu.Lock()
-	locked := true
-	defer func() {
-		if locked {
-			shared.lazyMu.Unlock()
-		}
-	}()
+	defer shared.lazyMu.Unlock()
+
 	if shared.lazyWhole.attempt != nil || shared.lazyWhole.syncPending {
 		return PersistedRecord{}, fmt.Errorf("%w: result %d whole evaluation", ErrPersistStateNotReady, shared.id)
 	}
@@ -68,6 +79,10 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 	}
 
 	payload := shared.loadPayloadState()
+	version.payload = payload
+	if payload.snapshotLinkIntent != nil {
+		payload.snapshotOwnerLinks = slices.Clone(payload.snapshotLinkIntent.Links)
+	}
 	frame := shared.loadResultCall().clone()
 	captured := &sharedResult{
 		id:                    shared.id,
@@ -82,7 +97,7 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		return PersistedRecord{}, err
 	}
 
-	versions := new(capturedOutputVersions)
+	versions := &version.outputs
 	ctx = context.WithValue(ctx, capturedOutputVersionsKey{}, versions)
 	var encoding PersistedResultEncoding
 	if payload.persistedEnvelope != nil {
@@ -101,9 +116,6 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		}
 	}
 	if err := context.Cause(ctx); err != nil {
-		return PersistedRecord{}, err
-	}
-	if err := versions.check(); err != nil {
 		return PersistedRecord{}, err
 	}
 	encoding.Envelope.Imported, encoding.Envelope.PendingOffers = imported, offers

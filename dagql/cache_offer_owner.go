@@ -338,6 +338,7 @@ func (c *Cache) restoreOfferOwnersLocked(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			record.Owner = owner.record
 			if err := c.attachPartOfferLocked(res, record.Address, &partOffer{record: record, owner: owner}); err != nil {
 				return err
 			}
@@ -387,6 +388,9 @@ func (c *Cache) validateStoredOwnershipLocked() error {
 		}
 		env.PendingOffers = nil
 		_, err := VisitEncodedReferences(PersistedRecord{ResultID: uint64(res.id), Envelope: env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}, func(ref *PersistedRef) error {
+			if ref.RecipeID != nil {
+				return nil
+			}
 			switch ref.Kind {
 			case PersistedRefChild, PersistedRefCall:
 				if _, ok := res.deps[sharedResultID(ref.ResultID)]; !ok {

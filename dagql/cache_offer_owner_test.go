@@ -10,7 +10,8 @@ import (
 
 func TestValueTransferOfferOwners(t *testing.T) {
 	ctx, c, srv := persistedListTestCache(t, "")
-	r := persistedListTestResult(t, ctx, c, srv, "receiver", String("r")).cacheSharedResult()
+	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
+	r := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "r"}).cacheSharedResult()
 	s := persistedListTestResult(t, ctx, c, srv, "service", String("s")).cacheSharedResult()
 	dependent := persistedListTestResult(t, ctx, c, srv, "dependent", String("d")).cacheSharedResult()
 	c.egraphMu.Lock()
@@ -79,7 +80,8 @@ func TestValueTransferOfferOwners(t *testing.T) {
 func TestValueTransferOwnerPersistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.db")
 	ctx, c, srv := persistedListTestCache(t, path)
-	r := persistedListTestResult(t, ctx, c, srv, "receiver", String("r")).cacheSharedResult()
+	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
+	r := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "r"}).cacheSharedResult()
 	s := persistedListTestResult(t, ctx, c, srv, "service", String("s")).cacheSharedResult()
 	c.egraphMu.Lock()
 	r.imported = true

@@ -40,3 +40,25 @@ func (versions *capturedOutputVersions) check() error {
 	}
 	return nil
 }
+
+// The encoded representation and desired links are one immutable payload
+// snapshot. Typed outputs additionally carry their own core publication stamp.
+type capturedRowRevision struct {
+	payload sharedResultPayloadState
+	outputs capturedOutputVersions
+}
+
+func (version *capturedRowRevision) check(row *sharedResult) error {
+	if err := version.outputs.check(); err != nil {
+		return err
+	}
+	row.payloadMu.RLock()
+	same := row.payloadRevision == version.payload.payloadRevision &&
+		row.persistedEnvelope == version.payload.persistedEnvelope &&
+		row.hasValue == version.payload.hasValue && row.isObject == version.payload.isObject
+	row.payloadMu.RUnlock()
+	if !same {
+		return fmt.Errorf("%w: row %d representation changed during capture", ErrPersistStateNotReady, row.id)
+	}
+	return nil
+}

@@ -859,6 +859,7 @@ func TestCachePersistenceImportedDecodeLeaseSyncCancelRetriesSync(t *testing.T) 
 	managerB := &fakeSnapshotManager{}
 	cB, err := NewCache(ctx, dbPath, managerB, nil)
 	assert.NilError(t, err)
+	assert.Equal(t, cB.PersistenceResetReason(), CachePersistenceResetNone)
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()

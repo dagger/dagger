@@ -1380,6 +1380,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge = persistedEdge{
 			resultID:          res.id,
 			createdAtUnixNano: createdAtUnixNano,
+			expiresAtUnix:     expiresAtUnix,
 		}
 		c.incrementIncomingOwnershipLocked(ctx, res)
 	}
@@ -1578,6 +1579,9 @@ func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink
 		return snapshotOwnerLinksFromTyped(state.self)
 	}
 
+	if state.snapshotLinkIntent != nil {
+		return slices.Clone(state.snapshotLinkIntent.Links)
+	}
 	if len(state.snapshotOwnerLinks) == 0 {
 		return nil
 	}
@@ -1595,6 +1599,11 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 		}
 
 		links := res.loadSnapshotOwnerLinks()
+		res.payloadMu.RLock()
+		for role := range res.snapshotLeaseCleanupRoles {
+			links = append(links, PersistedSnapshotRefLink{Role: role})
+		}
+		res.payloadMu.RUnlock()
 
 		seen := make(map[snapshotOwnerKey]struct{}, len(links))
 		var rerr error
@@ -1664,6 +1673,12 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	for key, newLink := range newByKey {
 		oldLink, ok := oldByKey[key]
 		if !ok || oldLink.RefKey != newLink.RefKey {
+			res.payloadMu.Lock()
+			if res.snapshotLeaseCleanupRoles == nil {
+				res.snapshotLeaseCleanupRoles = map[string]struct{}{}
+			}
+			res.snapshotLeaseCleanupRoles[key.Role] = struct{}{}
+			res.payloadMu.Unlock()
 			if err := c.snapshotManager.AttachLease(
 				ctx,
 				resultSnapshotLeaseID(res.id, key.Role),
@@ -1806,6 +1821,11 @@ func wipeSQLiteFiles(dbPath string) error {
 }
 
 type Cache struct {
+	testTransferCopied       func(uint64)
+	testTransferPlanPrepared func(int) error
+	testBeforeTransferCommit func()
+	testAfterTransferCommit  func()
+
 	offerOwners      map[offerOwnerID]*offerOwner
 	nextOfferOwnerID offerOwnerID
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
@@ -2154,7 +2174,10 @@ type sharedResult struct {
 	// cleanup and debug output. Persistence export for newly encoded objects
 	// derives links from the same object encode pass that produced the payload.
 	// They are not child-result deps.
-	snapshotOwnerLinks []PersistedSnapshotRefLink
+	snapshotOwnerLinks        []PersistedSnapshotRefLink
+	snapshotLinkIntent        *snapshotLinkIntent
+	payloadRevision           uint64
+	snapshotLeaseCleanupRoles map[string]struct{}
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
@@ -2286,7 +2309,12 @@ func (res *sharedResult) attachmentState() resultAttachmentState {
 	}
 }
 
+// A non-nil intent describes the complete desired map, even when empty.
+type snapshotLinkIntent struct{ Links []PersistedSnapshotRefLink }
+
 type sharedResultPayloadState struct {
+	payloadRevision    uint64
+	snapshotLinkIntent *snapshotLinkIntent
 	self               Typed
 	isObject           bool
 	hasValue           bool
@@ -2337,6 +2365,8 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	}
 	res.payloadMu.RLock()
 	state := sharedResultPayloadState{
+		payloadRevision:    res.payloadRevision,
+		snapshotLinkIntent: res.snapshotLinkIntent,
 		self:               res.self,
 		isObject:           res.isObject,
 		hasValue:           res.hasValue,
@@ -2381,6 +2411,7 @@ func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLin
 	}
 	res.payloadMu.Lock()
 	res.snapshotOwnerLinks = slices.Clone(links)
+	res.payloadRevision++
 	res.payloadMu.Unlock()
 }
 
@@ -5588,6 +5619,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_request_frame", nil, oc.res.loadResultCall())
 			}
 			oc.res.hasValue = true
+			oc.res.payloadRevision++
 
 			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
 				oc.res.onRelease = onReleaser.OnRelease

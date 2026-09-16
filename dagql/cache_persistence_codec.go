@@ -122,7 +122,14 @@ func (enc *PersistEncodeContext) item(itemCall *ResultCall, index int) *PersistE
 // PersistDecodeContext is the explicit context handed to every persisted
 // object, list and lazy decoder. It names the row being decoded, its recorded
 // call and the defining server, and supplies exact reference loads.
+type copiedDecodeRolesKey struct{}
+type copiedDecodeRoles struct {
+	ResultID uint64
+	Links    []PersistedSnapshotRefLink
+}
+
 type PersistDecodeContext struct {
+	roles    *copiedDecodeRoles
 	server   *Server
 	resultID uint64
 	call     *ResultCall
@@ -203,6 +210,9 @@ func (dec *PersistDecodeContext) CallID(raw string) (*call.ID, error) {
 func (dec *PersistDecodeContext) SnapshotRoles(ctx context.Context) ([]PersistedSnapshotRefLink, error) {
 	if dec == nil || dec.resultID == 0 {
 		return nil, fmt.Errorf("persist decode snapshot roles: zero result ID")
+	}
+	if dec.roles != nil && dec.roles.ResultID == dec.resultID {
+		return slices.Clone(dec.roles.Links), nil
 	}
 	cache, err := EngineCache(ctx)
 	if err != nil {
@@ -326,6 +336,9 @@ func (p PersistedRefPath) String() string {
 // visitor may replace ResultID or RefKey to relocate the reference; every other
 // field is descriptive.
 type PersistedRef struct {
+	// RecipeID is present only for a declared recipe-form call ID. Its
+	// numeric ResultID is zero; a visitor may replace the immutable DAG.
+	RecipeID *call.ID
 	Kind     PersistedRefKind
 	Path     PersistedRefPath
 	ResultID uint64
@@ -367,7 +380,23 @@ func VisitPersistedCallID(visit PersistedRefVisitor, kind PersistedRefKind, path
 		return false, fmt.Errorf("persisted reference %s: decode call ID: %w", path, err)
 	}
 	if !id.IsHandle() {
-		return false, nil
+		ref := PersistedRef{Kind: PersistedRefCall, Path: path, RecipeID: &id}
+		if err := visit(&ref); err != nil {
+			return false, err
+		}
+		if ref.RecipeID == &id {
+			return false, nil
+		}
+		if ref.RecipeID == nil || ref.RecipeID.IsHandle() {
+			return false, fmt.Errorf("invalid rewritten recipe ID at %s", path)
+		}
+		rewritten, err := ref.RecipeID.Encode()
+		if err != nil {
+			return false, err
+		}
+		changed := rewritten != *raw
+		*raw = rewritten
+		return changed, nil
 	}
 	resultID := id.EngineResultID()
 	if resultID == 0 {

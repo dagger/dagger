@@ -384,9 +384,12 @@ func mapContainerTransferParts(v dagql.PersistedPayloadVisit, p persistedContain
 		outputs = append(outputs, out)
 	}
 	// Mount descriptors are meaningful only with their captured ordered metadata.
-	for key := range expected {
-		if _, ok := p.Parts[key]; !ok && (p.Metadata.Consumed) {
-			return nil, fmt.Errorf("missing container part %s", key)
+	for key, want := range expected {
+		if _, ok := p.Parts[key]; !ok {
+			if p.Metadata.Consumed {
+				return nil, fmt.Errorf("missing container part %s", key)
+			}
+			outputs = append(outputs, dagql.CapturedCodecOutput{Address: dagql.PersistedPartAddress{OutputPath: v.Path, Part: key}, State: "pending", Role: want.role})
 		}
 	}
 	slices.SortFunc(outputs, func(a, b dagql.CapturedCodecOutput) int {

@@ -89,6 +89,9 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		}
 
 		payload := res.loadPayloadState()
+		if payload.snapshotLinkIntent != nil {
+			payload.snapshotOwnerLinks = slices.Clone(payload.snapshotLinkIntent.Links)
+		}
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:              resultID,
 			imported:              res.imported,

@@ -123,7 +123,9 @@ func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache Persist
 }
 
 func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
-	return decodePersistedResultEnvelope(ctx, NewPersistDecodeContext(dag, resultID, call), env, true)
+	dec := NewPersistDecodeContext(dag, resultID, call)
+	dec.roles, _ = ctx.Value(copiedDecodeRolesKey{}).(*copiedDecodeRoles)
+	return decodePersistedResultEnvelope(ctx, dec, env, true)
 }
 
 // persistedAbsentEnvelope describes an attached absent value: the row keeps
