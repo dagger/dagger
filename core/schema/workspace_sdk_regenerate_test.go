@@ -30,8 +30,8 @@ func TestModuleUpdateRegenerationPlan(t *testing.T) {
 	require.Len(t, plan.ordered, 2)
 	require.Equal(t, "web", plan.ordered[0].path)
 	require.Equal(t, "tests", plan.ordered[1].path)
-	require.Nil(t, plan.parent["go:web"], "do not generate the unselected API scope")
-	require.Equal(t, plan.ordered[0], plan.parent["go:tests"])
+	require.Equal(t, []string{"./api"}, plan.inputs["go:web"])
+	require.Equal(t, []string{"./api", "./web"}, plan.inputs["go:tests"])
 
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
@@ -53,9 +53,13 @@ func TestModuleUpdateRegenerationPlan(t *testing.T) {
 	var names []string
 	for _, span := range recorder.Ended() {
 		names = append(names, span.Name())
-		require.Equal(t, codes.Error, span.Status().Code)
+		if span.Name() == "re-generate: ./web" {
+			require.Equal(t, codes.Ok, span.Status().Code)
+		} else {
+			require.Equal(t, codes.Error, span.Status().Code)
+		}
 	}
-	require.Equal(t, []string{"re-generate: ./tests", "downstream clients", "re-generate: ./web", "downstream clients"}, names)
+	require.ElementsMatch(t, []string{"re-generate: ./web", "re-generate: ./tests", "re-generate: ./tests", "changed input: ./api", "changed input: ./web"}, names)
 }
 
 func TestModuleUpdateRegenerationGroup(t *testing.T) {
@@ -68,7 +72,7 @@ func TestModuleUpdateRegenerationGroup(t *testing.T) {
 			defer root.End()
 			var selections []sdkModuleClientSelection
 			if selected {
-				selections = []sdkModuleClientSelection{{sdkName: "missing", workspaceScope: "web", configScopePath: "web"}}
+				selections = []sdkModuleClientSelection{{sdkName: "missing", workspaceScope: "web", configScopePath: "web", targets: []string{"./api"}}}
 			}
 			_, err := (&workspaceSchema{}).regenerateSDKModuleClients(ctx, dagql.ObjectResult[*core.Workspace]{}, &stagedWorkspaceConfig{ConfigDir: ".", Config: &workspace.Config{}}, selections)
 			if !selected {
@@ -82,7 +86,24 @@ func TestModuleUpdateRegenerationGroup(t *testing.T) {
 				names = append(names, span.Name())
 				require.Equal(t, codes.Error, span.Status().Code)
 			}
-			require.Equal(t, []string{"re-generate: ./web", "downstream clients", "re-generate"}, names)
+			require.Equal(t, []string{"re-generate: ./web", "changed input: ./api", "re-generate"}, names)
 		})
 	}
+}
+
+func TestModuleUpdateRegenerationInputs(t *testing.T) {
+	staged := &stagedWorkspaceConfig{ConfigDir: "apps", Config: &workspace.Config{
+		SDKs: map[string]workspace.SDKEntry{"go": {Scopes: map[string]workspace.SDKScope{
+			"web": {Clients: []string{"../api", "github.com/acme/api@8c42f1a", "github.com/acme/other@main"}},
+		}}},
+	}}
+	selections, err := selectSDKModuleClients(staged, "apps/web", sdkModuleClientUpdateArgs{
+		Modules: []string{"../api", "github.com/acme/api@8c42f1a"},
+	})
+	require.NoError(t, err)
+	plan, err := planSDKModuleClientRegeneration(staged, selections)
+	require.NoError(t, err)
+	require.Len(t, plan.ordered, 1)
+	require.Equal(t, []string{"./api", "github.com/acme/api@8c42f1a"}, plan.inputs["go:apps/web"],
+		"show selected inputs, not every client of the scope")
 }

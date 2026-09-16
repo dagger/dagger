@@ -39,6 +39,7 @@ func planSDKModuleClientRegeneration(staged *stagedWorkspaceConfig, selections [
 	}
 	plan := &sdkModuleGeneratorPlan{}
 	modules := map[string]*sdkModuleGraphScope{}
+	targets := map[string][]string{}
 	for _, selection := range ordered {
 		node := &sdkModuleGraphScope{
 			key:         sdkModuleScopeKey(selection.sdkName, selection.workspaceScope),
@@ -48,6 +49,7 @@ func planSDKModuleClientRegeneration(staged *stagedWorkspaceConfig, selections [
 			scope:       selection.scope,
 		}
 		plan.ordered = append(plan.ordered, node)
+		targets[node.key] = selection.targets
 		if node.scope.IsModule {
 			modules[node.path] = node
 		}
@@ -65,7 +67,9 @@ func planSDKModuleClientRegeneration(staged *stagedWorkspaceConfig, selections [
 			}
 		}
 	}
-	plan.planProgress()
+	if err := plan.planProgress(staged.ConfigDir, targets); err != nil {
+		return nil, err
+	}
 	return plan, nil
 }
 
@@ -73,8 +77,6 @@ func runSDKModuleClientRegeneration(ctx context.Context, plan *sdkModuleGenerato
 	if len(plan.ordered) == 0 {
 		return nil
 	}
-	ctx, span := core.Tracer(ctx).Start(ctx, "downstream clients", telemetry.Reveal())
-	defer telemetry.EndWithCause(span, &rerr)
 	progress := &sdkModuleGeneratorProgress{plan: plan, scopes: map[string]*sdkModuleScopeProgress{}}
 	defer func() { progress.finish(len(plan.ordered)-1, rerr) }()
 	for i, node := range plan.ordered {

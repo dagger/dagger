@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -568,16 +569,28 @@ func TestSDKModuleScopeGenerationProgress(t *testing.T) {
 		}
 		paths = append(paths, path)
 	}
+	require.Empty(t, progress.inputs)
 	require.ElementsMatch(t, []string{
 		"re-generate: ./shared",
-		"re-generate: ./shared > downstream clients",
-		"re-generate: ./shared > downstream clients > re-generate: ./left",
-		"re-generate: ./shared > downstream clients > re-generate: ./left > downstream clients",
-		"re-generate: ./shared > downstream clients > re-generate: ./left > downstream clients > see: ./app",
-		"re-generate: ./shared > downstream clients > re-generate: ./right",
-		"re-generate: ./shared > downstream clients > re-generate: ./right > downstream clients",
-		"re-generate: ./shared > downstream clients > re-generate: ./right > downstream clients > re-generate: ./app",
+		"changed input: ./shared",
+		"changed input: ./shared > re-generate: ./left",
+		"changed input: ./shared > re-generate: ./right",
+		"changed input: ./left",
+		"changed input: ./left > re-generate: ./app",
+		"changed input: ./right",
+		"changed input: ./right > re-generate: ./app",
 	}, paths)
+	var appSpans []sdktrace.ReadOnlySpan
+	for _, span := range spans {
+		if span.Name() == "re-generate: ./app" {
+			appSpans = append(appSpans, span)
+		}
+	}
+	require.Len(t, appSpans, 2)
+	require.Len(t, appSpans[1].Links(), 1)
+	require.Equal(t, appSpans[0].SpanContext(), appSpans[1].Links()[0].SpanContext)
+	require.WithinDuration(t, appSpans[0].StartTime(), appSpans[1].StartTime(), time.Second)
+	require.WithinDuration(t, appSpans[0].EndTime(), appSpans[1].EndTime(), time.Second)
 }
 
 func TestSDKModuleScopeGenerationProgressFailure(t *testing.T) {
@@ -597,15 +610,17 @@ func TestSDKModuleScopeGenerationProgressFailure(t *testing.T) {
 	progress := &sdkModuleGeneratorProgress{plan: plan, scopes: map[string]*sdkModuleScopeProgress{}}
 	progress.start(ctx, plan.ordered[0])
 	progress.finish(0, nil)
-	require.Empty(t, recorder.Ended(), "upstream scope stays open for its client")
+	require.Len(t, recorder.Ended(), 1, "completed scope must end before its client starts")
+	require.Equal(t, codes.Ok, recorder.Ended()[0].Status().Code)
 	progress.start(ctx, plan.ordered[1])
 	progress.finish(1, errors.New("generation failed"))
 	require.Empty(t, progress.scopes)
 	require.Len(t, recorder.Ended(), 3)
-	for _, span := range recorder.Ended() {
+	for _, span := range recorder.Ended()[1:] {
 		require.Equal(t, codes.Error, span.Status().Code)
 	}
-	require.Equal(t, "re-generate: ./", recorder.Ended()[2].Name())
+	require.Equal(t, "changed input: ./", recorder.Ended()[2].Name())
+	require.Empty(t, progress.inputs)
 }
 
 func mustModuleEntrySourceWithPinRelativeTo(t *testing.T, configDir, targetDir string, entry workspace.ModuleEntry) string {

@@ -152,95 +152,133 @@ type sdkModuleGeneratorPlan struct {
 	ordered       []*sdkModuleGraphScope
 	// owner assigns dependencies from other SDKs to the generator that needs them.
 	owner  map[string]string
-	parent map[string]*sdkModuleGraphScope
+	inputs map[string][]string
 	last   map[string]int
 }
 
 func sdkModuleScopeLabel(node *sdkModuleGraphScope) string {
-	if node.path == "." {
-		return "./"
-	}
-	return "./" + node.path
+	return sdkModuleLocalInputLabel(node.path)
 }
 
-// planProgress projects the dependency graph onto a display tree. A client is
-// nested beneath its last generated dependency; other dependencies get a
-// reference. This does not change execution order or run shared clients twice.
-func (plan *sdkModuleGeneratorPlan) planProgress() {
-	plan.parent = map[string]*sdkModuleGraphScope{}
+func sdkModuleLocalInputLabel(path string) string {
+	path = cleanWorkspaceRelPath(path)
+	if path == "." {
+		return "./"
+	}
+	return "./" + path
+}
+
+// Group the work by its triggering client inputs. Updates pass their selected
+// targets; explicit generation uses all recorded clients. A selected local
+// dependency is also an input because it is regenerated earlier in this run.
+// This describes the existing selection policy, not a content-change test.
+func (plan *sdkModuleGeneratorPlan) planProgress(configDir string, targets map[string][]string) error {
+	plan.inputs = map[string][]string{}
 	plan.last = map[string]int{}
-	position := map[string]int{}
 	for i, node := range plan.ordered {
-		position[node.key] = i
-		plan.last[node.key] = i
-	}
-	for i, node := range plan.ordered {
-		for _, dep := range node.dependencies {
-			parent := plan.parent[node.key]
-			if parent == nil || position[dep.key] > position[parent.key] {
-				plan.parent[node.key] = dep
+		clients := node.scope.Clients
+		if targets != nil {
+			clients = targets[node.key]
+		}
+		seen := map[string]bool{}
+		add := func(label string) {
+			if !seen[label] {
+				plan.inputs[node.key] = append(plan.inputs[node.key], label)
+				seen[label] = true
 			}
-			// Keep the other branches open until their reference is emitted.
-			plan.last[dep.key] = max(plan.last[dep.key], i)
+			plan.last[label] = i
+		}
+		for _, target := range clients {
+			ref, err := resolveSDKManagedClientModule(configDir, target)
+			if err != nil {
+				return fmt.Errorf("generation input %q: %w", target, err)
+			}
+			if workspace.IsLocalRef(ref, "") {
+				ref = sdkModuleLocalInputLabel(ref)
+			}
+			add(ref)
+		}
+		for _, dependency := range node.dependencies {
+			add(sdkModuleScopeLabel(dependency))
 		}
 	}
-	for i := len(plan.ordered) - 1; i >= 0; i-- {
-		node := plan.ordered[i]
-		if parent := plan.parent[node.key]; parent != nil {
-			plan.last[parent.key] = max(plan.last[parent.key], plan.last[node.key])
-		}
-	}
+	return nil
+}
+
+type sdkModuleInputProgress struct {
+	ctx   context.Context
+	span  trace.Span
+	input string
+	err   error
 }
 
 type sdkModuleScopeProgress struct {
-	ctx            context.Context
-	span           trace.Span
-	downstreamCtx  context.Context
-	downstreamSpan trace.Span
-}
-
-func (p *sdkModuleScopeProgress) downstream() context.Context {
-	if p.downstreamSpan == nil {
-		p.downstreamCtx, p.downstreamSpan = core.Tracer(p.ctx).Start(p.ctx, "downstream clients", telemetry.Reveal())
-	}
-	return p.downstreamCtx
+	spans  []trace.Span
+	inputs []*sdkModuleInputProgress
 }
 
 type sdkModuleGeneratorProgress struct {
 	plan   *sdkModuleGeneratorPlan
 	scopes map[string]*sdkModuleScopeProgress
+	inputs map[string]*sdkModuleInputProgress
 }
 
 func (p *sdkModuleGeneratorProgress) start(ctx context.Context, node *sdkModuleGraphScope) context.Context {
-	parent := p.plan.parent[node.key]
-	if parent != nil {
-		ctx = p.scopes[parent.key].downstream()
+	if p.inputs == nil {
+		p.inputs = map[string]*sdkModuleInputProgress{}
 	}
-	for _, dep := range node.dependencies {
-		if dep != parent {
-			refCtx := p.scopes[dep.key].downstream()
-			_, ref := core.Tracer(refCtx).Start(refCtx, "see: "+sdkModuleScopeLabel(node), telemetry.Reveal())
-			ref.End()
+	work := &sdkModuleScopeProgress{}
+	p.scopes[node.key] = work
+	var scopeCtx context.Context
+	for _, input := range p.plan.inputs[node.key] {
+		// Keep groups separate when multiple SDK generators share an input.
+		key := trace.SpanFromContext(ctx).SpanContext().SpanID().String() + ":" + input
+		group := p.inputs[key]
+		if group == nil {
+			inputCtx, span := core.Tracer(ctx).Start(ctx, "changed input: "+input, telemetry.Reveal())
+			group = &sdkModuleInputProgress{ctx: inputCtx, span: span, input: input}
+			p.inputs[key] = group
 		}
+		opts := []trace.SpanStartOption{telemetry.Reveal()}
+		if scopeCtx != nil {
+			// Each row represents the same operation, executed only once.
+			opts = append(opts, trace.WithLinks(trace.Link{SpanContext: trace.SpanFromContext(scopeCtx).SpanContext()}))
+		}
+		rowCtx, span := core.Tracer(group.ctx).Start(group.ctx, "re-generate: "+sdkModuleScopeLabel(node), opts...)
+		if scopeCtx == nil {
+			scopeCtx = rowCtx
+		}
+		work.spans = append(work.spans, span)
+		work.inputs = append(work.inputs, group)
 	}
-	ctx, span := core.Tracer(ctx).Start(ctx, "re-generate: "+sdkModuleScopeLabel(node), telemetry.Reveal())
-	p.scopes[node.key] = &sdkModuleScopeProgress{ctx: ctx, span: span}
-	return ctx
+	if scopeCtx == nil {
+		// Explicit generation can select a module with no client inputs.
+		var span trace.Span
+		scopeCtx, span = core.Tracer(ctx).Start(ctx, "re-generate: "+sdkModuleScopeLabel(node), telemetry.Reveal())
+		work.spans = append(work.spans, span)
+	}
+	return scopeCtx
 }
 
 func (p *sdkModuleGeneratorProgress) finish(index int, err error) {
-	// Close children before parents. On error, close every open branch.
-	for i := index; i >= 0; i-- {
-		node := p.plan.ordered[i]
-		scope := p.scopes[node.key]
-		if scope == nil || (err == nil && p.plan.last[node.key] != index) {
-			continue
+	// End every appearance together. Scope durations measure only their own
+	// generation, not the work of later downstream scopes.
+	for key, scope := range p.scopes {
+		for _, span := range scope.spans {
+			telemetry.EndWithCause(span, &err)
 		}
-		if scope.downstreamSpan != nil {
-			telemetry.EndWithCause(scope.downstreamSpan, &err)
+		if err != nil {
+			for _, input := range scope.inputs {
+				input.err = err
+			}
 		}
-		telemetry.EndWithCause(scope.span, &err)
-		delete(p.scopes, node.key)
+		delete(p.scopes, key)
+	}
+	for key, input := range p.inputs {
+		if err != nil || p.plan.last[input.input] <= index {
+			telemetry.EndWithCause(input.span, &input.err)
+			delete(p.inputs, key)
+		}
 	}
 }
 
@@ -459,7 +497,9 @@ func planSDKModuleScopes(
 			plan.ordered = append(plan.ordered, node)
 		}
 	}
-	plan.planProgress()
+	if err := plan.planProgress(configDir, nil); err != nil {
+		return nil, err
+	}
 	return plan, nil
 }
 
@@ -483,8 +523,8 @@ func runSDKModuleGeneratorGraph(
 	// Each selected SDK is a distinct generator in the CLI, even though their
 	// scopes are evaluated together as one dependency-ordered graph. Keep the
 	// spans open for the whole graph so their duration and result describe the
-	// aggregate operation. Dependency-free scopes start below their provider;
-	// downstream clients nest below their last generated dependency.
+	// aggregate operation. Input groups stay under their SDK generator, with
+	// a regeneration row for each consumer of that input.
 	providerCtx := make(map[string]context.Context, len(specs))
 	var spans []trace.Span
 	if generatorSpans {

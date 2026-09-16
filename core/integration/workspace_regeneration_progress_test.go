@@ -45,7 +45,10 @@ func (GeneratorsSuite) TestModuleUpdateRegenerationProgress(ctx context.Context,
 	out, err = failed.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "re-generate")
-	require.Contains(t, out, "./web")
+	require.Contains(t, out, "changed input: ./api")
+	require.Contains(t, out, "re-generate: ./web")
+	require.NotContains(t, out, "downstream clients")
+	require.NotContains(t, out, "see: ./")
 	require.Contains(t, out, "update: api")
 }
 
@@ -63,7 +66,10 @@ func (GeneratorsSuite) TestClientUpdateRegenerationProgress(ctx context.Context,
 	out, err = failed.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "re-generate")
-	require.Contains(t, out, "./web")
+	require.Contains(t, out, "changed input: ./api")
+	require.Contains(t, out, "re-generate: ./web")
+	require.NotContains(t, out, "downstream clients")
+	require.NotContains(t, out, "see: ./")
 	require.Contains(t, out, "update clients")
 }
 
@@ -81,7 +87,10 @@ func (GeneratorsSuite) TestWorkspaceUpdateRegenerationProgress(ctx context.Conte
 	out, err = failed.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "re-generate")
-	require.Contains(t, out, "./web")
+	require.Contains(t, out, "changed input: ./api")
+	require.Contains(t, out, "re-generate: ./web")
+	require.NotContains(t, out, "downstream clients")
+	require.NotContains(t, out, "see: ./")
 	require.Contains(t, out, "update workspace")
 	// --no-generate must not load the broken SDK or create a regeneration group.
 	out, err = base.WithNewFile(".dagger/modules/sdk/main.dang", "intentionally invalid").
