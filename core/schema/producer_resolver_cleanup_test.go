@@ -338,6 +338,11 @@ func TestProducerResolverCapture(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assertResolverProducer(t, ctx, cache, result.Self(), kind)
+			if kind != "gitCleaned" {
+				require.Empty(t, server.manager.outputs)
+				require.False(t, result.Self().Lazy.IsEvaluated())
+				require.NoError(t, result.Self().Lazy.Evaluate(ctx, result.Self()))
+			}
 			require.Len(t, server.manager.outputs, 1)
 			if kind == "gitCleaned" {
 				require.Zero(t, server.manager.outputs[0].releases)
@@ -479,8 +484,7 @@ func testProducerResolverOutputs(t *testing.T, recorded bool) {
 					return
 				}
 				require.ErrorContains(t, err, "call is nil")
-				require.Len(t, server.manager.outputs, 1)
-				require.Equal(t, 1, server.manager.outputs[0].releases)
+				require.Empty(t, server.manager.outputs)
 			}
 		}
 	})
