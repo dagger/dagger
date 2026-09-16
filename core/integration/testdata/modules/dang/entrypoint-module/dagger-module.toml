@@ -1,0 +1,5 @@
+name = "entrypoint-module"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"

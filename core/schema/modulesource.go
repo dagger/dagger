@@ -1102,10 +1102,11 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 			Config:       modCfg.SDK.Config,       //nolint:staticcheck // deprecated; read for legacy JSON config compat
 			Experimental: modCfg.SDK.Experimental, //nolint:staticcheck // deprecated; read for legacy JSON config compat
 		}
-	} else if modCfg.Entrypoint != nil && modCfg.Entrypoint.Kind == modules.ModuleEntrypointKindDang {
+	} else if modCfg.Entrypoint != nil {
 		// SDK is an internal adapter for the existing module execution path. The
-		// manifest contains only the entrypoint configuration.
-		src.SDK = &core.SDKConfig{Source: string(modules.ModuleEntrypointKindDang)}
+		// manifest contains only the entrypoint configuration, so the adapter is
+		// named after the entrypoint kind that loads it.
+		src.SDK = &core.SDKConfig{Source: string(modCfg.Entrypoint.Kind)}
 	}
 
 	var sdkSource string

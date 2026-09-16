@@ -7,20 +7,21 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
+	entrypointmodule "github.com/dagger/dagger/core/sdk/entrypoint/module"
 	"github.com/dagger/dagger/dagql"
 )
 
-type entrypointSDK struct{}
+type entrypointSDK struct {
+	kind modules.ModuleEntrypointKind
+}
 
 func (l *Loader) entrypointForModule(src *core.ModuleSource) (core.SDK, error) {
 	if src.Entrypoint == nil {
 		return nil, fmt.Errorf("module entrypoint is not configured")
 	}
 	switch src.Entrypoint.Kind {
-	case modules.ModuleEntrypointKindDang:
-		return &entrypointSDK{}, nil
-	case modules.ModuleEntrypointKindModule:
-		return nil, fmt.Errorf("module entrypoint kind %q is not implemented", src.Entrypoint.Kind)
+	case modules.ModuleEntrypointKindDang, modules.ModuleEntrypointKindModule:
+		return &entrypointSDK{kind: src.Entrypoint.Kind}, nil
 	default:
 		return nil, fmt.Errorf("unsupported module entrypoint kind %q", src.Entrypoint.Kind)
 	}
@@ -82,7 +83,12 @@ func (sdk *entrypointSDK) Runtime(
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (core.ModuleRuntime, error) {
-	return dangv2.NewEntrypointRuntime(deps, source), nil
+	switch sdk.kind {
+	case modules.ModuleEntrypointKindModule:
+		return entrypointmodule.NewRuntime(source), nil
+	default:
+		return dangv2.NewEntrypointRuntime(deps, source), nil
+	}
 }
 
 func (sdk *entrypointSDK) ModuleTypes(
@@ -105,5 +111,8 @@ func (sdk *entrypointSDK) ModuleTypes(
 		return inst, fmt.Errorf("scope module for entrypoint types: %w", err)
 	}
 
+	if sdk.kind == modules.ModuleEntrypointKindModule {
+		return entrypointmodule.ModuleTypes(ctx, src)
+	}
 	return dangv2.EntrypointModuleTypes(ctx, deps, src, scopedMod)
 }
