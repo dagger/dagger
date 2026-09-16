@@ -1,5 +1,7 @@
 # Acquiring missing filesystem outputs
 
+Status: this document restates the converged designs, including the Lazy-values rework; it adds no design requirements.
+
 An imported result is an ordinary cached value whose pending parts carry operation data and optional download offers. Acquisition uses the existing Lazy operation and the same publication transaction as ready-output installation. A local stored snapshot without a foreign description keeps its existing missing-content error.
 
 ## Demand path
