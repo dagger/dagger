@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -272,6 +273,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.Positive(t, counters["settled"])
 			if cold {
 				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
+				assertColdPartDelegation(t, acquisition)
 			}
 			t.Logf("acquisition route counters cold=%t builtin=%d counts=%v", cold, builtinRoute, counters)
 			var echoed struct {
@@ -487,6 +489,118 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		// The recorded row is ineligible; its earlier imported equivalent is used.
 		assertForeign(importBundle("expired.json"))
 	})
+}
+
+// Keep acquisition hops separate from body entries. Every observation is
+// keyed by the exact row and full address, not an aggregate field-name count.
+func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
+	t.Helper()
+	rows := map[uint64]dagql.TransferFixtureRow{}
+	for _, row := range report.Rows {
+		rows[row.ResultID] = row
+	}
+	type key struct {
+		row     uint64
+		address string
+	}
+	keyOf := func(event dagql.TransferFixturePartEvent) key {
+		raw, err := json.Marshal(event.Address)
+		require.NoError(t, err)
+		return key{event.ResultID, string(raw)}
+	}
+	selected, installed, producers := map[key]int{}, map[key]int{}, map[key]int{}
+	fsFields := map[string]int{}
+	mountWriters := map[string]int{}
+	for _, event := range report.Parts {
+		k := keyOf(event)
+		if event.Kind == "producer-enter" {
+			producers[k]++
+		}
+		if event.Kind != "selected-delegation" && event.Kind != "installed-delegation" {
+			require.Nil(t, event.Source, "ordinary events cannot carry delegation provenance")
+			continue
+		}
+		require.NotNil(t, event.Source)
+		row := rows[event.ResultID]
+		require.NotNil(t, row.Call)
+		require.NotNil(t, row.Call.Receiver)
+		require.Equal(t, row.Call.Receiver.ResultID, event.Source.ResultID)
+		require.Contains(t, row.DependencyIDs, event.Source.ResultID)
+		require.Equal(t, event.Address.Part, event.Source.Address.Part)
+		require.Empty(t, event.Source.Address.OutputPath)
+		require.NotEqual(t, dagql.PartKey("metadata"), event.Address.Part)
+		if event.Kind == "selected-delegation" {
+			selected[k]++
+			continue
+		}
+		installed[k]++
+		if event.Address.Part == "fs" {
+			fsFields[event.Field]++
+		}
+		t.Logf("acquisition delegation target=%d address=%s field=%s parent=%d source=%+v", event.ResultID, k.address, event.Field, event.Source.ResultID, event.Source.Address)
+	}
+	for k, count := range installed {
+		require.Equal(t, 1, count, "duplicate delegation installation: %+v", k)
+		require.Positive(t, selected[k])
+		for p, bodies := range producers {
+			if p.row == k.row {
+				require.Zero(t, bodies, "metadata-only child entered a producer: %+v", p)
+			}
+		}
+	}
+	require.GreaterOrEqual(t, fsFields["withMountedCache"], 2, "both SDK cache children delegate inherited fs")
+	require.GreaterOrEqual(t, fsFields["__withSystemEnvVariable"], 2, "both SDK environment children delegate inherited fs")
+	for k, count := range producers {
+		row := rows[k.row]
+		if row.Call == nil {
+			continue
+		}
+		var address dagql.PersistedPartAddress
+		require.NoError(t, json.Unmarshal([]byte(k.address), &address))
+		if (row.Call.Field == "withMountedFile" && address.Part == "mount:/schema.json") || (row.Call.Field == "withMountedDirectory" && address.Part == "mount:/src") {
+			require.Equal(t, 1, count, "mount write producer repeats: %+v", k)
+			mountWriters[row.Call.Field]++
+			t.Logf("producer mount-write row=%d address=%s field=%s entries=%d", k.row, k.address, row.Call.Field, count)
+		}
+	}
+	require.Positive(t, mountWriters["withMountedFile"])
+	require.Positive(t, mountWriters["withMountedDirectory"])
+	// The exact imported Host input gets B's own matching capture. Check both
+	// the content class and the installed snapshot, while retaining distinct rows.
+	hostMatches := 0
+	for _, event := range report.Parts {
+		row := rows[event.ResultID]
+		if event.Kind != "installed-ready" || !row.Imported || row.Call == nil || row.Call.Field != "directory" || row.Call.Receiver == nil {
+			continue
+		}
+		parent := rows[row.Call.Receiver.ResultID]
+		if parent.Call == nil || parent.Call.Type.NamedType != "Host" {
+			continue
+		}
+		matched := false
+		for _, local := range report.Rows {
+			if local.Imported || local.ResultID == row.ResultID || local.Call.Type.NamedType != "Directory" {
+				continue
+			}
+			equalClass, equalSnapshot := false, false
+			for _, class := range row.OutputClasses {
+				equalClass = equalClass || slices.Contains(local.OutputClasses, class)
+			}
+			for _, a := range row.SnapshotLinks {
+				for _, b := range local.SnapshotLinks {
+					equalSnapshot = equalSnapshot || (a.RefKey == b.RefKey && a.Role == b.Role)
+				}
+			}
+			if equalClass && equalSnapshot {
+				matched = true
+				t.Logf("acquisition Host input imported=%d address=%+v local=%d snapshot=%v", row.ResultID, event.Address, local.ResultID, row.SnapshotLinks)
+			}
+		}
+		require.True(t, matched, "imported Host input %d lacks a matching B capture", row.ResultID)
+		hostMatches++
+	}
+	require.Positive(t, hostMatches)
+	t.Logf("acquisition SDK inherited-fs hops=%v; producer mount-writer rows=%v", fsFields, mountWriters)
 }
 
 func transferContextTool(ctx context.Context, t *testctx.T, client *dagger.Client, handle string) string {
