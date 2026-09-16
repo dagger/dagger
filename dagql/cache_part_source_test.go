@@ -164,3 +164,30 @@ func TestPartSettlementRetiresReplacement(t *testing.T) {
 	require.Equal(t, PartComplete, gate.outputs[key].phase)
 	gate.mu.Unlock()
 }
+
+func TestPartDecisionFinalSource(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	address := PersistedPartAddress{Part: "snapshot"}
+	require.NoError(t, c.RunLazyTask(ctx, receiver, "producer:whole", LazyTaskSpec{Body: func(ctx context.Context) error {
+		task := PartTaskFromContext(ctx)
+		drain, outcome, err := c.PrepareOriginal(ctx, receiver, ProducerAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, task)
+		require.NoError(t, err)
+		require.Equal(t, GateGranted, outcome)
+		require.NoError(t, drain.Wait(ctx))
+		scan, err := c.CheckPartSources(ctx, receiver, address, drain, &PartDemandState{})
+		require.NoError(t, err)
+		require.NotNil(t, scan.NoSource)
+		donor := persistedListTestResult(t, ctx, c, srv, "late", &transferTestValue{Text: "ready"})
+		partTestEquivalent(t, ctx, c, receiver, donor)
+		_, outcome, err = c.BeginOriginal(ctx, scan.NoSource)
+		require.NoError(t, err)
+		require.Equal(t, GateReselect, outcome)
+		scan, err = c.CheckPartSources(ctx, receiver, address, drain, &PartDemandState{})
+		require.NoError(t, err)
+		require.NotNil(t, scan.Source)
+		require.Equal(t, PartReady, scan.Source.Readiness())
+		require.NoError(t, scan.Source.Release(ctx))
+		return nil
+	}}))
+}

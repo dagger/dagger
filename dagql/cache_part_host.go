@@ -2,7 +2,6 @@ package dagql
 
 import (
 	"context"
-	"fmt"
 )
 
 // HasPartHost binds a typed adapter to the stable owning row. Binding never
@@ -15,8 +14,7 @@ type PartHost struct {
 
 func (c *Cache) bindPartHost(row *sharedResult, result AnyResult) {
 	if value, ok := UnwrapAs[HasPartHost](result); ok {
-		row.partGate.hostOnce.Do(func() { row.partGate.host = PartHost{cache: c, row: row} })
-		value.BindPartHost(&row.partGate.host)
+		value.BindPartHost(c.partHostFor(row))
 	}
 }
 func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
@@ -43,7 +41,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	if gate.managed {
 		gate.mu.Unlock()
 		c.egraphMu.Unlock()
-		return fmt.Errorf("native body on acquisition-managed result")
+		return ErrPartReselect
 	}
 	writes := make([]PersistedPartAddress, len(parts))
 	for i, part := range parts {
@@ -109,4 +107,16 @@ func (c *Cache) completeNativePartTask(task *PartTaskToken) {
 	}
 	gate.mu.Unlock()
 	c.egraphMu.Unlock()
+}
+
+// DecodeContext borrows this held owner's exact recorded identity and server.
+func (host *PartHost) DecodeContext(ctx context.Context) *PersistDecodeContext {
+	return host.cache.partDecodeContext(ctx, host.row, PersistedRecord{Call: host.row.loadResultCall(), SnapshotLinks: host.row.loadSnapshotOwnerLinks()})
+}
+
+func (host *PartHost) Managed() bool { return host != nil && host.row.partGate.active.Load() }
+
+func (c *Cache) partHostFor(row *sharedResult) *PartHost {
+	row.partGate.hostOnce.Do(func() { row.partGate.host = PartHost{cache: c, row: row} })
+	return &row.partGate.host
 }

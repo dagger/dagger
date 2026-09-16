@@ -2321,6 +2321,7 @@ type snapshotLinkIntent struct{ Links []PersistedSnapshotRefLink }
 
 type sharedResultPayloadState struct {
 	payloadRevision    uint64
+	imported           bool
 	snapshotLinkIntent *snapshotLinkIntent
 	self               Typed
 	isObject           bool
@@ -2373,6 +2374,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	res.payloadMu.RLock()
 	state := sharedResultPayloadState{
 		payloadRevision:    res.payloadRevision,
+		imported:           res.imported,
 		snapshotLinkIntent: res.snapshotLinkIntent,
 		self:               res.self,
 		isObject:           res.isObject,
@@ -2881,7 +2883,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
 	if hit {
-		c.registerLazyEvaluation(hitRes.cacheSharedResult(), hitRes)
+		c.registerLazyEvaluation(hitRes.cacheSharedResult(), hitRes, resolver)
 		return hitRes, nil
 	}
 
@@ -3754,7 +3756,10 @@ func lazyEvalFuncOfResult(val AnyResult) LazyEvalFunc {
 	return lazy.LazyEvalFunc()
 }
 
-func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
+func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult, resolver TypeResolver) {
+	if server := resolverServer(resolver); server != nil {
+		shared.partGate.server.CompareAndSwap(nil, server)
+	}
 	if shared == nil || val == nil {
 		return
 	}
@@ -3940,7 +3945,13 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 	}()
 
-	return c.evaluateResolved(ctx, res, shared, nil)
+	for {
+		err := c.evaluateResolved(ctx, res, shared, nil)
+		if partCanReselect(err) {
+			continue
+		}
+		return err
+	}
 }
 
 // EvaluateParts forces only the named parts of one result. On a value
@@ -3961,13 +3972,22 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 		}
 	}()
 
-	return c.evaluateResolved(ctx, res, shared, parts)
+	for {
+		err := c.evaluateResolved(ctx, res, shared, parts)
+		if partCanReselect(err) {
+			continue
+		}
+		return err
+	}
 }
 
 // evaluateResolved routes one attached result's demand to its evaluation
 // groups: the whole-result group for plain lazy values, the resolved
 // named groups for parts values. nil or empty parts means "everything".
 func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sharedResult, parts []PartKey) error {
+	if c.usesPartAcquisition(res, shared) {
+		return c.evaluateAcquiredParts(ctx, res, shared, parts)
+	}
 	shared.lazyMu.Lock()
 	if shared.lazyEvalComplete {
 		shared.lazyMu.Unlock()
@@ -6016,7 +6036,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		finishAttachDeps(attachErr)
 		return attachErr
 	}
-	c.registerLazyEvaluation(oc.res, oc.val)
+	c.registerLazyEvaluation(oc.res, oc.val, resolver)
 	finishAttachDeps(nil)
 
 	return nil

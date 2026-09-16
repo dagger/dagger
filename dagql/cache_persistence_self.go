@@ -125,6 +125,11 @@ func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache Persist
 func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
 	dec := NewPersistDecodeContext(dag, resultID, call)
 	dec.roles, _ = ctx.Value(copiedDecodeRolesKey{}).(*copiedDecodeRoles)
+	dec.imported = env.Imported
+	if dec.roles != nil && dec.roles.ResultID == resultID {
+		dec.imported = dec.roles.Imported
+		dec.host = dec.roles.Host
+	}
 	return decodePersistedResultEnvelope(ctx, dec, env, true)
 }
 

@@ -144,13 +144,7 @@ func (d *PartDemandState) causes() error {
 	return err
 }
 func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit, demand *PartDemandState) (rerr error) {
-	handedOff := false
-	defer func() {
-		if !handedOff {
-			rerr = errors.Join(rerr, source.Release(ctx))
-			permit.Release()
-		}
-	}()
+	defer func() { rerr = errors.Join(rerr, source.Release(ctx)); permit.Release() }()
 	if c.snapshotManager == nil {
 		return fmt.Errorf("chain acquisition: no snapshot manager")
 	}
@@ -177,8 +171,52 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	}
 	defer func() { rerr = errors.Join(rerr, imported.Release(context.WithoutCancel(ctx))) }()
 	source.descriptor.SnapshotID = imported.SnapshotID()
-	handedOff = true
-	return c.InstallReadyPart(ctx, receiver, source, permit)
+	// Keep admitted authority across a stale receiver preparation. Its donor
+	// can disappear during download; re-preparation must not require re-admission.
+	for {
+		if err := context.Cause(ctx); err != nil {
+			return err
+		}
+		c.egraphMu.Lock()
+		if !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
+			c.egraphMu.Unlock()
+			return ErrPartReselect
+		}
+		c.retainOfferOwnerLocked(source.offerOwner)
+		selected := &PartSourceLease{cache: c, sourceID: source.sourceID, offerOwner: source.offerOwner, descriptor: source.Descriptor(), target: clonePartAddress(source.target), offer: source.offer, readiness: PartDownloadable, route: source.route, offerRev: source.offerRev, sessionID: source.sessionID, record: source.record}
+		c.egraphMu.Unlock()
+		err := c.InstallReadyPart(ctx, receiver, selected, permit)
+		if !partCanReselect(err) {
+			return err
+		}
+		task := PartTaskFromContext(ctx)
+		var outcome GateOutcome
+		if permit.decision {
+			gate := permit.gate
+			gate.mu.Lock()
+			var drain *DrainTicket
+			for _, group := range gate.groups {
+				if group.task == task && group.phase == ProducerPreparing && containsPart(group.writeSet, source.target) {
+					drain = group.drain
+					break
+				}
+			}
+			gate.mu.Unlock()
+			permit, outcome, err = c.TryAcquireForDecision(ctx, receiver, source.target, drain, task)
+		} else {
+			permit, outcome, err = c.TryAcquire(ctx, receiver, source.target, task)
+		}
+		if err != nil {
+			return err
+		}
+		if outcome == GateAlreadyInstalled {
+			return nil
+		}
+		if outcome != GateGranted {
+			return ErrPartReselect
+		}
+	}
+
 }
 
 // Only the owning installation can settle. Detachment uses the current slot,

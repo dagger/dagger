@@ -37,6 +37,7 @@ type PartTaskToken struct {
 type InstalledOutputs struct {
 	outputs     []installedPartOutput
 	protections []*partProtection
+	beforeSync  []*partCleanup
 }
 type installedPartOutput struct {
 	address      PersistedPartAddress
@@ -56,6 +57,13 @@ type lazyTaskContinuation struct {
 }
 
 func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *sharedResult) error {
+	if installed := t.token.installed.Load(); installed != nil {
+		for _, cleanup := range installed.beforeSync {
+			if err := cleanup.release(ctx); err != nil {
+				return err
+			}
+		}
+	}
 	if t.spec.OwnerSyncReady != nil {
 		select {
 		case <-t.spec.OwnerSyncReady:
@@ -128,7 +136,18 @@ func (c *Cache) RunLazyTask(ctx context.Context, receiver AnyResult, key LazyGro
 	c.incrementIncomingOwnershipLocked(ctx, row)
 	c.egraphMu.Unlock()
 	defer func() { rerr = errors.Join(rerr, c.releasePartRow(context.WithoutCancel(ctx), row)) }()
-	return c.runLazyTask(ctx, receiver, row, key, nil, &spec)
+	if err := c.runLazyTask(ctx, receiver, row, key, nil, &spec); err != nil {
+		return err
+	}
+	if op.sessionID != "" {
+		c.egraphMu.RLock()
+		allowed := c.sessionSatisfiesResourceRequirementsLocked(op.sessionID, row)
+		c.egraphMu.RUnlock()
+		if !allowed {
+			return fmt.Errorf("part task: session no longer satisfies installed requirements")
+		}
+	}
+	return nil
 }
 
 func (c *Cache) releasePartRow(ctx context.Context, row *sharedResult) error {

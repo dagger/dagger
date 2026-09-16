@@ -466,9 +466,20 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			continue
 		}
 		decodeCtx := ContextWithCall(ctx, call)
+		decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: slices.Clone(state.snapshotOwnerLinks), Imported: state.imported, Host: c.partHostFor(res)})
 		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *state.persistedEnvelope); err == nil && decoded != nil {
 			res.payloadMu.Lock()
-			if !res.hasValue && res.persistedEnvelope != nil {
+			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
+				res.payloadMu.Unlock()
+				if release, ok := UnwrapAs[OnReleaser](decoded); ok {
+					if err := release.OnRelease(context.WithoutCancel(ctx)); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
+				c.bindPartHost(res, decoded)
 				res.self = decoded.Unwrap()
 				res.hasValue = true
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
@@ -653,14 +664,14 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			res.persistDecodeMu.Unlock()
 			if !leaseSyncPending {
 				if !state.isObject {
-					c.registerLazyEvaluation(res, hit)
+					c.registerLazyEvaluation(res, hit, resolver)
 					return hit, nil
 				}
 				objRes, err := wrapSharedResultWithResolver(ctx, res, hit.HitCache(), resolver)
 				if err != nil {
 					return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
 				}
-				c.registerLazyEvaluation(res, objRes)
+				c.registerLazyEvaluation(res, objRes, resolver)
 				return objRes, nil
 			}
 			// The payload is installed but its owner-lease sync has not
@@ -782,7 +793,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			if state.snapshotLinkIntent != nil {
 				roles = state.snapshotLinkIntent.Links
 			}
-			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: slices.Clone(roles)})
+			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: slices.Clone(roles), Imported: state.imported, Host: c.partHostFor(res)})
 			decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
 			if err != nil {
 				c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
@@ -808,7 +819,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				finishPersistDecode(nil, false)
 				continue
 			}
-			if !res.hasValue && res.persistedEnvelope != nil {
+			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
+				c.bindPartHost(res, decoded)
 				res.self = decoded.Unwrap()
 				res.hasValue = true
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {

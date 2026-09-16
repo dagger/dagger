@@ -117,6 +117,11 @@ func (dir *Directory) AttachDependencyResultsKinds(
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
+	if dir != nil {
+		if host := dir.partHost.Load(); host != nil && host.Managed() {
+			return func(ctx context.Context) error { return host.Evaluate(ctx, "snapshot") }
+		}
+	}
 	if dir == nil {
 		return nil
 	}
@@ -124,7 +129,12 @@ func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
 	pending, lazy := dir.transferPending != nil, dir.Lazy
 	dir.outputMu.Unlock()
 	if pending {
-		return func(context.Context) error { return fmt.Errorf("%w: Directory.snapshot", dagql.ErrUnavailablePart) }
+		return func(ctx context.Context) error {
+			if host := dir.partHost.Load(); host != nil {
+				return host.Evaluate(ctx, "snapshot")
+			}
+			return fmt.Errorf("%w: Directory.snapshot", dagql.ErrUnavailablePart)
+		}
 	}
 	if lazy == nil {
 		return nil

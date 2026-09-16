@@ -126,10 +126,14 @@ type copiedDecodeRolesKey struct{}
 type copiedDecodeRoles struct {
 	ResultID uint64
 	Links    []PersistedSnapshotRefLink
+	Imported bool
+	Host     *PartHost
 }
 
 type PersistDecodeContext struct {
 	roles    *copiedDecodeRoles
+	imported bool
+	host     *PartHost
 	server   *Server
 	resultID uint64
 	call     *ResultCall
@@ -245,7 +249,7 @@ func (dec *PersistDecodeContext) SnapshotRole(ctx context.Context, role string) 
 
 // item returns the context for an inline list item of this row.
 func (dec *PersistDecodeContext) item(itemCall *ResultCall) *PersistDecodeContext {
-	return &PersistDecodeContext{server: dec.Server(), call: itemCall}
+	return &PersistDecodeContext{server: dec.Server(), call: itemCall, imported: dec.imported, host: dec.host}
 }
 
 // DecodeLosslessJSON decodes exactly one JSON value, keeping numbers as
@@ -793,4 +797,13 @@ func visitResultCallLiteralReferences(lit *ResultCallLiteral, path PersistedRefP
 		}
 	}
 	return nil
+}
+
+// Imported reports the copied owner origin, never a temporary decoded row.
+func (dec *PersistDecodeContext) Imported() bool { return dec != nil && dec.imported }
+func (dec *PersistDecodeContext) PartHost() *PartHost {
+	if dec == nil {
+		return nil
+	}
+	return dec.host
 }

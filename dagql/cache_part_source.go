@@ -343,10 +343,19 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 	key, _ := partAddressKey(address)
 	c.egraphMu.Lock()
 	candidates := c.collectPartCandidatesLocked(row, lookup, session)
+	held := 0
+	defer func() {
+		for i := range candidates[:held] {
+			candidate := &candidates[i]
+			s := &PartSourceLease{cache: c, source: candidate.row, offerOwner: candidate.owner}
+			rerr = errors.Join(rerr, s.Release(ctx))
+		}
+	}()
 	for i := range candidates {
 		candidate := &candidates[i]
 		candidate.facts = c.partFactsLocked(candidate.row)
 		c.incrementIncomingOwnershipLocked(ctx, candidate.row)
+		held++
 		if offer := candidate.row.partOffers[key]; offer != nil && c.offerAllowedLocked(session, offer.owner) {
 			copies, err := clonePartOffers([]PersistedPartOffer{offer.record})
 			if err != nil {
@@ -359,13 +368,6 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		}
 	}
 	c.egraphMu.Unlock()
-	defer func() {
-		for i := range candidates {
-			candidate := &candidates[i]
-			s := &PartSourceLease{cache: c, source: candidate.row, offerOwner: candidate.owner}
-			rerr = errors.Join(rerr, s.Release(ctx))
-		}
-	}()
 	for i := range candidates {
 		candidate := &candidates[i]
 		candidate.record, candidate.version, candidate.probe, err = c.probePart(ctx, candidate.row, address)
@@ -385,7 +387,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		r := PartRunnable
 		if p != nil && p.LocalComplete && !p.Busy {
 			r = PartReady
-		} else if candidate.offer != nil && (candidate.row == row || chainAddressesUsable(candidate.offer, time.Now().Unix())) && (demand == nil || !demand.exhausted(candidate.row.id, address, candidate.offer)) {
+		} else if candidate.offer != nil && (candidate.row == row || chainAddressesUsable(candidate.offer, time.Now().Unix()) || candidate.offer.Chain.RenewalKey != "" && c.partContentSource.Load() != nil) && (demand == nil || !demand.exhausted(candidate.row.id, address, candidate.offer)) {
 			r = PartDownloadable
 		}
 		if p != nil && candidate.row == row && p.LocalComplete {
@@ -449,10 +451,18 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		source.offerOwner = selected.owner
 		selected.owner = nil
 		source.offer = selected.offer
-		source.descriptor = PartDescriptor{Address: clonePartAddress(selected.offer.Address), Value: &selected.offer.Value, DependencyIDs: append([]uint64(nil), selected.offer.Owner.DependencyIDs...)}
+		source.descriptor = PartDescriptor{Address: clonePartAddress(selected.offer.Address), Value: &selected.offer.Value, DependencyIDs: nil}
 		if selected.probe != nil {
 			source.descriptor.Family = selected.probe.Descriptor.Family
 		}
+		for _, svc := range selected.offer.Value.Services {
+			source.descriptor.DependencyIDs = append(source.descriptor.DependencyIDs, svc.ServiceResultID)
+		}
+		for _, dep := range source.offerOwner.deps {
+			source.descriptor.DependencyIDs = append(source.descriptor.DependencyIDs, c.partResourceLeavesLocked(dep)...)
+		}
+		slices.Sort(source.descriptor.DependencyIDs)
+		source.descriptor.DependencyIDs = slices.Compact(source.descriptor.DependencyIDs)
 	}
 	c.egraphMu.Unlock()
 	return source, candidates, nil
@@ -482,4 +492,39 @@ func (s *PartDemandState) exhausted(id sharedResultID, address PersistedPartAddr
 	defer s.mu.Unlock()
 	_, ok := s.exhaustedContent[partContentKey(id, address, offer)]
 	return ok
+}
+
+func (c *Cache) partSourceDependenciesLocked(source *PartSourceLease) []uint64 {
+	ids := slices.Clone(source.descriptor.DependencyIDs)
+	if source.offerOwner != nil {
+		for _, dep := range source.offerOwner.deps {
+			ids = append(ids, c.partResourceLeavesLocked(dep)...)
+		}
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// Retry only a pure stale-observation result. A cleanup failure joined to a
+// stale observation must reach the caller instead of being lost in a retry.
+func partCanReselect(err error) bool {
+	if err == nil {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		causes := joined.Unwrap()
+		if len(causes) == 0 {
+			return false
+		}
+		for _, cause := range causes {
+			if !partCanReselect(cause) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return partCanReselect(wrapped.Unwrap())
+	}
+	return err == ErrPartReselect || err == ErrPersistStateNotReady
 }

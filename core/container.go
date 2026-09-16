@@ -66,6 +66,7 @@ type DefaultTerminalCmdOpts struct {
 type Container struct {
 	partHost        atomic.Pointer[dagql.PartHost]
 	acquiredOutput  atomic.Pointer[containerAcquiredOutput]
+	acquiredOpens   sync.Map
 	transferPending *persistedContainerPayload
 	// fromContentDigestSafe tracks whether Container.From can give its result a
 	// content digest based only on the resolved image and platform. It is false
@@ -1087,6 +1088,21 @@ var _ dagql.HasDependencyResultsKinds = (*Container)(nil)
 var _ dagql.HasLazyEvaluation = (*Container)(nil)
 
 func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
+	if container != nil {
+		if view := container.acquiredOutput.Load(); view != nil {
+			return func(ctx context.Context) error {
+				if host := container.partHost.Load(); host != nil {
+					return host.Evaluate(ctx)
+				}
+				_, err := container.resolveTransferParts(nil)
+				return err
+			}
+		}
+		if host := container.partHost.Load(); host != nil && host.Managed() {
+			return func(ctx context.Context) error { return host.Evaluate(ctx) }
+		}
+	}
+
 	if container == nil {
 		return nil
 	}
@@ -1323,6 +1339,18 @@ func (container *Container) CacheUsageIdentities() []string {
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (container *Container) CacheUsageSize(ctx context.Context, sizeProvider dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
+	if container != nil {
+		if view := container.acquiredOutput.Load(); view != nil {
+			for _, link := range view.Links {
+				if link.RefKey == identity && sizeProvider != nil {
+					size, err := sizeProvider.SnapshotSize(ctx, identity)
+					return size, err == nil, err
+				}
+			}
+			return 0, false, nil
+		}
+	}
+
 	if container == nil || identity == "" {
 		return 0, false, nil
 	}
@@ -1575,6 +1603,13 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		DefaultArgs:        persisted.DefaultArgs,
 	}
 	if envelope.ProducerState != "" {
+		kind := ""
+		if dec.Call() != nil && len(envelope.LazyJSON) > 0 {
+			kind = dec.Call().Field
+		}
+		if err := validateTransferProducer(envelope.ProducerState, kind, envelope.LazyJSON); err != nil {
+			return nil, err
+		}
 		if _, err := mapContainerTransferParts(dagql.PersistedPayloadVisit{SnapshotLinks: links}, envelope); err != nil {
 			return nil, err
 		}

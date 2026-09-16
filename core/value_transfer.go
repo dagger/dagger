@@ -409,17 +409,25 @@ func persistedBackingForm(foreign, initialized bool) string {
 	return nativeBacking
 }
 func (container *Container) resolveTransferParts(parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	payload := container.transferPending
+	if view := container.acquiredOutput.Load(); view != nil {
+		payload = &view.Payload
+	}
+	if payload == nil {
+		return nil, fmt.Errorf("missing raw Container view")
+	}
+
 	if parts == nil {
 		parts = []dagql.PartKey{ContainerPartMetadata}
-		for part := range container.transferPending.Parts {
+		for part := range payload.Parts {
 			parts = append(parts, part)
 		}
 	}
 	for _, part := range parts {
-		if part == ContainerPartMetadata && container.transferPending.Metadata.Consumed {
+		if part == ContainerPartMetadata && payload.Metadata.Consumed {
 			continue
 		}
-		if descriptor, ok := container.transferPending.Parts[part]; ok && descriptor.Kind == containerPartAbsent {
+		if descriptor, ok := payload.Parts[part]; ok && descriptor.Kind != containerPartPending {
 			continue
 		}
 		return nil, fmt.Errorf("%w: Container.%s", dagql.ErrUnavailablePart, part)

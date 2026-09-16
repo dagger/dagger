@@ -67,9 +67,7 @@ func (w *chainCopyWriter) Write(p []byte) (int, error) {
 }
 func (w *chainCopyWriter) Status() (content.Status, error) {
 	s, err := w.Writer.Status()
-	if err != nil {
-		w.err = err
-	}
+	w.err = err
 	return s, err
 }
 func (w *chainCopyWriter) Commit(ctx context.Context, size int64, expected digest.Digest, opts ...content.Opt) error {

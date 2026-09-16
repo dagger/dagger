@@ -1,0 +1,214 @@
+package dagql
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"sync"
+
+	"github.com/dagger/dagger/engine/snapshots"
+)
+
+type partCleanup struct {
+	mu   sync.Mutex
+	done bool
+	fn   func(context.Context) error
+}
+
+func (p *partCleanup) release(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.done {
+		return nil
+	}
+	if err := p.fn(context.WithoutCancel(ctx)); err != nil {
+		return err
+	}
+	p.done = true
+	return nil
+}
+func (c *Cache) publishProducedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) error {
+	for {
+		if err := context.Cause(ctx); err != nil {
+			return err
+		}
+		prepared, err := c.prepareProducedParts(ctx, res, demanded, produced, original, cleanup)
+		if partCanReselect(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if prepared == nil {
+			return nil
+		}
+		receipt, outcome, err := c.CommitReadyPart(ctx, prepared)
+		if outcome == PartInstalled {
+			return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
+		}
+		if partCanReselect(err) {
+			continue
+		}
+		return err
+	}
+}
+func (c *Cache) prepareProducedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) (_ *PreparedReadyPart, rerr error) {
+	if len(demanded.OutputPath) != 0 {
+		return nil, fmt.Errorf("inline producer publication awaits scoped snapshot-link Addendum 1")
+	}
+	row := res.cacheSharedResult()
+	session, err := partSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p := &PreparedReadyPart{cache: c, original: original, privateCleanup: cleanup, source: &PartSourceLease{cache: c, sessionID: session}}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, p.Release(ctx))
+		}
+	}()
+	c.egraphMu.Lock()
+	if c.resultsByID[row.id] != row || original.task != PartTaskFromContext(ctx) {
+		c.egraphMu.Unlock()
+		return nil, fmt.Errorf("producer publication: invalid owner")
+	}
+	c.incrementIncomingOwnershipLocked(ctx, row)
+	p.receiver = row
+	original.gate.mu.Lock()
+	group := original.gate.groups[producerAddressKey(original.group)]
+	if group == nil || group.phase != ProducerRunning || group.task != original.task {
+		original.gate.mu.Unlock()
+		c.egraphMu.Unlock()
+		return nil, ErrPartReselect
+	}
+	p.permit = original.gate.newPermit(original.task, demanded, true)
+	original.gate.mu.Unlock()
+	c.egraphMu.Unlock()
+	current, err := c.capturePartRecord(ctx, row, row.imported, nil, &p.version)
+	if err != nil {
+		return nil, err
+	}
+	family, ok := PersistedObjectFamilyByName(current.Envelope.ObjectCodec)
+	if !ok {
+		return nil, fmt.Errorf("producer publication: unknown family")
+	}
+	describe, ok := family.Transfer.(PersistedPartDescriber)
+	if !ok {
+		return nil, fmt.Errorf("producer publication: missing describer")
+	}
+	codec, ok := family.Transfer.(PersistedPartInstaller)
+	if !ok {
+		return nil, fmt.Errorf("producer publication: missing installer")
+	}
+	probes, err := describe.DescribeParts(PersistedPayloadVisit{Call: produced.Call, Payload: produced.Envelope.ObjectJSON, SnapshotLinks: produced.SnapshotLinks})
+	if err != nil {
+		return nil, err
+	}
+	producedParts := map[string]PartProbe{}
+	for _, probe := range probes {
+		key, _ := partAddressKey(probe.Descriptor.Address)
+		producedParts[key] = probe
+	}
+	demandedKey, _ := partAddressKey(demanded)
+	if !producedParts[demandedKey].LocalComplete {
+		return nil, fmt.Errorf("saved producer left required output %s unset", demanded.Part)
+	}
+	currentProbes, err := describe.DescribeParts(PersistedPayloadVisit{Call: current.Call, Payload: current.Envelope.ObjectJSON, SnapshotLinks: current.SnapshotLinks})
+	if err != nil {
+		return nil, err
+	}
+	complete := map[string]bool{}
+	for _, probe := range currentProbes {
+		key, _ := partAddressKey(probe.Descriptor.Address)
+		complete[key] = probe.LocalComplete
+	}
+	var descriptors []PartDescriptor
+	var refs []snapshots.ImmutableRef
+	p.next = current
+	for _, address := range original.writeSet {
+		key, _ := partAddressKey(address)
+		if complete[key] {
+			continue
+		}
+		probe, ok := producedParts[key]
+		if !ok || !probe.LocalComplete {
+			return nil, fmt.Errorf("saved producer left write-set output %s unset", address.Part)
+		}
+		d := probe.Descriptor
+		d.Family = family.Name
+		d.Address = clonePartAddress(address)
+		next, err := codec.PreparePartRecord(p.next, produced, d, address)
+		if err != nil {
+			return nil, err
+		}
+		p.next = next
+		descriptors = append(descriptors, d)
+		p.addresses = append(p.addresses, clonePartAddress(address))
+		var ref snapshots.ImmutableRef
+		if d.SnapshotID != "" {
+			pin, err := c.snapshotManager.PinSnapshot(ctx, d.SnapshotID)
+			if err != nil {
+				return nil, err
+			}
+			p.extraProtections = append(p.extraProtections, &partProtection{ref: pin})
+			if p.version.payload.hasValue {
+				ref, err = c.snapshotManager.GetBySnapshotID(ctx, d.SnapshotID, snapshots.NoUpdateLastUsed)
+				if err != nil {
+					return nil, err
+				}
+				p.extraAccessors = append(p.extraAccessors, ref)
+			}
+		}
+		refs = append(refs, ref)
+	}
+	if len(descriptors) == 0 {
+		return nil, p.Release(ctx)
+	}
+	c.egraphMu.Lock()
+	ids := c.partResourceLeavesLocked(row)
+	for _, d := range descriptors {
+		ids = append(ids, d.DependencyIDs...)
+	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	for _, id := range ids {
+		dep := c.resultsByID[sharedResultID(id)]
+		if dep == nil {
+			err = fmt.Errorf("producer publication: missing reference %d", id)
+			break
+		}
+		c.incrementIncomingOwnershipLocked(ctx, dep)
+		p.deps = append(p.deps, dep)
+	}
+	if err == nil {
+		_, err = c.preparePartDependenciesLocked(row, p.deps)
+	}
+	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if p.version.payload.hasValue {
+		dec := c.partDecodeContext(ctx, row, p.next)
+		if len(descriptors) > 1 {
+			store, ok := UnwrapAs[PartBatchStorePreparer](res)
+			if !ok {
+				return nil, fmt.Errorf("producer publication: no batch store")
+			}
+			p.store, err = store.PreparePartStores(ctx, dec, p.next, descriptors, refs)
+		} else {
+			store, ok := UnwrapAs[PartStorePreparer](res)
+			if !ok {
+				return nil, fmt.Errorf("producer publication: no store")
+			}
+			p.store, err = store.PreparePartStore(ctx, dec, p.next, descriptors[0], refs[0])
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := p.version.check(row); err != nil {
+		return nil, err
+	}
+	return p, nil
+}

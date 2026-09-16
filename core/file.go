@@ -108,6 +108,11 @@ func (file *File) AttachDependencyResultsKinds(
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
+	if file != nil {
+		if host := file.partHost.Load(); host != nil && host.Managed() {
+			return func(ctx context.Context) error { return host.Evaluate(ctx, "snapshot") }
+		}
+	}
 	if file == nil {
 		return nil
 	}
@@ -115,7 +120,12 @@ func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
 	pending, lazy := file.transferPending != nil, file.Lazy
 	file.outputMu.Unlock()
 	if pending {
-		return func(context.Context) error { return fmt.Errorf("%w: File.snapshot", dagql.ErrUnavailablePart) }
+		return func(ctx context.Context) error {
+			if host := file.partHost.Load(); host != nil {
+				return host.Evaluate(ctx, "snapshot")
+			}
+			return fmt.Errorf("%w: File.snapshot", dagql.ErrUnavailablePart)
+		}
 	}
 	if lazy == nil {
 		return nil

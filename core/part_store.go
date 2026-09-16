@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -169,6 +170,8 @@ type filePartStore struct {
 	next     *File
 	expected dagql.OutputRevision
 	unlock   func()
+	path     string
+	ref      bkcache.ImmutableRef
 }
 
 func (s *filePartStore) TryLock() bool {
@@ -180,14 +183,21 @@ func (s *filePartStore) TryLock() bool {
 		u()
 		return false
 	}
-	s.unlock = u
+	unlockAccessors, ok := tryPartAccessorLocks([]*sync.RWMutex{&s.receiver.File.mu, &s.receiver.Snapshot.mu})
+	if !ok {
+		u()
+		return false
+	}
+	s.unlock = func() { unlockAccessors(); u() }
 	return true
 }
 func (s *filePartStore) Unlock() { s.unlock() }
 func (s *filePartStore) Publish() {
 	r, n := s.receiver, s.next
-	r.File = n.File
-	r.Snapshot = n.Snapshot
+	r.File.value = s.path
+	r.File.isSet = true
+	r.Snapshot.value = s.ref
+	r.Snapshot.isSet = true
 	r.Platform = n.Platform
 	r.Services = n.Services
 	r.stored = n.stored
@@ -210,7 +220,8 @@ func (file *File) PreparePartStore(ctx context.Context, dec *dagql.PersistDecode
 	}
 	n.SetSnapshot(ref)
 	n.Lazy = nil
-	return &filePartStore{receiver: file, next: n, expected: revision}, nil
+	path, _ := n.File.Peek()
+	return &filePartStore{receiver: file, next: n, expected: revision, path: path, ref: ref}, nil
 }
 
 type directoryPartStore struct {
@@ -218,6 +229,8 @@ type directoryPartStore struct {
 	next     *Directory
 	expected dagql.OutputRevision
 	unlock   func()
+	path     string
+	ref      bkcache.ImmutableRef
 }
 
 func (s *directoryPartStore) TryLock() bool {
@@ -229,14 +242,21 @@ func (s *directoryPartStore) TryLock() bool {
 		u()
 		return false
 	}
-	s.unlock = u
+	unlockAccessors, ok := tryPartAccessorLocks([]*sync.RWMutex{&s.receiver.Dir.mu, &s.receiver.Snapshot.mu})
+	if !ok {
+		u()
+		return false
+	}
+	s.unlock = func() { unlockAccessors(); u() }
 	return true
 }
 func (s *directoryPartStore) Unlock() { s.unlock() }
 func (s *directoryPartStore) Publish() {
 	r, n := s.receiver, s.next
-	r.Dir = n.Dir
-	r.Snapshot = n.Snapshot
+	r.Dir.value = s.path
+	r.Dir.isSet = true
+	r.Snapshot.value = s.ref
+	r.Snapshot.isSet = true
 	r.Platform = n.Platform
 	r.Services = n.Services
 	r.stored = n.stored
@@ -259,7 +279,8 @@ func (dir *Directory) PreparePartStore(ctx context.Context, dec *dagql.PersistDe
 	}
 	n.SetSnapshot(ref)
 	n.Lazy = nil
-	return &directoryPartStore{receiver: dir, next: n, expected: revision}, nil
+	path, _ := n.Dir.Peek()
+	return &directoryPartStore{receiver: dir, next: n, expected: revision, path: path, ref: ref}, nil
 }
 
 // An adapter-owned Container publishes payload, producer and all desired roles
@@ -286,7 +307,10 @@ type containerPartStore struct {
 	receiver, next *Container
 	view, previous *containerAcquiredOutput
 	part           dagql.PartKey
+	parts          []dagql.PartKey
 	unlock         func()
+	assignments    []containerPartAssignment
+	locks          []*sync.RWMutex
 }
 
 func (s *containerPartStore) TryLock() bool {
@@ -294,7 +318,7 @@ func (s *containerPartStore) TryLock() bool {
 		return false
 	}
 	if s.previous == nil {
-		u, err := s.receiver.lockForPersistence(false)
+		u, err := s.receiver.tryPartPublicationGuard()
 		if err != nil {
 			return false
 		}
@@ -306,13 +330,19 @@ func (s *containerPartStore) TryLock() bool {
 		s.unlock()
 		return false
 	}
+	unlockAccessors, ok := tryPartAccessorLocks(s.locks)
+	if !ok {
+		s.unlock()
+		return false
+	}
+	priorUnlock := s.unlock
+	s.unlock = func() { unlockAccessors(); priorUnlock() }
 	return true
 }
 func (s *containerPartStore) Unlock() { s.unlock() }
 func (s *containerPartStore) Publish() {
 	r, n := s.receiver, s.next
-	switch s.part {
-	case ContainerPartMetadata:
+	if slices.Contains(s.parts, ContainerPartMetadata) || s.part == ContainerPartMetadata {
 		r.Config = n.Config
 		r.EnabledGPUs = n.EnabledGPUs
 		r.Platform = n.Platform
@@ -327,17 +357,19 @@ func (s *containerPartStore) Publish() {
 		r.VolatileEnv = n.VolatileEnv
 		r.DefaultArgs = n.DefaultArgs
 		r.Mounts = n.Mounts
-	case ContainerPartFS:
-		r.FS = n.FS
-	case ContainerPartExecMeta:
-		r.MetaSnapshot = n.MetaSnapshot
-	default:
-		for i := range r.Mounts {
-			if dagql.PartKey("mount:"+r.Mounts[i].Target) == s.part {
-				r.Mounts[i].DirectorySource = n.Mounts[i].DirectorySource
-				r.Mounts[i].FileSource = n.Mounts[i].FileSource
-				break
-			}
+	}
+	for _, a := range s.assignments {
+		if a.directory != nil {
+			a.directory.value = a.dir
+			a.directory.isSet = true
+		}
+		if a.file != nil {
+			a.file.value = a.fileValue
+			a.file.isSet = true
+		}
+		if a.snapshot != nil {
+			a.snapshot.value = a.ref
+			a.snapshot.isSet = true
 		}
 	}
 	r.acquiredOutput.Store(s.view)
@@ -361,7 +393,9 @@ func (ctr *Container) PreparePartStore(ctx context.Context, dec *dagql.PersistDe
 			return nil, err
 		}
 	}
-	return &containerPartStore{receiver: ctr, next: next, view: view, previous: previous, part: d.Address.Part}, nil
+	store := &containerPartStore{receiver: ctr, next: next, view: view, previous: previous, part: d.Address.Part}
+	store.prepareAssignments()
+	return store, nil
 }
 
 // assignAcquiredRef operates only on an unpublished prepared value.
@@ -413,4 +447,147 @@ func (ctr *Container) assignAcquiredRef(ctx context.Context, dec *dagql.PersistD
 		return fmt.Errorf("missing mount %s", key)
 	}
 	return nil
+}
+
+func (ctr *Container) PreparePartStores(ctx context.Context, dec *dagql.PersistDecodeContext, record dagql.PersistedRecord, descriptors []dagql.PartDescriptor, refs []bkcache.ImmutableRef) (dagql.PreparedPartStore, error) {
+	if len(descriptors) == 0 {
+		return nil, fmt.Errorf("empty Container publication")
+	}
+	prepared, err := ctr.PreparePartStore(ctx, dec, record, descriptors[0], refs[0])
+	if err != nil {
+		return nil, err
+	}
+	store := prepared.(*containerPartStore)
+	store.parts = []dagql.PartKey{descriptors[0].Address.Part}
+	for i := 1; i < len(descriptors); i++ {
+		d := descriptors[i]
+		store.parts = append(store.parts, d.Address.Part)
+		if d.Address.Part != ContainerPartMetadata && !d.Absent {
+			if err := store.next.assignAcquiredRef(ctx, dec, d.Address.Part, refs[i]); err != nil {
+				return nil, err
+			}
+		}
+	}
+	store.prepareAssignments()
+	return store, nil
+}
+
+func tryPartAccessorLocks(locks []*sync.RWMutex) (func(), bool) {
+	for i, mu := range locks {
+		if !mu.TryLock() {
+			for _, held := range locks[:i] {
+				held.Unlock()
+			}
+			return nil, false
+		}
+	}
+	return func() {
+		for _, mu := range locks {
+			mu.Unlock()
+		}
+	}, true
+}
+
+type containerPartAssignment struct {
+	directory *LazyAccessor[*Directory, *Container]
+	file      *LazyAccessor[*File, *Container]
+	snapshot  *LazyAccessor[bkcache.ImmutableRef, *Container]
+	dir       *Directory
+	fileValue *File
+	ref       bkcache.ImmutableRef
+}
+
+func (s *containerPartStore) prepareAssignments() {
+	s.assignments = nil
+	s.locks = nil
+	parts := s.parts
+	if len(parts) == 0 {
+		parts = []dagql.PartKey{s.part}
+	}
+	metadata := slices.Contains(parts, ContainerPartMetadata)
+	for _, part := range parts {
+		var a containerPartAssignment
+		switch part {
+		case ContainerPartMetadata:
+			continue
+		case ContainerPartFS:
+			a.directory = s.receiver.FS
+			a.dir, _ = s.next.FS.Peek()
+		case ContainerPartExecMeta:
+			a.snapshot = s.receiver.MetaSnapshot
+			a.ref, _ = s.next.MetaSnapshot.Peek()
+		default:
+			if metadata {
+				continue
+			} // metadata installs the fully prepared new mount list
+			for i, m := range s.receiver.Mounts {
+				if dagql.PartKey("mount:"+m.Target) == part {
+					a.directory = m.DirectorySource
+					a.file = m.FileSource
+					if a.directory != nil {
+						a.dir, _ = s.next.Mounts[i].DirectorySource.Peek()
+					}
+					if a.file != nil {
+						a.fileValue, _ = s.next.Mounts[i].FileSource.Peek()
+					}
+					break
+				}
+			}
+		}
+		if a.directory != nil {
+			s.locks = append(s.locks, &a.directory.mu)
+		}
+		if a.file != nil {
+			s.locks = append(s.locks, &a.file.mu)
+		}
+		if a.snapshot != nil {
+			s.locks = append(s.locks, &a.snapshot.mu)
+		}
+		s.assignments = append(s.assignments, a)
+	}
+}
+
+// Commit must never wait for native pointer, whole-body or group locks while
+// holding the cache gate. Native activation takes all of them by try-lock.
+func (ctr *Container) tryPartPublicationGuard() (func(), error) {
+	if !ctr.lazyOpMu.TryLock() {
+		return nil, dagql.ErrPersistStateNotReady
+	}
+	lazy := ctr.Lazy
+	if lazy == nil {
+		lazy = ctr.completedRecipe
+	}
+	if lazy == nil {
+		return ctr.lazyOpMu.Unlock, nil
+	}
+	provider, ok := lazy.(interface{ ContainerLazyState() *LazyState })
+	if !ok {
+		ctr.lazyOpMu.Unlock()
+		return nil, fmt.Errorf("Container publication: missing native guard")
+	}
+	state := provider.ContainerLazyState()
+	if state == nil || state.LazyMu == nil {
+		ctr.lazyOpMu.Unlock()
+		return nil, fmt.Errorf("Container publication: missing native latch")
+	}
+	if !state.LazyMu.TryLock() {
+		ctr.lazyOpMu.Unlock()
+		return nil, dagql.ErrPersistStateNotReady
+	}
+	var held []*lazyGroupOnce
+	unlock := func() {
+		for _, group := range held {
+			group.mu.Unlock()
+		}
+		state.LazyMu.Unlock()
+		ctr.lazyOpMu.Unlock()
+	}
+	for _, group := range state.groups {
+		if !group.mu.TryLock() {
+			unlock()
+			return nil, dagql.ErrPersistStateNotReady
+		}
+		held = append(held, group)
+	}
+	return unlock, nil
 }

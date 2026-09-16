@@ -15,6 +15,7 @@ import (
 type filesystemOutput struct {
 	partHost        atomic.Pointer[dagql.PartHost]
 	outputMu        sync.Mutex
+	acquiredOpen    sync.Mutex
 	OutputRev       dagql.OutputRevision
 	persistenceBody *LazyState
 }

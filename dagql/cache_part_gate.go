@@ -12,8 +12,10 @@ import (
 // PartGateCell is a stable row attachment. Merely binding it allocates no gate.
 type PartGateCell struct {
 	gate     atomic.Pointer[PartWriterGate]
+	active   atomic.Bool
 	hostOnce sync.Once
 	host     PartHost
+	server   atomic.Pointer[Server]
 }
 
 func (cell *PartGateCell) loadOrCreate() *PartWriterGate {
@@ -101,8 +103,14 @@ type OriginalPermit struct {
 
 // SourceCheck is private evidence; only a validated source scan can construct it.
 type SourceCheck struct {
-	drain        *DrainTicket
-	gateRevision uint64
+	drain          *DrainTicket
+	gateRevision   uint64
+	candidates     []partCandidate
+	lookup         partLookup
+	sessionID      string
+	demand         *PartDemandState
+	demandRevision uint64
+	checked        bool
 }
 
 func producerAddressKey(address ProducerAddress) string {
@@ -173,6 +181,8 @@ func (c *Cache) TryAcquire(ctx context.Context, receiver AnyResult, address Pers
 			return nil, GateBusy, nil
 		}
 	}
+	gate.managed = true
+	row.partGate.active.Store(true)
 	return gate.newPermit(task, address, false), GateGranted, nil
 }
 func (gate *PartWriterGate) newPermit(task *PartTaskToken, address PersistedPartAddress, decision bool) *PartPermit {
@@ -305,6 +315,9 @@ func (c *Cache) BeginOriginal(ctx context.Context, check *SourceCheck) (*Origina
 	defer c.egraphMu.Unlock()
 	if c.resultsByID[drain.task.row.id] != drain.task.row {
 		return nil, GateReselect, fmt.Errorf("producer: unregistered receiver")
+	}
+	if !c.sourceCheckCurrentLocked(check) {
+		return nil, GateReselect, nil
 	}
 	gate := drain.gate
 	gate.mu.Lock()

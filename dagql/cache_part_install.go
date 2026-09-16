@@ -45,17 +45,22 @@ func (p *partProtection) release(ctx context.Context) error {
 }
 
 type PreparedReadyPart struct {
-	cache      *Cache
-	receiver   *sharedResult
-	source     *PartSourceLease
-	permit     *PartPermit
-	version    capturedRowRevision
-	next       PersistedRecord
-	store      PreparedPartStore
-	deps       []*sharedResult
-	protection *partProtection
-	accessor   snapshots.ImmutableRef
-	consumed   atomic.Bool
+	cache            *Cache
+	receiver         *sharedResult
+	source           *PartSourceLease
+	permit           *PartPermit
+	version          capturedRowRevision
+	next             PersistedRecord
+	store            PreparedPartStore
+	deps             []*sharedResult
+	protection       *partProtection
+	accessor         snapshots.ImmutableRef
+	consumed         atomic.Bool
+	original         *OriginalPermit
+	addresses        []PersistedPartAddress
+	extraProtections []*partProtection
+	extraAccessors   []snapshots.ImmutableRef
+	privateCleanup   *partCleanup
 }
 type ReadyPartReceipt struct {
 	cache      *Cache
@@ -82,6 +87,12 @@ func (p *PreparedReadyPart) release(ctx context.Context, published bool) error {
 	ctx = context.WithoutCancel(ctx)
 	var err error
 	if !published {
+		for _, protection := range p.extraProtections {
+			err = errors.Join(err, protection.release(ctx))
+		}
+		for _, ref := range p.extraAccessors {
+			err = errors.Join(err, ref.Release(ctx))
+		}
 		err = errors.Join(err, p.protection.release(ctx))
 		if p.accessor != nil {
 			err = errors.Join(err, p.accessor.Release(ctx))
@@ -148,7 +159,7 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 		return nil, fmt.Errorf("prepare part: codec has no installer")
 	}
 	c.egraphMu.Lock()
-	for _, id := range source.descriptor.DependencyIDs {
+	for _, id := range c.partSourceDependenciesLocked(source) {
 		dep := c.resultsByID[sharedResultID(id)]
 		if dep == nil {
 			err = fmt.Errorf("prepare part: missing exact reference %d", id)
@@ -189,7 +200,7 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 		if !ok {
 			return nil, fmt.Errorf("prepare part: typed value has no store")
 		}
-		dec := NewPersistDecodeContext(CurrentDagqlServer(ctx), uint64(row.id), current.Call).WithSnapshotRoles(p.next.SnapshotLinks)
+		dec := c.partDecodeContext(ctx, row, p.next)
 		d := source.Descriptor()
 		d.Address = clonePartAddress(permit.address)
 		p.store, err = preparer.PreparePartStore(ctx, dec, p.next, d, p.accessor)
@@ -313,7 +324,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		return nil, PartInstallRefused, ErrPartReselect
 	}
 	source := p.source
-	if source.readiness == PartReady {
+	if p.original == nil && source.readiness == PartReady {
 		if err := source.version.check(source.source); err != nil {
 			return nil, PartInstallRefused, ErrPartReselect
 		}
@@ -324,7 +335,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if c.resultsByID[row.id] != row || !p.permit.task.active.Load() {
 		return nil, PartInstallRefused, ErrPartReselect
 	}
-	if source.readiness == PartReady {
+	if p.original == nil && source.readiness == PartReady {
 		if source.source == nil || c.resultsByID[source.source.id] != source.source || source.facts != c.partFactsLocked(source.source) {
 			return nil, PartInstallRefused, ErrPartReselect
 		}
@@ -338,12 +349,26 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		if !found {
 			return nil, PartInstallRefused, ErrPartReselect
 		}
-	} else if !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
+	} else if p.original == nil && !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
 		return nil, PartInstallRefused, ErrPartReselect
 	}
 	for _, dep := range p.deps {
 		if !c.sessionSatisfiesResourceRequirementsLocked(source.sessionID, dep) {
 			return nil, PartInstallRefused, ErrPartReselect
+		}
+	}
+	if p.original == nil {
+		for _, id := range c.partSourceDependenciesLocked(source) {
+			found := false
+			for _, dep := range p.deps {
+				if uint64(dep.id) == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, PartInstallRefused, ErrPartReselect
+			}
 		}
 	}
 	requirements, err := c.preparePartDependenciesLocked(row, p.deps)
@@ -353,9 +378,21 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	gate := p.permit.gate
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
-	key, _ := partAddressKey(p.permit.address)
-	if gate.outputs[key].phase != PartPending {
-		return nil, PartInstallAlreadyInstalled, nil
+	addresses := p.addresses
+	if len(addresses) == 0 {
+		addresses = []PersistedPartAddress{p.permit.address}
+	}
+	for _, address := range addresses {
+		key, _ := partAddressKey(address)
+		if gate.outputs[key].phase != PartPending {
+			return nil, PartInstallAlreadyInstalled, nil
+		}
+	}
+	if p.original != nil {
+		group := gate.groups[producerAddressKey(p.original.group)]
+		if group == nil || group.phase != ProducerRunning || group.task != p.permit.task {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
 	}
 	if gate.writers[p.permit.ticket] != p.permit {
 		return nil, PartInstallRefused, ErrPartReselect
@@ -374,8 +411,15 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	// No fallible work after this point. Protection cleanup belongs to the row,
 	// independently of the receipt and the continuation's temporary row hold.
 	c.applyPartDependenciesLocked(ctx, row, p.deps, requirements)
+	protections := slices.Clone(p.extraProtections)
 	if p.protection != nil {
-		row.onRelease = joinOnRelease(row.onRelease, p.protection.release)
+		protections = append(protections, p.protection)
+	}
+	for _, protection := range protections {
+		row.onRelease = joinOnRelease(row.onRelease, protection.release)
+	}
+	if p.privateCleanup != nil {
+		row.onRelease = joinOnRelease(row.onRelease, p.privateCleanup.release)
 	}
 	row.snapshotLinkIntent = &snapshotLinkIntent{Links: slices.Clone(p.next.SnapshotLinks)}
 	if p.store == nil {
@@ -386,20 +430,29 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	}
 	row.payloadRevision++
 	gate.managed = true
+	row.partGate.active.Store(true)
 	gate.revision++
 	token := p.permit.task
 	installation := gate.revision
-	gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: token, installation: installation}
+	for _, address := range addresses {
+		key, _ := partAddressKey(address)
+		gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: token, installation: installation}
+	}
 	previous := token.installed.Load()
 	installed := &InstalledOutputs{}
 	if previous != nil {
 		installed.outputs = slices.Clone(previous.outputs)
 		installed.protections = slices.Clone(previous.protections)
+		installed.beforeSync = slices.Clone(previous.beforeSync)
 	}
-	installed.outputs = append(installed.outputs, installedPartOutput{address: clonePartAddress(p.permit.address), installation: installation})
-	if p.protection != nil {
-		installed.protections = append(installed.protections, p.protection)
+	for _, address := range addresses {
+		installed.outputs = append(installed.outputs, installedPartOutput{address: clonePartAddress(address), installation: installation})
 	}
+	installed.protections = append(installed.protections, protections...)
+	if p.privateCleanup != nil {
+		installed.beforeSync = append(installed.beforeSync, p.privateCleanup)
+	}
+
 	token.installed.Store(installed)
 	return &ReadyPartReceipt{cache: c, receiver: row, task: token}, PartInstalled, nil
 }
