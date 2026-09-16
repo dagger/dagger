@@ -37,7 +37,10 @@ pages and snippets are its resources.
 - `index.mdx` is the trunk, a linear progression: install the module, configure
   it, add any companion module the platform splits out, run generators, extend
   it with a small module of the reader's own, wire that module in, run every
-  Check, run on every push, next steps.
+  Check, run on every push, next steps. That order is both the order to
+  daggerize in and increasing complexity, so most readers finish early. Say so
+  in the intro and in "How the pieces fit together": name the point where a
+  project with plain tests is done, and tell the reader to stop there.
 - Branch pages (`guides/go/compose.mdx`, `guides/go/playwright.mdx`) exist only
   for a section that is conditional on project shape. A branch opens at a named
   trunk step and rejoins the trunk. Do not split a linear journey across pages.

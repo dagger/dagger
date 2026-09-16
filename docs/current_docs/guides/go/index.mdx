@@ -9,6 +9,8 @@ pagination_next: null
 
 This guide daggerizes a Go project. At the end, its tests, lint, and `go generate` run through Dagger, locally and after every push, in a runtime you control, and its end-to-end tests run against the services they need, such as Postgres.
 
+The sections are in the order you should do them, and each one adds more than the last. Most projects are done before the end. A project with plain unit tests is daggerized after the first three sections, and only a project whose generators need a system package or whose tests need a running service needs the rest. Stop when the Checks cover what your project does, and come back when it needs more.
+
 Complete [Install](../../getting-started/install.mdx) before you start. The project must be a Git repository. Run every command in this guide from the project root.
 
 ## How the pieces fit together
@@ -19,7 +21,7 @@ Complete [Install](../../getting-started/install.mdx) before you start. The proj
 - **A runtime module**, a few lines of [Dang](../../reference/sdks/dang.mdx), describes the container your tests and generators run in and the services they need.
 - **Module wiring** points a setting at a function of your module. That is how the reusable module gets a project-specific container without anyone writing a custom test Check.
 
-Most Go projects only need the first three. The last two are for projects whose generators need a system package or whose tests need something running, which is the second half of this guide.
+That list is also the order of the guide, from the least to the most project-specific. Most Go projects only need the first three. The last two are for projects whose generators need a system package or whose tests need something running, which is the second half of this guide.
 
 ## Install the Go module
 
