@@ -1,8 +1,7 @@
 """
-Services the project's tests need, and containers with those services
-already attached.
+The runtime the Go module tests and generates in, and the services it needs.
 """
-type TestServices {
+type GoRuntime {
   """
   A Postgres database for development and tests.
   """
@@ -17,12 +16,14 @@ type TestServices {
   }
 
   """
-  The container the Go module runs tests in: a Go image with Postgres bound
-  as a service and DATABASE_URL pointing at it.
+  A Debian-based Go image with protoc installed, Postgres bound as a service,
+  and DATABASE_URL pointing at it.
   """
-  pub goTestBase: Container! {
+  pub base: Container! {
     container
-      .from("golang:1.26-alpine")
+      .from("golang:1.26-bookworm")
+      .withExec(["apt-get", "update"])
+      .withExec(["apt-get", "install", "-y", "--no-install-recommends", "protobuf-compiler"])
       .withServiceBinding("db", postgres)
       .withEnvVariable("DATABASE_URL", "postgres://test:test@db:5432/test?sslmode=disable")
   }

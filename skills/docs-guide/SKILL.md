@@ -6,8 +6,12 @@ description: Author or review a platform guide in docs/current_docs/guides ("Dag
 # Docs Guides
 
 How to write a guide under `docs/current_docs/guides/`. The exemplar is
-`docs/current_docs/guides/go/index.mdx`. Read it before writing a new one and
-match its shape.
+`docs/current_docs/guides/go/index.mdx`, the first guide of this kind. Read it
+before writing a new one and match its shape, keeping the sections that apply
+to what the platform's official module exposes and dropping the ones that do
+not. This skill describes the framework; the Go guide is the worked instance of
+every part of it, and the section skeleton below names the Go section that
+shows each kind.
 
 ## What a guide is for
 
@@ -31,8 +35,9 @@ pages and snippets are its resources.
 
 - One directory per platform: `guides/<platform>/`.
 - `index.mdx` is the trunk, a linear progression: install the module, configure
-  it, run generators, extend it with a small module of the reader's own, wire
-  that module in, run every Check, run on every push, next steps.
+  it, add any companion module the platform splits out, run generators, extend
+  it with a small module of the reader's own, wire that module in, run every
+  Check, run on every push, next steps.
 - Branch pages (`guides/go/compose.mdx`, `guides/go/playwright.mdx`) exist only
   for a section that is conditional on project shape. A branch opens at a named
   trunk step and rejoins the trunk. Do not split a linear journey across pages.
@@ -42,7 +47,7 @@ pages and snippets are its resources.
   embedded with a code-import fence, never pasted inline:
 
   ````markdown
-  ```dang file=./snippets/test-services/main.dang
+  ```dang file=./snippets/<module-name>/main.dang
   ```
   ````
 
@@ -60,8 +65,12 @@ skipping when it is unset. Test code and application code never appear.
 
 **The only code is Dagger module code, in Dang.** Everything else is dagger
 commands, `dagger.toml`, and prose explaining how the pieces fit together. The
-module the reader writes gets a name a real project would use (`test-services`,
-not `myapp`) and stays deliberately minimal. Say why it is minimal.
+one exception is a platform-native directive or config line when the section
+is about that line: show it on its own, never the code around it. The module
+the reader writes gets a name that says what it supplies to the official module
+(not `myapp`) and stays deliberately minimal. Say why it is minimal. When the
+guide extends that module later, add a second snippet directory for the
+extended version rather than editing the first one in prose.
 
 **The official module does the heavy lifting.** Lean on the platform module and
 its settings first. The reader's own module exists only to supply what the
@@ -90,15 +99,18 @@ source and diffing the guide against it. Write to that standard:
   example `github.com/dagger/go`) and read its `.dang` files and helpers before
   describing a setting. Constraints the reader would otherwise discover only by
   reading that source belong in the guide: settings that are mutually exclusive,
-  workflows a setting does not affect (lint runs in its own pinned image),
-  what is mounted by default, whether a version is a floor or a requirement.
+  workflows a setting does not affect (a companion module that runs in its own
+  image ignores the platform module's version), what is mounted by default,
+  whether a version is a floor or a requirement, and any convention the module
+  reads from the project's source, such as a directive that declares inputs.
 - **Config examples are complete.** The reader should be able to diff their
   `dagger.toml` against the guide. Include every table the tooling writes,
   including ones the guide never asked the reader to add, such as the
   `[sdks.<name>]` scope tables written by `dagger module init`.
 - **Output shown is output printed.** Every command output block comes from a
   real run against the current CLI. Never tell the reader to look for something
-  the report omits (a zero `skipped` count is not printed).
+  the report omits: zero counts are not printed, and a cached re-run prints no
+  per-test section at all, so capture proof steps on a cache miss.
 - **Side effects get a sentence.** Files the tooling touches, such as
   `dagger.lock` keeping stale image pins, are explained where the reader first
   meets them so the first surprise is self-explanatory.
@@ -117,8 +129,9 @@ source and diffing the guide against it. Write to that standard:
 
 Do this before sending a guide for review, and again after every merge of main.
 
-1. **Scaffold a throwaway project** of the target type in the scratchpad, with
-   a test that skips when its service variable is unset. `git init` it.
+1. **Scaffold a throwaway project** of the target type in the scratchpad that
+   follows every convention the guide asks of the reader's code, such as a test
+   that skips when its service variable is unset. `git init` it.
 2. **Get a CLI that matches the docs.** The docs describe upstream main and the
    next beta. The brew CLI and older betas reject newer refs and commands.
    Options, in order of preference:
@@ -127,12 +140,18 @@ Do this before sending a guide for review, and again after every merge of main.
      `./hack/with-dev dagger ...` from any directory. Only main commits with
      published archives work with `--x-release <sha>`; a dev build is the
      fallback when the docs are ahead of every published build.
+   The pin in `hack/build` may predate the commands a guide uses; it is only
+   for the docs checks in step 5.
 3. **Run the guide top to bottom** in the scratch project, exactly as written,
    and paste real output into the output blocks: `dagger check -l`, the settings
-   table, the final `dagger check`, the resulting `dagger.toml`.
-4. **Exercise the failure paths the guide mentions**: set the mutually exclusive
-   settings together, unset the wiring and confirm the skips return, change a
-   version and inspect `dagger.lock`.
+   table, the final `dagger check`, the resulting `dagger.toml`. Headless runs
+   need `-y` on `dagger module init` and any other command that returns a
+   changeset. The settings table truncates to the terminal width, so capture
+   it under a wide pseudo-terminal.
+4. **Exercise every failure path the guide mentions**, so its failure text is
+   real: settings it calls mutually exclusive, a proof step that removes
+   wiring, a directive or setting it says is required. Confirm each fails the
+   way the guide says.
 5. **Run the docs checks** from the repo root with the pin hack/build uses:
 
    ```bash
@@ -148,30 +167,57 @@ Do this before sending a guide for review, and again after every merge of main.
 
 ## Section skeleton
 
-Use these H2s for a trunk page, adapting names to the platform:
+Use these H2s for a trunk page, adapting names to the platform. Sections 4, 6,
+and 7 are kinds, not fixed titles: include one section for each thing the
+platform actually has, and none for things it does not. Each entry ends with
+the Go guide section that shows it.
 
-1. `How the pieces fit together`: the official module, its settings, the
-   reader's small module, module wiring. One bullet each. Say which projects
-   need only the first two.
+1. `How the pieces fit together`: the official module, its settings, any
+   companion module, the reader's small module, module wiring. One bullet
+   each. Say which projects need only the official module and its settings.
+   Go: "How the pieces fit together".
 2. `Install the <platform> module`: install command, `dagger check -l`, the
-   first `dagger check`, what each Check does, how a skipped test appears.
+   first `dagger check`, what each Check does, and how a Check that passes but
+   is incomplete appears (for example a skipped test). Go: "Install the Go
+   module".
 3. `Configure the <platform> module`: settings table, one `settings` command,
-   the settings that come up most often with their constraints, a complete
-   `[modules.<name>.settings]` example.
-4. `Run generators`: only if the module has a generator.
-5. `Give the tests the services they need` (or the platform's equivalent
-   extension point): the one-line reason the official module needs to be given
-   something, the conventions on the test side, `### Create a module for
-   <purpose>`, `### Wire it into the <platform> module` with the full
-   `dagger.toml`, and a proof step that removes the wiring.
-6. `Run every Check`: real output, then the commit step naming `dagger.toml`,
+   the settings that come up most often with their constraints, including how
+   to select which of the project's units each workflow covers and how to mount
+   files the module does not find on its own, and a complete
+   `[modules.<name>.settings]` example. Go: "Configure the Go module".
+4. One section per companion module the platform splits out (a linter, a
+   formatter): install it, show the Check list gaining a Check, its settings,
+   and how it differs from the platform module. Go: "Lint the project",
+   which installs one of two linter modules and says how the other differs.
+5. `Run generators`: only if the module has a generator. Go: "Run generators".
+6. One section per convention the official module reads from the project's own
+   source, such as a directive that declares extra inputs: what the module
+   discovers on its own, the convention and its rules, the failure without it,
+   and when to prefer it over a setting. Go: "Declare the files a test or
+   generator reads", for `//go:test:include` and `//go:generate:include`.
+7. One section per extension point the official module exposes through a
+   wireable setting, in the order a reader needs them. For a runtime container:
+   the one-line reason the module needs to be given one, `### Create a
+   <purpose> module` with a function that starts from a published image and
+   adds what the project plausibly needs, a command proving it, and `### Wire
+   it into the <platform> module` with the full `dagger.toml`. For services:
+   the conventions on the test side, extend the same module, and a proof step
+   that removes the wiring. Go: "Provide the runtime the tests and generators
+   run in" builds a `go-runtime` module with one `base` function and wires it;
+   "Give the tests the services they need" adds Postgres to that same module as
+   a second snippet stage.
+8. `Run every Check`: real output, then the commit step naming `dagger.toml`,
    `dagger.lock`, and `.dagger`, with a sentence on what the lock file holds.
-7. `Run it on every push`: Cloud Checks and existing CI, by link.
-8. `Next steps`: reference pages and sibling branch guides.
+   Go: "Run every Check".
+9. `Run it on every push`: Cloud Checks and existing CI, by link. Go: "Run it
+   on every push".
+10. `Next steps`: reference pages, companion module references, and sibling
+    branch guides. Go: "Next steps".
 
 ## Checklist before opening the PR
 
 - [ ] No example project, no application or test code, only Dang module code
+      plus bare platform directive lines where a section is about that directive
 - [ ] Every setting described was checked against the module source
 - [ ] Every output block was pasted from a real run with the current CLI
 - [ ] The final `dagger.toml` is complete, including SDK scope tables

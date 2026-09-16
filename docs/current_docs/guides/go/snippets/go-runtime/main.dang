@@ -1,0 +1,15 @@
+"""
+The runtime the Go module tests and generates in.
+"""
+type GoRuntime {
+  """
+  A Debian-based Go image with protoc installed, for generators that compile
+  protobuf definitions.
+  """
+  pub base: Container! {
+    container
+      .from("golang:1.26-bookworm")
+      .withExec(["apt-get", "update"])
+      .withExec(["apt-get", "install", "-y", "--no-install-recommends", "protobuf-compiler"])
+  }
+}
