@@ -285,8 +285,8 @@ argument.
 
 ### `module`
 
-The `module` driver loads the entrypoint source as a manifest v2 module. Loading
-is recursive:
+The `module` driver loads the entrypoint source as a module. Loading is
+recursive:
 
 ```text
 target module
@@ -297,12 +297,29 @@ target module
                 └── dang driver
 ```
 
-The entrypoint module must have one constructor. The constructed object must
-implement `ModuleEntrypoint`. The constructor must work without supplied
-arguments. Optional arguments can use their defaults.
+The entrypoint module must have one constructor. The constructor must work
+without supplied arguments. Optional arguments can use their defaults.
 
-Each driver chain must end at a built-in driver. The engine detects a cycle by
-the resolved entrypoint `Directory` ID. A cycle error shows the complete chain.
+`entrypoint.source` means what `runtime.source` meant, so it accepts the same
+values and resolves the same way: a built-in runtime name, a git reference with
+its subpath and pin, or a path relative to the module that names it.
+
+What the engine does with the loaded module depends on what it implements:
+
+| Entrypoint source | Engine behavior |
+| --- | --- |
+| A module whose constructed object implements `ModuleEntrypoint` | Call `types` and `call` on it. |
+| A built-in runtime name | Drive it as a runtime. A built-in is a runtime, so the engine does not inspect it. |
+| Any other module | Drive it as a runtime, through the same adapter `runtime.source` uses. |
+
+The runtime cases exist because the runtimes predate this interface. A runtime
+that grows a `ModuleEntrypoint` implementation moves to the first row without a
+manifest change.
+
+Each driver chain must end at a built-in driver. A chain that returns to an
+entrypoint it already loaded is a cycle, and the error names the modules on the
+way back to it. A module that names itself is caught earlier, by the module
+reference loop check that every dependency gets.
 
 The engine passes the target module workspace to the entrypoint.
 

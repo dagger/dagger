@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
@@ -15,16 +16,56 @@ type entrypointSDK struct {
 	kind modules.ModuleEntrypointKind
 }
 
-func (l *Loader) entrypointForModule(src *core.ModuleSource) (core.SDK, error) {
+func (l *Loader) entrypointForModule(
+	ctx context.Context,
+	query *core.Query,
+	src *core.ModuleSource,
+) (core.SDK, error) {
 	if src.Entrypoint == nil {
 		return nil, fmt.Errorf("module entrypoint is not configured")
 	}
 	switch src.Entrypoint.Kind {
-	case modules.ModuleEntrypointKindDang, modules.ModuleEntrypointKindModule:
+	case modules.ModuleEntrypointKindDang:
 		return &entrypointSDK{kind: src.Entrypoint.Kind}, nil
+	case modules.ModuleEntrypointKindModule:
+		return l.moduleEntrypointForModule(ctx, query, src)
 	default:
 		return nil, fmt.Errorf("unsupported module entrypoint kind %q", src.Entrypoint.Kind)
 	}
+}
+
+// moduleEntrypointForModule drives entrypoint kind "module".
+//
+// entrypoint.source means what runtime.source has always meant, so it accepts
+// the same values: a built-in name, a git reference, or a local path. A module
+// that implements ModuleEntrypoint is called directly. Anything else is a
+// runtime module, which the engine drives through the existing runtime
+// adapter, so an SDK runtime can be named as an entrypoint before it grows a
+// ModuleEntrypoint implementation.
+func (l *Loader) moduleEntrypointForModule(
+	ctx context.Context,
+	query *core.Query,
+	src *core.ModuleSource,
+) (core.SDK, error) {
+	sdkCfg := &core.SDKConfig{Source: src.Entrypoint.Source}
+
+	// A built-in name is a runtime, never a ModuleEntrypoint implementation.
+	builtin, builtinErr := l.namedSDK(ctx, query, sdkCfg)
+	if builtinErr == nil {
+		return builtin, nil
+	}
+	if !errors.Is(builtinErr, errUnknownBuiltinSDK) {
+		return nil, builtinErr
+	}
+
+	isEntrypoint, err := entrypointmodule.ImplementsEntrypoint(ctx, src)
+	if err != nil {
+		return nil, err
+	}
+	if isEntrypoint {
+		return &entrypointSDK{kind: modules.ModuleEntrypointKindModule}, nil
+	}
+	return l.externalSDKForModule(ctx, query, sdkCfg, src)
 }
 
 func (sdk *entrypointSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {

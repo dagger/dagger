@@ -67,6 +67,106 @@ type instance struct {
 	workspace dagql.ObjectResult[*core.Workspace]
 }
 
+// resolveModule resolves entrypoint.source and loads it as a module. It returns
+// the context carrying this entrypoint in the cycle chain.
+//
+// entrypoint.source names a module here, so it resolves the way every other
+// module reference resolves. Renaming the runtime to an entrypoint did not
+// change what the value means: a git ref keeps its subpath and its pin, and a
+// local path is relative to the module that names it.
+func resolveModule(
+	ctx context.Context,
+	dag *dagql.Server,
+	query *core.Query,
+	src *core.ModuleSource,
+) (context.Context, dagql.ObjectResult[*core.Module], error) {
+	var mod dagql.ObjectResult[*core.Module]
+
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, mod, fmt.Errorf("get engine client for module entrypoint: %w", err)
+	}
+	entryModSrc, err := core.ResolveDepToSource(ctx, bk, dag, src, src.Entrypoint.Source, "", "")
+	if err != nil {
+		return nil, mod, fmt.Errorf("resolve module entrypoint %q: %w", src.Entrypoint.Source, err)
+	}
+	if !entryModSrc.Self().ConfigExists {
+		return nil, mod, fmt.Errorf("module entrypoint %q has no module configuration", src.Entrypoint.Source)
+	}
+
+	entryID, err := entryModSrc.ID()
+	if err != nil {
+		return nil, mod, fmt.Errorf("get module entrypoint source ID: %w", err)
+	}
+	// Encode rather than Digest: a source resolved through an address is a
+	// handle-form ID, which has no digest.
+	encodedSrc, err := entryID.Encode()
+	if err != nil {
+		return nil, mod, fmt.Errorf("encode module entrypoint source ID: %w", err)
+	}
+	ctx, err = pushChain(ctx, src.ModuleName, encodedSrc)
+	if err != nil {
+		return nil, mod, err
+	}
+
+	if err := dag.Select(ctx, entryModSrc, &mod, dagql.Selector{Field: "asModule"}); err != nil {
+		return nil, mod, fmt.Errorf("load module entrypoint %q: %w", src.Entrypoint.Source, err)
+	}
+	return ctx, mod, nil
+}
+
+// ImplementsEntrypoint reports whether the module named by entrypoint.source
+// implements ModuleEntrypoint.
+//
+// A module that does not is a runtime module, which the engine already knows
+// how to drive. The caller wraps that one instead of calling it directly.
+func ImplementsEntrypoint(
+	ctx context.Context,
+	src *core.ModuleSource,
+) (bool, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get Dagger server for module entrypoint: %w", err)
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get current query for module entrypoint: %w", err)
+	}
+
+	_, mod, err := resolveModule(ctx, dag, query, src)
+	if err != nil {
+		return false, err
+	}
+	return mainObjectHasFunctions(mod.Self(), "types", "call"), nil
+}
+
+// mainObjectHasFunctions reports whether the module's main object declares all
+// of the named functions.
+func mainObjectHasFunctions(mod *core.Module, names ...string) bool {
+	found := make(map[string]bool, len(names))
+	for _, def := range mod.ObjectDefs {
+		if !def.Self().AsObject.Valid {
+			continue
+		}
+		obj := def.Self().AsObject.Value.Self()
+		// The object and the module name differ in shape: a module named
+		// "entrypoint-module" defines "EntrypointModule". Compare them the way
+		// the schema does.
+		if strcase.ToLowerCamel(obj.Name) != strcase.ToLowerCamel(mod.NameField) {
+			continue
+		}
+		for _, fn := range obj.Functions {
+			found[strcase.ToLowerCamel(fn.Self().Name)] = true
+		}
+	}
+	for _, name := range names {
+		if !found[strcase.ToLowerCamel(name)] {
+			return false
+		}
+	}
+	return true
+}
+
 // load resolves entrypoint.source, loads it as a module, and constructs the
 // object that implements ModuleEntrypoint.
 //
@@ -90,40 +190,9 @@ func load(
 		return nil, fmt.Errorf("get module workspace: %w", err)
 	}
 
-	// entrypoint.source names a module here, so resolve it the way every other
-	// module reference is resolved. Renaming the runtime to an entrypoint did
-	// not change what the value means: a git ref keeps its subpath and its pin,
-	// and a local path is relative to the module that names it.
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get engine client for module entrypoint: %w", err)
-	}
-	entryModSrc, err := core.ResolveDepToSource(ctx, bk, dag, src.Self(), src.Self().Entrypoint.Source, "", "")
-	if err != nil {
-		return nil, fmt.Errorf("resolve module entrypoint %q: %w", src.Self().Entrypoint.Source, err)
-	}
-	if !entryModSrc.Self().ConfigExists {
-		return nil, fmt.Errorf("module entrypoint %q has no module configuration", src.Self().Entrypoint.Source)
-	}
-
-	entryID, err := entryModSrc.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get module entrypoint source ID: %w", err)
-	}
-	// Encode rather than Digest: a source resolved through an address is a
-	// handle-form ID, which has no digest.
-	encodedSrc, err := entryID.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode module entrypoint source ID: %w", err)
-	}
-	ctx, err = pushChain(ctx, src.Self().ModuleName, encodedSrc)
+	ctx, mod, err := resolveModule(ctx, dag, query, src.Self())
 	if err != nil {
 		return nil, err
-	}
-
-	var mod dagql.ObjectResult[*core.Module]
-	if err := dag.Select(ctx, entryModSrc, &mod, dagql.Selector{Field: "asModule"}); err != nil {
-		return nil, fmt.Errorf("load module entrypoint %q: %w", src.Self().Entrypoint.Source, err)
 	}
 
 	entryDag, err := dagql.NewServer(ctx, query)

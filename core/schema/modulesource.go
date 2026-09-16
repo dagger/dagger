@@ -1110,8 +1110,15 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	}
 
 	var sdkSource string
-	if modCfg.SDK != nil {
+	switch {
+	case modCfg.SDK != nil:
 		sdkSource = modCfg.SDK.Source
+	case modCfg.Entrypoint != nil && modCfg.Entrypoint.Kind == modules.ModuleEntrypointKindModule:
+		// A module entrypoint can resolve to a runtime, which runs this
+		// module's own source, so the source subpath defaults the way it does
+		// for a runtime. The dang kind reads a separate directory instead, so
+		// it keeps no source subpath.
+		sdkSource = string(modCfg.Entrypoint.Kind)
 	}
 	switch {
 	case sdkSource == "" && modCfg.Source != "":
