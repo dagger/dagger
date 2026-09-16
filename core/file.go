@@ -414,6 +414,10 @@ type persistedFileSubfileLazy struct {
 
 func encodePersistedFileLazy(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*File]) (string, json.RawMessage, error) {
 	switch lazy := lazy.(type) {
+	case *FileHTTPResolveLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedFileLazyKindHTTPResolve, payload, err
+
 	case *FileBlobLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindBlob, payload, err
@@ -442,6 +446,9 @@ func encodePersistedFileLazy(ctx context.Context, enc *dagql.PersistEncodeContex
 
 func decodePersistedFileLazy(ctx context.Context, dec *dagql.PersistDecodeContext, lazyKind string, payload json.RawMessage) (Lazy[*File], error) {
 	switch lazyKind {
+	case persistedFileLazyKindHTTPResolve:
+		return decodeFileHTTPResolveLazy(payload)
+
 	case persistedFileLazyKindBlob:
 		var persisted persistedFileBlobLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {

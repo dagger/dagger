@@ -263,6 +263,8 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 // persistedFileLazyVisitors declares the references of every File lazy kind,
 // mirroring decodePersistedFileLazy.
 var persistedFileLazyVisitors = map[string]persistedLazyVisitor{
+	persistedFileLazyKindHTTPResolve: persistedLazyStructVisitor(func(p *persistedFileHTTPResolveLazy, _ *persistedRefWalker) error { return p.validate() }),
+
 	persistedFileLazyKindBlob:           persistedLazyStructVisitor(func(*persistedFileBlobLazy, *persistedRefWalker) error { return nil }),
 	persistedFileLazyKindDirectoryFile:  parentOnly(func(p *persistedFileSubfileLazy) *uint64 { return &p.ParentResultID }),
 	persistedFileLazyKindContainerFile:  parentOnly(func(p *persistedContainerFileLazy) *uint64 { return &p.ParentResultID }),

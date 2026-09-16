@@ -166,6 +166,9 @@ func (s *httpSchema) httpStateResolve(ctx context.Context, parent dagql.ObjectRe
 	if err := cache.SyncResultSnapshotOwnerLeases(ctx, parent); err != nil {
 		return inst, errors.Join(fmt.Errorf("sync http state snapshot owner leases: %w", err), fetched.File.OnRelease(context.WithoutCancel(ctx)))
 	}
+	if err := core.RecordCompletedProducer(fetched.File, &core.FileHTTPResolveLazy{LazyState: core.NewLazyState(), URL: parent.Self().URL, Filename: args.Name, Permissions: args.Permissions, Checksum: args.Checksum, BodyDigest: fetched.ContentDigest}); err != nil {
+		return inst, errors.Join(err, fetched.File.OnRelease(context.WithoutCancel(ctx)))
+	}
 	return s.newHTTPFileResult(ctx, srv, fetched, args.Permissions, args.Checksum)
 }
 
