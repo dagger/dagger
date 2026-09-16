@@ -50,25 +50,25 @@ type PersistedPartDescriber interface {
 	DescribeParts(PersistedPayloadVisit) ([]PartProbe, error)
 }
 type PartSourceLease struct {
-	cache                                              *Cache
-	source                                             *sharedResult
-	sourceID                                           uint64
-	offerOwner                                         *offerOwner
-	descriptor                                         PartDescriptor
-	target                                             PersistedPartAddress
-	offer                                              *PersistedPartOffer
-	readiness                                          PartReadiness
-	route                                              CacheHitRoute
-	descriptorRev, offerRev, resourceRev, ownershipRev uint64
-	sessionlessShare                                   bool
-	delegation                                         *partDelegationProof
-	record                                             PersistedRecord
-	version                                            capturedRowRevision
-	facts                                              partSourceFacts
-	lookup                                             partLookup
-	sessionID                                          string
-	once                                               sync.Once
-	releaseErr                                         error
+	cache            *Cache
+	source           *sharedResult
+	sourceID         uint64
+	offerOwner       *offerOwner
+	descriptor       PartDescriptor
+	target           PersistedPartAddress
+	offer            *PersistedPartOffer
+	readiness        PartReadiness
+	route            CacheHitRoute
+	offerRev         uint64
+	sessionlessShare bool
+	delegation       *partDelegationProof
+	record           PersistedRecord
+	version          capturedRowRevision
+	facts            partSourceFacts
+	lookup           partLookup
+	sessionID        string
+	once             sync.Once
+	releaseErr       error
 }
 
 func (s *PartSourceLease) Descriptor() PartDescriptor {
@@ -122,11 +122,8 @@ func (c *Cache) partLookupFor(row *sharedResult) (partLookup, error) {
 	if err != nil {
 		return l, err
 	}
-	l.self, _, err = l.frame.selfDigestAndInputRefs(c)
-	if err != nil {
-		return l, err
-	}
-	_, refs, err := l.frame.selfDigestAndInputRefs(c)
+	var refs []ResultCallStructuralInputRef
+	l.self, refs, err = l.frame.selfDigestAndInputRefs(c)
 	if err != nil {
 		return l, err
 	}
@@ -456,7 +453,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		c.egraphMu.Unlock()
 		return nil, candidates, ErrPartReselect
 	}
-	source = &PartSourceLease{cache: c, sourceID: uint64(selected.row.id), target: clonePartAddress(address), readiness: rank, route: selected.route, record: selected.record, version: selected.version, facts: selected.facts, lookup: lookup, sessionID: session, descriptorRev: selected.facts.payload, offerRev: selected.facts.offers, resourceRev: selected.facts.resources, ownershipRev: selected.facts.ownership}
+	source = &PartSourceLease{cache: c, sourceID: uint64(selected.row.id), target: clonePartAddress(address), readiness: rank, route: selected.route, record: selected.record, version: selected.version, facts: selected.facts, lookup: lookup, sessionID: session, offerRev: selected.facts.offers}
 	if rank == PartReady {
 		source.source = selected.row
 		selected.row = nil
@@ -617,7 +614,7 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 			return nil, ErrPartReselect
 		}
 	}
-	source.descriptorRev, source.offerRev, source.resourceRev, source.ownershipRev = source.facts.payload, source.facts.offers, source.facts.resources, source.facts.ownership
+	source.offerRev = source.facts.offers
 	c.incrementIncomingOwnershipLocked(ctx, donor)
 	return source, nil
 }

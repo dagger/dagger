@@ -123,10 +123,8 @@ func clonePartAddress(address PersistedPartAddress) PersistedPartAddress {
 	return address
 }
 func containsPart(addresses []PersistedPartAddress, target PersistedPartAddress) bool {
-	key, _ := partAddressKey(target)
 	for _, address := range addresses {
-		candidate, _ := partAddressKey(address)
-		if key == candidate {
+		if address.Part == target.Part && slices.Equal(address.OutputPath, target.OutputPath) {
 			return true
 		}
 	}
