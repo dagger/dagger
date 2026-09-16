@@ -10,6 +10,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestContainerCompletedProducerAttachesParentAtPublication(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "completed-container-publication")
+	ctx, cache, srv := env.open(t)
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	parentRes := env.attach(t, ctx, cache, srv, "producer-parent", NewContainer(platform)).(dagql.ObjectResult[*Container])
+	parentID := persistedRowID(t, cache, parentRes)
+	child := NewContainer(platform)
+	recipe := &ContainerWithLabelLazy{LazyState: NewLazyState(), Parent: parentRes, Name: "retained", Value: "yes"}
+	child.Lazy = recipe
+	require.NoError(t, child.Evaluate(ctx))
+	require.Nil(t, child.lazyOpForRouting())
+	require.Same(t, recipe, child.completedRecipe)
+
+	// This synthetic call has no receiver or arguments, so only the retained
+	// recipe can supply the parent's direct dependency at publication.
+	childRes := env.attach(t, ctx, cache, srv, "withLabel", child)
+	childID := persistedRowID(t, cache, childRes)
+	for _, row := range cache.DebugEGraphSnapshot().Results {
+		if row.SharedResultID == childID {
+			require.Equal(t, []uint64{parentID}, row.ExplicitDeps)
+			return
+		}
+	}
+	t.Fatal("published child missing from cache graph")
+}
+
 func TestContainerCompletedProducerPersistsWithoutLoadingParents(t *testing.T) {
 	env := newPersistedFamiliesTestEnv(t, "completed-container")
 	ctx, cache, srv := env.open(t)

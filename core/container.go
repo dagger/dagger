@@ -1136,7 +1136,13 @@ func (container *Container) AttachDependencyResultsKinds(
 		return nil, nil
 	}
 
-	lazy := container.lazyOpForRouting()
+	container.lazyOpMu.Lock()
+	lazy := container.Lazy
+	if lazy == nil {
+		// Completed live recipes retain their inputs as direct dependencies.
+		lazy = container.completedRecipe
+	}
+	container.lazyOpMu.Unlock()
 	owned := make([]dagql.DependencyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets)+len(container.Services))
 	for i := range container.Mounts {
 		mnt := &container.Mounts[i]
