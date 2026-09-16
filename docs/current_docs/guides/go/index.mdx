@@ -65,6 +65,8 @@ go      base                      Base image used for Go test, generate, and hel
 go      includeExtraFiles         Extra workspace-root include patterns mounted for each module's Go commands.
 go      test                      Module roots to test. A bare pattern selects, a "!"-prefixed pattern
 go      generate                  Module roots to run go generate in. Same selection rules as `test`.
+go      goflags                   Value of the GOFLAGS environment variable in every Go container, e.g.
+go      mountPath                 Absolute container path where the workspace is mounted for Go commands.
 ```
 
 Set a single value with the same command:
@@ -77,8 +79,10 @@ The settings that come up most often:
 
 - **`version`**: the Go toolchain used to test and generate every Go module in the workspace. It selects the tag of the default `golang:<version>-alpine` image.
 - **`base`**: a container to use instead of that image. `version` and `base` are mutually exclusive, and the Go module fails to load when both are set. The second half of this guide sets `base`.
-- **`includeExtraFiles`**: files the Go module does not mount on its own. By default each Go command sees the module's Go source files, its `go.mod`, `go.sum`, and `go.work`, the files named by `go:embed` directives, and local `replace` targets, and tests also see every `testdata/` directory. Anything else a test opens by relative path can be listed here as a pattern from the repository root. A test that reads `fixtures/users.json` needs `fixtures/**`, and one that reads a config file at the root needs that file by name. A file that only one package needs is better declared next to that package with a directive, covered in [Declare the files a test or generator reads](#declare-the-files-a-test-or-generator-reads).
+- **`includeExtraFiles`**: files the Go module does not mount on its own. By default each Go command sees the module's Go source files, its `go.mod`, `go.sum`, and `go.work`, the files named by `go:embed` directives, and local `replace` targets, and tests also see every `testdata/` directory. Anything else a test opens by relative path can be listed here as a pattern from the repository root. The repository is mounted at `/src/<repository name>` in the container and each module's commands run from its own directory under it, so a relative path in a test resolves the same way it does in the checkout. A test that reads `fixtures/users.json` needs `fixtures/**`, and one that reads a config file at the root needs that file by name. A test runner that reads a whole directory, such as testscript files under `testscripts/**` or SQL migrations under `migrations/**`, lists that directory the same way. A file that only one package needs is better declared next to that package with a directive, covered in [Declare the files a test or generator reads](#declare-the-files-a-test-or-generator-reads).
 - **`test`, `generate`**: which Go modules each workflow covers, as path selectors. The Go module covers every `go.mod` it finds, including ones under directories like `examples/` or `tools/`. To cover only the root module, set the selector to `["."]`. To cover everything except one module, keep `"**"` and add a `!`-prefixed path, as in `["**", "!legacy-service"]`. Each workflow has its own selector, so a module can be excluded from one without being excluded from the other.
+- **`goflags`**: the `GOFLAGS` value for every Go command, which is how build tags get in. A project whose tests only compile with a tag sets it to `-tags=extended`. Flags that take a value use the `-flag=value` form, as Go requires inside `GOFLAGS`. On the command line the value starts with a dash, so put `--` before it: `dagger module settings go goflags -- -tags=extended`.
+- **`mountPath`**: where the repository is mounted in the container. The default is `/src/<repository name>`, taken from the last segment of the workspace address, so a test that expects the repository name in its working directory passes without configuration. Set it when a test expects some other absolute path.
 
 Settings are stored in `dagger.toml`, so they apply to everyone who uses the repository:
 
@@ -87,6 +91,7 @@ Settings are stored in `dagger.toml`, so they apply to everyone who uses the rep
 version = "1.26"
 includeExtraFiles = ["fixtures/**", "config.yaml"]
 test = ["**", "!legacy-service"]
+goflags = "-tags=extended"
 ```
 
 The [Go module reference](../../reference/modules/go.mdx) describes every setting. The second half of this guide is about `base`.
@@ -185,7 +190,7 @@ Prefer a directive when one package needs the file. It travels with the code, an
 
 ## Provide the runtime the tests and generators run in
 
-By default the Go module runs every Go command in `golang:<version>-alpine`. That is enough for most projects. A project whose generators run `protoc`, or whose tests need a system library, needs a runtime with those packages installed. The `base` setting takes that runtime, and module wiring lets a function of your own build it.
+By default the Go module runs every Go command in `golang:<version>-alpine`. That is enough for most projects. The image has no `git` and no C compiler, and cgo is disabled in it, which is the most common reason to change the runtime: a test that shells out to `git` fails there, and so does a package that needs cgo, such as a SQLite driver. A generator that runs a tool like `protoc` needs the runtime to have it installed too. Build tags are not a reason to change the runtime, since the `goflags` setting covers them. The `base` setting takes that runtime, and module wiring lets a function of your own build it.
 
 ### Create a runtime module
 
@@ -201,7 +206,7 @@ dagger module init dang --name go-runtime
 ```dang file=./snippets/go-runtime/main.dang
 ```
 
-`base` starts from the Debian-based `golang:1.26-bookworm` image instead of the Alpine default and installs `protobuf-compiler`, so a `//go:generate` line that runs `protoc` works. It is deliberately minimal:
+`base` starts from the Debian-based `golang:1.26-bookworm` image instead of the Alpine default, which brings `git` and `gcc` with it, and installs `protobuf-compiler`, so a `//go:generate` line that runs `protoc` works. It is deliberately minimal:
 
 - **Only an image and its packages.** No working directory, no source, no cache mounts. The Go module adds its own on top.
 - **The image sets the Go version.** Once `base` is wired, the toolchain is whatever tag the function uses, so use the release you would otherwise put in `version`. Keep it at Go 1.26 or newer: the Go module builds its own helper binaries in this container, and they need at least 1.26.
