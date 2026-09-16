@@ -137,28 +137,17 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 
 // Only the owning native attempt may advance installed output to complete,
 // after owner sync and operation-lease cleanup have both succeeded.
-func (c *Cache) completeNativePartTask(task *PartTaskToken) {
+func (c *Cache) completeNativePartTask(ctx context.Context, task *PartTaskToken) error {
 	installed := task.installed.Load()
 	if installed == nil {
-		return
+		return nil
 	}
-	gate := task.row.partGate.gate.Load()
-	if gate == nil {
-		return
-	}
-	c.egraphMu.Lock()
-	gate.mu.Lock()
 	for _, output := range installed.outputs {
-		key, _ := partAddressKey(output.address)
-		state := gate.outputs[key]
-		if state.task == task && state.installation == output.installation && state.phase == PartOutputInstalled {
-			state.phase = PartComplete
-			gate.outputs[key] = state
-			gate.revision++
+		if err := c.settlePart(ctx, task.row, output.address, task, output.installation); err != nil {
+			return err
 		}
 	}
-	gate.mu.Unlock()
-	c.egraphMu.Unlock()
+	return nil
 }
 
 // DecodeContext borrows this held owner's exact recorded identity and server.

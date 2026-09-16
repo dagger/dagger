@@ -263,3 +263,39 @@ func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
 		})
 	}
 }
+
+func TestPartNativeCompletionRetiresOffer(t *testing.T) {
+	ctx, c := newPartsTestCache(t, nil)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	obj := &cacheTestPartsObject{resolveFn: partsTestDirectResolve}
+	var receiver ObjectResult[*cacheTestPartsObject]
+	bodies := 0
+	address := PersistedPartAddress{Part: partsTestPartFS}
+	obj.groupEval = map[LazyGroupKey]LazyEvalFunc{partsTestGroupOut: func(ctx context.Context) error {
+		return c.partHostFor(receiver.cacheSharedResult()).RunNative(ctx, partsTestGroupOut, []PartKey{partsTestPartFS}, func(ctx context.Context) error {
+			bodies++
+			// Offer arrival after native admission cannot change its running route.
+			c.egraphMu.Lock()
+			defer c.egraphMu.Unlock()
+			owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{})
+			if err != nil {
+				return err
+			}
+			return c.attachPartOfferLocked(receiver.cacheSharedResult(), address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner})
+		})
+	}}
+	receiver = newPartsTestResult(t, c, ctx, obj)
+	require.NoError(t, c.EvaluateParts(ctx, receiver, partsTestPartFS))
+	require.NoError(t, c.EvaluateParts(ctx, receiver, partsTestPartFS))
+	require.Equal(t, 1, bodies)
+	row := receiver.cacheSharedResult()
+	c.egraphMu.RLock()
+	require.Empty(t, row.partOffers)
+	require.Empty(t, c.offerOwners)
+	c.egraphMu.RUnlock()
+	gate := row.partGate.loadOrCreate()
+	gate.mu.Lock()
+	key, _ := partAddressKey(address)
+	require.Equal(t, PartComplete, gate.outputs[key].phase)
+	gate.mu.Unlock()
+}
