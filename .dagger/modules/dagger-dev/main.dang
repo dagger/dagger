@@ -36,6 +36,38 @@ type DaggerDev {
   }
 
   """
+  Smoke test: build the CLI and engine from source, then load a small module and run its check
+  """
+  smoke(ws: Workspace!): Void @check {
+    playground(ws)
+      .withWorkdir("/smoke")
+      .withNewFile("dagger.toml", """
+        [modules.hello]
+        source = ".dagger/modules/hello"
+        """)
+      .withNewFile(".dagger/modules/hello/dagger-module.toml", """
+        name = "hello"
+        engineVersion = "latest"
+
+        [runtime]
+        source = "dang"
+        """)
+      .withNewFile(".dagger/modules/hello/main.dang", """
+        type Hello {
+          ok: Void @check {
+            container.from("alpine").withExec(["true"]).sync
+            null
+          }
+        }
+        """)
+      .withExec(["dagger", "version"])
+      .withExec(["dagger", "check", "-l"])
+      .withExec(["dagger", "check"])
+      .sync
+    null
+  }
+
+  """
   Go tools and system dependencies for generating Dagger source files.
   """
   goBase: Container! {

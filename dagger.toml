@@ -1,10 +1,6 @@
 [modules.changie]
 source = ".dagger/modules/changie"
 
-[modules.bootstrap]
-source = ".dagger/modules/bootstrap"
-legacy-default-path = true
-
 [modules.cli]
 source = ".dagger/modules/cli-dev"
 legacy-default-path = true
