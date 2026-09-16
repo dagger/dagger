@@ -61,6 +61,7 @@ func gitPushSHA(sha string) bool {
 
 // Push copies only the selected history into a disposable repository. Neither
 // checkout configuration/hooks nor source credentials can affect the push.
+//
 //nolint:gocyclo // keep approval, history preparation, and credential use in their required order
 func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, opts GitPushOpts) (*GitPushResult, error) {
 	name, err := opts.Ref(ref.Ref)
