@@ -62,27 +62,54 @@ source = "./entrypoint"
 // A manifest with entrypoint kind "module" loads its entrypoint source as a
 // module and calls ModuleEntrypoint on the object its constructor returns.
 func (ModuleSuite) TestModuleKindModuleEntrypoint(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	t.Run("a path under the module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
-	ctr := goGitBase(t, c).
-		WithNewFile("dagger.toml", `[modules.app]
+		out, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.app]
 source = ".dagger/modules/app"
 `).
-		WithNewFile(".dagger/modules/app/dagger-module.toml", `name = "app"
+			WithNewFile(".dagger/modules/app/dagger-module.toml", `name = "app"
 
 [entrypoint]
 kind = "module"
 source = "./entrypoint-module"
 `).
-		WithDirectory(
-			".dagger/modules/app/entrypoint-module",
-			c.Host().Directory("./testdata/modules/dang/entrypoint-module"),
-		).
-		With(daggerCallAt("app", "message"))
+			WithDirectory(
+				".dagger/modules/app/entrypoint-module",
+				c.Host().Directory("./testdata/modules/dang/entrypoint-module"),
+			).
+			With(daggerCallAt("app", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "loaded through the module entrypoint", strings.TrimSpace(out))
+	})
 
-	out, err := ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "loaded through the module entrypoint", strings.TrimSpace(out))
+	// entrypoint.source resolves like runtime.source, so a sibling module is a
+	// valid entrypoint. Resolving it as a path under the module directory would
+	// reject this.
+	t.Run("a path beside the module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.app]
+source = ".dagger/modules/app"
+`).
+			WithNewFile(".dagger/modules/app/dagger-module.toml", `name = "app"
+
+[entrypoint]
+kind = "module"
+source = "../entrypoint-module"
+`).
+			WithDirectory(
+				".dagger/modules/entrypoint-module",
+				c.Host().Directory("./testdata/modules/dang/entrypoint-module"),
+			).
+			With(daggerCallAt("app", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "loaded through the module entrypoint", strings.TrimSpace(out))
+	})
 }
 
 // A module entrypoint that names itself is a cycle. The engine reports the
@@ -107,7 +134,5 @@ source = "."
 		}).
 		Stderr(ctx)
 	require.NoError(t, err)
-	// dagql rejects the self-reference before the driver's own chain sees the
-	// directory twice. Either way the cycle is reported, not followed.
-	require.Contains(t, out, "recursive call detected")
+	require.Contains(t, out, "module entrypoint cycle: loop -> loop")
 }

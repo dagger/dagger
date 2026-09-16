@@ -21,21 +21,20 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-// chainKey carries the entrypoint directories already being loaded, so a chain
-// that returns to one of them is reported instead of looping.
+// chainKey carries the entrypoint sources already being loaded, so a chain that
+// returns to one of them is reported instead of looping.
 //
-// dagql rejects a module that names itself before this chain sees the
-// directory twice, with "recursive call detected". This chain covers the case
-// dagql cannot see: a loop through entrypoints that are separate calls, where
-// only the resolved directory repeats.
+// Resolving the source to a module reference makes the identity stable, so a
+// module that names itself repeats immediately and a longer loop repeats when
+// it comes back around.
 type chainKey struct{}
 
 type chainEntry struct {
 	// module names the module whose entrypoint this is, for the error message.
 	module string
-	// directory is the resolved entrypoint Directory ID, which is the identity
-	// the spec detects cycles on.
-	directory string
+	// source is the resolved entrypoint module source ID, which is the identity
+	// cycles are detected on.
+	source string
 }
 
 // pushChain records this entrypoint directory, and fails when the chain
@@ -43,7 +42,7 @@ type chainEntry struct {
 func pushChain(ctx context.Context, module, encoded string) (context.Context, error) {
 	chain, _ := ctx.Value(chainKey{}).([]chainEntry)
 	for _, entry := range chain {
-		if entry.directory != encoded {
+		if entry.source != encoded {
 			continue
 		}
 		names := make([]string, 0, len(chain)+1)
@@ -56,7 +55,7 @@ func pushChain(ctx context.Context, module, encoded string) (context.Context, er
 
 	next := make([]chainEntry, len(chain), len(chain)+1)
 	copy(next, chain)
-	next = append(next, chainEntry{module: module, directory: encoded})
+	next = append(next, chainEntry{module: module, source: encoded})
 	return context.WithValue(ctx, chainKey{}, next), nil
 }
 
@@ -86,36 +85,40 @@ func load(
 		return nil, fmt.Errorf("get current query for module entrypoint: %w", err)
 	}
 
-	entrySrc, workspace, err := entrypoint.ResolveSource(ctx, dag, src)
-	if err != nil {
-		return nil, err
+	var workspace dagql.ObjectResult[*core.Workspace]
+	if err := dag.Select(ctx, dag.Root(), &workspace, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+		return nil, fmt.Errorf("get module workspace: %w", err)
 	}
 
-	entryDir := entrySrc.Self().ContextDirectory
-	entryDirID, err := entryDir.ID()
+	// entrypoint.source names a module here, so resolve it the way every other
+	// module reference is resolved. Renaming the runtime to an entrypoint did
+	// not change what the value means: a git ref keeps its subpath and its pin,
+	// and a local path is relative to the module that names it.
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get module entrypoint directory ID: %w", err)
+		return nil, fmt.Errorf("get engine client for module entrypoint: %w", err)
 	}
-	// Encode rather than Digest: a directory resolved through an address is a
+	entryModSrc, err := core.ResolveDepToSource(ctx, bk, dag, src.Self(), src.Self().Entrypoint.Source, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("resolve module entrypoint %q: %w", src.Self().Entrypoint.Source, err)
+	}
+	if !entryModSrc.Self().ConfigExists {
+		return nil, fmt.Errorf("module entrypoint %q has no module configuration", src.Self().Entrypoint.Source)
+	}
+
+	entryID, err := entryModSrc.ID()
+	if err != nil {
+		return nil, fmt.Errorf("get module entrypoint source ID: %w", err)
+	}
+	// Encode rather than Digest: a source resolved through an address is a
 	// handle-form ID, which has no digest.
-	encodedDir, err := entryDirID.Encode()
+	encodedSrc, err := entryID.Encode()
 	if err != nil {
-		return nil, fmt.Errorf("encode module entrypoint directory ID: %w", err)
+		return nil, fmt.Errorf("encode module entrypoint source ID: %w", err)
 	}
-	ctx, err = pushChain(ctx, src.Self().ModuleName, encodedDir)
+	ctx, err = pushChain(ctx, src.Self().ModuleName, encodedSrc)
 	if err != nil {
 		return nil, err
-	}
-
-	// Load the directory as its own module source rather than reusing the
-	// resolved source: that one is a clone of the module being implemented, so
-	// it still carries this module's entrypoint and would name itself.
-	var entryModSrc dagql.ObjectResult[*core.ModuleSource]
-	if err := dag.Select(ctx, entryDir, &entryModSrc, dagql.Selector{
-		Field: "asModuleSource",
-		Args:  []dagql.NamedInput{{Name: "sourceRootPath", Value: dagql.NewString(".")}},
-	}); err != nil {
-		return nil, fmt.Errorf("read module entrypoint %q: %w", src.Self().Entrypoint.Source, err)
 	}
 
 	var mod dagql.ObjectResult[*core.Module]
