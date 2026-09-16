@@ -84,7 +84,7 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 		ctx, cancel := context.WithTimeout(ctx, core.WorkspacePullTimeout)
 		defer cancel()
 		var repo dagql.ObjectResult[*core.GitRepository]
-		if err := srv.Select(ctx, source, &repo, dagql.Selector{Field: "git"}); err != nil {
+		if err := srv.Select(ctx, source, &repo, dagql.Selector{Field: "git"}, dagql.Selector{Field: "__repository"}); err != nil {
 			return receiver, resolved, err
 		}
 		// Resolve against the frozen source's object database, not a history
