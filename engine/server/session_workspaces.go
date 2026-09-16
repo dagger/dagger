@@ -1825,7 +1825,10 @@ func (srv *Server) resolveModuleLoad(
 		if i < len(src.Self().ConfigToolchains) {
 			cfg = src.Self().ConfigToolchains[i]
 		}
-		pending := pendingRelatedModule(defaultPathContextSrc, toolchainSrc.Self(), cfg, false)
+		pending, err := pendingRelatedModule(defaultPathContextSrc, toolchainSrc.Self(), cfg, false)
+		if err != nil {
+			return resolvedModuleLoad{}, err
+		}
 		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc, pending)
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving toolchain module: %w", err)
@@ -1837,7 +1840,10 @@ func (srv *Server) resolveModuleLoad(
 	}
 
 	if src.Self().Blueprint.Self() != nil {
-		pending := pendingRelatedModule(defaultPathContextSrc, src.Self().Blueprint.Self(), src.Self().ConfigBlueprint, true)
+		pending, err := pendingRelatedModule(defaultPathContextSrc, src.Self().Blueprint.Self(), src.Self().ConfigBlueprint, true)
+		if err != nil {
+			return resolvedModuleLoad{}, err
+		}
 		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Self().Blueprint, pending)
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving blueprint module: %w", err)
@@ -2262,7 +2268,20 @@ func pendingRelatedModule(
 	related *core.ModuleSource,
 	cfg *modules.ModuleConfigDependency,
 	entrypoint bool,
-) pendingModule {
+) (pendingModule, error) {
+	if related == nil {
+		return pendingModule{}, fmt.Errorf("missing related module source")
+	}
+	if related.Kind == core.ModuleSourceKindLocal {
+		if _, err := related.LocalContextDirectoryPath(); err != nil {
+			return pendingModule{}, err
+		}
+	}
+	if contextSource := defaultPathContextSrc.Self(); contextSource != nil && contextSource.Kind == core.ModuleSourceKindLocal {
+		if _, err := contextSource.LocalContextDirectoryPath(); err != nil {
+			return pendingModule{}, err
+		}
+	}
 	mod := pendingModule{
 		Kind:       moduleLoadKindExtra,
 		Ref:        related.AsString(),
@@ -2289,7 +2308,7 @@ func pendingRelatedModule(
 	if entrypoint && defaultPathContextSrc.Self() != nil && defaultPathContextSrc.Self().Kind == core.ModuleSourceKindLocal {
 		mod.LegacyCallerModuleDir = defaultPathContextSrc.Self().AsString()
 	}
-	return mod
+	return mod, nil
 }
 
 func (srv *Server) resolveModuleSourceAsModule(
