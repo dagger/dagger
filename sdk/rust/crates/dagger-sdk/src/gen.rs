@@ -10754,13 +10754,13 @@ pub struct LlmTranscriptOpts {
     /// Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots.
     #[builder(setter(into, strip_option), default)]
     pub content_kinds: Option<Vec<LlmContentBlockKind>>,
-    /// Maximum number of matching messages from the end, after offset. Must be non-negative. Mutually exclusive with limit; zero returns an empty transcript.
+    /// Maximum number of matching messages from the end, after offset. Must be non-negative. Zero is equivalent to omitting this argument. Positive limit and last values are mutually exclusive.
     #[builder(setter(into, strip_option), default)]
     pub last: Option<isize>,
-    /// Maximum number of matching messages from the start, after offset. Must be non-negative. Mutually exclusive with last; zero returns an empty transcript. Omit both to return all matching messages after offset.
+    /// Maximum number of matching messages from the start, after offset. Must be non-negative. Zero is equivalent to omitting this argument. Positive limit and last values are mutually exclusive. If neither is positive, return all matching messages after offset.
     #[builder(setter(into, strip_option), default)]
     pub limit: Option<isize>,
-    /// Number of matching messages to skip. Skips from the end when last is set, otherwise from the start. Must be non-negative.
+    /// Number of matching messages to skip. Skips from the end when last is positive, otherwise from the start. Must be non-negative.
     #[builder(setter(into, strip_option), default)]
     pub offset: Option<isize>,
     /// Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing.

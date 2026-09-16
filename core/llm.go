@@ -2863,6 +2863,7 @@ func (llm *LLM) Replay(ctx context.Context) {
 
 // LLMTranscriptArgs selects renderable messages before formatting them.
 // An absent filter keeps the default; an explicitly empty filter matches nothing.
+// Zero pagination limits are equivalent to omitted limits in every SDK.
 type LLMTranscriptArgs struct {
 	Limit        dagql.Optional[dagql.Int]
 	Last         dagql.Optional[dagql.Int]
@@ -2896,8 +2897,8 @@ func (args LLMTranscriptArgs) includesBlock(role LLMMessageRole, block *LLMConte
 }
 
 func (args LLMTranscriptArgs) validate() error {
-	if args.Limit.Valid && args.Last.Valid {
-		return errors.New("limit and last are mutually exclusive")
+	if args.Limit.Valid && args.Limit.Value > 0 && args.Last.Valid && args.Last.Value > 0 {
+		return errors.New("positive limit and last values are mutually exclusive")
 	}
 	if args.Limit.Valid && args.Limit.Value < 0 {
 		return errors.New("limit must be non-negative")
@@ -2918,17 +2919,18 @@ func (llm *LLM) Transcript(args LLMTranscriptArgs) (string, error) {
 	if err := args.validate(); err != nil {
 		return "", err
 	}
+	fromEnd := args.Last.Valid && args.Last.Value > 0
 	remaining := len(llm.Messages)
-	if args.Limit.Valid {
+	if args.Limit.Valid && args.Limit.Value > 0 {
 		remaining = args.Limit.Value.Int()
-	} else if args.Last.Valid {
+	} else if fromEnd {
 		remaining = args.Last.Value.Int()
 	}
 	skip := args.Offset
 	selected := []*LLMMessage{}
 	for n := 0; n < len(llm.Messages) && remaining > 0; n++ {
 		i := n
-		if args.Last.Valid {
+		if fromEnd {
 			i = len(llm.Messages) - 1 - n
 		}
 		msg := llm.Messages[i]
@@ -2954,7 +2956,7 @@ func (llm *LLM) Transcript(args LLMTranscriptArgs) (string, error) {
 		selected = append(selected, msg)
 		remaining--
 	}
-	if args.Last.Valid {
+	if fromEnd {
 		slices.Reverse(selected)
 	}
 

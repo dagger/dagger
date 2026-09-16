@@ -47,9 +47,9 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).",
 				"Filters are applied before pagination. Only messages with renderable content count; content blocks within a message stay grouped. Selected messages are always returned in chronological order.").
 			Args(
-				dagql.Arg("limit").Doc("Maximum number of matching messages from the start, after offset. Must be non-negative. Mutually exclusive with last; zero returns an empty transcript. Omit both to return all matching messages after offset."),
-				dagql.Arg("last").Doc("Maximum number of matching messages from the end, after offset. Must be non-negative. Mutually exclusive with limit; zero returns an empty transcript."),
-				dagql.Arg("offset").Doc("Number of matching messages to skip. Skips from the end when last is set, otherwise from the start. Must be non-negative."),
+				dagql.Arg("limit").Doc("Maximum number of matching messages from the start, after offset. Must be non-negative. Zero is equivalent to omitting this argument. Positive limit and last values are mutually exclusive. If neither is positive, return all matching messages after offset."),
+				dagql.Arg("last").Doc("Maximum number of matching messages from the end, after offset. Must be non-negative. Zero is equivalent to omitting this argument. Positive limit and last values are mutually exclusive."),
+				dagql.Arg("offset").Doc("Number of matching messages to skip. Skips from the end when last is positive, otherwise from the start. Must be non-negative."),
 				dagql.Arg("roles").Doc("Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing."),
 				dagql.Arg("contentKinds").Doc("Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots."),
 			),

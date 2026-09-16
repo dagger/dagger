@@ -10929,16 +10929,16 @@ class LLM(Type):
         ----------
         limit:
             Maximum number of matching messages from the start, after offset.
-            Must be non-negative. Mutually exclusive with last; zero returns
-            an empty transcript. Omit both to return all matching messages
-            after offset.
+            Must be non-negative. Zero is equivalent to omitting this
+            argument. Positive limit and last values are mutually exclusive.
+            If neither is positive, return all matching messages after offset.
         last:
             Maximum number of matching messages from the end, after offset.
-            Must be non-negative. Mutually exclusive with limit; zero returns
-            an empty transcript.
+            Must be non-negative. Zero is equivalent to omitting this
+            argument. Positive limit and last values are mutually exclusive.
         offset:
             Number of matching messages to skip. Skips from the end when last
-            is set, otherwise from the start. Must be non-negative.
+            is positive, otherwise from the start. Must be non-negative.
         roles:
             Only include these message roles. Omitted includes USER and
             ASSISTANT; explicitly include SYSTEM to request system prompts. An

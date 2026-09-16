@@ -113,8 +113,14 @@ func TestLLMTranscript(t *testing.T) {
 		{"empty roles", LLMTranscriptArgs{Roles: roles()}, ""},
 		{"empty kinds", LLMTranscriptArgs{ContentKinds: kinds()}, ""},
 		{"no matching content", LLMTranscriptArgs{Roles: roles(LLMMessageRoleSystem), ContentKinds: kinds(LLMContentToolCall)}, ""},
-		{"zero limit", LLMTranscriptArgs{Limit: count(0)}, ""},
-		{"zero last", LLMTranscriptArgs{Last: count(0)}, ""},
+		{"zero limit", LLMTranscriptArgs{Limit: count(0)}, join(user, assistant, results, answer, tool)},
+		{"zero last", LLMTranscriptArgs{Last: count(0)}, join(user, assistant, results, answer, tool)},
+		{"both zero limits", LLMTranscriptArgs{Limit: count(0), Last: count(0)}, join(user, assistant, results, answer, tool)},
+		{"zero limit with tail", LLMTranscriptArgs{Limit: count(0), Last: count(2), Offset: 1}, join(results, answer)},
+		{"zero last with head", LLMTranscriptArgs{Limit: count(2), Last: count(0), Offset: 1}, join(assistant, results)},
+		{"zero limit with offset", LLMTranscriptArgs{Limit: count(0), Offset: 3}, join(answer, tool)},
+		{"zero last with offset skips from start", LLMTranscriptArgs{Last: count(0), Offset: 3}, join(answer, tool)},
+		{"both zero with filtered offset", LLMTranscriptArgs{Limit: count(0), Last: count(0), Offset: 1, ContentKinds: kinds(LLMContentText)}, join("[Assistant]: first\nsecond", answer)},
 		{"head beyond end", LLMTranscriptArgs{Offset: 5}, ""},
 		{"tail beyond end", LLMTranscriptArgs{Last: count(2), Offset: 5}, ""},
 		{"large head bounds", LLMTranscriptArgs{Limit: count(int(^uint(0) >> 1)), Offset: 4}, tool},
@@ -133,8 +139,9 @@ func TestLLMTranscript(t *testing.T) {
 		args LLMTranscriptArgs
 		err  string
 	}{
-		{"both limits", LLMTranscriptArgs{Limit: count(1), Last: count(1)}, "limit and last are mutually exclusive"},
-		{"both zero limits", LLMTranscriptArgs{Limit: count(0), Last: count(0)}, "limit and last are mutually exclusive"},
+		{"both limits", LLMTranscriptArgs{Limit: count(1), Last: count(1)}, "positive limit and last values are mutually exclusive"},
+		{"negative limit with zero last", LLMTranscriptArgs{Limit: count(-1), Last: count(0)}, "limit must be non-negative"},
+		{"negative last with zero limit", LLMTranscriptArgs{Limit: count(0), Last: count(-1)}, "last must be non-negative"},
 		{"negative limit", LLMTranscriptArgs{Limit: count(-1)}, "limit must be non-negative"},
 		{"negative last", LLMTranscriptArgs{Last: count(-1)}, "last must be non-negative"},
 		{"negative offset", LLMTranscriptArgs{Offset: -1}, "offset must be non-negative"},

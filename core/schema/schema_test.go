@@ -82,8 +82,14 @@ func TestLLMTranscriptSelection(t *testing.T) {
 		{"(roles: [SYSTEM], contentKinds: [TEXT])", "[System]: system"},
 		{"(roles: [])", ""},
 		{"(contentKinds: [])", ""},
-		{"(limit: 0)", ""},
-		{"(last: 0)", ""},
+		{"(limit: 0)", "[User]: user\n\n[Assistant]: assistant"},
+		{"(last: 0)", "[User]: user\n\n[Assistant]: assistant"},
+		{"(limit: 0, last: 0)", "[User]: user\n\n[Assistant]: assistant"},
+		{"(limit: 0, last: 1)", "[Assistant]: assistant"},
+		{"(limit: 1, last: 0)", "[User]: user"},
+		{"(limit: 0, offset: 1)", "[Assistant]: assistant"},
+		{"(last: 0, offset: 1)", "[Assistant]: assistant"},
+		{"(limit: 0, last: 0, offset: 1, contentKinds: [TEXT])", "[Assistant]: assistant"},
 		{"(limit: null, last: null, roles: null, contentKinds: null)", "[User]: user\n\n[Assistant]: assistant"},
 	} {
 		t.Run(tc.args, func(t *testing.T) {
@@ -93,7 +99,8 @@ func TestLLMTranscriptSelection(t *testing.T) {
 		})
 	}
 	for _, args := range []string{
-		"(limit: 0, last: 0)", "(limit: -1)", "(last: -1)", "(offset: -1)",
+		"(limit: 1, last: 1)", "(limit: -1)", "(last: -1)", "(offset: -1)",
+		"(limit: -1, last: 0)", "(limit: 0, last: -1)",
 		"(roles: [UNKNOWN])", "(contentKinds: [UNKNOWN])",
 	} {
 		t.Run(args, func(t *testing.T) {
