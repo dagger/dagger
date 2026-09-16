@@ -173,6 +173,10 @@ func (container *Container) HasPendingLazyComputation() bool {
 	if container == nil {
 		return false
 	}
+	if container.transferPending != nil {
+		_, err := container.resolveTransferParts(nil)
+		return err != nil
+	}
 	lazy := container.lazyOpForRouting()
 	if lazy == nil {
 		return false

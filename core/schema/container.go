@@ -3407,6 +3407,8 @@ func inheritedOwner(parent dagql.ObjectResult[*core.Container], owner string, in
 }
 
 func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult[*core.Container]) (*core.Container, bool, error) {
+	// Foreign shells report pending work here too, so the child's ordinary
+	// producer keeps its parent dependency and delegates unresolved parts.
 	parentPendingLazy := dagql.HasPendingLazyEvaluation(parent)
 
 	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)

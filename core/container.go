@@ -1087,6 +1087,15 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 	if container == nil {
 		return nil
 	}
+	if container.transferPending != nil {
+		if _, err := container.resolveTransferParts(nil); err == nil {
+			return nil
+		}
+		return func(context.Context) error {
+			_, err := container.resolveTransferParts(nil)
+			return err
+		}
+	}
 	lazy := container.lazyOpForRouting()
 	if lazy == nil {
 		return nil
