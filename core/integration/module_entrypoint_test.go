@@ -112,6 +112,37 @@ source = "../entrypoint-module"
 	})
 }
 
+// entrypoint.source means what runtime.source means, so a runtime module is a
+// valid entrypoint even though it does not implement ModuleEntrypoint. The
+// engine drives it through the runtime adapter instead of calling types.
+func (ModuleSuite) TestModuleKindModuleEntrypointWrapsARuntime(ctx context.Context, t *testctx.T) {
+	t.Run("a built-in runtime name", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.app]
+source = ".dagger/modules/app"
+`).
+			WithNewFile(".dagger/modules/app/dagger-module.toml", `name = "app"
+
+[entrypoint]
+kind = "module"
+source = "dang"
+`).
+			WithNewFile(".dagger/modules/app/main.dang", `
+type App {
+  pub message: String! {
+    "loaded through the runtime adapter"
+  }
+}
+`).
+			With(daggerCallAt("app", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "loaded through the runtime adapter", strings.TrimSpace(out))
+	})
+}
+
 // A module entrypoint that names itself is a cycle. The engine reports the
 // chain instead of looping.
 func (ModuleSuite) TestModuleKindModuleEntrypointRejectsCycle(ctx context.Context, t *testctx.T) {
@@ -134,5 +165,7 @@ source = "."
 		}).
 		Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "module entrypoint cycle: loop -> loop")
+	// Resolving the entrypoint as a module reference means the existing
+	// circular dependency check sees the loop first.
+	require.Contains(t, out, `module "loop" has a circular dependency on itself`)
 }
