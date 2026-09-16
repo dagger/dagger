@@ -34,12 +34,17 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "dagger.io/go"
+source = "dagger.io/go@pull/45/head"
 legacy-default-path = true
 
 [modules.golang.settings]
 base = "go-base"
-generate = [".", "docs/current_docs/reference/cli"]
+generate = [
+  "dagql/**",
+  "engine/**",
+  "internal/**",
+  "docs/current_docs/reference/cli",
+]
 test = ["e2e/**"]
 
 [modules.golangci-lint]
