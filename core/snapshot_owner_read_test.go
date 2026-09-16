@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"runtime"
@@ -18,6 +19,105 @@ type snapshotOwnerReadResult struct {
 	revision dagql.OutputRevision
 	links    []dagql.PersistedSnapshotRefLink
 	err      error
+}
+
+type snapshotOwnerWholeOp struct {
+	ContainerImportLazy
+	diagnostic func()
+}
+
+func (op *snapshotOwnerWholeOp) IsEvaluated() bool {
+	if op.diagnostic != nil {
+		op.diagnostic()
+	}
+	return op.LazyState.IsEvaluated()
+}
+
+func TestSnapshotOwnerWaitsForWholeContainer(t *testing.T) {
+	previousDiagnostics := containerPartDiagnosticsEnabled
+	containerPartDiagnosticsEnabled = true
+	t.Cleanup(func() { containerPartDiagnosticsEnabled = previousDiagnostics })
+	env := newPersistedFamiliesTestEnv(t, "whole-owner-read")
+	ctx, cache, srv := env.open(t)
+	parent := env.attach(t, ctx, cache, srv, "parent", NewContainer(Platform{})).(dagql.ObjectResult[*Container])
+	sourceValue := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
+	sourceValue.SetPath("/source")
+	sourceValue.SetSnapshot(nil)
+	source := env.attach(t, ctx, cache, srv, "source", sourceValue).(dagql.ObjectResult[*File])
+	op := &snapshotOwnerWholeOp{ContainerImportLazy: ContainerImportLazy{LazyState: NewLazyState(), Parent: parent, Source: source}}
+	ctr := NewContainer(Platform{})
+	ctr.Lazy = op
+	res := env.attach(t, ctx, cache, srv, "import", ctr)
+
+	entered, allowBody := make(chan struct{}), make(chan struct{})
+	finishBody := sync.OnceFunc(func() { close(allowBody) })
+	defer finishBody()
+	bodyDone := make(chan error, 1)
+	go func() {
+		// Use the import operation's whole-body latch and actual dependency
+		// evaluation, stopping before unrelated archive/image I/O.
+		bodyDone <- op.LazyState.Evaluate(ctx, "Container.import", func(ctx context.Context) error {
+			close(entered)
+			<-allowBody
+			if err := cache.Evaluate(ctx, op.Parent, op.Source); err != nil {
+				return err
+			}
+			ctr.FS.setValue(containerPersistenceTestDirectory("owned", "/"))
+			return nil
+		})
+	}()
+	<-entered
+	ownerDone := make(chan snapshotOwnerReadResult, 1)
+	go func() { ownerDone <- snapshotOwnerReadResult{err: cache.SyncResultSnapshotOwnerLeases(ctx, res)} }()
+	awaitSnapshotOwnerLatch(t, ownerDone)
+
+	encoded := make(chan error, 1)
+	go func() {
+		_, err := ctr.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 1, nil))
+		encoded <- err
+	}()
+	select {
+	case err := <-encoded:
+		require.ErrorIs(t, err, dagql.ErrPersistStateNotReady, "live encoder must return before the body is released")
+	case <-time.After(5 * time.Second):
+		t.Fatal("encoder waited behind the owner reader's whole-body wait")
+	}
+
+	diagnosticEntered, allowDiagnostic := make(chan struct{}), make(chan struct{})
+	finishDiagnostic := sync.OnceFunc(func() { close(allowDiagnostic) })
+	defer finishDiagnostic()
+	var once sync.Once
+	op.diagnostic = func() { once.Do(func() { close(diagnosticEntered); <-allowDiagnostic }) }
+	var snapshot bytes.Buffer
+	diagnosticDone := make(chan error, 1)
+	go func() { diagnosticDone <- cache.WriteDebugCacheSnapshot(&snapshot) }()
+	select {
+	case <-diagnosticEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("gated diagnostic could not read the operation pointer")
+	}
+	finishBody()
+	// The real streamed diagnostic owns the graph read lock. Observe the
+	// body's real dependency evaluation queued for the graph write lock.
+	require.Eventually(t, func() bool {
+		buf := make([]byte, 256<<10)
+		for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
+			if strings.Contains(stack, "usesPartAcquisition(") && strings.Contains(stack, "sync.RWMutex") {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, time.Millisecond)
+	finishDiagnostic()
+	require.NoError(t, <-diagnosticDone)
+	require.NoError(t, <-bodyDone)
+	require.NoError(t, (<-ownerDone).err)
+	require.True(t, json.Valid(snapshot.Bytes()))
+	require.Contains(t, snapshot.String(), `"parts"`)
+	revision, links, err := ctr.ReadSnapshotOwner()
+	require.NoError(t, err)
+	require.Equal(t, dagql.OutputRevision(1), revision)
+	require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "fs", RefKey: "owned"}}, links)
 }
 
 func startSnapshotOwnerRead(value dagql.SnapshotOwnerReader) <-chan snapshotOwnerReadResult {

@@ -342,6 +342,9 @@ func (ctr *Container) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.Persist
 func (ctr *Container) lockSnapshotOwnerRead() (func(), error) {
 	for {
 		ctr.lazyOpMu.Lock()
+		if ctr.acquiredOutput.Load() != nil {
+			return ctr.lazyOpMu.Unlock, nil
+		}
 		lazy := ctr.Lazy
 		if lazy == nil {
 			return ctr.lazyOpMu.Unlock, nil
@@ -352,7 +355,14 @@ func (ctr *Container) lockSnapshotOwnerRead() (func(), error) {
 			return nil, fmt.Errorf("Container ownership read: missing native latch")
 		}
 		state := provider.ContainerLazyState()
-		state.LazyMu.Lock()
+		if !state.LazyMu.TryLock() {
+			// A whole body may need the graph lock while a diagnostic or
+			// encoder needs lazyOpMu. Wait without retaining that pointer hold.
+			ctr.lazyOpMu.Unlock()
+			state.LazyMu.Lock()
+			state.LazyMu.Unlock()
+			continue
+		}
 		var held []*lazyGroupOnce
 		unlock := func() {
 			for _, group := range held {
