@@ -2861,15 +2861,111 @@ func (llm *LLM) Replay(ctx context.Context) {
 	}
 }
 
-// Transcript returns the message history as plain text suitable for LLM
-// consumption (e.g. for summarization). Role-tagged lines, tool calls shown
-// as function signatures, and tool results included inline.
-func (llm *LLM) Transcript() string {
+// LLMTranscriptArgs selects renderable messages before formatting them.
+// An absent filter keeps the default; an explicitly empty filter matches nothing.
+type LLMTranscriptArgs struct {
+	Limit        dagql.Optional[dagql.Int]
+	Last         dagql.Optional[dagql.Int]
+	Offset       int `default:"0"`
+	Roles        dagql.Optional[dagql.ArrayInput[LLMMessageRole]]
+	ContentKinds dagql.Optional[dagql.ArrayInput[LLMContentBlockKind]]
+}
+
+// transcriptBlockRenderable mirrors the formatter's supported role/kind pairs
+// without formatting tool arguments or joining text from unselected messages.
+func transcriptBlockRenderable(role LLMMessageRole, block *LLMContentBlock) bool {
+	if block == nil {
+		return false
+	}
+	switch role {
+	case LLMMessageRoleSystem:
+		return block.Kind == LLMContentText && block.Text != ""
+	case LLMMessageRoleUser:
+		return (block.Kind == LLMContentText || block.Kind == LLMContentToolResult) && block.Text != ""
+	case LLMMessageRoleAssistant:
+		return block.Kind == LLMContentToolCall ||
+			((block.Kind == LLMContentText || block.Kind == LLMContentThinking) && block.Text != "")
+	default:
+		return false
+	}
+}
+
+func (args LLMTranscriptArgs) includesBlock(role LLMMessageRole, block *LLMContentBlock) bool {
+	return transcriptBlockRenderable(role, block) &&
+		(!args.ContentKinds.Valid || slices.Contains(args.ContentKinds.Value, block.Kind))
+}
+
+func (args LLMTranscriptArgs) validate() error {
+	if args.Limit.Valid && args.Last.Valid {
+		return errors.New("limit and last are mutually exclusive")
+	}
+	if args.Limit.Valid && args.Limit.Value < 0 {
+		return errors.New("limit must be non-negative")
+	}
+	if args.Last.Valid && args.Last.Value < 0 {
+		return errors.New("last must be non-negative")
+	}
+	if args.Offset < 0 {
+		return errors.New("offset must be non-negative")
+	}
+	return nil
+}
+
+// Transcript returns the selected message history as plain text suitable for
+// LLM consumption. Pagination counts messages with renderable content, not
+// blocks; even tail pages are returned in chronological order.
+func (llm *LLM) Transcript(args LLMTranscriptArgs) (string, error) {
+	if err := args.validate(); err != nil {
+		return "", err
+	}
+	remaining := len(llm.Messages)
+	if args.Limit.Valid {
+		remaining = args.Limit.Value.Int()
+	} else if args.Last.Valid {
+		remaining = args.Last.Value.Int()
+	}
+	skip := args.Offset
+	selected := []*LLMMessage{}
+	for n := 0; n < len(llm.Messages) && remaining > 0; n++ {
+		i := n
+		if args.Last.Valid {
+			i = len(llm.Messages) - 1 - n
+		}
+		msg := llm.Messages[i]
+		if msg == nil {
+			continue
+		}
+		if args.Roles.Valid {
+			if !slices.Contains(args.Roles.Value, msg.Role) {
+				continue
+			}
+		} else if msg.Role == LLMMessageRoleSystem {
+			continue
+		}
+		if !slices.ContainsFunc(msg.Content, func(block *LLMContentBlock) bool {
+			return args.includesBlock(msg.Role, block)
+		}) {
+			continue
+		}
+		if skip > 0 {
+			skip--
+			continue
+		}
+		selected = append(selected, msg)
+		remaining--
+	}
+	if args.Last.Valid {
+		slices.Reverse(selected)
+	}
+
 	var parts []string
-	for _, msg := range llm.Messages {
+	for _, msg := range selected {
 		switch msg.Role {
 		case LLMMessageRoleUser:
 			for _, block := range msg.Content {
+				if !args.includesBlock(msg.Role, block) {
+					continue
+				}
 				switch block.Kind {
 				case LLMContentToolResult:
 					prefix := "[Tool result]"
@@ -2889,6 +2985,9 @@ func (llm *LLM) Transcript() string {
 			var thinkingParts, textParts []string
 			var toolCalls []string
 			for _, block := range msg.Content {
+				if !args.includesBlock(msg.Role, block) {
+					continue
+				}
 				switch block.Kind {
 				case LLMContentThinking:
 					if block.Text != "" {
@@ -2913,10 +3012,14 @@ func (llm *LLM) Transcript() string {
 				parts = append(parts, "[Assistant tool calls]: "+strings.Join(toolCalls, "; "))
 			}
 		case LLMMessageRoleSystem:
-			// System prompts are omitted from serialization
+			for _, block := range msg.Content {
+				if args.includesBlock(msg.Role, block) {
+					parts = append(parts, "[System]: "+block.Text)
+				}
+			}
 		}
 	}
-	return strings.Join(parts, "\n\n")
+	return strings.Join(parts, "\n\n"), nil
 }
 
 func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {
