@@ -188,6 +188,26 @@ func parentAndSource[T any](sourceField string, parent, source func(*T) *uint64)
 // persistedDirectoryLazyVisitors declares the references of every Directory
 // lazy kind, mirroring decodePersistedDirectoryLazy.
 var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
+	persistedDirectoryLazyKindGitCommitTree: persistedLazyStructVisitor(func(p *persistedDirectoryGitCommitTreeLazy, w *persistedRefWalker) error {
+		if err := p.validate(); err != nil {
+			return err
+		}
+		if err := w.child("commitResultID", &p.CommitResultID); err != nil {
+			return err
+		}
+		return nil
+	}),
+
+	persistedDirectoryLazyKindGitTree: persistedLazyStructVisitor(func(p *persistedDirectoryGitTreeLazy, w *persistedRefWalker) error {
+		if err := p.validate(); err != nil {
+			return err
+		}
+		if err := w.child("refResultID", &p.RefResultID); err != nil {
+			return err
+		}
+		return nil
+	}),
+
 	persistedDirectoryLazyKindGitBundleImport: persistedLazyStructVisitor(func(p *persistedDirectoryGitBundleImportLazy, w *persistedRefWalker) error {
 		if err := p.validate(); err != nil {
 			return err

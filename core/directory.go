@@ -628,6 +628,14 @@ func attachFileResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res
 
 func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Directory]) (string, json.RawMessage, error) {
 	switch lazy := lazy.(type) {
+	case *DirectoryGitCommitTreeLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindGitCommitTree, payload, err
+
+	case *DirectoryGitTreeLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindGitTree, payload, err
+
 	case *DirectoryGitBundleImportLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindGitBundleImport, payload, err
@@ -689,6 +697,12 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeContext, lazyKind string, payload json.RawMessage) (Lazy[*Directory], error) {
 	switch lazyKind {
+	case persistedDirectoryLazyKindGitCommitTree:
+		return decodeDirectoryGitCommitTreeLazy(ctx, dec, payload)
+
+	case persistedDirectoryLazyKindGitTree:
+		return decodeDirectoryGitTreeLazy(ctx, dec, payload)
+
 	case persistedDirectoryLazyKindGitBundleImport:
 		return decodeDirectoryGitBundleImportLazy(ctx, dec, payload)
 

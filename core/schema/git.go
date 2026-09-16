@@ -2082,6 +2082,9 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 					rerr = errors.Join(rerr, dir.OnRelease(context.WithoutCancel(ctx)))
 				}
 			}()
+			if err := core.RecordCompletedProducer(dir, &core.DirectoryGitTreeLazy{LazyState: core.NewLazyState(), Ref: parent, DiscardGitDir: args.DiscardGitDir, Depth: args.Depth, IncludeTags: args.IncludeTags}); err != nil {
+				return inst, err
+			}
 			inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 		}
 	}
@@ -2212,6 +2215,9 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 			rerr = errors.Join(rerr, dir.OnRelease(context.WithoutCancel(ctx)))
 		}
 	}()
+	if err := core.RecordCompletedProducer(dir, &core.DirectoryGitCommitTreeLazy{LazyState: core.NewLazyState(), Commit: parent, DiscardGitDir: args.DiscardGitDir, Depth: args.Depth, IncludeTags: args.IncludeTags}); err != nil {
+		return inst, err
+	}
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
 		return inst, err
