@@ -288,9 +288,11 @@ func normalizeCaptureLimits(policy *CaptureGitPolicy) (captureLimits, error) {
 // advertises, and names the ref a restore fetches to get it.
 //
 // The work is bounded by the number of remotes, not by how many refs they
-// advertise. Each queried remote gets one listing and a batched object probe;
-// discovery stops early if HEAD itself is advertised. A single history walk
-// and a halving search then find the ref that carries the base. A repository
+// advertise. Each remote gets one listing and a batched object probe, all
+// overlapped so wall-clock cost is one round trip rather than one per remote;
+// later remotes are ignored once a preferred one advertises HEAD itself. A
+// single history walk and a halving search then find the ref that carries the
+// base. A repository
 // whose remotes advertise tens of thousands of refs costs the same handful of
 // local git invocations as one with a dozen.
 func selectCaptureRemote(ctx context.Context, checkout, head string) (captureRemote, error) {
@@ -336,45 +338,59 @@ func selectCaptureRemote(ctx context.Context, checkout, head string) (captureRem
 // actually prove a base: ones a restore can fetch by name, and whose commit the
 // checkout already has.
 func advertisedCaptureRefs(ctx context.Context, checkout, head string) []captureAdvertisedRef {
+	remotes := orderedCaptureRemotes(ctx, checkout)
+	if len(remotes) == 0 || ctx.Err() != nil {
+		return nil
+	}
+
+	// Every listing is a network round trip and capture runs on each
+	// snapshot, so start them all at once rather than one preference tier at
+	// a time. Results are still consumed strictly in preference order, and
+	// returning cancels whatever is still in flight: a slow or unavailable
+	// later remote can neither stall the search nor change its answer once a
+	// preferred remote has settled it.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	listings := make([]chan []captureAdvertisedRef, len(remotes))
+	slots := make(chan struct{}, captureRemoteListingConcurrency)
+	for i, remote := range remotes {
+		listing := make(chan []captureAdvertisedRef, 1)
+		listings[i] = listing
+		go func() {
+			defer close(listing)
+			select {
+			case slots <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-slots }()
+			listing <- advertisedCaptureRemoteRefs(ctx, checkout, remote)
+		}()
+	}
+
 	var refs []captureAdvertisedRef
 	seen := map[string]struct{}{}
-	remotes := orderedCaptureRemotes(ctx, checkout)
-	for offset := 0; offset < len(remotes) && ctx.Err() == nil; {
-		// Try the preferred remote alone first: a published HEAD needs no
-		// other queries. Otherwise overlap network waits in bounded batches.
-		size := min(4, len(remotes)-offset)
-		if offset == 0 {
-			size = 1
-		}
-		batch := make([][]captureAdvertisedRef, size)
-		var wg sync.WaitGroup
-		for i := range size {
-			wg.Go(func() {
-				batch[i] = advertisedCaptureRemoteRefs(ctx, checkout, remotes[offset+i])
-			})
-		}
-		wg.Wait()
-		offset += size
-		// Consume in preference order, never network completion order.
-		for _, local := range batch {
-			foundHead := false
-			for _, ref := range local {
-				if _, ok := seen[ref.sha]; ok {
-					continue
-				}
-				seen[ref.sha] = struct{}{}
-				refs = append(refs, ref)
-				foundHead = foundHead || ref.commit == head
+	for _, listing := range listings {
+		foundHead := false
+		for _, ref := range <-listing {
+			if _, ok := seen[ref.sha]; ok {
+				continue
 			}
-			if foundHead {
-				// No later remote can improve on HEAD itself. Keep earlier
-				// candidates so ref selection still honors preference order.
-				return refs
-			}
+			seen[ref.sha] = struct{}{}
+			refs = append(refs, ref)
+			foundHead = foundHead || ref.commit == head
+		}
+		if foundHead {
+			// No later remote can improve on HEAD itself. Keep earlier
+			// candidates so ref selection still honors preference order.
+			return refs
 		}
 	}
 	return refs
 }
+
+// captureRemoteListingConcurrency bounds how many remotes are listed at once.
+const captureRemoteListingConcurrency = 8
 
 func advertisedCaptureRemoteRefs(ctx context.Context, checkout, remote string) []captureAdvertisedRef {
 	// Restrict the advertisement itself, not just the parsed result. In

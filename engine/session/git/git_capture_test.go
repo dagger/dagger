@@ -337,7 +337,7 @@ func TestCaptureGitChoosesClosestAdvertisedAncestorAcrossRemotes(t *testing.T) {
 	require.Equal(t, other, meta.GetRemoteUrl())
 }
 
-func TestCaptureGitAdvertisedHeadSkipsLaterRemotes(t *testing.T) {
+func TestCaptureGitAdvertisedHeadIgnoresLaterRemotes(t *testing.T) {
 	skipIfNoGit(t)
 	for _, tagged := range []bool{false, true} {
 		t.Run(fmt.Sprintf("tagged=%t", tagged), func(t *testing.T) {
@@ -352,32 +352,39 @@ func TestCaptureGitAdvertisedHeadSkipsLaterRemotes(t *testing.T) {
 			head := gitCmd(t, home, repo, "rev-parse", "HEAD")
 			gitCmd(t, home, repo, "remote", "add", "unrelated", filepath.Join(t.TempDir(), "missing.git"))
 
-			// Record real Git invocations so querying and ignoring an unavailable
-			// later remote cannot silently pass. No timing/network dependency.
+			// Listings are started together, so the later remote may be
+			// queried. Make it hang until released: a preferred remote that
+			// advertises HEAD must settle the search without waiting on it.
+			// No timing/network dependency.
 			realGit, err := exec.LookPath("git")
 			require.NoError(t, err)
 			bin := t.TempDir()
-			logPath := filepath.Join(t.TempDir(), "git.log")
+			barrier := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte(`#!/bin/sh
-printf '%s\n' "$*" >> "$CAPTURE_GIT_COMMAND_LOG"
+if [ "$3" = ls-remote ]; then
+  for remote in "$@"; do :; done
+  if [ "$remote" = unrelated ]; then
+    touch "$CAPTURE_BARRIER_DIR/queried"
+    while [ ! -f "$CAPTURE_BARRIER_DIR/release" ]; do sleep 0.01; done
+  fi
+fi
 exec "$CAPTURE_REAL_GIT" "$@"
 `), 0700))
 			t.Setenv("CAPTURE_REAL_GIT", realGit)
-			t.Setenv("CAPTURE_GIT_COMMAND_LOG", logPath)
+			t.Setenv("CAPTURE_BARRIER_DIR", barrier)
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Cleanup(func() {
+				_ = os.WriteFile(filepath.Join(barrier, "release"), nil, 0o600)
+			})
 
-			remote, err := selectCaptureRemote(t.Context(), repo, head)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			remote, err := selectCaptureRemote(ctx, repo, head)
 			require.NoError(t, err)
+			require.NoError(t, ctx.Err(), "a hanging later remote must not stall the search")
 			require.Equal(t, "origin", remote.name)
 			require.Equal(t, wantRef, remote.ref)
 			require.Equal(t, head, remote.baseSHA)
-			var advertisements []string
-			for _, line := range strings.Split(string(mustReadFile(t, logPath)), "\n") {
-				if strings.Contains(line, " ls-remote ") {
-					advertisements = append(advertisements, line)
-				}
-			}
-			require.Equal(t, []string{"-C " + repo + " ls-remote --refs --heads --tags origin"}, advertisements)
 		})
 	}
 }
