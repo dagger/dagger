@@ -438,3 +438,14 @@ type SDK interface {
 	// retain.
 	AttachDependencyResults(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error)
 }
+
+type daggerlandRealmSDK interface {
+	DaggerlandRealm() bool
+}
+
+// SDKUsesDaggerlandNetwork reports whether an SDK implementation is trusted
+// Dagger code. External SDK modules are user-controlled and return false.
+func SDKUsesDaggerlandNetwork(sdk SDK) bool {
+	trusted, ok := sdk.(daggerlandRealmSDK)
+	return ok && trusted.DaggerlandRealm()
+}

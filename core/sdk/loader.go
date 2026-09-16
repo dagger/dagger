@@ -64,7 +64,7 @@ func (l *Loader) SDKForModule(
 		return nil, builtinErr
 	}
 
-	extSDK, extErr := l.externalSDKForModule(ctx, query, sdk, parentSrc)
+	extSDK, extErr := l.externalSDKForModule(ctx, query, sdk, parentSrc, false)
 	if extErr == nil {
 		return extSDK, nil
 	}
@@ -95,6 +95,7 @@ func (l *Loader) externalSDKForModule(
 	query *core.Query,
 	sdk *core.SDKConfig,
 	parentSrc *core.ModuleSource,
+	trusted bool,
 ) (core.SDK, error) {
 	bk, err := query.Engine(ctx)
 	if err != nil {
@@ -124,7 +125,7 @@ func (l *Loader) externalSDKForModule(
 		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
 	}
 
-	return newModuleSDK(ctx, query, sdkMod, dagql.ObjectResult[*core.Directory]{}, sdk.Config)
+	return newModuleSDK(ctx, query, sdkMod, dagql.ObjectResult[*core.Directory]{}, sdk.Config, trusted)
 }
 
 func (l *Loader) namedSDK(
@@ -156,7 +157,7 @@ func (l *Loader) namedSDK(
 			Config:       sdk.Config,
 			Experimental: sdk.Experimental,
 		}
-		loaded, tagErr := l.externalSDKForModule(ctx, root, sdkConfig, nil)
+		loaded, tagErr := l.externalSDKForModule(ctx, root, sdkConfig, nil, true)
 		if tagErr == nil {
 			return loaded, nil
 		}
@@ -179,7 +180,7 @@ func (l *Loader) namedSDK(
 			return nil, errUnknownBuiltinSDK
 		}
 		sdkConfig.Source = commitMod.Source
-		loaded, commitErr := l.externalSDKForModule(ctx, root, sdkConfig, nil)
+		loaded, commitErr := l.externalSDKForModule(ctx, root, sdkConfig, nil, true)
 		if commitErr != nil {
 			return nil, fmt.Errorf(
 				"failed to load SDK %q from %q: %w; fallback to engine commit %q failed: %w",
@@ -253,7 +254,7 @@ func (l *Loader) loadBuiltinSDK(
 		return nil, fmt.Errorf("failed to import module sdk %s: %w", sdk.Source, err)
 	}
 
-	return newModuleSDK(ctx, root, sdkMod, fullSDKDir, sdk.Config)
+	return newModuleSDK(ctx, root, sdkMod, fullSDKDir, sdk.Config, true)
 }
 
 // parse and validate the name and version from sdkName

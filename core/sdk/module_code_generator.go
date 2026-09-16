@@ -19,6 +19,7 @@ func (sdk *codeGeneratorModule) Codegen(
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
+	ctx = sdk.mod.networkContext(ctx)
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.EndWithCause(span, &rerr)
 

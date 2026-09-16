@@ -47,6 +47,8 @@ type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
 
+func (*goSDK) DaggerlandRealm() bool { return true }
+
 func (sdk *goSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {
 	if sdk == nil {
 		return nil
@@ -127,6 +129,7 @@ func (sdk *goSDK) GenerateClient(
 	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
+	ctx = engineNetworkContext(ctx)
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
@@ -249,6 +252,7 @@ func (sdk *goSDK) Codegen(
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
+	ctx = engineNetworkContext(ctx)
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -301,6 +305,7 @@ func (sdk *goSDK) Runtime(
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ core.ModuleRuntime, rerr error) {
+	ctx = engineNetworkContext(ctx)
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
 	defer telemetry.EndWithCause(span, &rerr)
 

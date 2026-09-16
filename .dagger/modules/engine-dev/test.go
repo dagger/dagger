@@ -17,6 +17,21 @@ func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
 	return dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Tests(ctx)
 }
 
+// Check that engine network connections select an accounting owner.
+// +check
+func (dev *EngineDev) NetworkOwnership(ctx context.Context) error {
+	_, err := dag.Go(dagger.GoOpts{
+		Source:    dev.Source,
+		VcsCommit: dev.VCSCommit,
+		VcsDirty:  dev.VCSDirty,
+		Ws:        dev.Ws,
+	}).Env().WithExec([]string{
+		"go", "run", "./cmd/networkinglint", "./cmd/engine", "./core/...", "./engine/...",
+		"./internal/buildkit/...",
+	}).Sync(ctx)
+	return err
+}
+
 // Run core engine tests
 // +cache="session"
 func (dev *EngineDev) Test(

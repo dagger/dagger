@@ -22,6 +22,7 @@ func (sdk *runtimeModule) Runtime(
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ core.ModuleRuntime, rerr error) {
+	ctx = sdk.mod.networkContext(ctx)
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.EndWithCause(span, &rerr)
 

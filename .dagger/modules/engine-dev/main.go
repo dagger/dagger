@@ -178,7 +178,6 @@ func (dev *EngineDev) Container(
 	for _, prog := range dev.EBPFProgs {
 		ctr = ctr.WithEnvVariable("DAGGER_EBPF_PROG_"+strings.ToUpper(prog), "y")
 	}
-
 	ctr = ctr.
 		WithFile(engineJSONPath, cfg).
 		WithFile(engineTOMLPath, engineTOML).

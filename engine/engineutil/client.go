@@ -82,7 +82,7 @@ type Opts struct {
 	HostMntNS  *os.File
 	CleanMntNS *os.File
 
-	Dialer               *net.Dialer
+	Dialer               *enginetelemetry.Dialer
 	GetClientCaller      func(context.Context, string) (SessionCaller, error)
 	GetHostServiceCaller func(context.Context, string) (SessionCaller, error)
 	GetMainClientCaller  func(context.Context) (SessionCaller, error)

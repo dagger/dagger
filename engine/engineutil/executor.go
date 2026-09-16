@@ -47,6 +47,11 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
+	// NetworkOwnerDaggerland marks trusted Dagger runtime work. Internal is not a
+	// trust boundary: user module processes are internal telemetry plumbing but
+	// still userland-owned network traffic.
+	NetworkOwnerDaggerland bool `json:"-"`
+
 	// UseRecipeIDsByDefault configures nested clients started by this exec to
 	// resolve id() as recipe-form IDs unless explicitly requested otherwise.
 	UseRecipeIDsByDefault bool

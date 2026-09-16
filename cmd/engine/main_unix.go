@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/coreos/go-systemd/v22/activation"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/pkg/errors"
 )
 
@@ -37,7 +38,7 @@ func listenFD(addr string, tlsConfig *tls.Config) (net.Listener, error) {
 
 	// default to first fd
 	if addr == "" {
-		return listeners[0], nil
+		return realm.Userland.Listener(listeners[0])
 	}
 
 	//TODO: systemd fd selection (default is 3)

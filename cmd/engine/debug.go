@@ -6,7 +6,6 @@ import (
 	"expvar"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
@@ -26,6 +25,7 @@ import (
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
 
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -156,7 +156,7 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 		return true, true
 	}
 
-	l, err := net.Listen("tcp", addr)
+	l, err := realm.Daggerland.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}

@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -940,22 +941,22 @@ func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final b
 }
 
 var metricsVerbosity = map[string]int{
-	telemetry.IOStatDiskReadBytes:      3,
-	telemetry.IOStatDiskWriteBytes:     3,
-	telemetry.IOStatPressureSomeTotal:  3,
-	telemetry.CPUStatPressureSomeTotal: 3,
-	telemetry.CPUStatPressureFullTotal: 3,
-	telemetry.MemoryCurrentBytes:       3,
-	telemetry.MemoryPeakBytes:          3,
-	telemetry.NetstatRxBytes:           3,
-	telemetry.NetstatTxBytes:           3,
-	telemetry.NetstatRxDropped:         3,
-	telemetry.NetstatTxDropped:         3,
-	telemetry.NetstatRxPackets:         3,
-	telemetry.NetstatTxPackets:         3,
-	telemetry.LLMInputTokens:           1,
-	telemetry.LLMOutputTokens:          1,
-	telemetry.FilesyncWrittenBytes:     3,
+	telemetry.IOStatDiskReadBytes:         3,
+	telemetry.IOStatDiskWriteBytes:        3,
+	telemetry.IOStatPressureSomeTotal:     3,
+	telemetry.CPUStatPressureSomeTotal:    3,
+	telemetry.CPUStatPressureFullTotal:    3,
+	telemetry.MemoryCurrentBytes:          3,
+	telemetry.MemoryPeakBytes:             3,
+	telemetryattrs.NetworkRxBytes:         2,
+	telemetryattrs.NetworkTxBytes:         2,
+	telemetryattrs.NetworkInternalRxBytes: 3,
+	telemetryattrs.NetworkInternalTxBytes: 3,
+	telemetryattrs.NetworkExternalRxBytes: 3,
+	telemetryattrs.NetworkExternalTxBytes: 3,
+	telemetry.LLMInputTokens:              1,
+	telemetry.LLMOutputTokens:             1,
+	telemetry.FilesyncWrittenBytes:        3,
 }
 
 func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
@@ -975,8 +976,12 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 			r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
 
 			// Network Stats
-			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
-			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkRxBytes, "Network Rx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkTxBytes, "Network Tx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalRxBytes, "External Rx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalTxBytes, "External Tx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalRxBytes, "Internal Rx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalTxBytes, "Internal Tx", humanizeBytes)
 		}
 	}
 
@@ -1091,38 +1096,6 @@ func (r renderer) renderMetricIfNonzero(
 			return
 		}
 		r.renderMetric(out, metricsByName, metricName, label, formatValue)
-	}
-}
-
-func (r renderer) renderNetworkMetric(
-	out TermOutput,
-	metricsByName map[string][]metricdata.DataPoint[int64],
-	bytesMetric, droppedMetric, packetsMetric, label string,
-) {
-	r.renderMetricIfNonzero(out, metricsByName, bytesMetric, label, humanizeBytes)
-	if dataPoints := metricsByName[bytesMetric]; len(dataPoints) > 0 {
-		renderPacketLoss(out, metricsByName, droppedMetric, packetsMetric)
-	}
-}
-
-func renderPacketLoss(
-	out TermOutput,
-	metricsByName map[string][]metricdata.DataPoint[int64],
-	droppedMetric, packetsMetric string,
-) {
-	if drops := metricsByName[droppedMetric]; len(drops) > 0 {
-		if packets := metricsByName[packetsMetric]; len(packets) > 0 {
-			lastDrops := drops[len(drops)-1]
-			lastPackets := packets[len(packets)-1]
-			if lastDrops.Value > 0 && lastPackets.Value > 0 {
-				droppedPercent := (float64(lastDrops.Value) / float64(lastPackets.Value)) * 100
-				if droppedPercent > 0 {
-					displaydropped := out.String(fmt.Sprintf(" (%.3g%% dropped)", droppedPercent))
-					displaydropped = displaydropped.Foreground(termenv.ANSIRed)
-					fmt.Fprint(out, displaydropped)
-				}
-			}
-		}
 	}
 }
 
