@@ -99,6 +99,82 @@ source = "go"
 	})
 }
 
+// A fat manifest carries a version 2 entrypoint table and the pre-v2 fields at
+// the same time. Manifest version 2 has no dependency list, so a manifest that
+// declares dependencies stays on the pre-v2 format. See config_fat_manifest.go.
+func TestParseFatModuleManifest(t *testing.T) {
+	t.Parallel()
+
+	t.Run("entrypoint without dependencies reads as version 2", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseModuleConfigForFilename([]byte(`
+name = "fat"
+engineVersion = "latest"
+
+[runtime]
+source = "dang"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`), Filename)
+		require.NoError(t, err)
+		require.Equal(t, "fat", cfg.Name)
+		require.Equal(t, &ModuleEntrypointConfig{
+			Kind:   ModuleEntrypointKindDang,
+			Source: "./entrypoint",
+		}, cfg.Entrypoint)
+		// The pre-v2 fields exist for older engines. A version 2 read ignores them.
+		require.Nil(t, cfg.SDK)
+		require.Empty(t, cfg.EngineVersion)
+	})
+
+	t.Run("entrypoint with dependencies and runtime reads as pre-v2", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseModuleConfigForFilename([]byte(`
+name = "fat"
+engineVersion = "latest"
+
+[runtime]
+source = "dang"
+
+[[dependencies]]
+name = "dep"
+source = "github.com/acme/dep"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`), Filename)
+		require.NoError(t, err)
+		require.Equal(t, "fat", cfg.Name)
+		// The entrypoint exists for a newer engine. A pre-v2 read ignores it.
+		require.Nil(t, cfg.Entrypoint)
+		require.Equal(t, "dang", cfg.SDK.Source)
+		require.Equal(t, "latest", cfg.EngineVersion)
+		require.Equal(t, "github.com/acme/dep", cfg.Dependencies[0].Source)
+	})
+
+	t.Run("entrypoint with dependencies and no runtime is an error", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := ParseModuleConfigForFilename([]byte(`
+name = "fat"
+
+[[dependencies]]
+source = "github.com/acme/dep"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`), Filename)
+		require.ErrorContains(t, err, `sets "entrypoint" and "dependencies" without "runtime"`)
+		require.ErrorContains(t, err, "manifest version 2 has no dependency list")
+	})
+}
+
 func TestModuleManifestV2RoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -160,9 +236,9 @@ func TestParseModuleManifestV2RejectsInvalidFields(t *testing.T) {
 			want: "requires entrypoint.source",
 		},
 		{
-			name: "legacy field",
-			cfg:  "name = \"tiny\"\nengineVersion = \"latest\"\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\n",
-			want: "does not support \"engineVersion\"",
+			name: "unknown field",
+			cfg:  "name = \"tiny\"\nnope = \"x\"\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\n",
+			want: "does not support \"nope\"",
 		},
 		{
 			name: "version key",

@@ -223,9 +223,15 @@ func validateCurrentModuleConfigTOML(tree *toml.Tree) error {
 
 func validateModuleManifestV2TOML(tree *toml.Tree) error {
 	for _, key := range tree.Keys() {
-		if !slices.Contains([]string{"name", "entrypoint"}, key) {
-			return fmt.Errorf("%s manifest version 2 does not support %q", Filename, key)
+		if slices.Contains([]string{"name", "entrypoint"}, key) {
+			continue
 		}
+		// A fat manifest keeps the pre-v2 fields for older engines. Ignore them
+		// here rather than rejecting the file. See config_fat_manifest.go.
+		if slices.Contains(legacyModuleManifestKeys, key) {
+			continue
+		}
+		return fmt.Errorf("%s manifest version 2 does not support %q", Filename, key)
 	}
 
 	entrypoint, ok := tree.Get("entrypoint").(*toml.Tree)
