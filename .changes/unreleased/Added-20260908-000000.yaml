@@ -1,0 +1,8 @@
+kind: Added
+body: |
+  Add `dagger api schema` to print the API schema currently served by the engine
+  The schema is printed as GraphQL SDL, combining Dagger's core types with the schema extensions contributed by every module loaded in the current workspace, so it reflects the exact API surface available to the session. Name one or more modules to print only what they contribute, pass `--core` for the core API alone, or `--json` for the raw introspection JSON.
+time: 2026-09-08T00:00:00Z
+custom:
+  Author: dbansal
+  PR: 13943

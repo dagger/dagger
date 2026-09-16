@@ -109,6 +109,7 @@ func init() {
 	moduleAddFlags(listenCmd, listenCmd.PersistentFlags(), true)
 	moduleAddFlags(apiQueryCmd, apiQueryCmd.PersistentFlags(), true)
 	moduleAddFlags(queryCmd, queryCmd.PersistentFlags(), true)
+	moduleAddFlags(apiSchemaCmd, apiSchemaCmd.PersistentFlags(), true)
 
 	moduleAddFlags(mcpCmd, mcpCmd.PersistentFlags(), true)
 
