@@ -6,25 +6,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/containerd/containerd/v2/core/content"
-	"github.com/containerd/containerd/v2/core/mount"
-	"github.com/containerd/containerd/v2/plugins/content/local"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/image-spec/specs-go"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/opencontainers/go-digest"
+	"github.com/opencontainers/image-spec/specs-go"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,7 +76,7 @@ func (m resolverInputMount) Mount() ([]mount.Mount, func() error, error) {
 	return []mount.Mount{{Type: "bind", Source: string(m)}}, func() error { return nil }, nil
 }
 func TestProducerResolverCleanup(t *testing.T) {
-	for _, kind := range []string{"ref wrapping", "ref digest", "commit wrapping"} {
+	for _, kind := range []string{"ref wrapping", "ref digest", "commit wrapping", "ref recording", "commit recording"} {
 		t.Run(kind, func(t *testing.T) {
 			server := &currentTypeDefsTestServer{}
 			query := core.NewRoot(server)
@@ -92,8 +93,11 @@ func TestProducerResolverCleanup(t *testing.T) {
 			dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory])}
 			dir.Dir.SetValue("/")
 			dir.Snapshot.SetValue(ref)
+			if strings.HasSuffix(kind, "recording") {
+				dir.Lazy = &core.DirectorySubdirectoryLazy{LazyState: core.NewLazyState()}
+			}
 			tree := &resolverCleanupTree{output: dir}
-			if kind == "commit wrapping" {
+			if strings.HasPrefix(kind, "commit") {
 				cache, e := dagql.NewCache(ctx, "", nil, nil)
 				require.NoError(t, e)
 				t.Cleanup(func() { require.NoError(t, cache.CloseDiscardingPersistence()) })
@@ -115,7 +119,7 @@ func TestProducerResolverCleanup(t *testing.T) {
 			repo := &core.GitRepository{Backend: backend}
 			repoResult, err := dagql.NewObjectResultForCall(repo, srv, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "git", Type: dagql.NewResultCallType(repo.Type())})
 			require.NoError(t, err)
-			if kind == "commit wrapping" {
+			if strings.HasPrefix(kind, "commit") {
 				commit := &core.GitCommit{Repo: repoResult, Backend: tree, Ref: &gitutil.Ref{SHA: "saved"}}
 				parent, e := dagql.NewObjectResultForCall(commit, srv, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "commit", Type: dagql.NewResultCallType(commit.Type())})
 				require.NoError(t, e)
@@ -130,6 +134,10 @@ func TestProducerResolverCleanup(t *testing.T) {
 				_, err = (&gitSchema{}).tree(ctx, parent, treeArgs{})
 			}
 			require.Error(t, err)
+			if strings.HasSuffix(kind, "recording") {
+				require.ErrorContains(t, err, "operation already recorded")
+				require.NotNil(t, dir.Lazy)
+			}
 			require.ErrorIs(t, err, cleanupErr)
 			require.Equal(t, 1, ref.releases)
 		})
@@ -247,16 +255,83 @@ func resolverAttach[T dagql.Typed](t *testing.T, ctx context.Context, srv *dagql
 	require.NoError(t, err)
 	return result.(dagql.ObjectResult[T])
 }
-func TestProducerResolverOutputCleanup(t *testing.T) {
+func TestProducerResolverOutputCleanup(t *testing.T) { testProducerResolverOutputs(t, false) }
+func TestProducerResolverCapture(t *testing.T) {
+	testProducerResolverOutputs(t, true)
+	for _, kind := range []string{"gitCleaned", "gitTree", "gitCommitTree"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx, srv, cache, server := resolverOutputFixture(t)
+			srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitRef]{}))
+			srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitCommit]{}))
+			root := t.TempDir()
+			run := func(args ...string) string {
+				out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
+				require.NoError(t, err, string(out))
+				return strings.TrimSpace(string(out))
+			}
+			run("init", "-b", "main")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "data"), []byte("saved"), 0644))
+			run("add", ".")
+			run("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "saved")
+			sha := run("rev-parse", "HEAD")
+			dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory])}
+			dir.Dir.SetValue("/")
+			dir.Snapshot.SetValue(&resolverOutputRef{root: root, id: "source"})
+			input := resolverAttach(t, ctx, srv, cache, "source", dir)
+			repo := &core.GitRepository{Backend: &core.LocalGitRepository{Directory: input}}
+			parent := resolverAttach(t, ctx, srv, cache, "repository", repo)
+			var result dagql.ObjectResult[*core.Directory]
+			var err error
+			if kind == "gitCleaned" {
+				ctx = producerResolverCall(ctx, "__cleaned", dir)
+				dagql.Fields[*core.GitRepository]{dagql.NodeFunc("__cleaned", (&gitSchema{}).cleaned)}.Install(srv)
+				err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "__cleaned"})
+			} else {
+				ref := &gitutil.Ref{Name: "refs/heads/main", SHA: sha}
+				backend, e := repo.Backend.Get(ctx, ref)
+				require.NoError(t, e)
+				ctx = producerResolverCall(ctx, "tree", dir)
+				if kind == "gitTree" {
+					input := resolverAttach(t, ctx, srv, cache, "ref", &core.GitRef{Repo: parent, Ref: ref, Backend: backend})
+					result, err = (&gitSchema{}).tree(ctx, input, treeArgs{})
+				} else {
+					input := resolverAttach(t, ctx, srv, cache, "commit", &core.GitCommit{Repo: parent, Ref: ref, Backend: backend})
+					result, err = (&gitSchema{}).commitTree(ctx, input, commitTreeArgs{})
+				}
+			}
+			require.NoError(t, err)
+			assertResolverProducer(t, ctx, cache, result.Self(), kind)
+			require.Len(t, server.manager.outputs, 1)
+			if kind == "gitCleaned" {
+				require.Zero(t, server.manager.outputs[0].releases)
+			} else {
+				require.NoError(t, result.Self().OnRelease(ctx))
+				require.Equal(t, 1, server.manager.outputs[0].releases)
+			}
+		})
+	}
+}
+func testProducerResolverOutputs(t *testing.T, recorded bool) {
 	t.Run("http state sync", func(t *testing.T) {
 		ctx, srv, cache, server := resolverOutputFixture(t)
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "body") }))
 		defer origin.Close()
 		state := &core.HTTPState{URL: origin.URL}
 		parent := resolverAttach(t, ctx, srv, cache, "_httpState", state)
-		server.manager.leaseFault = errors.New("injected state owner failure")
+		if recorded {
+			ctx = producerResolverCall(ctx, "_resolve", &core.File{})
+		} else {
+			server.manager.leaseFault = errors.New("injected state owner failure")
+		}
 		var err error
-		_, err = (&httpSchema{}).httpStateResolve(ctx, parent, httpStateResolveArgs{Name: "data", Permissions: 0644})
+		result, callErr := (&httpSchema{}).httpStateResolve(ctx, parent, httpStateResolveArgs{Name: "data", Permissions: 0644})
+		err = callErr
+		if recorded {
+			require.NoError(t, err)
+			assertResolverProducer(t, ctx, cache, result.Self(), "httpResolve")
+			require.NoError(t, result.Self().OnRelease(ctx))
+			return
+		}
 		require.ErrorContains(t, err, "sync http state snapshot owner leases")
 		require.Len(t, server.manager.outputs, 2)
 		require.Zero(t, server.manager.outputs[0].releases)
@@ -264,20 +339,29 @@ func TestProducerResolverOutputCleanup(t *testing.T) {
 		server.manager.leaseFault = nil
 	})
 	t.Run("schema wrapping", func(t *testing.T) {
-		ctx, srv, _, server := resolverOutputFixture(t)
+		ctx, srv, cache, server := resolverOutputFixture(t)
 		dagql.Fields[*core.Query]{dagql.Func("directory", func(context.Context, *core.Query, struct{}) (*core.Directory, error) {
 			dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory])}
 			dir.Dir.SetValue("/")
 			dir.Snapshot.SetValue(&resolverOutputRef{root: t.TempDir(), id: "scratch"})
 			return dir, nil
 		})}.Install(srv)
-		_, err := (&querySchema{}).schemaJSONFile(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), schemaJSONArgs{})
+		if recorded {
+			ctx = producerResolverCall(ctx, "__schemaJSONFile", &core.File{})
+		}
+		result, err := (&querySchema{}).schemaJSONFile(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), schemaJSONArgs{})
+		if recorded {
+			require.NoError(t, err)
+			assertResolverProducer(t, ctx, cache, result.Self(), "file.blob")
+			require.NoError(t, result.Self().OnRelease(ctx))
+			return
+		}
 		require.ErrorContains(t, err, "call is nil")
 		require.Len(t, server.manager.outputs, 1)
 		require.Equal(t, 1, server.manager.outputs[0].releases)
 	})
 	t.Run("builtin wrapping", func(t *testing.T) {
-		ctx, srv, _, server := resolverOutputFixture(t)
+		ctx, srv, cache, server := resolverOutputFixture(t)
 		store, err := local.NewStore(t.TempDir())
 		require.NoError(t, err)
 		server.content = store
@@ -288,7 +372,17 @@ func TestProducerResolverOutputCleanup(t *testing.T) {
 		require.NoError(t, err)
 		desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromBytes(manifest), Size: int64(len(manifest))}
 		require.NoError(t, content.WriteBlob(ctx, store, "manifest", bytes.NewReader(manifest), desc))
-		_, err = (&hostSchema{}).builtinContainer(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), builtinContainerArgs{Digest: desc.Digest.String()})
+		if recorded {
+			ctx = producerResolverCall(ctx, "_builtinContainer", &core.Container{})
+		}
+		result, callErr := (&hostSchema{}).builtinContainer(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), builtinContainerArgs{Digest: desc.Digest.String()})
+		err = callErr
+		if recorded {
+			require.NoError(t, err)
+			assertResolverProducer(t, ctx, cache, result.Self(), "")
+			require.NoError(t, result.Self().OnRelease(ctx))
+			return
+		}
 		require.ErrorContains(t, err, "call is nil")
 		require.Len(t, server.manager.outputs, 1)
 		require.Equal(t, 1, server.manager.outputs[0].releases)
@@ -316,11 +410,37 @@ func TestProducerResolverOutputCleanup(t *testing.T) {
 				repoRes := resolverAttach(t, ctx, srv, cache, "git", repo)
 				bundleID, err := bundleRes.ID()
 				require.NoError(t, err)
-				_, err = (&gitSchema{}).withBundleDirectory(ctx, repoRes, gitWithBundleArgs{Bundle: dagql.NewID[*core.GitBundle](bundleID)})
+				if recorded {
+					ctx = producerResolverCall(ctx, "__withBundleDirectory", &core.Directory{})
+				}
+				result, callErr := (&gitSchema{}).withBundleDirectory(ctx, repoRes, gitWithBundleArgs{Bundle: dagql.NewID[*core.GitBundle](bundleID)})
+				err = callErr
+				if recorded {
+					require.NoError(t, err)
+					assertResolverProducer(t, ctx, cache, result.Self(), "gitBundleImport")
+					require.NoError(t, result.Self().OnRelease(ctx))
+					return
+				}
 				require.ErrorContains(t, err, "call is nil")
 				require.Len(t, server.manager.outputs, 1)
 				require.Equal(t, 1, server.manager.outputs[0].releases)
 			}
 		}
 	})
+}
+
+func producerResolverCall(ctx context.Context, field string, value dagql.Typed) context.Context {
+	return dagql.ContextWithCall(ctx, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Type: dagql.NewResultCallType(value.Type())})
+}
+func assertResolverProducer(t *testing.T, ctx context.Context, cache *dagql.Cache, value dagql.PersistedObject, kind string) {
+	t.Helper()
+	encoded, err := value.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, dagql.CurrentCall(ctx)))
+	require.NoError(t, err)
+	var payload struct {
+		LazyKind string          `json:"lazyKind"`
+		LazyJSON json.RawMessage `json:"lazyJSON"`
+	}
+	require.NoError(t, json.Unmarshal(encoded.JSON, &payload))
+	require.Equal(t, kind, payload.LazyKind)
+	require.NotEmpty(t, payload.LazyJSON)
 }

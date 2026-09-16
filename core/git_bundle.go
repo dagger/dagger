@@ -709,8 +709,6 @@ func resolveGitBundleTarget(remote *gitutil.Remote, name string) (*gitBundleTarg
 // bundle's refs and every exact prerequisite fetched from repo. The source
 // canonical repository is read-only; all imported refs live in the returned
 // immutable snapshot.
-//
-//nolint:gocyclo // bundle import verifies prerequisites, refs, and connectivity in one pass
 func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle, prerequisiteRef string) (*Directory, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -723,6 +721,7 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 	return dir, nil
 }
 
+//nolint:gocyclo // bundle import verifies prerequisites, refs, and connectivity in one pass
 func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepository, bundle *GitBundle, prerequisiteRef string) (rerr error) {
 	if err := validateProducedDirectoryReceiver(dst); err != nil {
 		return err

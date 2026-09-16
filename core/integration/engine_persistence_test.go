@@ -12,13 +12,18 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/distconsts"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -168,6 +173,71 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NoError(t, err)
 		t.Logf("%s: %s", checkpoint, data)
 	}
+
+	t.Run("eager producers survive restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		requests := atomic.Int64{}
+		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); fmt.Fprint(w, "saved HTTP body\n") }))
+		defer origin.Close()
+		port := origin.Listener.Addr().(*net.TCPAddr).Port
+		const hostname = "saved-producer-origin"
+		source := c.Host().Service([]dagger.PortForward{{Backend: port, Frontend: port}}).WithHostname(hostname)
+		opts := snapshotTestOptions(ctx, t)
+		opts = append(opts, func(ctr *dagger.Container) *dagger.Container { return ctr.WithServiceBinding(hostname, source) })
+		stateKey := "eager-producers-" + identity.NewID()
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		file := a.HTTP(fmt.Sprintf("http://%s:%d/data", hostname, port))
+		body, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "saved HTTP body\n", body)
+		fileID, err := file.ID(ctx)
+		require.NoError(t, err)
+		manifest, err := devEngineContainer(c).EnvVariable(ctx, distconsts.GoSDKManifestDigestEnvName)
+		require.NoError(t, err)
+		require.NotEmpty(t, manifest)
+		var sdk struct {
+			Builtin struct {
+				ID dagger.ID `json:"id"`
+			} `json:"_builtinContainer"`
+			Schema struct {
+				ID       dagger.ID `json:"id"`
+				Contents string    `json:"contents"`
+			} `json:"__schemaJSONFile"`
+		}
+		require.NoError(t, a.Do(ctx, &dagger.Request{Query: `query($digest: String!) { _builtinContainer(digest: $digest) { id } __schemaJSONFile { id contents } }`, Variables: map[string]any{"digest": manifest}}, &dagger.Response{Data: &sdk}))
+		require.NotEmpty(t, sdk.Schema.Contents)
+		rowsA := readSnapshotRows(ctx, t, c, upA)
+		fileRowID := snapshotResultID(t, string(fileID))
+		schemaRowID := snapshotResultID(t, string(sdk.Schema.ID))
+		builtinRowID := snapshotResultID(t, string(sdk.Builtin.ID))
+		require.Equal(t, "_resolve", rowsA[fileRowID].Call.Field)
+		require.Equal(t, "__schemaJSONFile", rowsA[schemaRowID].Call.Field)
+		require.Equal(t, "_builtinContainer", rowsA[builtinRowID].Call.Field)
+		requestsBefore := requests.Load()
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA = nil
+		tunnelA = nil
+		a = nil
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		fileB := dagger.Ref[*dagger.File](b, fileID)
+		body, err = fileB.Contents(ctx, dagger.FileContentsOpts{LimitLines: 1})
+		require.NoError(t, err)
+		require.Equal(t, "saved HTTP body\n", body)
+		schemaB := dagger.Ref[*dagger.File](b, sdk.Schema.ID)
+		body, err = schemaB.Contents(ctx, dagger.FileContentsOpts{LimitLines: 1})
+		require.NoError(t, err)
+		require.Equal(t, sdk.Schema.Contents, body)
+		entries, err := dagger.Ref[*dagger.Container](b, sdk.Builtin.ID).Rootfs().Entries(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, entries)
+		require.Equal(t, requestsBefore, requests.Load(), "ready HTTP snapshot contacted its origin")
+		rowsB := readSnapshotRows(ctx, t, c, upB)
+		require.EqualValues(t, 1, rowsB[fileRowID].Value.Counts["storedOpen"])
+		require.EqualValues(t, 1, rowsB[schemaRowID].Value.Counts["storedOpen"])
+		require.EqualValues(t, 1, rowsB[builtinRowID].Value.Counts["storedOpen:fs"])
+	})
 
 	t.Run("changeset merge producer survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

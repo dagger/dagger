@@ -70,6 +70,7 @@ func producedDirectoryOutput(dir *Directory) (string, bkcache.ImmutableRef, erro
 	}
 	return path, snapshot, nil
 }
+
 func producedFileOutput(file *File) (string, bkcache.ImmutableRef, error) {
 	if file == nil || file.File == nil || file.Snapshot == nil {
 		return "", nil, fmt.Errorf("missing File accessors")
@@ -84,6 +85,7 @@ func producedFileOutput(file *File) (string, bkcache.ImmutableRef, error) {
 	}
 	return path, snapshot, nil
 }
+
 func validateProducedDirectoryReceiver(dir *Directory) error {
 	if dir == nil || dir.Dir == nil || dir.Snapshot == nil {
 		return fmt.Errorf("producer receiver: missing Directory accessors")
@@ -96,6 +98,7 @@ func validateProducedDirectoryReceiver(dir *Directory) error {
 	}
 	return nil
 }
+
 func validateProducedFileReceiver(file *File) error {
 	if file == nil || file.File == nil || file.Snapshot == nil {
 		return fmt.Errorf("producer receiver: missing File accessors")
@@ -125,6 +128,7 @@ func moveProducedDirectory(dst, src *Directory) error {
 	src.Snapshot = new(LazyAccessor[bkcache.ImmutableRef, *Directory])
 	return nil
 }
+
 func moveProducedFile(dst, src *File) error {
 	if err := validateProducedFileReceiver(dst); err != nil {
 		return err

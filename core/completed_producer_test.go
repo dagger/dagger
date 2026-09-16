@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -105,6 +107,36 @@ func TestRecordCompletedProducer(t *testing.T) {
 		}
 		require.Same(t, directoryProducer, dir.completedRecipe)
 	})
+}
+
+func TestCompletedProducerAttachmentBeforePublication(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "detached-completion")
+	ctx, cache, srv := env.open(t)
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, "selected"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "selected", "data"), []byte("data"), 0644))
+	source := containerPersistenceTestDirectory("source-tree", "/")
+	source.Snapshot.setValue(&producerTreeRef{cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "source-tree", snapshotID: "source-tree"}, root: root})
+	parent := env.attach(t, ctx, cache, srv, "source", source).(dagql.ObjectResult[*Directory])
+	dir, err := source.Subdirectory(ctx, parent, "selected")
+	require.NoError(t, err)
+	file, err := source.Subfile(ctx, parent, "selected/data")
+	require.NoError(t, err)
+	for _, value := range []interface {
+		LazyEvalFunc() dagql.LazyEvalFunc
+		AttachDependencyResultsKinds(context.Context, dagql.AnyResult, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.DependencyResult, error)
+	}{dir, file} {
+		require.NoError(t, value.LazyEvalFunc()(ctx))
+		deps, err := value.AttachDependencyResultsKinds(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) { return res, nil })
+		require.NoError(t, err)
+		require.Len(t, deps, 1)
+		require.False(t, deps[0].Owned)
+		require.Equal(t, persistedRowID(t, cache, parent), persistedRowID(t, cache, deps[0].Result))
+	}
+	require.Nil(t, dir.Lazy)
+	require.IsType(t, &DirectorySubdirectoryLazy{}, dir.completedRecipe)
+	require.Nil(t, file.Lazy)
+	require.IsType(t, &FileSubfileLazy{}, file.completedRecipe)
 }
 
 func TestMoveProducedOutputs(t *testing.T) {

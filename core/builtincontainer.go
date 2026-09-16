@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dagger/dagger/dagql"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -68,6 +68,7 @@ type ContainerBuiltinLazy struct {
 	Platform       Platform
 	ManifestDigest digest.Digest
 }
+
 type persistedContainerBuiltinLazy struct {
 	Platform       Platform `json:"platform"`
 	ManifestDigest string   `json:"manifestDigest"`
@@ -79,6 +80,7 @@ func (p *persistedContainerBuiltinLazy) validate() error {
 	}
 	return nil
 }
+
 func (lazy *ContainerBuiltinLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Query._builtinContainer", func(ctx context.Context) error {
 		if err := (&persistedContainerBuiltinLazy{ManifestDigest: lazy.ManifestDigest.String()}).validate(); err != nil {
@@ -91,9 +93,11 @@ func (lazy *ContainerBuiltinLazy) Evaluate(ctx context.Context, container *Conta
 		return nil
 	})
 }
+
 func (*ContainerBuiltinLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	return nil, nil
 }
+
 func (lazy *ContainerBuiltinLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	if enc.Call() == nil || enc.Call().Field != "_builtinContainer" {
 		return nil, fmt.Errorf("builtin Container producer requires recorded _builtinContainer call")
@@ -104,6 +108,7 @@ func (lazy *ContainerBuiltinLazy) EncodePersisted(ctx context.Context, enc *dagq
 	}
 	return json.Marshal(p)
 }
+
 func decodeContainerBuiltinLazy(payload json.RawMessage) (Lazy[*Container], error) {
 	var p persistedContainerBuiltinLazy
 	if err := json.Unmarshal(payload, &p); err != nil {

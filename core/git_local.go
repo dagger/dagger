@@ -227,10 +227,11 @@ func (repo *LocalGitRepository) cleanedInto(ctx context.Context, dst *Directory)
 }
 
 // withTemporaryGitIndex owns the newly created index until the Git commands finish.
-func withTemporaryGitIndex(idx io.Reader, tmp *os.File, run func(string) error) (rerr error) {
-	defer func() { rerr = errors.Join(rerr, os.Remove(tmp.Name())) }()
+func withTemporaryGitIndex(idx io.Reader, tmp *os.File, run func(string) error) error {
+	defer os.Remove(tmp.Name())
 	if _, err := io.Copy(tmp, idx); err != nil {
-		return errors.Join(err, tmp.Close())
+		_ = tmp.Close()
+		return err
 	}
 	if err := tmp.Close(); err != nil {
 		return err

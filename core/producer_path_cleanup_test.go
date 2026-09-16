@@ -119,13 +119,35 @@ func TestProducerPathCleanup(t *testing.T) {
 		dir := containerPersistenceTestDirectory("borrowed", "/")
 		borrowedReleases := 0
 		dir.Snapshot.setValue(&cacheVolumeTestImmutableRef{release: func(context.Context) error { borrowedReleases++; return nil }})
+		ancestor := attachTransferObject(t, ctx, cache, srv, "cleanup", "ancestor", containerPersistenceTestDirectory("ancestor", "/"))
+		existing := &DirectorySubdirectoryLazy{LazyState: NewLazyState(), Parent: ancestor, Subdir: "."}
+		dir.completedRecipe = existing
 		parent := attachTransferObject(t, ctx, cache, srv, "cleanup", "directory", dir)
+		ancestorID := persistedRowID(t, cache, ancestor)
+		ownership := func() int64 {
+			for _, row := range cache.DebugEGraphSnapshot().Results {
+				if row.SharedResultID == ancestorID {
+					return row.IncomingOwnershipCount
+				}
+			}
+			t.Fatal("missing ancestor")
+			return 0
+		}
+		before := ownership()
 		result, err := (&LocalGitRepository{Directory: parent}).Cleaned(ctx)
 		require.NoError(t, err)
 		require.Same(t, dir, result.Self())
 		require.Equal(t, 1, ref.releases)
 		require.Zero(t, ref.commits)
 		require.Zero(t, borrowedReleases)
+		require.Same(t, existing, dir.completedRecipe)
+		call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "cleanedAlias", Type: dagql.NewResultCallType(dir.Type())}
+		alias, err := cache.GetOrInitCall(ctx, "cleanup", srv, &dagql.CallRequest{ResultCall: call}, func(context.Context) (dagql.AnyResult, error) { return result, nil })
+		require.NoError(t, err)
+		require.Equal(t, persistedRowID(t, cache, parent), persistedRowID(t, cache, alias))
+		require.Equal(t, before, ownership(), "alias attachment added another input owner")
+		require.Same(t, existing, dir.completedRecipe)
+
 	})
 }
 
@@ -157,6 +179,9 @@ func TestProducerTemporaryIndexCleanup(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err)
+			}
+			if exit == "copy" {
+				require.NotContains(t, err.Error(), "\n", "copy keeps its original error message")
 			}
 			if exit == "command" {
 				require.ErrorIs(t, err, fault)
