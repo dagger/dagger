@@ -3613,7 +3613,7 @@ export type WorkspaceChecksOpts = {
 
 export type WorkspaceCommitsFromOpts = {
   /**
-   * Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   * Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
    */
   commits?: string[]
 
@@ -3806,7 +3806,7 @@ export type WorkspaceWithCommitOpts = {
 
 export type WorkspaceWithCommitsFromOpts = {
   /**
-   * Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   * Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
    */
   commits?: string[]
 
@@ -16845,7 +16845,7 @@ export class Workspace extends BaseClient {
    *
    * A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
    * @param source Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
-   * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   * @param opts.commits Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
    * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
    */
   commitsFrom = async (
@@ -17314,7 +17314,7 @@ export class Workspace extends BaseClient {
    *
    * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
    * @param source Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
-   * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   * @param opts.commits Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
    * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
    */
   withCommitsFrom = (

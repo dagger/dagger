@@ -16694,9 +16694,12 @@ class Workspace(Type):
             Git-backed source workspace. For a local checkout, call snapshot
             on the source first and pass the returned workspace.
         commits:
-            Full commit hashes to select, in any order. Empty selects all new
-            source commits. Explicit hashes must be within the source's latest
-            10000 commits.
+            Full lowercase commit hashes or unambiguous lowercase hex prefixes
+            (4-40 characters) to select, in any order. Prefixes resolve
+            against the frozen source's Git objects and are recorded as full
+            hashes; duplicate selections after resolution are rejected. Empty
+            selects all new source commits. Selected commits must be within
+            the source's latest 10000 commits.
         max_commits:
             Maximum commits in either differing history, from 1 to 1000.
             Exceeding the limit fails; nothing is silently omitted.
@@ -17532,9 +17535,12 @@ class Workspace(Type):
             Git-backed source workspace. For a local checkout, call snapshot
             on the source first and pass the returned workspace.
         commits:
-            Full commit hashes to select, in any order. Empty selects all new
-            source commits. Explicit hashes must be within the source's latest
-            10000 commits.
+            Full lowercase commit hashes or unambiguous lowercase hex prefixes
+            (4-40 characters) to select, in any order. Prefixes resolve
+            against the frozen source's Git objects and are recorded as full
+            hashes; duplicate selections after resolution are rejected. Empty
+            selects all new source commits. Selected commits must be within
+            the source's latest 10000 commits.
         max_commits:
             Maximum commits in either differing history, from 1 to 1000.
             Exceeding the limit fails; nothing is silently omitted.
