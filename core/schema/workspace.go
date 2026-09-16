@@ -75,7 +75,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.",
 				"A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.").
 			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
-				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
+				dagql.Arg("commits").Doc("Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
 			View(AfterVersion("v1.0.0-0")).
@@ -85,7 +85,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.",
 				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.").
 			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
-				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
+				dagql.Arg("commits").Doc("Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
 		dagql.NodeFunc("__saveDirectory", s.saveDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Integrate source work into a captured destination and bundle the result."),

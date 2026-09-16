@@ -46,7 +46,7 @@ func (args workspacePullArgs) opts() core.WorkspacePullOpts {
 // pure helpers over pinned values. Source capture is always explicit.
 func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.ObjectResult[*core.Workspace], workspacePullArgs, error) {
 	resolved := workspacePullArgs{Source: args.Source, Commits: args.Commits, MaxCommits: args.MaxCommits}
-	if err := resolved.opts().Validate(); err != nil {
+	if err := resolved.opts().ValidateSelection(); err != nil {
 		return receiver, resolved, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -80,6 +80,30 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 		return receiver, resolved, err
 	}
 	resolved.Source = dagql.NewID[*core.Workspace](id)
+	if len(args.Commits) > 0 {
+		ctx, cancel := context.WithTimeout(ctx, core.WorkspacePullTimeout)
+		defer cancel()
+		var repo dagql.ObjectResult[*core.GitRepository]
+		if err := srv.Select(ctx, source, &repo, dagql.Selector{Field: "git"}); err != nil {
+			return receiver, resolved, err
+		}
+		// Resolve against the frozen source's object database, not a history
+		// scan or the receiver. Only canonical hashes enter the recorded helper.
+		resolved.Commits = make([]string, len(args.Commits))
+		for i, sha := range args.Commits {
+			if !core.IsFullGitSHA(sha) {
+				full, err := repo.Self().ResolveShortSHA(ctx, sha)
+				if err != nil {
+					return receiver, resolved, fmt.Errorf("resolve selected commit %q: %w", sha, err)
+				}
+				sha = full
+			}
+			resolved.Commits[i] = sha
+		}
+	}
+	if err := resolved.opts().Validate(); err != nil {
+		return receiver, resolved, err
+	}
 	return receiver, resolved, nil
 }
 

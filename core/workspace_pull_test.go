@@ -442,6 +442,31 @@ func TestWorkspacePullMerges(t *testing.T) {
 	require.ErrorContains(t, err, "without a mainline")
 }
 
+func TestWorkspacePullSelectionValidation(t *testing.T) {
+	for _, sha := range []string{"abcd", "abcdef1", strings.Repeat("a", 39), strings.Repeat("a", 40), strings.Repeat("a", 64)} {
+		opts := WorkspacePullOpts{MaxCommits: 100, Commits: []string{sha}}
+		require.NoError(t, opts.ValidateSelection(), sha)
+		if IsFullGitSHA(sha) {
+			require.NoError(t, opts.Validate(), sha)
+		} else {
+			require.ErrorContains(t, opts.Validate(), "full lowercase commit hashes", sha)
+		}
+	}
+	for _, sha := range []string{"", "abc", "ABCD", "HEAD", "main", "--all", "abcd^", "abcd\n", strings.Repeat("a", 41), strings.Repeat("a", 65)} {
+		require.ErrorContains(t, (WorkspacePullOpts{MaxCommits: 100, Commits: []string{sha}}).ValidateSelection(), "lowercase", sha)
+	}
+	for _, opts := range []WorkspacePullOpts{
+		{MaxCommits: 0},
+		{MaxCommits: 1001},
+		{MaxCommits: 1, Commits: []string{"abcd", "abcd123"}},
+		{MaxCommits: 100, Commits: []string{"abcd", "abcd"}},
+		{MaxCommits: 100, Commits: []string{strings.Repeat("a", 40), strings.Repeat("a", 40)}},
+	} {
+		require.Error(t, opts.ValidateSelection())
+		require.Error(t, opts.Validate())
+	}
+}
+
 func TestWorkspacePullLimits(t *testing.T) {
 	f := newPullFixture(t)
 	f.git("switch", "source")

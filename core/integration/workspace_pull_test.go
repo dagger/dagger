@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"dagger.io/dagger"
@@ -249,6 +250,141 @@ func (WorkspaceSuite) TestWorkspacePullConflictsAndRedundancy(ctx context.Contex
 	require.Equal(t, []string{"empty"}, plan[0].ConflictPaths)
 	_, err = applyWorkspacePull(ctx, c, emptyDir, incoming, nil, 100)
 	require.ErrorContains(t, err, "DIRTY conflict on empty")
+}
+
+func (WorkspaceSuite) TestWorkspacePullShortSHAs(ctx context.Context, t *testctx.T) {
+	checkout, _ := workspaceExportCheckout(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	source := base.WithNewFile("a", "a").WithCommit("a", workspaceCommitDate)
+	a, err := source.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	source = source.WithNewFile("b", "b").WithCommit("b", workspaceCommitDate)
+	b, err := source.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+
+	for _, commits := range [][]string{{b, a}, {b[:7], a[:7]}, {b, a[:12]}} {
+		plan, err := planWorkspacePull(ctx, c, base, source, commits, 100)
+		require.NoError(t, err)
+		require.Len(t, plan, 2)
+		require.Equal(t, a, plan[0].Commit.SHA)
+		require.Equal(t, b, plan[1].Commit.SHA)
+		for _, pick := range plan {
+			require.Equal(t, "PICKABLE", pick.Status)
+		}
+		pulled, err := applyWorkspacePull(ctx, c, base, source, commits, 100)
+		require.NoError(t, err)
+		sha, err := pulled.Git().Head().CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, b, sha)
+	}
+
+	// Sparse selection cherry-picks only b; a prefix and a full hash produce
+	// the same persisted recipe, not just equivalent checkout contents.
+	var recipes []dagger.ID
+	for _, selection := range []string{b, b[:7]} {
+		plan, err := planWorkspacePull(ctx, c, base, source, []string{selection}, 100)
+		require.NoError(t, err)
+		require.Len(t, plan, 1)
+		require.Equal(t, b, plan[0].Commit.SHA)
+		pulled, err := applyWorkspacePull(ctx, c, base, source, []string{selection}, 100)
+		require.NoError(t, err)
+		exists, err := pulled.Directory("/").Exists(ctx, "a")
+		require.NoError(t, err)
+		require.False(t, exists)
+		contents, err := pulled.File("b").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "b", contents)
+		recipe, err := c.LLM().WithWorkspace(pulled).PortableID(ctx)
+		require.NoError(t, err)
+		recipes = append(recipes, recipe)
+		var id call.ID
+		require.NoError(t, id.Decode(string(recipe)))
+		require.Contains(t, id.Display(), b)
+		require.NotContains(t, id.Display(), fmt.Sprintf("%q", b[:7]))
+		restored := dagger.Ref[*dagger.LLM](c, recipe).Workspace()
+		contents, err = restored.File("b").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "b", contents)
+	}
+	require.Equal(t, recipes[0], recipes[1])
+
+	for _, tc := range []struct {
+		commits []string
+		max     int
+		want    string
+	}{
+		{[]string{a, a[:7]}, 100, "duplicate selected commit " + a},
+		{[]string{a[:7], a}, 100, "duplicate selected commit " + a},
+		{[]string{a[:7], a[:12]}, 100, "duplicate selected commit " + a},
+		{[]string{a[:7], a[:7]}, 100, "duplicate selected commit"},
+		{[]string{a, a}, 100, "duplicate selected commit"},
+		{[]string{"abcdef123456789"}, 100, "no commit matches short SHA"},
+		{[]string{strings.Repeat("f", 40)}, 100, "not within the source"},
+		{[]string{"HEAD"}, 100, "lowercase"},
+		{[]string{"abc"}, 100, "lowercase"},
+		{[]string{"ABCD"}, 100, "lowercase"},
+		{[]string{a[:7], b[:7]}, 1, "selected commits exceed maxCommits"},
+	} {
+		_, err := planWorkspacePull(ctx, c, base, source, tc.commits, tc.max)
+		require.ErrorContains(t, err, tc.want)
+		_, err = applyWorkspacePull(ctx, c, base, source, tc.commits, tc.max)
+		require.ErrorContains(t, err, tc.want)
+	}
+}
+
+func (WorkspaceSuite) TestWorkspacePullAmbiguousSHA(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	baseSHA := git("rev-parse", "HEAD")
+	tree := git("rev-parse", "HEAD^{tree}")
+	// Manufacture two reachable commits sharing a prefix. This exercises Git's
+	// object disambiguation rather than assuming that a prefix is unique in a
+	// bounded history listing. Only the two colliding commits enter the source.
+	seen := map[string]string{}
+	var first, second string
+	for i := 0; ; i++ {
+		require.Less(t, i, 5000, "no 4-character prefix collision found")
+		sha := git("commit-tree", tree, "-p", baseSHA, "-m", fmt.Sprintf("collision-%d", i))
+		if sha[:4] == baseSHA[:4] {
+			continue
+		}
+		if other, ok := seen[sha[:4]]; ok {
+			first, second = other, sha
+			break
+		}
+		seen[sha[:4]] = sha
+	}
+	var tip string
+	for i := 0; ; i++ {
+		require.Less(t, i, 100, "merge tip repeatedly collides")
+		tip = git("commit-tree", tree, "-p", first, "-p", second, "-m", fmt.Sprintf("collision merge-%d", i))
+		if tip[:4] != first[:4] {
+			break
+		}
+	}
+	git("reset", "--hard", tip)
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	source := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	base := source.WithReset(baseSHA, dagger.WorkspaceWithResetOpts{Hard: true})
+	prefix := first[:4]
+	_, err := planWorkspacePull(ctx, c, base, source, []string{prefix}, 100)
+	require.ErrorContains(t, err, "ambiguous short SHA")
+	require.ErrorContains(t, err, prefix)
+	require.ErrorContains(t, err, first)
+	require.ErrorContains(t, err, second)
+	_, err = applyWorkspacePull(ctx, c, base, source, []string{prefix}, 100)
+	require.ErrorContains(t, err, "ambiguous short SHA")
+	require.ErrorContains(t, err, prefix)
+	// A full hash remains usable even though its short form is ambiguous.
+	plan, err := planWorkspacePull(ctx, c, base, source, []string{first}, 100)
+	require.NoError(t, err)
+	require.Len(t, plan, 1)
+	require.Equal(t, first, plan[0].Commit.SHA)
+	pulled, err := applyWorkspacePull(ctx, c, base, source, []string{first}, 100)
+	require.NoError(t, err)
+	sha, err := pulled.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, first, sha)
 }
 
 func (WorkspaceSuite) TestWorkspacePullSelectionAndLimits(ctx context.Context, t *testctx.T) {

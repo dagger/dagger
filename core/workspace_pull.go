@@ -31,7 +31,22 @@ type WorkspacePullOpts struct {
 	CommitterName, CommitterEmail string
 }
 
+// Validate requires canonical hashes for deterministic recorded pull operations.
 func (opts WorkspacePullOpts) Validate() error {
+	if err := opts.ValidateSelection(); err != nil {
+		return err
+	}
+	for _, sha := range opts.Commits {
+		if !IsFullGitSHA(sha) {
+			return fmt.Errorf("commits must contain full lowercase commit hashes, got %q", sha)
+		}
+	}
+	return nil
+}
+
+// ValidateSelection checks public inputs before resolving abbreviated hashes.
+// Call Validate again after resolution to reject aliases of the same commit.
+func (opts WorkspacePullOpts) ValidateSelection() error {
 	if opts.MaxCommits < 1 || opts.MaxCommits > MaxWorkspacePullCommits {
 		return fmt.Errorf("maxCommits must be between 1 and %d", MaxWorkspacePullCommits)
 	}
@@ -40,8 +55,8 @@ func (opts WorkspacePullOpts) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, sha := range opts.Commits {
-		if !IsFullGitSHA(sha) {
-			return fmt.Errorf("commits must contain full lowercase commit hashes, got %q", sha)
+		if !IsFullGitSHA(sha) && !gitutil.IsCommitSHAPrefix(sha) {
+			return fmt.Errorf("commits must contain full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters), got %q", sha)
 		}
 		if seen[sha] {
 			return fmt.Errorf("duplicate selected commit %s", sha)
@@ -52,8 +67,8 @@ func (opts WorkspacePullOpts) Validate() error {
 }
 
 // IsFullGitSHA reports whether sha is a full lowercase hex commit hash
-// (SHA-1 or SHA-256). Workspace Git APIs demand full hashes: abbreviations
-// and symbolic refs would make recorded recipes ambiguous.
+// (SHA-1 or SHA-256). Recorded workspace Git operations demand full hashes:
+// public APIs must resolve any abbreviations before recording recipes.
 func IsFullGitSHA(sha string) bool {
 	if len(sha) != 40 && len(sha) != 64 {
 		return false
