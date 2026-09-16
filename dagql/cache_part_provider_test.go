@@ -101,3 +101,98 @@ func TestPartOfferReplacementNotExhausted(t *testing.T) {
 	require.Greater(t, source.offerRev, oldRevision)
 	require.NoError(t, source.Release(ctx))
 }
+
+func TestPartFixedProviderMultiBuffer(t *testing.T) {
+	body := strings.Repeat("0123456789abcdef", 20000)
+	for _, ranges := range []bool{true, false} {
+		name := "full-body"
+		if ranges {
+			name = "ranges"
+		}
+		t.Run(name, func(t *testing.T) {
+			var requests atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.Header.Get("Range") == "" {
+					t.Error("Range must remain the first choice")
+				}
+				if ranges {
+					http.ServeContent(w, r, "blob", time.Time{}, strings.NewReader(body))
+					return
+				}
+				_, _ = io.WriteString(w, body)
+			}))
+			defer server.Close()
+			descriptor := ocispec.Descriptor{Digest: digest.FromString(body), Size: int64(len(body))}
+			offer := PersistedPartOffer{Chain: OfferedChain{Layers: []snapshots.ExportLayer{{Descriptor: descriptor}}, Addresses: map[digest.Digest]BlobAddress{descriptor.Digest: {URL: server.URL}}}}
+			reader, err := (fixedPartContentSource{}).Provider(t.Context(), offer, nil).ReaderAt(t.Context(), descriptor)
+			require.NoError(t, err)
+			defer reader.Close()
+			const bufferSize = 16 * 1024
+			buffer := make([]byte, bufferSize)
+			reads := int64(0)
+			for off := 0; off < len(body); {
+				n, err := reader.ReadAt(buffer, int64(off))
+				require.Equal(t, body[off:off+n], string(buffer[:n]))
+				if off+n == len(body) {
+					require.ErrorIs(t, err, io.EOF)
+				} else {
+					require.NoError(t, err)
+				}
+				off += n
+				reads++
+			}
+			want := int64(1)
+			if ranges {
+				want = reads
+			}
+			require.Equal(t, want, requests.Load())
+			// A nonsequential offset starts a fresh Range request; a 200 response
+			// discards just the prefix and then resumes sequential consumption.
+			n, err := reader.ReadAt(buffer[:31], 37)
+			require.NoError(t, err)
+			require.Equal(t, body[37:68], string(buffer[:n]))
+			n, err = reader.ReadAt(buffer[:31], 68)
+			require.NoError(t, err)
+			require.Equal(t, body[68:99], string(buffer[:n]))
+			extra := int64(1)
+			if ranges {
+				extra = 2
+			}
+			require.Equal(t, want+extra, requests.Load())
+			n, err = reader.ReadAt(buffer[:31], 7)
+			require.NoError(t, err)
+			require.Equal(t, body[7:38], string(buffer[:n]))
+			require.Equal(t, want+extra+1, requests.Load(), "rewind closes the retained stream and reissues")
+			t.Logf("bytes=%d buffer=%d reads=%d requests=%d initial-path-requests=%d", len(body), bufferSize, reads, requests.Load(), want)
+		})
+	}
+}
+
+func TestPartFixedProviderCancellationClosesStream(t *testing.T) {
+	closed := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, strings.Repeat("x", 100))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		close(closed)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	descriptor := ocispec.Descriptor{Digest: digest.FromString("stream"), Size: 100000}
+	offer := PersistedPartOffer{Chain: OfferedChain{Addresses: map[digest.Digest]BlobAddress{descriptor.Digest: {URL: server.URL}}}}
+	reader, err := (fixedPartContentSource{}).Provider(ctx, offer, nil).ReaderAt(ctx, descriptor)
+	require.NoError(t, err)
+	_, err = reader.ReadAt(make([]byte, 16), 0)
+	require.NoError(t, err)
+	cancel()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancellation did not close retained response")
+	}
+	_, err = reader.ReadAt(make([]byte, 16), 16)
+	require.ErrorIs(t, err, context.Canceled)
+	require.NoError(t, reader.Close())
+}

@@ -69,51 +69,109 @@ func (p *fixedPartProvider) ReaderAt(ctx context.Context, desc ocispecs.Descript
 	return &partHTTPReader{ctx: ctx, cancel: cancel, client: p.client, url: a.URL, size: desc.Size}, nil
 }
 
-// Range reads bound memory to the importer's buffer. Closing a reader cancels
-// outstanding requests; no response body or donor row outlives the import.
+// Reads are serialized only while using this ReaderAt's response. Range
+// responses are bounded requests; a Range-ignoring endpoint keeps one body for
+// consecutive offsets. No blob-sized buffer or shared provider state is used.
 type partHTTPReader struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	client *http.Client
 	url    string
 	size   int64
-	once   sync.Once
+	mu     sync.Mutex
+	stream *partHTTPStream
+	offset int64
+	stop   func() bool
 }
 
-func (r *partHTTPReader) Size() int64  { return r.size }
-func (r *partHTTPReader) Close() error { r.once.Do(r.cancel); return nil }
+type partHTTPStream struct {
+	io.ReadCloser
+	once sync.Once
+	err  error
+}
+
+func (s *partHTTPStream) Close() error {
+	s.once.Do(func() { s.err = s.ReadCloser.Close() })
+	return s.err
+}
+func (r *partHTTPReader) closeStream() {
+	if r.stream != nil {
+		r.stop()
+		_ = r.stream.Close()
+		r.stream, r.stop = nil, nil
+	}
+}
+func (r *partHTTPReader) Close() error {
+	// Cancel first: a read holding mu may be blocked on the transport.
+	r.cancel()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closeStream()
+	return nil
+}
+func (r *partHTTPReader) Size() int64 { return r.size }
 func (r *partHTTPReader) ReadAt(p []byte, off int64) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := context.Cause(r.ctx); err != nil {
+		return 0, err
+	}
 	if len(p) == 0 {
 		return 0, nil
 	}
 	if off < 0 {
-		return 0, fmt.Errorf("negative blob offset")
+		return 0, fmt.Errorf("negative content offset")
 	}
 	if off >= r.size {
 		return 0, io.EOF
 	}
-	limit := len(p)
-	if int64(limit) > r.size-off {
-		limit = int(r.size - off)
+	limit := min(int64(len(p)), r.size-off)
+	if r.stream != nil && off != r.offset {
+		r.closeStream()
 	}
-	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, r.url, nil)
-	if err != nil {
-		return 0, err
+	if r.stream == nil {
+		req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, r.url, nil)
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, off+limit-1))
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return 0, err
+		}
+		if resp.StatusCode == http.StatusPartialContent {
+			defer resp.Body.Close()
+			n, err := io.ReadFull(resp.Body, p[:limit])
+			if err == nil && limit < int64(len(p)) {
+				err = io.EOF
+			}
+			return n, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return 0, fmt.Errorf("content HTTP status %d", resp.StatusCode)
+		}
+		r.stream = &partHTTPStream{ReadCloser: resp.Body}
+		stream := r.stream
+		r.stop = context.AfterFunc(r.ctx, func() { _ = stream.Close() })
+		r.offset = 0
+		if off > 0 {
+			if _, err := io.CopyN(io.Discard, r.stream, off); err != nil {
+				r.closeStream()
+				return 0, errors.Join(err, context.Cause(r.ctx))
+			}
+			r.offset = off
+		}
 	}
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, off+int64(limit)-1))
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return 0, err
+	n, err := io.ReadFull(r.stream, p[:limit])
+	r.offset += int64(n)
+	if err != nil || r.offset == r.size {
+		r.closeStream()
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusPartialContent && (off != 0 || resp.StatusCode != http.StatusOK) {
-		return 0, fmt.Errorf("blob request: HTTP %d", resp.StatusCode)
-	}
-	n, err := io.ReadFull(resp.Body, p[:limit])
-	if err == nil && limit < len(p) {
+	if err == nil && limit < int64(len(p)) {
 		err = io.EOF
 	}
-	return n, err
+	return n, errors.Join(err, context.Cause(r.ctx))
 }
 
 type partDemandContextKey struct{}
