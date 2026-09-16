@@ -26,10 +26,12 @@ import (
 
 type partObservedManager struct {
 	bkcache.SnapshotManager
-	bodies        atomic.Int64
-	failOwner     atomic.Bool
-	ownerAttempts atomic.Int64
-	pins          atomic.Int64
+	bodies             atomic.Int64
+	failOwner          atomic.Bool
+	ownerAttempts      atomic.Int64
+	pins               atomic.Int64
+	failPinRelease     atomic.Bool
+	pinReleaseAttempts atomic.Int64
 }
 
 func (m *partObservedManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
@@ -52,7 +54,26 @@ func (m *partObservedManager) AttachLease(ctx context.Context, id, snapshot stri
 
 func (m *partObservedManager) PinSnapshot(ctx context.Context, id string) (bkcache.ImmutableRef, error) {
 	m.pins.Add(1)
-	return m.SnapshotManager.PinSnapshot(ctx, id)
+	ref, err := m.SnapshotManager.PinSnapshot(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &partObservedPin{ImmutableRef: ref, manager: m}, nil
+}
+
+type partObservedPin struct {
+	bkcache.ImmutableRef
+	manager *partObservedManager
+}
+
+var partInjectedPinReleaseFailure = errors.New("injected pin release failure")
+
+func (p *partObservedPin) Release(ctx context.Context) error {
+	p.manager.pinReleaseAttempts.Add(1)
+	if p.manager.failPinRelease.Swap(false) {
+		return partInjectedPinReleaseFailure
+	}
+	return p.ImmutableRef.Release(ctx)
 }
 
 type partTestContentSource struct{ provider content.InfoReaderProvider }
@@ -61,7 +82,7 @@ func (s partTestContentSource) Provider(context.Context, dagql.PersistedPartOffe
 	return s.provider
 }
 func TestPartAcquisitionRootRoutes(t *testing.T) {
-	for _, mode := range []string{"ready", "chain", "chain-sync-retry", "chain-sync-restart", "chain-fallback", "producer"} {
+	for _, mode := range []string{"ready", "chain", "chain-sync-retry", "chain-sync-restart", "chain-pin-release-retry", "chain-fallback", "producer"} {
 		t.Run(mode, func(t *testing.T) {
 			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 			actx, a, asrv := transferCache(t, aStore, filepath.Join(t.TempDir(), "a.db"), "a")
@@ -105,7 +126,18 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 				observed.ownerAttempts.Store(0)
 				observed.pins.Store(0)
 				started := time.Now()
-				if strings.HasPrefix(mode, "chain-sync-") {
+				if mode == "chain-pin-release-retry" {
+					observed.failPinRelease.Store(true)
+					require.ErrorIs(t, b.Evaluate(bctx, result), partInjectedPinReleaseFailure)
+					reads, syncs := provider.Reads.Load(), observed.ownerAttempts.Load()
+					require.Positive(t, reads)
+					require.EqualValues(t, 1, observed.pinReleaseAttempts.Load())
+					require.NoError(t, b.Evaluate(bctx, result))
+					require.Equal(t, reads, provider.Reads.Load(), "retained pin retry cannot redownload")
+					require.Equal(t, syncs, observed.ownerAttempts.Load(), "successful lease sync cannot repeat")
+					require.EqualValues(t, 2, observed.pinReleaseAttempts.Load())
+					require.EqualValues(t, 1, observed.pins.Load())
+				} else if strings.HasPrefix(mode, "chain-sync-") {
 					observed.failOwner.Store(true)
 					require.ErrorIs(t, b.Evaluate(bctx, result), partInjectedOwnerFailure)
 					_, err := b.CapturePersistedRecord(bctx, result)
