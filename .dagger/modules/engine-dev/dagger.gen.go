@@ -388,6 +388,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*EngineDev).NetworkCidr(&parent), nil
+		case "NetworkOwnership":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*EngineDev).NetworkOwnership(&parent, ctx)
 		case "Publish":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -437,6 +444,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*EngineDev).ReleaseDryRun(&parent, ctx)
+		case "Playground":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).Playground(&parent, ctx)
 		case "Service":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -843,6 +857,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithSourceMap(dag.SourceMap("main.go", 108, 1))).
 					WithFunction(
+						dag.Function("NetworkOwnership",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Check that engine network connections select an accounting owner.").
+							WithSourceMap(dag.SourceMap("test.go", 22, 1)).
+							WithCheck()).
+					WithFunction(
 						dag.Function("Publish",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Publish all engine images to a registry").
@@ -858,6 +878,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithSourceMap(dag.SourceMap("main.go", 367, 1)).
 							WithCheck()).
+					WithFunction(
+						dag.Function("Playground",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Open a shell with this source tree and a network-metrics engine.").
+							WithSourceMap(dag.SourceMap("main.go", 252, 1))).
 					WithFunction(
 						dag.Function("Service",
 							dag.TypeDef().WithObject("Service")).
