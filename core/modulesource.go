@@ -1196,37 +1196,30 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, error) {
 		localPath,             // path of the module's git root, on the host
 		src.SourceRootSubpath, // path of the module directory, relative to its git root
 	)
-	// Check if the env file exists
-	var envFileExists bool
-	if err := dag.Select(ctx, dag.Root(), &envFileExists,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(moduleDirPath)},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String]{".env"}},
-			},
-		},
-		dagql.Selector{
-			Field: "exists",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".env")},
-				{Name: "expectedType", Value: dagql.Opt(ExistsTypeRegular)},
-			},
-		},
-	); status.Code(err) == codes.NotFound {
-		// It's possible that the module directory *doesn't exist yet*
+	envFilePath := path.Join(moduleDirPath, ".env")
+	// Check whether the env file exists with one stat of the caller's host,
+	// rather than by syncing the module directory. The common case is that
+	// there is none, and every command loads the module.
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
+	}
+	_, stat, err := CallerStatFS{bk}.Stat(ctx, envFilePath)
+	if errors.Is(err, os.ErrNotExist) {
+		// Covers a module directory that *doesn't exist yet*
 		// (ie. we are called from `dagger init ./FOO` and `FOO` will be populated after we return)
-		// Therefore: if parent directory doesn't exist, just return "no result" without error
 		return nil, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to check for inner env file in %s: %w",
 			moduleDirPath, err)
 	}
-	if !envFileExists {
+	if stat.FileType != FileTypeRegular {
 		return nil, nil
 	}
-	envFilePath := path.Join(moduleDirPath, ".env")
 	var envFile *EnvFile
 	if err := dag.Select(ctx, dag.Root(), &envFile,
 		dagql.Selector{Field: "host"},
@@ -1311,30 +1304,21 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 	if envFilePath == "" {
 		return &EnvFile{}, "", nil
 	}
-	// Check if the found .env path is a regular file (not a directory)
-	envFileDir := path.Dir(envFilePath.String())
-	envFileName := path.Base(envFilePath.String())
-	var isRegularFile bool
-	if err := dag.Select(ctx, dag.Root(), &isRegularFile,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(envFileDir)},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(envFileName)}},
-			},
-		},
-		dagql.Selector{
-			Field: "exists",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(envFileName)},
-				{Name: "expectedType", Value: dagql.Opt(ExistsTypeRegular)},
-			},
-		},
-	); err != nil {
+	// Check that the found .env path is a regular file (not a directory) with
+	// one stat of the caller's host, rather than by syncing its directory.
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get engine client: %w", err)
+	}
+	_, stat, err := CallerStatFS{bk}.Stat(ctx, envFilePath.String())
+	if err != nil {
 		return nil, "", fmt.Errorf("failed to check outer env file type at %q: %w", envFilePath.String(), err)
 	}
-	if !isRegularFile {
+	if stat.FileType != FileTypeRegular {
 		return &EnvFile{}, "", nil
 	}
 	var envFile *EnvFile
@@ -2632,6 +2616,30 @@ func (fs ModuleSourceFS) workspaceEntry(ctx context.Context, path string) (dagql
 }
 
 func (fs ModuleSourceFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	if fs.src != nil && fs.src.Kind == ModuleSourceKindLocal && fs.src.Workspace.Self() == nil && fs.bk != nil {
+		// Read straight from the caller's host, as the workspace config is
+		// read: syncing the file's directory into the engine just to read
+		// one file costs a round trip and a snapshot on every module load.
+		localPath, err := fs.src.LocalContextDirectoryPath()
+		if err != nil {
+			return nil, err
+		}
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(localPath, fs.src.SourceRootSubpath, path)
+		} else {
+			path = filepath.Join(localPath, path)
+		}
+		return fs.bk.ReadCallerHostFile(ctx, path)
+	}
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
