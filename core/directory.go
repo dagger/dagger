@@ -217,6 +217,7 @@ const (
 )
 
 const (
+	persistedDirectoryLazyKindScratch                       = "scratch"
 	persistedDirectoryLazyKindContainerRootFS               = "container.rootfs"
 	persistedDirectoryLazyKindContainerDirectory            = "container.directory"
 	persistedDirectoryLazyKindWithDirectory                 = "directory.withDirectory"
@@ -661,6 +662,10 @@ func attachFileResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res
 
 func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Directory]) (string, json.RawMessage, error) {
 	switch lazy := lazy.(type) {
+	case *DirectoryScratchLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindScratch, payload, err
+
 	case *DirectoryGitCommitTreeLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindGitCommitTree, payload, err
@@ -730,6 +735,12 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeContext, lazyKind string, payload json.RawMessage) (Lazy[*Directory], error) {
 	switch lazyKind {
+	case persistedDirectoryLazyKindScratch:
+		if err := validateDirectoryScratchPayload(payload); err != nil {
+			return nil, err
+		}
+		return &DirectoryScratchLazy{LazyState: NewLazyState()}, nil
+
 	case persistedDirectoryLazyKindGitCommitTree:
 		return decodeDirectoryGitCommitTreeLazy(ctx, dec, payload)
 

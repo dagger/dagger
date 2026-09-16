@@ -91,7 +91,7 @@ ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(cont
 		return
 	}
 
-	for _, site := range []string{"cleaned", "HTTP", "bundle", "schema File", "builtin Container", "mounted File", "mounted Directory"} {
+	for _, site := range []string{"cleaned", "HTTP", "bundle", "schema File", "builtin Container", "mounted File", "mounted Directory", "scratch"} {
 		t.Run(site, func(t *testing.T) {
 			ctx, srv, cache, server := resolverOutputFixture(t)
 			releaseErr := errors.New("injected recording cleanup failure")
@@ -99,6 +99,11 @@ ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(cont
 			var invoke func(context.Context) error
 			var borrowed *resolverOutputRef
 			switch site {
+			case "scratch":
+				server.platform = core.Platform{OS: "linux", Architecture: "amd64"}
+				invoke = installRecordingFaultCall(t, srv, func(ctx context.Context) (dagql.ObjectResult[*core.Directory], error) {
+					return (&directorySchema{}).directory(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), struct{}{})
+				})
 			case "mounted File", "mounted Directory":
 				borrowed = &resolverOutputRef{root: t.TempDir(), id: "mount-input"}
 				server.manager.inputs = map[string]*resolverOutputRef{borrowed.id: borrowed}

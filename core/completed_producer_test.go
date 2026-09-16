@@ -12,9 +12,24 @@ import (
 )
 
 func TestRecordCompletedProducer(t *testing.T) {
+	t.Run("scratch", testRecordCompletedProducerScratch)
 	t.Run("Directory", testRecordCompletedProducerDirectory)
 	t.Run("File", testRecordCompletedProducerFile)
 	t.Run("existing completed kinds attach", testRecordCompletedProducerExistingKindsAttach)
+}
+
+func testRecordCompletedProducerScratch(t *testing.T) {
+	dir := containerPersistenceTestDirectory("scratch", "/")
+	path, snapshot := dir.Dir, dir.Snapshot
+	lazy := &DirectoryScratchLazy{LazyState: NewLazyState()}
+	require.NoError(t, RecordCompletedProducer(dir, lazy))
+	require.Nil(t, dir.Lazy)
+	require.Same(t, lazy, dir.completedRecipe)
+	require.Same(t, path, dir.Dir)
+	require.Same(t, snapshot, dir.Snapshot)
+	require.False(t, lazy.lazyInitComplete.Load())
+	require.Error(t, RecordCompletedProducer(dir, &DirectoryScratchLazy{LazyState: NewLazyState()}))
+	require.Same(t, lazy, dir.completedRecipe)
 }
 
 func testRecordCompletedProducerDirectory(t *testing.T) {

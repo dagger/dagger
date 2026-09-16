@@ -430,7 +430,7 @@ func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, 
 	return parent, nil
 }
 
-func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Query], _ struct{}) (inst dagql.ObjectResult[*core.Directory], _ error) {
+func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Query], _ struct{}) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -449,10 +449,17 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 	}
 	dir.SetPath("/")
 	dir.SetSnapshot(finalRef)
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, dir.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
+	if err := core.RecordCompletedProducer(dir, &core.DirectoryScratchLazy{LazyState: core.NewLazyState()}); err != nil {
+		return inst, err
+	}
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
-		_ = dir.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
 	return inst, nil

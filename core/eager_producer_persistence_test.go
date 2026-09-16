@@ -46,6 +46,7 @@ func newEagerProducerFixture(t *testing.T) *eagerProducerFixture {
 		&DirectoryGitBundleImportLazy{LazyState: NewLazyState(), Repo: repo, Bundle: bundle, PrerequisiteRef: "refs/heads/main"},
 		&DirectoryGitTreeLazy{LazyState: NewLazyState(), Ref: ref, DiscardGitDir: true, Depth: 0, IncludeTags: false},
 		&DirectoryGitCommitTreeLazy{LazyState: NewLazyState(), Commit: commit, DiscardGitDir: false, Depth: 7, IncludeTags: true},
+		&DirectoryScratchLazy{LazyState: NewLazyState()},
 	}}
 }
 
@@ -54,6 +55,8 @@ func attachEagerProducerDirectory(t *testing.T, f *eagerProducerFixture, dir *Di
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Type: dagql.NewResultCallType(dir.Type())}
 	var receiver dagql.AnyResult
 	switch recipe := recipe.(type) {
+	case *DirectoryScratchLazy:
+		frame.Field = "directory"
 	case *DirectoryGitCleanedLazy:
 		frame.Field = "__cleaned"
 		receiver = recipe.Repo
@@ -70,7 +73,9 @@ func attachEagerProducerDirectory(t *testing.T, f *eagerProducerFixture, dir *Di
 	default:
 		t.Fatalf("unexpected producer %T", recipe)
 	}
-	frame.Receiver = &dagql.ResultCallRef{ResultID: persistedRowID(t, f.cache, receiver)}
+	if receiver != nil {
+		frame.Receiver = &dagql.ResultCallRef{ResultID: persistedRowID(t, f.cache, receiver)}
+	}
 	result, err := f.cache.GetOrInitCall(f.ctx, f.env.session, f.srv, &dagql.CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) { return dagql.NewObjectResultForCall(dir, f.srv, frame) })
 	require.NoError(t, err)
 	return result
@@ -87,6 +92,38 @@ func TestEagerProducerCodecs(t *testing.T) {
 			decoded, err := decodePersistedDirectoryLazy(f.ctx, dec, kind, raw)
 			require.NoError(t, err)
 			require.NotSame(t, recipe, decoded)
+			if scratch, ok := decoded.(*DirectoryScratchLazy); ok {
+				require.Equal(t, "{}", string(raw))
+				require.False(t, scratch.lazyInitComplete.Load())
+				require.NotSame(t, recipe.(*DirectoryScratchLazy).LazyMu, scratch.LazyMu)
+				deps, err := scratch.AttachDependencies(f.ctx, func(dagql.AnyResult) (dagql.AnyResult, error) { t.Fatal("scratch attached an input"); return nil, nil })
+				require.NoError(t, err)
+				require.Empty(t, deps)
+				for _, savedKind := range []string{"scratch", ""} {
+					payload, err := json.Marshal(persistedDirectoryPayload{Platform: Platform{OS: "linux", Architecture: "arm64"}, LazyKind: savedKind, LazyJSON: raw})
+					require.NoError(t, err)
+					route, err := foreignFamilyCodec("Directory").RouteParts(dagql.PersistedPayloadVisit{Payload: payload, Path: dagql.PersistedRefPath{}.Field("items").Index(2)}, "snapshot")
+					require.NoError(t, err)
+					require.Equal(t, savedKind != "", route.HasProducer)
+					if savedKind != "" {
+						require.Equal(t, dagql.LazyGroupWhole, route.Group.Group)
+						require.Equal(t, []dagql.PersistedPartAddress{{OutputPath: route.Group.OutputPath, Part: "snapshot"}}, route.WriteSet)
+					}
+				}
+				for _, payload := range []string{"", "null", "[]", "0", `"{}"`, `{"platform":"linux/amd64"}`, `{"ignored":null}`, `{} {}`, `{`} {
+					_, err := decodePersistedDirectoryLazy(f.ctx, dec, kind, json.RawMessage(payload))
+					require.Error(t, err, payload)
+					_, err = persistedDirectoryLazyVisitors[kind](json.RawMessage(payload), newPersistedRefWalker(func(*dagql.PersistedRef) error { t.Fatal("scratch visited a reference"); return nil }, nil))
+					require.Error(t, err, payload)
+				}
+				for _, payload := range []string{`{}`, " \n{ \t }\n"} {
+					_, err := decodePersistedDirectoryLazy(f.ctx, dec, kind, json.RawMessage(payload))
+					require.NoError(t, err)
+					out, err := persistedDirectoryLazyVisitors[kind](json.RawMessage(payload), newPersistedRefWalker(func(*dagql.PersistedRef) error { t.Fatal("scratch visited a reference"); return nil }, nil))
+					require.NoError(t, err)
+					require.Equal(t, payload, string(out))
+				}
+			}
 			_, again, err := encodePersistedDirectoryLazy(f.ctx, enc, decoded)
 			require.NoError(t, err)
 			require.JSONEq(t, string(raw), string(again))
@@ -288,7 +325,11 @@ func TestEagerProducerRelocation(t *testing.T) {
 		require.NoError(t, RecordCompletedProducer(dir, recipe))
 		result := attachEagerProducerDirectory(t, f, dir, recipe)
 		refs := assertPersistedRefsMatchOwnership(t, f.ctx, f.cache, result)
-		require.NotEmpty(t, refs)
+		if _, scratch := recipe.(*DirectoryScratchLazy); scratch {
+			require.Empty(t, refs)
+		} else {
+			require.NotEmpty(t, refs)
+		}
 		rec := coreRelocationRecord(t, f.ctx, f.cache, result)
 		mapping := map[uint64]uint64{rec.ResultID: rec.ResultID}
 		for _, id := range refs {

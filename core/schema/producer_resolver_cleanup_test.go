@@ -152,11 +152,12 @@ func TestProducerResolverCleanup(t *testing.T) {
 // Faults happen after the eager body has produced its immutable output.
 type resolverOutputRef struct {
 	bkcache.ImmutableRef
-	root, id          string
-	releases          int
-	faultValue        dagql.Typed
-	faultLazy         any
-	faultReleaseError error
+	root, id           string
+	releases           int
+	faultValue         dagql.Typed
+	faultLazy          any
+	faultReleaseError  error
+	releaseAlwaysFails bool
 }
 
 func (r *resolverOutputRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
@@ -166,7 +167,7 @@ func (r *resolverOutputRef) ID() string         { return r.id }
 func (r *resolverOutputRef) SnapshotID() string { return r.id }
 func (r *resolverOutputRef) Release(ctx context.Context) error {
 	r.releases++
-	if r.faultValue != nil {
+	if r.faultValue != nil || r.releaseAlwaysFails {
 		return errors.Join(ctx.Err(), r.faultReleaseError)
 	}
 	return ctx.Err()
@@ -193,6 +194,12 @@ type resolverOutputManager struct {
 	leaseFault            error
 	recordingReleaseError error
 	inputs                map[string]*resolverOutputRef
+}
+
+func (m *resolverOutputManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+	ref := &resolverOutputRef{root: m.t.TempDir(), id: "scratch", faultReleaseError: m.recordingReleaseError, releaseAlwaysFails: m.recordingReleaseError != nil}
+	m.outputs = append(m.outputs, ref)
+	return ref, nil
 }
 
 func (m *resolverOutputManager) GetBySnapshotID(_ context.Context, id string, _ ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
@@ -341,6 +348,27 @@ func TestProducerResolverCapture(t *testing.T) {
 	}
 }
 func testProducerResolverOutputs(t *testing.T, recorded bool) {
+	t.Run("scratch wrapping", func(t *testing.T) {
+		ctx, srv, cache, server := resolverOutputFixture(t)
+		server.platform = core.Platform{OS: "linux", Architecture: "amd64"}
+		if recorded {
+			ctx = producerResolverCall(ctx, "directory", &core.Directory{})
+		} else {
+			server.manager.recordingReleaseError = errors.New("scratch cleanup failure")
+		}
+		result, err := (&directorySchema{}).directory(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), struct{}{})
+		require.Len(t, server.manager.outputs, 1)
+		if recorded {
+			require.NoError(t, err)
+			assertResolverProducer(t, ctx, cache, result.Self(), "scratch")
+			require.NoError(t, result.Self().OnRelease(ctx))
+		} else {
+			require.ErrorContains(t, err, "call is nil")
+			require.ErrorIs(t, err, server.manager.recordingReleaseError)
+			require.Equal(t, dagql.ObjectResult[*core.Directory]{}, result)
+		}
+		require.Equal(t, 1, server.manager.outputs[0].releases)
+	})
 	t.Run("http state sync", func(t *testing.T) {
 		ctx, srv, cache, server := resolverOutputFixture(t)
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "body") }))
