@@ -71,8 +71,8 @@ const (
 
 	DaggerQemuEmulatorMountPoint = "/dev/.dagger_qemu_emulator"
 
-	cgroupSampleInterval     = 5 * time.Second
-	finalCgroupSampleTimeout = 5 * time.Second
+	defaultCgroupSampleInterval = 5 * time.Second
+	finalCgroupSampleTimeout    = 5 * time.Second
 
 	defaultHostname = "dagger"
 )
@@ -1480,8 +1480,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			cgroupSamplerPool.Wait()
 		}))
 
+		sampleInterval := c.CgroupSampleInterval
+		if sampleInterval <= 0 {
+			sampleInterval = defaultCgroupSampleInterval
+		}
+
 		cgroupSamplerPool.Go(func() {
-			ticker := time.NewTicker(cgroupSampleInterval)
+			ticker := time.NewTicker(sampleInterval)
 			defer ticker.Stop()
 
 			for {

@@ -34,6 +34,10 @@ type Config struct {
 
 	History *HistoryConfig `toml:"history"`
 
+	// Telemetry configures dagger-specific telemetry collection.
+	// (dagger addition, not part of upstream buildkit)
+	Telemetry TelemetryConfig `toml:"telemetry"`
+
 	Frontends struct {
 		Dockerfile DockerfileFrontendConfig `toml:"dockerfile.v0"`
 		Gateway    GatewayFrontendConfig    `toml:"gateway.v0"`
@@ -190,6 +194,14 @@ type DNSConfig struct {
 type HistoryConfig struct {
 	MaxAge     Duration `toml:"maxAge"`
 	MaxEntries int64    `toml:"maxEntries"`
+}
+
+// TelemetryConfig configures dagger-specific telemetry collection.
+// (dagger addition, not part of upstream buildkit)
+type TelemetryConfig struct {
+	// CgroupSampleInterval is how often container resource metrics (CPU,
+	// memory, IO, network) are sampled from each running container's cgroup.
+	CgroupSampleInterval Duration `toml:"cgroupSampleInterval"`
 }
 
 type DockerfileFrontendConfig struct {
