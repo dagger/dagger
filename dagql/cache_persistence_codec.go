@@ -283,9 +283,9 @@ const (
 // PersistedRefPathElem is one declared position: a field name or a list
 // index relative to the enclosing owner.
 type PersistedRefPathElem struct {
-	Field   string
-	Index   int
-	IsIndex bool
+	Field   string `json:"field,omitempty"`
+	Index   int    `json:"index,omitempty"`
+	IsIndex bool   `json:"isIndex,omitempty"`
 }
 
 // PersistedRefPath is the declared position of a reference relative to its
@@ -441,7 +441,8 @@ type PersistedObjectFamily struct {
 	// Typed is a zero value of the Go type whose codec produces this family.
 	Typed Typed
 	// Visitor walks the family's declared references.
-	Visitor PersistedPayloadVisitor
+	Visitor  PersistedPayloadVisitor
+	Transfer PersistedTransferCodec
 }
 
 var (
@@ -511,10 +512,10 @@ func PersistedObjectFamilies() []PersistedObjectFamily {
 // PersistedRecord is one persisted row as the reference visitor sees it: its
 // identity, generic envelope, recorded call and declared storage links.
 type PersistedRecord struct {
-	ResultID      uint64
-	Envelope      PersistedResultEnvelope
-	Call          *ResultCall
-	SnapshotLinks []PersistedSnapshotRefLink
+	ResultID      uint64                     `json:"resultID"`
+	Envelope      PersistedResultEnvelope    `json:"envelope"`
+	Call          *ResultCall                `json:"call"`
+	SnapshotLinks []PersistedSnapshotRefLink `json:"snapshotLinks,omitempty"`
 }
 
 // VisitEncodedReferences walks every declared reference of one persisted row:
@@ -561,6 +562,15 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, links []PersistedSnapshotRefLink, path PersistedRefPath, root bool, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
 	if env.Version != persistedResultEnvelopeVersion {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unsupported version %d", path, env.Version)
+	}
+	if !root && (env.Imported || len(env.PendingOffers) != 0) {
+		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: root metadata on inline value", path)
+	}
+	env.PendingOffers = clonePartOffers(env.PendingOffers)
+	for i := range env.PendingOffers {
+		if err := visitPersistedPartOffer(&env.PendingOffers[i], path.Field("pendingOffers").Index(i), visit); err != nil {
+			return PersistedResultEnvelope{}, err
+		}
 	}
 	if root && env.Kind == persistedResultKindRef {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope: root envelope cannot be a result reference")

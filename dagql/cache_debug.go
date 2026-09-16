@@ -25,6 +25,7 @@ const (
 )
 
 type EGraphDebugSnapshot struct {
+	OfferOwners        []CacheDebugOfferOwner     `json:"offer_owners,omitempty"`
 	TraceFormatVersion int                        `json:"trace_format_version"`
 	BootID             string                     `json:"boot_id"`
 	CapturedAtSeq      uint64                     `json:"captured_at_seq"`
@@ -37,6 +38,7 @@ type EGraphDebugSnapshot struct {
 }
 
 type CacheDebugSnapshot struct {
+	OfferOwners             []CacheDebugOfferOwner        `json:"offer_owners,omitempty"`
 	TraceFormatVersion      int                           `json:"trace_format_version"`
 	BootID                  string                        `json:"boot_id"`
 	CapturedAtSeq           uint64                        `json:"captured_at_seq"`
@@ -960,6 +962,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 	defer c.egraphMu.RUnlock()
 
 	snap := &EGraphDebugSnapshot{
+		OfferOwners:        c.debugOfferOwnersLocked(),
 		TraceFormatVersion: egraphTraceFormatV1,
 		BootID:             c.traceBootID,
 		CapturedAtSeq:      atomic.LoadUint64(&c.traceSeq),
@@ -1218,6 +1221,12 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	}
 
 	if _, err := bw.WriteString("{"); err != nil {
+		return err
+	}
+	if err := writeField("offer_owners"); err != nil {
+		return err
+	}
+	if err := writeValue(c.debugOfferOwnersLocked()); err != nil {
 		return err
 	}
 	if err := writeField("trace_format_version"); err != nil {

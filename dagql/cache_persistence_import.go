@@ -163,6 +163,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 
 			res := &sharedResult{
 				id:                    resultID,
+				imported:              env.Imported,
 				isObject:              env.Kind == persistedResultKindObject,
 				sessionResourceHandle: env.SessionResourceHandle,
 				expiresAtUnix:         row.ExpiresAtUnix,
@@ -186,7 +187,6 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				}
 				res.self = absent
 				res.hasValue = true
-				res.persistedEnvelope = nil
 				c.tracePersistedPayloadImportedEager(ctx, importRunID, resultID, "", "nil")
 			} else {
 				eagerDecodeResultIDs = append(eagerDecodeResultIDs, resultID)
@@ -361,7 +361,16 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role)
 		}
 
+		if err := c.validateStoredOwnershipLocked(); err != nil {
+			return err
+		}
+		if err := c.restoreOfferOwnersLocked(ctx); err != nil {
+			return err
+		}
 		for _, res := range c.resultsByID {
+			if res.hasValue {
+				res.persistedEnvelope = nil
+			}
 			res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), res.onRelease)
 		}
 

@@ -39,6 +39,7 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		c.egraphMu.Unlock()
 		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
 	}
+	imported, offers := shared.imported, shared.pendingOffersLocked()
 	c.incrementIncomingOwnershipLocked(ctx, shared)
 	c.egraphMu.Unlock()
 	defer func() {
@@ -108,6 +109,7 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 	if err := context.Cause(ctx); err != nil {
 		return PersistedRecord{}, err
 	}
+	encoding.Envelope.Imported, encoding.Envelope.PendingOffers = imported, offers
 	return PersistedRecord{
 		ResultID:      uint64(shared.id),
 		Envelope:      clonePersistedEnvelope(encoding.Envelope),
@@ -117,6 +119,7 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 }
 
 func clonePersistedEnvelope(env PersistedResultEnvelope) PersistedResultEnvelope {
+	env.PendingOffers = clonePartOffers(env.PendingOffers)
 	env.ObjectJSON = slices.Clone(env.ObjectJSON)
 	env.ScalarJSON = slices.Clone(env.ScalarJSON)
 	env.Items = slices.Clone(env.Items)

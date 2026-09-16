@@ -29,7 +29,8 @@ const (
 // the recorded call instead of a flattened element name; object envelopes
 // name their codec family; list items naming another row are result_ref
 // envelopes without a duplicated body.
-const persistedResultEnvelopeVersion = 3
+// 4: root origin and independent pending offer ownership.
+const persistedResultEnvelopeVersion = 4
 
 // PersistedResultEnvelope is the shared on-disk payload envelope for persisted
 // result self values.
@@ -38,8 +39,10 @@ const persistedResultEnvelopeVersion = 3
 // while still carrying enough structured data to decode common SDK-return
 // shapes (scalars, object IDs, lists, nested combinations).
 type PersistedResultEnvelope struct {
-	Version int    `json:"version"`
-	Kind    string `json:"kind"`
+	Imported      bool                 `json:"imported,omitempty"`
+	PendingOffers []PersistedPartOffer `json:"pendingOffers,omitempty"`
+	Version       int                  `json:"version"`
+	Kind          string               `json:"kind"`
 	// TypeName identifies the GraphQL value type of object and scalar
 	// envelopes.
 	TypeName string `json:"typeName,omitempty"`

@@ -91,6 +91,8 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		payload := res.loadPayloadState()
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:              resultID,
+			imported:              res.imported,
+			pendingOffers:         res.pendingOffersLocked(),
 			frame:                 res.loadResultCall().clone(),
 			self:                  payload.self,
 			isObject:              payload.isObject,
@@ -291,7 +293,7 @@ func (c *Cache) snapshotPersistedRootClosureLocked() (map[sharedResultID]struct{
 		if res.attachmentState() != resultAttachmentClean {
 			markInvalid(resultID)
 		}
-		for depID := range res.deps {
+		for depID := range c.ownedResultIDsLocked(res) {
 			parentsByDependency[depID] = append(parentsByDependency[depID], resultID)
 			if c.resultsByID[depID] == nil {
 				markInvalid(resultID)
@@ -334,7 +336,7 @@ func (c *Cache) snapshotPersistedRootClosureLocked() (map[sharedResultID]struct{
 			continue
 		}
 		selected[resultID] = struct{}{}
-		for depID := range res.deps {
+		for depID := range c.ownedResultIDsLocked(res) {
 			stack = append(stack, depID)
 		}
 	}
@@ -467,7 +469,13 @@ func resultSnapshotLinkRows(resultID sharedResultID, links []PersistedSnapshotRe
 	return rows
 }
 
-func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (PersistedResultEncoding, error) {
+func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (encoding PersistedResultEncoding, rerr error) {
+	defer func() {
+		if rerr == nil && snapshot != nil {
+			encoding.Envelope.Imported = snapshot.imported
+			encoding.Envelope.PendingOffers = clonePartOffers(snapshot.pendingOffers)
+		}
+	}()
 	if snapshot != nil && snapshot.persistedEnvelope != nil {
 		return PersistedResultEncoding{
 			Envelope:      *snapshot.persistedEnvelope,

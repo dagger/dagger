@@ -91,10 +91,12 @@ const (
 // cache's live results and symbolic graph. It intentionally models only the
 // existing result, term, and allocated eq-class cardinalities.
 type CacheMetadataEstimate struct {
-	ResultCount    int
-	TermCount      int
-	ClassSlotCount int
-	EstimatedBytes int64
+	ResultCount     int
+	TermCount       int
+	ClassSlotCount  int
+	OfferOwnerCount int
+	OfferOwnerBytes int64
+	EstimatedBytes  int64
 }
 
 // CacheMetadataPruneReport summarizes an automatic structural pruning pass.
@@ -147,7 +149,7 @@ type persistedEdge struct {
 // persisted as result refs. Older snapshots may hold untracked scalar handle
 // strings whose referents were never retained (and whose IDs may have been
 // reused), so they are wiped rather than imported.
-const cachePersistenceSchemaVersion = "19"
+const cachePersistenceSchemaVersion = "20"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
@@ -1499,6 +1501,12 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			continue
 		}
 
+		for _, offer := range res.partOffers {
+			more, err := c.retirePartOfferLocked(ctx, res, offer.record.Address)
+			queue = append(queue, more...)
+			rerr = errors.Join(rerr, err)
+		}
+
 		depIDs := make([]sharedResultID, 0, len(res.deps))
 		for depID := range res.deps {
 			depIDs = append(depIDs, depID)
@@ -1797,6 +1805,8 @@ func wipeSQLiteFiles(dbPath string) error {
 }
 
 type Cache struct {
+	offerOwners      map[offerOwnerID]*offerOwner
+	nextOfferOwnerID offerOwnerID
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
 	callsMu sync.Mutex
 	// sessionMu protects per-session tracked cache-backed results, arbitrary
@@ -2079,6 +2089,13 @@ type cacheUsageMayChange interface {
 
 // sharedResult holds cache-entry state and shared payload published to per-call Result values.
 type sharedResult struct {
+	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
+	imported                    bool
+	partOffers                  map[string]*partOffer
+	transferRevision            uint64
+	dependencyOwnershipRevision uint64
+	// Reverse offer ownership does not propagate lookup requirements.
+	offerParents map[offerOwnerID]struct{}
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
 
@@ -2924,6 +2941,7 @@ func (c *Cache) addExplicitDependencyLocked(
 	}
 
 	parentRes.deps[depRes.id] = struct{}{}
+	parentRes.dependencyOwnershipRevision++
 	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
@@ -4456,11 +4474,15 @@ func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
 		classSlots = 0
 	}
 	estimate := CacheMetadataEstimate{
-		ResultCount:    len(c.resultsByID),
-		TermCount:      len(c.egraphTerms),
-		ClassSlotCount: classSlots,
+		ResultCount:     len(c.resultsByID),
+		TermCount:       len(c.egraphTerms),
+		ClassSlotCount:  classSlots,
+		OfferOwnerCount: len(c.offerOwners),
 	}
-	estimate.EstimatedBytes = cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
+	for _, owner := range c.offerOwners {
+		estimate.OfferOwnerBytes += offerMetadataBytes(owner)
+	}
+	estimate.EstimatedBytes = estimate.OfferOwnerBytes + cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
 		cacheMetadataTermEstimatedBytes*int64(estimate.TermCount) +
 		cacheMetadataClassSlotEstimatedBytes*int64(estimate.ClassSlotCount)
 	return estimate
@@ -5823,6 +5845,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			continue
 		}
 		oc.res.deps[depID] = struct{}{}
+		oc.res.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
