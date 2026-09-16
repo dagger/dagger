@@ -154,10 +154,10 @@ func TestSDKGeneratorScopeProgress(t *testing.T) {
 	root := generatorSnapshot(1, "generate", SpanID{}, "")
 	root.Passthrough = true
 	generator := generatorSnapshot(2, "go-sdk:generate", root.ID, "go-sdk:generate")
-	input := generatorSnapshot(3, "changed input: ./left", generator.ID, "")
-	otherInput := generatorSnapshot(4, "changed input: ./right", generator.ID, "")
-	app := generatorSnapshot(5, "re-generate: ./app", input.ID, "")
-	otherApp := generatorSnapshot(6, "re-generate: ./app", otherInput.ID, "")
+	input := generatorSnapshot(3, "changed: ./left", generator.ID, "")
+	otherInput := generatorSnapshot(4, "changed: ./right", generator.ID, "")
+	app := generatorSnapshot(5, "re-generate ./app", input.ID, "")
+	otherApp := generatorSnapshot(6, "re-generate ./app", otherInput.ID, "")
 	internal := generatorSnapshot(7, "Host.directory", app.ID, "")
 	spans := []SpanSnapshot{root, generator, input, otherInput, app, otherApp}
 	for i := range spans {
@@ -203,9 +203,9 @@ func TestUpdateRegenerationProgress(t *testing.T) {
 			operation.Reveal = true
 			regeneration := generatorSnapshot(3, "re-generate", operation.ID, "")
 			regeneration.Reveal = true
-			group := generatorSnapshot(4, "changed input: ./api", regeneration.ID, "")
+			group := generatorSnapshot(4, "changed: ./api", regeneration.ID, "")
 			group.Reveal = true
-			scope := generatorSnapshot(5, "re-generate: ./web", group.ID, "")
+			scope := generatorSnapshot(5, "re-generate ./web", group.ID, "")
 			scope.Reveal = true
 			spans := []SpanSnapshot{root, operation, regeneration, group, scope}
 			for i := range spans {
@@ -218,7 +218,7 @@ func TestUpdateRegenerationProgress(t *testing.T) {
 			db.ImportSnapshots(spans)
 			opts := FrontendOpts{ZoomedSpan: root.ID}
 			rows := db.RowsView(opts).Rows(opts).Order
-			if len(rows) != 4 || rows[0].Span.Name != "update: api" || rows[1].Span.Name != "re-generate" || rows[3].Span.Name != "re-generate: ./web" {
+			if len(rows) != 4 || rows[0].Span.Name != "update: api" || rows[1].Span.Name != "re-generate" || rows[3].Span.Name != "re-generate ./web" {
 				t.Fatalf("expected regeneration group and scope, got %+v", rows)
 			}
 			opts.SpanExpanded = map[SpanID]bool{regeneration.ID: false}

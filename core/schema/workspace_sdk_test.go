@@ -571,18 +571,18 @@ func TestSDKModuleScopeGenerationProgress(t *testing.T) {
 	}
 	require.Empty(t, progress.inputs)
 	require.ElementsMatch(t, []string{
-		"re-generate: ./shared",
-		"changed input: ./shared",
-		"changed input: ./shared > re-generate: ./left",
-		"changed input: ./shared > re-generate: ./right",
-		"changed input: ./left",
-		"changed input: ./left > re-generate: ./app",
-		"changed input: ./right",
-		"changed input: ./right > re-generate: ./app",
+		"re-generate ./shared",
+		"changed: ./shared",
+		"changed: ./shared > re-generate ./left",
+		"changed: ./shared > re-generate ./right",
+		"changed: ./left",
+		"changed: ./left > re-generate ./app",
+		"changed: ./right",
+		"changed: ./right > re-generate ./app",
 	}, paths)
 	var appSpans []sdktrace.ReadOnlySpan
 	for _, span := range spans {
-		if span.Name() == "re-generate: ./app" {
+		if span.Name() == "re-generate ./app" {
 			appSpans = append(appSpans, span)
 		}
 	}
@@ -619,7 +619,7 @@ func TestSDKModuleScopeGenerationProgressFailure(t *testing.T) {
 	for _, span := range recorder.Ended()[1:] {
 		require.Equal(t, codes.Error, span.Status().Code)
 	}
-	require.Equal(t, "changed input: ./", recorder.Ended()[2].Name())
+	require.Equal(t, "changed: ./", recorder.Ended()[2].Name())
 	require.Empty(t, progress.inputs)
 }
 

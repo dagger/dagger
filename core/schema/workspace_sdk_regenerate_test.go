@@ -53,13 +53,13 @@ func TestModuleUpdateRegenerationPlan(t *testing.T) {
 	var names []string
 	for _, span := range recorder.Ended() {
 		names = append(names, span.Name())
-		if span.Name() == "re-generate: ./web" {
+		if span.Name() == "re-generate ./web" {
 			require.Equal(t, codes.Ok, span.Status().Code)
 		} else {
 			require.Equal(t, codes.Error, span.Status().Code)
 		}
 	}
-	require.ElementsMatch(t, []string{"re-generate: ./web", "re-generate: ./tests", "re-generate: ./tests", "changed input: ./api", "changed input: ./web"}, names)
+	require.ElementsMatch(t, []string{"re-generate ./web", "re-generate ./tests", "re-generate ./tests", "changed: ./api", "changed: ./web"}, names)
 }
 
 func TestModuleUpdateRegenerationGroup(t *testing.T) {
@@ -86,7 +86,7 @@ func TestModuleUpdateRegenerationGroup(t *testing.T) {
 				names = append(names, span.Name())
 				require.Equal(t, codes.Error, span.Status().Code)
 			}
-			require.Equal(t, []string{"re-generate: ./web", "changed input: ./api", "re-generate"}, names)
+			require.Equal(t, []string{"re-generate ./web", "changed: ./api", "re-generate"}, names)
 		})
 	}
 }

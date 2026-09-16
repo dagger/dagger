@@ -235,7 +235,7 @@ func (p *sdkModuleGeneratorProgress) start(ctx context.Context, node *sdkModuleG
 		key := trace.SpanFromContext(ctx).SpanContext().SpanID().String() + ":" + input
 		group := p.inputs[key]
 		if group == nil {
-			inputCtx, span := core.Tracer(ctx).Start(ctx, "changed input: "+input, telemetry.Reveal())
+			inputCtx, span := core.Tracer(ctx).Start(ctx, "changed: "+input, telemetry.Reveal())
 			group = &sdkModuleInputProgress{ctx: inputCtx, span: span, input: input}
 			p.inputs[key] = group
 		}
@@ -244,7 +244,7 @@ func (p *sdkModuleGeneratorProgress) start(ctx context.Context, node *sdkModuleG
 			// Each row represents the same operation, executed only once.
 			opts = append(opts, trace.WithLinks(trace.Link{SpanContext: trace.SpanFromContext(scopeCtx).SpanContext()}))
 		}
-		rowCtx, span := core.Tracer(group.ctx).Start(group.ctx, "re-generate: "+sdkModuleScopeLabel(node), opts...)
+		rowCtx, span := core.Tracer(group.ctx).Start(group.ctx, "re-generate "+sdkModuleScopeLabel(node), opts...)
 		if scopeCtx == nil {
 			scopeCtx = rowCtx
 		}
@@ -254,7 +254,7 @@ func (p *sdkModuleGeneratorProgress) start(ctx context.Context, node *sdkModuleG
 	if scopeCtx == nil {
 		// Explicit generation can select a module with no client inputs.
 		var span trace.Span
-		scopeCtx, span = core.Tracer(ctx).Start(ctx, "re-generate: "+sdkModuleScopeLabel(node), telemetry.Reveal())
+		scopeCtx, span = core.Tracer(ctx).Start(ctx, "re-generate "+sdkModuleScopeLabel(node), telemetry.Reveal())
 		work.spans = append(work.spans, span)
 	}
 	return scopeCtx
