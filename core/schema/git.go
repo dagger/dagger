@@ -386,6 +386,11 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("includeTags").
 					Doc(`Set to true to populate tag refs in the local checkout .git.`),
 			),
+		dagql.NodeFunc("changes", s.commitChanges).
+			IsPersistable().
+			Doc("Returns the changes from the first parent to this commit, excluding Git metadata.",
+				"Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.").
+			Args(dagql.Arg("against").Doc("Use this commit as the comparison base instead of the first parent. The comparison commit may belong to an unrelated history or repository.")),
 		dagql.NodeFunc("sha", s.commitSHA).
 			IsPersistable().
 			Doc(`The full commit SHA.`),
@@ -2042,6 +2047,65 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	return inst, nil
+}
+
+type commitChangesArgs struct {
+	Against dagql.Optional[core.GitCommitID]
+}
+
+func (s *gitSchema) commitChanges(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args commitChangesArgs) (inst dagql.ObjectResult[*core.Changeset], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	var against dagql.ObjectResult[*core.GitCommit]
+	if args.Against.Valid {
+		against, err = args.Against.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load comparison commit: %w", err)
+		}
+	} else {
+		meta, err := parent.Self().Metadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("read commit parents: %w", err)
+		}
+		if len(meta.ParentSHAs) > 0 {
+			if err := srv.Select(ctx, parent.Self().Repo, &against, dagql.Selector{
+				Field: "commit",
+				Args:  []dagql.NamedInput{{Name: "id", Value: dagql.NewString(meta.ParentSHAs[0])}},
+			}); err != nil {
+				return inst, fmt.Errorf("select first parent: %w", err)
+			}
+		}
+	}
+
+	// Both sides are immutable, metadata-free trees. Selecting the existing
+	// core operations retains their pinned recipes and persistence dependencies.
+	tree := dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+		{Name: "discardGitDir", Value: dagql.Boolean(true)},
+	}}
+	var before, after dagql.ObjectResult[*core.Directory]
+	if against.Self() == nil {
+		err = srv.Select(ctx, srv.Root(), &before, dagql.Selector{Field: "directory"})
+	} else {
+		err = srv.Select(ctx, against, &before, tree)
+	}
+	if err != nil {
+		return inst, fmt.Errorf("select comparison tree: %w", err)
+	}
+	if err := srv.Select(ctx, parent, &after, tree); err != nil {
+		return inst, fmt.Errorf("select commit tree: %w", err)
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return inst, err
+	}
+	err = srv.Select(ctx, after, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	})
+	return inst, err
 }
 
 func gitCommitMetadata(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit]) (*core.GitCommitMetadata, error) {

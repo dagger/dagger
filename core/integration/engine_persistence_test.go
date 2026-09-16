@@ -1058,6 +1058,72 @@ printf 'layered\n' > /work/layered.txt
 		require.Contains(t, outB.summary, "random="+outB.random)
 	})
 
+	t.Run("git commit changes survive restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "git-commit-changes-restart-" + identity.NewID()
+		upstreamA, serviceA, clientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamA, serviceA, clientA) })
+
+		repo := clientA.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).WithWorkdir("/repo").
+			WithExec([]string{"sh", "-ec", `
+git init
+git config user.name Test
+git config user.email test@example.com
+printf 'before\n' > file
+git add . && git commit -m root && git tag root
+printf 'after\n' > file
+git commit -am next
+`}).Directory("/repo").AsGit()
+		root := repo.Tag("root").TargetCommit()
+		head := repo.Head().TargetCommit()
+		changesets := []*dagger.Changeset{
+			root.Changes(),
+			head.Changes(),
+			root.Changes(dagger.GitCommitChangesOpts{Against: head}),
+			head.Changes(dagger.GitCommitChangesOpts{Against: head}),
+		}
+		ids := make([]dagger.ID, len(changesets))
+		for i, changes := range changesets {
+			_, err := changes.Sync(ctx)
+			require.NoError(t, err)
+			ids[i], err = changes.ID(ctx)
+			require.NoError(t, err)
+		}
+		stopEngine(ctx, t, upstreamA, serviceA, clientA)
+		upstreamA, serviceA, clientA = nil, nil, nil
+
+		upstreamB, serviceB, clientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamB, serviceB, clientB) })
+		for i, id := range ids {
+			changes := dagger.Ref[*dagger.Changeset](clientB, id)
+			// Traverse the persisted tree dependencies for the first time after restart.
+			contents, err := changes.After().File("file").Contents(ctx)
+			require.NoError(t, err)
+			if i == 0 || i == 2 {
+				require.Equal(t, "before\n", contents)
+			} else {
+				require.Equal(t, "after\n", contents)
+			}
+			empty, err := changes.IsEmpty(ctx)
+			require.NoError(t, err)
+			require.Equal(t, i == 3, empty)
+			if i == 0 {
+				entries, err := changes.Before().Entries(ctx)
+				require.NoError(t, err)
+				require.Empty(t, entries)
+			} else {
+				contents, err := changes.Before().File("file").Contents(ctx)
+				require.NoError(t, err)
+				if i == 1 {
+					require.Equal(t, "before\n", contents)
+				} else {
+					require.Equal(t, "after\n", contents)
+				}
+			}
+		}
+	})
+
 	t.Run("engine-dev container build survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-engine-dev-build-state-" + identity.NewID()

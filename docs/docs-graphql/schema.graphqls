@@ -3511,6 +3511,19 @@ type GitCommit implements Node {
   """Git author date, in RFC3339 format."""
   authoredDate: String!
 
+  """
+  Returns the changes from the first parent to this commit, excluding Git metadata.
+
+  Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+  """
+  changes(
+    """
+    Use this commit as the comparison base instead of the first parent. The
+    comparison commit may belong to an unrelated history or repository.
+    """
+    against: ID @expectedType(name: "GitCommit")
+  ): Changeset!
+
   """Git committer date, in RFC3339 format."""
   committedDate: String!
 

@@ -302,6 +302,128 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	requireSampleGitRootDir(ctx, t, c, commit.Tree())
 }
 
+func (GitSuite) TestGitCommitChanges(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	repo := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-ec", `
+git init -b main
+git config user.name Test
+git config user.email test@example.com
+printf 'original\n' > edited
+printf 'delete me\n' > deleted
+printf '#!/bin/sh\n' > executable
+git add . && git commit -m root && git tag root
+printf 'updated\n' > edited
+rm deleted
+chmod +x executable
+printf 'added\n' > added
+ln -s edited link
+git add . && git commit -m ordinary && git tag ordinary
+git checkout -b topic
+printf 'topic\n' > topic
+git add . && git commit -m topic
+git checkout main
+printf 'main\n' > main
+git add . && git commit -m main
+git merge --no-ff topic -m merge
+git tag merge
+git checkout --orphan unrelated
+git rm -rf .
+printf 'unrelated\n' > unrelated
+git add . && git commit -m unrelated
+`}).Directory("/repo").AsGit()
+	root := repo.Tag("root").TargetCommit()
+	ordinary := repo.Tag("ordinary").TargetCommit()
+	merge := repo.Tag("merge").TargetCommit()
+
+	assertPaths := func(t *testctx.T, changes *dagger.Changeset, added, modified, removed []string) {
+		t.Helper()
+		got, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, added, got)
+		got, err = changes.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, modified, got)
+		got, err = changes.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, removed, got)
+		for _, tree := range []*dagger.Directory{changes.Before(), changes.After()} {
+			entries, err := tree.Entries(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, entries, ".git/")
+			require.NotContains(t, entries, ".git")
+		}
+	}
+
+	t.Run("root", func(ctx context.Context, t *testctx.T) {
+		changes := root.Changes()
+		assertPaths(t, changes, []string{"deleted", "edited", "executable"}, nil, nil)
+		entries, err := changes.Before().Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, entries)
+	})
+	t.Run("ordinary deletion and modes", func(ctx context.Context, t *testctx.T) {
+		changes := ordinary.Changes()
+		assertPaths(t, changes, []string{"added", "link"}, []string{"edited", "executable"}, []string{"deleted"})
+		// Applying the structured delta preserves deletion, executable bits and symlinks.
+		out, err := c.Container().From(alpineImage).
+			WithDirectory("/tree", changes.Before().WithChanges(changes)).
+			WithWorkdir("/tree").
+			WithExec([]string{"sh", "-ec", "test ! -e deleted; test -x executable; test -L link; readlink link; cat edited"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "edited\nupdated\n", out)
+	})
+	t.Run("merge first parent", func(ctx context.Context, t *testctx.T) {
+		assertPaths(t, merge.Changes(), []string{"topic"}, nil, nil)
+		parents, err := merge.ParentShas(ctx)
+		require.NoError(t, err)
+		require.Len(t, parents, 2)
+		assertPaths(t, merge.Changes(dagger.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
+	})
+	t.Run("explicit comparison", func(ctx context.Context, t *testctx.T) {
+		assertPaths(t, merge.Changes(dagger.GitCommitChangesOpts{Against: root}),
+			[]string{"added", "link", "main", "topic"}, []string{"edited", "executable"}, []string{"deleted"})
+		// An explicit comparison overrides even the root commit's empty base.
+		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: ordinary}),
+			[]string{"deleted"}, []string{"edited", "executable"}, []string{"added", "link"})
+	})
+	t.Run("self comparison", func(ctx context.Context, t *testctx.T) {
+		changes := ordinary.Changes(dagger.GitCommitChangesOpts{Against: ordinary})
+		assertPaths(t, changes, nil, nil, nil)
+		empty, err := changes.IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, empty)
+	})
+	t.Run("unrelated history", func(ctx context.Context, t *testctx.T) {
+		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: repo.Head().TargetCommit()}),
+			[]string{"deleted", "edited", "executable"}, nil, []string{"unrelated"})
+	})
+	t.Run("different repository", func(ctx context.Context, t *testctx.T) {
+		other := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).WithWorkdir("/other").
+			WithExec([]string{"sh", "-ec", `
+git init
+git config user.name Other
+git config user.email other@example.com
+printf 'other\n' > other
+git add . && git commit -m other
+`}).Directory("/other").AsGit().Head().TargetCommit()
+		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: other}),
+			[]string{"deleted", "edited", "executable"}, nil, []string{"other"})
+	})
+	t.Run("stable recipe", func(ctx context.Context, t *testctx.T) {
+		first, err := ordinary.Changes().ID(ctx)
+		require.NoError(t, err)
+		sha, err := ordinary.Sha(ctx)
+		require.NoError(t, err)
+		second, err := repo.Commit(sha).Changes().ID(ctx)
+		require.NoError(t, err)
+		require.Equal(t, first, second)
+	})
+}
+
 func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

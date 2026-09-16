@@ -9043,6 +9043,29 @@ func (r *GitCommit) AuthoredDate(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// GitCommitChangesOpts contains options for GitCommit.Changes
+type GitCommitChangesOpts struct {
+	// Use this commit as the comparison base instead of the first parent. The comparison commit may belong to an unrelated history or repository.
+	Against *GitCommit
+}
+
+// Returns the changes from the first parent to this commit, excluding Git metadata.
+//
+// Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+func (r *GitCommit) Changes(opts ...GitCommitChangesOpts) *Changeset {
+	q := r.query.Select("changes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `against` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Against) {
+			q = q.Arg("against", opts[i].Against)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Git committer date, in RFC3339 format.
 func (r *GitCommit) CommittedDate(ctx context.Context) (string, error) {
 	if r.committedDate != nil {
