@@ -87,14 +87,17 @@ func moduleLoadingDaggerQueryFail(query string, args ...string) dagger.WithConta
 	}
 }
 
-// TestFatModuleManifestUsesLegacyRuntime verifies that the current engine can
-// load a fat TOML manifest through its legacy runtime. The entrypoint source is
-// intentionally invalid because this engine does not support entrypoints yet.
-func (ModuleLoadingSuite) TestFatModuleManifestUsesLegacyRuntime(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+// TestFatModuleManifest covers the fat manifest rules. A fat manifest carries a
+// version 2 entrypoint table and the pre-v2 fields at the same time, so one
+// file loads on an engine that supports entrypoints and on an engine that does
+// not. Manifest version 2 has no dependency list, so a manifest that declares
+// dependencies stays on the pre-v2 format. See core/modules/config_fat_manifest.go.
+func (ModuleLoadingSuite) TestFatModuleManifest(ctx context.Context, t *testctx.T) {
+	t.Run("without dependencies the entrypoint wins", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
-	ctr := goGitBase(t, c).
-		WithNewFile("dagger-module.toml", `name = "fat"
+		ctr := goGitBase(t, c).
+			WithNewFile("dagger-module.toml", `name = "fat"
 engineVersion = "latest"
 
 [runtime]
@@ -102,19 +105,96 @@ engineVersion = "latest"
 
 [entrypoint]
   kind = "dang"
-  source = "./missing-entrypoint"
+  source = "./entrypoint"
 `).
-		WithNewFile("main.dang", `
+			// Reached only if the engine ignores the entrypoint table.
+			WithNewFile("main.dang", `
 type Fat {
   pub message: String! {
     "loaded through the legacy runtime"
   }
 }
+`).
+			WithNewFile("entrypoint/main.dang", `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Fat")
+        .withConstructor(function("", typeDef.withObject("Fat")))
+        .withFunction(
+          function("Message", typeDef.withKind(TypeDefKind.STRING_KIND)),
+        ),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Message") {
+      ("\"loaded through the entrypoint\"" :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}
 `)
 
-	out, err := ctr.With(daggerCallAt(".", "message")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "loaded through the legacy runtime", strings.TrimSpace(out))
+		out, err := ctr.With(daggerCallAt(".", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "loaded through the entrypoint", strings.TrimSpace(out))
+	})
+
+	t.Run("with dependencies the legacy runtime wins", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// The entrypoint source is intentionally invalid: a manifest that
+		// declares dependencies reads as pre-v2, so the entrypoint is ignored.
+		ctr := goGitBase(t, c).
+			WithNewFile("dagger-module.toml", `name = "fat"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "dep"
+  source = "./dep"
+
+[entrypoint]
+  kind = "dang"
+  source = "./missing-entrypoint"
+`).
+			WithNewFile("main.dang", `
+type Fat {
+  pub message: String! {
+    "loaded through the legacy runtime"
+  }
+}
+`).
+			WithNewFile("dep/dagger-module.toml", `name = "dep"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"
+`).
+			WithNewFile("dep/main.dang", `
+type Dep {
+  pub hello: String! {
+    "dep"
+  }
+}
+`)
+
+		out, err := ctr.With(daggerCallAt(".", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "loaded through the legacy runtime", strings.TrimSpace(out))
+	})
 }
 
 // TestModuleSourceResolution should pin down how module loading behaves before
