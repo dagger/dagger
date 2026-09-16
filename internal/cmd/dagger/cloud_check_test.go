@@ -81,8 +81,8 @@ func TestCloudChecksOnPrerequisites(t *testing.T) {
 		wantQueries []string
 	}{
 		{name: "GitHub App install required", noSource: true, wantError: "installations/select_target", wantQueries: []string{"GetUserRepositories", "GetSources", "GetGithubConnection"}},
-		{name: "already enabled", enabled: true, wantQueries: []string{"GetUserRepositories"}},
-		{name: "enable mapped repository", wantQueries: []string{"GetUserRepositories", "GetSources", "User", "GetOrgMappedSources", "ConfigureSource"}},
+		{name: "already enabled", enabled: true, wantQueries: []string{"GetUserRepositories", "GetSources", "GetOrgDetails"}},
+		{name: "enable mapped repository", wantQueries: []string{"GetUserRepositories", "GetSources", "User", "GetOrgDetails", "GetOrgMappedSources", "ConfigureSource"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var queries []string
@@ -113,6 +113,11 @@ func TestCloudChecksOnPrerequisites(t *testing.T) {
 					if tc.noSource {
 						data = `{"sources":[]}`
 					}
+				case "GetOrgDetails":
+					// The feature gate runs even when invoked without the
+					// annotated command (e.g. from dagger init); features are
+					// active here so no trial is offered.
+					data = `{"org":{"id":"org","name":"example","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[{"name":"CLOUD_CHECKS","status":"ACTIVE"},{"name":"CLOUD_MODULES","status":"ACTIVE"},{"name":"CLOUD_ENGINES","status":"ACTIVE"}]}}`
 				case "GetGithubConnection":
 					// The identity is connected; only the app install is missing.
 					data = `{"githubConnection":{"githubLogin":"octocat","connectedAt":""}}`
@@ -329,6 +334,8 @@ func TestCloudChecksOnRepoNotGrantedPointsAtInstallationSettings(t *testing.T) {
 			data = `{"sources":[{"id":"161781848","name":"marcosnils","orgName":"marcosnils","configUrl":"https://github.com/settings/installations/161781848"}]}`
 		case "User":
 			data = `{"user":{"id":"user","orgs":[{"id":"org","name":"marcosnils"}]}}`
+		case "GetOrgDetails":
+			data = `{"org":{"id":"org","name":"marcosnils","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[{"name":"CLOUD_CHECKS","status":"ACTIVE"},{"name":"CLOUD_MODULES","status":"ACTIVE"},{"name":"CLOUD_ENGINES","status":"ACTIVE"}]}}`
 		case "GetOrgMappedSources":
 			data = `{"org":{"mappedSources":[{"installationId":"161781848","mode":"SELECTED","repositories":[]}]}}`
 		case "ConfigureSource":
