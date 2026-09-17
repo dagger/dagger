@@ -71,8 +71,16 @@ func applyIntegrationWorktree(ctx context.Context, checkout, base, target, after
 	if err != nil {
 		return err
 	}
+	notTarget, err := run("", "diff", "--cached", "--name-only", "-z", target, "--")
+	if err != nil {
+		return err
+	}
 	for _, path := range integrationPaths(staged) {
-		if integrationOverlaps(path, integrationPaths(committed)) && integrationOverlaps(path, integrationPaths(notCaptured)) {
+		// A previous attempt may have installed this index before losing its
+		// ref transaction. Accept an exact target match on those paths too.
+		if integrationOverlaps(path, integrationPaths(committed)) &&
+			integrationOverlaps(path, integrationPaths(notCaptured)) &&
+			integrationOverlaps(path, integrationPaths(notTarget)) {
 			return fmt.Errorf("staged path %q differs from the captured worktree", path)
 		}
 	}

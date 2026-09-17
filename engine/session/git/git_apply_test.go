@@ -4,9 +4,11 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -65,6 +67,116 @@ func TestApplyBundleFastForward(t *testing.T) {
 	resp = applyBundle(t.Context(), f.metadata(t), "", 0)
 	require.Nil(t, resp.Error)
 	require.Equal(t, f.target, resp.HeadSha)
+}
+
+func TestApplyBundleCancellationDuringMutation(t *testing.T) {
+	for _, integration := range []bool{false, true} {
+		name := "fast-forward"
+		if integration {
+			name = "integration"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newApplyBundleFixture(t)
+			meta := f.metadata(t)
+			if integration {
+				before := gitCmd(t, f.home, f.source, "rev-parse", f.base+"^{tree}")
+				after := gitCmd(t, f.home, f.source, "rev-parse", f.target+"^{tree}")
+				meta = integrationBundle(t, &f, before, after)
+			}
+			realGit, err := exec.LookPath("git")
+			require.NoError(t, err)
+			barrier := t.TempDir()
+			// Pause after installing the index but before committing the ref.
+			// Fast-forward uses read-tree; integration installs its index in Go,
+			// so intercept the subsequent ref transaction's commit command.
+			require.NoError(t, os.WriteFile(filepath.Join(barrier, "git"), []byte(`#!/bin/sh
+pause_export() {
+  touch "$EXPORT_TEST_BARRIER/ready"
+  while [ ! -f "$EXPORT_TEST_BARRIER/release" ]; do sleep 0.01; done
+}
+case " $* " in
+  *" read-tree "*)
+    if [ "$EXPORT_TEST_MODE" = fast-forward ]; then
+      "$EXPORT_TEST_REAL_GIT" "$@" || exit $?
+      pause_export
+      exit 0
+    fi
+    ;;
+  *" update-ref "*" --stdin "*)
+    if [ "$EXPORT_TEST_MODE" = integration ]; then
+      mkfifo "$EXPORT_TEST_BARRIER/ref-input"
+      "$EXPORT_TEST_REAL_GIT" "$@" < "$EXPORT_TEST_BARRIER/ref-input" &
+      ref_pid=$!
+      exec 3>"$EXPORT_TEST_BARRIER/ref-input"
+      while IFS= read -r line; do
+        if [ "$line" = commit ]; then pause_export; fi
+        printf '%s\n' "$line" >&3
+      done
+      exec 3>&-
+      wait "$ref_pid"
+      exit $?
+    fi
+    ;;
+esac
+exec "$EXPORT_TEST_REAL_GIT" "$@"
+`), 0o700))
+			t.Setenv("EXPORT_TEST_REAL_GIT", realGit)
+			t.Setenv("EXPORT_TEST_BARRIER", barrier)
+			t.Setenv("EXPORT_TEST_MODE", name)
+			t.Setenv("PATH", barrier+string(os.PathListSeparator)+os.Getenv("PATH"))
+			ctx, cancel := context.WithCancel(t.Context())
+			release := func() { _ = os.WriteFile(filepath.Join(barrier, "release"), nil, 0o600) }
+			result := make(chan *ApplyBundleResponse, 1)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				result <- applyBundle(ctx, meta, f.bundle, f.size)
+			}()
+			defer func() {
+				cancel()
+				release()
+				select {
+				case <-done:
+				case <-time.After(10 * time.Second):
+					t.Error("export goroutine did not finish")
+				}
+			}()
+			require.Eventually(t, func() bool {
+				_, err := os.Stat(filepath.Join(barrier, "ready"))
+				return err == nil
+			}, 10*time.Second, 10*time.Millisecond)
+			require.Equal(t, f.base, gitCmd(t, f.home, f.repo, "rev-parse", "HEAD"))
+			require.Equal(t, "incoming", gitCmd(t, f.home, f.repo, "show", ":incoming.txt"))
+			cancel()
+			release()
+			var resp *ApplyBundleResponse
+			select {
+			case resp = <-result:
+			case <-time.After(10 * time.Second):
+				t.Fatal("cancelled export did not finish")
+			}
+			for _, lock := range []string{"HEAD.lock", "index.lock", "refs/heads/main.lock"} {
+				require.NoFileExists(t, filepath.Join(f.repo, ".git", lock))
+			}
+			require.Nil(t, resp.Error, "%+v", resp.Error)
+			require.Equal(t, f.target, gitCmd(t, f.home, f.repo, "rev-parse", "HEAD"))
+			require.Empty(t, gitCmd(t, f.home, f.repo, "status", "--porcelain"))
+			require.Empty(t, gitCmd(t, f.home, f.repo, "for-each-ref", "refs/dagger/checkpoints"))
+			commitFile(t, f.repo, f.home, "next.txt", "next", "commit after cancelled export")
+		})
+	}
+}
+
+func TestApplyBundleAlreadyCancelled(t *testing.T) {
+	f := newApplyBundleFixture(t)
+	meta := f.metadata(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	resp := applyBundle(ctx, meta, f.bundle, f.size)
+	require.NotNil(t, resp.Error)
+	require.Equal(t, f.base, gitCmd(t, f.home, f.repo, "rev-parse", "HEAD"))
+	require.Empty(t, gitCmd(t, f.home, f.repo, "status", "--porcelain"))
+	require.Empty(t, gitCmd(t, f.home, f.repo, "for-each-ref", "refs/dagger/checkpoints"))
 }
 
 func TestApplyBundleParksWithoutChangingCheckout(t *testing.T) {

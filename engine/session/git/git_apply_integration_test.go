@@ -58,6 +58,31 @@ func TestApplyBundleIntegrationRetry(t *testing.T) {
 	}
 }
 
+func TestApplyBundleIntegrationRetryAfterIndexInstall(t *testing.T) {
+	f := newApplyBundleFixture(t)
+	before := gitCmd(t, f.home, f.source, "rev-parse", f.base+"^{tree}")
+	require.NoError(t, os.WriteFile(filepath.Join(f.source, "pending.txt"), []byte("pending\n"), 0o644))
+	gitCmd(t, f.home, f.source, "add", "pending.txt")
+	after := gitCmd(t, f.home, f.source, "write-tree")
+	meta := integrationBundle(t, &f, before, after)
+	gitCmd(t, f.home, f.repo, "fetch", "--no-write-fetch-head", f.bundle, meta.BundleRef)
+	// Reproduce an interrupted export that installed its worktree and index
+	// but lost the ref transaction. Its index now differs from both the old
+	// HEAD and the captured before tree, while matching the intended target.
+	index, unlock, err := lockIntegrationIndex(t.Context(), f.repo)
+	require.NoError(t, err)
+	err = applyIntegrationWorktree(t.Context(), f.repo, f.base, f.target, meta.IntegrationWorktreeSha, index)
+	unlock()
+	require.NoError(t, err)
+	require.Equal(t, f.base, gitCmd(t, f.home, f.repo, "rev-parse", "HEAD"))
+	require.Equal(t, "incoming", gitCmd(t, f.home, f.repo, "show", ":incoming.txt"))
+	meta.ExpectedStateDigest = checkoutDigest(t, f.repo)
+	resp := applyBundle(t.Context(), meta, f.bundle, f.size)
+	require.Nil(t, resp.Error, "%+v", resp.Error)
+	require.Equal(t, f.target, gitCmd(t, f.home, f.repo, "rev-parse", "HEAD"))
+	require.Equal(t, "?? pending.txt", gitCmd(t, f.home, f.repo, "status", "--porcelain"))
+}
+
 func TestApplyBundleIntegrationRetryChecksMode(t *testing.T) {
 	f := newApplyBundleFixture(t)
 	f.target = f.base
@@ -101,7 +126,7 @@ func TestApplyBundleIntegrationRetryChecksSymlink(t *testing.T) {
 }
 
 func TestApplyBundleIntegration(t *testing.T) {
-	for _, scenario := range []string{"clean", "captured-dirt", "staged-dirt", "stale-file", "untracked-obstruction", "unrelated-staging", "pending-conflict", "index-locked", "sha256"} {
+	for _, scenario := range []string{"clean", "captured-dirt", "staged-dirt", "staged-conflict", "stale-file", "untracked-obstruction", "unrelated-staging", "pending-conflict", "index-locked", "sha256"} {
 		t.Run(scenario, func(t *testing.T) {
 			var format []string
 			if scenario == "sha256" {
@@ -140,12 +165,21 @@ func TestApplyBundleIntegration(t *testing.T) {
 				require.NoError(t, os.WriteFile(filepath.Join(f.repo, "unrelated.txt"), []byte("staged"), 0o644))
 				gitCmd(t, f.home, f.repo, "add", "unrelated.txt")
 				require.NoError(t, os.WriteFile(filepath.Join(f.repo, "unrelated.txt"), []byte("unstaged"), 0o644))
+			case "staged-conflict":
+				// The worktree already matches the target, but unrelated staged
+				// contents must not be mistaken for a previously installed index.
+				require.NoError(t, os.WriteFile(filepath.Join(f.repo, "incoming.txt"), []byte("staged edit"), 0o644))
+				gitCmd(t, f.home, f.repo, "add", "incoming.txt")
+				require.NoError(t, os.WriteFile(filepath.Join(f.repo, "incoming.txt"), []byte("incoming\n"), 0o644))
 			}
 			head := gitCmd(t, f.home, f.repo, "rev-parse", "HEAD")
 			status := gitCmd(t, f.home, f.repo, "status", "--porcelain")
 			resp := applyBundle(t.Context(), meta, f.bundle, f.size)
-			if scenario == "stale-file" || scenario == "untracked-obstruction" || scenario == "pending-conflict" || scenario == "index-locked" {
+			if scenario == "stale-file" || scenario == "untracked-obstruction" || scenario == "pending-conflict" || scenario == "index-locked" || scenario == "staged-conflict" {
 				require.NotNil(t, resp.Error)
+				if scenario == "staged-conflict" {
+					require.Contains(t, resp.Error.Message, `staged path "incoming.txt" differs`)
+				}
 				require.Equal(t, head, gitCmd(t, f.home, f.repo, "rev-parse", "HEAD"))
 				require.Equal(t, status, gitCmd(t, f.home, f.repo, "status", "--porcelain"))
 				if scenario == "index-locked" {

@@ -124,6 +124,14 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundlePath stri
 	if _, err := runExportGit(ctx, checkout, "cat-file", "-e", meta.TargetSha+"^{commit}"); err != nil {
 		return applyBundleError(err.Error())
 	}
+	if err := ctx.Err(); err != nil {
+		return applyBundleError(err.Error())
+	}
+	// Once local mutation starts, finish the index/worktree and ref transaction
+	// even if the caller disconnects. Killing Git here can leave its locks
+	// behind or install an index whose HEAD update never commits. Keep the
+	// checkout mutex through completion and recovery-ref cleanup as well.
+	ctx = context.WithoutCancel(ctx)
 	// Keep a recovery ref before any worktree mutation, including on a failed
 	// lease. Never overwrite an existing hand-off, even a short-SHA collision.
 	parked, created, err := parkExportCommit(ctx, checkout, meta.TargetSha)
