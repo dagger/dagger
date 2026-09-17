@@ -762,15 +762,26 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 }
 
 func (c *Cache) sessionlessPartEquivalentLocked(receiver, donor *sharedResult, lookup partLookup) (CacheHitRoute, bool) {
+	route, ok := c.sessionlessPartEquivalentsLocked(receiver, lookup)[donor]
+	return route, ok
+}
+
+// sessionlessPartEquivalentsLocked collects, once, every ordinary equivalent
+// of receiver whose own resource requirements fit inside the receiver's, with
+// the route that found it. It validates the receiver's frame against the
+// prepared lookup and excludes expired candidates, as the single-donor form
+// does. E is held.
+func (c *Cache) sessionlessPartEquivalentsLocked(receiver *sharedResult, lookup partLookup) map[*sharedResult]CacheHitRoute {
 	if receiver.loadResultCall() != lookup.frame {
-		return "", false
+		return nil
 	}
-	for _, candidate := range c.collectPartCandidatesWithAdmissionLocked(receiver, lookup, func(row *sharedResult) bool { return c.ownPartRequirementsFitLocked(receiver, row) }) {
-		if candidate.row == donor {
-			return candidate.route, true
-		}
+	candidates := c.collectPartCandidatesWithAdmissionLocked(receiver, lookup, func(row *sharedResult) bool { return c.ownPartRequirementsFitLocked(receiver, row) })
+	out := make(map[*sharedResult]CacheHitRoute, len(candidates))
+	// The collector already keeps one entry per row, with its first route.
+	for _, candidate := range candidates {
+		out[candidate.row] = candidate.route
 	}
-	return "", false
+	return out
 }
 
 func (c *Cache) partSourceReferenceAllowedLocked(receiver *sharedResult, source *PartSourceLease, dep *sharedResult) bool {

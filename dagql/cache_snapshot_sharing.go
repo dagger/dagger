@@ -729,11 +729,14 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 		if !eligible[row.id] {
 			continue
 		}
+		// The receiver's admitted equivalents are collected once and
+		// intersected with the held cohort, not collected again per donor.
+		equivalents := c.sessionlessPartEquivalentsLocked(row, lookup)
 		for _, donor := range rows {
 			if donor == row || partRowExpired(donor, now) {
 				continue
 			}
-			if _, ok := c.sessionlessPartEquivalentLocked(row, donor, lookup); ok {
+			if _, ok := equivalents[donor]; ok {
 				admits[sharePair{row.id, donor.id}] = true
 			}
 		}
