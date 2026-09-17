@@ -983,7 +983,7 @@ func (s *workspaceSchema) resolveRootfsInner(
 	}
 
 	if ws.HostPath() != "" {
-		ctx, err = s.withWorkspaceClientContext(ctx, ws)
+		ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
 		if err != nil {
 			return inst, err
 		}
@@ -1089,7 +1089,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 	filter core.CopyFilter,
 	gitignore bool,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	hostCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	hostCtx, err := s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
 		return inst, err
 	}
@@ -2512,9 +2512,23 @@ func (s *workspaceSchema) export(
 	return core.Void{}, nil
 }
 
+// invalidateExportedWorkspace drops the calling client's cached workspace
+// detection and bumps its workspace read epoch: the export just changed the
+// workspace's on-disk content, so host reads (Workspace.file / .directory and
+// the sparse baseline a later export diffs against) cached earlier in this
+// session are stale — they are cached per client for the client's whole
+// lifetime (dagql.PerClientInput). Bumping the epoch lands subsequent reads in
+// a fresh per-client cache namespace so they re-read the live host. This only
+// matters when the caller owns the workspace: a non-owner's export never
+// touched the owner's host, and this workspace's reads resolve under the
+// owner's epoch, so the bump is a harmless no-op. Best-effort: a bookkeeping
+// failure must not fail an export that already succeeded.
 func invalidateExportedWorkspace(ctx context.Context) {
 	if err := core.InvalidateCurrentWorkspace(ctx); err != nil {
 		slog.Warn("could not invalidate workspace after export", "error", err)
+	}
+	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
+		slog.Warn("could not bump workspace read epoch after export", "error", err)
 	}
 }
 
@@ -2902,7 +2916,10 @@ func (s *workspaceSchema) sparseHostBase(
 
 	includes := sparseIncludePatterns(touched)
 
-	ctx, err = s.withWorkspaceClientContext(ctx, ws)
+	// Read the baseline under the read epoch: after an export the on-disk
+	// content moved, and the next export must diff against what is on disk
+	// now rather than the snapshot cached earlier in the session.
+	ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
@@ -3208,11 +3225,18 @@ func (s *workspaceSchema) materializeWorkspaceGitUncommitted(
 	if err != nil {
 		return inst, false, err
 	}
+	// Pin the reconstruction to the session's cached view of the checkout,
+	// keyed by the read epoch so an export that moved the working tree is
+	// re-read rather than served from the pre-export materialization.
+	epoch, err := core.WorkspaceReadEpoch(clientCtx)
+	if err != nil {
+		return inst, false, err
+	}
 	var scratch dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(clientCtx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
 		return inst, false, err
 	}
-	canonical, err := core.MaterializeHostGitCheckout(clientCtx, srv, scratch, ws.HostPath(), "workspace")
+	canonical, err := core.MaterializeHostGitCheckout(clientCtx, srv, scratch, ws.HostPath(), "epoch:"+epoch)
 	if err != nil {
 		return inst, false, err
 	}
@@ -4627,6 +4651,26 @@ func filterNodesByInclude[T any](
 // caller's held scope rather than metadata selecting another executable runtime.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	return withWorkspaceClientContext(ctx, ws)
+}
+
+// withWorkspaceHostReadContext is withWorkspaceClientContext plus the owner's
+// current workspace read epoch folded into the per-client cache namespace, so
+// cached host.directory reads are scoped per epoch. When the epoch is bumped
+// (Workspace.export, after the changes are written to disk), reads issued
+// afterwards land in a fresh namespace and re-read the live host instead of
+// returning a per-client snapshot cached earlier in the same session. Use it
+// for host reads that must reflect on-disk content (Workspace.file /
+// Workspace.directory and the baseline of edits and exports).
+func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	ctx, err := withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	epoch, err := core.WorkspaceReadEpoch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.WithNamedPerClientCacheScope(ctx, epoch), nil
 }
 
 // withWorkspaceClientContext stamps owner metadata for host/resource routing;

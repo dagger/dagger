@@ -774,3 +774,44 @@ func (WorkspaceSuite) TestWorkspaceExportLocalWorkdirAndFrom(ctx context.Context
 		})
 	}
 }
+
+// A session caches host reads per client for the client's whole lifetime, so
+// an export that changes the files on disk must invalidate them: both the
+// reads an agent makes afterwards and the host baseline the next export diffs
+// its overlay against. Without that, exporting VERSION=2 and then VERSION=1
+// leaves 2 on disk because the second export compares against a baseline that
+// still says 1.
+func (WorkspaceSuite) TestWorkspaceExportRereadsHost(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	versionPath := filepath.Join(checkout, "VERSION")
+	require.NoError(t, os.WriteFile(versionPath, []byte("1"), 0o644))
+	git("add", ".")
+	git("commit", "-m", "version 1")
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+
+	// Prime the per-client host cache, as an agent reading before editing does.
+	contents, err := c.CurrentWorkspace().File("VERSION").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1", contents)
+
+	require.NoError(t, c.CurrentWorkspace().WithNewFile("VERSION", "2").Export(ctx))
+	onDisk, err := os.ReadFile(versionPath)
+	require.NoError(t, err)
+	require.Equal(t, "2", string(onDisk))
+
+	// Reads after the export observe the exported contents, not the snapshot
+	// cached by the earlier read.
+	contents, err = c.CurrentWorkspace().File("VERSION").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "2", contents)
+
+	// A second export diffs against what is on disk now, so reverting to the
+	// original contents is a real change and is written.
+	require.NoError(t, c.CurrentWorkspace().WithNewFile("VERSION", "1").Export(ctx))
+	onDisk, err = os.ReadFile(versionPath)
+	require.NoError(t, err)
+	require.Equal(t, "1", string(onDisk))
+	contents, err = c.CurrentWorkspace().File("VERSION").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1", contents)
+}
