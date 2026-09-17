@@ -7,6 +7,8 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/engine"
 )
 
 // HasPartHost binds a typed adapter to the stable owning row. Binding never
@@ -28,6 +30,9 @@ func (c *Cache) bindPartHost(row *sharedResult, result AnyResult) {
 	}
 }
 func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate hosted parts"); err != nil {
+		return err
+	}
 	if len(host.path) == 0 {
 		return host.cache.EvaluateParts(ctx, Result[Typed]{shared: host.row}, parts...)
 	}
@@ -85,6 +90,9 @@ func (host *PartHost) Admitted(ctx context.Context) bool {
 // RunNative enters the gate before the body takes any core latch. The raw
 // callback remains the only owner of native completion and consumption.
 func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts []PartKey, body func(context.Context) error) error {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "run native evaluation"); err != nil {
+		return err
+	}
 	if !host.Admitted(ctx) {
 		return host.Evaluate(ctx, parts...)
 	}

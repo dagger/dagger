@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/dagger/dagger/engine"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -144,6 +145,9 @@ func (c *Cache) joinPartInstallation(ctx context.Context, res AnyResult, token *
 
 //nolint:gocyclo // Intrinsically long demand state machine: probe, route, select, obtain, delegate, run.
 func (c *Cache) demandPart(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "demand part"); err != nil {
+		return err
+	}
 	var err error
 	ctx, err = enterPartDemand(ctx, res.cacheSharedResult(), address)
 	if err != nil {
@@ -368,6 +372,9 @@ func (c *Cache) sourceCheckCurrentLocked(check *SourceCheck) bool {
 	return true
 }
 func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, address PersistedPartAddress, route LazyOperationRoute, demand *PartDemandState) error {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "prepare lazy operation"); err != nil {
+		return err
+	}
 	return c.RunLazyTask(ctx, res, lazyEvaluationTaskKey(route.Group), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 		task := PartTaskFromContext(ctx)
 		drain, outcome, err := c.PrepareOriginal(ctx, res, route.Group, route.WriteSet, task)
@@ -401,6 +408,9 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 		factory, ok := family.Transfer.(PersistedLazyOperationFactory)
 		if !ok {
 			return fmt.Errorf("lazy: family has no saved invoker")
+		}
+		if err := engine.CheckSnapshotSharePreparation(ctx, "prepare lazy operation"); err != nil {
+			return err
 		}
 		invocation, err := factory.PrepareLazyOperation(ctx, c.partDecodeContext(ctx, row, record).atPath(address.OutputPath), local, route)
 		if err != nil {
@@ -443,6 +453,9 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			}
 			if outcome != GateGranted {
 				return partRefused("decision: final source check refused")
+			}
+			if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
+				return err
 			}
 			c.recordPartFixture(row, address, "lazy-enter")
 			if err := invocation.Run(ctx); err != nil {

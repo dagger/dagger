@@ -1897,6 +1897,9 @@ type Cache struct {
 	// shareDuplicateHolds are member holds dropped by coalescing, released
 	// through the ordinary unlocked path by the next queue operation.
 	shareDuplicateHolds []*sharedResult
+	// partPreparation is the engine's registered preparation-context
+	// callback, nil on a cache that cannot reconstruct persisted services.
+	partPreparation PartPreparationContext
 
 	// sessionLifecycles retains one small atomic record per session for the
 	// engine lifetime. The packed release bit and operation count make admission
@@ -3974,6 +3977,9 @@ func blockedOnPrerequisite(err error, selfID sharedResultID) bool {
 }
 
 func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate result"); err != nil {
+		return err
+	}
 	switch len(results) {
 	case 0:
 		return nil
@@ -4039,6 +4045,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 // the whole-result group, so this degenerates to Evaluate; the same
 // conservative fallback applies when no parts are named.
 func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartKey) (rerr error) {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate result parts"); err != nil {
+		return err
+	}
 	waiterOp, shared, err := c.beginEvaluateOne(ctx, res)
 	if err != nil {
 		return err
@@ -4610,6 +4619,9 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
 		}
+		// The registered preparation root outlives the worker and every
+		// decoded row until the drain has finished.
+		c.clearPartPreparationContext()
 		if err := c.releaseCleanupError(); err != nil {
 			slog.Error("dagql cache close found session cleanup errors; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, err)
