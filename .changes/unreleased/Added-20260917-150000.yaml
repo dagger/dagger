@@ -1,0 +1,9 @@
+kind: Added
+body: |
+  `dagger module settings --wide` (and `dagger settings --wide`) lists settings
+  with full values and descriptions instead of truncating them to the terminal
+  width.
+time: 2026-09-17T15:00:00Z
+custom:
+  Author: kpenfound
+  PR: 14201

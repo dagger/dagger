@@ -18020,7 +18020,7 @@ class WorkspaceModuleSetting(Type):
         return await _ctx.execute(bool)
 
     async def is_string(self) -> bool:
-        """Whether the setting accepts a string, stored as a TOML string even
+        """Whether the setting is a string argument, stored as a TOML string even
         when the value reads as a number or boolean.
 
         Returns

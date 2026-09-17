@@ -94,6 +94,7 @@ func TestWriteSettingValueUsesSettingType(t *testing.T) {
 		{"int is typed from the value", constructorArgHint{Name: "version"}, "42", int64(42)},
 		{"float is typed from the value", constructorArgHint{Name: "version"}, "1.5", 1.5},
 		{"bool is typed from the value", constructorArgHint{Name: "version"}, "true", true},
+		{"enum keeps its JSON quotes", constructorArgHint{Name: "version"}, `"FAST"`, `"FAST"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -71,7 +71,7 @@ defmodule Dagger.WorkspaceModuleSetting do
   end
 
   @doc """
-  Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+  Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
   """
   @spec string?(t()) :: {:ok, boolean()} | {:error, term()}
   def string?(%__MODULE__{} = workspace_module_setting) do

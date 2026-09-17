@@ -560,6 +560,7 @@ func TestStringValue(t *testing.T) {
 		`"1.27'`:        `"1.27'`,
 		`"a" and "b"`:   `"a" and "b"`,
 		`say "hi"`:      `say "hi"`,
+		`'it's quoted'`: `'it's quoted'`,
 		`"it's quoted"`: "it's quoted",
 		` "1.27"`:       ` "1.27"`,
 		`"C:\dir\file"`: `C:\dir\file`,

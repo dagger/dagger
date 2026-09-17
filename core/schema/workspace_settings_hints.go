@@ -121,7 +121,9 @@ func (s *workspaceSchema) settingHintForKey(
 // writeSettingValue writes value to a module setting in the TOML type its
 // hint gives it: an array for a list, where a malformed value is an error, and
 // a string for a string or an address, so that 1.27 is not stored as a float.
-// Settings of other types are typed from the value.
+// Settings of other types are typed from the value. That includes enums and
+// custom scalars: their stored value is read back as JSON, so a string one is
+// written with its JSON quotes ("FAST"), which value typing keeps.
 func writeSettingValue(data []byte, key, moduleName string, hint constructorArgHint, value string) ([]byte, error) {
 	switch {
 	case hint.IsList:

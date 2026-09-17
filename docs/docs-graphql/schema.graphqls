@@ -6961,7 +6961,7 @@ type WorkspaceModuleSetting implements Node {
   isObject: Boolean!
 
   """
-  Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+  Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
   """
   isString: Boolean!
 

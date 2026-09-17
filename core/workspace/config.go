@@ -772,8 +772,9 @@ func WriteConfigStringValue(existingData []byte, key string, rawValue string) ([
 
 // StringValue is the string a raw value denotes for a string-typed setting:
 // the value itself, without the pair of double or single quotes that may wrap
-// it to mark it as a string ("1.27" and '1.27' both denote 1.27). Quotes are
-// only removed when they wrap the whole value, so `"a" and "b"` is unchanged.
+// it to mark it as a string ("1.27" and '1.27' both denote 1.27). The quotes
+// are only removed when that same quote appears nowhere else in the value, so
+// `"a" and "b"` and 'it's quoted' are unchanged.
 func StringValue(rawValue string) string {
 	if len(rawValue) < 2 {
 		return rawValue

@@ -17458,7 +17458,7 @@ export class WorkspaceModuleSetting extends BaseClient {
   }
 
   /**
-   * Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+   * Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
    */
   isString = async (): Promise<boolean> => {
     if (this._isString) {

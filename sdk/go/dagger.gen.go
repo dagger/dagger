@@ -18982,7 +18982,7 @@ func (r *WorkspaceModuleSetting) IsObject(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+// Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
 func (r *WorkspaceModuleSetting) IsString(ctx context.Context) (bool, error) {
 	if r.isString != nil {
 		return *r.isString, nil

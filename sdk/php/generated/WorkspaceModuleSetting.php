@@ -59,7 +59,7 @@ class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdA
     }
 
     /**
-     * Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+     * Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
      */
     public function isString(): bool
     {
