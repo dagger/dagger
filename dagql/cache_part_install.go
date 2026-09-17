@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -62,6 +63,53 @@ type PreparedReadyPart struct {
 	extraProtections  []*partProtection
 	extraAccessors    []snapshots.ImmutableRef
 	beforeSyncCleanup *partCleanup
+	// expectedRepresentation is the receiver representation this preparation
+	// requires at Commit: the real observed one for a public single-demand
+	// preparation, or the one its prepared prefix will have published. Only
+	// cache orchestration can supply a non-nil base, so this is never
+	// caller-supplied wire data.
+	expectedRepresentation readyPartRepresentation
+	// expectedPredecessors names each preceding address of the same receiver
+	// and the owning installation identity reserved for it. Copied scalars
+	// only: no task authority, receipt, hold or live carrier is borrowed.
+	expectedPredecessors []readyPartPredecessor
+	// published is the envelope pointer an encoded Commit installs. It is
+	// allocated during preparation so a successor prepared from this
+	// representation can name the exact pointer it must find.
+	published *PersistedResultEnvelope
+}
+
+// readyPartRepresentation is the receiver stamp a Commit must find: the
+// encoded envelope pointer plus payload revision, with the typed flag that
+// distinguishes an encoded row from a decoded one.
+type readyPartRepresentation struct {
+	receiver        *sharedResult
+	payloadRevision uint64
+	envelope        *PersistedResultEnvelope
+	hasValue        bool
+}
+
+// readyPartPredecessor is one earlier address of the same receiver and the
+// owning installation identity reserved for it by batch 4's task token.
+type readyPartPredecessor struct {
+	address    PersistedPartAddress
+	receiver   *sharedResult
+	key        LazyGroupKey
+	generation uint64
+}
+
+// readyPartPreparationBase carries the ordered prefix a sharing pass has
+// already prepared for one receiver: the real original observation, the
+// representation the prefix will have published, the preceding installation
+// identities, and the codec-owned immutable record to build the next
+// representation from. It holds no ref, source lease, permit, receipt or
+// incoming hold, and only cache orchestration creates it.
+type readyPartPreparationBase struct {
+	receiver     *sharedResult
+	original     sharedResultPayloadState
+	expected     readyPartRepresentation
+	predecessors []readyPartPredecessor
+	record       PersistedRecord
 }
 type ReadyPartReceipt struct {
 	cache      *Cache
@@ -111,7 +159,19 @@ func (p *PreparedReadyPart) release(ctx context.Context, published bool) error {
 	}
 	return err
 }
-func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit) (_ *PreparedReadyPart, rerr error) {
+
+// PrepareReadyPart is the public single-demand preparation: the nil-base
+// wrapper over prepareReadyPartFromBase, which records an empty predecessor
+// list and the ordinary observed-representation guard.
+func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit) (*PreparedReadyPart, error) {
+	return c.prepareReadyPartFromBase(ctx, receiver, source, permit, nil)
+}
+
+// prepareReadyPartFromBase consumes source and permit on every return and
+// produces the same owning PreparedReadyPart as the public entry. A non-nil
+// base supplies only expected-version provenance and copied data: the real
+// original row is still observed and validated while every store is pending.
+func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit, base *readyPartPreparationBase) (_ *PreparedReadyPart, rerr error) {
 	p := &PreparedReadyPart{cache: c, source: source, permit: permit}
 	defer func() {
 		if rerr != nil {
@@ -148,6 +208,30 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 	if probe.LocalComplete {
 		return nil, partRefused("prepare: receiver part already complete")
 	}
+	p.expectedRepresentation = readyPartRepresentation{
+		receiver:        row,
+		payloadRevision: version.payload.payloadRevision,
+		envelope:        version.payload.persistedEnvelope,
+		hasValue:        version.payload.hasValue,
+	}
+	if base != nil {
+		if base.receiver != row || base.expected.receiver != row {
+			return nil, fmt.Errorf("prepare part: preparation base names another receiver")
+		}
+		// The real row must still hold the observation the prefix was built
+		// from: an unexpected representation change aborts this sequence
+		// rather than relabelling a stale envelope with a newer revision.
+		if version.payload.payloadRevision != base.original.payloadRevision ||
+			version.payload.persistedEnvelope != base.original.persistedEnvelope ||
+			version.payload.hasValue != base.original.hasValue {
+			return nil, ErrPartReselect
+		}
+		p.expectedRepresentation = base.expected
+		p.expectedPredecessors = slices.Clone(base.predecessors)
+		// Build the next representation from the validated prefix, not from
+		// the real record, so this envelope contains every earlier role.
+		current = base.record
+	}
 	local, err := partRecordAt(current, permit.address.OutputPath)
 	if err != nil {
 		return nil, err
@@ -183,6 +267,12 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 	p.next, err = prepareScopedPartRecord(current, source.record, source.Descriptor(), permit.address)
 	if err != nil {
 		return nil, err
+	}
+	if !version.payload.hasValue {
+		// Allocate the envelope this Commit will publish, so an ordered
+		// successor can expect that exact pointer.
+		env := p.next.Envelope
+		p.published = &env
 	}
 	if version.payload.hasValue {
 		if err := p.prepareValueStore(ctx, row, current); err != nil {
@@ -474,6 +564,25 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if gate.writers[p.permit.ticket] != p.permit {
 		return nil, PartInstallRefused, partRefused("commit: own permit gone")
 	}
+	// Every recorded predecessor must have published under exactly the
+	// installation identity reserved for it. A matching numeric revision
+	// alone never authorizes a different installation.
+	for _, pred := range p.expectedPredecessors {
+		key, err := partAddressKey(pred.address)
+		if err != nil {
+			return nil, PartInstallRefused, err
+		}
+		state := gate.outputs[key]
+		if state.phase == PartPending || state.task == nil {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+		if state.task.row != pred.receiver || state.task.key != pred.key || state.task.generation != pred.generation {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+	}
+	if gate.revision == math.MaxUint64 {
+		return nil, PartInstallRefused, fmt.Errorf("commit part: installation revision overflow")
+	}
 	if p.store != nil {
 		if !p.store.TryLock() {
 			return nil, PartInstallRefused, partRefused("commit: part store busy")
@@ -482,8 +591,12 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	}
 	row.payloadMu.Lock()
 	defer row.payloadMu.Unlock()
-	if row.payloadRevision != p.version.payload.payloadRevision || row.hasValue != p.version.payload.hasValue || row.persistedEnvelope != p.version.payload.persistedEnvelope {
+	expected := p.expectedRepresentation
+	if row.payloadRevision != expected.payloadRevision || row.hasValue != expected.hasValue || row.persistedEnvelope != expected.envelope {
 		return nil, PartInstallRefused, partRefused("commit: receiver representation")
+	}
+	if row.payloadRevision == math.MaxUint64 {
+		return nil, PartInstallRefused, fmt.Errorf("commit part: payload revision overflow")
 	}
 	// No fallible work after this point. Protection cleanup belongs to the row,
 	// independently of the receipt and the continuation's temporary row hold.
@@ -500,8 +613,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	}
 	row.snapshotLinkIntent = &snapshotLinkIntent{Links: cloneSnapshotRefLinks(p.next.SnapshotLinks)}
 	if p.store == nil {
-		env := p.next.Envelope
-		row.persistedEnvelope = &env
+		row.persistedEnvelope = p.published
 	} else {
 		p.store.Publish()
 	}
