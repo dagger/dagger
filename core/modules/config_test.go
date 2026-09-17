@@ -182,7 +182,7 @@ func TestModuleManifestV2RoundTrip(t *testing.T) {
 		ModuleConfig: ModuleConfig{
 			Name: "tiny",
 			Entrypoint: &ModuleEntrypointConfig{
-				Kind:   ModuleEntrypointKindModule,
+				Kind:   ModuleEntrypointKindDang,
 				Source: "github.com/acme/entrypoint@v1.0.0",
 			},
 		},
@@ -223,6 +223,12 @@ func TestParseModuleManifestV2RejectsInvalidFields(t *testing.T) {
 		{
 			name: "invalid kind",
 			cfg:  "name = \"tiny\"\n[entrypoint]\nkind = \"container\"\nsource = \".\"\n",
+			want: "unsupported entrypoint kind",
+		},
+		{
+			// A module is named by runtime.source, not by an entrypoint.
+			name: "module kind",
+			cfg:  "name = \"tiny\"\n[entrypoint]\nkind = \"module\"\nsource = \"github.com/acme/runtime@v1\"\n",
 			want: "unsupported entrypoint kind",
 		},
 		{

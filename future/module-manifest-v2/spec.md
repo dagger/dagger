@@ -56,7 +56,7 @@ source = "./internal/dagger/entrypoint"
 | Field | Meaning |
 | --- | --- |
 | `name` | The module name. |
-| `entrypoint.kind` | The entrypoint kind. It must be `dang` or `module`. |
+| `entrypoint.kind` | The entrypoint kind. It must be `dang`. |
 | `entrypoint.source` | A local path, or an address that resolves to a `Directory`. |
 
 ### Format selection
@@ -266,7 +266,9 @@ error. The receiver node is not a public entrypoint argument.
 
 ## Entrypoint drivers
 
-Manifest v2 defines two entrypoint drivers.
+Manifest v2 defines one entrypoint driver. A module is not an entrypoint: a
+runtime implemented as a module is named by `runtime.source` in the previous
+format, and the engine drives it as a runtime.
 
 ### `dang`
 
@@ -283,62 +285,19 @@ the Dang evaluator.
 The entrypoint does not receive an introspection file or an introspection
 argument.
 
-### `module`
+### Observability
 
-The `module` driver loads the entrypoint source as a module. Loading is
-recursive:
-
-```text
-target module
-└── module driver
-    └── entrypoint module
-        └── module driver
-            └── entrypoint module
-                └── dang driver
-```
-
-The entrypoint module must have one constructor. The constructor must work
-without supplied arguments. Optional arguments can use their defaults.
-
-`entrypoint.source` means what `runtime.source` meant, so it accepts the same
-values and resolves the same way: a built-in runtime name, a git reference with
-its subpath and pin, or a path relative to the module that names it.
-
-What the engine does with the loaded module depends on what it implements:
-
-| Entrypoint source | Engine behavior |
-| --- | --- |
-| A module whose constructed object implements `ModuleEntrypoint` | Call `types` and `call` on it. |
-| A built-in runtime name | Drive it as a runtime. A built-in is a runtime, so the engine does not inspect it. |
-| Any other module | Drive it as a runtime, through the same adapter `runtime.source` uses. |
-
-The runtime cases exist because the runtimes predate this interface. A runtime
-that grows a `ModuleEntrypoint` implementation moves to the first row without a
-manifest change.
-
-The engine records which of these it chose, so the choice is not silent. The
-span is internal: it stays out of ordinary output and appears when inspecting a
-trace, or at `-vvv`.
+The engine records which interface it drove a module through, so the choice
+is not silent. The span is internal: it stays out of ordinary output and
+appears when inspecting a trace, or at `-vvv`.
 
 | Span | Meaning |
 | --- | --- |
 | `module entrypoint interface` | `ModuleEntrypoint`, called directly. |
-| `module entrypoint runtime adapter` | A runtime named by `entrypoint.source`. |
 | `legacy runtime interface` | A runtime named by `runtime.source`, with no entrypoint in play. |
 
 A fat manifest carries both keys, so exactly one of these says which one the
 engine honored.
-
-Each driver chain must end at a built-in driver. A chain that returns to an
-entrypoint it already loaded is a cycle, and the error names the modules on the
-way back to it. A module that names itself is caught earlier, by the module
-reference loop check that every dependency gets.
-
-The engine passes the target module workspace to the entrypoint.
-
-Module schemas are specific to a client. The entrypoint client serves its own
-schema. A nested dispatch client serves the target module schema. Both clients
-can use the same engine session.
 
 ## Module manifest builder
 
