@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
@@ -50,6 +51,9 @@ type remoteCacheFixtureReport struct {
 	dagql.TransferFixtureReport
 	Bodies      []remoteCacheBodyCount             `json:"bodies"`
 	Persistence core.RemoteCacheFixturePersistence `json:"persistence"`
+	// Transport is what the in-process dispatcher saw of requests to the
+	// fixture's own hosts, and how many other requests it delegated.
+	Transport *fixturetransport.Report `json:"transport,omitempty"`
 }
 
 func installRemoteCacheFixture(srv *dagql.Server) error {
@@ -387,6 +391,13 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		}
 		defer root.Close()
 		report.Bodies, err = readFixtureBodies(root)
+		if dispatcher := fixturetransport.Current(); dispatcher != nil && err == nil {
+			transport := dispatcher.Report()
+			if transport.Overflowed {
+				err = fmt.Errorf("%w: transport", dagql.ErrTransferFixtureOverflow)
+			}
+			report.Transport = &transport
+		}
 		response = report
 	case "recordBody":
 		fn, callErr := q.CurrentFunctionCall(ctx)

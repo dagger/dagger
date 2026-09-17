@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -278,7 +279,8 @@ func (state *HTTPState) Resolve(
 		return nil, err
 	}
 	client := http.Client{
-		Transport: netconfhttp.NewTransport(http.DefaultTransport, dns),
+		// Off the test fixture's gate Wrap returns its argument unchanged.
+		Transport: fixturetransport.Wrap(netconfhttp.NewTransport(http.DefaultTransport, dns)),
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -582,7 +584,8 @@ func doHTTPClientRequest(ctx context.Context, req *http.Request) (*http.Response
 		return nil, err
 	}
 	client := http.Client{
-		Transport: netconfhttp.NewTransport(http.DefaultTransport, dns),
+		// Off the test fixture's gate Wrap returns its argument unchanged.
+		Transport: fixturetransport.Wrap(netconfhttp.NewTransport(http.DefaultTransport, dns)),
 	}
 	resp, err := client.Do(req)
 	if err != nil {

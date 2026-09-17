@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -125,6 +127,28 @@ func TestFixtureControls(t *testing.T) {
 		require.NoError(t, run("releaseHold", "hold.json", nil, nil))
 		require.ErrorContains(t, run("releaseHold", "hold.json", nil, nil), "unknown fixture hold token")
 		require.Zero(t, cache.TransferFixtureHoldCount())
+	})
+
+	t.Run("the observation bound is a positive per-scenario cap", func(t *testing.T) {
+		control("cap.json", fixtureObserveRequest{Cap: 0})
+		require.ErrorContains(t, run("observe", "cap.json", nil, nil), "positive cap")
+		control("cap.json", fixtureObserveRequest{Cap: 64})
+		require.NoError(t, run("observe", "cap.json", nil, nil))
+		var report remoteCacheFixtureReport
+		require.NoError(t, run("report", "", nil, &report))
+		require.Zero(t, report.Controls.HoldTokens, "the hold above was released")
+		require.Equal(t, 1, report.Controls.ArmedBarriers, "the barrier armed above never fired, so the report still shows it")
+	})
+
+	t.Run("transport shape", func(t *testing.T) {
+		// The default transport keeps its dynamic type: the LLM dial override
+		// clones it through this assertion.
+		_, ok := http.DefaultTransport.(*http.Transport)
+		require.True(t, ok)
+		base := http.DefaultTransport
+		require.Same(t, base, fixturetransport.Wrap(base), "with no dispatcher enabled the factory returns the original transport")
+		control("script.json", fixturetransport.Script{})
+		require.ErrorContains(t, run("transport", "script.json", nil, nil), "no fixture transport")
 	})
 
 	t.Run("server-only controls need the engine's controller", func(t *testing.T) {

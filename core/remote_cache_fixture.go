@@ -2,10 +2,14 @@ package core
 
 import (
 	"context"
+	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -77,4 +81,30 @@ type RemoteCacheFixtureRenewalReply struct {
 	Layers      []snapshots.ExportLayer             `json:"layers,omitempty"`
 	Unavailable bool                                `json:"unavailable,omitempty"`
 	Addresses   map[digest.Digest]dagql.BlobAddress `json:"addresses,omitempty"`
+}
+
+// remoteCacheFixtureGitRoot is set once, at startup, under the fixture gate.
+var remoteCacheFixtureGitRoot atomic.Pointer[string]
+
+// EnableRemoteCacheFixtureGit maps the fixture's one Git host to copied bare
+// repositories under <root>/git for the real Git executable. The engine calls
+// it at startup under the fixture gate. It supplies configuration to GitCLI's
+// isolated environment through WithConfig and replaces nothing: not GitCLI's
+// Run, not the Git executable, not checkout or snapshot construction. The
+// public URL, SHA and options of a repository are unchanged. The mapping is
+// bounded to that host and that directory.
+func EnableRemoteCacheFixtureGit(root string) {
+	remoteCacheFixtureGitRoot.Store(&root)
+}
+
+// remoteCacheFixtureGitOptions is nil off-gate.
+func remoteCacheFixtureGitOptions() []gitutil.Option {
+	root := remoteCacheFixtureGitRoot.Load()
+	if root == nil {
+		return nil
+	}
+	return []gitutil.Option{gitutil.WithConfig(map[string]string{
+		"url.file://" + filepath.Join(*root, "git") + "/.insteadOf": "https://" + fixturetransport.GitHost + "/",
+		"protocol.file.allow": "always",
+	})}
 }

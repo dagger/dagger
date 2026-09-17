@@ -220,3 +220,28 @@ func TestFixtureHoldTokensEndAtClose(t *testing.T) {
 	require.NoError(t, c.Close(closeCtx))
 	require.Zero(t, c.TransferFixtureHoldCount(), "no token survives the cache")
 }
+
+// The observation bound: a report whose bound was exceeded fails instead of
+// returning a silently shortened event list, and a new bound starts a new
+// scenario.
+func TestFixtureObserverOverflow(t *testing.T) {
+	ctx, c, srv, _ := shareTestCache(t)
+	c.EnableTransferFixtureParts()
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	c.SetTransferFixtureEventCap(1)
+	shareTestUnite(t, ctx, c, "fixture-overflow", donor, receiver)
+	require.Equal(t, 1, barrier.awaitPass(t), "one install records an installation, an owner sync and a settlement")
+	_, err := c.TransferFixtureSnapshot(ctx, "test-session", nil)
+	require.ErrorIs(t, err, ErrTransferFixtureOverflow)
+
+	c.SetTransferFixtureEventCap(64)
+	report, err := c.TransferFixtureSnapshot(ctx, "test-session", nil)
+	require.NoError(t, err)
+	require.Empty(t, report.Parts, "the new bound cleared the old scenario's events")
+	require.Zero(t, report.Controls.HoldTokens)
+	require.Zero(t, report.Controls.ArmedBarriers)
+}

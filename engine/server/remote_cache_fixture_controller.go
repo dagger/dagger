@@ -12,7 +12,9 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -43,6 +45,25 @@ var errRemoteCacheFixtureDisabled = errors.New("remote cache fixture is not enab
 
 func remoteCacheFixtureEnabled() bool {
 	return os.Getenv(core.RemoteCacheFixtureRootEnv) != ""
+}
+
+// enableRemoteCacheFixtureTransports runs once at startup, under the fixture
+// gate and before any request: it enables the in-process dispatcher, which
+// the two HTTP clients and the content source then wrap their transports
+// with, re-registers go-git's HTTP clients around it, and maps the fixture's
+// Git host to copied bare repositories for the real Git executable. A
+// disabled engine does none of this.
+func enableRemoteCacheFixtureTransports() error {
+	root := os.Getenv(core.RemoteCacheFixtureRootEnv)
+	if root == "" {
+		return nil
+	}
+	if _, err := fixturetransport.Enable(root); err != nil {
+		return err
+	}
+	schema.InstallRemoteCacheFixtureGitTransport()
+	core.EnableRemoteCacheFixtureGit(root)
+	return nil
 }
 
 // remoteCacheFixtureIntegration returns the integration the engine starts:
