@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 
@@ -211,7 +212,7 @@ type partAvailabilityHook struct {
 	fn   func()
 }
 
-func (h *partAvailabilityHook) Available(PersistedPartOffer, int64) bool {
+func (h *partAvailabilityHook) Available(PersistedPartOffer, time.Time) bool {
 	h.once.Do(h.fn)
 	return true
 }

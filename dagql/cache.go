@@ -428,9 +428,10 @@ func NewCache(
 	snapshotGC func(context.Context) error,
 ) (*Cache, error) {
 	c := &Cache{
-		traceBootID:     newTraceBootID(),
-		snapshotManager: snapshotManager,
-		snapshotGC:      snapshotGC,
+		traceBootID:       newTraceBootID(),
+		snapshotManager:   snapshotManager,
+		snapshotGC:        snapshotGC,
+		partContentSource: NewPartContentSource(nil),
 	}
 
 	if dbPath == "" {
@@ -502,7 +503,7 @@ func NewCache(
 		if err := runOnReleaseFuncs(context.WithoutCancel(ctx), releases); err != nil {
 			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
 		}
-		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, persistenceResetReason: CachePersistenceResetImportFailure, sqlDB: db, pdb: persistDB}
+		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, partContentSource: c.partContentSource, persistenceResetReason: CachePersistenceResetImportFailure, sqlDB: db, pdb: persistDB}
 		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
 			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
 		}
@@ -2011,7 +2012,7 @@ type Cache struct {
 	traceImportRuns uint64
 
 	snapshotManager   bkcache.SnapshotManager
-	partContentSource atomic.Pointer[partContentSourceBinding]
+	partContentSource *PartContentSource
 	snapshotGC        func(context.Context) error
 
 	// Test hooks are nil in production. Tests use them to pause inside or

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/dagql"
@@ -103,4 +104,4 @@ func writeFixtureChains(ctx context.Context, path string, chains *dagql.Selected
 	return nil
 }
 
-func (fixturePartContentSource) Available(dagql.PersistedPartOffer, int64) bool { return true }
+func (fixturePartContentSource) Available(dagql.PersistedPartOffer, time.Time) bool { return true }
