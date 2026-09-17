@@ -251,6 +251,24 @@ func userOverlayKeyParts(key string) ([]string, error) {
 // rather than duplicated. A non-nil values slice stores a string array
 // verbatim; otherwise rawValue is typed like repository config writes.
 func WriteUserConfigValue(existing []byte, workspaceKey, key, rawValue string, values []string) ([]byte, error) {
+	return writeUserConfigValue(existing, workspaceKey, key, func(parts []string) any {
+		if values != nil {
+			return values
+		}
+		return parseValueString(parts, rawValue)
+	})
+}
+
+// WriteUserConfigStringValue is WriteUserConfigValue for a string-typed
+// setting: the value is stored as a string whatever it looks like, like
+// WriteConfigStringValue does for repository config.
+func WriteUserConfigStringValue(existing []byte, workspaceKey, key, rawValue string) ([]byte, error) {
+	return writeUserConfigValue(existing, workspaceKey, key, func([]string) any {
+		return StringValue(rawValue)
+	})
+}
+
+func writeUserConfigValue(existing []byte, workspaceKey, key string, valueFor func(parts []string) any) ([]byte, error) {
 	parts, err := userOverlayKeyParts(key)
 	if err != nil {
 		return nil, err
@@ -260,13 +278,7 @@ func WriteUserConfigValue(existing []byte, workspaceKey, key, rawValue string, v
 		return nil, err
 	}
 
-	var value any
-	if values != nil {
-		value = values
-	} else {
-		value = parseValueString(parts, rawValue)
-	}
-	tree.SetPath(append([]string{"workspaces", entryKey}, parts...), value)
+	tree.SetPath(append([]string{"workspaces", entryKey}, parts...), valueFor(parts))
 
 	out, err := tree.ToTomlString()
 	if err != nil {

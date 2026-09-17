@@ -352,6 +352,15 @@ region = "us-east-1"
 		require.NoError(t, err)
 		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
+		// A string setting stores a number-looking value as a string.
+		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "-g", "aws", "region", "1.20")
+		require.NoError(t, err)
+		userConfig, err = os.ReadFile(userConfigPath)
+		require.NoError(t, err)
+		require.Contains(t, string(userConfig), `region = "1.20"`)
+		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "-g", "aws", "region", "us-west-2")
+		require.NoError(t, err)
+
 		// --env scoping composes with --global.
 		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "-g", "aws", "region", "eu-west-1")
 		require.NoError(t, err)

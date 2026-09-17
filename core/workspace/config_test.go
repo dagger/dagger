@@ -520,6 +520,55 @@ source = "modules/my.module"
 	})
 }
 
+func TestWriteConfigStringValue(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct{ raw, stored string }{
+		{"1.20", "1.20"},
+		{"42", "42"},
+		{"true", "true"},
+		{"a,b", "a,b"},
+		{`"1.27"`, "1.27"},
+		{"'1.27'", "1.27"},
+		{"golang:1.27-alpine", "golang:1.27-alpine"},
+	} {
+		data, err := WriteConfigValue(nil, "modules.go.source", "modules/go")
+		require.NoError(t, err)
+		data, err = WriteConfigStringValue(data, "modules.go.settings.version", test.raw)
+		require.NoError(t, err, test.raw)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err, test.raw)
+		require.Equal(t, test.stored, cfg.Modules["go"].Settings["version"], test.raw)
+
+		read, err := ReadConfigValue(data, "modules.go.settings.version")
+		require.NoError(t, err, test.raw)
+		require.Equal(t, test.stored, read, test.raw)
+	}
+}
+
+func TestStringValue(t *testing.T) {
+	t.Parallel()
+
+	for raw, want := range map[string]string{
+		"":              "",
+		"1.27":          "1.27",
+		`"1.27"`:        "1.27",
+		"'1.27'":        "1.27",
+		`""`:            "",
+		`"`:             `"`,
+		`"1.27'`:        `"1.27'`,
+		`"a" and "b"`:   `"a" and "b"`,
+		`say "hi"`:      `say "hi"`,
+		`'it's quoted'`: `'it's quoted'`,
+		`"it's quoted"`: "it's quoted",
+		` "1.27"`:       ` "1.27"`,
+		`"C:\dir\file"`: `C:\dir\file`,
+	} {
+		require.Equal(t, want, StringValue(raw), raw)
+	}
+}
+
 func TestWriteConfigValue(t *testing.T) {
 	t.Parallel()
 

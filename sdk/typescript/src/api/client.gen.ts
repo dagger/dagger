@@ -18150,6 +18150,7 @@ export class WorkspaceModuleSetting extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _isList?: boolean = undefined
   private readonly _isObject?: boolean = undefined
+  private readonly _isString?: boolean = undefined
   private readonly _key?: string = undefined
   private readonly _value?: string = undefined
 
@@ -18163,6 +18164,7 @@ export class WorkspaceModuleSetting extends BaseClient {
     _description?: string,
     _isList?: boolean,
     _isObject?: boolean,
+    _isString?: boolean,
     _key?: string,
     _value?: string,
   ) {
@@ -18173,6 +18175,7 @@ export class WorkspaceModuleSetting extends BaseClient {
     this._description = _description
     this._isList = _isList
     this._isObject = _isObject
+    this._isString = _isString
     this._key = _key
     this._value = _value
   }
@@ -18246,6 +18249,21 @@ export class WorkspaceModuleSetting extends BaseClient {
     }
 
     const ctx = this._ctx.select("isObject")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
+   */
+  isString = async (): Promise<boolean> => {
+    if (this._isString) {
+      return this._isString
+    }
+
+    const ctx = this._ctx.select("isString")
 
     const response: Awaited<boolean> = await ctx.execute()
 

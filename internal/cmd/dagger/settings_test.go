@@ -146,6 +146,49 @@ func TestWriteWorkspaceSettingsTableFitsViewWidth(t *testing.T) {
 	require.NotContains(t, out.String(), "Second description line.")
 }
 
+func TestWriteWorkspaceSettingsTableWide(t *testing.T) {
+	settings := []workspaceSetting{
+		{
+			Module:      "module-with-a-name-that-is-too-long",
+			Key:         "setting-with-a-key-that-is-too-long",
+			Value:       strings.Repeat("value", 20),
+			Description: strings.Repeat("A long description. ", 10),
+		},
+		{
+			Module:      "short",
+			Key:         "multiline",
+			Value:       "first\nsecond\tthird",
+			Description: "First description line.\n\nSecond description line.",
+		},
+	}
+
+	var out bytes.Buffer
+	require.NoError(t, writeWorkspaceSettingsTable(&out, settings, true))
+
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	require.Len(t, lines, len(settings)+1)
+	require.NotContains(t, out.String(), "…")
+	require.Contains(t, lines[1], settings[0].Module)
+	require.Contains(t, lines[1], settings[0].Key)
+	require.Contains(t, lines[1], settings[0].Value)
+	require.Contains(t, lines[1], strings.TrimSpace(settings[0].Description))
+	require.Contains(t, lines[2], "First description line. Second description line.")
+
+	// Columns stay aligned on the widest cell.
+	descriptionColumn := strings.Index(lines[0], "DESCRIPTION")
+	require.Equal(t, descriptionColumn, strings.Index(lines[1], "A long description."))
+	require.Equal(t, descriptionColumn, strings.Index(lines[2], "First description line."))
+}
+
+func TestWorkspaceSettingsWideOnlyLists(t *testing.T) {
+	cmd := newSettingsCmd(false)
+	require.NoError(t, cmd.Flags().Set("wide", "true"))
+	t.Cleanup(func() { workspaceSettingsWide = false })
+
+	err := runWorkspaceSettings(cmd, []string{"go", "version"})
+	require.ErrorContains(t, err, "--wide applies to listing settings")
+}
+
 func TestWriteWorkspaceSettingsTableMeasuresUnicodeWidth(t *testing.T) {
 	settings := []workspaceSetting{
 		{

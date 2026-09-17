@@ -264,6 +264,7 @@ func (s *workspaceSchema) moduleSettings(
 			Value:        value,
 			Description:  hint.Description,
 			DefaultValue: hint.DefaultValue,
+			IsString:     hint.IsString,
 			IsList:       hint.IsList,
 			IsObject:     hint.IsObject,
 		})

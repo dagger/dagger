@@ -185,15 +185,11 @@ func (s *workspaceSchema) withConfigValue(
 		}
 		updated, err = workspace.WriteConfigValues(staged.Data, writeKey, elements)
 	default:
-		// A string written to a list-typed module setting stores as an
-		// array, so raw config writes and API calls agree with what
+		// A value written to a module setting stores in the setting's type,
+		// so raw config writes and API calls agree with what
 		// `dagger module settings` produces.
-		elements, isList, listErr := s.listSettingElements(ctx, parent.Self(), staged, writeKey, args.Value)
-		if listErr != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, listErr
-		}
-		if isList {
-			updated, err = workspace.WriteConfigValues(staged.Data, writeKey, elements)
+		if moduleName, hint, ok := s.settingHintForKey(ctx, parent.Self(), staged, writeKey); ok {
+			updated, err = writeSettingValue(staged.Data, writeKey, moduleName, hint, args.Value)
 		} else {
 			updated, err = workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
 		}

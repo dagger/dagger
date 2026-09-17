@@ -17,6 +17,7 @@ import (
 type constructorArgHint struct {
 	Name         string
 	TypeLabel    string
+	IsString     bool
 	IsList       bool
 	IsObject     bool
 	Description  string
@@ -88,22 +89,22 @@ func introspectModuleFromDirectory(
 	return mod.Self(), nil
 }
 
-// listSettingElements reports whether key addresses a list-typed module
-// setting (modules.<m>.settings.<k> or env.<e>.modules.<m>.settings.<k>) and,
-// if so, the elements value denotes. A malformed value for a list setting is
-// an error. The type lookup is best effort: when the module is not installed,
-// has no source, or cannot be introspected, the setting is treated as scalar
-// and the caller writes the value as given.
-func (s *workspaceSchema) listSettingElements(
+// settingHintForKey returns the constructor hint of the module setting that
+// key addresses (modules.<m>.settings.<k> or
+// env.<e>.modules.<m>.settings.<k>). The lookup is best effort: when key is
+// not a module setting, or the module is not installed, has no source, or
+// cannot be introspected, there is no hint and the caller writes the value as
+// given.
+func (s *workspaceSchema) settingHintForKey(
 	ctx context.Context,
 	ws *core.Workspace,
 	staged *stagedWorkspaceConfig,
 	key string,
-	value string,
-) ([]string, bool, error) {
+) (string, constructorArgHint, bool) {
 	parts, err := workspace.SplitConfigPath(key)
 	if err != nil {
-		return nil, false, nil //nolint:nilerr // the write itself reports bad keys
+		// the write itself reports bad keys
+		return "", constructorArgHint{}, false
 	}
 	envName := ""
 	if len(parts) == 6 && parts[0] == "env" {
@@ -111,19 +112,31 @@ func (s *workspaceSchema) listSettingElements(
 		parts = parts[2:]
 	}
 	if len(parts) != 4 || parts[0] != "modules" || parts[2] != "settings" {
-		return nil, false, nil
+		return "", constructorArgHint{}, false
 	}
-	moduleName, settingName := parts[1], parts[3]
+	hint, ok := s.lookupSettingHint(ctx, ws, staged, envName, parts[1], parts[3])
+	return parts[1], hint, ok
+}
 
-	hint, ok := s.lookupSettingHint(ctx, ws, staged, envName, moduleName, settingName)
-	if !ok || !hint.IsList {
-		return nil, false, nil
+// writeSettingValue writes value to a module setting in the TOML type its
+// hint gives it: an array for a list, where a malformed value is an error, and
+// a string for a string or an address, so that 1.27 is not stored as a float.
+// Settings of other types are typed from the value. That includes enums and
+// custom scalars: their stored value is read back as JSON, so a string one is
+// written with its JSON quotes ("FAST"), which value typing keeps.
+func writeSettingValue(data []byte, key, moduleName string, hint constructorArgHint, value string) ([]byte, error) {
+	switch {
+	case hint.IsList:
+		elements, err := workspace.ParseListValue(value)
+		if err != nil {
+			return nil, fmt.Errorf("setting %q of module %q is a list: %w", hint.Name, moduleName, err)
+		}
+		return workspace.WriteConfigValues(data, key, elements)
+	case hint.IsString || hint.IsObject:
+		return workspace.WriteConfigStringValue(data, key, value)
+	default:
+		return workspace.WriteConfigValue(data, key, value)
 	}
-	elements, err := workspace.ParseListValue(value)
-	if err != nil {
-		return nil, true, fmt.Errorf("setting %q of module %q is a list: %w", settingName, moduleName, err)
-	}
-	return elements, true, nil
 }
 
 // lookupSettingHint introspects the named module from the staged config and
@@ -238,6 +251,7 @@ func buildHintFromArg(arg *core.FunctionArg) (constructorArgHint, bool) {
 	return constructorArgHint{
 		Name:         arg.Name,
 		TypeLabel:    typeLabel,
+		IsString:     arg.TypeDef.Self().Kind == core.TypeDefKindString,
 		IsList:       arg.TypeDef.Self().Kind == core.TypeDefKindList,
 		IsObject:     arg.TypeDef.Self().Kind == core.TypeDefKindObject,
 		Description:  arg.Description,

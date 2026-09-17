@@ -296,7 +296,7 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return fmt.Errorf("--global writes to user-level config; pass KEY VALUE to set or --unset KEY (reads always show the effective merged config)")
 		}
-		return writeUserConfigValue(ctx, userScopedConfigKey(args[0]), args[1], nil)
+		return writeUserConfigValue(ctx, userScopedConfigKey(args[0]), args[1], nil, false)
 	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
@@ -822,13 +822,18 @@ func userScopedConfigKey(key string) string {
 }
 
 // writeUserConfigValue stores a config value for the current workspace in the
-// user-level config file, under the cross-process lock.
-func writeUserConfigValue(ctx context.Context, key, value string, values []string) error {
+// user-level config file, under the cross-process lock. A non-nil values slice
+// stores a list; otherwise value is stored as a string when asString is set,
+// and typed by what it looks like when not.
+func writeUserConfigValue(ctx context.Context, key, value string, values []string, asString bool) error {
 	workspaceKey, err := userConfigWorkspaceKey(ctx)
 	if err != nil {
 		return err
 	}
 	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		if asString && values == nil {
+			return workspacepkg.WriteUserConfigStringValue(existing, workspaceKey, key, value)
+		}
 		return workspacepkg.WriteUserConfigValue(existing, workspaceKey, key, value, values)
 	})
 }
