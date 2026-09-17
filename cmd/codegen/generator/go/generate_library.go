@@ -19,6 +19,10 @@ func (g *GoGenerator) GenerateLibrary(ctx context.Context, schema *introspection
 
 	genSt := &generator.GeneratedState{
 		Overlay: overlay,
+		// The generated API bindings used to live directly in dagger.gen.go;
+		// they now live in core/core.gen.go (see cmd/codegen/generator/go/templates/src/core).
+		// Remove the stale top-level file so old checkouts self-heal on regen.
+		RemovePaths: []string{ClientGenFile},
 	}
 
 	pkg, fset, err := loadPackage(ctx, filepath.Join(g.Config.OutputDir, outDir), false)
