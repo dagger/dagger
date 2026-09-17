@@ -1,0 +1,6 @@
+kind: Dependencies
+body: Bump go-runewidth to v0.0.30, which builds its Unicode width tables lazily. Every CLI invocation and every engine init starts about 23ms sooner and uses 2MB less memory.
+time: 2026-09-16T18:20:30-07:00
+custom:
+    Author: grouville
+    PR: "14175"
