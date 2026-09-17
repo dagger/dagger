@@ -216,7 +216,7 @@ func TestPartLazyOperationMissingOutputStopsOnce(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }})
+		return c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }}, nil)
 	}})
 	require.ErrorContains(t, err, "left required output snapshot unset")
 	require.Equal(t, 1, calls)
@@ -276,7 +276,7 @@ func TestPartLazyOperationPublishesOverObservedRepresentation(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				err = c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }})
+				err = c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }}, nil)
 				// Observed before the owner synchronization that follows the
 				// Body applies the link and advances the revision again.
 				published = row.loadPayloadState()

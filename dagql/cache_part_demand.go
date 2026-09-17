@@ -160,6 +160,13 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 		outer.again(ctx, res.cacheSharedResult(), address)
 		err := c.RunLazyTask(ctx, res, partTaskKey("acquire", address), LazyTaskSpec{Body: func(ctx context.Context) error {
 			watch := partReselectWatch{loop: "demandPart acquire"}
+			// retry notes a refusal in the reselect class that is about to be
+			// retried. It returns an error when the progress rule forbids the
+			// retry.
+			retry := func(err error) error {
+				watch.refused(err)
+				return demand.refused(watch.loop, watch.n, address, err)
+			}
 			for {
 				if err := context.Cause(ctx); err != nil {
 					return err
@@ -212,7 +219,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				}
 				source, pendingParent, err := c.selectDemandPartSource(ctx, res, address, route)
 				if partCanReselect(err) {
-					watch.refused(err)
+					if stuck := retry(err); stuck != nil {
+						return stuck
+					}
 					continue
 				}
 				if err != nil {
@@ -255,8 +264,13 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					if errors.Is(err, errLazyEvaluationBusy) {
 						err = c.joinLazyEvaluation(ctx, res, address)
 					}
-					if err == nil || partCanReselect(err) {
-						watch.refused(err)
+					if err == nil {
+						continue
+					}
+					if partCanReselect(err) {
+						if stuck := retry(err); stuck != nil {
+							return stuck
+						}
 						continue
 					}
 					return err
@@ -264,7 +278,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				if pendingParent != nil {
 					if err := c.demandDelegatedParent(ctx, pendingParent); err != nil {
 						if partCanReselect(err) {
-							watch.refused(err)
+							if stuck := retry(err); stuck != nil {
+								return stuck
+							}
 							continue
 						}
 						return errors.Join(demand.causes(), err)
@@ -276,7 +292,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				}
 				err = c.runLazyOperationDecision(ctx, res, address, route, demand)
 				if partCanReselect(err) {
-					watch.refused(err)
+					if stuck := retry(err); stuck != nil {
+						return stuck
+					}
 					continue
 				}
 				if err != nil {
@@ -452,6 +470,11 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 					err = c.InstallReadyPart(ctx, res, scan.Source, permit)
 				}
 				if partCanReselect(err) {
+					// The second scan's refusal would otherwise reach the demand
+					// as this loop's own, which names no counters.
+					if stuck := demand.refused("runLazyOperationDecision", uint64(scanAttempt)+1, address, err); stuck != nil {
+						return stuck
+					}
 					continue
 				}
 				return err
@@ -480,7 +503,7 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			if err != nil {
 				return err
 			}
-			return c.publishEvaluatedParts(ctx, res, address, produced, original, cleanup)
+			return c.publishEvaluatedParts(ctx, res, address, produced, original, cleanup, demand)
 		}
 		return partRefused("decision: both scans refused")
 	}})

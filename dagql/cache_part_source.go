@@ -560,7 +560,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		candidate := &candidates[i]
 		if candidate.probe != nil {
 			if err := candidate.version.check(candidate.row); err != nil {
-				return nil, candidates, partRefused("scan: candidate version")
+				return nil, candidates, candidate.version.changed("scan: candidate version", candidate.row)
 			}
 		}
 	}
@@ -634,6 +634,8 @@ type PartDemandState struct {
 	// revision changes only on exhaustion; SourceCheck treats a change as stale.
 	revision uint64
 	renewals map[renewalEpisodeKey]*renewalEpisode
+	// progress is what the progress rule has recorded for this demand.
+	progress map[partProgressKey]partProgressSeen
 }
 
 func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) string {

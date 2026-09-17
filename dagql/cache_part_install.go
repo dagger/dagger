@@ -468,6 +468,9 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if err := context.Cause(ctx); err != nil {
 		return nil, PartInstallRefused, err
 	}
+	if hook := c.testBeforePartCommit; hook != nil {
+		hook(p)
+	}
 	// Construction invariants, checked before any lock. A violation is a
 	// defect in the constructor, not a changed source: it is an error, so no
 	// retry loop can mistake it for a reason to select again.
@@ -486,13 +489,13 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	// validated below, which is a stricter check than the original stamp.
 	if len(p.expectedPredecessors) == 0 {
 		if err := p.version.check(p.receiver); err != nil {
-			return nil, PartInstallRefused, partRefused("commit: receiver version")
+			return nil, PartInstallRefused, p.version.changed("commit: receiver version", p.receiver)
 		}
 	}
 	source := p.source
 	if source.delegation != nil {
 		if err := source.delegation.childVersion.check(p.receiver); err != nil {
-			return nil, PartInstallRefused, partRefused("commit: delegation child version")
+			return nil, PartInstallRefused, source.delegation.childVersion.changed("commit: delegation child version", p.receiver)
 		}
 	}
 	if p.original == nil && source.readiness == PartReady && !source.sessionlessShare {
@@ -500,7 +503,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		// donor's whole-row capture would refuse an unchanged donated part
 		// whenever a sibling of the donor published in the same pass.
 		if err := source.version.check(source.source); err != nil {
-			return nil, PartInstallRefused, partRefused("commit: donor version")
+			return nil, PartInstallRefused, source.version.changed("commit: donor version", source.source)
 		}
 	}
 	c.egraphMu.Lock()
@@ -533,8 +536,8 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 			if c.partDonatedFactsLocked(source.source, key, source.descriptor.Address, source.descriptor.SnapshotID) != source.donated {
 				return nil, PartInstallRefused, partRefused("commit: donated facts changed")
 			}
-		} else if source.facts != c.partFactsLocked(source.source) {
-			return nil, PartInstallRefused, partRefused("commit: donor facts changed")
+		} else if current := c.partFactsLocked(source.source); source.facts != current {
+			return nil, PartInstallRefused, partChanged("commit: donor facts changed", source.source, source.facts, current)
 		}
 		found := false
 		if source.delegation != nil {
@@ -630,7 +633,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	defer row.payloadMu.Unlock()
 	expected := p.expectedRepresentation
 	if row.payloadRevision != expected.payloadRevision || row.hasValue != expected.hasValue || row.persistedEnvelope != expected.envelope {
-		return nil, PartInstallRefused, partRefused("commit: receiver representation")
+		return nil, PartInstallRefused, partChanged("commit: receiver representation", row, partSourceFacts{payload: expected.payloadRevision}, partSourceFacts{payload: row.payloadRevision})
 	}
 	if row.payloadRevision == math.MaxUint64 {
 		return nil, PartInstallRefused, fmt.Errorf("commit part: payload revision overflow")

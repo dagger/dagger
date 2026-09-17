@@ -2072,6 +2072,8 @@ type Cache struct {
 	testAfterSharePass    func(*snapshotShareItem)
 	testShareSkipped      func(sharedResultID, PersistedPartAddress, error)
 	testBeforeShareFinish func(*ReadyPartReceipt)
+	// testBeforePartCommit sees every preparation as Commit receives it.
+	testBeforePartCommit func(*PreparedReadyPart)
 
 	closeOnce sync.Once
 	closeErr  error
