@@ -65,7 +65,9 @@ func TestSharingOwedBookkeepingIsPaidByAnExactDemand(t *testing.T) {
 		report, err := b.TransferFixtureSnapshot(bCtx, "b", nil)
 		require.NoError(t, err)
 		for _, e := range report.Parts {
-			if e.ResultID == rID {
+			// A later pass that meets the installed part skips it and says so;
+			// when it does is the worker's timing, not this test's subject.
+			if e.ResultID == rID && e.Kind != "share-skipped" {
 				out = append(out, e.Kind)
 			}
 		}
