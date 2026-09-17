@@ -149,14 +149,38 @@ source = "dagger.io/sdk/go@main"
 [env.dev.modules.engine-lab]
 source = ".dagger/modules/engine-lab"
 
+[env.dev.modules.engine-lab.settings]
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+daggerConfig = "file://~/.config/dagger/config.toml"
+
 [env.dev.modules.tui-qa]
 source = ".dagger/modules/tui-qa"
+
+[env.dev.modules.tui-qa.settings]
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+daggerConfig = "file://~/.config/dagger/config.toml"
 
 [env.dev.modules.mcp-lab]
 source = ".dagger/modules/mcp-lab"
 
 [env.dev.modules.editor]
 source = "github.com/vito/editor"
+
+[env.dev.modules.go-cli]
+source = ".dagger/modules/go-cli"
+
+[env.dev.modules.contributor]
+source = "github.com/vito/agents/contributor"
+
+[env.dev.modules.contributor.settings]
+githubToken = "cmd://gh auth token"
+remote = "dagger/dagger"
+
+[env.dev.modules.staff]
+source = "github.com/vito/agents/staff"
+
+[env.dev.modules.committer]
+source = "github.com/vito/agents/committer"
 
 [sdks.dang]
 module = "dang-sdk"
@@ -171,6 +195,21 @@ is-module = true
 [sdks.dang.scopes.".dagger/modules/elixir-client-dev"]
 is-module = true
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/go"]
+
+[sdks.dang.scopes.".dagger/modules/engine-lab"]
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/go-cli"]
+is-module = true
+
+[sdks.dang.scopes.".dagger/modules/go-cli"]
+is-module = true
+
+[sdks.dang.scopes.".dagger/modules/mcp-lab"]
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/go-cli"]
+is-module = true
+
+[sdks.dang.scopes.".dagger/modules/tui-qa"]
+clients = ["./.dagger/modules/cli-dev"]
+is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-client-dev"]
 is-module = true

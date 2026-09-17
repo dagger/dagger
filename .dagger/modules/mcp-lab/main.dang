@@ -15,8 +15,8 @@
 #
 #   - `start`: build CLI + bridge from the workspace, mount a fixture
 #     workspace (fixtures/<name>), run `dagger mcp` under the bridge —
-#     attached to an engine-lab engine via `engine`, or to this session's
-#     own engine via nesting by default.
+#     attached to an engine-lab engine via `engineAddress`, or to a fresh
+#     from-source engine by default.
 #   - `tools`: tools/list verbatim — names, descriptions, input schemas.
 #   - `call`: tools/call — the raw result text the model would receive,
 #     with isError surfaced as a marker instead of raised.
@@ -36,6 +36,8 @@ type McpLab {
   let client: Container! = container
   # the started bridge service (kept so `stop` can tear it down)
   let service: Service = null
+  # the from-source engine owned by this session, when no address was supplied
+  let engineService: Service = null
   # base URL of the bridge inside the client container
   let url: String! = ""
 
@@ -59,19 +61,19 @@ type McpLab {
   builtins (ReadLogs, ListServices, ...) — afterwards, `tools` lists them and
   `call` invokes them, returning the verbatim results a model would receive.
 
-  With `engine` set (the engine-lab endpoint), the session runs against THAT
+  With `engineAddress` set (the engine-lab endpoint), the session runs against THAT
   from-source engine — the mode for QA'ing engine changes: restart engine-lab
-  after edits, then start a fresh MCP session against it. With `engine` empty
-  the session nests against this session's own engine.
+  after edits, then start a fresh MCP session against it. With `engineAddress` empty
+  the session starts a fresh from-source engine.
   """
   start(
     source: Workspace!,
     """
     Address of a running engine to attach to — e.g. the tcp://<host>:1234
     endpoint printed by the engine-lab start tool. Empty attaches to this
-    session's own engine via nesting.
+    fresh from-source engine.
     """
-    engine: String! = "",
+    engineAddress: String! = "",
     """
     Fixture workspace to serve, a directory under this module's fixtures/.
     `crasher` provides startCrasher/startDoomed/poke for crash scenarios.
@@ -92,6 +94,10 @@ type McpLab {
       service.stop
       print("Stopped previous MCP session")
     }
+    if (engineService != null) {
+      engineService.stop
+      self.engineService = null
+    }
 
     let srcDir = source.directory("/")
 
@@ -101,29 +107,30 @@ type McpLab {
     # Build the HTTP<->stdio bridge from the workspace tree: it lives in the
     # repo's root Go module, so it compiles against the exact mcp-go version
     # the CLI serves.
-    let bridgeBin = engineDev(ws: source)
-      .goContainer
-      .withEnvVariable("GOMODCACHE", "/go/pkg/mod")
-      .withEnvVariable("GOCACHE", "/root/.cache/go-build")
-      .withMountedCache("/go/pkg/mod", cacheVolume("mcp-lab-gomod"))
-      .withMountedCache("/root/.cache/go-build", cacheVolume("mcp-lab-gobuild"))
+    let bridgeBin = goCli
+      .base
       .withMountedDirectory("/src", srcDir)
       .withWorkdir("/src")
+      # The bridge runs in Alpine, so it must not depend on the build image's libc.
+      .withEnvVariable("CGO_ENABLED", "0")
       .withExec(["go", "build", "-o", "/out/mcp-bridge", "./.dagger/modules/mcp-lab/bridge"])
       .file("/out/mcp-bridge")
 
-    # Default: nest against this session's own engine. With `engine`: point
-    # the CLI at the existing engine by address — reachable with no service
-    # binding because engine-lab starts its service under the session DNS
-    # domain.
-    let nesting = engine == ""
+    # MCP needs its own client attachables for the stdio pipe. Privileged
+    # nesting forwards to the outer session, which may not have that pipe.
+    # Connect directly to an engine instead: use the supplied address, or
+    # start an isolated engine built from the same workspace as the CLI.
     let lean = container
       .from("alpine:3.20")
       .withExec(["apk", "add", "--no-cache", "git"])
-    let base = if (nesting) {
+    let base = if (engineAddress == "") {
+      let svc = engineDev(ws: source).service(name: "mcp-lab").start
+      self.engineService = svc
       lean
+        .withServiceBinding("dagger-engine", svc)
+        .withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234")
     } else {
-      lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine)
+      lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineAddress)
     }
 
     let runner = base
@@ -139,16 +146,13 @@ type McpLab {
       .withExposedPort(port)
 
     let svc = runner
-      .asService(
-        args: [
-          "mcp-bridge",
-          "-port", toString(port),
-          "-workdir", defaultWorkdir,
-          "--",
-          "--progress=plain", "mcp",
-        ] + extraArgs,
-        experimentalPrivilegedNesting: nesting,
-      )
+      .asService(args: [
+        "mcp-bridge",
+        "-port", toString(port),
+        "-workdir", defaultWorkdir,
+        "--",
+        "--progress=plain", "mcp",
+      ] + extraArgs)
       .start
 
     self.client = container
@@ -157,8 +161,8 @@ type McpLab {
       .withServiceBinding("mcp-lab", svc)
     self.service = svc
     self.url = "http://mcp-lab:" + toString(port)
-    if (engine != "") {
-      print("Attached to engine at " + engine)
+    if (engineAddress != "") {
+      print("Attached to engine at " + engineAddress)
     }
     print("MCP session starting. The `tools` tool blocks until `dagger mcp` finishes initializing — the first run may build SDKs, so give it time.")
     self
@@ -198,6 +202,9 @@ type McpLab {
     if (service != null) {
       service.stop
       print("Stopped MCP session")
+    }
+    if (engineService != null) {
+      engineService.stop
     }
     mcpLab
   }
