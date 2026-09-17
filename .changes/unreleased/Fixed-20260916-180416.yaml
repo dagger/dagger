@@ -1,0 +1,6 @@
+kind: Fixed
+body: The CLI no longer renews an expired LLM subscription login before every command, so commands that do not use an LLM no longer wait for a provider round trip at startup.
+time: 2026-09-16T18:04:16-07:00
+custom:
+    Author: grouville
+    PR: "14174"
