@@ -137,6 +137,8 @@ func printUsage(
 		}
 	}
 	fmt.Fprintln(out)
+
+	fmt.Fprintf(out, "\nFor detailed usage information, visit https://dagger.cloud/%s/settings/usage\n", org.Name)
 }
 
 // formatUsageInt renders an integer with thousands separators.
