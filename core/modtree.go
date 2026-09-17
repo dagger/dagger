@@ -126,6 +126,7 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 		func(n *ModTreeNode, ctx context.Context) error {
 			return n.runCheckLocally(ctx)
 		},
+		(*ModTreeNode).CommandName,
 		include, exclude)
 }
 
@@ -138,15 +139,19 @@ func (node *ModTreeNode) RunGeneratorAsCheck(ctx context.Context, include, exclu
 		func(n *ModTreeNode, ctx context.Context) error {
 			return n.runGeneratorAsCheckLocally(ctx)
 		},
+		func(n *ModTreeNode) string { return generateCheckNode(n).CommandName() },
 		include, exclude)
 }
 
 // runAsCheck runs a leaf node as a check, with telemetry span and optional scale-out.
+// checkName names the span, which has to be the name Check.Name lists the check
+// under: the frontends build the checks report from it.
 func (node *ModTreeNode) runAsCheck(
 	ctx context.Context,
 	isLeaf func(*ModTreeNode) bool,
 	tryScaleOut func(*ModTreeNode, context.Context) (bool, error),
 	runLocally func(*ModTreeNode, context.Context) error,
+	checkName func(*ModTreeNode) string,
 	include, exclude []string,
 ) error {
 	return node.Run(ctx,
@@ -158,11 +163,12 @@ func (node *ModTreeNode) runAsCheck(
 					return err
 				}
 			}
-			ctx, span := Tracer(ctx).Start(ctx, n.CommandName(),
+			name := checkName(n)
+			ctx, span := Tracer(ctx).Start(ctx, name,
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-					attribute.String(telemetry.CheckNameAttr, n.CommandName()),
+					attribute.String(telemetry.CheckNameAttr, name),
 				),
 			)
 			defer func() {

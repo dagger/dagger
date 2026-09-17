@@ -609,6 +609,75 @@ func TestWorkspaceTargetSkipNames(t *testing.T) {
 	}
 }
 
+// TestGenerateCheckPatterns pins which patterns select a generate-derived
+// check: the is-empty name it is listed under, and every pattern that selected
+// it while it was still named after its generator.
+func TestGenerateCheckPatterns(t *testing.T) {
+	ctx := context.Background()
+	for _, test := range []struct {
+		name       string
+		entrypoint bool
+		patterns   []string
+		// included is whether the patterns select the check as `dagger check`
+		// arguments or --skip values. moduleSkipped is whether they do as a
+		// module's configured skips, which also accept module-local names.
+		included      bool
+		moduleSkipped bool
+	}{
+		{"check name", false, []string{"alpha-sdk:generate:is-empty"}, true, true},
+		{"generator name", false, []string{"alpha-sdk:generate"}, true, true},
+		{"module name", false, []string{"alpha-sdk"}, true, true},
+		{"single segment wildcard on the generator", false, []string{"alpha-sdk:*"}, true, true},
+		{"wildcard on the check name", false, []string{"alpha-sdk:*:is-empty"}, true, true},
+		{"entrypoint check name", true, []string{"generate:is-empty"}, true, true},
+		{"entrypoint generator name", true, []string{"generate"}, true, true},
+		{"module-local check name", false, []string{"generate:is-empty"}, false, true},
+		{"module-local generator name", false, []string{"generate"}, false, true},
+		{"other leaf", false, []string{"alpha-sdk:generate:other"}, false, false},
+		{"other module", false, []string{"beta-sdk:generate:is-empty"}, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := modTreeNode("alpha-sdk", "generate")
+			node.Parent.WorkspaceEntrypoint = test.entrypoint
+			check := &core.Check{Node: node, IsGenerate: true}
+
+			wantName := "alpha-sdk:generate:is-empty"
+			if test.entrypoint {
+				wantName = "generate:is-empty"
+			}
+			require.Equal(t, wantName, check.Name())
+
+			included, err := filterChecksByInclude(ctx, []*core.Check{check}, test.patterns)
+			require.NoError(t, err)
+			require.Equal(t, test.included, len(included) == 1)
+
+			remaining, err := filterChecksByExclude(ctx, []*core.Check{check}, test.patterns, false)
+			require.NoError(t, err)
+			require.Equal(t, test.included, len(remaining) == 0)
+
+			remaining, err = filterChecksByExclude(ctx, []*core.Check{check}, test.patterns, true)
+			require.NoError(t, err)
+			require.Equal(t, test.moduleSkipped, len(remaining) == 0)
+		})
+	}
+
+	t.Run("the is-empty name alone would lose single segment wildcards", func(t *testing.T) {
+		// Why a generate-derived check also answers to its generator node.
+		check := &core.Check{Node: modTreeNode("alpha-sdk", "generate"), IsGenerate: true}
+		match, err := matchWorkspaceInclude(ctx, check.NamingNode(), []string{"alpha-sdk:*"})
+		require.NoError(t, err)
+		require.False(t, match)
+	})
+
+	t.Run("an ordinary check has no is-empty name", func(t *testing.T) {
+		check := &core.Check{Node: modTreeNode("go", "lint")}
+		require.Equal(t, "go:lint", check.Name())
+		included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{"go:lint:is-empty"})
+		require.NoError(t, err)
+		require.Empty(t, included)
+	})
+}
+
 func TestSelectVisibleGeneratorModules(t *testing.T) {
 	names := func(entries []workspaceGeneratorModule) []string {
 		result := make([]string, 0, len(entries))

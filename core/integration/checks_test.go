@@ -180,7 +180,10 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.Contains(t, out, "empty-generate")
 		require.Contains(t, out, "non-empty-generate")
 		require.Regexp(t, `passing-check\s+# A regular passing check`, out)
-		require.Regexp(t, `empty-generate\s+# Did you "`, out)
+		// A generate-derived check is listed under an is-empty leaf, so its name
+		// cannot be mistaken for the generator `dagger generate -l` lists.
+		require.Regexp(t, `(?m)^empty-generate:is-empty\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^non-empty-generate:is-empty\s+# Did you "`, out)
 		require.NotContains(t, out, "Generators")
 	})
 
@@ -202,8 +205,8 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		// Should only list generators (rendered with `# Did you "..."?` comments), no regular checks
-		require.Regexp(t, `empty-generate\s+# Did you "`, out)
-		require.Regexp(t, `non-empty-generate\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^empty-generate:is-empty\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^non-empty-generate:is-empty\s+# Did you "`, out)
 		require.NotContains(t, out, "passing-check")
 	})
 
@@ -212,7 +215,8 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			With(daggerExec("--progress=report", "check", "empty-generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `empty-generate.*OK`, out)
+		// The run report has to name the check as the list does.
+		require.Regexp(t, `empty-generate:is-empty.*OK`, out)
 	})
 
 	t.Run("run non-empty generator fails", func(ctx context.Context, t *testctx.T) {
@@ -220,7 +224,35 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			With(daggerExecFail("--progress=report", "check", "non-empty-generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `non-empty-generate.*ERROR`, out)
+		require.Regexp(t, `non-empty-generate:is-empty.*ERROR`, out)
+		// The fix is to run the generator, so the advice names it, not the check.
+		require.Regexp(t, `run 'dagger generate \S*non-empty-generate' to apply`, out)
+	})
+
+	t.Run("the listed name selects the check", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerExec("--progress=report", "check", "empty-generate:is-empty")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `empty-generate:is-empty.*OK`, out)
+		require.NotContains(t, out, "passing-check")
+
+		out, err = modGen.
+			With(daggerExecFail("--progress=report", "check", "non-empty-generate:is-empty")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `non-empty-generate:is-empty.*ERROR`, out)
+	})
+
+	t.Run("a wildcard matching the generator still selects the check", func(ctx context.Context, t *testctx.T) {
+		// "*" spans one segment, so this matches the generator and not the
+		// longer check name. It selected the check before the is-empty leaf.
+		out, err := modGen.
+			With(daggerExec("check", "-l", "empty-*")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `(?m)^empty-generate:is-empty\s+# Did you "`, out)
+		require.NotContains(t, out, "passing-check")
 	})
 
 	t.Run("run all includes generators", func(ctx context.Context, t *testctx.T) {
@@ -374,8 +406,8 @@ source = "hello-with-generate-checks"
 	t.Run("--generate flag overrides the config", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "--generate")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `empty-generate\s+# Did you "`, out)
-		require.Regexp(t, `non-empty-generate\s+# Did you "`, out)
+		require.Regexp(t, `:empty-generate:is-empty\s+# Did you "`, out)
+		require.Regexp(t, `:non-empty-generate:is-empty\s+# Did you "`, out)
 		require.NotContains(t, out, "passing-check")
 	})
 
@@ -485,7 +517,7 @@ engineVersion = "v0.21.9"
 			With(daggerExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "alpha-sdk:generate")
+		require.Contains(t, out, "alpha-sdk:generate:is-empty")
 		require.Contains(t, out, "bad:load")
 	})
 
@@ -643,7 +675,17 @@ name = "beta"
 		require.NoError(t, err, out)
 		// The "Did you ..." comment is how the CLI renders a check whose type
 		// is "generate", so matching it proves the derived check is one.
-		require.Regexp(t, `alpha-sdk:generate\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^alpha-sdk:generate:is-empty\s+# Did you "`, out)
+	})
+
+	t.Run("the generator keeps the un-suffixed name", func(ctx context.Context, t *testctx.T) {
+		// The is-empty leaf exists so the two lists never show the same name.
+		out, err := generated(ctx, t, alphaOnly).
+			With(daggerNonNestedExec("generate", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `(?m)^alpha-sdk:generate\s+#`, out)
+		require.NotContains(t, out, "is-empty")
 	})
 
 	t.Run("no-generate excludes the derived check", func(ctx context.Context, t *testctx.T) {
@@ -659,7 +701,7 @@ name = "beta"
 			With(daggerNonNestedExec("check", "-l", "--generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "alpha-sdk:generate")
+		require.Contains(t, out, "alpha-sdk:generate:is-empty")
 	})
 
 	t.Run("check-generated false excludes the derived check", func(ctx context.Context, t *testctx.T) {
@@ -699,7 +741,7 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^\s*generate\b`, out)
+		require.Regexp(t, `(?m)^\s*generate:is-empty\s+# Did you "`, out)
 		require.NotContains(t, out, "alpha-sdk:generate")
 	})
 
@@ -708,7 +750,41 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk:generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `alpha-sdk:generate.*OK`, out)
+		require.Regexp(t, `alpha-sdk:generate:is-empty.*OK`, out)
+	})
+
+	t.Run("the listed name selects the derived check", func(ctx context.Context, t *testctx.T) {
+		// `dagger check -l` output is meant to be typed back, so the is-empty
+		// name has to select and run the check, not just label it.
+		base := generated(ctx, t, bothSDKs)
+		out, err := base.
+			With(daggerNonNestedExec("check", "-l", "alpha-sdk:generate:is-empty")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `(?m)^alpha-sdk:generate:is-empty\s+# Did you "`, out)
+		require.NotContains(t, out, "beta-sdk")
+
+		out, err = base.
+			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk:generate:is-empty")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `alpha-sdk:generate:is-empty.*OK`, out)
+
+		// Running it is what makes a stale scope fail under that name.
+		out, err = base.
+			WithoutFile(alphaMarker).
+			With(daggerNonNestedExecFail("--progress=report", "check", "alpha-sdk:generate:is-empty")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `alpha-sdk:generate:is-empty.*ERROR`, out)
+	})
+
+	t.Run("skipping the listed name excludes the derived check", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, alphaOnly).
+			With(daggerNonNestedExec("check", "-l", "--skip", "alpha-sdk:generate:is-empty")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "alpha-sdk:generate")
 	})
 
 	t.Run("the derived check fails when the scope is stale", func(ctx context.Context, t *testctx.T) {
@@ -717,7 +793,8 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExecFail("--progress=report", "check", "alpha-sdk:generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `alpha-sdk:generate.*ERROR`, out)
+		require.Regexp(t, `alpha-sdk:generate:is-empty.*ERROR`, out)
+		// The fix is to run the generator, so the advice names it, not the check.
 		require.Contains(t, out, "run 'dagger generate alpha-sdk:generate' to apply")
 	})
 
@@ -733,7 +810,17 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
+		// The derived check no longer shares the explicit check's name, but the
+		// explicit check still wins: the dedup is keyed on the generator's name.
 		require.Equal(t, 1, strings.Count(out, "alpha-sdk:generate"))
+		require.NotContains(t, out, "is-empty")
+
+		// Asking for the derived check by name does not bring it back.
+		out, err = base.
+			With(daggerNonNestedExecFail("check", "alpha-sdk:generate:is-empty")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `no checks matched pattern "alpha-sdk:generate:is-empty"`)
 
 		// The explicit check passes on a stale scope; the derived check would
 		// have failed, so this proves which one survived the dedup.
@@ -750,8 +837,8 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "alpha-sdk:generate")
-		require.Contains(t, out, "beta-sdk:generate")
+		require.Contains(t, out, "alpha-sdk:generate:is-empty")
+		require.Contains(t, out, "beta-sdk:generate:is-empty")
 	})
 
 	t.Run("a stale dependency fails the dependent SDK's check too", func(ctx context.Context, t *testctx.T) {
@@ -762,8 +849,8 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExecFail("--progress=report", "check")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `alpha-sdk:generate.*ERROR`, out)
-		require.Regexp(t, `beta-sdk:generate.*ERROR`, out)
+		require.Regexp(t, `alpha-sdk:generate:is-empty.*ERROR`, out)
+		require.Regexp(t, `beta-sdk:generate:is-empty.*ERROR`, out)
 	})
 
 	t.Run("an independent SDK's check is unaffected", func(ctx context.Context, t *testctx.T) {
@@ -772,8 +859,8 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExecFail("--progress=report", "check")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `alpha-sdk:generate.*ERROR`, out)
-		require.Regexp(t, `beta-sdk:generate.*OK`, out)
+		require.Regexp(t, `alpha-sdk:generate:is-empty.*ERROR`, out)
+		require.Regexp(t, `beta-sdk:generate:is-empty.*OK`, out)
 	})
 
 	t.Run("originalModule reports that the check is engine-defined", func(ctx context.Context, t *testctx.T) {

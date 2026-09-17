@@ -47,6 +47,22 @@ type Check struct {
 // module's checks drop their prefix), and the frontends dedupe by check name.
 const moduleLoadCheckName = "load"
 
+// generateCheckName is the leaf a generate-derived check is reported under, so
+// it reads as "<generator>:is-empty" everywhere checks are named. The check
+// passes when the generator's changeset is empty. The suffix keeps the check
+// from colliding with the generator itself, which `dagger generate` lists under
+// the un-suffixed name. It extends the generator's path rather than replacing
+// its leaf the way moduleLoadCheckName does, because a module may declare
+// several +generate functions and "<module>:is-empty" would collide again.
+const generateCheckName = "is-empty"
+
+// generateCheckNode is the naming-only node of the check derived from a
+// generator. Every place that names such a check goes through it, so the list
+// and the run report cannot disagree.
+func generateCheckNode(generator *ModTreeNode) *ModTreeNode {
+	return &ModTreeNode{Parent: generator, Name: generateCheckName}
+}
+
 // NewModuleLoadFailureCheck is the always-failing check that stands in for a
 // workspace module `dagger check` could not load. Its nodes are naming-only
 // (the shape reparentWorkspaceTreeRoot gives a module root) because the
@@ -263,7 +279,31 @@ func (c *Check) ResultEmoji() string {
 }
 
 func (c *Check) Name() string {
-	return c.Node.CommandName()
+	return c.NamingNode().CommandName()
+}
+
+// NamingNode is the node a check is named and matched by. A generate-derived
+// check reports under an is-empty leaf its generator node does not carry, so
+// this wraps that node the way NewModuleLoadFailureCheck builds its own
+// naming-only nodes. Node itself has to stay the real generator node, because
+// that is what RunGeneratorAsCheck and Generator{Node: ...} dispatch on.
+func (c *Check) NamingNode() *ModTreeNode {
+	if !c.IsGenerate {
+		return c.Node
+	}
+	return generateCheckNode(c.Node)
+}
+
+// MatchNodes are the nodes include and skip patterns are tried against. A
+// generate-derived check is listed under its is-empty name, so that name has to
+// select it. Patterns written against the generator it came from have to keep
+// selecting it too: a "*" spans a single segment, so "go:*" matches the
+// generator and not the check name, which is one leaf longer.
+func (c *Check) MatchNodes() []*ModTreeNode {
+	if !c.IsGenerate {
+		return []*ModTreeNode{c.Node}
+	}
+	return []*ModTreeNode{c.NamingNode(), c.Node}
 }
 
 func (c *Check) CheckType() string {

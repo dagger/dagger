@@ -3979,50 +3979,31 @@ func (s *workspaceSchema) checks(
 		return e.Check.Skip
 	})
 
-	var allChecks []*core.Check
+	// declaredChecks keeps every module check, whatever the patterns select: a
+	// derived check yields to an explicit one even when only the derived check
+	// was asked for by name.
+	var allChecks, declaredChecks []*core.Check
 	for _, mod := range mods {
 		checkGroup, err := core.NewCheckGroup(ctx, mod, nil, noGenerate, onlyGenerate)
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
 		}
 		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Self().Name(), entrypoints[mod.Self().Name()])
-		filtered, err := filterNodesByInclude(
-			ctx,
-			checkGroup.Checks,
-			include,
-			func(check *core.Check) *core.ModTreeNode { return check.Node },
-			func(check *core.Check) string { return check.Name() },
-			"check",
-		)
+		declaredChecks = append(declaredChecks, checkGroup.Checks...)
+		filtered, err := filterChecksByInclude(ctx, checkGroup.Checks, include)
 		if err != nil {
 			return nil, err
 		}
 		// Apply caller-requested skip patterns.
 		if len(skip) > 0 {
-			filtered, err = filterNodesByExclude(
-				ctx,
-				filtered,
-				skip,
-				false,
-				func(check *core.Check) *core.ModTreeNode { return check.Node },
-				func(check *core.Check) string { return check.Name() },
-				"check",
-			)
+			filtered, err = filterChecksByExclude(ctx, filtered, skip, false)
 			if err != nil {
 				return nil, err
 			}
 		}
 		// Apply ignoreChecks exclusion for this toolchain's checks.
 		if exclude := ignoreChecks[mod.Self().Name()]; len(exclude) > 0 {
-			filtered, err = filterNodesByExclude(
-				ctx,
-				filtered,
-				exclude,
-				true,
-				func(check *core.Check) *core.ModTreeNode { return check.Node },
-				func(check *core.Check) string { return check.Name() },
-				"check",
-			)
+			filtered, err = filterChecksByExclude(ctx, filtered, exclude, true)
 			if err != nil {
 				return nil, err
 			}
@@ -4038,7 +4019,7 @@ func (s *workspaceSchema) checks(
 		if err != nil {
 			return nil, err
 		}
-		derived, err := s.syntheticSDKGeneratorChecks(ctx, staged, include, skip, entrypoints, ignoreChecks, allChecks)
+		derived, err := s.syntheticSDKGeneratorChecks(ctx, staged, include, skip, entrypoints, ignoreChecks, declaredChecks)
 		if err != nil {
 			return nil, err
 		}
@@ -4059,7 +4040,7 @@ func (s *workspaceSchema) checks(
 // syntheticSDKGeneratorChecks derives one check per configured SDK from the
 // engine-injected generators `dagger generate` already lists, so a workspace
 // keeps the generate-derived check it had when its SDK declared its own
-// +generate function. syntheticSDKGenerators applies the include patterns.
+// +generate function.
 func (s *workspaceSchema) syntheticSDKGeneratorChecks(
 	ctx context.Context,
 	staged *stagedWorkspaceConfig,
@@ -4069,51 +4050,100 @@ func (s *workspaceSchema) syntheticSDKGeneratorChecks(
 	ignoreChecks map[string][]string,
 	existing []*core.Check,
 ) ([]*core.Check, error) {
-	generators, err := s.syntheticSDKGenerators(ctx, staged, include, entrypoints)
+	// The include patterns are applied to the checks below, not here: a pattern
+	// naming the check selects nothing when it is tried against the generator,
+	// whose path is one leaf shorter.
+	generators, err := s.syntheticSDKGenerators(ctx, staged, nil, entrypoints)
 	if err != nil {
 		return nil, err
 	}
 
 	// An explicit +check at the same name wins, as it does for a function
-	// annotated with both +check and +generate.
+	// annotated with both +check and +generate. The dedup is keyed on the
+	// generator's own name, not the check's, so an explicit +check of that name
+	// still wins even though the two no longer collide.
 	taken := make(map[string]struct{}, len(existing))
 	for _, check := range existing {
-		taken[check.Name()] = struct{}{}
+		taken[check.Node.CommandName()] = struct{}{}
 	}
 
 	derived := make([]*core.Check, 0, len(generators))
 	for _, generator := range generators {
-		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
-		if _, exists := taken[check.Name()]; exists {
+		if _, exists := taken[generator.Node.CommandName()]; exists {
 			continue
 		}
+		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
 		// The generator is namespaced under its SDK's provider module, and an
 		// SDK names exactly one installed module, so that module's configured
 		// check skips apply to this check alone.
-		filtered, err := filterNodesByExclude(
-			ctx,
-			[]*core.Check{check},
-			ignoreChecks[generator.Node.Path()[0]],
-			true,
-			func(check *core.Check) *core.ModTreeNode { return check.Node },
-			func(check *core.Check) string { return check.Name() },
-			"check",
-		)
+		filtered, err := filterChecksByExclude(ctx, []*core.Check{check}, ignoreChecks[generator.Node.Path()[0]], true)
 		if err != nil {
 			return nil, err
 		}
 		derived = append(derived, filtered...)
 	}
 
-	return filterNodesByExclude(
-		ctx,
-		derived,
-		skip,
-		false,
-		func(check *core.Check) *core.ModTreeNode { return check.Node },
-		func(check *core.Check) string { return check.Name() },
-		"check",
-	)
+	derived, err = filterChecksByInclude(ctx, derived, include)
+	if err != nil {
+		return nil, err
+	}
+	return filterChecksByExclude(ctx, derived, skip, false)
+}
+
+// matchCheck reports whether a pattern selects the check, by any of the nodes
+// it answers to. moduleLocal also accepts a pattern relative to the module, as
+// filterNodesByExclude does.
+func matchCheck(ctx context.Context, check *core.Check, patterns []string, moduleLocal bool) (bool, error) {
+	for _, node := range check.MatchNodes() {
+		match, err := matchWorkspaceInclude(ctx, node, patterns)
+		if err != nil || match {
+			return match, err
+		}
+		if !moduleLocal {
+			continue
+		}
+		match, err = matchSingleModuleInclude(ctx, node, patterns)
+		if err != nil || match {
+			return match, err
+		}
+	}
+	return false, nil
+}
+
+func filterChecksByInclude(ctx context.Context, checks []*core.Check, include []string) ([]*core.Check, error) {
+	if len(include) == 0 {
+		return checks, nil
+	}
+
+	filtered := make([]*core.Check, 0, len(checks))
+	for _, check := range checks {
+		match, err := matchCheck(ctx, check, include, false)
+		if err != nil {
+			return nil, fmt.Errorf("check %q include match: %w", check.Name(), err)
+		}
+		if match {
+			filtered = append(filtered, check)
+		}
+	}
+	return filtered, nil
+}
+
+func filterChecksByExclude(ctx context.Context, checks []*core.Check, exclude []string, moduleLocal bool) ([]*core.Check, error) {
+	if len(exclude) == 0 {
+		return checks, nil
+	}
+
+	filtered := make([]*core.Check, 0, len(checks))
+	for _, check := range checks {
+		match, err := matchCheck(ctx, check, exclude, moduleLocal)
+		if err != nil {
+			return nil, fmt.Errorf("check %q exclude match: %w", check.Name(), err)
+		}
+		if !match {
+			filtered = append(filtered, check)
+		}
+	}
+	return filtered, nil
 }
 
 type workspaceGeneratorModule struct {
