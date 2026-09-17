@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/containerd/containerd/v2/core/mount"
+	containerdfs "github.com/containerd/continuity/fs"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/fsutil"
