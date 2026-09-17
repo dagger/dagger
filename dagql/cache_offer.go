@@ -258,20 +258,17 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 		if current != old {
 			out.Outcome, out.Err = OfferUnavailable, ErrPersistStateNotReady
 		} else if current == nil || !reflect.DeepEqual(current.record, offer) {
-			if _, err := c.validateOfferAttachmentLocked(row, address, &partOffer{record: offer, owner: owner}); err != nil {
-				out.Outcome, out.Err = OfferInvalid, err
+			// Both primitives validate the owner graph before any mutation.
+			next := &partOffer{record: offer, owner: owner}
+			if current == nil {
+				out.Err = c.attachPartOfferLocked(row, address, next)
 			} else {
-				next := &partOffer{record: offer, owner: owner}
-				if current == nil {
-					out.Err = c.attachPartOfferLocked(row, address, next)
-				} else {
-					queue, out.Err = c.replacePartOfferLocked(ctx, row, address, next)
-				}
-				transferred = row.partOffers[key] == next
-				out.Replaced = transferred && current != nil
-				if !transferred {
-					out.Outcome = OfferInvalid
-				}
+				queue, out.Err = c.replacePartOfferLocked(ctx, row, address, next)
+			}
+			transferred = row.partOffers[key] == next
+			out.Replaced = transferred && current != nil
+			if !transferred {
+				out.Outcome = OfferInvalid
 			}
 		}
 	}
