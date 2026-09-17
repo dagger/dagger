@@ -960,7 +960,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			stopClose()
 			_ = current.Body.Close()
 			if complete || ctx.Err() != nil {
-				return nil
+				return nil //nolint:nilerr // Cancellation and terminal frames end the background consumer normally.
 			}
 			if errors.Is(err, enginetel.ErrInvalidLiveFrame) || errors.Is(err, enginetel.ErrLiveStream) {
 				return fmt.Errorf("decode OTLP stream: %w", err)
@@ -976,7 +976,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 					return nil
 				}
 
-				resp, err = c.connect(ctx, cursor)
+				resp, err = c.connect(ctx, cursor) //nolint:bodyclose // The outer loop closes every response after consumeResponse.
 				if err == nil {
 					break
 				}

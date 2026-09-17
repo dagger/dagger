@@ -29,7 +29,6 @@ import (
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
-	otelgo "github.com/dagger/otel-go"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -3379,7 +3378,7 @@ func TestClassifyCallPayloadRecord(t *testing.T) {
 	digestlessPayload, err := proto.Marshal(digestless)
 	require.NoError(t, err)
 
-	callType := otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)
+	callType := otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)
 	for _, test := range []struct {
 		name       string
 		scope      string
@@ -3401,7 +3400,7 @@ func TestClassifyCallPayloadRecord(t *testing.T) {
 			name:  "other content type",
 			scope: "test.core",
 			body:  otellog.BytesValue(payload),
-			attrs: []otellog.KeyValue{otellog.String(otelgo.ContentTypeAttr, "application/json")},
+			attrs: []otellog.KeyValue{otellog.String(telemetry.ContentTypeAttr, "application/json")},
 		},
 		{
 			name:      "wrong body kind",
@@ -3463,7 +3462,7 @@ func TestClassifyCallPayloadRecordReadsEmbeddedAddress(t *testing.T) {
 		record := scopedLogRecord(t,
 			"test.core",
 			otellog.BytesValue(test.body),
-			otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
 		)
 		got, payload, err := classifyCallPayloadRecord(record)
 		require.NoError(t, err)
@@ -3478,7 +3477,7 @@ func TestWithoutLogOriginPreservesCallPayloadRecord(t *testing.T) {
 		"test.core",
 		otellog.BytesValue(payload),
 		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "origin"),
-		otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
 		otellog.String("test.keep", "value"),
 	)
 
@@ -3491,7 +3490,7 @@ func TestWithoutLogOriginPreservesCallPayloadRecord(t *testing.T) {
 		return true
 	})
 	require.NotContains(t, attrs, telemetryattrs.TelemetryOriginClientIDAttr)
-	require.Equal(t, telemetryattrs.CallPayloadContentType, attrs[otelgo.ContentTypeAttr].AsString())
+	require.Equal(t, telemetryattrs.CallPayloadContentType, attrs[telemetry.ContentTypeAttr].AsString())
 	require.Equal(t, "value", attrs["test.keep"].AsString())
 }
 
@@ -3517,7 +3516,7 @@ func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 			"test.core",
 			otellog.BytesValue(body),
 			otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin),
-			otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
 			otellog.String("test.keep", "value"),
 		)
 	}
@@ -3560,7 +3559,7 @@ func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 			for _, attr := range attrs {
 				require.NotEqual(t, telemetryattrs.TelemetryOriginClientIDAttr, attr.Key,
 					"routing-only origin must not be persisted or streamed")
-				hasPayload = hasPayload || attr.Key == otelgo.ContentTypeAttr && attr.Value.GetStringValue() == telemetryattrs.CallPayloadContentType
+				hasPayload = hasPayload || attr.Key == telemetry.ContentTypeAttr && attr.Value.GetStringValue() == telemetryattrs.CallPayloadContentType
 				hasExtra = hasExtra || attr.Key == "test.keep" && attr.Value.GetStringValue() == "value"
 			}
 			require.True(t, hasPayload, "routing must preserve the call payload marker")
