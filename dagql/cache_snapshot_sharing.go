@@ -874,10 +874,29 @@ func (c *Cache) preflightShareDecode(ctx context.Context, roots []uint64) error 
 	return nil
 }
 
-// errShareSlotStopped ends a slot that never installed anything. It keeps the
-// kernel from retaining bookkeeping for an attempt with no installed output,
-// and is an ordinary skip in diagnostics.
-var errShareSlotStopped = errors.New("snapshot share slot stopped without installing")
+// shareSlotEnded is what a slot's Body returns when it ends without
+// installing. A slot runs as the ordinary obtain:<part> task, so an ordinary
+// demand for that address can join its generation and receives this error.
+// A refusal, a skip, a guard trip under the preparation marker, ineligibility
+// and the worker's own cancellation are sharing's business: the joined demand
+// gets batch 4's reselect, which is what one foreground demand returns to
+// another that joined it, and selects again by its ordinary order. A real
+// local pin, open or decode error keeps its cause; the demand would have met
+// it by selecting the same donor. No private sharing error reaches a caller.
+// Any non-nil return also keeps the kernel from retaining bookkeeping for an
+// attempt that installed nothing.
+func shareSlotEnded(ctx context.Context, cause error) error {
+	switch {
+	case cause == nil,
+		ctx.Err() != nil,
+		errors.Is(cause, ErrPartReselect),
+		errors.Is(cause, ErrPersistStateNotReady),
+		errors.Is(cause, ErrSnapshotShareIneligible),
+		errors.Is(cause, engine.ErrSnapshotShareEvaluation):
+		return ErrPartReselect
+	}
+	return cause
+}
 
 type shareSlotPrepared struct {
 	ok         bool
@@ -935,13 +954,13 @@ func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, member
 	token := PartTaskFromContext(ctx)
 	if token == nil {
 		st.reportPrepared(shareSlotPrepared{err: fmt.Errorf("snapshot share: body has no task token")})
-		return errShareSlotStopped
+		return shareSlotEnded(ctx, nil)
 	}
 	select {
 	case <-st.prepareNow:
 	case <-ctx.Done():
 		st.reportPrepared(shareSlotPrepared{err: context.Cause(ctx)})
-		return errShareSlotStopped
+		return shareSlotEnded(ctx, nil)
 	}
 	permit, outcome, err := c.TryAcquire(ctx, receiver, slot.address, token)
 	if err != nil || outcome != GateGranted {
@@ -949,19 +968,19 @@ func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, member
 			permit.Release()
 		}
 		st.reportPrepared(shareSlotPrepared{err: shareSkipCause(err, outcome)})
-		return errShareSlotStopped
+		return shareSlotEnded(ctx, err)
 	}
 	source, err := c.newSessionlessPartSourceLease(ctx, slot.receiver.row, slot.donor.row, slot.address, slot.address, slot.probe)
 	if err != nil {
 		permit.Release()
 		st.reportPrepared(shareSlotPrepared{err: err})
-		return errShareSlotStopped
+		return shareSlotEnded(ctx, err)
 	}
 	// Prepare consumes the source and the permit on every return.
 	prepared, err := c.prepareReadyPartFromBase(ctx, receiver, source, permit, st.base)
 	if err != nil {
 		st.reportPrepared(shareSlotPrepared{err: err})
-		return errShareSlotStopped
+		return shareSlotEnded(ctx, err)
 	}
 	st.reportPrepared(shareSlotPrepared{
 		ok:         true,
@@ -978,17 +997,19 @@ func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, member
 	}
 	if !commit {
 		st.reportCommitted(shareSlotCommitted{outcome: PartInstallRefused})
+		// An aborted slot's release error is a cleanup error of sharing's
+		// own; it is recorded, not handed to a joined demand.
 		if err := prepared.Release(context.WithoutCancel(ctx)); err != nil {
-			return errors.Join(errShareSlotStopped, err)
+			c.recordShareCleanupError(err)
 		}
-		return errShareSlotStopped
+		return shareSlotEnded(ctx, nil)
 	}
 	receipt, installOutcome, err := c.CommitReadyPart(ctx, prepared)
 	// A successful Body always delivers its receipt through its owning pass
 	// slot, including on a post-commit cleanup error or cancellation.
 	st.reportCommitted(shareSlotCommitted{receipt: receipt, outcome: installOutcome, err: err})
 	if installOutcome != PartInstalled {
-		return errors.Join(errShareSlotStopped, err)
+		return shareSlotEnded(ctx, err)
 	}
 	// Every cohort member hold is released before this Body returns, so the
 	// receipt's and the task's own receiver holds are the only ones left.
