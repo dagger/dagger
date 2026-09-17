@@ -172,6 +172,17 @@ func (RemoteCacheTransferSuite) TestFixtureControls(ctx context.Context, t *test
 		require.Equal(t, dagql.TransferFixtureControls{}, report.Controls, "neither a hold token nor an armed barrier survives a restart")
 		require.ErrorContains(t, b.fixture("barrierRelease", b.control("old-barrier.json", map[string]any{"key": "never", "generation": armed.Generation}), nil, nil), "not armed")
 		require.ErrorContains(t, b.fixture("releaseHold", b.control("old-hold.json", map[string]any{"token": hold.Token}), nil, nil), "unknown fixture hold token")
+
+		// The collection control runs the engine's real metadata collection
+		// and numbers its own generations from one in each cache lifetime.
+		var gc struct {
+			Generation                      uint64
+			SnapshotsBefore, SnapshotsAfter uint64
+		}
+		require.NoError(t, b.fixture("gc", "", nil, &gc))
+		require.Equal(t, uint64(1), gc.Generation)
+		require.Positive(t, gc.SnapshotsBefore)
+		require.LessOrEqual(t, gc.SnapshotsAfter, gc.SnapshotsBefore)
 	})
 
 	t.Run("ObserverOverflow", func(ctx context.Context, t *testctx.T) {
