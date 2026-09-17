@@ -379,6 +379,7 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 	}
 	return record, version, probe, nil
 }
+
 // probeAllParts describes every declared part of one row, outside E, with the
 // same nonblocking capture and gate reads probePart uses for one address. It
 // performs no typed decode, open, hash, content request or evaluation.

@@ -695,14 +695,37 @@ func shareReceiverPending(p PartProbe) bool {
 func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) []*shareSlot {
 	rows := shareMemberOrder(item.members)
 	now := time.Now().Unix()
-	c.egraphMu.RLock()
+	observed := c.probeShareMembers(ctx, rows)
+
+	// One graph section decides receiver eligibility and, for each ordered
+	// pair, whether the donor is an ordinary equivalent whose own resource
+	// requirements already fit inside the receiver's. Selecting a donor the
+	// structural admission would refuse would spend this address's one
+	// attempt on a slot that cannot be admitted.
+	type sharePair struct{ receiver, donor sharedResultID }
 	eligible := make(map[sharedResultID]bool, len(rows))
+	admits := map[sharePair]bool{}
+	c.egraphMu.Lock()
 	for _, row := range rows {
 		eligible[row.id] = c.shareReceiverEligibleLocked(row, now)
+		if !eligible[row.id] {
+			continue
+		}
+		lookup, err := c.partLookupFor(row)
+		if err != nil {
+			eligible[row.id] = false
+			continue
+		}
+		for _, donor := range rows {
+			if donor == row || partRowExpired(donor, now) {
+				continue
+			}
+			if _, ok := c.sessionlessPartEquivalentLocked(row, donor, lookup); ok {
+				admits[sharePair{row.id, donor.id}] = true
+			}
+		}
 	}
-	c.egraphMu.RUnlock()
-
-	observed := c.probeShareMembers(ctx, rows)
+	c.egraphMu.Unlock()
 	var slots []*shareSlot
 	taken := map[sharedResultID]map[string]bool{}
 	for _, row := range rows {
@@ -726,6 +749,9 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 				}
 				donor := observed[candidate.id]
 				if donor == nil || !donor.usable {
+					continue
+				}
+				if !admits[sharePair{row.id, candidate.id}] {
 					continue
 				}
 				p, ok := donor.probes[key]
@@ -757,6 +783,9 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 func (c *Cache) traceShareSkip(ctx context.Context, row *sharedResult, address PersistedPartAddress, cause error) {
 	_ = ctx
 	slog.Debug("snapshot sharing skipped", "row", uint64(row.id), "part", string(address.Part), "cause", cause)
+	if c.testShareSkipped != nil {
+		c.testShareSkipped(row.id, address, cause)
+	}
 }
 
 // preflightShareDecode checks, before any shared persisted-decode attempt is
@@ -1032,8 +1061,10 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 		close(st.prepareNow)
 		res := <-st.prepared
 		if !res.ok {
+			// A failed preparation is omitted before any later prefix is
+			// built: the next address of the same receiver simply starts its
+			// own chain from the real record.
 			c.traceShareSkip(ctx, st.slot.receiver.row, st.slot.address, res.err)
-			c.abortShareSuffix(states, i)
 			continue
 		}
 		st.holds, st.ready = true, true
@@ -1081,6 +1112,9 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 	// protocol.
 	releaseMembers()
 	for _, receipt := range receipts {
+		if c.testBeforeShareFinish != nil {
+			c.testBeforeShareFinish(receipt)
+		}
 		if err := c.FinishReadyPart(context.WithoutCancel(ctx), receipt); err != nil {
 			c.traceShareSkip(ctx, receipt.receiver, PersistedPartAddress{}, err)
 		}
