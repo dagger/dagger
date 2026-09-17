@@ -345,6 +345,15 @@ func (srv *Server) RemoteCacheFixtureStorage(ctx context.Context) (core.RemoteCa
 		switch {
 		case bkcache.IsTransferLease(lease):
 			report.TransientPins++
+			held := lease.ID + ":"
+			resources, err := srv.leaseManager.ListResources(ctx, lease)
+			if err != nil {
+				held += " " + err.Error()
+			}
+			for _, resource := range resources {
+				held += " " + resource.Type + "/" + resource.ID
+			}
+			report.TransientPinResources = append(report.TransientPinResources, held)
 		case strings.HasPrefix(lease.ID, "dagql/result/"):
 			report.OwnerLeases = append(report.OwnerLeases, lease.ID)
 		default:
