@@ -47,6 +47,9 @@ type contentTestTransport struct {
 	open     atomic.Int64
 	// progress, when set, gates each stalled body byte on a receive.
 	progress chan struct{}
+	// opened, when set and buffered, is signaled once per response body
+	// without ever blocking the transport.
+	opened chan struct{}
 }
 
 func newContentTestTransport() *contentTestTransport {
@@ -127,6 +130,12 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 
 func (tr *contentTestTransport) body(ctx context.Context, data []byte, stallAfter int) io.ReadCloser {
 	tr.open.Add(1)
+	if tr.opened != nil {
+		select {
+		case tr.opened <- struct{}{}:
+		default:
+		}
+	}
 	return &contentTestBody{ctx: ctx, data: data, stallAfter: stallAfter, transport: tr}
 }
 
@@ -807,14 +816,19 @@ func newExhaustionFixture(t *testing.T, chains ...chainFixture) *exhaustionFixtu
 	// before the cache is used.
 	c.partContentSource = NewPartContentSource(f.transport)
 	f.receiver = persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
-	f.donor = persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "pending"})
-	partTestEquivalent(t, c, f.receiver, f.donor)
 	partEncodedReceiver(t, ctx, c, f.receiver)
 	id := uint64(f.receiver.cacheSharedResult().id)
 	partLazyPreparationHooks.Store(id, func(context.Context) (LazyOperationInvocation, error) { return f.operation, nil })
 	t.Cleanup(func() { partLazyPreparationHooks.Delete(id) })
 	f.demand = &PartDemandState{target: f.address}
 	return f
+}
+
+// addDonor registers an equivalent pending donor for the receiver.
+func (f *exhaustionFixture) addDonor(t *testing.T) {
+	t.Helper()
+	f.donor = persistedListTestResult(t, f.ctx, f.cache, f.srv, "donor", &transferTestValue{Text: "pending"})
+	partTestEquivalent(t, f.cache, f.receiver, f.donor)
 }
 
 func exhaustionOffer(chain chainFixture, key string, fixed bool) PersistedPartOffer {
@@ -880,6 +894,7 @@ func TestRenewalExhaustion(t *testing.T) {
 	}
 	t.Run("equivalent donor fixed address still works", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain)
+		f.addDonor(t)
 		taken := renewalConsumer(t, attachTestBridge(t, f.cache.PartContentSource()), refuse)
 		f.attach(t, f.receiver, exhaustionOffer(chain, "receiver-key", false))
 		f.attach(t, f.donor, exhaustionOffer(chain, "donor-key", true))
@@ -893,6 +908,7 @@ func TestRenewalExhaustion(t *testing.T) {
 	})
 	t.Run("equivalent donor key does not reset the episode", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain)
+		f.addDonor(t)
 		// The donor's key would be answered; its content already used the episode.
 		taken := renewalConsumer(t, attachTestBridge(t, f.cache.PartContentSource()), func(request *RenewalRequest) RenewalReply {
 			if request.RenewalKey == "receiver-key" {
@@ -909,6 +925,7 @@ func TestRenewalExhaustion(t *testing.T) {
 	})
 	t.Run("distinct chain can still renew", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain, other)
+		f.addDonor(t)
 		taken := renewalConsumer(t, attachTestBridge(t, f.cache.PartContentSource()), func(request *RenewalRequest) RenewalReply {
 			if request.RenewalKey == "receiver-key" {
 				return refuse(request)

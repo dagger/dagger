@@ -3,16 +3,20 @@ package server
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
+	bolt "go.etcd.io/bbolt"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/snapshots"
 )
 
 // renewalOnlyOffer is available only while a bridge is attached.
@@ -157,5 +161,75 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		releaseOnce.Do(func() { close(release) })
 		within(t, adapter.runDone)
 		require.Equal(t, err, adapter.Stop(boundedContext(t)), "the first stop result is kept")
+	})
+}
+
+// newGracefulStopServer has the state GracefulStop closes, with a persistent
+// cache and no sessions.
+func newGracefulStopServer(t *testing.T, cachePath string) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	cache, err := dagql.NewCache(t.Context(), cachePath, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cache.CloseDiscardingPersistence() })
+	meta, err := storage.NewMetaStore(filepath.Join(dir, "snapshots.db"))
+	require.NoError(t, err)
+	db, err := bolt.Open(filepath.Join(dir, "containerdmeta.db"), 0o600, nil)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(nil) })
+	addGCTestPersistable(t, cache, "graceful", "gracefulRoot", dagql.NewInt(1))
+	return &Server{rootDir: dir, workerRootDir: dir, engineCache: cache, snapshotterMDStore: meta, containerdMetaBoltDB: db, shutdownCtx: ctx, shutdownCancel: cancel}
+}
+
+func TestRemoteCacheGracefulStop(t *testing.T) {
+	reopen := func(t *testing.T, path string) dagql.CachePersistenceResetReason {
+		t.Helper()
+		cache, err := dagql.NewCache(t.Context(), path, nil, nil)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, cache.CloseDiscardingPersistence()) }()
+		return cache.PersistenceResetReason()
+	}
+	t.Run("noncooperative run leaves the checkpoint dirty", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "cache.db")
+		srv := newGracefulStopServer(t, path)
+		canceled, release := make(chan struct{}), make(chan struct{})
+		var releaseOnce sync.Once
+		defer releaseOnce.Do(func() { close(release) })
+		require.NoError(t, srv.startRemoteCacheIntegration(&RemoteCacheIntegrationConfig{Run: func(ctx context.Context, _ *RemoteCacheAdapter) error {
+			<-ctx.Done()
+			close(canceled)
+			<-release // ignores cancellation
+			return nil
+		}}))
+		// The shutdown deadline passes once Run has ignored its cancellation;
+		// the cache is otherwise quiescent.
+		stopCtx, expire := context.WithCancel(context.Background())
+		defer expire()
+		go func() {
+			select {
+			case <-canceled:
+				expire()
+			case <-time.After(10 * time.Second):
+			}
+		}()
+		err := srv.GracefulStop(stopCtx)
+		require.ErrorContains(t, err, "remote cache integration did not stop")
+		require.ErrorIs(t, err, context.Canceled)
+		later := srv.engineCache.Close(boundedContext(t))
+		require.ErrorContains(t, later, "remote cache integration did not stop", "a later close cannot mark the checkpoint clean")
+		releaseOnce.Do(func() { close(release) })
+		within(t, srv.remoteCacheAdapter.runDone)
+		require.Equal(t, dagql.CachePersistenceResetUncleanShutdown, reopen(t, path))
+	})
+	t.Run("cooperative run closes cleanly", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "cache.db")
+		srv := newGracefulStopServer(t, path)
+		require.NoError(t, srv.startRemoteCacheIntegration(&RemoteCacheIntegrationConfig{Run: func(ctx context.Context, _ *RemoteCacheAdapter) error {
+			<-ctx.Done()
+			return context.Cause(ctx)
+		}}))
+		require.NoError(t, srv.GracefulStop(boundedContext(t)))
+		require.Equal(t, dagql.CachePersistenceResetNone, reopen(t, path))
 	})
 }
