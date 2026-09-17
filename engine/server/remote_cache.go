@@ -91,6 +91,12 @@ func (a *RemoteCacheAdapter) close(cause error) {
 func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 	a.stopOnce.Do(func() {
 		a.close(errServerShuttingDown)
+		// A Run that has already returned has stopped, whatever ctx says.
+		select {
+		case <-a.runDone:
+			return
+		default:
+		}
 		select {
 		case <-a.runDone:
 		case <-ctx.Done():
