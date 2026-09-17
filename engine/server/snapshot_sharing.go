@@ -22,8 +22,9 @@ func snapshotSharingReceivesImports(opts *NewServerOpts) bool {
 	if opts != nil && opts.RemoteCacheIntegration != nil {
 		return true
 	}
-	_, gated := os.LookupEnv(core.RemoteCacheFixtureRootEnv)
-	return gated
+	// The fixture's own test: it is enabled by a non-empty root, so a
+	// variable that is set but empty enables neither it nor sharing.
+	return os.Getenv(core.RemoteCacheFixtureRootEnv) != ""
 }
 
 // initSnapshotSharing builds the static core schema base, registers the

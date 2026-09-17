@@ -1084,7 +1084,7 @@ func TestSnapshotSharingCancelDuringPreparation(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the preparation never reached PinSnapshot")
 	}
-	require.NoError(t, c.closeSnapshotSharing(ctx))
+	c.closeSnapshotSharing()
 	shareTestNoPassYet(t, barrier, "while its Body was still inside PinSnapshot")
 	unblock()
 	require.Equal(t, 1, barrier.awaitPass(t))
@@ -1111,7 +1111,7 @@ func TestSnapshotSharingAbortReportsAfterCleanup(t *testing.T) {
 	defer unblock()
 	// Cancel inside Prepare, so the Body finds its context done at the commit
 	// latch and aborts a live preparation.
-	manager.afterPin = func() { require.NoError(t, c.closeSnapshotSharing(ctx)) }
+	manager.afterPin = func() { c.closeSnapshotSharing() }
 	manager.beforeRelease = sync.OnceFunc(func() { close(releasing); <-resume })
 	shareTestUnite(t, ctx, c, "abort-cleanup", donor, receiver)
 	select {
@@ -1164,7 +1164,7 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the slot never published")
 	}
-	require.NoError(t, c.closeSnapshotSharing(ctx))
+	c.closeSnapshotSharing()
 	shareTestNoPassYet(t, barrier, "while its Body still held an undelivered receipt")
 	release()
 	require.Equal(t, 1, barrier.awaitPass(t))
@@ -1539,4 +1539,23 @@ func TestSnapshotSharingDonorLeaseReconciliationIsBusy(t *testing.T) {
 	c.notifySnapshotShareCompletion(ctx, donorRow)
 	require.Equal(t, 1, barrier.awaitPass(t))
 	require.True(t, shareTestHasLink(receiver, "fs-snap"))
+}
+
+// The preparation callback is registered once, before admission is enabled,
+// and never after close.
+func TestSnapshotSharingPreparationContextIsSetOnce(t *testing.T) {
+	prepare := func(ctx context.Context) (context.Context, *Server, error) { return ctx, nil, nil }
+
+	_, c, _ := transferTestCache(t)
+	require.Error(t, c.SetPartPreparationContext(nil))
+	require.NoError(t, c.SetPartPreparationContext(prepare))
+	require.ErrorContains(t, c.SetPartPreparationContext(prepare), "already registered")
+	require.NoError(t, c.EnableSnapshotSharing())
+
+	_, enabled, _, _ := shareTestCache(t)
+	require.ErrorContains(t, enabled.SetPartPreparationContext(prepare), "already enabled", "a first registration after admission is refused")
+
+	_, closed, _ := transferTestCache(t)
+	closed.closeSnapshotSharing()
+	require.ErrorIs(t, closed.SetPartPreparationContext(prepare), ErrSnapshotSharingClosed)
 }

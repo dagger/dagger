@@ -21,6 +21,9 @@ func TestSnapshotSharingReceivesImports(t *testing.T) {
 	require.True(t, snapshotSharingReceivesImports(&NewServerOpts{
 		RemoteCacheIntegration: &RemoteCacheIntegrationConfig{Run: func(context.Context, *RemoteCacheAdapter) error { return nil }},
 	}))
+	// The fixture is enabled by a non-empty root, and so is sharing.
+	t.Setenv(core.RemoteCacheFixtureRootEnv, "")
+	require.False(t, snapshotSharingReceivesImports(&NewServerOpts{}))
 	t.Setenv(core.RemoteCacheFixtureRootEnv, t.TempDir())
 	require.True(t, snapshotSharingReceivesImports(&NewServerOpts{}))
 }
