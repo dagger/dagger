@@ -30,10 +30,27 @@
 (* Abstracted away, and owed to Go tests: session lookup and which         *)
 (* equivalent serves a read, publication and the e-graph, requirement      *)
 (* sets (see RemoteOwners), the mailbox and its timer, HTTP, bytes,        *)
-(* leases and real GC, persisted decode, and the reselect progress rule,   *)
-(* which is a diagnostic over counters this model does not carry. The scan *)
-(* correction appears as Scan's guard: a row that is being published is    *)
-(* not scanned, it is scanned again.                                       *)
+(* leases and real GC, and persisted decode. The scan correction appears   *)
+(* as Scan's guard: a row that is being published is not scanned, it is    *)
+(* scanned again.                                                          *)
+(*                                                                         *)
+(* The reselect progress rule is modeled on its one counter here, the      *)
+(* receiver's payload revision: every publication and every successful     *)
+(* owner synchronization advances it. A preparation observes it, Commit    *)
+(* refuses a preparation whose observation no longer stands, and that      *)
+(* counted refusal is recorded with the revision Commit read; the same     *)
+(* record twice ends the demand with "noprogress". In this module's bounds *)
+(* no other actor can move the revision between a preparation and its      *)
+(* Commit, because one operation publishes every pending part at once, so  *)
+(* the rule's silence under real contention is Go's to show                *)
+(* (TestPublishEvaluatedPartsSurvivesContention); what the model shows is  *)
+(* that the rule never fires on the code as it is and fires on the second  *)
+(* round of a refusal whose counters have not moved.                       *)
+(*                                                                         *)
+(* Assumed, and discharged by CacheLifecycle's own invariants: one attempt *)
+(* per group at a time (LazyMutualExclusion), success is permanent         *)
+(* (LazySuccessPermanent), holds are exact and never underflow             *)
+(* (OwnershipExact, NoUnderflow). No assumption here lacks one.            *)
 (*                                                                         *)
 (* Fault selects one deliberate break; "none" is the code. Bounds limit    *)
 (* external events (cancellations, offers, failed synchronizations, the    *)
@@ -51,7 +68,7 @@ vars == <<out, grp, writers, donor, offer, task, used, hist>>
 
 IdleTask == [pc |-> "idle", part |-> "fs", src |-> "none", decision |-> FALSE,
              exhausted |-> FALSE, renewed |-> FALSE, drain |-> {}, checkOK |-> FALSE,
-             res |-> "none"]
+             obs |-> 0, seen |-> {}, res |-> "none"]
 
 Init ==
     /\ out = [p \in Parts |-> [phase |-> "Pending", by |-> NoTask, via |-> "none",
@@ -62,7 +79,7 @@ Init ==
     /\ offer = [present |-> FALSE, addr |-> "usable", afterSeal |-> FALSE, duringPreparing |-> FALSE]
     /\ task = [t \in Tasks |-> IdleTask]
     /\ used = [cancels |-> 0, offers |-> 0, syncFails |-> 0]
-    /\ hist = [installs |-> [p \in Parts |-> 0]]
+    /\ hist = [installs |-> [p \in Parts |-> 0], rev |-> 0, rounds |-> [t \in Tasks |-> 0]]
 
 Sealed == grp.phase \in {"Running", "Evaluated"}
 WritersOn(p) == {w \in writers : w[2] = p}
@@ -139,7 +156,8 @@ Acquire(t) ==
             /\ UNCHANGED writers
        ELSE /\ writers' = writers \cup {<<t, p>>}
             /\ task' = [ClearChecks({t}) EXCEPT ![t] = [task[t] EXCEPT
-                   !.pc = IF task[t].src = "chain" THEN "download" ELSE "commit"]]
+                   !.pc = IF task[t].src = "chain" THEN "download" ELSE "commit",
+                   !.obs = hist.rev]]
             /\ UNCHANGED donor
     /\ UNCHANGED <<out, grp, offer, used, hist>>
 
@@ -172,22 +190,36 @@ Download(t) ==
     /\ UNCHANGED <<out, grp, donor, used, hist>>
 
 \* CommitReadyPart: the source is revalidated; the permit and the source hold
-\* end before owner synchronization starts.
+\* end before owner synchronization starts. A preparation whose observed
+\* revision no longer stands is a counted refusal: the progress rule records
+\* the revision Commit read, and the same record twice ends the demand.
 Commit(t) ==
     LET p == task[t].part
-        valid == IF task[t].src = "ready" THEN donor.up ELSE offer.present IN
+        valid == IF task[t].src = "ready" THEN donor.up ELSE offer.present
+        expected == IF Fault = "WrongExpectation" THEN task[t].obs + 1 ELSE task[t].obs
+        stale == hist.rev # expected
+        retry == IF task[t].decision THEN "check" ELSE "scan" IN
     /\ task[t].pc = "commit"
     /\ writers' = ReleasePermit(t)
     /\ donor' = ReleaseSrc(t)
-    /\ IF valid /\ out[p].phase = "Pending"
+    /\ IF valid /\ ~stale /\ out[p].phase = "Pending"
        THEN /\ out' = [out EXCEPT ![p] = [phase |-> "Installed", by |-> t, via |-> task[t].src,
                          decision |-> task[t].decision, owed |-> FALSE,
                          lateOffer |-> task[t].src = "chain" /\ offer.duringPreparing]]
-            /\ hist' = [hist EXCEPT !.installs[p] = @ + 1]
+            /\ hist' = [hist EXCEPT !.installs[p] = @ + 1, !.rev = @ + 1]
             /\ task' = Set(t, [task[t] EXCEPT !.pc = "finish", !.src = "none"])
-       ELSE /\ task' = Set(t, [task[t] EXCEPT !.pc = IF task[t].decision THEN "check" ELSE "scan", !.src = "none"])
+       ELSE IF valid /\ stale /\ out[p].phase = "Pending"
+       THEN /\ hist' = [hist EXCEPT !.rounds[t] = @ + 1]
+            /\ task' = Set(t, IF hist.rev \in task[t].seen
+                   THEN [task[t] EXCEPT !.pc = "done", !.res = "noprogress", !.src = "none"]
+                   ELSE [task[t] EXCEPT !.pc = retry, !.src = "none", !.seen = @ \cup {hist.rev}])
+            /\ UNCHANGED out
+       ELSE /\ task' = Set(t, [task[t] EXCEPT !.pc = retry, !.src = "none"])
             /\ UNCHANGED <<out, hist>>
-    /\ UNCHANGED <<grp, offer, used>>
+    \* A decision that ends in the hard error ends its group with it.
+    /\ grp' = IF task'[t].res = "noprogress" /\ grp.task = t /\ grp.phase = "Preparing"
+              THEN [phase |-> "Open", task |-> NoTask, ended |-> "err"] ELSE grp
+    /\ UNCHANGED <<offer, used>>
 
 \* Owner synchronization and settlement. A decision that installed from a
 \* source ends its group without running the operation.
@@ -198,13 +230,15 @@ Finish(t) ==
     /\ \/ /\ out' = [out EXCEPT ![p].phase = "Complete"]
           /\ task' = Set(t, [task[t] EXCEPT !.pc = "done", !.res = "ok"])
           /\ grp' = IF owner THEN [phase |-> "Open", task |-> NoTask, ended |-> "ok"] ELSE grp
+          /\ hist' = [hist EXCEPT !.rev = @ + 1]
           /\ UNCHANGED used
        \/ /\ used.syncFails < MaxSyncFailures
           /\ used' = [used EXCEPT !.syncFails = @ + 1]
           /\ out' = [out EXCEPT ![p].owed = TRUE]
           /\ task' = Set(t, [task[t] EXCEPT !.pc = "done", !.res = "err"])
           /\ grp' = IF owner THEN [phase |-> "Open", task |-> NoTask, ended |-> "err"] ELSE grp
-    /\ UNCHANGED <<writers, donor, offer, hist>>
+          /\ UNCHANGED hist
+    /\ UNCHANGED <<writers, donor, offer>>
 
 \* joinLazyEvaluation. The joiner learns only that the group's task ended; it
 \* probes its own part again. The fault takes that task's success for its own:
@@ -255,7 +289,8 @@ Check(t) ==
             /\ donor' = IF donor.up THEN [donor EXCEPT !.holds = @ + 1] ELSE donor
             /\ task' = [ClearChecks({t}) EXCEPT ![t] = [task[t] EXCEPT
                    !.src = IF donor.up THEN "ready" ELSE "chain",
-                   !.pc = IF donor.up THEN "commit" ELSE "download"]]
+                   !.pc = IF donor.up THEN "commit" ELSE "download",
+                   !.obs = hist.rev]]
        ELSE /\ task' = Set(t, [task[t] EXCEPT !.pc = "begin", !.checkOK = TRUE])
             /\ UNCHANGED <<writers, donor>>
     /\ UNCHANGED <<out, grp, offer, used, hist>>
@@ -282,7 +317,8 @@ Publish(t) ==
     /\ out' = [p \in Parts |-> IF out[p].phase = "Pending"
                  THEN [phase |-> "Installed", by |-> t, via |-> "lazy", decision |-> TRUE, owed |-> FALSE, lateOffer |-> FALSE]
                  ELSE out[p]]
-    /\ hist' = [hist EXCEPT !.installs = [p \in Parts |-> IF out[p].phase = "Pending" THEN @[p] + 1 ELSE @[p]]]
+    /\ hist' = [hist EXCEPT !.installs = [p \in Parts |-> IF out[p].phase = "Pending" THEN @[p] + 1 ELSE @[p]],
+                           !.rev = @ + 1]
     /\ task' = Set(t, [task[t] EXCEPT !.pc = "sync"])
     /\ UNCHANGED <<grp, writers, donor, offer, used>>
 
@@ -295,13 +331,15 @@ Sync(t) ==
           \* The demanded part may have been installed by another route; the
           \* demand loop probes it again.
           /\ task' = Set(t, [task[t] EXCEPT !.pc = "probe", !.decision = FALSE])
+          /\ hist' = [hist EXCEPT !.rev = @ + 1]
           /\ UNCHANGED used
        \/ /\ used.syncFails < MaxSyncFailures
           /\ used' = [used EXCEPT !.syncFails = @ + 1]
           /\ out' = [p \in Parts |-> IF p \in Mine(t) THEN [out[p] EXCEPT !.owed = TRUE] ELSE out[p]]
           /\ grp' = [phase |-> "Open", task |-> NoTask, ended |-> "err"]
           /\ task' = Set(t, [task[t] EXCEPT !.pc = "done", !.res = "err", !.decision = FALSE])
-    /\ UNCHANGED <<writers, donor, offer, hist>>
+          /\ UNCHANGED hist
+    /\ UNCHANGED <<writers, donor, offer>>
 
 Cancel(t) ==
     /\ task[t].pc \in {"joinInstall", "joinGroup", "drain", "download", "check", "scan"}
@@ -350,7 +388,7 @@ TypeOK ==
     /\ grp.phase \in {"Open", "Preparing", "Running", "Evaluated"} /\ grp.task \in Tasks \cup {NoTask}
     /\ writers \subseteq Tasks \X Parts
     /\ donor.holds \in 0..Cardinality(Tasks)
-    /\ \A t \in Tasks : task[t].pc \in Pcs /\ task[t].res \in {"none", "ok", "err", "canceled"}
+    /\ \A t \in Tasks : task[t].pc \in Pcs /\ task[t].res \in {"none", "ok", "err", "canceled", "noprogress"}
 
 \* A demand that succeeded was served a completed output of its own part.
 ServedOutputIsComplete == \A t \in Tasks : task[t].res = "ok" => out[task[t].part].phase = "Complete"
@@ -376,6 +414,11 @@ HoldsHaveLiveOwners ==
 
 Quiescent == \A t \in Tasks : task[t].pc = "done"
 QuiescentIsClean == Quiescent => writers = {} /\ donor.holds = 0 /\ grp.phase \in {"Open", "Evaluated"}
+
+\* The progress rule never fires on the code as it is, and when it fires it
+\* is on the second refusal at unmoved counters, never the first.
+NoProgressIsUnreachable == \A t \in Tasks : task[t].res # "noprogress"
+NoProgressOnlyOnARepeat == \A t \in Tasks : task[t].res = "noprogress" => hist.rounds[t] = 2
 
 \* Owed bookkeeping is always attached to an installed, unsettled output.
 OwedMeansInstalled == \A p \in Parts : out[p].owed => out[p].phase = "Installed"

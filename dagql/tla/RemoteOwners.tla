@@ -28,6 +28,13 @@
 (* stands for the e-graph lookup and its filter), publication of results,  *)
 (* the part gate and byte routes (RemoteParts), bytes, leases, restart.    *)
 (* Bounds limit external events only: slot publications, retention drops.  *)
+(*                                                                         *)
+(* Assumed, and discharged by CacheLifecycle's own invariants: stored      *)
+(* counts are exact and never underflow (OwnershipExact, NoUnderflow), a   *)
+(* collected row never returns (NoResurrection), and a row's stored        *)
+(* requirement equals its direct closure before any offer is involved      *)
+(* (RequiredExact). This module re-asserts the first and the last over its *)
+(* own actions, so none is a silent axiom.                                 *)
 EXTENDS Naturals, FiniteSets, TLC
 
 CONSTANTS MaxPubs, MaxDrops, Fault

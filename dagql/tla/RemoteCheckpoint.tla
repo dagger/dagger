@@ -28,6 +28,13 @@
 (* routes (RemoteParts), offer owners beyond one hold (RemoteOwners), the  *)
 (* sharing pass (RemoteSharing), the persistence database, bytes. Bounds   *)
 (* limit external events only: failed synchronizations, one clean restart. *)
+(*                                                                         *)
+(* Assumed, and discharged by CacheLifecycle's own invariants: a flush is  *)
+(* a clean capture with referential integrity (FlushCleanCapture,          *)
+(* FlushReferentialIntegrity) and holds are exact (OwnershipExact). Named  *)
+(* gap, with no CacheLifecycle invariant behind it: that a process which   *)
+(* dies without its checkpoint boots into a whole-cache reset; Go's reset  *)
+(* tests and native TestEncodedRestart/LocalRestoreReset carry it.         *)
 EXTENDS Naturals, FiniteSets, TLC
 
 CONSTANTS MaxSyncFailures, Fault

@@ -331,14 +331,17 @@ remote-cache mechanisms sit above the snapshot store and beside the cache
 kernel, and keeping them out of `CacheLifecycle.tla` leaves every existing
 configuration's state space exactly as it was. Nothing under
 `CacheLifecycle*` changed for them, so they owe no full-suite run. Each module
-header says what it models, as the code is after batches 4 to 6, and what it
-abstracts away (session lookup, publication, bytes, leases, restart).
+header says what it models, as the code is after batches 4 to 6, what it
+abstracts away (session lookup, publication, bytes, leases), and which
+`CacheLifecycle` invariant discharges each thing it assumes; an assumption with
+no such invariant is named there as a gap with the Go tests that carry it.
 
 - `RemoteParts`: one receiver, two parts, one Lazy evaluation group, a Ready
   donor and an offered chain for `fs`; output phase separate from group phase
   and from each demand's result; permits, the recorded drain, the final source
   check and the seal; Commit's revalidation; owed bookkeeping paid by a joiner;
-  offers refused after the seal; one renewal episode; cancellation.
+  offers refused after the seal; one renewal episode; cancellation; and the
+  reselect progress rule on the receiver's payload revision.
 - `RemoteOwners`: receiver, Service and child; two offer owners, one slot, two
   sessions of which one holds the Service's handle; replacement, acquisition
   holds, the cycle rejection, the ordinary hit's filter, Commit's conversion of
@@ -375,6 +378,8 @@ for the two pass configurations, 60 s for each fault and witness):
 | `remote_parts` | pass | 26,270 | 2.2 |
 | `remote_parts_fault_certify_sibling` | `ServedOutputIsComplete` violated | | 2 |
 | `remote_parts_fault_accept_after_seal` | `OfferAfterSealCannotPublish` violated | | 1 |
+| `remote_parts_fault_wrong_expectation` | `NoProgressIsUnreachable` violated: the progress rule ends a refusal whose counters never move | | 1 |
+| `remote_parts_fault_wrong_expectation_round` | pass, 47,466 states: under that fault the hard error comes only on the second refusal and nothing else breaks | 47,466 | 3 |
 | `remote_parts_witness_downloaded_fs` | `WitnessDownloadedFsPendingMeta` violated | | 1 |
 | `remote_parts_witness_late_offer` | `WitnessLateOfferWinsDuringPreparing` violated | | 1 |
 | `remote_parts_witness_fs_beside_meta` | `WitnessFsAcquiredBesideProducedMeta` violated | | 1 |

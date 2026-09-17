@@ -43,6 +43,8 @@ var expectedOutcome = map[string]string{
 	"remote_parts":                                  "",
 	"remote_parts_fault_certify_sibling":            "ServedOutputIsComplete",
 	"remote_parts_fault_accept_after_seal":          "OfferAfterSealCannotPublish",
+	"remote_parts_fault_wrong_expectation":          "NoProgressIsUnreachable",
+	"remote_parts_fault_wrong_expectation_round":    "",
 	"remote_parts_witness_downloaded_fs":            "WitnessDownloadedFsPendingMeta",
 	"remote_parts_witness_late_offer":               "WitnessLateOfferWinsDuringPreparing",
 	"remote_parts_witness_fs_beside_meta":           "WitnessFsAcquiredBesideProducedMeta",

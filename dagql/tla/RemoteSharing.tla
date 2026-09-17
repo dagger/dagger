@@ -33,6 +33,14 @@
 (* (RemoteParts; a foreground demand for an address with a prepared slot   *)
 (* joins it, so the foreground install here needs the address free),       *)
 (* bytes, leases, restart. Bounds limit external events only.              *)
+(*                                                                         *)
+(* Assumed, and discharged by CacheLifecycle's own invariants: stored      *)
+(* counts are exact and never underflow (OwnershipExact, NoUnderflow), a   *)
+(* collected row never returns (NoResurrection), and a slot's task is the  *)
+(* only attempt on its address (LazyMutualExclusion). Named gap, with no   *)
+(* CacheLifecycle invariant behind it: that each slot outcome has exactly  *)
+(* one reporter and a pass does not end while a Body owns a preparation    *)
+(* (batch 6 amendment A2); batch 6's three cancellation tests carry it.    *)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
 CONSTANTS MaxForeground, MaxSyncFailures, StartDecoded, Fault
@@ -62,7 +70,7 @@ Init ==
     /\ pass = [pc |-> "none", slots |-> <<>>, typed |-> FALSE]
     /\ used = [fg |-> 0, syncFails |-> 0]
     /\ hist = [installs |-> [p \in PartSet |-> 0], passes |-> 0, decodedDuringFinish |-> FALSE,
-               typedTwoSlots |-> FALSE]
+               typedTwoSlots |-> FALSE, donorUnownedInFirstPass |-> FALSE]
 
 Move(cnt, ds, as) == [r \in Rows |-> (cnt[r] + (IF r \in as THEN 1 ELSE 0)) - (IF r \in ds THEN 1 ELSE 0)]
 Slot(p) == [part |-> p, state |-> "planned", roles |-> {}, expRev |-> 0]
@@ -203,7 +211,8 @@ DropDonorOwner ==
     /\ donorOwned
     /\ donorOwned' = FALSE
     /\ count' = Move(count, {"D"}, {})
-    /\ UNCHANGED <<live, xRetained, form, rev, phase, desired, owed, pins, cohort, successor, pass, used, hist>>
+    /\ hist' = [hist EXCEPT !.donorUnownedInFirstPass = hist.passes <= 1]
+    /\ UNCHANGED <<live, xRetained, form, rev, phase, desired, owed, pins, cohort, successor, pass, used>>
 
 DropBystander ==
     /\ xRetained
@@ -272,8 +281,11 @@ WitnessDonorCollectedBeforeReceiverRead ==
 WitnessDecodedWhileFinishPaused == ~hist.decodedDuringFinish
 WitnessTwoPartsInOnePass ==
     ~(hist.passes = 1 /\ pass.pc = "none" /\ \A p \in PartSet : phase[p] = "Complete" /\ hist.installs[p] = 1 /\ used.fg = 0)
+\* A decoded receiver filled over two passes although the donor lost its
+\* ordinary owner: only the cohorts' continuous hold kept the donor.
 WitnessSuccessorFillsDecodedReceiver ==
-    ~(hist.passes = 2 /\ form = "decoded" /\ used.fg = 0 /\ \A p \in PartSet : phase[p] = "Complete")
+    ~(hist.passes = 2 /\ form = "decoded" /\ used.fg = 0 /\ ~donorOwned /\ hist.donorUnownedInFirstPass
+      /\ \A p \in PartSet : phase[p] = "Complete")
 WitnessStaleRevisionRefusesSlot ==
     ~(\E i \in SlotIdx : pass.slots[i].state = "refused" /\ live["D"] /\ phase[pass.slots[i].part] = "Pending")
 =============================================================================
