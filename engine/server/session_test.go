@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -28,7 +30,9 @@ import (
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -36,10 +40,13 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -1560,7 +1567,7 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 			TracerProviders:          1,
 			LoggerProviders:          1,
 			ConfiguredSpanProcessors: 4,
-			ConfiguredLogProcessors:  2,
+			ConfiguredLogProcessors:  3,
 			ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
 			ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 		},
@@ -1725,8 +1732,8 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 		}
 		return ""
 	}
-	metricPoints := func(rows []clientdb.Metric) int {
-		points := 0
+	metricPointCount := func(rows []clientdb.Metric) int {
+		count := 0
 		for _, resourceMetricsPB := range clientdb.MetricsToPB(rows) {
 			resourceMetrics, err := telemetry.ResourceMetricsFromPB(resourceMetricsPB)
 			require.NoError(t, err)
@@ -1734,11 +1741,11 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 				for _, metrics := range scopeMetrics.Metrics {
 					gauge, ok := metrics.Data.(metricdata.Gauge[int64])
 					require.True(t, ok, "unexpected metric aggregation %T", metrics.Data)
-					points += len(gauge.DataPoints)
+					count += len(gauge.DataPoints)
 				}
 			}
 		}
-		return points
+		return count
 	}
 
 	rootSpans, rootLogs, rootMetrics := load("root")
@@ -1755,16 +1762,15 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 	require.Len(t, rootLogs, 2)
 	require.Len(t, parentLogs, 1)
 	require.Len(t, childLogs, 1)
-	require.Equal(t, 2, metricPoints(rootMetrics))
-	require.Equal(t, 1, metricPoints(parentMetrics))
-	require.Equal(t, 1, metricPoints(childMetrics))
-	for _, span := range childSpans {
-		require.Equal(t, "child", originAttr(span.Attributes))
+	require.Equal(t, 2, metricPointCount(rootMetrics))
+	require.Equal(t, 1, metricPointCount(parentMetrics))
+	require.Equal(t, 1, metricPointCount(childMetrics))
+	for _, span := range append(append(rootSpans, parentSpans...), childSpans...) {
+		require.Empty(t, originAttr(span.Attributes), "routing-only span origin must not be persisted")
 	}
-	require.Equal(t, "child", originAttr(parentLogs[0].Attributes))
-	require.ElementsMatch(t, []string{"root", "child"}, []string{
-		originAttr(rootLogs[0].Attributes), originAttr(rootLogs[1].Attributes),
-	})
+	for _, row := range append(append(rootLogs, parentLogs...), childLogs...) {
+		require.Empty(t, originAttr(row.Attributes), "routing-only log origin must not be persisted")
+	}
 
 	// Incoming OTLP/cloud telemetry has no emission context. Its authenticated
 	// client record, not a payload attribute, selects the route.
@@ -1793,10 +1799,10 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 	require.Len(t, rootLogs, 3)
 	require.Len(t, parentLogs, 2)
 	require.Len(t, childLogs, 1)
-	require.Equal(t, 3, metricPoints(rootMetrics))
-	require.Equal(t, 2, metricPoints(parentMetrics))
-	require.Equal(t, 1, metricPoints(childMetrics))
-	require.Equal(t, "parent", originAttr(rootLogs[len(rootLogs)-1].Attributes))
+	require.Equal(t, 3, metricPointCount(rootMetrics))
+	require.Equal(t, 2, metricPointCount(parentMetrics))
+	require.Equal(t, 1, metricPointCount(childMetrics))
+	require.Empty(t, originAttr(rootLogs[len(rootLogs)-1].Attributes))
 
 	require.Equal(t, 0, dbs.OpenStats().Stores, "exports and reads must release DB handles")
 
@@ -1958,6 +1964,217 @@ func (caller *fakeSessionCaller) Supports(string) bool {
 
 func (caller *fakeSessionCaller) Conn() *grpc.ClientConn {
 	return caller.conn
+}
+
+func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	ps := &PubSub{srv: srv}
+	sess := &daggerSession{telemetryPubSub: ps}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: sess,
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
+	req.Header.Set(enginetel.LiveCursorHeader, "4")
+	resp := httptest.NewRecorder()
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+		switch since {
+		case 4, 5:
+			next := since + 1
+			return next, &collogspb.ExportLogsServiceRequest{
+				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: fmt.Sprintf("batch-%d", next)}},
+			}, 1, nil
+		default:
+			return since, nil, 0, nil
+		}
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, enginetel.LiveContentType, resp.Header().Get("Content-Type"))
+	require.True(t, resp.Flushed)
+
+	for _, expectedCursor := range []int64{5, 6} {
+		cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, expectedCursor, cursor)
+		require.False(t, terminal)
+		require.NotEmpty(t, payload)
+		require.NotEqual(t, byte('{'), payload[0], "payload must be binary protobuf, not protojson")
+		var batch collogspb.ExportLogsServiceRequest
+		require.NoError(t, proto.Unmarshal(payload, &batch))
+		require.Equal(t, fmt.Sprintf("batch-%d", expectedCursor), batch.ResourceLogs[0].SchemaUrl)
+	}
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, int64(6), cursor)
+	require.Nil(t, payload)
+	require.True(t, terminal)
+	require.Empty(t, resp.Body.Bytes())
+}
+
+func TestTelemetryStreamDefaultsToLegacySSE(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	rawBody := []byte{0, 1, 2, 0xff}
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set(enginetel.LegacyLiveCursorHeader, "4")
+	resp := httptest.NewRecorder()
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+		if since != 4 {
+			return since, nil, 0, nil
+		}
+		return 5, &collogspb.ExportLogsServiceRequest{
+			ResourceLogs: []*otlplogsv1.ResourceLogs{{
+				ScopeLogs: []*otlplogsv1.ScopeLogs{{
+					LogRecords: []*otlplogsv1.LogRecord{{
+						Body: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: rawBody}},
+					}},
+				}},
+			}},
+		}, 1, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, enginetel.LegacyLiveContentType, resp.Header().Get("Content-Type"))
+	require.Equal(t, "keep-alive", resp.Header().Get("Connection"))
+	require.True(t, resp.Flushed)
+
+	reader := sse.NewReadCloser(io.NopCloser(resp.Body))
+	event, err := reader.Next()
+	require.NoError(t, err)
+	require.Equal(t, "subscribed", event.Name)
+
+	event, err = reader.Next()
+	require.NoError(t, err)
+	require.Equal(t, "logs", event.Name)
+	require.Equal(t, "5", event.ID)
+	var batch collogspb.ExportLogsServiceRequest
+	require.NoError(t, protojson.Unmarshal(event.Data, &batch))
+	require.Equal(t, rawBody, batch.ResourceLogs[0].ScopeLogs[0].LogRecords[0].Body.GetBytesValue())
+
+	_, err = reader.Next()
+	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	batch := func(since int64, rows int) *collogspb.ExportLogsServiceRequest {
+		logs := make([]*otlplogsv1.ResourceLogs, rows)
+		for i := range logs {
+			logs[i] = &otlplogsv1.ResourceLogs{
+				SchemaUrl: fmt.Sprintf("row-%d-%s", since+int64(i)+1, strings.Repeat("x", 80)),
+			}
+		}
+		return &collogspb.ExportLogsServiceRequest{ResourceLogs: logs}
+	}
+	maxPayloadSize := proto.Size(batch(0, 2))
+	require.Greater(t, proto.Size(batch(0, 4)), maxPayloadSize)
+
+	type fetchCall struct {
+		since int64
+		limit int
+	}
+	var calls []fetchCall
+	fetcher := func(_ context.Context, _ *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+		calls = append(calls, fetchCall{since: since, limit: limit})
+		remaining := 4 - int(since)
+		if remaining == 0 {
+			return since, nil, 0, nil
+		}
+		rows := min(limit, remaining)
+		return since + int64(rows), batch(since, rows), rows, nil
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
+	err := ps.streamHandlerWithPayloadLimit(
+		resp,
+		req,
+		record,
+		fetcher,
+		maxPayloadSize,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []fetchCall{
+		{since: 0, limit: otlpBatchSize},
+		{since: 0, limit: 2},
+		{since: 2, limit: otlpBatchSize},
+		{since: 4, limit: otlpBatchSize},
+		{since: 4, limit: otlpBatchSize},
+	}, calls)
+
+	for _, expectedCursor := range []int64{2, 4} {
+		cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, expectedCursor, cursor)
+		require.LessOrEqual(t, len(payload), maxPayloadSize)
+		require.False(t, terminal)
+	}
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), cursor)
+	require.Nil(t, payload)
+	require.True(t, terminal)
+}
+
+func TestTelemetryStreamReportsSingleOversizedRow(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    make(chan struct{}),
+	}
+
+	fetches := 0
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
+	err := ps.streamHandlerWithPayloadLimit(
+		resp,
+		req,
+		record,
+		func(_ context.Context, _ *clientdb.DB, _ int64, _ int) (int64, proto.Message, int, error) {
+			fetches++
+			return 1, &collogspb.ExportLogsServiceRequest{
+				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: strings.Repeat("x", 100)}},
+			}, 1, nil
+		},
+		16,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, fetches, "an oversized row must not be fetched repeatedly")
+
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.ErrorIs(t, err, enginetel.ErrLiveStream)
+	require.ErrorContains(t, err, "telemetry row at cursor 1")
+	require.Equal(t, int64(0), cursor)
+	require.Nil(t, payload)
+	require.False(t, terminal)
 }
 
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
@@ -3057,35 +3274,314 @@ func TestCallPayloadDeliveryStore(t *testing.T) {
 	t.Parallel()
 
 	sess := &daggerSession{}
-
-	// Client A (top-level, no parents) claims a digest: unseen the first
-	// time, seen for A afterwards.
 	storeA := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA"}}
-	require.False(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
-	require.True(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeA.CallPayloadNeedsEmission("xxh3:abc"))
+	require.Equal(t, []string{"clientA"}, sess.callPayloadMissingTargets("xxh3:abc", storeA.targets, true))
+	require.False(t, storeA.CallPayloadNeedsEmission("xxh3:abc"))
 
-	// Client B attaches later: A's claim must not satisfy B's delivery
-	// domain — B's DB never received the payload.
 	storeB := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB"}}
-	require.False(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
-		"a digest claimed by another client's emission must stay claimable for a late-attaching client")
-	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeB.CallPayloadNeedsEmission("xxh3:abc"),
+		"a digest claimed by another client's emission must stay needed for a late client")
 
-	// A module client under B: its emissions deliver to itself AND B, so a
-	// claim from its context marks both — and it is only "seen" when every
-	// target already has it. B has the digest, the module client does not,
-	// so the first probe still publishes (marking both).
-	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB", "modClient"}}
-	require.False(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
-		"an emission must not be skipped while any target in its delivery domain still needs it")
-	require.True(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
-	// And now B's own store agrees the digest is spent for B.
-	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA", "modClient"}}
+	require.True(t, storeMod.CallPayloadNeedsEmission("xxh3:abc"),
+		"an emission must not be skipped while any route target still needs it")
+	require.Equal(t, []string{"modClient"},
+		sess.callPayloadMissingTargets("xxh3:abc", storeMod.targets, true),
+		"only the missing target must be claimed")
+	require.False(t, storeMod.CallPayloadNeedsEmission("xxh3:abc"))
+}
 
-	// StoreTelemetrySeenKey marks every target unconditionally.
-	storeC := &callPayloadDeliveryStore{session: sess, targets: []string{"clientC", "clientD"}}
-	storeC.StoreTelemetrySeenKey("dag.call.payload:xxh3:def")
-	require.True(t, storeC.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:def"))
+func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	routes := [][]string{{"parent", "childA"}, {"parent", "childB"}}
+	start := make(chan struct{})
+	results := make(chan []string, len(routes))
+	var ready sync.WaitGroup
+	ready.Add(len(routes))
+	for _, route := range routes {
+		go func() {
+			ready.Done()
+			<-start
+			results <- sess.callPayloadMissingTargets("xxh3:overlap", route, true)
+		}()
+	}
+	ready.Wait()
+	close(start)
+
+	counts := map[string]int{}
+	for range routes {
+		for _, target := range <-results {
+			counts[target]++
+		}
+	}
+	require.Equal(t, map[string]int{"parent": 1, "childA": 1, "childB": 1}, counts,
+		"overlapping decisions must atomically assign each target exactly once")
+	require.Empty(t, sess.callPayloadMissingTargets("xxh3:overlap", []string{"parent", "childA", "childB"}, true))
+}
+
+type callPayloadRecordCapture struct {
+	records []sdklog.Record
+}
+
+func (capture *callPayloadRecordCapture) Export(_ context.Context, records []sdklog.Record) error {
+	for _, record := range records {
+		capture.records = append(capture.records, record.Clone())
+	}
+	return nil
+}
+
+func (*callPayloadRecordCapture) ForceFlush(context.Context) error { return nil }
+func (*callPayloadRecordCapture) Shutdown(context.Context) error   { return nil }
+
+func scopedLogRecord(t *testing.T, scope string, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+	t.Helper()
+
+	capture := new(callPayloadRecordCapture)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)))
+	record := otellog.Record{}
+	record.SetTimestamp(time.Now())
+	record.SetBody(body)
+	record.AddAttributes(attrs...)
+	ctx := trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	}))
+	provider.Logger(scope).Emit(ctx, record)
+	require.NoError(t, provider.Shutdown(context.Background()))
+	require.Len(t, capture.records, 1)
+	return capture.records[0]
+}
+
+func serverCallPayload(t *testing.T, field, value string) ([]byte, string) {
+	t.Helper()
+
+	callPB := &callpbv1.Call{
+		Field: field,
+		Type:  &callpbv1.Type{NamedType: "Thing"},
+		Args: []*callpbv1.Argument{{
+			Name:  "value",
+			Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: value}},
+		}},
+	}
+	callPB.Digest = digest.FromString(callPB.String()).String()
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(callPB)
+	require.NoError(t, err)
+	return payload, callPB.Digest
+}
+
+func TestClassifyCallPayloadRecord(t *testing.T) {
+	payload, digest := serverCallPayload(t, "original", "value")
+	digestless := &callpbv1.Call{Field: "embedded"}
+	digestlessPayload, err := proto.Marshal(digestless)
+	require.NoError(t, err)
+
+	callType := otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)
+	for _, test := range []struct {
+		name       string
+		scope      string
+		body       otellog.Value
+		attrs      []otellog.KeyValue
+		payload    bool
+		wantDigest string
+		wantError  string
+	}{
+		{
+			name:       "call content type and bytes body",
+			scope:      "test.core",
+			body:       otellog.BytesValue(payload),
+			attrs:      []otellog.KeyValue{callType},
+			payload:    true,
+			wantDigest: digest,
+		},
+		{
+			name:  "other content type",
+			scope: "test.core",
+			body:  otellog.BytesValue(payload),
+			attrs: []otellog.KeyValue{otellog.String(telemetry.ContentTypeAttr, "application/json")},
+		},
+		{
+			name:      "wrong body kind",
+			scope:     "test.core",
+			body:      otellog.StringValue(string(payload)),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "body must be bytes",
+		},
+		{
+			name:      "malformed protobuf",
+			scope:     "test.core",
+			body:      otellog.BytesValue([]byte{0xff}),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "decode call payload",
+		},
+		{
+			name:      "missing embedded digest",
+			scope:     "test.core",
+			body:      otellog.BytesValue(digestlessPayload),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "missing embedded digest",
+		},
+		{
+			name:    "ordinary log",
+			scope:   "test.log",
+			body:    otellog.StringValue("hello"),
+			payload: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record := scopedLogRecord(t, test.scope, test.body, test.attrs...)
+			gotDigest, gotPayload, err := classifyCallPayloadRecord(record)
+			require.Equal(t, test.payload, gotPayload)
+			require.Equal(t, test.wantDigest, gotDigest)
+			if test.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestClassifyCallPayloadRecordReadsEmbeddedAddress(t *testing.T) {
+	original, originalDigest := serverCallPayload(t, "lookup", "original")
+	tampered, tamperedDigest := serverCallPayload(t, "lookup", "tampered")
+	require.NotEqual(t, originalDigest, tamperedDigest)
+
+	for _, test := range []struct {
+		body []byte
+		want string
+	}{
+		{body: original, want: originalDigest},
+		{body: tampered, want: tamperedDigest},
+	} {
+		record := scopedLogRecord(t,
+			"test.core",
+			otellog.BytesValue(test.body),
+			otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		)
+		got, payload, err := classifyCallPayloadRecord(record)
+		require.NoError(t, err)
+		require.True(t, payload)
+		require.Equal(t, test.want, got)
+	}
+}
+
+func TestWithoutLogOriginPreservesCallPayloadRecord(t *testing.T) {
+	payload, _ := serverCallPayload(t, "lookup", "value")
+	record := scopedLogRecord(t,
+		"test.core",
+		otellog.BytesValue(payload),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "origin"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		otellog.String("test.keep", "value"),
+	)
+
+	clean := withoutLogOrigin(record)
+	require.Equal(t, otellog.KindBytes, clean.Body().Kind())
+	require.Equal(t, payload, clean.Body().AsBytes())
+	attrs := map[string]otellog.Value{}
+	clean.WalkAttributes(func(attr otellog.KeyValue) bool {
+		attrs[attr.Key] = attr.Value
+		return true
+	})
+	require.NotContains(t, attrs, telemetryattrs.TelemetryOriginClientIDAttr)
+	require.Equal(t, telemetryattrs.CallPayloadContentType, attrs[telemetry.ContentTypeAttr].AsString())
+	require.Equal(t, "value", attrs["test.keep"].AsString())
+}
+
+func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
+	t.Parallel()
+
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	srv.telemetryPubSub = NewPubSub(srv)
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	parent := &clientRecord{daggerSession: sess, clientID: "parent"}
+	child := &clientRecord{daggerSession: sess, clientID: "child", parentClientIDs: []string{"parent"}}
+	sess.clientRecords[parent.clientID] = parent
+	sess.clientRecords[child.clientID] = child
+	exporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
+
+	original, originalDigest := serverCallPayload(t, "lookup", "original")
+	tampered, tamperedDigest := serverCallPayload(t, "lookup", "tampered")
+	require.NotEqual(t, originalDigest, tamperedDigest)
+
+	payloadRecord := func(origin string, body []byte) sdklog.Record {
+		return scopedLogRecord(t,
+			"test.core",
+			otellog.BytesValue(body),
+			otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin),
+			otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			otellog.String("test.keep", "value"),
+		)
+	}
+
+	digestless := &callpbv1.Call{Field: "invalid"}
+	digestlessPayload, err := proto.Marshal(digestless)
+	require.NoError(t, err)
+
+	// The parent receives the original first. The same payload from the child
+	// then fills only the child gap, while the tampered payload is independently
+	// addressed and delivered to both. The invalid reserved record in the middle
+	// is consumed without aborting either valid record in the mixed batch.
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{
+		payloadRecord("parent", original),
+		payloadRecord("child", digestlessPayload),
+		payloadRecord("child", original),
+		payloadRecord("child", original),
+		payloadRecord("child", tampered),
+	}))
+
+	load := func(target string) []clientdb.Log {
+		db, err := dbs.Open(t.Context(), target)
+		require.NoError(t, err)
+		defer db.Close()
+		logs, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+		require.NoError(t, err)
+		return logs
+	}
+	parentLogs := load("parent")
+	childLogs := load("child")
+	require.Len(t, parentLogs, 2)
+	require.Len(t, childLogs, 2)
+
+	for _, rows := range [][]clientdb.Log{parentLogs, childLogs} {
+		seenBodies := map[string]bool{}
+		for _, row := range rows {
+			var attrs []*otlpcommonv1.KeyValue
+			require.NoError(t, clientdb.UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs))
+			var hasPayload, hasExtra bool
+			for _, attr := range attrs {
+				require.NotEqual(t, telemetryattrs.TelemetryOriginClientIDAttr, attr.Key,
+					"routing-only origin must not be persisted or streamed")
+				hasPayload = hasPayload || attr.Key == telemetry.ContentTypeAttr && attr.Value.GetStringValue() == telemetryattrs.CallPayloadContentType
+				hasExtra = hasExtra || attr.Key == "test.keep" && attr.Value.GetStringValue() == "value"
+			}
+			require.True(t, hasPayload, "routing must preserve the call payload marker")
+			require.True(t, hasExtra, "routing must strip only the origin attribute")
+
+			var body otlpcommonv1.AnyValue
+			require.NoError(t, proto.Unmarshal(row.Body, &body))
+			seenBodies[string(body.GetBytesValue())] = true
+		}
+		require.Equal(t, map[string]bool{string(original): true, string(tampered): true}, seenBodies)
+
+		resourceLogs := clientdb.LogsToPB(rows)
+		require.Len(t, resourceLogs, 1)
+		require.Len(t, resourceLogs[0].ScopeLogs, 1)
+		scopeLogs := resourceLogs[0].ScopeLogs[0]
+		require.Equal(t, "test.core", scopeLogs.Scope.Name)
+		require.Len(t, scopeLogs.LogRecords, 2)
+		for _, record := range scopeLogs.LogRecords {
+			require.Contains(t, [][]byte{original, tampered}, record.Body.GetBytesValue(),
+				"byte bodies must survive client DB to binary OTLP reconstruction")
+		}
+	}
 }
 
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {

@@ -24,8 +24,9 @@ type LifecycleDebugSnapshot struct {
 
 // LifecycleTelemetryCounts reports configured provider, processor, reader, and
 // queue cardinality. Trace/log resources are session-owned; metric resources
-// belong to live client runtimes. Queue capacity is configured fact, never
-// measured occupancy.
+// belong to live client runtimes. Slots count bounded capacity; lossless
+// unbounded queues contribute no finite slot count. This is configured fact,
+// never measured occupancy.
 type LifecycleTelemetryCounts struct {
 	TracerProviders          int `json:"tracer_providers"`
 	LoggerProviders          int `json:"logger_providers"`
