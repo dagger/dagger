@@ -324,9 +324,9 @@ are in `prepared-race-20260905T085744` and `assembled-race-20260905T085911`.
 `final-evidence.md` reconciles source revisions, commands, counts and limitations.
 No full TLA or Go suite was run for this implementation.
 
-## Remote-cache models: `RemoteParts.tla` and `RemoteOwners.tla`
+## Remote-cache models: `RemoteParts`, `RemoteOwners`, `RemoteSharing`, `RemoteCheckpoint`
 
-Two separate modules, beside `SnapshotChain.tla` and for the same reason: the
+Four separate modules, beside `SnapshotChain.tla` and for the same reason: the
 remote-cache mechanisms sit above the snapshot store and beside the cache
 kernel, and keeping them out of `CacheLifecycle.tla` leaves every existing
 configuration's state space exactly as it was. Nothing under
@@ -344,6 +344,19 @@ abstracts away (session lookup, publication, bytes, leases, restart).
   holds, the cycle rejection, the ordinary hit's filter, Commit's conversion of
   the owner's rows into dependency edges and requirement, settlement, and
   collection at zero with ownership recounted from the actual edges and holds.
+- `RemoteSharing`: donor, imported receiver lacking two parts, bystander; one
+  cohort and its successor. Every slot prepared before any commit, members
+  released before any Finish, an encoded receiver's second slot built on the
+  first's prefix and expected revision, a decoded receiver's one slot per pass
+  with the successor taking its holds in the releasing step, a stale revision
+  refusing a slot, independent synchronization, owed bookkeeping paid without
+  pinning again, collection at zero.
+- `RemoteCheckpoint`: receiver, donor and one offer dependency over one clean
+  shutdown and restart. Desired roles recorded at install and applied at
+  synchronization, pins that outlive the process, the checkpoint's complete
+  desired roles, boot attaching every saved owner before releasing old pins,
+  a lost snapshot as a reset and never a repair, the producer run at most once
+  per process, and the receiver's last owner going.
 
 Every configuration is registered in `expectedOutcome`. A `fault` configuration
 sets the module's `Fault` constant to one deliberate break and must violate the
@@ -372,6 +385,12 @@ for the two pass configurations, 60 s for each fault and witness):
 | `remote_owners_witness_old_acquisition` | `WitnessOldAcquisitionSurvivesReplacement` violated | 451 | 1.0 |
 | `remote_owners_witness_unauthorized_hit` | `WitnessUnauthorizedHitOfferSkipped` violated | 147 | 1.0 |
 | `remote_owners_witness_offer_row_outlives` | `WitnessOfferRowOutlivesItsRetention` violated | 95 | 1.0 |
+
+| `remote_sharing` | pass | 1,293 | 1.1 |
+| `remote_sharing_decoded` | pass | 672 | 1.2 |
+| five `remote_sharing_fault_*`, five `remote_sharing_witness_*` | each violates the invariant `expectedOutcome` names | | about 1 each |
+| `remote_checkpoint` | pass | 2,134 | 1.5 |
+| three `remote_checkpoint_fault_*`, four `remote_checkpoint_witness_*` | each violates the invariant `expectedOutcome` names | | about 1 each |
 
 These bounds are small enough that they are the configurations' real bounds,
 not reduced ones. A symbolic model proves no bytes, leases or GC.
