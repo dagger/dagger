@@ -60,17 +60,6 @@ func (r *DaggerEngine) ClientDockerConfig() *Secret { // dagger-engine (../../..
 	}
 }
 
-// Generate the json schema for a dagger config file
-// Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (r *DaggerEngine) ConfigSchema(filename string) *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:395:1)
-	q := r.query.Select("configSchema")
-	q = q.Arg("filename", filename)
-
-	return &File{
-		query: q,
-	}
-}
-
 // DaggerEngineContainerOpts contains options for DaggerEngine.Container
 type DaggerEngineContainerOpts struct {
 	Platform Platform // dagger-engine (../../../../toolchains/engine-dev/main.go:189:2)
@@ -99,16 +88,6 @@ func (r *DaggerEngine) Container(opts ...DaggerEngineContainerOpts) *Container {
 	}
 
 	return &Container{
-		query: q,
-	}
-}
-
-// Generate any engine-related files
-// Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *DaggerEngine) Generate() *Changeset { // dagger-engine (../../../../toolchains/engine-dev/main.go:410:1)
-	q := r.query.Select("generate")
-
-	return &Changeset{
 		query: q,
 	}
 }
@@ -196,8 +175,6 @@ type DaggerEngineInstallClientOpts struct {
 	// The engine service to bind
 	//
 	Service *Service // dagger-engine (../../../../toolchains/engine-dev/main.go:311:2)
-
-	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:313:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
@@ -208,10 +185,6 @@ func (r *DaggerEngine) InstallClient(client *Container, opts ...DaggerEngineInst
 		// `service` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Service) {
 			q = q.Arg("service", opts[i].Service)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("client", client)
@@ -402,8 +375,6 @@ type DaggerEngineServiceOpts struct {
 	SharedCache bool // dagger-engine (../../../../toolchains/engine-dev/main.go:254:2)
 
 	Metrics bool // dagger-engine (../../../../toolchains/engine-dev/main.go:256:2)
-
-	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:258:2)
 }
 
 // Create a test engine service
@@ -421,10 +392,6 @@ func (r *DaggerEngine) Service(name string, opts ...DaggerEngineServiceOpts) *Se
 		// `metrics` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Metrics) {
 			q = q.Arg("metrics", opts[i].Metrics)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("name", name)

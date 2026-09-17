@@ -1,15 +1,10 @@
-pub description = "A module to generate changelog"
+pub description = "A module to generate changelog with `changie`"
 
-type Changelog {
-  let source: Directory!
+type Changie {
+  source: Directory!
 
   new(ws: Workspace!) {
-    self.source = ws.directory("/", exclude: [
-      "**",
-      "!**/.changes/",
-      "!CHANGELOG.md",
-      "!**/.changie.yaml",
-    ])
+    self.source = ws.directory("/", include: ["**/.changes/", "**/CHANGELOG.md", "**/changelog.md", "**/.changie.yaml"])
     self
   }
 
@@ -17,9 +12,8 @@ type Changelog {
   Generate the changelog with 'changie merge'. Only run this manually, at release time.
   """
   generate: Changeset! @generate {
-    let changieVersion = "1.21.0"
     container(platform: "linux/amd64")
-      .from("ghcr.io/miniscruff/changie:v" + changieVersion)
+      .from("ghcr.io/miniscruff/changie")
       .withWorkdir("/src")
       .withMountedDirectory(".", source)
       .withExec(["/changie", "merge"])

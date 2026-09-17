@@ -62,7 +62,7 @@ Use your local dev environment to iterate until you're ready for review.
 To run an interactive playground with all Dagger components built and integrated:
 
 ```shell
-dagger api call engine-dev playground terminal
+dagger shell playground
 ```
 
 This will:

@@ -72,15 +72,6 @@ func (r *Release) GetMaintainers(ctx context.Context, githubOrgName string, opts
 	return response, q.Execute(ctx)
 }
 
-// Regenerate Go SDK files that reference the target Dagger Engine version.
-func (r *Release) GoSDKTargetVersion() *Changeset {
-	q := r.query.Select("goSdkTargetVersion")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Regenerate Helm chart files that reference the target Dagger Engine version.
 func (r *Release) HelmTargetVersion() *Changeset {
 	q := r.query.Select("helmTargetVersion")
@@ -419,16 +410,6 @@ func (r *Release) RustSDKTargetVersion() *Changeset {
 	q := r.query.Select("rustSdkTargetVersion")
 
 	return &Changeset{
-		query: q,
-	}
-}
-
-// Create a fake release a run checks to catch potential breaking changes.
-func (r *Release) TestLocalRelease(version string) *ReleaseTest {
-	q := r.query.Select("testLocalRelease")
-	q = q.Arg("version", version)
-
-	return &ReleaseTest{
 		query: q,
 	}
 }
@@ -881,111 +862,4 @@ func (r *ReleaseReportFollowUp) Name(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-type ReleaseTest struct { // release (../../../../../:0:0)
-	query *querybuilder.Selection
-
-	existingModule *Void
-	id             *ID
-	newModule      *Void
-}
-
-func (r *ReleaseTest) WithGraphQLQuery(q *querybuilder.Selection) *ReleaseTest {
-	return &ReleaseTest{
-		query: q,
-	}
-}
-
-func (r *ReleaseTest) Container() *Container {
-	q := r.query.Select("container")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// ReleaseTestExistingModuleOpts contains options for ReleaseTest.ExistingModule
-type ReleaseTestExistingModuleOpts struct {
-	Testdata *Directory
-}
-
-// Test calling an existing module with basic commands.
-func (r *ReleaseTest) ExistingModule(ctx context.Context, opts ...ReleaseTestExistingModuleOpts) error {
-	if r.existingModule != nil {
-		return nil
-	}
-	q := r.query.Select("existingModule")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `testdata` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Testdata) {
-			q = q.Arg("testdata", opts[i].Testdata)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// A unique identifier for this ReleaseTest.
-func (r *ReleaseTest) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ReleaseTest) XXX_GraphQLType() string {
-	return "ReleaseTest"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ReleaseTest) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ReleaseTest) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ReleaseTest) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *ReleaseTest) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = ReleaseTest{query: selectNode(dag.query, id, "ReleaseTest")}
-	return nil
-}
-
-// Test scaffolding a new module via the Go SDK and executing basic commands.
-//
-// This installs the Go SDK, uses `dagger module init` with the legacy template
-// (the classic ContainerEcho/GrepDir example) to scaffold a module, then calls
-// the generated module. Workspace discovery resolves through a .git boundary,
-// so the working directory is initialized as a repo first.
-func (r *ReleaseTest) NewModule(ctx context.Context) error {
-	if r.newModule != nil {
-		return nil
-	}
-	q := r.query.Select("newModule")
-
-	return q.Execute(ctx)
 }
