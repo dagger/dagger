@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"dagger.io/dagger"
@@ -273,32 +272,34 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 			require.Empty(t, partEventsOf(report.transferFixtureReport, row.ResultID, "installed-chain"))
 		}
 	})
-	// Status codes the stateless restoration can meet, recorded according to
-	// the existing writer's behavior rather than a new 200-only rule. The
-	// invariant asserted for every case: either the File is restored with
-	// exactly A's bytes, or the demand is an ordinary restoration error and
-	// nothing is installed under the saved identity. Which of the two each
-	// status gives is logged for the measurement report. One A and one B
-	// serve the table; every case has its own URL and row.
+	// Status codes the stateless restoration can meet, asserted as the
+	// existing writer behaves rather than by a new 200-only rule: each case
+	// names whether the File is restored with exactly A's bytes or the demand
+	// is a restoration error of a named kind with nothing installed under the
+	// saved identity. One A and one B serve the table; every case has its own
+	// URL and row.
 	t.Run("StatusTable", func(ctx context.Context, t *testctx.T) {
 		outer := connect(ctx, t)
 		a := newFixtureEngine(ctx, t, outer, "http-status-a", true)
 		b := newFixtureEngine(ctx, t, outer, "http-status-b", true)
 		type statusCase struct {
-			name      string
-			saved     string
-			response  fixturetransport.Response
+			name     string
+			saved    string
+			response fixturetransport.Response
+			// failure is empty when the writer restores the File, else the
+			// restoration error it gives.
+			failure   string
 			url, file string
 		}
 		cases := []statusCase{
 			{name: "204 empty saved body", saved: "", response: fixturetransport.Response{Status: 204}},
-			{name: "204 nonempty saved body", saved: "kept", response: fixturetransport.Response{Status: 204}},
+			{name: "204 nonempty saved body", saved: "kept", response: fixturetransport.Response{Status: 204}, failure: "HTTP File operation body mismatch"},
 			{name: "206 whole body", saved: "partial", response: fixturetransport.Response{Status: 206, BodyFile: "saved"}},
 			// One empty saved body only: two empty Files are one row, and a
 			// bundle cannot name a root twice.
-			{name: "304 nonempty saved body", saved: "kept", response: fixturetransport.Response{Status: 304}},
-			{name: "403", saved: "kept", response: fixturetransport.Response{Status: 403}},
-			{name: "503", saved: "kept", response: fixturetransport.Response{Status: 503}},
+			{name: "304 nonempty saved body", saved: "kept", response: fixturetransport.Response{Status: 304}, failure: "HTTP File operation body mismatch"},
+			{name: "403", saved: "kept", response: fixturetransport.Response{Status: 403}, failure: "invalid response status 403"},
+			{name: "503", saved: "kept", response: fixturetransport.Response{Status: 503}, failure: "invalid response status 503"},
 		}
 		var onA, onB []fixturetransport.Response
 		for i := range cases {
@@ -348,21 +349,25 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 			require.NoError(t, b.fixture("report", "", []string{row.Handle}, &single))
 			require.Len(t, single.Rows, 1)
 			require.Len(t, partEventsOf(report.transferFixtureReport, row.ResultID, "lazy-enter"), 1, "%s: the saved producer ran once", tc.name)
-			if err == nil {
-				t.Logf("writer behavior: %s -> restored", tc.name)
+			if tc.failure == "" {
+				require.NoError(t, err, "%s: the writer restores the File", tc.name)
 				require.Equal(t, tc.saved, contents, "%s: a restored File has exactly A's bytes", tc.name)
 				require.Len(t, single.Rows[0].SnapshotLinks, 1, tc.name)
 			} else {
-				t.Logf("writer behavior: %s -> restoration error: %v", tc.name, strings.ReplaceAll(err.Error(), "\n", " | "))
+				require.ErrorContains(t, err, tc.failure, tc.name)
 				require.Empty(t, single.Rows[0].SnapshotLinks, "%s: nothing is installed under the saved identity", tc.name)
 			}
+			asked := 0
 			for _, request := range report.Transport.Requests {
 				if request.URL == tc.url {
+					asked++
+					require.Equal(t, tc.response.Status, request.Status, tc.name)
 					require.Empty(t, request.IfNoneMatch, "%s: no conditional validator", tc.name)
 					require.Empty(t, request.IfModifiedSince, tc.name)
 					require.True(t, request.Closed, "%s: the response body is closed", tc.name)
 				}
 			}
+			require.Equal(t, 1, asked, "%s: the scripted origin was asked exactly once", tc.name)
 		}
 	})
 }
