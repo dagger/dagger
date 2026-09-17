@@ -3852,7 +3852,7 @@ type containerWithoutDirectoryArgs struct {
 	Expand bool `default:"false"`
 }
 
-//nolint:dupl // symmetric with withoutFile; the distinct argument types preserve the scheman operations
+//nolint:dupl // symmetric with withoutFile; the distinct argument types preserve the schema operations
 func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutDirectoryArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return inst, err
@@ -3888,7 +3888,7 @@ type containerWithoutFileArgs struct {
 	Expand bool `default:"false"`
 }
 
-//nolint:dupl // symmetric with withoutDirectory; the distinct argument types preserve the scheman operations
+//nolint:dupl // symmetric with withoutDirectory; the distinct argument types preserve the schema operations
 func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return inst, err
