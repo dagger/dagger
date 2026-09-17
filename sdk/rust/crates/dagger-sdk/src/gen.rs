@@ -18315,6 +18315,11 @@ impl Loadable for WorkspaceModuleSetting {
     }
 }
 impl WorkspaceModuleSetting {
+    /// The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+    pub async fn default_value(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("defaultValue");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The constructor argument description.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
@@ -18340,7 +18345,7 @@ impl WorkspaceModuleSetting {
         let query = self.selection.select("key");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
+    /// The value stored in workspace config after applying the selected workspace environment, or empty when unset.
     pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await

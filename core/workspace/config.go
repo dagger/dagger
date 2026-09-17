@@ -1437,54 +1437,74 @@ func preferredExampleFieldName(t reflect.Type) string {
 }
 
 // ParseListValue splits the single-value form of a list write into its
-// elements so callers can store a native TOML array instead of a bare string.
-// A bracketed value is read as an array literal: TOML syntax when it parses
-// (["a,b", "c"] keeps the comma inside the quoted element), and otherwise a
-// comma-separated list with the brackets stripped ([a, b] and [.] both work).
-// An unbracketed value is comma-split, matching the auto-detection that
-// WriteConfigValue applies to string values. Elements are trimmed of
-// surrounding whitespace.
-func ParseListValue(rawValue string) []string {
+// elements so callers store a native TOML array instead of a bare string.
+// Elements are comma-separated, optionally wrapped in [ ], and trimmed of
+// surrounding whitespace. An element may be wrapped in double or single
+// quotes to keep commas, brackets, or whitespace; quoted elements are taken
+// verbatim, with no escape processing, so ["C:\foo"] stores C:\foo. Empty
+// elements, stray quotes, and text after a closing quote are errors rather
+// than being stored as-is. "[]" denotes an empty list.
+func ParseListValue(rawValue string) ([]string, error) {
 	rawValue = strings.TrimSpace(rawValue)
-	bracketed := strings.HasPrefix(rawValue, "[") && strings.HasSuffix(rawValue, "]")
-	if bracketed {
-		if elements, ok := parseTOMLArrayLiteral(rawValue); ok {
-			return elements
-		}
+	if strings.HasPrefix(rawValue, "[") && strings.HasSuffix(rawValue, "]") {
 		rawValue = strings.TrimSpace(rawValue[1 : len(rawValue)-1])
+		if rawValue == "" {
+			return []string{}, nil
+		}
 	}
 	if rawValue == "" {
-		return []string{}
+		return nil, fmt.Errorf("list value is empty")
 	}
-	items := strings.Split(rawValue, ",")
-	elements := make([]string, 0, len(items))
-	for _, item := range items {
-		elements = append(elements, strings.TrimSpace(item))
-	}
-	return elements
-}
 
-// parseTOMLArrayLiteral reads a TOML array of scalars into its elements'
-// output form. It reports false for anything that is not a flat scalar array.
-func parseTOMLArrayLiteral(literal string) ([]string, bool) {
-	tree, err := toml.Load("value = " + literal)
-	if err != nil {
-		return nil, false
-	}
-	items, ok := tree.Get("value").([]any)
-	if !ok {
-		return nil, false
-	}
-	elements := make([]string, 0, len(items))
-	for _, item := range items {
-		switch item.(type) {
-		case string, bool, int64, float64:
-			elements = append(elements, formatScalarOutput(item))
-		default:
-			return nil, false
+	elements := []string{}
+	for {
+		element, rest, err := parseListElement(rawValue)
+		if err != nil {
+			return nil, err
+		}
+		elements = append(elements, element)
+		if rest == "" {
+			return elements, nil
+		}
+		// rest begins with the separator; a trailing separator with nothing
+		// after it is an empty element.
+		rawValue = strings.TrimSpace(rest[1:])
+		if rawValue == "" {
+			return nil, fmt.Errorf("list value has an empty element after %q", element)
 		}
 	}
-	return elements, true
+}
+
+// parseListElement reads one element from the front of input and returns it
+// with the unread remainder, which is either empty or starts with a comma.
+func parseListElement(input string) (element, rest string, err error) {
+	input = strings.TrimSpace(input)
+	if quote := input[0]; quote == '"' || quote == '\'' {
+		end := strings.IndexByte(input[1:], quote)
+		if end < 0 {
+			return "", "", fmt.Errorf("list value has an unterminated quote: %s", input)
+		}
+		element = input[1 : 1+end]
+		rest = strings.TrimSpace(input[2+end:])
+		if rest != "" && rest[0] != ',' {
+			return "", "", fmt.Errorf("list value has unexpected text %q after quoted element %q; separate elements with commas", rest, element)
+		}
+		return element, rest, nil
+	}
+
+	end := strings.IndexByte(input, ',')
+	if end < 0 {
+		end = len(input)
+	}
+	element = strings.TrimSpace(input[:end])
+	rest = input[end:]
+	if element == "" {
+		return "", "", fmt.Errorf("list value has an empty element")
+	}
+	if strings.ContainsAny(element, `"'`) {
+		return "", "", fmt.Errorf("list value has a stray quote in element %s; quote the whole element", element)
+	}
+	return element, rest, nil
 }
 
 func parseValueString(parts []string, rawValue string) any {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -85,6 +86,84 @@ func introspectModuleFromDirectory(
 		return nil, fmt.Errorf("loading module from directory: %w", err)
 	}
 	return mod.Self(), nil
+}
+
+// listSettingElements reports whether key addresses a list-typed module
+// setting (modules.<m>.settings.<k> or env.<e>.modules.<m>.settings.<k>) and,
+// if so, the elements value denotes. A malformed value for a list setting is
+// an error. The type lookup is best effort: when the module is not installed,
+// has no source, or cannot be introspected, the setting is treated as scalar
+// and the caller writes the value as given.
+func (s *workspaceSchema) listSettingElements(
+	ctx context.Context,
+	ws *core.Workspace,
+	staged *stagedWorkspaceConfig,
+	key string,
+	value string,
+) ([]string, bool, error) {
+	parts, err := workspace.SplitConfigPath(key)
+	if err != nil {
+		return nil, false, nil //nolint:nilerr // the write itself reports bad keys
+	}
+	envName := ""
+	if len(parts) == 6 && parts[0] == "env" {
+		envName = parts[1]
+		parts = parts[2:]
+	}
+	if len(parts) != 4 || parts[0] != "modules" || parts[2] != "settings" {
+		return nil, false, nil
+	}
+	moduleName, settingName := parts[1], parts[3]
+
+	hint, ok := s.lookupSettingHint(ctx, ws, staged, envName, moduleName, settingName)
+	if !ok || !hint.IsList {
+		return nil, false, nil
+	}
+	elements, err := workspace.ParseListValue(value)
+	if err != nil {
+		return nil, true, fmt.Errorf("setting %q of module %q is a list: %w", settingName, moduleName, err)
+	}
+	return elements, true, nil
+}
+
+// lookupSettingHint introspects the named module from the staged config and
+// returns the constructor hint for settingName. Overlays apply in module-load
+// order (user-level, then the env being written to) so modules an overlay
+// adds resolve too. Any failure reports no hint.
+func (s *workspaceSchema) lookupSettingHint(
+	ctx context.Context,
+	ws *core.Workspace,
+	staged *stagedWorkspaceConfig,
+	envName, moduleName, settingName string,
+) (constructorArgHint, bool) {
+	cfg, err := workspace.ApplyUserOverlay(staged.Config, ws.UserConfigOverlay())
+	if err != nil {
+		return constructorArgHint{}, false
+	}
+	if envName != "" {
+		if applied, err := workspace.ApplyEnvOverlay(cfg, envName); err == nil {
+			cfg = applied
+		}
+	}
+	entry, ok := cfg.Modules[moduleName]
+	if !ok || entry.Source == "" {
+		return constructorArgHint{}, false
+	}
+
+	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
+	if err != nil {
+		return constructorArgHint{}, false
+	}
+	mod, err := introspectWorkspaceModule(ctx, srv, ws, staged.ConfigDir, entry.Source)
+	if err != nil {
+		return constructorArgHint{}, false
+	}
+	for _, hint := range constructorHintsFromModule(mod) {
+		if strings.EqualFold(hint.Name, settingName) {
+			return hint, true
+		}
+	}
+	return constructorArgHint{}, false
 }
 
 // mainObjectFunctionNames lists the main object's functions in GraphQL field form, sorted.

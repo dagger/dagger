@@ -52,11 +52,12 @@ func (*WorkspaceModule) DecodePersistedObject(ctx context.Context, dag *dagql.Se
 
 // WorkspaceModuleSetting describes one constructor-backed module setting.
 type WorkspaceModuleSetting struct {
-	Key         string `field:"true" doc:"The setting key."`
-	Value       string `field:"true" doc:"The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set."`
-	Description string `field:"true" doc:"The constructor argument description."`
-	IsList      bool   `field:"true" doc:"Whether the setting accepts a list of values."`
-	IsObject    bool   `field:"true" doc:"Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference."`
+	Key          string `field:"true" doc:"The setting key."`
+	Value        string `field:"true" doc:"The value stored in workspace config after applying the selected workspace environment, or empty when unset."`
+	Description  string `field:"true" doc:"The constructor argument description."`
+	DefaultValue string `field:"true" doc:"The constructor argument's declared default, formatted like value, or empty when the argument has no default."`
+	IsList       bool   `field:"true" doc:"Whether the setting accepts a list of values."`
+	IsObject     bool   `field:"true" doc:"Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference."`
 }
 
 var _ dagql.PersistedObject = (*WorkspaceModuleSetting)(nil)

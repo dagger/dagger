@@ -14,6 +14,15 @@ namespace Dagger;
 class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+     */
+    public function defaultValue(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultValue');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultValue');
+    }
+
+    /**
      * The constructor argument description.
      */
     public function description(): string
@@ -59,7 +68,7 @@ class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdA
     }
 
     /**
-     * The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
+     * The value stored in workspace config after applying the selected workspace environment, or empty when unset.
      */
     public function value(): string
     {

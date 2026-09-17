@@ -152,8 +152,9 @@ secretKey = "op://vault/aws"
 		require.NotContains(t, output, "source")
 		require.NotContains(t, output, "entrypoint")
 
-		// An unset setting shows its constructor default rather than a blank.
-		require.Regexp(t, `(?m)^aws\s+format\s+json\s+Output format for commands\.`, output)
+		// An unset setting shows its constructor default, marked so it is not
+		// mistaken for a configured value.
+		require.Regexp(t, `(?m)^aws\s+format\s+json \(default\)\s+Output format for commands\.`, output)
 	})
 
 	t.Run("settings MODULE skips args not configurable from workspace settings", func(ctx context.Context, t *testctx.T) {
@@ -250,7 +251,7 @@ region = "us-west-2"
 
 		out, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "format")
 		require.NoError(t, err)
-		require.Equal(t, "json", strings.TrimSpace(string(out)))
+		require.Equal(t, "json (default)", strings.TrimSpace(string(out)))
 
 		// The default is not stored: raw config reads still report it unset.
 		_, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.aws.settings.format")
@@ -268,7 +269,7 @@ region = "us-west-2"
 		require.NoError(t, err)
 		out, err = hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "format")
 		require.NoError(t, err)
-		require.Equal(t, "json", strings.TrimSpace(string(out)))
+		require.Equal(t, "json (default)", strings.TrimSpace(string(out)))
 
 		// A setting with no default still reads as empty when unset.
 		out, err = hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "secretKey")
@@ -771,12 +772,44 @@ retries = 0
 		}
 	})
 
-	t.Run("an empty value for a list setting fails and points at --unset", func(ctx context.Context, t *testctx.T) {
+	t.Run("malformed single values for a list setting fail instead of storing junk", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
 
-		_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "vitest", "tags", "")
+		for value, wantErr := range map[string]string{
+			"":          "list value is empty",
+			"a,b,":      "list value has an empty element",
+			`["a" "b"]`: "list value has unexpected text",
+		} {
+			_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "vitest", "tags", value)
+			require.Error(t, err, value)
+			requireErrOut(t, err, `setting "tags" of module "vitest" is a list: `+wantErr)
+		}
+		require.NotContains(t, readInstalledWorkspaceConfig(t, workdir).Modules["vitest"].Settings, "tags")
+	})
+
+	t.Run("an empty list value stores an empty array", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "vitest", "tags", "[]")
+		require.NoError(t, err)
+		require.Equal(t, []any{}, readInstalledWorkspaceConfig(t, workdir).Modules["vitest"].Settings["tags"])
+	})
+
+	t.Run("raw config writes to a list setting store an array too", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.vitest.settings.tags", ".")
+		require.NoError(t, err)
+		require.Equal(t, []any{"."}, readInstalledWorkspaceConfig(t, workdir).Modules["vitest"].Settings["tags"])
+
+		_, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.vitest.settings.tags", `["a" "b"]`)
 		require.Error(t, err)
-		requireErrOut(t, err, `setting "tags" of module "vitest" needs at least one value; use --unset to remove it`)
+		requireErrOut(t, err, `setting "tags" of module "vitest" is a list: `)
+
+		// Scalar settings keep the raw write's auto-detection.
+		_, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.vitest.settings.retries", "2")
+		require.NoError(t, err)
+		require.Equal(t, int64(2), readInstalledWorkspaceConfig(t, workdir).Modules["vitest"].Settings["retries"])
 	})
 
 	t.Run("multiple values for a scalar setting fail clearly", func(ctx context.Context, t *testctx.T) {

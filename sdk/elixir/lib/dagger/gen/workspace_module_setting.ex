@@ -16,6 +16,17 @@ defmodule Dagger.WorkspaceModuleSetting do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+  """
+  @spec default_value(t()) :: {:ok, String.t()} | {:error, term()}
+  def default_value(%__MODULE__{} = workspace_module_setting) do
+    query_builder =
+      workspace_module_setting.query_builder |> QB.select("defaultValue")
+
+    Client.execute(workspace_module_setting.client, query_builder)
+  end
+
+  @doc """
   The constructor argument description.
   """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
@@ -71,7 +82,7 @@ defmodule Dagger.WorkspaceModuleSetting do
   end
 
   @doc """
-  The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
+  The value stored in workspace config after applying the selected workspace environment, or empty when unset.
   """
   @spec value(t()) :: {:ok, String.t()} | {:error, term()}
   def value(%__MODULE__{} = workspace_module_setting) do

@@ -18874,18 +18874,32 @@ func (r *WorkspaceModule) AsNode() Node {
 type WorkspaceModuleSetting struct {
 	query *querybuilder.Selection
 
-	description *string
-	id          *ID
-	isList      *bool
-	isObject    *bool
-	key         *string
-	value       *string
+	defaultValue *string
+	description  *string
+	id           *ID
+	isList       *bool
+	isObject     *bool
+	key          *string
+	value        *string
 }
 
 func (r *WorkspaceModuleSetting) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModuleSetting {
 	return &WorkspaceModuleSetting{
 		query: q,
 	}
+}
+
+// The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+func (r *WorkspaceModuleSetting) DefaultValue(ctx context.Context) (string, error) {
+	if r.defaultValue != nil {
+		return *r.defaultValue, nil
+	}
+	q := r.query.Select("defaultValue")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The constructor argument description.
@@ -18980,7 +18994,7 @@ func (r *WorkspaceModuleSetting) Key(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The effective value: the configured value after applying the selected workspace environment, falling back to the constructor default, or empty when neither is set.
+// The value stored in workspace config after applying the selected workspace environment, or empty when unset.
 func (r *WorkspaceModuleSetting) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil

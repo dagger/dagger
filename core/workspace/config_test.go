@@ -1333,17 +1333,48 @@ func TestParseListValue(t *testing.T) {
 		{"comma-separated", "smoke, regression", []string{"smoke", "regression"}},
 		{"bracketed bare elements", "[.]", []string{"."}},
 		{"bracketed comma-separated", "[a, b]", []string{"a", "b"}},
-		{"toml array literal", `["smoke", "regression"]`, []string{"smoke", "regression"}},
-		{"toml array keeps commas inside quotes", `["a,b", "c"]`, []string{"a,b", "c"}},
-		{"toml array of numbers", "[1, 2]", []string{"1", "2"}},
+		{"quoted elements", `["smoke", "regression"]`, []string{"smoke", "regression"}},
+		{"single-quoted elements", `['smoke', 'regression']`, []string{"smoke", "regression"}},
+		{"quoted element keeps commas", `["a,b", "c"]`, []string{"a,b", "c"}},
+		{"quoted element keeps brackets", `["[abc]"]`, []string{"[abc]"}},
+		{"quoted element keeps backslashes verbatim", `["C:\foo"]`, []string{`C:\foo`}},
+		{"quoted element keeps the other quote kind", `['say "hi"']`, []string{`say "hi"`}},
+		{"unbracketed quoted element", `"a,b"`, []string{"a,b"}},
+		{"numbers stay strings", "[1, 2]", []string{"1", "2"}},
 		{"glob-looking element is not an array", "[abc]*", []string{"[abc]*"}},
-		{"empty", "", []string{}},
+		{"brackets are stripped from a bare bracketed element", "[abc]", []string{"abc"}},
 		{"empty array", "[]", []string{}},
+		{"empty array with whitespace", "[ ]", []string{}},
 		{"whitespace is trimmed", "  a , b  ", []string{"a", "b"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.want, ParseListValue(tc.in))
+			got, err := ParseListValue(tc.in)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	for _, tc := range []struct {
+		name    string
+		in      string
+		wantErr string
+	}{
+		{"empty value", "", "list value is empty"},
+		{"whitespace only", "   ", "list value is empty"},
+		{"trailing comma", "a,b,", `empty element after "b"`},
+		{"leading comma", ",a", "empty element"},
+		{"consecutive commas", "[a,,b]", "empty element"},
+		{"quoted elements without a comma", `["a" "b"]`, `unexpected text "\"b\"" after quoted element "a"`},
+		{"text after a closing quote", `["a"b]`, `unexpected text "b" after quoted element "a"`},
+		{"unterminated quote", `["a, b]`, "unterminated quote"},
+		{"stray quote in a bare element", `[a"b]`, `stray quote in element a"b`},
+		{"quote in the middle of a bare element", `it's`, `stray quote in element it's`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseListValue(tc.in)
+			require.ErrorContains(t, err, tc.wantErr)
 		})
 	}
 }
