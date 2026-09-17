@@ -253,6 +253,12 @@ func classifySource(
 // way runtime.source and dependency references parse, and allowNotExists
 // keeps it a plain directory: an entrypoint directory holds Dang files, not a
 // module manifest, so nothing is parsed, loaded, or resolved beyond the tree.
+//
+// disableFindUp keeps the reference on the directory it names. An entrypoint
+// directory usually sits below the manifest of the SDK that owns it. With
+// find-up the resolver walks up to that manifest, loads the SDK module, and
+// moves the source root to it, so the engine would evaluate the wrong Dang
+// files.
 func resolveModuleRefDirectory(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -265,6 +271,7 @@ func resolveModuleRefDirectory(
 		Field: "moduleSource",
 		Args: []dagql.NamedInput{
 			{Name: "refString", Value: dagql.String(ref)},
+			{Name: "disableFindUp", Value: dagql.Boolean(true)},
 			{Name: "allowNotExists", Value: dagql.Boolean(true)},
 		},
 	}); err != nil {

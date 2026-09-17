@@ -122,6 +122,53 @@ source = "`+repoURL+`#main:entrypoint"
 	require.Equal(t, "hello", strings.TrimSpace(out))
 }
 
+// An entrypoint directory usually lives inside the repository of the SDK that
+// owns it, below that SDK's own module manifest. The reference names the
+// entrypoint directory, so the engine must not walk up to the enclosing module
+// and evaluate that module's Dang files instead.
+func (ModuleSuite) TestDangModuleEntrypointFromModuleRefInsideModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The root module's Dang file does not type check on its own. Evaluating it
+	// as the entrypoint fails, so the test passes only when the engine reads
+	// entrypoint/ and nothing above it.
+	served := c.Directory().
+		WithNewFile("dagger-module.toml", `name = "owner"
+
+[runtime]
+source = "dang"
+`).
+		WithNewFile("main.dang", `type Owner {
+  pub broken: String! {
+    missingDependency.value
+  }
+}
+`).
+		WithDirectory(
+			"entrypoint",
+			c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+		)
+	gitDaemon, repoURL := gitService(ctx, t, c, served)
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	out, err := goGitBase(t, c).
+		WithServiceBinding(gitHost, gitDaemon).
+		WithNewFile("dagger.toml", `[modules.tiny]
+source = ".dagger/modules/tiny"
+`).
+		WithNewFile(".dagger/modules/tiny/dagger-module.toml", `name = "tiny"
+
+[entrypoint]
+kind = "dang"
+source = "`+repoURL+`#main:entrypoint"
+`).
+		With(daggerCallAt("tiny", "hello")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello", strings.TrimSpace(out))
+}
+
 // The workspace an entrypoint receives has its working directory at the module
 // it serves, so a shared entrypoint can find the module without a path
 // generated into it.
