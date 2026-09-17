@@ -19,7 +19,7 @@ type workspacePullPlanEntry struct {
 
 func planWorkspacePull(ctx context.Context, c *dagger.Client, receiver, source *dagger.Workspace, commits []string, maxCommits int) ([]workspacePullPlanEntry, error) {
 	var result struct {
-		Node struct{ CommitsFrom []workspacePullPlanEntry }
+		Node struct{ CompareCommitsFrom []workspacePullPlanEntry }
 	}
 	id, err := receiver.ID(ctx)
 	if err != nil {
@@ -33,10 +33,10 @@ func planWorkspacePull(ctx context.Context, c *dagger.Client, receiver, source *
 		commits = []string{}
 	}
 	err = c.Do(ctx, &dagger.Request{
-		Query:     `query($id: ID!, $source: ID!, $commits: [String!]!, $max: Int!) { node(id: $id) { ... on Workspace { commitsFrom(source: $source, commits: $commits, maxCommits: $max) { commit { sha message } status reason conflictPaths } } } }`,
+		Query:     `query($id: ID!, $source: ID!, $commits: [String!]!, $max: Int!) { node(id: $id) { ... on Workspace { compareCommitsFrom(source: $source, commits: $commits, maxCommits: $max) { commit { sha message } status reason conflictPaths } } } }`,
 		Variables: map[string]any{"id": id, "source": sourceID, "commits": commits, "max": maxCommits},
 	}, &dagger.Response{Data: &result})
-	return result.Node.CommitsFrom, err
+	return result.Node.CompareCommitsFrom, err
 }
 
 func applyWorkspacePull(ctx context.Context, c *dagger.Client, receiver, source *dagger.Workspace, commits []string, maxCommits int) (*dagger.Workspace, error) {

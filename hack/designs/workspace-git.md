@@ -51,7 +51,7 @@ identities; cherry-picked copies can have new hashes.
 Agent sessions act as independent factory lines. Saving one session delivers
 its work while every session continues from its own workspace. The user can
 save contributions from several agents, or select commits through
-`commitsFrom` and `withCommitsFrom`. Saving does not require agents to adopt the
+`compareCommitsFrom` and `withCommitsFrom`. Saving does not require agents to adopt the
 checkout's combined history or restart their work.
 
 Each session tracks its last saved **source Workspace**, including pending
@@ -230,7 +230,7 @@ unlimited. `Workspace.changes(from:)` returns cwd-relative paths. Omitting
 ```graphql
 extend type Workspace {
   """Preview integration oldest first, accounting for earlier applicable picks."""
-  commitsFrom(
+  compareCommitsFrom(
     source: ID! @expectedType(name: "Workspace")
     commits: [String!] = []
     maxCommits: Int = 100

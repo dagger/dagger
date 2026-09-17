@@ -926,7 +926,7 @@ core/integration/agent_runtime_test.go), ratified here:
 ### 8.1 Harvesting a worker's work
 
 Every worker gets its own `Workspace`, so anything it edits or commits is
-invisible to the chief until it is deliberately taken. `Workspace.commitsFrom`
+invisible to the chief until it is deliberately taken. `Workspace.compareCommitsFrom`
 / `withCommitsFrom` and the `modules/staff` harvest family
 (`logOf`/`diffOf`/`pull`/`pullConflicted`/`pullPending`) close that gap.
 Semantics ratified during implementation:
@@ -937,7 +937,7 @@ Semantics ratified during implementation:
   as a patch to the receiver's *current* content, so a commit still lands
   cleanly when the receiver has moved on since the worker branched off.
   Patch application is the merge; `withChanges` is only the write.
-- **Plan/apply split.** A pure planner (`commitsFrom`) classifies each of the
+- **Plan/apply split.** A pure planner (`compareCommitsFrom`) classifies each of the
   source's staged commits — PICKABLE, PICKED, REDUNDANT, or CONFLICT with a
   reason (CONTENT / DIRTY) and the obstructing paths — and a strict apply
   (`withCommitsFrom`) executes. Conflicts are *data*, not errors; but a commit
@@ -1211,7 +1211,7 @@ What is BUILT (see also §8 for ratified semantics):
   leading-SYSTEM trim fix (item 15), and the de-race pattern recorded
   cross-agent tests need.
 - **Workspace harvesting** (§8.1): the core API is
-  `Workspace.commitsFrom` / `withCommitsFrom` (+ the internal
+  `Workspace.compareCommitsFrom` / `withCommitsFrom` (+ the internal
   `__withReplayedCommit`), with `WorkspaceCommitPick` and its
   status/reason enums, `WorkspaceStagedCommit.origin`, and
   `WorkspaceRepoContainsCommits`; the chief-facing tools are

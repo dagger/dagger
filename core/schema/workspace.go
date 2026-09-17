@@ -68,7 +68,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
 			).
 			PassthroughTelemetry(),
-		dagql.NodeFunc("commitsFrom", s.commitsFrom).
+		dagql.NodeFunc("compareCommitsFrom", s.compareCommitsFrom).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures local receivers before planning integration").
 			Doc("Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.",
@@ -81,7 +81,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures local receivers before integrating commits").
 			Doc("Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.",
-				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.",
+				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.",
 				"A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.",
 				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.").
 			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),

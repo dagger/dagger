@@ -107,7 +107,7 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 	return receiver, resolved, nil
 }
 
-func (s *workspaceSchema) commitsFrom(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.Array[*core.WorkspaceCommitPick], error) {
+func (s *workspaceSchema) compareCommitsFrom(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.Array[*core.WorkspaceCommitPick], error) {
 	parent, resolved, err := s.pullInputs(ctx, parent, args)
 	if err != nil {
 		return nil, err
