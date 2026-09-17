@@ -78,6 +78,13 @@ func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
 func (a *Artifacts) FilterTypes(types []string) *Artifacts {
 	return a.filter(func(artifact *Artifact) bool { return slices.Contains(types, artifact.TypeName) })
 }
+func (a *Artifacts) Types() []string {
+	types := map[string]struct{}{}
+	for _, artifact := range a.Entries {
+		types[artifact.TypeName] = struct{}{}
+	}
+	return slices.Sorted(maps.Keys(types))
+}
 func (a *Artifacts) FilterQuery(query []string) *Artifacts {
 	return a.filter(func(artifact *Artifact) bool { return slices.Equal(query, artifact.Query) })
 }

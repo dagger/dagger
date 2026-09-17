@@ -1600,6 +1600,16 @@ func (r *Artifacts) Pretty(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// List concrete GraphQL types represented in this selection, sorted with no duplicates.
+func (r *Artifacts) Types(ctx context.Context) ([]string, error) {
+	q := r.query.Select("types")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // AsNode returns this Artifacts as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Artifacts) AsNode() Node {

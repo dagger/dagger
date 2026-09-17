@@ -18,6 +18,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.Artifacts](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.ArtifactCollectionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
+		dagql.Func("types", s.types).Doc("List concrete GraphQL types represented in this selection, sorted with no duplicates."),
 		dagql.Func("filterTypes", s.filterTypes).Doc("Keep artifacts of any listed concrete GraphQL type."),
 		dagql.Func("filterQuery", s.filterQuery).Doc("Match one complete, ordered field sequence exactly."),
 		dagql.Func("filterCollections", s.filterCollections).Doc("Keep artifacts selected through any listed collection."),
@@ -38,6 +39,9 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	}, s.value)
 }
 
+func (*artifactsSchema) types(_ context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
+	return parent.Types(), nil
+}
 func (*artifactsSchema) filterTypes(_ context.Context, parent *core.Artifacts, args struct{ Types []string }) (*core.Artifacts, error) {
 	return parent.FilterTypes(args.Types), nil
 }

@@ -63,6 +63,7 @@ source = "dang"
   pub selected(ws: Workspace!): Artifacts! {
     ws.artifacts.filterQuery(["base"])
   }
+  pub single(ws: Workspace!): Artifact! { selected(ws).one }
   pub resolve(ws: Workspace!, address: String!): Address! { ws.resolve(address) }
 
 }`)
@@ -74,13 +75,14 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
-    containers: filterTypes(types: ["Container"]) { items { query collectionKeys { collection key } pretty } }
+    types
+    containers: filterTypes(types: ["Container"]) { types items { query collectionKeys { collection key } pretty } }
     nested: filterQuery(query: ["docs", "source"]) { items { pretty } }
     sibling: filterQuery(query: ["other-docs", "source"]) { items { pretty } }
     optional: filterQuery(query: ["optional-docs", "source"]) { pretty }
     list: filterQuery(query: ["doc-list", "source"]) { pretty }
     cycle: filterQuery(query: ["docs", "again", "source"]) { pretty }
-    noType: filterTypes(types: []) { pretty }
+    noType: filterTypes(types: []) { types pretty }
     unknown: filterTypes(types: ["Unknown"]) { pretty }
     noCollection: filterCollections(collections: ["missing"]) { pretty }
     noKey: filterCollectionKeys(collection: "missing", keys: ["anything"]) { pretty }
@@ -97,7 +99,8 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{
-  "containers":{"items":[
+  "types":["Artifact","Artifacts","Container","Directory","File"],
+  "containers":{"types":["Container"],"items":[
     {"query":["base"],"collectionKeys":[],"pretty":"base"},
     {"query":["broken"],"collectionKeys":[],"pretty":"broken"},
     {"query":["consumer","base"],"collectionKeys":[],"pretty":"consumer:base"}
@@ -105,7 +108,7 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
   "nested":{"items":[{"pretty":"docs:source"}]},
   "sibling":{"items":[{"pretty":"other-docs:source"}]},
   "optional":{"pretty":[]},"list":{"pretty":[]},"cycle":{"pretty":[]},
-  "noType":{"pretty":[]},"unknown":{"pretty":[]},"noCollection":{"pretty":[]},"noKey":{"pretty":[]},
+  "noType":{"types":[],"pretty":[]},"unknown":{"pretty":[]},"noCollection":{"pretty":[]},"noKey":{"pretty":[]},
   "exact":{"pretty":[]},"colon":{"pretty":[]},"order":{"pretty":[]},"prefix":{"pretty":[]},
   "first":{"filterQuery":{"pretty":["base"]}},"second":{"filterTypes":{"pretty":["base"]}},
   "contradiction":{"filterTypes":{"pretty":[]}},"collections":[],"collectionKeys":[]
@@ -225,6 +228,30 @@ func (ArtifactsSuite) TestCoreSelection(ctx context.Context, t *testctx.T) {
 }}`, out)
 		})
 	}
+}
+
+func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).WithDirectory("/work/selected", artifactSource(c))
+	for _, tc := range []struct {
+		command string
+		want    string
+	}{
+		{"containers", "base\nbroken\nconsumer:base\n"},
+		{"directories", "docs:source\nother-docs:source\n"},
+		{"files", "marker\n"},
+		{"Artifact", "consumer:single\n"},
+		{"Artifacts", "consumer:selected\n"},
+	} {
+		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
+			out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "workspace", tc.command)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, out)
+		})
+	}
+	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "__complete", "workspace", "dir")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "directories\tList Directory artifacts\n")
 }
 
 func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
