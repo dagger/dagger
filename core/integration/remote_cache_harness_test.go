@@ -3,8 +3,11 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -49,8 +52,14 @@ func newFixtureEngine(ctx context.Context, t *testctx.T, outer *dagger.Client, n
 		workdir: t.TempDir(),
 		gated:   gated,
 	}
+	// Registered before the first fallible startup step, so a failed start
+	// still stops whatever it had started.
+	t.Cleanup(func() {
+		if err := e.shutdown(); err != nil {
+			t.Errorf("stop fixture engine %s: %v", e.name, err)
+		}
+	})
 	e.start()
-	t.Cleanup(e.stop)
 	return e
 }
 
@@ -67,34 +76,56 @@ func (e *fixtureEngine) start() {
 	ctr = engineWithConfig(e.ctx, e.t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 	e.upstream = devEngineContainerAsService(ctr)
 	e.unwatch = watchNestedEngine(e.t, e.outer, e.upstream, e.t.Name()+" "+e.name)
-	var err error
-	e.tunnel, err = e.outer.Host().Tunnel(e.upstream).Start(e.ctx)
+	tunnel, err := e.outer.Host().Tunnel(e.upstream).Start(e.ctx)
 	require.NoError(e.t, err)
+	e.tunnel = tunnel
 	endpoint, err := e.tunnel.Endpoint(e.ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(e.t, err)
 	e.client, err = dagger.Connect(e.ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(e.workdir), dagger.WithLogOutput(testutil.NewTWriter(e.t)))
 	require.NoError(e.t, err)
 }
 
-// stop is idempotent; it is also the engine's cleanup.
+// fixtureEngineStopTimeout bounds one whole shutdown. It never inherits the
+// test's context, which is usually already canceled when cleanup runs.
+const fixtureEngineStopTimeout = 90 * time.Second
+
+// shutdown is idempotent. It attempts every step under one fresh deadline and
+// reports every failure, so one failed step never strands the rest.
+func (e *fixtureEngine) shutdown() error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(e.ctx), fixtureEngineStopTimeout)
+	defer cancel()
+	var errs error
+	if client := e.client; client != nil {
+		e.client = nil
+		// Close takes no context; join it under the deadline.
+		closed := make(chan error, 1)
+		go func() { closed <- client.Close() }()
+		select {
+		case err := <-closed:
+			errs = errors.Join(errs, err)
+		case <-ctx.Done():
+			errs = errors.Join(errs, fmt.Errorf("client close did not return: %w", context.Cause(ctx)))
+		}
+	}
+	if upstream := e.upstream; upstream != nil {
+		e.upstream = nil
+		e.unwatch()
+		_, err := upstream.Stop(ctx)
+		errs = errors.Join(errs, err)
+	}
+	if tunnel := e.tunnel; tunnel != nil {
+		e.tunnel = nil
+		_, err := tunnel.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		errs = errors.Join(errs, err)
+	}
+	return errs
+}
+
+// stop is a clean stop that the scenario depends on: a restart or an offline
+// edit of saved state must not proceed after a failed one.
 func (e *fixtureEngine) stop() {
 	e.t.Helper()
-	ctx := context.WithoutCancel(e.ctx)
-	if e.client != nil {
-		require.NoError(e.t, e.client.Close())
-		e.client = nil
-	}
-	if e.upstream != nil {
-		e.unwatch()
-		_, err := e.upstream.Stop(ctx)
-		require.NoError(e.t, err)
-		e.upstream = nil
-	}
-	if e.tunnel != nil {
-		_, err := e.tunnel.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
-		require.NoError(e.t, err)
-		e.tunnel = nil
-	}
+	require.NoError(e.t, e.shutdown())
 }
 
 // restart stops the engine cleanly and starts it again on the same state and
