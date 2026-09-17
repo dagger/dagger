@@ -252,6 +252,7 @@ defmodule Dagger.LLM do
   @spec spawn(t(), [
           {:name, String.t() | nil},
           {:handle, String.t() | nil},
+          {:parent_handle, String.t() | nil},
           {:state, Dagger.AgentState.t() | nil},
           {:error, String.t() | nil}
         ]) :: {:ok, Dagger.Agent.t()} | {:error, term()}
@@ -261,6 +262,7 @@ defmodule Dagger.LLM do
       |> QB.select("spawn")
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("handle", optional_args[:handle])
+      |> QB.maybe_put_arg("parentHandle", optional_args[:parent_handle])
       |> QB.maybe_put_arg("state", optional_args[:state])
       |> QB.maybe_put_arg("error", optional_args[:error])
 

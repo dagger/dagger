@@ -29,7 +29,9 @@ const CallPayloadExportDelay = 5 * time.Millisecond
 // bounded. The ordinary processor later exports the same records, but the
 // session exporter's per-target claims make those copies no-ops.
 type CallPayloadBatchProcessor struct {
-	exporter sdklog.Exporter
+	exporter    sdklog.Exporter
+	match       func(sdklog.Record) bool
+	exportDelay time.Duration
 
 	mu      sync.Mutex
 	queue   []sdklog.Record
@@ -47,20 +49,34 @@ type callPayloadBatchRequest struct {
 }
 
 func NewCallPayloadBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchProcessor {
+	return newLosslessLogBatchProcessor(exporter, isCallPayloadRecord, CallPayloadExportDelay)
+}
+
+// NewAgentCheckpointBatchProcessor gives resume-critical agent checkpoints the
+// same lossless, unbounded ingress and bounded export behavior as call payloads.
+// It uses the ordinary log cadence so presentation state emitted immediately
+// before a checkpoint reaches live consumers first; shutdown still drains it.
+func NewAgentCheckpointBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchProcessor {
+	return newLosslessLogBatchProcessor(exporter, isAgentCheckpointRecord, LogExportInterval)
+}
+
+func newLosslessLogBatchProcessor(exporter sdklog.Exporter, match func(sdklog.Record) bool, delay time.Duration) *CallPayloadBatchProcessor {
 	processor := &CallPayloadBatchProcessor{
-		exporter: exporter,
-		queue:    make([]sdklog.Record, 0, LogExportMaxBatchSize),
-		wake:     make(chan struct{}, 1),
-		flush:    make(chan callPayloadBatchRequest),
-		shutdown: make(chan callPayloadBatchRequest, 1),
-		done:     make(chan struct{}),
+		exporter:    exporter,
+		match:       match,
+		exportDelay: delay,
+		queue:       make([]sdklog.Record, 0, LogExportMaxBatchSize),
+		wake:        make(chan struct{}, 1),
+		flush:       make(chan callPayloadBatchRequest),
+		shutdown:    make(chan callPayloadBatchRequest, 1),
+		done:        make(chan struct{}),
 	}
 	go processor.run()
 	return processor
 }
 
 func (processor *CallPayloadBatchProcessor) OnEmit(_ context.Context, record *sdklog.Record) error {
-	if record == nil || !isCallPayloadRecord(*record) {
+	if record == nil || processor.match == nil || !processor.match(*record) {
 		return nil
 	}
 
@@ -142,7 +158,7 @@ func (processor *CallPayloadBatchProcessor) run() {
 	for {
 		select {
 		case <-processor.wake:
-			timer := time.NewTimer(CallPayloadExportDelay)
+			timer := time.NewTimer(processor.exportDelay)
 			select {
 			case <-timer.C:
 				if err := processor.exportQueued(context.Background()); err != nil {
@@ -204,6 +220,28 @@ func isCallPayloadRecord(record sdklog.Record) bool {
 		return true
 	})
 	return payload
+}
+
+func isAgentCheckpointRecord(record sdklog.Record) bool {
+	if record.InstrumentationScope().Name != telemetryattrs.AgentCheckpointInstrumentationScope ||
+		record.Body().Kind() != log.KindBytes {
+		return false
+	}
+
+	marker := false
+	contract := ""
+	record.WalkAttributes(func(attr log.KeyValue) bool {
+		switch attr.Key {
+		case telemetryattrs.AgentCheckpointAttr:
+			marker = attr.Value.Kind() == log.KindBool && attr.Value.AsBool()
+		case telemetryattrs.AgentCheckpointContractAttr:
+			if attr.Value.Kind() == log.KindString {
+				contract = attr.Value.AsString()
+			}
+		}
+		return true
+	})
+	return marker && contract == telemetryattrs.AgentCheckpointContractV1
 }
 
 func stopTimer(timer *time.Timer) {

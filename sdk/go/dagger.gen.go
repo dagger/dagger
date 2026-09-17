@@ -11378,6 +11378,8 @@ type LLMSpawnOpts struct {
 	Name string
 	// The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.
 	Handle string
+	// The parent agent runtime handle recorded in a restored checkpoint. Omit to use the calling agent, if any.
+	ParentHandle string
 	// The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
 	//
 	// RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.
@@ -11407,6 +11409,10 @@ func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
 		// `handle` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Handle) {
 			q = q.Arg("handle", opts[i].Handle)
+		}
+		// `parentHandle` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ParentHandle) {
+			q = q.Arg("parentHandle", opts[i].ParentHandle)
 		}
 		// `state` optional argument
 		if !querybuilder.IsZeroValue(opts[i].State) {
