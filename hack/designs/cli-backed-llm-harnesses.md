@@ -8,7 +8,6 @@
 > The status checklists below describe the source design, including future work;
 > extraction validation is recorded in the PR and extraction ledger.
 
-
 Design and implementation plan for running the official Codex and Claude Code
 CLIs as the execution harness behind `LLM` and `Agent`, while preserving Dagger's
 workspace, message, lifecycle, and telemetry model.
