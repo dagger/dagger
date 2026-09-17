@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -141,24 +142,35 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	b.egraphMu.RUnlock()
 }
 
-func TestRemoteCacheUnusedCost(t *testing.T) {
-	chain := newChainFixture(t, "unused")
-	// A nil config leaves no bridge; ranking allocates nothing for a
-	// renewal-only offer and never requests content.
-	f := newExhaustionFixture(t, chain)
-	source := f.cache.PartContentSource()
+// With no integration, ranking a renewal-only offer allocates nothing and an
+// ordinary miss never consults the content source. No real store is needed.
+func TestRemoteCacheUnusedRanking(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	transport := newContentTestTransport()
+	c.partContentSource = NewPartContentSource(transport)
+	source := c.PartContentSource()
 	require.Nil(t, source.bridge.Load())
-	renewalOnly := exhaustionOffer(chain, "key", false)
+	layers := renewalTestLayers("lower", "upper")
+	renewalOnly := PersistedPartOffer{Chain: OfferedChain{Layers: layers, RenewalKey: "key", Addresses: map[digest.Digest]BlobAddress{layers[0].Descriptor.Digest: expiredTestAddress, layers[1].Descriptor.Digest: expiredTestAddress}}}
 	now := time.Now()
 	require.Zero(t, testing.AllocsPerRun(100, func() {
 		if source.Available(renewalOnly, now) {
 			panic("renewal-only offer available without a bridge")
 		}
 	}))
-	persistedListTestResult(t, f.ctx, f.cache, f.srv, "ordinary-miss", String("computed"))
-	require.Zero(t, f.transport.total(), "an ordinary miss never consults the source")
+	persistedListTestResult(t, ctx, c, srv, "ordinary-miss", String("computed"))
+	require.Zero(t, transport.total(), "an ordinary miss never consults the source")
+	require.Nil(t, source.bridge.Load())
+}
 
-	// Fixed addresses still work, and no renewal state is created.
+// Without an integration, a fixed address still installs and no renewal
+// state is created.
+func TestRemoteCacheUnusedCost(t *testing.T) {
+	chain := newChainFixture(t, "unused")
+	f := newExhaustionFixture(t, chain)
+	source := f.cache.PartContentSource()
+	require.Nil(t, source.bridge.Load())
+	now := time.Now()
 	fixed := exhaustionOffer(chain, "key", true)
 	f.attach(t, f.receiver, fixed)
 	require.True(t, source.Available(fixed, now))
