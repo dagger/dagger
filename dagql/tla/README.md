@@ -395,6 +395,7 @@ for the two pass configurations, 60 s for each fault and witness):
 | `remote_sharing_decoded` | pass | 672 | 1.2 |
 | five `remote_sharing_fault_*`, five `remote_sharing_witness_*` | each violates the invariant `expectedOutcome` names | | about 1 each |
 | `remote_checkpoint` | pass | 2,134 | 1.5 |
+| `remote_checkpoint_fault_drop_operation` | `OperationRetained` violated: the retained operation is one saved and restored bit, and a checkpoint that drops it leaves a pending part nothing to produce it | 154 | 1 |
 | three `remote_checkpoint_fault_*`, four `remote_checkpoint_witness_*` | each violates the invariant `expectedOutcome` names | | about 1 each |
 
 These bounds are small enough that they are the configurations' real bounds,
