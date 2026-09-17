@@ -2012,9 +2012,52 @@ func (s *directorySchema) changesetFilter(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return inst, err
 	}
-	var selected dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, after, &selected, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}}); err != nil {
+	selectChanges := func(after dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Changeset], error) {
+		var selected dagql.ObjectResult[*core.Changeset]
+		err := srv.Select(ctx, after, &selected, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}})
+		return selected, err
+	}
+	selected, err := selectChanges(after)
+	if err != nil {
 		return inst, err
+	}
+	// Filtering can strip every selected entry out of a directory that the
+	// full after side still has (say, when only one of its files is deleted).
+	// The filtered comparison then reports the directory itself as removed,
+	// and applying that to the complete baseline would delete its unselected
+	// siblings. Put those directories back on the filtered after side so only
+	// the selected entries count as removed.
+	selectedPaths, err := selected.Self().ComputePaths(ctx)
+	if err != nil {
+		return inst, err
+	}
+	restored := false
+	for _, removed := range selectedPaths.AllRemoved {
+		if !strings.HasSuffix(removed, "/") {
+			continue
+		}
+		var exists bool
+		if err := srv.Select(ctx, parent.Self().After, &exists, dagql.Selector{Field: "exists", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(removed)},
+			{Name: "expectedType", Value: dagql.Opt(core.ExistsTypeDirectory)},
+			{Name: "doNotFollowSymlinks", Value: dagql.NewBoolean(true)},
+		}}); err != nil {
+			return inst, err
+		}
+		if !exists {
+			continue
+		}
+		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withNewDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(removed)},
+		}}); err != nil {
+			return inst, err
+		}
+		restored = true
+	}
+	if restored {
+		if selected, err = selectChanges(after); err != nil {
+			return inst, err
+		}
 	}
 	selectedID, err := selected.ID()
 	if err != nil {

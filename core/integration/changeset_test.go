@@ -2285,3 +2285,46 @@ func (ChangesetSuite) TestFilter(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "docs", after)
 }
+
+// Selecting a single deletion must not remove its siblings. Filtering both
+// sides down to the selected path leaves the after side without the parent
+// directory at all, and re-applying that selection to the complete baseline
+// must treat it as one file removal, not a directory removal.
+func (ChangesetSuite) TestFilterDeletionKeepsSiblings(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	before := c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b")
+	all := before.WithoutFile("src/a.txt").WithNewFile("other.txt", "other").Changes(before)
+	selected := all.Filter(dagger.ChangesetFilterOpts{Include: []string{"src/a.txt"}})
+
+	removed, err := selected.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"src/a.txt"}, removed)
+	added, err := selected.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Empty(t, added)
+
+	entries, err := selected.After().Directory("src").Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"b.txt"}, entries)
+
+	applied, err := before.WithChanges(selected).Directory("src").Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"b.txt"}, applied)
+
+	// A directory that really is gone on the after side still reports as
+	// removed, and applying the selection removes it.
+	t.Run("whole directory", func(ctx context.Context, t *testctx.T) {
+		before := c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("keep.txt", "keep")
+		all := before.WithoutDirectory("src").WithNewFile("other.txt", "other").Changes(before)
+		unfiltered, err := all.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"src/"}, unfiltered)
+		selected := all.Filter(dagger.ChangesetFilterOpts{Include: []string{"src/**"}})
+		removed, err := selected.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, unfiltered, removed)
+		entries, err := before.WithChanges(selected).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"keep.txt"}, entries)
+	})
+}
