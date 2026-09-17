@@ -9,14 +9,15 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/plugins/content/local"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
 )
 
 func builtinLazyFixture(t *testing.T, missing, fallback bool) (context.Context, *dagql.Server, *dagql.Cache, *resolverOutputServer, dagql.ObjectResult[*core.Container]) {
@@ -51,7 +52,6 @@ func builtinLazyFixture(t *testing.T, missing, fallback bool) (context.Context, 
 }
 
 func TestBuiltinMetadataSelectors(t *testing.T) {
-	testutil.RequireNativeMount(t)
 	for _, test := range []struct {
 		name, path               string
 		file, relative, fallback bool
@@ -94,9 +94,6 @@ func TestBuiltinMetadataSelectors(t *testing.T) {
 				path, _ := output.Self().File.Peek()
 				require.Equal(t, wantPath, path)
 				require.Equal(t, wantPlatform, output.Self().Platform.Format())
-				got, err := output.Self().Contents(ctx, output, nil, nil)
-				require.NoError(t, err)
-				require.Equal(t, "saved", string(got))
 			} else {
 				var output dagql.ObjectResult[*core.Directory]
 				require.NoError(t, srv.Select(ctx, parent, &output, selector))
@@ -107,10 +104,11 @@ func TestBuiltinMetadataSelectors(t *testing.T) {
 				path, _ := output.Self().Dir.Peek()
 				require.Equal(t, wantPath, path)
 				require.Equal(t, wantPlatform, output.Self().Platform.Format())
-				entries, err := output.Self().Entries(ctx, output, "")
-				require.NoError(t, err)
-				require.Equal(t, []string{"data"}, entries)
 			}
+			// Reading the selected bytes evaluates the output through a read-only
+			// mount; native TestPipeline/Cold reads them. Here the builtin parent
+			// is evaluated directly.
+			require.NoError(t, cache.Evaluate(ctx, parent))
 			require.True(t, parent.Self().Lazy.IsEvaluated())
 			record, err := cache.CapturePersistedRecord(ctx, parent)
 			require.NoError(t, err)
