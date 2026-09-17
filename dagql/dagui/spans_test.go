@@ -55,6 +55,19 @@ func TestProcessAttributeLLMToolResultTokens(t *testing.T) {
 	}
 }
 
+func TestProcessAttributeCacheEvidence(t *testing.T) {
+	var snapshot SpanSnapshot
+	snapshot.ProcessAttribute(telemetryattrs.CacheContractAttr, telemetryattrs.CacheContractV1)
+	snapshot.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, telemetryattrs.CacheOutcomeHit)
+	snapshot.ProcessAttribute(telemetryattrs.CacheHitRouteAttr, telemetryattrs.CacheHitRouteStructural)
+
+	if snapshot.CacheContract != telemetryattrs.CacheContractV1 ||
+		snapshot.CacheOutcome != telemetryattrs.CacheOutcomeHit ||
+		snapshot.CacheHitRoute != telemetryattrs.CacheHitRouteStructural {
+		t.Fatalf("cache evidence not ingested: %+v", snapshot)
+	}
+}
+
 // TestProcessAttributeLLMMessageOrigin covers the ingestion of the
 // dagger.io/llm.origin.* vocabulary: the recorded provenance of a message
 // that arrived through an agent mailbox lands on the snapshot's LLMOrigin*
