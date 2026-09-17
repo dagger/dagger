@@ -4131,6 +4131,11 @@ type LLM implements Node & Syncer {
     handle: String
 
     """
+    The parent agent runtime handle recorded in a restored checkpoint. Omit to use the calling agent, if any.
+    """
+    parentHandle: String
+
+    """
     The lifecycle state to create the agent in, as facts on the entry: IDLE is
     ready to be prompted, PAUSED parks it, FAILED holds an error a resume
     retries past, STOPPED preserves a dormant snapshot that send or resume can

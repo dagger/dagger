@@ -172,6 +172,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     public function spawn(
         ?string $name = null,
         ?string $handle = null,
+        ?string $parentHandle = null,
         ?AgentState $state = null,
         ?string $error = '',
     ): Agent {
@@ -181,6 +182,9 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         }
         if (null !== $handle) {
         $leafQueryBuilder->setArgument('handle', $handle);
+        }
+        if (null !== $parentHandle) {
+        $leafQueryBuilder->setArgument('parentHandle', $parentHandle);
         }
         if (null !== $state) {
         $leafQueryBuilder->setArgument('state', $state);

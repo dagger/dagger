@@ -10782,6 +10782,7 @@ class LLM(Type):
         *,
         name: str | None = None,
         handle: str | None = None,
+        parent_handle: str | None = None,
         state: AgentState | None = AgentState.IDLE,
         error: str | None = "",
     ) -> Agent:
@@ -10819,6 +10820,9 @@ class LLM(Type):
             The runtime handle to restore the instance under, as published on
             its loop span as dagger.io/agent.id. Omit to mint a fresh
             instance.
+        parent_handle:
+            The parent agent runtime handle recorded in a restored checkpoint.
+            Omit to use the calling agent, if any.
         state:
             The lifecycle state to create the agent in, as facts on the entry:
             IDLE is ready to be prompted, PAUSED parks it, FAILED holds an
@@ -10842,6 +10846,7 @@ class LLM(Type):
         _args = [
             Arg("name", name, None),
             Arg("handle", handle, None),
+            Arg("parentHandle", parent_handle, None),
             Arg("state", state, AgentState.IDLE),
             Arg("error", error, ""),
         ]

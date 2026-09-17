@@ -10738,6 +10738,9 @@ pub struct LlmSpawnOpts<'a> {
     /// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
+    /// The parent agent runtime handle recorded in a restored checkpoint. Omit to use the calling agent, if any.
+    #[builder(setter(into, strip_option), default)]
+    pub parent_handle: Option<&'a str>,
     /// The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
     /// RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.
     #[builder(setter(into, strip_option), default)]
@@ -11001,6 +11004,9 @@ impl Llm {
         }
         if let Some(handle) = opts.handle {
             query = query.arg("handle", handle);
+        }
+        if let Some(parent_handle) = opts.parent_handle {
+            query = query.arg("parentHandle", parent_handle);
         }
         if let Some(state) = opts.state {
             query = query.arg("state", state);
