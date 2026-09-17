@@ -45,6 +45,13 @@ type PartContentOverride interface {
 	Provider(context.Context, PersistedPartOffer, *PartDemandState) content.InfoReaderProvider
 }
 
+// PartContentOverrideScope is optionally implemented by an override that
+// leaves some offers to the real source. The gated fixture uses it: an offer
+// that carries addresses or a renewal key is fetched over the real HTTP path.
+type PartContentOverrideScope interface {
+	Overrides(PersistedPartOffer) bool
+}
+
 type partContentOverride struct{ PartContentOverride }
 
 // PartContentSource is the cache's one content source. Ranking and chain
@@ -88,6 +95,15 @@ func (s *PartContentSource) loadOverride() PartContentOverride {
 	return nil
 }
 
+// overrideFor returns the override that serves this offer, if any.
+func (s *PartContentSource) overrideFor(offer PersistedPartOffer) PartContentOverride {
+	override := s.loadOverride()
+	if scope, ok := override.(PartContentOverrideScope); ok && !scope.Overrides(offer) {
+		return nil
+	}
+	return override
+}
+
 func (s *PartContentSource) attachedBridge() *RemoteCacheBridge {
 	if s == nil {
 		return nil
@@ -115,7 +131,7 @@ func (s *PartContentSource) roundTripper() http.RoundTripper {
 // scratch; otherwise every blob needs a usable address, or the offer needs a
 // renewal key with a bridge attached. It performs no I/O.
 func (s *PartContentSource) Available(offer PersistedPartOffer, now time.Time) bool {
-	if override := s.loadOverride(); override != nil {
+	if override := s.overrideFor(offer); override != nil {
 		return override.Available(offer, now)
 	}
 	if len(offer.Chain.Layers) == 0 || chainAddressesUsable(&offer, now) {
@@ -134,7 +150,7 @@ func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOff
 	if engine.IsSnapshotSharePreparation(ctx) {
 		return refusingContentProvider{}
 	}
-	if override := s.loadOverride(); override != nil {
+	if override := s.overrideFor(offer); override != nil {
 		return override.Provider(ctx, offer, demand)
 	}
 	// Always a map: an offer may carry a renewal key and no address yet, and
