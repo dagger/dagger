@@ -199,6 +199,34 @@ func (ArtifactsSuite) TestExplicitEntrypoint(ctx context.Context, t *testctx.T) 
 	require.JSONEq(t, `{"currentWorkspace":{"resolve":{"container":{"file":{"contents":"extra"}}}}}`, out)
 }
 
+func (ArtifactsSuite) TestCoreSelection(ctx context.Context, t *testctx.T) {
+	for _, mode := range []string{"local", "remote"} {
+		t.Run(mode, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			source := artifactSource(c)
+			base := nativeWorkspaceBase(t, c)
+			ref := "/work/selected"
+			if mode == "remote" {
+				ref = workspaceSelectionRemoteRef(ctx, t, c, source)
+			} else {
+				base = base.WithDirectory(ref, source)
+			}
+			out, err := base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
+  artifacts { filterTypes(types: ["Container", "Directory"]) { items { query } } }
+  resolve(value: "consumer:base") { container { file(path: "/marker") { contents } } }
+} }`, "-W", ref, "-m", "core")).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"currentWorkspace":{
+  "artifacts":{"filterTypes":{"items":[
+    {"query":["base"]}, {"query":["broken"]}, {"query":["consumer","base"]},
+    {"query":["docs","source"]}, {"query":["other-docs","source"]}
+  ]}},
+  "resolve":{"container":{"file":{"contents":"configured:original"}}}
+}}`, out)
+		})
+	}
+}
+
 func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).AsWorkspace().ID(ctx)
