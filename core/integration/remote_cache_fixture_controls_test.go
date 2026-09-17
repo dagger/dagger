@@ -168,8 +168,20 @@ func (RemoteCacheTransferSuite) TestFixtureControls(ctx context.Context, t *test
 			require.Len(t, partEventsOf(after.transferFixtureReport, row.ResultID, "installed-chain"), 1, "the output was installed exactly once")
 			require.Len(t, partEventsOf(after.transferFixtureReport, row.ResultID, "settled"), 1)
 			require.Empty(t, partEventsOf(after.transferFixtureReport, row.ResultID, "lazy-enter"))
+			// The exhausted demand's error keeps the injected cause; an error
+			// that had lost it would still read as an unavailable part.
+			switch fault.action {
+			case dagql.FixtureFailChainOpen:
+				require.ErrorContains(t, firstErr, "imported filesystem part is unavailable")
+				require.ErrorContains(t, firstErr, dagql.ErrFixtureTransport.Error())
+			case dagql.FixtureFailChainRead:
+				require.ErrorContains(t, firstErr, "imported filesystem part is unavailable")
+				require.ErrorContains(t, firstErr, "unexpected EOF")
+			case dagql.FixtureFailChainClose:
+				require.NoError(t, firstErr, "a Close error after a fully read and verified blob does not fail the install")
+			}
 			if fault.bookkeeping {
-				require.Error(t, firstErr, "a failed owner attachment fails that demand")
+				require.ErrorContains(t, firstErr, dagql.ErrFixtureLocalStorage.Error(), "a failed owner attachment fails that demand")
 				require.Equal(t,
 					len(partEventsOf(before.transferFixtureReport, row.ResultID, "provider-read")),
 					len(partEventsOf(after.transferFixtureReport, row.ResultID, "provider-read")),
