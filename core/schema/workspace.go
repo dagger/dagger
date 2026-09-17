@@ -687,6 +687,9 @@ func syntheticWorkspaceFromGitRef(
 	}
 	ws.SetRootfs(rootResult)
 	ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	if repo := ref.Self().Repo.Self(); repo != nil && repo.URL.Valid {
+		ws.SetGitOrigin(repo.URL.Value.String())
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 

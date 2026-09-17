@@ -42,6 +42,7 @@ func (s *workspaceSchema) loadWorkspaceSDKModule(
 			DirSrc: &core.DirModuleSource{
 				OriginalContextDir:        workspaceRoot,
 				OriginalSourceRootSubpath: configDir,
+				ContextIdentity:           ws.GitOrigin(),
 			},
 		}
 	}
