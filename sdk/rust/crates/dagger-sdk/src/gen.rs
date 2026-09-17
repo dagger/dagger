@@ -11081,6 +11081,29 @@ impl Llm {
         let query = self.selection.select("transcript");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Run future evaluation through an official CLI in the given container.
+    /// The container's configured working directory is the mutable workspace mount. The supplied container is the cold seed for a new harness lineage; existing messages are imported when they are not represented by a valid checkpoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `harness` - The container containing the official CLI and its configuration.
+    /// * `kind` - The official CLI to use.
+    pub fn with_harness(&self, harness: impl IntoID<Id>, kind: LlmHarnessKind) -> Llm {
+        let mut query = self.selection.select("withHarness");
+        query = query.arg_lazy(
+            "harness",
+            Box::new(move || {
+                let harness = harness.clone();
+                Box::pin(async move { harness.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("kind", kind);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Add an external MCP server to the LLM
     ///
     /// # Arguments
@@ -18578,6 +18601,13 @@ pub enum LlmContentBlockKind {
     ToolCall,
     #[serde(rename = "TOOL_RESULT")]
     ToolResult,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum LlmHarnessKind {
+    #[serde(rename = "CLAUDE")]
+    Claude,
+    #[serde(rename = "CODEX")]
+    Codex,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum LlmMessageOriginKind {

@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -115,6 +117,72 @@ type LLM struct {
 	// specify a cap. Zero means no cap. Only set via the legacy
 	// llm(maxAPICalls:) argument, kept for pre-v1 module views.
 	maxSteps int
+
+	// harness and harnessKind configure the cold container used for future
+	// evaluation. A checkpoint, when present, is an immutable native-state
+	// snapshot whose cursor describes the prefix of Messages it represents.
+	harness           dagql.ObjectResult[*Container]
+	harnessKind       LLMHarnessKind
+	harnessCheckpoint *LLMHarnessCheckpoint
+}
+
+// LLMHarnessKind identifies the official CLI used to execute an LLM
+// conversation.
+type LLMHarnessKind string
+
+var LLMHarnessKinds = dagql.NewEnum[LLMHarnessKind]()
+
+var (
+	LLMHarnessClaude = LLMHarnessKinds.Register("CLAUDE", "Anthropic's Claude Code CLI.")
+	LLMHarnessCodex  = LLMHarnessKinds.Register("CODEX", "OpenAI's Codex CLI.")
+)
+
+func (LLMHarnessKind) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMHarnessKind",
+		NonNull:   true,
+	}
+}
+
+func (LLMHarnessKind) TypeDescription() string {
+	return "The official CLI used to execute an LLM conversation."
+}
+
+func (LLMHarnessKind) Decoder() dagql.InputDecoder {
+	return LLMHarnessKinds
+}
+
+func (kind LLMHarnessKind) ToLiteral() call.Literal {
+	return LLMHarnessKinds.Literal(kind)
+}
+
+// LLMHarnessMessageCorrelation preserves the stable relationship between a
+// Dagger AgentMessage ID and the vendor-native message ID used by a harness.
+type LLMHarnessMessageCorrelation struct {
+	DaggerMessageID string
+	VendorMessageID string
+}
+
+// LLMHarnessCheckpoint is an immutable cold snapshot of a native harness. The
+// cursor (MessageCount and HistoryDigest) identifies exactly which prefix of
+// the LLM's portable history is represented by the native state.
+type LLMHarnessCheckpoint struct {
+	Harness       dagql.ObjectResult[*Container]
+	Kind          LLMHarnessKind
+	MessageCount  int
+	HistoryDigest digest.Digest
+	NativeSession string
+	Protocol      string
+	Correlations  []LLMHarnessMessageCorrelation
+}
+
+func (checkpoint *LLMHarnessCheckpoint) clone() *LLMHarnessCheckpoint {
+	if checkpoint == nil {
+		return nil
+	}
+	cp := *checkpoint
+	cp.Correlations = slices.Clone(checkpoint.Correlations)
+	return &cp
 }
 
 func (*LLM) TypeDescription() string {
@@ -786,8 +854,8 @@ type LLMRouter struct {
 	// supplied each subscription OAuth token, against the client that
 	// supplied it. They are what makes a token a live credential rather than
 	// a snapshot: the client's secret provider re-reads (and, for the CLI,
-	// refreshes) the token on every resolution, so asking again at request
-	// time yields the current one. Nil when no token was configured.
+	// refreshes) the token on every resolution, so later requests see updates.
+	// Nil when no token was configured.
 	reloadAnthropicAuthToken credentialResolver
 	reloadCodexAuthToken     credentialResolver
 }
@@ -1529,6 +1597,7 @@ func (llm *LLM) Clone() *LLM {
 	// LLMMessage.Clone before modifying one.
 	cp.Messages = slices.Clone(cp.Messages)
 	cp.mcp = cp.mcp.Clone()
+	cp.harnessCheckpoint = cp.harnessCheckpoint.clone()
 	cp.endpointMtx = &sync.Mutex{}
 	return &cp
 }
@@ -1554,6 +1623,32 @@ func (llm *LLM) AttachDependencyResults(
 		return nil, nil
 	}
 	var deps []dagql.AnyResult
+	attachHarness := func(label string, harness dagql.ObjectResult[*Container]) (dagql.ObjectResult[*Container], error) {
+		if harness.Self() == nil {
+			return harness, nil
+		}
+		attached, err := attach(harness)
+		if err != nil {
+			return harness, fmt.Errorf("attach llm %s: %w", label, err)
+		}
+		container, ok := attached.(dagql.ObjectResult[*Container])
+		if !ok {
+			return harness, fmt.Errorf("attach llm %s: unexpected result %T", label, attached)
+		}
+		deps = append(deps, attached)
+		return container, nil
+	}
+	var err error
+	llm.harness, err = attachHarness("harness", llm.harness)
+	if err != nil {
+		return nil, err
+	}
+	if llm.harnessCheckpoint != nil {
+		llm.harnessCheckpoint.Harness, err = attachHarness("harness checkpoint", llm.harnessCheckpoint.Harness)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if llm.mcp.workspace.Self() != nil {
 		attached, err := attach(llm.mcp.workspace)
 		if err != nil {
@@ -1705,6 +1800,69 @@ func (llm *LLM) WithModel(model, provider string) *LLM {
 	llm.endpoint = nil
 
 	return llm
+}
+
+// WithHarness configures future evaluation through an official CLI in the
+// supplied cold container. The explicit kind selection is the auth trust
+// boundary: Core may provide only that official protocol's matching session
+// credential directly to its runtime adapter, never to the container recipe or
+// module SDK. Selecting a new seed starts a new harness lineage, so any
+// checkpoint and its history cursor are deliberately discarded.
+func (llm *LLM) WithHarness(harness dagql.ObjectResult[*Container], kind LLMHarnessKind) (*LLM, error) {
+	if harness.Self() == nil {
+		return nil, fmt.Errorf("harness container is required")
+	}
+	workdir := harness.Self().Config.WorkingDir
+	if workdir == "" || path.Clean(workdir) == "/" {
+		return nil, fmt.Errorf("harness container working directory must be non-empty and not root (/)")
+	}
+	switch kind {
+	case LLMHarnessClaude, LLMHarnessCodex:
+	default:
+		return nil, fmt.Errorf("unsupported LLM harness kind %q", kind)
+	}
+
+	llm = llm.Clone()
+	llm.harness = harness
+	llm.harnessKind = kind
+	llm.harnessCheckpoint = nil
+	return llm, nil
+}
+
+// WithHarnessCheckpoint records the vendor-native state corresponding to the
+// current portable message history. It is reached through an internal DAGQL
+// selector so the checkpointed LLM remains an attached, addressable cache
+// result even though the harness publishes it from outside a field resolver.
+func (llm *LLM) WithHarnessCheckpoint(
+	messageCount int,
+	historyDigest digest.Digest,
+	nativeSession string,
+	protocol string,
+	correlations []LLMHarnessMessageCorrelation,
+) (*LLM, error) {
+	if llm.harness.Self() == nil {
+		return nil, fmt.Errorf("cannot checkpoint LLM without a harness")
+	}
+	if err := historyDigest.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid LLM harness history digest: %w", err)
+	}
+	checkpoint := &LLMHarnessCheckpoint{
+		Harness:       llm.harness,
+		Kind:          llm.harnessKind,
+		MessageCount:  messageCount,
+		HistoryDigest: historyDigest,
+		NativeSession: nativeSession,
+		Protocol:      protocol,
+		Correlations:  slices.Clone(correlations),
+	}
+	if !checkpoint.validFor(llm.Messages, llm.harnessKind) {
+		return nil, fmt.Errorf("LLM harness checkpoint does not match message history")
+	}
+
+	llm = llm.Clone()
+	checkpoint.Harness = llm.harness
+	llm.harnessCheckpoint = checkpoint
+	return llm, nil
 }
 
 // WithReasoningEffort changes the reasoning effort for the rest of the
@@ -1977,6 +2135,9 @@ func (err *ModelFinishedError) Error() string {
 func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
+	}
+	if llm.harness.Self() != nil {
+		return llm.stepHarness(ctx, inst, maxTokens)
 	}
 	return llm.step(ctx, inst, maxTokens)
 }
@@ -2973,6 +3134,20 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 
 	if llm.disableDefaultSystemPrompt {
 		sels = append(sels, dagql.Selector{Field: "withoutDefaultSystemPrompt"})
+	}
+
+	if llm.harness.Self() != nil {
+		harnessID, err := llm.harness.RecipeID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("harness container recipe ID: %w", err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withHarness",
+			Args: []dagql.NamedInput{
+				{Name: "harness", Value: dagql.NewID[*Container](harnessID)},
+				{Name: "kind", Value: llm.harnessKind},
+			},
+		})
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(llm.mcp.mcpServers)) {

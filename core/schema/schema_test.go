@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/opencontainers/go-digest"
 )
 
 func TestBaseSchemaAllowlist(t *testing.T) {
@@ -46,6 +47,128 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 			"View(AfterVersion(<next release version from internal/version/VERSION>)). "+
 			"For intentional changes to the base view, regenerate with "+
 			"`go test ./core/schema -run TestBaseSchemaAllowlist -update`.")
+}
+
+func TestLLMHarnessSchema(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "llm-harness-schema-client",
+		SessionID: "llm-harness-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "v1.0.0")
+	require.NoError(t, err)
+
+	fullJSON, err := getSchemaJSON(nil, nil, dag.View, dag)
+	require.NoError(t, err)
+	schema := decodeSchemaResponse(t, fullJSON).Schema
+
+	kind := schema.Types.Get("LLMHarnessKind")
+	require.NotNil(t, kind)
+	require.Len(t, kind.EnumValues, 2)
+	require.ElementsMatch(t, []string{"CLAUDE", "CODEX"}, []string{
+		kind.EnumValues[0].Name,
+		kind.EnumValues[1].Name,
+	})
+
+	field := schemaField(schema.Types.Get("LLM"), "withHarness")
+	require.NotNil(t, field)
+	require.False(t, field.TypeRef.IsOptional())
+	require.True(t, field.TypeRef.ReferencesType("LLM"))
+	harnessArg := schemaArgument(t, field, "harness")
+	require.False(t, harnessArg.TypeRef.IsOptional())
+	require.True(t, harnessArg.TypeRef.ReferencesType("ID"))
+	require.Equal(t, "Container", harnessArg.Directives.ExpectedType())
+	kindArg := schemaArgument(t, field, "kind")
+	require.False(t, kindArg.TypeRef.IsOptional())
+	require.True(t, kindArg.TypeRef.ReferencesType("LLMHarnessKind"))
+
+	baseJSON, err := getSchemaJSON(nil, nil, baseSchemaView(), dag)
+	require.NoError(t, err)
+	baseSchema := decodeSchemaResponse(t, baseJSON).Schema
+	require.Nil(t, baseSchema.Types.Get("LLMHarnessKind"))
+	require.Nil(t, schemaField(baseSchema.Types.Get("LLM"), "withHarness"))
+}
+
+func TestLLMHarnessCheckpointIsAddressable(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "llm-harness-checkpoint-client",
+		SessionID: "llm-harness-checkpoint-session",
+	})
+	srv := &currentTypeDefsTestServer{platform: core.Platform{OS: "linux", Architecture: "amd64"}}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "v1.0.0")
+	require.NoError(t, err)
+
+	var harness dagql.ObjectResult[*core.Container]
+	require.NoError(t, dag.Select(ctx, dag.Root(), &harness,
+		dagql.Selector{Field: "container"},
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/workspace")}},
+		},
+	))
+	harnessCall, err := harness.ID()
+	require.NoError(t, err)
+
+	var conversation dagql.ObjectResult[*core.LLM]
+	require.NoError(t, dag.Select(ctx, dag.Root(), &conversation,
+		dagql.Selector{
+			Field: "llm",
+			Args:  []dagql.NamedInput{{Name: "model", Value: dagql.Opt(dagql.NewString("gpt-5.6-sol"))}},
+		},
+		dagql.Selector{
+			Field: "withHarness",
+			Args: []dagql.NamedInput{
+				{Name: "harness", Value: dagql.NewID[*core.Container](harnessCall)},
+				{Name: "kind", Value: core.LLMHarnessCodex},
+			},
+		},
+	))
+	history, err := json.Marshal(conversation.Self().Messages)
+	require.NoError(t, err)
+	correlations := []core.LLMHarnessMessageCorrelation{{
+		DaggerMessageID: "dagger-message",
+		VendorMessageID: "vendor-message",
+	}}
+	correlationsJSON, err := json.Marshal(correlations)
+	require.NoError(t, err)
+
+	var checkpointed dagql.ObjectResult[*core.LLM]
+	require.NoError(t, dag.Select(ctx, conversation, &checkpointed, dagql.Selector{
+		Field: "__withHarnessCheckpoint",
+		Args: []dagql.NamedInput{
+			{Name: "messageCount", Value: dagql.NewInt(len(conversation.Self().Messages))},
+			{Name: "historyDigest", Value: dagql.NewString(digest.FromBytes(history).String())},
+			{Name: "nativeSession", Value: dagql.NewString("native-thread")},
+			{Name: "protocol", Value: dagql.NewString("codex-app-server")},
+			{Name: "correlations", Value: dagql.NewDigestedSerializedString(correlations, digest.FromBytes(correlationsJSON))},
+		},
+	}))
+
+	checkpointCall, err := checkpointed.ID()
+	require.NoError(t, err, "checkpoint publication must return an attached DAGQL result")
+	reloaded, err := dagql.NewID[*core.LLM](checkpointCall).Load(ctx, dag)
+	require.NoError(t, err, "checkpoint ID must resolve through the session cache")
+	var chained dagql.ObjectResult[*core.LLM]
+	require.NoError(t, dag.Select(ctx, reloaded, &chained, dagql.Selector{
+		Field: "withPrompt",
+		Args:  []dagql.NamedInput{{Name: "prompt", Value: dagql.NewString("second turn")}},
+	}))
+	_, err = chained.ID()
+	require.NoError(t, err, "a reloaded checkpoint must remain chainable")
 }
 
 func TestGitBundleSchema(t *testing.T) {

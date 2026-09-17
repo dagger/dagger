@@ -276,3 +276,10 @@ is-module = true
 [modules.dagger-dev]
 source = ".dagger/modules/dagger-dev"
 entrypoint = true
+
+[sdks.dang.scopes."modules/claude"]
+is-module = true
+
+[sdks.dang.scopes."modules/codex"]
+is-module = true
+clients = ["./modules/wolfi"]

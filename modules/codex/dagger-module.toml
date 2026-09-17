@@ -1,0 +1,9 @@
+name = "codex"
+engineVersion = "v1.0.0-beta.14"
+
+[runtime]
+source = "dang"
+
+[[dependencies]]
+name = "wolfi"
+source = "../wolfi"

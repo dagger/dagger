@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/opencontainers/go-digest"
 )
 
 type llmSchema struct {
@@ -57,6 +58,17 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("workspace").Doc("The workspace to work in."),
 			),
+		dagql.Func("withHarness", s.withHarness).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Run future evaluation through an official CLI in the given container.",
+				"The container's configured working directory is the mutable workspace mount. The supplied container is the cold seed for a new harness lineage; existing messages are imported when they are not represented by a valid checkpoint.").
+			Args(
+				dagql.Arg("harness").Doc("The container containing the official CLI and its configuration."),
+				dagql.Arg("kind").Doc("The official CLI to use."),
+			),
+		dagql.Func("__withHarnessCheckpoint", s.withHarnessCheckpoint).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Record an internal native harness checkpoint as an addressable LLM result."),
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
@@ -284,6 +296,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMMessageOriginKinds.Install(srv, AfterVersion("v1.0.0-0"))
+	core.LLMHarnessKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMMessageOriginInput{}).Install(srv, AfterVersion("v1.0.0-0"))
 }
@@ -307,6 +320,37 @@ func (s *llmSchema) withWorkspace(ctx context.Context, llm *core.LLM, args struc
 		return nil, err
 	}
 	return llm.WithWorkspace(ws), nil
+}
+
+func (s *llmSchema) withHarness(ctx context.Context, llm *core.LLM, args struct {
+	Harness dagql.ID[*core.Container]
+	Kind    core.LLMHarnessKind
+}) (*core.LLM, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	harness, err := args.Harness.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithHarness(harness, args.Kind)
+}
+
+func (s *llmSchema) withHarnessCheckpoint(ctx context.Context, llm *core.LLM, args struct {
+	MessageCount  int
+	HistoryDigest string
+	NativeSession string
+	Protocol      string
+	Correlations  dagql.DigestedSerializedString[[]core.LLMHarnessMessageCorrelation]
+}) (*core.LLM, error) {
+	return llm.WithHarnessCheckpoint(
+		args.MessageCount,
+		digest.Digest(args.HistoryDigest),
+		args.NativeSession,
+		args.Protocol,
+		args.Correlations.Self,
+	)
 }
 
 func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Workspace], _ error) {
