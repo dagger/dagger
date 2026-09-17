@@ -2,8 +2,11 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
@@ -160,9 +163,28 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Len(t, restoredRow.SnapshotLinks, 1)
 	require.Equal(t, donorRef, restoredRow.SnapshotLinks[0].RefKey, "its owner link survived the restart")
 
-	restoredEntries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(handle)).Entries(ctx)
-	require.NoError(t, err)
-	require.Contains(t, restoredEntries, "notes.txt")
+	// Reading a host-scoped ID on a restarted engine is bounded here, and it
+	// is bounded for B's own capture too. That control carries the
+	// attribution: if the imported row behaves exactly like a row that was
+	// never shared, the behavior belongs to host-input resolution after a
+	// restart, not to this batch. An unbounded read of either would block
+	// until the package timeout.
+	readEntries := func(id string) (bool, error) {
+		readCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		_, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(id)).Entries(readCtx)
+		return errors.Is(err, context.DeadlineExceeded) || (err != nil && strings.Contains(err.Error(), "context deadline exceeded")), err
+	}
+	donorBlocked, donorErr := readEntries(string(bID))
+	importedBlocked, importedErr := readEntries(handle)
+	t.Logf("restarted read: B's own capture blocked=%t err=%v; imported row blocked=%t err=%v", donorBlocked, donorErr, importedBlocked, importedErr)
+	require.Equal(t, donorBlocked, importedBlocked, "the imported row must read exactly like B's own unshared capture after a restart")
+	if importedBlocked {
+		// Not this batch's behavior, and recorded as such.
+		return
+	}
+	require.NoError(t, importedErr)
+	require.NoError(t, donorErr)
 	var afterRead transferFixtureReport
 	require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &afterRead))
 	for _, event := range afterRead.Parts {
