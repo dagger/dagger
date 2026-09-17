@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -20,13 +22,14 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/moby/locker"
+	"github.com/opencontainers/go-digest"
+	"github.com/stretchr/testify/require"
+
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/moby/locker"
-	"github.com/opencontainers/go-digest"
-	"github.com/stretchr/testify/require"
 )
 
 type producerExecutionServer struct {
@@ -76,6 +79,35 @@ func executionFixture(t *testing.T) (context.Context, *testutil.Store, *dagql.Ca
 func executionContext(t *testing.T) context.Context {
 	t.Helper()
 	return newExecutionFixture(t).ctx
+}
+
+// inUmaskChild lets a subtest run under a umask without changing the umask of
+// the test process, which every other test shares. In the test process it
+// re-executes the test binary for just this subtest, with a deadline, requires
+// the child to pass and returns false. In that child it sets the umask, which
+// dies with the process, and returns true, and the caller runs its body.
+func inUmaskChild(t *testing.T, mask int) bool {
+	t.Helper()
+	const marker = "DAGGER_TEST_UMASK_CHILD"
+	const ran = "umask child ran its body"
+	if os.Getenv(marker) == t.Name() {
+		syscall.Umask(mask)
+		// A pattern that matched no test would also exit zero.
+		t.Cleanup(func() { fmt.Println(ran) })
+		return true
+	}
+	var pattern []string
+	for _, name := range strings.Split(t.Name(), "/") {
+		pattern = append(pattern, "^"+regexp.QuoteMeta(name)+"$")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run="+strings.Join(pattern, "/"), "-test.count=1", "-test.timeout=30s")
+	child.Env = append(os.Environ(), marker+"="+t.Name())
+	output, err := child.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	require.Contains(t, string(output), ran, "%s", output)
+	return false
 }
 func freshProducerFile() *File {
 	return &File{Platform: Platform{OS: "linux", Architecture: "arm64"}, File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
@@ -224,8 +256,9 @@ func TestHTTPProducerWriter(t *testing.T) {
 		}
 	}
 	t.Run("restrictive umask", func(t *testing.T) {
-		old := syscall.Umask(0077)
-		defer syscall.Umask(old)
+		if !inUmaskChild(t, 0077) {
+			return
+		}
 		output := freshProducerFile()
 		producer := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: origin.URL, Filename: "data", Permissions: 0755, BodyDigest: digest.FromString("saved")}
 		require.NoError(t, producer.Evaluate(ctx, output))
@@ -234,8 +267,9 @@ func TestHTTPProducerWriter(t *testing.T) {
 		require.EqualValues(t, 0755, info.Mode().Perm())
 	})
 	t.Run("public eager layout", func(t *testing.T) {
-		old := syscall.Umask(0)
-		defer syscall.Umask(old)
+		if !inUmaskChild(t, 0) {
+			return
+		}
 		for _, name := range []string{"data", "/data", "../data", "a/../data", "./data"} {
 			output, err := FetchHTTPFile(ctx, query, FetchHTTPRequestOpts{URL: origin.URL, Filename: name, Permissions: 0644, AuthorizationHeader: "saved-auth"})
 			require.NoError(t, err)
