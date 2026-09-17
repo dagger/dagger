@@ -36,6 +36,23 @@ const temporalOutcome = "temporal"
 var expectedOutcome = map[string]string{
 	"snapshot_import": "",
 	"snapshot_export": "",
+	// RemoteParts.tla and RemoteOwners.tla: remote-cache part acquisition and
+	// offer ownership, separate modules. A fault or witness configuration
+	// names the one invariant it must violate; a witness is a reachability
+	// probe, the negation of what it shows. None is in the quick set.
+	"remote_parts":                                  "",
+	"remote_parts_fault_certify_sibling":            "ServedOutputIsComplete",
+	"remote_parts_fault_accept_after_seal":          "OfferAfterSealCannotPublish",
+	"remote_parts_witness_downloaded_fs":            "WitnessDownloadedFsPendingMeta",
+	"remote_parts_witness_late_offer":               "WitnessLateOfferWinsDuringPreparing",
+	"remote_parts_witness_fs_beside_meta":           "WitnessFsAcquiredBesideProducedMeta",
+	"remote_owners":                                 "",
+	"remote_owners_fault_release_on_replace":        "OwnerLivesWhileHeld",
+	"remote_owners_fault_offer_resources_in_lookup": "OrdinaryHitNotGatedByOffers",
+	"remote_owners_fault_retain_owner_in_retry":     "OwnerLivesWhileHeld",
+	"remote_owners_witness_old_acquisition":         "WitnessOldAcquisitionSurvivesReplacement",
+	"remote_owners_witness_unauthorized_hit":        "WitnessUnauthorizedHitOfferSkipped",
+	"remote_owners_witness_offer_row_outlives":      "WitnessOfferRowOutlivesItsRetention",
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
@@ -521,6 +538,12 @@ func modelFiles(name string) (string, string) {
 		return "SnapshotChain.tla", "SnapshotChain_import.cfg"
 	case "snapshot_export":
 		return "SnapshotChain.tla", "SnapshotChain_export.cfg"
+	}
+	switch {
+	case strings.HasPrefix(name, "remote_parts"):
+		return "RemoteParts.tla", fmt.Sprintf("RemoteParts_%s.cfg", name)
+	case strings.HasPrefix(name, "remote_owners"):
+		return "RemoteOwners.tla", fmt.Sprintf("RemoteOwners_%s.cfg", name)
 	default:
 		return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
 	}

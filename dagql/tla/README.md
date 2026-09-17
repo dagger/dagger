@@ -323,3 +323,55 @@ logs. Focused race evidence is in `snapshot-race-20260905T084725`,
 are in `prepared-race-20260905T085744` and `assembled-race-20260905T085911`.
 `final-evidence.md` reconciles source revisions, commands, counts and limitations.
 No full TLA or Go suite was run for this implementation.
+
+## Remote-cache models: `RemoteParts.tla` and `RemoteOwners.tla`
+
+Two separate modules, beside `SnapshotChain.tla` and for the same reason: the
+remote-cache mechanisms sit above the snapshot store and beside the cache
+kernel, and keeping them out of `CacheLifecycle.tla` leaves every existing
+configuration's state space exactly as it was. Nothing under
+`CacheLifecycle*` changed for them, so they owe no full-suite run. Each module
+header says what it models, as the code is after batches 4 to 6, and what it
+abstracts away (session lookup, publication, bytes, leases, restart).
+
+- `RemoteParts`: one receiver, two parts, one Lazy evaluation group, a Ready
+  donor and an offered chain for `fs`; output phase separate from group phase
+  and from each demand's result; permits, the recorded drain, the final source
+  check and the seal; Commit's revalidation; owed bookkeeping paid by a joiner;
+  offers refused after the seal; one renewal episode; cancellation.
+- `RemoteOwners`: receiver, Service and child; two offer owners, one slot, two
+  sessions of which one holds the Service's handle; replacement, acquisition
+  holds, the cycle rejection, the ordinary hit's filter, Commit's conversion of
+  the owner's rows into dependency edges and requirement, settlement, and
+  collection at zero with ownership recounted from the actual edges and holds.
+
+Every configuration is registered in `expectedOutcome`. A `fault` configuration
+sets the module's `Fault` constant to one deliberate break and must violate the
+one invariant it names. A `witness` configuration is a reachability probe: its
+"invariant" is the negation of the state it shows reachable, and it must be
+violated too. None is in the quick set.
+
+Recorded 2026-09-17 with the module's pinned TLC 1.7.4 jar (SHA-256
+`936a2620…0e88`, the same file the runner downloads), Java 21, 16 workers,
+`java -Xmx8g -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -workers auto
+-deadlock -config <cfg> <module>.tla`, each under an explicit `timeout` (180 s
+for the two pass configurations, 60 s for each fault and witness):
+
+| Configuration | Outcome | Distinct states | Wall seconds |
+| --- | --- | ---: | ---: |
+| `remote_parts` | pass | 26,270 | 2.2 |
+| `remote_parts_fault_certify_sibling` | `ServedOutputIsComplete` violated | | 2 |
+| `remote_parts_fault_accept_after_seal` | `OfferAfterSealCannotPublish` violated | | 1 |
+| `remote_parts_witness_downloaded_fs` | `WitnessDownloadedFsPendingMeta` violated | | 1 |
+| `remote_parts_witness_late_offer` | `WitnessLateOfferWinsDuringPreparing` violated | | 1 |
+| `remote_parts_witness_fs_beside_meta` | `WitnessFsAcquiredBesideProducedMeta` violated | | 1 |
+| `remote_owners` | pass | 3,092 | 1.7 |
+| `remote_owners_fault_release_on_replace` | `OwnerLivesWhileHeld` violated | 386 | 1.0 |
+| `remote_owners_fault_offer_resources_in_lookup` | `OrdinaryHitNotGatedByOffers` violated | 76 | 0.9 |
+| `remote_owners_fault_retain_owner_in_retry` | `OwnerLivesWhileHeld` violated | 264 | 1 |
+| `remote_owners_witness_old_acquisition` | `WitnessOldAcquisitionSurvivesReplacement` violated | 451 | 1.0 |
+| `remote_owners_witness_unauthorized_hit` | `WitnessUnauthorizedHitOfferSkipped` violated | 147 | 1.0 |
+| `remote_owners_witness_offer_row_outlives` | `WitnessOfferRowOutlivesItsRetention` violated | 95 | 1.0 |
+
+These bounds are small enough that they are the configurations' real bounds,
+not reduced ones. A symbolic model proves no bytes, leases or GC.
