@@ -272,6 +272,14 @@ func TestRenewalEpisodeSet(t *testing.T) {
 		addresses, err := demand.awaitRenewal(t.Context(), episode)
 		require.NoError(t, err)
 		require.Equal(t, supplied, addresses)
+		// The deadline bounds waiting for a reply, not a supplied result's use.
+		// Consulting it after the deadline must return the result every time.
+		time.Sleep(time.Hour)
+		for range 100 {
+			addresses, err = demand.awaitRenewal(t.Context(), again)
+			require.NoError(t, err)
+			require.Equal(t, supplied, addresses)
+		}
 		require.Zero(t, demand.revision, "episodes never invalidate a SourceCheck")
 
 		// Chain failure records the renewed episode as exhausted once, through
@@ -293,6 +301,33 @@ func TestRenewalEpisodeSet(t *testing.T) {
 		require.ErrorIs(t, err, ErrRenewalUnavailable)
 		require.Equal(t, renewalDeadline, time.Since(started))
 		require.EqualValues(t, 1, demand.revision)
+	})
+}
+
+// A provider without a key or bridge uses an episode another source settled,
+// even when it consults the episode after that episode's deadline.
+func TestRenewalSettledEpisodeAfterDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const data = "renewed bytes"
+		transport, source, offer, descriptor := contentReaderFixture(t, data)
+		offer.Chain.Addresses[descriptor.Digest] = BlobAddress{URL: "https://expired.invalid/blob", ExpiresAtUnix: 1}
+		demand := &PartDemandState{target: PersistedPartAddress{Part: "snapshot"}}
+		key := renewalEpisodeKey{target: demand.targetKey(), content: renewalContentKey(offer.Chain.Layers)}
+		episode, claimed := demand.claimRenewal(key, true, time.Now().Add(renewalDeadline))
+		require.True(t, claimed)
+		demand.settleRenewal(episode, map[digest.Digest]BlobAddress{descriptor.Digest: {URL: "https://blobs.invalid/blob"}}, nil)
+		time.Sleep(2 * renewalDeadline)
+		for range 20 {
+			reader, err := source.Provider(t.Context(), offer, demand).ReaderAt(t.Context(), descriptor)
+			require.NoError(t, err)
+			buf := make([]byte, len(data))
+			n, err := reader.ReadAt(buf, 0)
+			require.NoError(t, err)
+			require.Equal(t, data, string(buf[:n]))
+			require.NoError(t, reader.Close())
+		}
+		require.Equal(t, 20, transport.count("https://blobs.invalid/blob"))
+		require.Zero(t, transport.count("https://expired.invalid/blob"))
 	})
 }
 
