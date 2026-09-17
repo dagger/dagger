@@ -1,6 +1,8 @@
 package dagql
 
 import (
+	"context"
+	"fmt"
 	"sync"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -19,6 +21,20 @@ type NotReplayableCall struct {
 	Field  string
 	Digest digest.Digest
 	Reason string
+}
+
+type replayableRecipeKey struct{}
+
+// LoadReplayable loads an ID without evaluating NotReplayable fields. Handles
+// remain loadable: they reference existing results rather than replaying calls.
+func (s *Server) LoadReplayable(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	if blocked := s.ClassifyRecipe(id).NotReplayable; blocked != nil {
+		return nil, fmt.Errorf("field %s is not replayable: %s", blocked.Field, blocked.Reason)
+	}
+	// Classification is best-effort and uses type information supplied in the
+	// recipe. Enforce the same restriction on the resolved field during loading
+	// as well, including when forged types or dynamic schemas hide it here.
+	return s.Load(context.WithValue(ctx, replayableRecipeKey{}, true), id)
 }
 
 // ClassifyRecipe structurally classifies id without evaluating it. The first

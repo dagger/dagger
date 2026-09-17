@@ -1872,6 +1872,9 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 	if !ok {
 		return Selector{}, fmt.Errorf("field %q not found on %s", frame.Field, baseObj.Type().Name())
 	}
+	if ctx.Value(replayableRecipeKey{}) == true && fieldSpec.NotReplayable != "" {
+		return Selector{}, fmt.Errorf("field %s is not replayable: %s", frame.Field, fieldSpec.NotReplayable)
+	}
 	// Lazy-ref args are decoded straight from the recipe ID's literals
 	// (yielding unevaluated recipe IDs) instead of from the frame, since the
 	// frame's ref would resolve to an evaluated result that was intentionally

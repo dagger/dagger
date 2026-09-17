@@ -257,6 +257,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("push", s.push).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Pushes to an external Git repository on each invocation.").
+			NotReplayable("Requires explicit Git push authorization from the calling client").
 			Doc("Push this ref's commit and history to a remote repository using the destination's credentials.",
 				"The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.",
 				"A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.").
