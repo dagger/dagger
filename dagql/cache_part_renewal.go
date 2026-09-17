@@ -76,6 +76,7 @@ type RemoteCacheBridge struct {
 
 type renewalExchange struct {
 	request   RenewalRequest
+	requester context.Context
 	delivered bool
 	done      chan struct{}
 	addresses map[digest.Digest]BlobAddress
@@ -94,9 +95,19 @@ func renewalUnavailable(reason string) error {
 	return fmt.Errorf("%w: %s", ErrRenewalUnavailable, reason)
 }
 
-// request enqueues one exchange without waiting for capacity and waits for its
-// single terminal result until deadline. No lock is held while waiting.
+// request enqueues one exchange and waits for its single terminal result.
 func (b *RemoteCacheBridge) request(ctx context.Context, request RenewalRequest) (map[digest.Digest]BlobAddress, error) {
+	exchange, err := b.enqueue(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	return b.wait(ctx, exchange)
+}
+
+// enqueue installs one exchange without waiting for capacity. The exchange
+// keeps its requester's context, so Take and Reply see a cancellation before
+// the requester itself runs.
+func (b *RemoteCacheBridge) enqueue(ctx context.Context, request RenewalRequest) (*renewalExchange, error) {
 	if err := context.Cause(ctx); err != nil {
 		return nil, err
 	}
@@ -105,14 +116,13 @@ func (b *RemoteCacheBridge) request(ctx context.Context, request RenewalRequest)
 		return nil, err
 	}
 	request.Layers = layers
-	exchange := &renewalExchange{done: make(chan struct{})}
+	exchange := &renewalExchange{requester: ctx, done: make(chan struct{})}
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	switch {
 	case b.closed:
-		b.mu.Unlock()
 		return nil, renewalUnavailable("bridge detached")
 	case len(b.exchanges) >= renewalMailboxCapacity:
-		b.mu.Unlock()
 		return nil, renewalUnavailable("mailbox full")
 	}
 	b.sequence++
@@ -123,9 +133,13 @@ func (b *RemoteCacheBridge) request(ctx context.Context, request RenewalRequest)
 	b.queue = append(b.queue, request.ID.Sequence)
 	close(b.ready)
 	b.ready = make(chan struct{})
-	b.mu.Unlock()
+	return exchange, nil
+}
 
-	timer := time.NewTimer(time.Until(request.Deadline))
+// wait holds no lock and returns the exchange's terminal result, completing
+// it on cancellation or at its deadline.
+func (b *RemoteCacheBridge) wait(ctx context.Context, exchange *renewalExchange) (map[digest.Digest]BlobAddress, error) {
+	timer := time.NewTimer(time.Until(exchange.request.Deadline))
 	defer timer.Stop()
 	select {
 	case <-exchange.done:
@@ -136,6 +150,16 @@ func (b *RemoteCacheBridge) request(ctx context.Context, request RenewalRequest)
 	}
 	<-exchange.done
 	return exchange.addresses, exchange.err
+}
+
+// retireCanceledLocked completes an exchange whose requester is canceled.
+func (b *RemoteCacheBridge) retireCanceledLocked(exchange *renewalExchange) bool {
+	cause := context.Cause(exchange.requester)
+	if cause == nil {
+		return false
+	}
+	b.finishLocked(exchange, nil, cause)
+	return true
 }
 
 // finish publishes the first terminal result; later paths observe it.
@@ -159,8 +183,9 @@ func (b *RemoteCacheBridge) finishLocked(exchange *renewalExchange, addresses ma
 	return true
 }
 
-// TakeRenewalRequest delivers each queued request once. Only the integration's
-// consumer blocks here; canceling a Take does not cancel delivered exchanges.
+// TakeRenewalRequest delivers each queued request once, retiring requests
+// whose requester is canceled. Only the integration's consumer blocks here;
+// canceling a Take does not cancel delivered exchanges.
 func (b *RemoteCacheBridge) TakeRenewalRequest(ctx context.Context) (*RenewalRequest, error) {
 	for {
 		b.mu.Lock()
@@ -173,7 +198,7 @@ func (b *RemoteCacheBridge) TakeRenewalRequest(ctx context.Context) (*RenewalReq
 			sequence := b.queue[0]
 			b.queue = b.queue[1:]
 			exchange := b.exchanges[sequence]
-			if exchange == nil || !now.Before(exchange.request.Deadline) {
+			if exchange == nil || b.retireCanceledLocked(exchange) || !now.Before(exchange.request.Deadline) {
 				// The requester's own deadline completes an expired exchange.
 				continue
 			}
@@ -200,10 +225,14 @@ func (b *RemoteCacheBridge) TakeRenewalRequest(ctx context.Context) (*RenewalReq
 
 // ReplyRenewal publishes a valid reply for a live exchange. Late, duplicate,
 // old-epoch, wrong-content and invalid replies are discarded without effect; a
-// rejected reply leaves the exchange eligible until its original deadline.
+// rejected reply leaves the exchange eligible until its original deadline. A
+// reply for a canceled requester is discarded and retires the exchange.
 func (b *RemoteCacheBridge) ReplyRenewal(reply RenewalReply) RenewalReplyDisposition {
 	b.mu.Lock()
 	exchange := b.liveExchangeLocked(reply)
+	if exchange != nil && b.retireCanceledLocked(exchange) {
+		exchange = nil
+	}
 	b.mu.Unlock()
 	if exchange == nil {
 		return RenewalReplyDiscarded
@@ -218,7 +247,7 @@ func (b *RemoteCacheBridge) ReplyRenewal(reply RenewalReply) RenewalReplyDisposi
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.liveExchangeLocked(reply) != exchange || !time.Now().Before(exchange.request.Deadline) {
+	if b.liveExchangeLocked(reply) != exchange || b.retireCanceledLocked(exchange) || !time.Now().Before(exchange.request.Deadline) {
 		return RenewalReplyDiscarded
 	}
 	if !b.finishLocked(exchange, addresses, err) {
