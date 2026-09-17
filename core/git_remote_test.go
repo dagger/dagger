@@ -208,7 +208,7 @@ func TestGitMirrorFetchPrivateRefs(t *testing.T) {
 	require.Equal(t, next, gitMirrorTestRun(t, mirror, "rev-parse", fetchedGitRef(next)))
 	checkout := t.TempDir()
 	checkoutGit := gitutil.NewGitCLI(gitutil.WithWorkTree(checkout), gitutil.WithGitDir(filepath.Join(checkout, ".git")))
-	require.NoError(t, doGitCheckout(context.Background(), checkoutGit, "", "file://"+mirror, &gitutil.Ref{SHA: next}, 1, false))
+	require.NoError(t, doGitCheckout(context.Background(), checkoutGit, nil, "file://"+mirror, &gitutil.Ref{SHA: next}, 1, false))
 	require.Empty(t, gitMirrorTestRun(t, checkout, "for-each-ref", "--format=%(refname)"), "private mirror refs and unrequested tags must not leak into checkout")
 	require.Equal(t, "new", gitMirrorTestRun(t, checkout, "show", "HEAD:small"))
 }
@@ -241,6 +241,41 @@ func TestGitMirrorFetchNamedFallback(t *testing.T) {
 				require.ErrorContains(t, err, "did not materialize expected sha")
 				require.Empty(t, gitMirrorTestRun(t, mirror, "for-each-ref", "--format=%(refname)", "refs/dagger.fetched", "refs/dagger.fetch"), "failed fallback must not retain an incorrect tip")
 			}
+		})
+	}
+}
+
+func TestGitCheckoutContentOnlyDepthWithSubmodule(t *testing.T) {
+	ctx := context.Background()
+	submodule := t.TempDir()
+	gitBundleTestRun(t, submodule, "init", "--quiet", "--initial-branch=main")
+	require.NoError(t, os.WriteFile(filepath.Join(submodule, "value"), []byte("pinned"), 0o644))
+	gitBundleTestRun(t, submodule, "add", ".")
+	gitBundleTestRun(t, submodule, "commit", "-m", "pinned submodule")
+	pinned := gitBundleTestRun(t, submodule, "rev-parse", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(submodule, "value"), []byte("later"), 0o644))
+	gitBundleTestRun(t, submodule, "commit", "-am", "later submodule")
+	source := t.TempDir()
+	gitBundleTestRun(t, source, "init", "--quiet", "--initial-branch=main")
+	gitBundleTestRun(t, source, "-c", "protocol.file.allow=always", "submodule", "add", "file://"+submodule, "module")
+	gitBundleTestRun(t, filepath.Join(source, "module"), "checkout", pinned)
+	gitBundleTestRun(t, source, "add", ".")
+	gitBundleTestRun(t, source, "commit", "-m", "submodule at older commit")
+	gitBundleTestRun(t, source, "commit", "--allow-empty", "-m", "later parent")
+	head := gitBundleTestRun(t, source, "rev-parse", "HEAD")
+	for _, depth := range []int{0, 1} {
+		t.Run(fmt.Sprint(depth), func(t *testing.T) {
+			root := t.TempDir()
+			git := gitutil.NewGitCLI(gitutil.WithDir(root), gitutil.WithWorkTree(root),
+				gitutil.WithGitDir(filepath.Join(root, ".git")),
+				// Only this private test fixture allows local submodule URLs.
+				gitutil.WithArgs("-c", "protocol.file.allow=always"))
+			require.NoError(t, doGitCheckout(ctx, git, nil, "file://"+source, &gitutil.Ref{SHA: head}, depth, true))
+			data, err := os.ReadFile(filepath.Join(root, "module", "value"))
+			require.NoError(t, err)
+			require.Equal(t, "pinned", string(data), "parent depth does not change the gitlink checkout")
+			_, err = os.Stat(filepath.Join(root, ".git"))
+			require.ErrorIs(t, err, os.ErrNotExist)
 		})
 	}
 }

@@ -2,19 +2,312 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	gitsession "github.com/dagger/dagger/engine/session/git"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+// The qualification test must only Peek: any attempt to mount/evaluate this
+// snapshot panics through the deliberately unimplemented embedded interface.
+type workspaceExportTestSnapshot struct{ bkcache.ImmutableRef }
+
+type workspaceCheckoutRequest struct {
+	discard     bool
+	depth       int
+	includeTags bool
+	remotes     []core.GitRemote
+}
+
+type workspaceCheckoutBackend struct {
+	core.GitRefBackend
+	mu       sync.Mutex
+	requests []workspaceCheckoutRequest
+}
+
+func (b *workspaceCheckoutBackend) Tree(_ context.Context, _ *dagql.Server, discard bool, depth int, includeTags bool, remotes []core.GitRemote) (*core.Directory, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.requests = append(b.requests, workspaceCheckoutRequest{discard, depth, includeTags, remotes})
+	// Each backend invocation produces a distinct materialization. Comparing
+	// content digests would miss redundant copies of identical checkout data.
+	return &core.Directory{}, nil
+}
+
+func TestWorkspaceGitCheckoutReuse(t *testing.T) {
+	for _, discard := range []bool{false, true} {
+		for _, order := range []string{"tree first", "workspace first", "concurrent"} {
+			t.Run(fmt.Sprintf("discard=%t/%s", discard, order), func(t *testing.T) {
+				ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "caller", SessionID: "checkout-test"})
+				cache, err := dagql.NewCache(ctx, "", nil, nil)
+				require.NoError(t, err)
+				ctx = dagql.ContextWithCache(ctx, cache)
+				srv, err := dagql.NewServer(ctx, &core.Query{})
+				require.NoError(t, err)
+				srv.InstallObject(dagql.NewClass[*core.Directory](srv))
+				srv.InstallObject(dagql.NewClass[*core.GitRepository](srv))
+				srv.InstallObject(dagql.NewClass[*core.Workspace](srv))
+				git := &gitSchema{}
+				wsSchema := &workspaceSchema{}
+				dagql.Fields[*core.GitRef]{
+					dagql.NodeFunc("tree", git.tree),
+					dagql.NodeFunc("__fullCheckout", git.fullCheckout),
+				}.Install(srv)
+				dagql.Fields[*core.WorkspaceGit]{
+					dagql.NodeFunc("head", wsSchema.workspaceGitHead),
+					dagql.NodeFunc("__checkout", wsSchema.workspaceGitFullCheckout),
+				}.Install(srv)
+				backend := &workspaceCheckoutBackend{}
+				remotes := []core.GitRemote{{Name: "upstream", URL: "https://example.com/upstream.git"}}
+				sha := strings.Repeat("a", 40)
+				ref := objectResult(t, srv, "checkout-ref", &core.GitRef{
+					Repo:    objectResult(t, srv, "checkout-repo", &core.GitRepository{DiscardGitDir: discard, Remotes: remotes}),
+					Backend: backend,
+					Ref:     &gitutil.Ref{Name: sha, SHA: sha},
+				})
+				// Publish the synthetic fixture before sharing it across calls, as
+				// a production GitRef returned by the schema would be published.
+				attachedRef, err := cache.AttachResult(ctx, "checkout-test", srv, ref)
+				require.NoError(t, err)
+				ref = attachedRef.(dagql.ObjectResult[*core.GitRef])
+				base := &core.Workspace{}
+				base.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+				overlay := &core.Workspace{}
+				overlay.SetSource(core.NewWorkspaceSourceOverlay(base.Source(), nil, nil, dagql.ObjectResult[*core.Changeset]{}))
+				workspaces := []dagql.ObjectResult[*core.WorkspaceGit]{
+					objectResult(t, srv, "checkout-base-git", &core.WorkspaceGit{Workspace: objectResult(t, srv, "checkout-base", base)}),
+					objectResult(t, srv, "checkout-overlay-git", &core.WorkspaceGit{Workspace: objectResult(t, srv, "checkout-overlay", overlay)}),
+				}
+				var tree dagql.ObjectResult[*core.Directory]
+				checkouts := make([]dagql.ObjectResult[*core.Directory], len(workspaces))
+				selectTree := func() error {
+					return srv.Select(ctx, ref, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+						{Name: "depth", Value: dagql.NewInt(0)},
+						{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+						{Name: "includeTags", Value: dagql.NewBoolean(false)},
+					}})
+				}
+				selectWorkspace := func(i int) error {
+					return srv.Select(ctx, workspaces[i], &checkouts[i], dagql.Selector{Field: "__checkout"})
+				}
+				switch order {
+				case "tree first":
+					require.NoError(t, selectTree())
+					for i := range workspaces {
+						require.NoError(t, selectWorkspace(i))
+					}
+				case "workspace first":
+					for i := range workspaces {
+						require.NoError(t, selectWorkspace(i))
+					}
+					require.NoError(t, selectTree())
+				case "concurrent":
+					errs := make(chan error, 3)
+					go func() { errs <- selectTree() }()
+					for i := range workspaces {
+						go func() { errs <- selectWorkspace(i) }()
+					}
+					for range 3 {
+						require.NoError(t, <-errs)
+					}
+				}
+				if !discard {
+					var implicit dagql.ObjectResult[*core.Directory]
+					require.NoError(t, srv.Select(ctx, ref, &implicit, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+						{Name: "depth", Value: dagql.NewInt(0)},
+					}}))
+					require.Same(t, tree.Self(), implicit.Self(), "omitted defaults share the materialization")
+				}
+				require.Same(t, checkouts[0].Self(), checkouts[1].Self(), "pending edits must not reconstruct HEAD")
+				retained, discarded := 0, 0
+				for _, req := range backend.requests {
+					require.Zero(t, req.depth)
+					require.False(t, req.includeTags)
+					require.Equal(t, remotes, req.remotes)
+					if req.discard {
+						discarded++
+					} else {
+						retained++
+					}
+				}
+				require.Equal(t, 1, retained, "materialize the retained checkout only once")
+				if discard {
+					require.Equal(t, 1, discarded, "public tree must still honor keepGitDir=false")
+					require.NotSame(t, tree.Self(), checkouts[0].Self())
+				} else {
+					require.Zero(t, discarded)
+					require.Same(t, tree.Self(), checkouts[0].Self())
+				}
+				// A default source tree is still shallow, not the full checkout.
+				var shallow dagql.ObjectResult[*core.Directory]
+				require.NoError(t, srv.Select(ctx, ref, &shallow, dagql.Selector{Field: "tree"}))
+				require.NotSame(t, tree.Self(), shallow.Self())
+				require.Equal(t, 1, backend.requests[len(backend.requests)-1].depth)
+				var tagged dagql.ObjectResult[*core.Directory]
+				require.NoError(t, srv.Select(ctx, ref, &tagged, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+					{Name: "depth", Value: dagql.NewInt(0)},
+					{Name: "includeTags", Value: dagql.NewBoolean(true)},
+				}}))
+				require.NotSame(t, tree.Self(), tagged.Self())
+				require.True(t, backend.requests[len(backend.requests)-1].includeTags)
+			})
+		}
+	}
+}
+
+func TestWorkspaceExportBaseCandidate(t *testing.T) {
+	for _, scenario := range []string{"matching origin", "matching no remote", "matching implicit origin", "origin mismatch", "extra remote", "sha256", "diverged", "rewritten", "routing mismatch", "push mismatch", "live", "mutable ref", "unevaluated", "remote backend", "directory", "overlay"} {
+		t.Run(scenario, func(t *testing.T) {
+			srv, err := dagql.NewServer(t.Context(), &core.Query{})
+			require.NoError(t, err)
+			srv.InstallObject(dagql.NewClass[*core.Directory](srv))
+			srv.InstallObject(dagql.NewClass[*core.GitRepository](srv))
+			srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
+			dir := &core.Directory{Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]), Dir: new(core.LazyAccessor[string, *core.Directory])}
+			if scenario != "unevaluated" {
+				dir.Snapshot.SetValue(&workspaceExportTestSnapshot{})
+				dir.Dir.SetValue("/")
+			}
+			backend := &core.LocalGitRepository{Directory: objectResult(t, srv, "export-directory", dir)}
+			sha := strings.Repeat("a", 40)
+			if scenario == "sha256" {
+				// The initial reuse guard follows IsCommitSHA's SHA-1 contract;
+				// SHA-256 captures retain the existing reconstruction path.
+				sha = strings.Repeat("a", 64)
+			}
+			repo := &core.GitRepository{
+				Backend: backend,
+				URL:     dagql.NonNull(dagql.String("https://example.com/origin.git")),
+				Remotes: []core.GitRemote{{Name: "origin", URL: "https://example.com/origin.git", PushURL: "ssh://git@example.com/push.git"}},
+			}
+			metadata := &gitsession.CaptureGitMetadata{HeadSha: sha, RemoteUrl: string(repo.URL.Value), RemotePushUrl: repo.Remotes[0].PushURL}
+			switch scenario {
+			case "matching no remote":
+				repo.URL, repo.Remotes = dagql.Nullable[dagql.String]{}, nil
+				metadata.RemoteUrl, metadata.RemotePushUrl = "", ""
+			case "matching implicit origin":
+				repo.Remotes = nil
+				metadata.RemotePushUrl = ""
+			case "origin mismatch":
+				repo.Remotes[0].URL = "https://example.com/other.git"
+			case "extra remote":
+				repo.Remotes = append(repo.Remotes, core.GitRemote{Name: "mirror", URL: "https://example.com/mirror.git"})
+			case "diverged", "rewritten":
+				metadata.HeadSha = strings.Repeat("b", 40)
+			case "routing mismatch":
+				metadata.RemoteUrl = "https://example.com/other.git"
+			case "push mismatch":
+				metadata.RemotePushUrl = ""
+			case "remote backend":
+				repo.Backend = &core.RemoteGitRepository{}
+			}
+			gitRef := &gitutil.Ref{Name: sha, SHA: sha}
+			if scenario == "mutable ref" {
+				gitRef.Name = "refs/heads/main"
+			}
+			refBackend, err := backend.Get(t.Context(), gitRef)
+			require.NoError(t, err)
+			ref := objectResult(t, srv, "export-ref", &core.GitRef{Repo: objectResult(t, srv, "export-repo", repo), Backend: refBackend, Ref: gitRef})
+			ws := &core.Workspace{}
+			ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+			switch scenario {
+			case "live":
+				ws.ClientID = "another-client"
+			case "directory":
+				ws.SetSource(core.NewWorkspaceSourceDirectory(backend.Directory))
+			case "overlay":
+				// Qualification must use the frozen base, not After or rootfs.
+				ws.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), nil, nil, dagql.ObjectResult[*core.Changeset]{}))
+			}
+			got, ok := workspaceExportBaseCandidate(ws, metadata)
+			want := scenario == "matching origin" || scenario == "matching no remote" || scenario == "matching implicit origin" || scenario == "overlay"
+			require.Equal(t, want, ok)
+			if want {
+				require.Same(t, ref.Self(), got.Self())
+			}
+		})
+	}
+}
+
+func TestWorkspaceExportCompositionSkipsReconstruction(t *testing.T) {
+	for _, remote := range []bool{false, true} {
+		for _, reuse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("remote=%t/reuse=%t", remote, reuse), func(t *testing.T) {
+				ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "caller", SessionID: "export-test"})
+				cache, err := dagql.NewCache(ctx, "", nil, nil)
+				require.NoError(t, err)
+				ctx = dagql.ContextWithCache(ctx, cache)
+				srv, err := dagql.NewServer(ctx, &core.Query{})
+				require.NoError(t, err)
+				srv.InstallObject(dagql.NewClass[*core.GitRepository](srv))
+				stop := errors.New("injected composition boundary")
+				var hostPacks, remoteLoads, bundleImports int
+				dagql.Fields[*core.Query]{
+					dagql.Func("host", func(context.Context, *core.Query, struct{}) (*core.Host, error) { return &core.Host{}, nil }),
+					dagql.Func("git", func(context.Context, *core.Query, struct{ URL string }) (*core.GitRepository, error) {
+						remoteLoads++
+						return nil, stop
+					}),
+					dagql.Func("blob", func(context.Context, *core.Query, struct {
+						Name        string
+						Contents    dagql.Bytes
+						Permissions int
+					}) (*core.File, error) {
+						bundleImports++
+						return nil, stop
+					}),
+				}.Install(srv)
+				dagql.Fields[*core.Host]{dagql.Func("__gitDir", func(_ context.Context, _ *core.Host, args struct {
+					Path          string
+					StateDigest   string
+					ValidateState bool
+				}) (*core.Directory, error) {
+					hostPacks++
+					require.Equal(t, "/caller/destination", args.Path)
+					require.Equal(t, "captured-state", args.StateDigest)
+					require.True(t, args.ValidateState)
+					return nil, stop
+				})}.Install(srv)
+				captured := &core.Workspace{}
+				captured.SetHostPath("/caller/destination")
+				metadata := &gitsession.CaptureGitMetadata{CheckoutStateDigest: "captured-state"}
+				if remote {
+					metadata.RemoteUrl = "https://example.com/origin.git"
+				}
+				var base dagql.ObjectResult[*core.GitRepository]
+				if reuse {
+					base = objectResult(t, srv, "export-owned-base", &core.GitRepository{})
+				}
+				_, err = (&workspaceSchema{}).checkpointCapturedGitCompositionWithBase(ctx, srv, captured, metadata, []byte("captured bundle"), "", base)
+				require.ErrorContains(t, err, stop.Error())
+				if reuse {
+					require.Zero(t, hostPacks, "must not invoke Host.__gitDir/PackGitCheckout")
+					require.Zero(t, remoteLoads, "must not resolve/fetch the remote")
+					require.Equal(t, 1, bundleImports, "captured bundle remains authoritative")
+				} else if remote {
+					require.Equal(t, 1, remoteLoads)
+				} else {
+					require.Equal(t, 1, hostPacks)
+				}
+			})
+		}
+	}
+}
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})

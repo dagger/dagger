@@ -200,7 +200,7 @@ func registerModuleSDKCommandsFromConfig(
 			}
 			modSrc := dag.ModuleSource(sdkRef)
 			if workspace.IsLocalRef(sdk.entry.Source, sdk.entry.Pin) {
-				currentWorkspace := dag.CurrentWorkspace().Reloaded()
+				currentWorkspace := dag.CurrentWorkspace()
 				workspaceConfigFile, err := currentWorkspace.ConfigFile(ctx)
 				if err != nil {
 					return fmt.Errorf("find SDK module %q workspace config: %w", sdk.commandName, err)

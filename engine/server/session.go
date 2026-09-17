@@ -158,6 +158,8 @@ type daggerSession struct {
 
 	allowedLLMModules []string
 
+	gitPushApprovals gitPushApprovals
+
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
 }
@@ -329,8 +331,7 @@ type clientRuntime struct {
 
 	// workspaceReadEpoch is a monotonically bumped token folded into cached
 	// Workspace.file / Workspace.directory host reads' per-client cache
-	// namespace. Bumped on Workspace.export / Workspace.reloaded so a
-	// long-lived session re-reads
+	// namespace. Bumped on Workspace.export so a long-lived session re-reads
 	// the host after the workspace's on-disk content changed under it, instead
 	// of serving a stale per-client host.directory snapshot cached earlier in
 	// the session. Atomic (not guarded by workspaceMu) so a read resolver can

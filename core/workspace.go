@@ -48,10 +48,9 @@ func InvalidateCurrentWorkspace(ctx context.Context) error {
 // (dagql.PerClientInput), so within one session — such as a `dagger agent`
 // conversation — a file read earlier in the session keeps returning its
 // original snapshot even after the agent's edits are exported to disk. Bumping
-// the epoch on Workspace.export (and on Workspace.reloaded, when an agent
-// discards its overlay to re-sync with the host) gives subsequent reads a
-// fresh per-client cache namespace, so they re-read the (now updated) host
-// instead of the stale snapshot.
+// the epoch on Workspace.export gives subsequent reads (and the host baseline
+// the next export diffs against) a fresh per-client cache namespace, so they
+// re-read the (now updated) host instead of the stale snapshot.
 //
 // Both hooks are registered by engine/server (which owns the per-client cache);
 // nil in contexts without a server, where the epoch is empty and bumping is a
@@ -555,6 +554,14 @@ func (ws *Workspace) WithoutMountedAt(newMounts dagql.ObjectResult[*Directory], 
 	return cp
 }
 
+// MountPoints returns the sorted workspace-root-relative mount paths.
+func (ws *Workspace) MountPoints() []string {
+	if ws == nil {
+		return nil
+	}
+	return slices.Clone(ws.mountPoints)
+}
+
 // MountedPath reports whether a workspace-root-relative path is at or under
 // one of the workspace's mount points.
 func (ws *Workspace) MountedPath(resolvedPath string) bool {
@@ -886,7 +893,6 @@ func (ws *Workspace) AttachDependencyResults(
 	}
 
 	var deps []dagql.AnyResult
-
 	if ws.rootfs.Self() != nil {
 		attached, err := attach(ws.rootfs)
 		if err != nil {

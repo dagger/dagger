@@ -1,0 +1,18 @@
+kind: Added
+body: |
+  New `GitRepository.withRemote(name, url, pushUrl: "")` API registers named
+  remotes on a repository, replacing any remote of the same name.
+  Registered remotes are recorded in checkouts materialized from the
+  repository (`GitRef.tree`, `Workspace.git.directory`), so remote-aware
+  tooling like `gh` can resolve and fetch from them, and `GitRef.push` accepts
+  a `remote` name to route a push through a registered remote — the `origin`
+  remote remains the default. Engine-local repository rebuilds now also carry
+  the source repository's entire remote configuration, not just `origin`.
+  Remotes are routing metadata only, never a credential grant.
+  Each registered remote accepts one optional push URL; a captured host remote
+  with several `pushurl` entries contributes only the first.
+  Cached checkouts retain their own remote configuration, including push URLs.
+time: 2026-09-12T21:00:00Z
+custom:
+  Author: vito
+  PR: "14147"

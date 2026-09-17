@@ -344,6 +344,15 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Changeset]{
 		Syncer[*core.Changeset]().
 			Doc(`Force evaluation in the engine.`),
+		dagql.NodeFunc("filter", s.changesetFilter).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("Select changes matching the supplied glob patterns, preserving their original baseline.",
+				"Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.").
+			Args(
+				dagql.Arg("include").Doc("Only include changes at paths matching these patterns. Empty includes all paths."),
+				dagql.Arg("exclude").Doc("Exclude changes at paths matching these patterns."),
+			),
 		dagql.NodeFunc("layer", s.changesetLayer).
 			Doc(`Return a snapshot containing only the created and modified files`),
 		dagql.NodeFunc("asPatch", s.changesetAsPatch).
@@ -1976,4 +1985,105 @@ func maintainContentHashing[A any](
 		}
 		return res, nil
 	}
+}
+
+// Keep the complete baseline: a filtered changeset must not make unselected
+// baseline files look like additions when merged onto another tree.
+func (s *directorySchema) changesetFilter(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct {
+	Include []string `default:"[]"`
+	Exclude []string `default:"[]"`
+}) (inst dagql.ObjectResult[*core.Changeset], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	selector := dagql.Selector{Field: "filter", Args: []dagql.NamedInput{
+		{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Include...))},
+		{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Exclude...))},
+	}}
+	var before, after dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent.Self().Before, &before, selector); err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, parent.Self().After, &after, selector); err != nil {
+		return inst, err
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return inst, err
+	}
+	selectChanges := func(after dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Changeset], error) {
+		var selected dagql.ObjectResult[*core.Changeset]
+		err := srv.Select(ctx, after, &selected, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}})
+		return selected, err
+	}
+	selected, err := selectChanges(after)
+	if err != nil {
+		return inst, err
+	}
+	// A removed directory may contain unselected baseline entries, even when
+	// the full after side no longer has it. Restore these directories on the
+	// filtered after side so applying the selection only deletes selected
+	// entries. Fully selected directory removals must remain intact.
+	selectedPaths, err := selected.Self().ComputePaths(ctx)
+	if err != nil {
+		return inst, err
+	}
+	restored := false
+	var excludedPaths *core.ChangesetPaths
+	for _, removed := range selectedPaths.AllRemoved {
+		if !strings.HasSuffix(removed, "/") {
+			continue
+		}
+		var exists bool
+		if err := srv.Select(ctx, parent.Self().After, &exists, dagql.Selector{Field: "exists", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(removed)},
+			{Name: "expectedType", Value: dagql.Opt(core.ExistsTypeDirectory)},
+			{Name: "doNotFollowSymlinks", Value: dagql.NewBoolean(true)},
+		}}); err != nil {
+			return inst, err
+		}
+		if !exists {
+			if excludedPaths == nil {
+				excluded, err := core.NewChangeset(ctx, parent.Self().Before, before)
+				if err != nil {
+					return inst, err
+				}
+				excludedPaths, err = excluded.ComputePaths(ctx)
+				if err != nil {
+					return inst, err
+				}
+			}
+			if !slices.ContainsFunc(excludedPaths.AllRemoved, func(p string) bool {
+				return strings.HasPrefix(p, removed)
+			}) {
+				continue
+			}
+		}
+		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withNewDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(removed)},
+		}}); err != nil {
+			return inst, err
+		}
+		restored = true
+	}
+	if restored {
+		if selected, err = selectChanges(after); err != nil {
+			return inst, err
+		}
+	}
+	selectedID, err := selected.ID()
+	if err != nil {
+		return inst, err
+	}
+	var fullAfter dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent.Self().Before, &fullAfter, dagql.Selector{Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](selectedID)}}}); err != nil {
+		return inst, err
+	}
+	fullBeforeID, err := parent.Self().Before.ID()
+	if err != nil {
+		return inst, err
+	}
+	err = srv.Select(ctx, fullAfter, &inst, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](fullBeforeID)}}})
+	return inst, err
 }

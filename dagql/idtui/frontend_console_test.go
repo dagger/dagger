@@ -95,6 +95,105 @@ func TestConsoleTimingsHandler(t *testing.T) {
 	}
 }
 
+func TestValidateConsoleKey(t *testing.T) {
+	valid := []string{
+		// named keys
+		"enter", "esc", "escape", "tab", "space", "backspace",
+		"up", "down", "left", "right", "home", "end", "pgup", "pgdown",
+		"insert", "delete", "begin", "find", "select",
+		// bare characters (including the keymap's own bindings)
+		"a", "L", "T", "/", "-", "?",
+		// the plus key and modified pluses
+		"+", "ctrl++",
+		// f-keys
+		"f1", "f10", "f20",
+		// modifier combos
+		"ctrl+c", "ctrl+s", "alt+enter", "shift+tab", "ctrl+alt+delete",
+		"meta+x", "super+z", "hyper+q",
+	}
+	for _, spec := range valid {
+		if err := validateConsoleKey(spec); err != nil {
+			t.Errorf("validateConsoleKey(%q) = %v, want nil", spec, err)
+		}
+	}
+
+	invalid := []string{
+		// the emacs/tmux-style names that motivated validation: tuist would
+		// type these into the TUI as literal text
+		"C-s", "C-c", "M-x",
+		// typos and unknown names
+		"entr", "escpe", "control+c", "ctl+c",
+		// a modifier with nothing after it is parsed as a key name
+		"ctrl+notakey",
+	}
+	for _, spec := range invalid {
+		err := validateConsoleKey(spec)
+		if err == nil {
+			t.Errorf("validateConsoleKey(%q) = nil, want error", spec)
+			continue
+		}
+		if !strings.Contains(err.Error(), spec) {
+			t.Errorf("validateConsoleKey(%q) error does not name the token: %v", spec, err)
+		}
+	}
+
+	// A trailing bare modifier is a single-part spec, so it's a key *name*
+	// lookup — "ctrl" alone is not a key.
+	if err := validateConsoleKey("ctrl"); err == nil {
+		t.Error("validateConsoleKey(\"ctrl\") = nil, want error")
+	}
+
+	// Repeat syntax is stripped by parseConsoleKeys before validation; a
+	// malformed count survives as part of the token and must be rejected.
+	keys := parseConsoleKeys("down*3 enter")
+	if len(keys) != 4 {
+		t.Fatalf("parseConsoleKeys(\"down*3 enter\") = %v", keys)
+	}
+	for _, k := range keys {
+		if err := validateConsoleKey(k); err != nil {
+			t.Errorf("validateConsoleKey(%q) = %v, want nil", k, err)
+		}
+	}
+	for _, k := range parseConsoleKeys("down*x") {
+		if err := validateConsoleKey(k); err == nil {
+			t.Errorf("validateConsoleKey(%q) = nil, want error", k)
+		}
+	}
+}
+
+func TestConsoleDuration(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		def  time.Duration
+		want time.Duration
+		err  bool
+	}{
+		{in: "", def: 2 * time.Second, want: 2 * time.Second},
+		{in: "5s", want: 5 * time.Second},
+		{in: "1500ms", want: 1500 * time.Millisecond},
+		{in: "30", want: 30 * time.Second},
+		{in: "2.5", want: 2500 * time.Millisecond},
+		{in: "bogus", err: true},
+		{in: "-5s", err: true},
+		{in: "-3", err: true},
+	} {
+		got, err := consoleDuration(tc.in, tc.def)
+		if tc.err {
+			if err == nil {
+				t.Errorf("consoleDuration(%q) = %v, want error", tc.in, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("consoleDuration(%q) = %v, want %v", tc.in, err, tc.want)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("consoleDuration(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestConsoleSpanDetail(t *testing.T) {
 	db := dagui.NewDB()
 	rootID := prettyTestSpanID(1)

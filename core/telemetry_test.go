@@ -51,6 +51,10 @@ type mockServer struct {
 	lockWritable   bool
 }
 
+func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error) {
+	panic("unexpected AuthorizeGitPush")
+}
+
 func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
 	return engine.NewNestedClientTransport(nil), nil
 }

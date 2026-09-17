@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
@@ -14,6 +15,9 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type LocalGitRepository struct {
@@ -50,6 +54,21 @@ func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, er
 		return nil, err
 	}
 	return remote, nil
+}
+
+// ResolveShortSHA expands an abbreviated commit SHA against the repository's
+// own object database, which is fully available locally.
+func (repo *LocalGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	var sha string
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		var err error
+		sha, err = git.ResolveShortSHA(ctx, prefix)
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return sha, nil
 }
 
 func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*File, error) {
@@ -240,7 +259,69 @@ func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, 
 	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
 }
 
-func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
+// readGitConfigRemotes reads the remotes configured on the repository the
+// CLI is positioned in: every remote.<name>.url and remote.<name>.pushurl,
+// in configuration order. A repository with no remotes (or no readable
+// config) reports none.
+func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote, error) {
+	out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "config", "-z", "--get-regexp", `^remote\.`)
+	if err != nil {
+		return nil, err
+	}
+	byName := map[string]*GitRemote{}
+	var order []string
+	for _, entry := range strings.Split(string(out), "\x00") {
+		key, value, ok := strings.Cut(entry, "\n")
+		if !ok {
+			continue
+		}
+		rest, isRemote := strings.CutPrefix(key, "remote.")
+		if !isRemote {
+			continue
+		}
+		// Suffix-first parsing keeps remote names containing dots intact.
+		var name, attr string
+		if n, isURL := strings.CutSuffix(rest, ".url"); isURL {
+			name, attr = n, "url"
+		} else if n, isPush := strings.CutSuffix(rest, ".pushurl"); isPush {
+			name, attr = n, "pushurl"
+		} else {
+			continue
+		}
+		if name == "" || value == "" {
+			continue
+		}
+		remote, ok := byName[name]
+		if !ok {
+			remote = &GitRemote{Name: name}
+			byName[name] = remote
+			order = append(order, name)
+		}
+		switch attr {
+		case "url":
+			// Later values shadow earlier ones, like `git config --get`.
+			remote.URL = value
+		case "pushurl":
+			// Git pushes to every configured pushurl; only the first one is
+			// retained here, since a push routes to one destination.
+			if remote.PushURL == "" {
+				remote.PushURL = value
+			}
+		}
+	}
+	remotes := make([]GitRemote, 0, len(order))
+	for _, name := range order {
+		remotes = append(remotes, *byName[name])
+	}
+	return remotes, nil
+}
+
+func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "materialize local git checkout", telemetry.Internal(), trace.WithAttributes(
+		attribute.Int("dagger.git.checkout.depth", depth),
+		attribute.Bool("dagger.git.checkout.discard_git_dir", discardGitDir),
+	))
+	defer telemetry.EndWithCause(span, &rerr)
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -265,6 +346,18 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git url: %w", err)
 		}
 
+		// The checkout is rebuilt from scratch, which would drop the source
+		// repository's remotes. Carry its remote configuration over -- with
+		// any remotes registered on the repository object overlaid -- so
+		// remote-aware tooling (gh, git fetch) keeps resolving the repository
+		// from the result; the checkout itself still fetches from the local
+		// mount.
+		configRemotes, err := readGitConfigRemotes(ctx, git)
+		if err != nil {
+			return fmt.Errorf("could not read remotes: %w", err)
+		}
+		checkoutRemotes := MergeGitRemotes(configRemotes, remotes)
+
 		return MountRef(ctx, bkref, func(checkoutDir string, _ *mount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
@@ -275,7 +368,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 				gitutil.WithWorkTree(checkoutDir),
 				gitutil.WithGitDir(checkoutDirGit),
 			)
-			return doGitCheckout(ctx, checkoutGit, "", gitURL, ref.Ref, depth, discardGitDir)
+			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir)
 		})
 	})
 	if err != nil {

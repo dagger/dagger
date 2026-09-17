@@ -1258,7 +1258,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		_ = stdio.Close()
 	}()
 
-	toolCtx := ctx
+	toolCtx := context.WithValue(ctx, agentToolCallKey{}, true)
 	if m.workspace.Self() != nil {
 		// Bind the LLM's Workspace so the tool's contextual (+defaultPath) and
 		// Workspace-typed args resolve against it, not the ambient workspace.

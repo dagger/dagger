@@ -123,6 +123,7 @@ type frontendPretty struct {
 	statusLine     *StatusLine
 	statusLineData StatusLineData
 	llmCostFn      LLMCostFunc
+	llmToolsFn     LLMToolsProvider
 	textInput      *tuist.TextInput
 	promptFrame    *PromptFrame
 	completionMenu *tuist.CompletionMenu
@@ -1389,12 +1390,18 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
+	return fe.handleForm(ctx, func() *huh.Form { return form })
+}
+
+// Build on the UI goroutine when the form needs current terminal dimensions.
+func (fe *frontendPretty) handleForm(ctx context.Context, create func() *huh.Form) error {
 	if fe.reportOnly {
 		return ErrNonInteractive
 	}
 
-	req := fe.newPromptFormRequest(ctx, form, nil)
+	req := fe.newPromptFormRequest(ctx, nil, nil)
 	fe.dispatch(func() {
+		req.model = create()
 		fe.enqueuePromptForm(req)
 		fe.Update()
 	})
@@ -1520,6 +1527,7 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 	model := req.model.
 		WithTheme(frontendFormTheme()).
 		WithKeyMap(frontendFormKeyMap()).
+		WithWidth(fe.window.Width).
 		WithShowHelp(false)
 	// Cap the form at half the screen so a tall field (e.g. the .resume session
 	// picker's long Select) stays scrollable instead of dominating the terminal.
@@ -1547,12 +1555,22 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 	// focus instead of returning it to the prompt.
 	active.focus = fe.tui.PushFocus(active.wrap)
 
-	// Insert before keymapBar, then acquire scoped focus. Tuist preserves input
-	// typed before the wrapper's first render and restores the captured owner
-	// when this form is dismissed.
+	// Keep queued permission forms above the draft and preserve scoped focus.
+	if fe.promptFrame != nil {
+		fe.tui.RemoveChild(fe.promptFrame)
+	}
+	if fe.statusLine != nil {
+		fe.tui.RemoveChild(fe.statusLine)
+	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(active.wrap)
 	fe.tui.AddChild(active.spacer)
+	if fe.promptFrame != nil {
+		fe.tui.AddChild(fe.promptFrame)
+	}
+	if fe.statusLine != nil {
+		fe.tui.AddChild(fe.statusLine)
+	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.activeForm = active
 	fe.syncHardwareCursor()
@@ -6760,6 +6778,11 @@ func (fe *frontendPretty) goErrorOrigin() {
 func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	old := fe.window
 	fe.window = msg
+	if fe.activeForm != nil {
+		// Huh fixes its width at 80 under TERM=dumb, including headless
+		// consoles. The pretty frontend owns layout and must override it.
+		fe.activeForm.model.WithWidth(msg.Width)
+	}
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
 	if old != msg {
@@ -6874,7 +6897,7 @@ func (fe *frontendPretty) renderableErrorOrigins(span *dagui.Span) []*dagui.Span
 		if cause.ID == span.ID {
 			continue
 		}
-		if !cause.Received {
+		if !cause.Received || !hasSpanErrorMessage(cause) {
 			continue
 		}
 		if fe.claims.hasError(cause.ID) {
@@ -7395,12 +7418,21 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		fe.claims.claimLog(rootCauseRow.Span)
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
-
-	fe.claims.claimError(rootCause)
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
 	return fe.claims.hasRootError(fe.err)
+}
+
+// A nested session's error may arrive before its origin's final span. Until
+// that span carries a message, keep the error on the propagating span visible.
+func hasSpanErrorMessage(span *dagui.Span) bool {
+	for _, failed := range span.Errors().Order {
+		if strings.TrimSpace(failed.Status.Description) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // errorShownElsewhere reports whether a failed span's error message is carried
@@ -7424,6 +7456,9 @@ func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
 		if fe.claims.hasError(origin.ID) {
 			return true
 		}
+		if !hasSpanErrorMessage(origin) {
+			continue
+		}
 		if fe.rows != nil && fe.rows.BySpan[origin.ID] != nil {
 			return true
 		}
@@ -7445,6 +7480,9 @@ func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	if !hasSpanErrorMessage(row.Span) {
+		return
+	}
 	if fe.errorShownElsewhere(row.Span) {
 		// span's error originated elsewhere and that origin is visible this
 		// pass; don't repeat the message, the ERROR status links to its origin
@@ -8635,17 +8673,18 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	return fe.HandleForm(ctx, NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title(title).
-				Description(strings.TrimSpace((&Markdown{
-					Content: message,
-					Width:   fe.window.Width,
-				}).View())).
-				Value(dest),
-		),
-	))
+	return fe.handleForm(ctx, func() *huh.Form {
+		field := NewExplicitConfirm("Yes", "No", dest).Title(title)
+		if title == "" {
+			// A self-contained question needs no separate Markdown description.
+			field.Title(message).Inline(true)
+		} else if message == "" {
+			field.Inline(true)
+		} else {
+			field.Description(strings.TrimSpace((&Markdown{Content: message, Width: fe.window.Width}).View()))
+		}
+		return huh.NewForm(huh.NewGroup(field))
+	})
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {

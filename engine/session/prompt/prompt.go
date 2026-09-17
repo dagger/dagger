@@ -109,6 +109,52 @@ func (p PromptAttachable) PromptString(ctx context.Context, req *StringRequest) 
 	}, nil
 }
 
+func (p PromptAttachable) PromptSelect(ctx context.Context, req *SelectRequest) (*SelectResponse, error) {
+	form, selected, err := SelectForm(req)
+	if err != nil {
+		return nil, err
+	}
+	promptMutex.Lock()
+	defer promptMutex.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if p.promptHandler == nil {
+		return nil, status.Error(codes.FailedPrecondition, "selection requires an interactive client")
+	}
+	if err := p.promptHandler.HandleForm(ctx, form); err != nil {
+		return nil, err
+	}
+	if form.State == huh.StateAborted {
+		return nil, status.Error(codes.Canceled, "selection canceled")
+	}
+	return &SelectResponse{Choice: *selected}, nil
+}
+
+// SelectForm uses the same client-local form lifecycle as other interactive
+// inputs. Labels are literal UI text; stable IDs, not labels, cross the RPC.
+func SelectForm(req *SelectRequest) (*huh.Form, *string, error) {
+	if req.GetTitle() == "" && req.GetPrompt() == "" || len(req.GetChoices()) < 2 {
+		return nil, nil, status.Error(codes.InvalidArgument, "selection requires a question and at least two choices")
+	}
+	ids := make(map[string]bool)
+	options := make([]huh.Option[string], 0, len(req.Choices))
+	for _, choice := range req.Choices {
+		if choice.GetId() == "" || choice.GetLabel() == "" || ids[choice.GetId()] {
+			return nil, nil, status.Error(codes.InvalidArgument, "selection choices require unique IDs and nonempty labels")
+		}
+		ids[choice.Id] = true
+		options = append(options, huh.NewOption(choice.Label, choice.Id))
+	}
+	if !ids[req.DefaultChoice] {
+		return nil, nil, status.Error(codes.InvalidArgument, "selection requires an explicit default choice")
+	}
+	selected := req.DefaultChoice
+	field := huh.NewSelect[string]().Title(req.Title).Description(req.Prompt).
+		Options(options...).Value(&selected)
+	return huh.NewForm(huh.NewGroup(field)), &selected, nil
+}
+
 // not threadsafe, must be holding promptMutex
 func (a *PromptResponses) load() error {
 	if err := a.ensureFileExists(); err != nil {
@@ -195,4 +241,8 @@ func (p PromptProxy) PromptBool(ctx context.Context, req *BoolRequest) (*BoolRes
 
 func (p PromptProxy) PromptString(ctx context.Context, req *StringRequest) (*StringResponse, error) {
 	return p.client.PromptString(grpcutil.IncomingToOutgoingContext(ctx), req)
+}
+
+func (p PromptProxy) PromptSelect(ctx context.Context, req *SelectRequest) (*SelectResponse, error) {
+	return p.client.PromptSelect(grpcutil.IncomingToOutgoingContext(ctx), req)
 }

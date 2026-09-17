@@ -133,6 +133,27 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 	}, nil
 }
 
+// ResolveShortSHA expands an abbreviated commit SHA against the engine's
+// local mirror of the remote. Remote repositories are resolved via ls-remote,
+// which only advertises refs: a prefix can only be expanded when the commit's
+// objects were already fetched (e.g. by a previous tree checkout). Nothing is
+// fetched to answer the expansion.
+func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	var sha string
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		var err error
+		sha, err = git.ResolveShortSHA(ctx, prefix)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, gitutil.ErrShortSHANotFound) {
+			return "", fmt.Errorf("%w; a remote repository can only expand an abbreviated SHA against already-fetched commits: use the full SHA or a named ref", err)
+		}
+		return "", err
+	}
+	return sha, nil
+}
+
 func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -207,6 +228,14 @@ func (repo *RemoteGitRepository) Cleaned(ctx context.Context) (inst dagql.Object
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	return repo.setupWithSSHAuthSock(ctx, "")
+}
+
+// sshAuthSock is an operation-local agent mount, never a repository capability.
+func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAuthSock string) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	if repo.URL != nil && repo.URL.Scheme == gitutil.SSHProtocol && repo.SSHAuthSocket.Self() == nil && sshAuthSock == "" {
+		return nil, nil, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -217,6 +246,9 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		"gc.autoDetach":          "false",
 		"maintenance.autoDetach": "false",
 	})}
+	if sshAuthSock != "" {
+		opts = append(opts, gitutil.WithSSHAuthSock(sshAuthSock))
+	}
 
 	cleanups := cleanups.Cleanups{}
 	defer func() {
@@ -610,7 +642,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	return fn(dir)
 }
 
-func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
+func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -644,7 +676,13 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
-			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir)
+			// The clone URL is the remote itself, so it doubles as the
+			// checkout's origin; registered remotes overlay it.
+			checkoutRemotes := MergeGitRemotes(
+				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}},
+				remotes,
+			)
+			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)
@@ -809,11 +847,20 @@ func overrideNetworkConfig(hostsOverride, resolvOverride string) error {
 	return nil
 }
 
+// runProcessGroup runs cmd in its own process group so a cancelled context
+// tears down every helper it spawned, and asks the kernel to SIGTERM it if the
+// engine dies. Pdeathsig fires when the OS thread that forked the child exits,
+// not when the process does, and Go retires threads whenever a goroutine that
+// locked one exits. Pin this goroutine to its thread for the child's lifetime:
+// a locked thread only goes away with its goroutine, after Wait has returned,
+// so the child never sees a spurious SIGTERM from an unrelated thread's exit.
 func runProcessGroup(ctx context.Context, cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		Setpgid:   true,
 		Pdeathsig: unix.SIGTERM,
 	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := cmd.Start(); err != nil {
 		return err
 	}

@@ -33,6 +33,7 @@ type fakeRuntime struct {
 	stops      int
 	reseeds    int
 	reseedErr  error
+	snapshot   dagger.ID
 	state      dagger.AgentState
 	delivered  chan string
 }
@@ -81,7 +82,11 @@ func (f *fakeRuntime) setState(state dagger.AgentState) {
 	f.state = state
 }
 
-func (f *fakeRuntime) SnapshotID(context.Context) (dagger.ID, error) { return "", nil }
+func (f *fakeRuntime) SnapshotID(context.Context) (dagger.ID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.snapshot, nil
+}
 
 func (f *fakeRuntime) Stop(context.Context) error {
 	f.mu.Lock()

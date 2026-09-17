@@ -7,11 +7,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -36,6 +38,14 @@ const (
 	// consoleSettleTimeout bounds how long a request keeps draining background
 	// fetches (lazy span/log loads land on other goroutines) before responding.
 	consoleSettleTimeout = 2 * time.Second
+	// consoleWaitQuietDefault is how long the screen must stay unchanged for
+	// /wait (without a regex) to consider it settled.
+	consoleWaitQuietDefault = 2 * time.Second
+	// consoleWaitTimeoutDefault/-Max bound how long a /wait request may block.
+	consoleWaitTimeoutDefault = 60 * time.Second
+	consoleWaitTimeoutMax     = 5 * time.Minute
+	// consoleWaitPoll is how often /wait re-renders the screen while waiting.
+	consoleWaitPoll = 100 * time.Millisecond
 )
 
 // runWithConsole runs the command's work in the background and serves the TUI
@@ -106,31 +116,30 @@ func (fe *frontendPretty) runWithConsole(ctx context.Context, run func(context.C
 // access is serialized via fe.consoleMu: the frontend is single-goroutine (no
 // event loop), so a handler must hold the lock while it Steps and renders.
 func (fe *frontendPretty) serveConsole(ctx context.Context) error {
-	writeScreen := func(w http.ResponseWriter, r *http.Request, frame string) {
-		if r.URL.Query().Get("raw") == "" {
-			frame = ansi.Strip(frame)
-		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		io.WriteString(w, frame)
-	}
-	reqBody := func(r *http.Request) string {
-		b, _ := io.ReadAll(r.Body)
-		return strings.TrimSpace(string(b))
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/screen", func(w http.ResponseWriter, r *http.Request) {
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/key", func(w http.ResponseWriter, r *http.Request) {
+		keys := parseConsoleKeys(consoleRequestBody(r))
+		// Validate the whole script before injecting any of it: an unknown
+		// token must not leave the TUI half-driven, and must not fall through
+		// tuist.ParseKey's extended-key fallback, which would *type the token
+		// as literal text* into whatever is focused (e.g. an agent prompt).
+		for _, k := range keys {
+			if err := validateConsoleKey(k); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
-		for _, k := range parseConsoleKeys(reqBody(r)) {
+		for _, k := range keys {
 			fe.tui.Inject(tuist.ParseKey(k))
 		}
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/type", func(w http.ResponseWriter, r *http.Request) {
 		fe.consoleMu.Lock()
@@ -143,10 +152,10 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		for _, ru := range strings.TrimRight(string(raw), "\n") {
 			fe.tui.Inject(tuist.ParseKey(string(ru)))
 		}
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/zoom", func(w http.ResponseWriter, r *http.Request) {
-		hex := reqBody(r)
+		hex := consoleRequestBody(r)
 		sid, err := oteltrace.SpanIDFromHex(hex)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("bad span hex %q: %v", hex, err), http.StatusBadRequest)
@@ -155,12 +164,12 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
 		fe.ZoomToSpan(dagui.SpanID{SpanID: sid})
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/resize", func(w http.ResponseWriter, r *http.Request) {
 		// Body is "<cols>x<rows>" or "<cols> <rows>"; either dimension may be
 		// omitted (or 0) to keep the current value, so "x12" just changes rows.
-		body := reqBody(r)
+		body := consoleRequestBody(r)
 		isSep := func(c rune) bool {
 			return c == 'x' || c == 'X' || c == ' ' || c == ',' || c == '\t'
 		}
@@ -195,13 +204,41 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		// height-dependent renders on ScreenHeight, so the next Step reflows to
 		// the new size on its own -- no manual generation bump needed.
 		fe.consoleTerm.Resize(cols, rows)
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
+	mux.HandleFunc("/wait", fe.consoleWaitHandler)
 	mux.HandleFunc("/spans", func(w http.ResponseWriter, r *http.Request) {
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, fe.consoleSpans(r.URL.Query().Get("q")))
+	})
+	mux.HandleFunc("/toolset", func(w http.ResponseWriter, r *http.Request) {
+		// The rendered docs of the tools the model in an interactive LLM
+		// session (`dagger agent`, shell prompt mode) currently sees — so QA
+		// can verify the composed toolset without spending an LLM turn asking
+		// the agent itself. The CLI registers the provider when a session
+		// starts (SetLLMToolsProvider); a Step first drains the dispatch
+		// queue so a just-registered provider is visible.
+		fe.consoleMu.Lock()
+		fe.tui.Step()
+		provider := fe.llmToolsFn
+		fe.consoleMu.Unlock()
+		if provider == nil {
+			http.Error(w, "no interactive LLM session (the toolset is only "+
+				"available once a `dagger agent`/shell prompt session is up)",
+				http.StatusNotFound)
+			return
+		}
+		// The provider queries the engine (LLM.tools); run it without
+		// consoleMu so a slow round-trip can't wedge the other endpoints.
+		doc, err := provider(r.Context())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("toolset: %v", err), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		io.WriteString(w, doc)
 	})
 	mux.HandleFunc("/span", func(w http.ResponseWriter, r *http.Request) {
 		hex := r.URL.Query().Get("id")
@@ -248,6 +285,92 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		<-shutdownDone
 	}
 	return err
+}
+
+func writeConsoleScreen(w http.ResponseWriter, r *http.Request, frame string) {
+	if r.URL.Query().Get("raw") == "" {
+		frame = ansi.Strip(frame)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	io.WriteString(w, frame)
+}
+
+func consoleRequestBody(r *http.Request) string {
+	b, _ := io.ReadAll(r.Body)
+	return strings.TrimSpace(string(b))
+}
+
+func (fe *frontendPretty) consoleWaitHandler(w http.ResponseWriter, r *http.Request) {
+	// Block until the screen reaches a state, then respond like /screen —
+	// so QA scripts wait for a span to finish (or a prompt to appear) in
+	// one request instead of polling /screen in a loop. The regex rides in
+	// the body (like /key and /type take theirs) so it needs no URL
+	// encoding; the durations are simple enough for query params.
+	//
+	// With a regex: return as soon as the ANSI-stripped screen matches it.
+	// Without one: return once the screen has been unchanged for the quiet
+	// duration (?quiet=, default 2s). Quiet is not an exit condition while
+	// a regex is pending — an already-idle screen would end the wait
+	// immediately and defeat the match. Either way the wait gives up at
+	// ?timeout= (default 60s, capped) and returns the screen as it stands:
+	// inspect the result, don't assume the condition was reached.
+	var matchRe *regexp.Regexp
+	if pattern := consoleRequestBody(r); pattern != "" {
+		var err error
+		matchRe, err = regexp.Compile(pattern)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("bad match regexp %q: %v", pattern, err), http.StatusBadRequest)
+			return
+		}
+	}
+	quiet, err := consoleDuration(r.URL.Query().Get("quiet"), consoleWaitQuietDefault)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("bad quiet param: %v", err), http.StatusBadRequest)
+		return
+	}
+	timeout, err := consoleDuration(r.URL.Query().Get("timeout"), consoleWaitTimeoutDefault)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("bad timeout param: %v", err), http.StatusBadRequest)
+		return
+	}
+	timeout = min(timeout, consoleWaitTimeoutMax)
+
+	// Poll with single Steps, holding consoleMu only per render so the
+	// other endpoints (and the background pump) stay responsive for the
+	// whole — potentially minutes-long — wait.
+	render := func() string {
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
+		return ansi.Strip(strings.Join(fe.consoleViewport(fe.tui.Step()), "\n"))
+	}
+	deadline := time.Now().Add(timeout)
+	frame := render()
+	quietSince := time.Now()
+	for {
+		if matchRe != nil {
+			if matchRe.MatchString(frame) {
+				break
+			}
+		} else if time.Since(quietSince) >= quiet {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(consoleWaitPoll):
+		}
+		next := render()
+		if next != frame {
+			frame = next
+			quietSince = time.Now()
+		}
+	}
+	fe.consoleMu.Lock()
+	defer fe.consoleMu.Unlock()
+	writeConsoleScreen(w, r, fe.consoleSettle())
 }
 
 // consoleSettle Steps the TUI (draining dispatched telemetry and injected keys,
@@ -563,12 +686,17 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  POST /type  <text>   type a literal string (e.g. into / search)\n"+
 		"  POST /zoom  <hex>    zoom to a span, return frame\n"+
 		"  POST /resize <CxR>   resize the terminal (e.g. 120x12), return frame\n"+
+		"  POST /wait [regex]   block until the screen matches the body regex, or\n"+
+		"                       (with no body) has been unchanged for ?quiet= (default 2s);\n"+
+		"                       either way return the frame at ?timeout= (default 60s) at the latest\n"+
 		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
 		"  GET  /span?id=<hex>  span detail: status, timing, flags, parent chain\n"+
 		"  GET  /timings?root=<hex>[&minDuration=10ms&limit=200]  loaded subtree wall timings (0 limit = unlimited)\n"+
+		"  GET  /toolset        the interactive LLM session's tool docs, when one is live\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
-		"r error origin · L logs · +/- verbosity · / search\n")
+		"r error origin · L logs · +/- verbosity · / search\n"+
+		"key format: "+consoleKeyFormat+"\n")
 }
 
 // parseConsoleKeys splits a key script into individual key specs (tuist.ParseKey
@@ -590,4 +718,93 @@ func parseConsoleKeys(script string) []string {
 		}
 	}
 	return keys
+}
+
+// consoleKeyNames mirrors the (unexported) named-key table tuist.ParseKey
+// accepts, so /key can reject a token ParseKey would not recognize instead of
+// letting it degrade into literal text.
+var consoleKeyNames = map[string]bool{
+	"enter": true, "tab": true, "backspace": true,
+	"escape": true, "esc": true, "space": true,
+	"up": true, "down": true, "left": true, "right": true,
+	"home": true, "end": true, "pgup": true, "pgdown": true,
+	"insert": true, "delete": true, "begin": true, "find": true, "select": true,
+}
+
+// consoleKeyMods mirrors tuist.ParseKey's modifier-prefix table.
+var consoleKeyMods = map[string]bool{
+	"ctrl": true, "alt": true, "shift": true,
+	"meta": true, "super": true, "hyper": true,
+}
+
+// consoleFKey matches the function keys f1..f20, which tuist routes through
+// its extended-key fallback: uv matches extended keys by their text, so they
+// behave as real keys even though they're not in the named-key table.
+var consoleFKey = regexp.MustCompile(`^f([1-9]|1[0-9]|20)$`)
+
+// consoleKeyFormat describes the accepted /key token format, for error
+// messages and /help.
+const consoleKeyFormat = "named keys (enter, tab, backspace, esc/escape, space, " +
+	"up, down, left, right, home, end, pgup, pgdown, insert, delete, begin, " +
+	"find, select), f1-f20, any single character, or a '+'-joined modifier " +
+	"combo of ctrl/alt/shift/meta/super/hyper (e.g. ctrl+s, alt+enter); " +
+	"'<key>*N' repeats a token"
+
+// validateConsoleKey reports whether tuist.ParseKey would treat spec as a real
+// key. ParseKey itself never fails: an unknown multi-rune name falls back to
+// an extended key carrying the name as literal text, which a focused text
+// input happily inserts — so an unsupported token like "C-s" would be typed
+// verbatim into the TUI (corrupting e.g. an agent prompt) rather than erroring.
+func validateConsoleKey(spec string) error {
+	parts := strings.Split(spec, "+")
+	for i, part := range parts {
+		switch {
+		case part == "":
+			// An empty part comes from a "+" in the spec ("+" splits to
+			// ["",""], "ctrl++" to ["ctrl","",""]) — the plus key itself.
+		case i < len(parts)-1 && consoleKeyMods[part]:
+			// A modifier prefix ("ctrl+...", "alt+...").
+		case consoleKeyNames[part],
+			consoleFKey.MatchString(part),
+			utf8.RuneCountInString(part) == 1:
+			// A named key, an f-key, or a bare character.
+		default:
+			return fmt.Errorf("unknown key %q in token %q: want %s", part, spec, consoleKeyFormat)
+		}
+	}
+	return nil
+}
+
+// consoleDuration parses a /wait duration param: a Go duration string ("2s",
+// "1500ms") or a bare number of seconds ("30", "2.5"). Empty means def.
+func consoleDuration(s string, def time.Duration) (time.Duration, error) {
+	if s == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		secs, ferr := strconv.ParseFloat(s, 64)
+		if ferr != nil {
+			return 0, fmt.Errorf("bad duration %q: want a Go duration (e.g. \"2s\") or seconds (e.g. \"30\")", s)
+		}
+		d = time.Duration(secs * float64(time.Second))
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("bad duration %q: must not be negative", s)
+	}
+	return d, nil
+}
+
+// LLMToolsProvider renders the documentation of the tools currently exposed to
+// an interactive LLM session's model (LLM.tools). The CLI registers one when
+// an agent/shell session starts so the console can serve /toolset.
+type LLMToolsProvider func(context.Context) (string, error)
+
+// SetLLMToolsProvider registers the toolset provider backing the console's
+// /toolset endpoint. The CLI re-registers it on every LLM swap (prompt turns,
+// .clear, .model, resume, ...) so it always reflects the current composition.
+func (fe *frontendPretty) SetLLMToolsProvider(fn LLMToolsProvider) {
+	fe.dispatch(func() {
+		fe.llmToolsFn = fn
+	})
 }

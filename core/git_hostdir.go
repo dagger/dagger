@@ -45,8 +45,7 @@ var ErrNoGitContext = errors.New("module context has no git checkout")
 // for a module context, resolved fresh per load. A caller that wants the
 // reconstruction pinned to a session's cached view of the checkout -- so a
 // checkout that advances mid-session is not silently re-read -- passes a stable
-// token instead (a workspace passes its read epoch, which bumps on
-// export/reload). The token only selects a cache entry; the pack itself is
+// token instead (an unsynced workspace uses a fixed session-local token). The token only selects a cache entry; the pack itself is
 // always taken from the live checkout when a new entry is computed.
 //
 // A checkout that is not a git repository reports ErrNoGitContext with the
@@ -85,7 +84,7 @@ func MaterializeHostGitCheckout(
 
 		// The live ref-state digest keys the reconstruction unless the caller
 		// pinned it to a stable token of its own. Only a live digest is also an
-		// expected pack state; an epoch-pinned workspace accepts whichever
+		// expected pack state; a session-pinned workspace accepts whichever
 		// stable state is first materialized in its cache slot.
 		stateDigest := state
 		validateState := true
@@ -160,9 +159,14 @@ func MaterializeHostGitCheckout(
 // Directory is the git directory itself -- HEAD, objects and refs at its
 // root -- ready to be mounted at some tree's .git.
 //
+// originURL, when nonempty, is recorded as the reconstruction's origin remote
+// so remote-aware tooling reading the result (gh, git fetch) can still resolve
+// which repository the checkout came from; the raw host config is otherwise
+// never copied.
+//
 // A pack with no HeadSHA (a repository with no commits yet) reconstructs an
 // empty repository on the same unborn branch.
-func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckoutPack) (_ *Directory, rerr error) {
+func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckoutPack, originURL string) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -182,7 +186,7 @@ func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckou
 	}()
 
 	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
-		return reconstructGitDir(ctx, root, pack)
+		return reconstructGitDir(ctx, root, pack, originURL)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct git dir: %w", err)
@@ -297,7 +301,7 @@ func MaterializeGitUncommittedPack(ctx context.Context, tree dagql.ObjectResult[
 	return inst, nil
 }
 
-func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack) error {
+func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack, originURL string) error {
 	initArgs := []string{"init", "-q", "--initial-branch=main"}
 	if pack.ObjectFormat != "" && pack.ObjectFormat != "sha1" {
 		initArgs = append(initArgs, "--object-format="+pack.ObjectFormat)
@@ -326,7 +330,10 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		// branch HEAD symbolically points at (set just above): this is a
 		// scratch reconstruction with no meaningful work tree, so git's
 		// "refusing to fetch into checked-out branch" guard does not apply.
-		if err := fetchGitBundleRefspecs(ctx, root, pack.BundlePath, []string{"+refs/*:refs/*"}); err != nil {
+		// HEAD is also advertised by PackCheckout and can be the only ref in
+		// a detached checkout, such as a materialized Workspace.git.directory.
+		// Fetch it explicitly so its objects exist before restoring HEAD below.
+		if err := fetchGitBundleRefspecs(ctx, root, pack.BundlePath, []string{"+refs/*:refs/*", "HEAD"}); err != nil {
 			return fmt.Errorf("fetch checkout pack: %w", err)
 		}
 
@@ -354,6 +361,16 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		}
 		if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
 			return err
+		}
+	}
+
+	// Record where the checkout's repository was loaded from, so consumers
+	// mounting the reconstruction (Workspace.git.directory) keep working with
+	// remote-aware tooling like gh, which resolves the repository from the
+	// origin remote.
+	if originURL != "" {
+		if _, err := runGitEnv(ctx, root, "remote", "add", "origin", originURL); err != nil {
+			return fmt.Errorf("set origin remote: %w", err)
 		}
 	}
 

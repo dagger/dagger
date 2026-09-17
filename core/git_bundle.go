@@ -26,6 +26,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -448,8 +449,6 @@ func inspectGitBundleFile(path string) (*GitBundle, error) {
 // CreateGitBundleFile creates a version-3 bundle from named refs in the
 // repository's canonical object database. The temporary refs and repository
 // live only in a scratch snapshot; the source repository is never mutated.
-//
-//nolint:gocyclo // bundle creation validates every ref and prerequisite in one pass
 func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string, base *GitRef) (_ *File, rerr error) {
 	if repo == nil || repo.Backend == nil {
 		return nil, fmt.Errorf("git repository is required")
@@ -516,73 +515,12 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 	ctx, cancel := context.WithTimeout(ctx, gitBundleCommandTimeout)
 	defer cancel()
 	err = repo.Backend.mount(ctx, 0, false, backends, func(source *gitutil.GitCLI) error {
-		sourceURL, err := source.URL(ctx)
-		if err != nil {
-			return fmt.Errorf("locate canonical git repository: %w", err)
-		}
-		objectFormatOut, err := source.Run(ctx, "rev-parse", "--show-object-format")
-		if err != nil {
-			return fmt.Errorf("read git repository object format: %w", err)
-		}
-		objectFormat := strings.TrimSpace(string(objectFormatOut))
-		if objectFormat != "sha1" && objectFormat != "sha256" {
-			return fmt.Errorf("unsupported git repository object format %q", objectFormat)
-		}
-
 		return MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
-			scratch := filepath.Join(root, ".git-bundle-source")
-			if err := os.MkdirAll(scratch, 0o700); err != nil {
-				return err
-			}
-			if _, err := runGitEnv(ctx, scratch, "init", "--bare", "--quiet", "--object-format="+objectFormat); err != nil {
-				return fmt.Errorf("initialize git bundle repository: %w", err)
-			}
-			fetchGit := source.New(
-				gitutil.WithDir(scratch),
-				gitutil.WithGitDir(""),
-				gitutil.WithWorkTree(""),
-			)
-			for _, target := range targets {
-				fetchURL := sourceURL
-				if target.exact.SHA != target.checkout.SHA {
-					if remoteRepo, ok := repo.Backend.(*RemoteGitRepository); ok {
-						// A canonical mirror fetched by peeled commit need not contain
-						// the annotated tag object. Fetch that exact advertised object
-						// from the configured origin with the backend's auth and network.
-						fetchURL = remoteRepo.URL.Remote()
-					}
-				}
-				if _, err := fetchGit.Run(ctx, "fetch", "--quiet", "--no-tags", fetchURL, target.exact.SHA+":"+target.exact.Name); err != nil {
-					return fmt.Errorf("fetch git bundle ref %s: %w", target.exact.Name, err)
-				}
-			}
-
-			bundleArgs := []string{"bundle", "create", "--version=3", filepath.Join(root, "repository.bundle")}
-			for _, target := range targets {
-				bundleArgs = append(bundleArgs, target.exact.Name)
-			}
+			var baseSHA string
 			if base != nil {
-				baseRef := "refs/dagger/bundle/base"
-				if _, err := runGitEnv(ctx, scratch, "fetch", "--quiet", "--no-tags", sourceURL, base.Ref.SHA+":"+baseRef); err != nil {
-					return fmt.Errorf("fetch git bundle base %s: %w", base.Ref.SHA, err)
-				}
-				bundleArgs = append(bundleArgs, "^"+baseRef)
+				baseSHA = base.Ref.SHA
 			}
-			if _, err := runGitEnv(ctx, scratch, bundleArgs...); err != nil {
-				return fmt.Errorf("create git bundle: %w", err)
-			}
-			if err := os.RemoveAll(scratch); err != nil {
-				return fmt.Errorf("remove git bundle scratch repository: %w", err)
-			}
-
-			header, err := inspectGitBundleFile(filepath.Join(root, "repository.bundle"))
-			if err != nil {
-				return fmt.Errorf("validate created git bundle: %w", err)
-			}
-			if base != nil && !slices.Contains(header.PrerequisiteSHAs, base.Ref.SHA) {
-				return fmt.Errorf("git bundle base %s is not reachable from the bundled refs", base.Ref.SHA)
-			}
-			return nil
+			return createGitBundleFromSource(ctx, source, repo.Backend, root, targets, baseSHA)
 		})
 	})
 	if err != nil {
@@ -604,9 +542,139 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 	return file, nil
 }
 
+// createGitBundleFromSource must finish while source is mounted. Only the bundle
+// survives: the private repository (including its temporary alternates) is removed
+// before the output snapshot is committed.
+func createGitBundleFromSource(ctx context.Context, source *gitutil.GitCLI, backend GitRepositoryBackend, root string, targets []*gitBundleTarget, baseSHA string) error {
+	sourceURL, err := source.URL(ctx)
+	if err != nil {
+		return fmt.Errorf("locate canonical git repository: %w", err)
+	}
+	objectFormatOut, err := source.Run(ctx, "rev-parse", "--show-object-format")
+	if err != nil {
+		return fmt.Errorf("read git repository object format: %w", err)
+	}
+	objectFormat := strings.TrimSpace(string(objectFormatOut))
+	if objectFormat != "sha1" && objectFormat != "sha256" {
+		return fmt.Errorf("unsupported git repository object format %q", objectFormat)
+	}
+
+	scratch := filepath.Join(root, ".git-bundle-source")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		return err
+	}
+	defer os.RemoveAll(scratch)
+	if _, err := runGitEnv(ctx, scratch, "init", "--bare", "--quiet", "--object-format="+objectFormat); err != nil {
+		return fmt.Errorf("initialize git bundle repository: %w", err)
+	}
+	_, local := backend.(*LocalGitRepository)
+	if local {
+		// Borrow objects, not source refs/configuration. In particular, bundle
+		// packing must not exclude objects merely because an alternate has them:
+		// only the explicitly supplied base is a prerequisite.
+		objectsOut, err := source.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+		if err != nil {
+			return fmt.Errorf("locate git bundle source objects: %w", err)
+		}
+		objects := strings.TrimSuffix(string(objectsOut), "\n")
+		if !filepath.IsAbs(objects) {
+			return fmt.Errorf("invalid git bundle source object directory %q", objects)
+		}
+		// Alternates are newline-delimited and accept Git's C-style quoting.
+		// Escape path delimiters rather than letting a checkout path add entries.
+		quotedObjects := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`).Replace(objects) + `"`
+		if err := os.WriteFile(filepath.Join(scratch, "objects", "info", "alternates"), []byte(quotedObjects+"\n"), 0o600); err != nil {
+			return fmt.Errorf("borrow git bundle source objects: %w", err)
+		}
+	}
+	fetchGit := source.New(
+		gitutil.WithDir(scratch),
+		gitutil.WithGitDir(""),
+		gitutil.WithWorkTree(""),
+	)
+	for _, target := range targets {
+		if local {
+			// --no-deref keeps a selected HEAD independent of any branch, even
+			// when that branch is also selected. All writes are private to scratch.
+			if _, err := runGitEnv(ctx, scratch, "update-ref", "--no-deref", target.exact.Name, target.exact.SHA); err != nil {
+				return fmt.Errorf("prepare git bundle ref %s: %w", target.exact.Name, err)
+			}
+			continue
+		}
+		fetchURL := sourceURL
+		if target.exact.SHA != target.checkout.SHA {
+			if remoteRepo, ok := backend.(*RemoteGitRepository); ok {
+				// A canonical mirror fetched by peeled commit need not contain
+				// the annotated tag object. Fetch that exact advertised object
+				// from the configured origin with the backend's auth and network.
+				fetchURL = remoteRepo.URL.Remote()
+			}
+		}
+		if _, err := fetchGit.Run(ctx, "fetch", "--quiet", "--no-tags", fetchURL, target.exact.SHA+":"+target.exact.Name); err != nil {
+			return fmt.Errorf("fetch git bundle ref %s: %w", target.exact.Name, err)
+		}
+	}
+
+	bundleArgs := []string{"bundle", "create", "--version=3", filepath.Join(root, "repository.bundle")}
+	for _, target := range targets {
+		bundleArgs = append(bundleArgs, target.exact.Name)
+	}
+	if baseSHA != "" {
+		if !local {
+			baseRef := "refs/dagger/bundle/base"
+			if _, err := runGitEnv(ctx, scratch, "fetch", "--quiet", "--no-tags", sourceURL, baseSHA+":"+baseRef); err != nil {
+				return fmt.Errorf("fetch git bundle base %s: %w", baseSHA, err)
+			}
+		}
+		// Excluding the exact SHA avoids a collision with an advertised ref.
+		bundleArgs = append(bundleArgs, "^"+baseSHA)
+	}
+	if _, err := runGitEnv(ctx, scratch, bundleArgs...); err != nil {
+		return fmt.Errorf("create git bundle: %w", err)
+	}
+	if err := os.RemoveAll(scratch); err != nil {
+		return fmt.Errorf("remove git bundle scratch repository: %w", err)
+	}
+
+	header, err := inspectGitBundleFile(filepath.Join(root, "repository.bundle"))
+	if err != nil {
+		return fmt.Errorf("validate created git bundle: %w", err)
+	}
+	if baseSHA != "" && !slices.Contains(header.PrerequisiteSHAs, baseSHA) {
+		return fmt.Errorf("git bundle base %s is not reachable from the bundled refs", baseSHA)
+	}
+	return nil
+}
+
 type gitBundleTarget struct {
 	checkout *gitutil.Ref
 	exact    *gitutil.Ref
+}
+
+// GitBundleRefPins resolves refs the way CreateGitBundleFile will and returns
+// the exact object each one advertises right now. A bundle's cached result is
+// keyed by these pins as well as the names, so bundling a ref that has moved
+// since an earlier session is a new call rather than a hit on the old bundle.
+func GitBundleRefPins(ctx context.Context, repo *GitRepository, refs []string) ([]string, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	remote, err := repo.LoadRemote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pins := make([]string, 0, len(refs))
+	for _, name := range refs {
+		if name == "" || strings.HasPrefix(name, "-") {
+			return nil, fmt.Errorf("invalid git bundle ref %q", name)
+		}
+		ref, err := resolveGitBundleTarget(remote, name)
+		if err != nil {
+			return nil, fmt.Errorf("resolve git bundle ref %q: %w", name, err)
+		}
+		pins = append(pins, ref.exact.SHA)
+	}
+	return pins, nil
 }
 
 // resolveGitBundleTarget uses checkout-style lookup to choose the canonical
@@ -617,6 +685,13 @@ func resolveGitBundleTarget(remote *gitutil.Remote, name string) (*gitBundleTarg
 	ref, err := remote.Lookup(name)
 	if err != nil {
 		return nil, err
+	}
+	if name == "HEAD" && ref.Name == "" {
+		// Checkout must keep a detached HEAD unnamed, but the bundle still
+		// advertises it as HEAD so its objects can be transported.
+		target := *ref
+		target.Name = "HEAD"
+		return &gitBundleTarget{checkout: ref, exact: &target}, nil
 	}
 	if !strings.HasPrefix(ref.Name, "refs/tags/") {
 		return &gitBundleTarget{checkout: ref, exact: ref}, nil
@@ -723,6 +798,17 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 				}
 			}
 
+			// Local repositories carry remote routing in their config. Preserve
+			// that routing across bundle reconstruction, just as Tree does;
+			// other source configuration and refs remain isolated.
+			var remotes []GitRemote
+			if _, local := repo.Backend.(*LocalGitRepository); local {
+				remotes, err = readGitConfigRemotes(ctx, source)
+				if err != nil {
+					return fmt.Errorf("read git bundle source remotes: %w", err)
+				}
+			}
+
 			return MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
 				if _, err := runGitEnv(ctx, root, "init", "--bare", "--quiet", "--object-format="+header.ObjectFormat); err != nil {
 					return fmt.Errorf("initialize git bundle repository: %w", err)
@@ -746,6 +832,12 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 				}
 				if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
 					return fmt.Errorf("normalize git bundle refs: %w", err)
+				}
+				git := gitutil.NewGitCLI(gitutil.WithDir(root))
+				for _, remote := range remotes {
+					if err := writeGitCheckoutRemote(ctx, git, remote); err != nil {
+						return fmt.Errorf("preserve git bundle source remote: %w", err)
+					}
 				}
 				return normalizeCanonicalGitDir(root)
 			})
@@ -830,7 +922,25 @@ func normalizeCanonicalGitDir(gitDir string) error {
 // runGitEnv runs git in dir under a hermetic environment, returning its
 // standard output. Errors carry the
 // standard error stream, which is where git reports what went wrong.
-func runGitEnv(ctx context.Context, dir string, args ...string) (string, error) {
+func runGitEnv(ctx context.Context, dir string, args ...string) (_ string, rerr error) {
+	// Do not expose paths, ref names, identities, configuration, or Git output
+	// in subprocess telemetry. The caller still receives the original error.
+	commandArgs := args
+	for len(commandArgs) >= 2 && commandArgs[0] == "-c" {
+		commandArgs = commandArgs[2:]
+	}
+	operation := "command"
+	if len(commandArgs) > 0 {
+		operation = commandArgs[0]
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "git "+operation, telemetry.Internal())
+	defer func() {
+		var spanErr error
+		if rerr != nil {
+			spanErr = fmt.Errorf("git %s failed", operation)
+		}
+		telemetry.EndWithCause(span, &spanErr)
+	}()
 	gitArgs := make([]string, 0, len(gitEphemeralConfig)+len(args))
 	gitArgs = append(gitArgs, gitEphemeralConfig...)
 	gitArgs = append(gitArgs, args...)

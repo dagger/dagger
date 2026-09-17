@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -73,8 +74,8 @@ Examples:
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
 				}
-				// Compose all selected agents onto a frozen workspace-bound LLM,
-				// then hand the composed LLM to the interactive prompt. A module
+				// Compose all selected agents onto a workspace-bound LLM, capturing
+				// a stable baseline when possible, then open the prompt. A module
 				// function returning LLM already lands in prompt mode today.
 				//
 				// Trace restore deliberately starts from an unbound base instead:
@@ -188,17 +189,27 @@ func freshAgentBase(ctx context.Context, dag *dagger.Client) (string, error) {
 	return res.LLM.ID, nil
 }
 
-const composeAgentsQuery = `query ComposeAgents($include: [String!]) {
-  workspace: currentWorkspace {
+const composeAgentsQuery = `query ComposeAgents($include: [String!], $workspace: ID!) {
+  workspace: node(id: $workspace) { ... on Workspace {
     agents(include: $include) {
       compose {
         id
       }
     }
-  }
+  } }
 }`
 
 func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (string, error) {
+	workspace, err := snapshotWorkspace(ctx, dag)
+	if err != nil {
+		return "", err
+	}
+	id, err := workspace.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	vars := agentIncludeVars(include)
+	vars["workspace"] = id
 	var res struct {
 		Workspace struct {
 			Agents struct {
@@ -208,10 +219,10 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 			}
 		}
 	}
-	err := dag.Do(ctx, &dagger.Request{
+	err = dag.Do(ctx, &dagger.Request{
 		Query:     composeAgentsQuery,
 		OpName:    "ComposeAgents",
-		Variables: agentIncludeVars(include),
+		Variables: vars,
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -219,6 +230,21 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 		return "", err
 	}
 	return res.Workspace.Agents.Compose.ID, nil
+}
+
+// Attempt the effectful capture once before binding or composing tools. Capture
+// is best effort: startup and reload can use the live workspace if it fails.
+func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
+	workspace := dag.CurrentWorkspace()
+	id, err := workspace.Snapshot().ID(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		slog.WarnContext(ctx, "could not snapshot workspace; continuing with the live workspace", "error", err)
+		return workspace, nil
+	}
+	return dagger.Ref[*dagger.Workspace](dag, id), nil
 }
 
 const listAgentsQuery = `query ListAgents($include: [String!]) {

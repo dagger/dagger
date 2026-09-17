@@ -311,12 +311,20 @@ func TestGitRepositoryCloneWithBackendResetsRemoteMetadata(t *testing.T) {
 			Symrefs: map[string]string{"HEAD": "refs/heads/main"},
 		},
 		DiscardGitDir: true,
+		Remotes: []GitRemote{{
+			Name:    "origin",
+			URL:     "https://example.test/repo",
+			PushURL: "ssh://git@example.test/repo",
+		}},
 	}
 
 	clone := repo.CloneWithBackend(backend)
 	require.NotSame(t, repo, clone)
 	require.Same(t, backend, clone.Backend)
 	require.True(t, clone.DiscardGitDir)
+	require.Equal(t, repo.Remotes, clone.Remotes)
+	clone.Remotes[0].PushURL = "ssh://git@example.test/other"
+	require.Equal(t, "ssh://git@example.test/repo", repo.Remotes[0].PushURL)
 	require.Empty(t, clone.Remote.Refs)
 	require.Empty(t, clone.Remote.Symrefs)
 	require.Equal(t, repo.Remote.Head, clone.Remote.Head)

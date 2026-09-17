@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type GitRepository struct {
@@ -28,8 +29,100 @@ type GitRepository struct {
 	Backend  GitRepositoryBackend
 	Remote   *gitutil.Remote
 	remoteMu sync.Mutex
+	// remoteSession is the session whose ls-remote populated Remote's refs.
+	// A remote repository result is shared across sessions, but its refs are
+	// only fresh for the session that listed them (RemoteGitRepository.Remote
+	// caches ls-remote per session): a later session must list again rather
+	// than be answered from an earlier session's tags. Empty for backends
+	// whose refs never move, and for restored results, which reload once.
+	remoteSession string
 
 	DiscardGitDir bool
+
+	// Remotes is registered routing metadata, not a credential grant: named
+	// remotes recorded in materialized checkouts and consulted by push.
+	Remotes []GitRemote
+}
+
+// GitRemote is a named remote registered on a repository: the remote's name,
+// its fetch URL, and any push destinations that differ from it. Registered
+// remotes are written into checkouts materialized from the repository and
+// route push when no explicit destination is given. They are routing
+// metadata only, never a credential grant.
+type GitRemote struct {
+	Name    string `json:"name"`
+	URL     string `json:"url,omitempty"`
+	PushURL string `json:"pushURL,omitempty"`
+}
+
+func (remote GitRemote) Clone() GitRemote {
+	return remote
+}
+
+// CloneGitRemotes deep-copies a remote list so registrations never alias.
+func CloneGitRemotes(remotes []GitRemote) []GitRemote {
+	if remotes == nil {
+		return nil
+	}
+	cloned := make([]GitRemote, len(remotes))
+	for i, remote := range remotes {
+		cloned[i] = remote.Clone()
+	}
+	return cloned
+}
+
+// WithGitRemote returns remotes with remote registered, replacing any
+// existing entry of the same name.
+func WithGitRemote(remotes []GitRemote, remote GitRemote) []GitRemote {
+	out := CloneGitRemotes(remotes)
+	for i := range out {
+		if out[i].Name == remote.Name {
+			out[i] = remote.Clone()
+			return out
+		}
+	}
+	return append(out, remote.Clone())
+}
+
+// MergeGitRemotes overlays registered remotes over base ones -- same name,
+// the overlay wins -- in a deterministic order (origin first, the rest
+// sorted by name) so materialized checkouts converge byte-for-byte.
+func MergeGitRemotes(base, overlay []GitRemote) []GitRemote {
+	if len(base) == 0 && len(overlay) == 0 {
+		return nil
+	}
+	byName := map[string]GitRemote{}
+	for _, remote := range base {
+		byName[remote.Name] = remote
+	}
+	for _, remote := range overlay {
+		byName[remote.Name] = remote
+	}
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		if name != "origin" {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	if _, ok := byName["origin"]; ok {
+		names = append([]string{"origin"}, names...)
+	}
+	merged := make([]GitRemote, 0, len(names))
+	for _, name := range names {
+		merged = append(merged, byName[name].Clone())
+	}
+	return merged
+}
+
+// RemoteConfig returns the registered remote with the given name, or nil.
+func (repo *GitRepository) RemoteConfig(name string) *GitRemote {
+	for i := range repo.Remotes {
+		if repo.Remotes[i].Name == name {
+			return &repo.Remotes[i]
+		}
+	}
+	return nil
 }
 
 type GitRepositoryBackend interface {
@@ -37,6 +130,12 @@ type GitRepositoryBackend interface {
 	Remote(ctx context.Context) (*gitutil.Remote, error)
 	// Get returns a reference to a specific git ref (branch, tag, or commit).
 	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
+
+	// ResolveShortSHA expands an abbreviated commit SHA (a 4-40 character hex
+	// prefix) to the full SHA of the single matching commit, using only
+	// locally available objects. Backends that merely proxy a remote cannot
+	// expand prefixes of commits that were never fetched.
+	ResolveShortSHA(ctx context.Context, prefix string) (string, error)
 
 	// Dirty returns a Directory representing the repository in it's current state.
 	Dirty(ctx context.Context) (dagql.ObjectResult[*Directory], error)
@@ -77,7 +176,7 @@ type GitCommitMetadata struct {
 }
 
 type GitRefBackend interface {
-	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool) (checkout *Directory, err error)
+	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool, remotes []GitRemote) (checkout *Directory, err error)
 
 	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
 }
@@ -269,7 +368,13 @@ func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, err
 	repo.remoteMu.Lock()
 	defer repo.remoteMu.Unlock()
 
-	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) {
+	var session string
+	if _, remote := repo.Backend.(*RemoteGitRepository); remote {
+		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+			session = clientMetadata.SessionID
+		}
+	}
+	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) && repo.remoteSession == session {
 		return repo.Remote, nil
 	}
 
@@ -285,7 +390,18 @@ func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, err
 		remote.Head = head
 	}
 	repo.Remote = remote
+	repo.remoteSession = session
 	return remote, nil
+}
+
+// ResolveShortSHA expands an abbreviated commit SHA the way `git rev-parse`
+// does, using the repository's locally available objects. Workspace-backed
+// and other engine-side repositories carry their whole object database, so
+// any commit's prefix resolves. A remote repository is resolved via
+// ls-remote, which only advertises refs: its prefixes can only be expanded
+// against commits that have already been fetched into the engine's mirror.
+func (repo *GitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	return repo.Backend.ResolveShortSHA(ctx, prefix)
 }
 
 // CloneWithBackend returns a repository with fresh remote metadata state. This
@@ -297,6 +413,7 @@ func (repo *GitRepository) CloneWithBackend(backend GitRepositoryBackend) *GitRe
 
 	clone := &GitRepository{
 		URL:           repo.URL,
+		Remotes:       CloneGitRemotes(repo.Remotes),
 		Backend:       backend,
 		Remote:        &gitutil.Remote{},
 		DiscardGitDir: repo.DiscardGitDir,
@@ -491,13 +608,20 @@ const (
 )
 
 type persistedGitRepositoryPayload struct {
-	Form          string          `json:"form"`
-	URL           string          `json:"url,omitempty"`
-	DiscardGitDir bool            `json:"discardGitDir,omitempty"`
-	RemoteJSON    json.RawMessage `json:"remoteJson,omitempty"`
+	Form          string                      `json:"form"`
+	URL           string                      `json:"url,omitempty"`
+	Remotes       []persistedGitRemotePayload `json:"remotes,omitempty"`
+	DiscardGitDir bool                        `json:"discardGitDir,omitempty"`
+	RemoteJSON    json.RawMessage             `json:"remoteJson,omitempty"`
 
 	Local  *persistedLocalGitRepositoryPayload  `json:"local,omitempty"`
 	Remote *persistedRemoteGitRepositoryPayload `json:"remote,omitempty"`
+}
+
+type persistedGitRemotePayload struct {
+	Name    string `json:"name"`
+	URL     string `json:"url,omitempty"`
+	PushURL string `json:"pushURL,omitempty"`
 }
 
 type persistedLocalGitRepositoryPayload struct {
@@ -522,6 +646,9 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 	payload := persistedGitRepositoryPayload{
 		DiscardGitDir: repo.DiscardGitDir,
 		RemoteJSON:    remoteJSON,
+	}
+	for _, remote := range repo.Remotes {
+		payload.Remotes = append(payload.Remotes, persistedGitRemotePayload(remote))
 	}
 	if repo.URL.Valid {
 		payload.URL = repo.URL.Value.String()
@@ -572,6 +699,9 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 	repo := &GitRepository{
 		Remote:        &remote,
 		DiscardGitDir: persisted.DiscardGitDir,
+	}
+	for _, persistedRemote := range persisted.Remotes {
+		repo.Remotes = append(repo.Remotes, GitRemote(persistedRemote))
 	}
 	if persisted.URL != "" {
 		repo.URL = dagql.NonNull(dagql.String(persisted.URL))
@@ -737,7 +867,7 @@ func (*GitCommit) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 }
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
-	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
+	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags, ref.Repo.Self().Remotes)
 }
 
 func (commit *GitCommit) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
@@ -751,7 +881,7 @@ func (commit *GitCommit) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if err != nil {
 		return nil, err
 	}
-	return backend.Tree(ctx, srv, commit.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
+	return backend.Tree(ctx, srv, commit.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags, commit.Repo.Self().Remotes)
 }
 
 func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, error) {
@@ -950,11 +1080,15 @@ func parseGitTimezoneOffset(raw string) (int, bool) {
 
 // doGitCheckout performs a git checkout using the given git helper.
 //
+// remotes are written into the checkout's configuration (remote.<name>.url
+// and remote.<name>.pushurl), so the result stays resolvable by remote-aware
+// tooling; the checkout itself always fetches from cloneURL.
+//
 // The provided git dir should *always* be empty.
 func doGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
-	remoteURL string,
+	remotes []GitRemote,
 	cloneURL string,
 	ref *gitutil.Ref,
 	depth int,
@@ -1004,10 +1138,9 @@ func doGitCheckout(
 			return fmt.Errorf("failed to reset ref: %w", err)
 		}
 	}
-	if remoteURL != "" {
-		_, err = checkoutGit.Run(ctx, "remote", "add", "origin", remoteURL)
-		if err != nil {
-			return fmt.Errorf("failed to set remote origin to %s: %w", remoteURL, err)
+	for _, remote := range remotes {
+		if err := writeGitCheckoutRemote(ctx, checkoutGit, remote); err != nil {
+			return err
 		}
 	}
 	_, err = checkoutGit.Run(ctx, "update-ref", "-d", tmpref)
@@ -1066,6 +1199,25 @@ func doGitCheckout(
 		return fmt.Errorf("failed to normalize checkout timestamps: %w", err)
 	}
 
+	return nil
+}
+
+// writeGitCheckoutRemote records one remote in a checkout's configuration:
+// its fetch URL (when known) and its push destination, if any.
+func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, remote GitRemote) error {
+	if remote.Name == "" || (remote.URL == "" && remote.PushURL == "") {
+		return nil
+	}
+	if remote.URL != "" {
+		if _, err := checkoutGit.Run(ctx, "remote", "add", remote.Name, remote.URL); err != nil {
+			return fmt.Errorf("failed to add remote %s: %w", remote.Name, err)
+		}
+	}
+	if remote.PushURL != "" {
+		if _, err := checkoutGit.Run(ctx, "config", "remote."+remote.Name+".pushurl", remote.PushURL); err != nil {
+			return fmt.Errorf("failed to set remote %s push URL: %w", remote.Name, err)
+		}
+	}
 	return nil
 }
 

@@ -67,11 +67,11 @@ func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error
 	return client.workspace, nil
 }
 
-// currentWorkspaceReadEpoch returns the workspace owner's read epoch
-// as a stable string token, folded by the workspace read resolvers into their
-// host reads' per-client cache namespace (see bumpClientWorkspaceReadEpoch).
-// Epoch 0 (never bumped) maps to "" so untouched sessions keep the client's
-// default namespace and share cache entries as before.
+// currentWorkspaceReadEpoch returns the workspace owner's read epoch as a
+// stable string token, folded by the workspace read resolvers into their host
+// reads' per-client cache namespace (see bumpClientWorkspaceReadEpoch). Epoch 0
+// (never bumped) maps to "" so untouched sessions keep the client's default
+// namespace and share cache entries as before.
 func (srv *Server) currentWorkspaceReadEpoch(ctx context.Context) (string, error) {
 	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
@@ -84,11 +84,10 @@ func (srv *Server) currentWorkspaceReadEpoch(ctx context.Context) (string, error
 	return strconv.FormatUint(epoch, 10), nil
 }
 
-// bumpClientWorkspaceReadEpoch advances the workspace owner's read
-// epoch, so cached host reads (Workspace.file / Workspace.directory) taken
-// before the bump are no longer served for the rest of the session. Triggered
-// from Workspace.export, after the agent's changes are written to disk, and
-// from Workspace.reloaded when its overlay is discarded instead, so the next
+// bumpClientWorkspaceReadEpoch advances the workspace owner's read epoch, so
+// cached host reads (Workspace.file / Workspace.directory) taken before the
+// bump are no longer served for the rest of the session. Triggered from
+// Workspace.export, after the agent's changes are written to disk, so the next
 // read re-reads the live host instead of a stale per-client host.directory
 // snapshot cached earlier in the session.
 func (srv *Server) bumpClientWorkspaceReadEpoch(ctx context.Context) error {
@@ -816,7 +815,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if workspaceAddress != nil {
 		address = workspaceAddress(ws)
 	}
-	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, prebuiltSource, address)
+	coreWS, err := srv.buildCoreWorkspace(ctx, ws, isLocal, prebuiltRootfs, prebuiltSource, address)
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
@@ -931,7 +930,6 @@ func legacyWorkspaceCompatMessage(cwd, cfgPath string) string {
 // (directories are resolved lazily). For remote, it stores the prebuiltRootfs.
 func (srv *Server) buildCoreWorkspace(
 	ctx context.Context,
-	_ *clientRuntime,
 	detected *workspace.Workspace,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],

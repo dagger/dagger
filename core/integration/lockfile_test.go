@@ -1098,3 +1098,46 @@ func assertOCILatestLockEntry(t *testctx.T, lockBytes []byte) string {
 	require.FailNow(t, "expected oci-sha entry for selected tag")
 	return ""
 }
+
+// The repository result behind Query.git is shared across clients, but a named
+// ref lookup consults the calling client's workspace lock: which pin applies,
+// and whether a missing pin should be written. Those lookups must therefore be
+// scoped per client, or one workspace's pinned (or unpinned) answer would be
+// served to the next workspace that asks.
+func (LockfileSuite) TestGitLatestPinIsolatedAcrossClients(ctx context.Context, t *testctx.T) {
+	newWorkdir := func() (string, string) {
+		workdir := t.TempDir()
+		hostGitInit(t, workdir)
+		writeEmptyWorkspaceConfig(t, workdir)
+		return workdir, writeQueryDoc(t, workdir, "git-latest.graphql", gitLatestCommitQuery)
+	}
+	stalePin := "refs/tags/" + lockTestGitTagName + "@" + lockTestGitStaleCommit
+
+	// An unpinned workspace resolves fresh and records its own pin. Its result
+	// is now cached engine-wide.
+	unpinned, unpinnedQuery := newWorkdir()
+	out, err := hostDaggerExec(ctx, t, unpinned, "--silent", "query", "--doc", unpinnedQuery)
+	require.NoError(t, err)
+	require.NotContains(t, string(out), lockTestGitStaleCommit)
+	lockBytes, err := os.ReadFile(filepath.Join(unpinned, workspace.LockFileName))
+	require.NoError(t, err)
+	assertGitLatestLockEntry(t, lockBytes)
+
+	// A pinned workspace still gets its pin, not the cached fresh result.
+	pinned, pinnedQuery := newWorkdir()
+	writeGitLatestLock(t, pinned, stalePin)
+	out, err = hostDaggerExec(ctx, t, pinned, "--silent", "query", "--doc", pinnedQuery)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "refs/tags/"+lockTestGitTagName)
+	require.Contains(t, string(out), lockTestGitStaleCommit)
+
+	// And another unpinned workspace neither inherits that pin nor skips
+	// writing its own.
+	unpinnedAgain, unpinnedAgainQuery := newWorkdir()
+	out, err = hostDaggerExec(ctx, t, unpinnedAgain, "--silent", "query", "--doc", unpinnedAgainQuery)
+	require.NoError(t, err)
+	require.NotContains(t, string(out), lockTestGitStaleCommit)
+	lockBytes, err = os.ReadFile(filepath.Join(unpinnedAgain, workspace.LockFileName))
+	require.NoError(t, err)
+	assertGitLatestLockEntry(t, lockBytes)
+}

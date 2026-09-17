@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  Add Workspace.snapshot to capture a workspace's Git history and approved
+  working-tree changes as a stable value. Snapshots use public GitBundle
+  compositions and can be restored without the original checkout when a
+  remote serves their base. Local-only repositories still freeze within the
+  session. Snapshots retain their config selection and load modules from
+  their own tree. Snapshot currentWorkspace again to capture later checkout
+  changes; Workspace.reloaded has been removed in favor of snapshots.
+time: 2026-09-05T12:00:00Z
+custom:
+  Author: vito
+  PR: "14147"

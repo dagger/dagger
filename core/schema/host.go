@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -24,6 +25,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
@@ -45,6 +47,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Host]{
 		dagql.NodeFunc("directory", s.directory).
+			NotReplayable("Reads a directory from the originating client").
 			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Accesses a directory on the host.`).
 			Args(
@@ -56,6 +59,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("file", s.file).
+			NotReplayable("Reads a file from the originating client").
 			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Accesses a file on the host.`).
 			Args(
@@ -71,6 +75,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("unixSocket", s.socket).
+			NotReplayable("Uses a socket on the originating client").
 			WithInput(dagql.PerClientInput).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
@@ -123,6 +128,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("__gitDir", s.gitDir).
+			NotReplayable("Reconstructs a Git checkout from the originating client").
 			WithInput(dagql.PerClientInput).
 			Doc(`(Internal-only) A canonical .git directory for the client checkout at path, reconstructed from the client's own git pack.`,
 				`The engine never interprets a host checkout's raw git layout (worktree/submodule pointer files, commondirs, separate git dirs): the client's own git packs the repository and the engine rebuilds a standalone .git from the pack.`).
@@ -844,13 +850,17 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 	if args.ValidateState {
 		expectedStateDigest = args.StateDigest
 	}
-	pack, err := bk.PackGitCheckout(ctx, args.Path, expectedStateDigest)
+	packCtx, packSpan := core.Tracer(ctx).Start(ctx, "pack host git checkout", telemetry.Internal())
+	pack, err := bk.PackGitCheckout(packCtx, args.Path, expectedStateDigest)
+	packSpan.End()
 	if err != nil {
 		return inst, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
 	}
 	defer func() { _ = pack.Close() }()
 
-	dir, err := core.MaterializeGitCheckoutPack(ctx, pack)
+	reconstructCtx, reconstructSpan := core.Tracer(ctx).Start(ctx, "reconstruct host git checkout", telemetry.Internal())
+	dir, err := core.MaterializeGitCheckoutPack(reconstructCtx, pack, hostCheckoutOriginURL(reconstructCtx, bk, args.Path))
+	reconstructSpan.End()
 	if err != nil {
 		return inst, fmt.Errorf("failed to materialize git checkout pack for %q: %w", args.Path, err)
 	}
@@ -860,6 +870,46 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+// hostCheckoutOriginURL resolves the origin remote of the client checkout at
+// path, read by the client's own git (GetConfig) like the rest of the
+// checkout's state. Best-effort: a checkout without an origin remote -- or a
+// client that predates sharing it -- reconstructs without remotes, as before.
+// Credential-bearing origins are omitted rather than copied into ordinary
+// Directory contents. SSH usernames select an account and are safe to retain.
+// The origin rides the ref-state-keyed reconstruction, so changing it alone
+// is picked up the next time the checkout's refs move.
+func hostCheckoutOriginURL(ctx context.Context, bk *engineutil.Client, path string) string {
+	entries, err := bk.GetGitConfig(ctx, path)
+	if err != nil {
+		return ""
+	}
+	originURL := ""
+	for _, entry := range entries {
+		if strings.EqualFold(entry.GetKey(), "remote.origin.url") {
+			// git config -l lists less specific scopes first; keep the last
+			// value, matching `git config --get`.
+			originURL = entry.GetValue()
+		}
+	}
+	if strings.Contains(originURL, "://") {
+		parsed, err := url.Parse(originURL)
+		if err != nil {
+			return ""
+		}
+		if parsed.User != nil {
+			_, hasPassword := parsed.User.Password()
+			if hasPassword || !strings.EqualFold(parsed.Scheme, "ssh") {
+				return ""
+			}
+		}
+		// Query strings and fragments can also carry credentials.
+		if parsed.RawQuery != "" || parsed.Fragment != "" {
+			return ""
+		}
+	}
+	return originURL
 }
 
 type hostServiceArgs struct {

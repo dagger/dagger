@@ -302,6 +302,128 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	requireSampleGitRootDir(ctx, t, c, commit.Tree())
 }
 
+func (GitSuite) TestGitCommitChanges(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	repo := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-ec", `
+git init -b main
+git config user.name Test
+git config user.email test@example.com
+printf 'original\n' > edited
+printf 'delete me\n' > deleted
+printf '#!/bin/sh\n' > executable
+git add . && git commit -m root && git tag root
+printf 'updated\n' > edited
+rm deleted
+chmod +x executable
+printf 'added\n' > added
+ln -s edited link
+git add . && git commit -m ordinary && git tag ordinary
+git checkout -b topic
+printf 'topic\n' > topic
+git add . && git commit -m topic
+git checkout main
+printf 'main\n' > main
+git add . && git commit -m main
+git merge --no-ff topic -m merge
+git tag merge
+git checkout --orphan unrelated
+git rm -rf .
+printf 'unrelated\n' > unrelated
+git add . && git commit -m unrelated
+`}).Directory("/repo").AsGit()
+	root := repo.Tag("root").TargetCommit()
+	ordinary := repo.Tag("ordinary").TargetCommit()
+	merge := repo.Tag("merge").TargetCommit()
+
+	assertPaths := func(t *testctx.T, changes *dagger.Changeset, added, modified, removed []string) {
+		t.Helper()
+		got, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, added, got)
+		got, err = changes.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, modified, got)
+		got, err = changes.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, removed, got)
+		for _, tree := range []*dagger.Directory{changes.Before(), changes.After()} {
+			entries, err := tree.Entries(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, entries, ".git/")
+			require.NotContains(t, entries, ".git")
+		}
+	}
+
+	t.Run("root", func(ctx context.Context, t *testctx.T) {
+		changes := root.Changes()
+		assertPaths(t, changes, []string{"deleted", "edited", "executable"}, nil, nil)
+		entries, err := changes.Before().Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, entries)
+	})
+	t.Run("ordinary deletion and modes", func(ctx context.Context, t *testctx.T) {
+		changes := ordinary.Changes()
+		assertPaths(t, changes, []string{"added", "link"}, []string{"edited", "executable"}, []string{"deleted"})
+		// Applying the structured delta preserves deletion, executable bits and symlinks.
+		out, err := c.Container().From(alpineImage).
+			WithDirectory("/tree", changes.Before().WithChanges(changes)).
+			WithWorkdir("/tree").
+			WithExec([]string{"sh", "-ec", "test ! -e deleted; test -x executable; test -L link; readlink link; cat edited"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "edited\nupdated\n", out)
+	})
+	t.Run("merge first parent", func(ctx context.Context, t *testctx.T) {
+		assertPaths(t, merge.Changes(), []string{"topic"}, nil, nil)
+		parents, err := merge.ParentShas(ctx)
+		require.NoError(t, err)
+		require.Len(t, parents, 2)
+		assertPaths(t, merge.Changes(dagger.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
+	})
+	t.Run("explicit comparison", func(ctx context.Context, t *testctx.T) {
+		assertPaths(t, merge.Changes(dagger.GitCommitChangesOpts{Against: root}),
+			[]string{"added", "link", "main", "topic"}, []string{"edited", "executable"}, []string{"deleted"})
+		// An explicit comparison overrides even the root commit's empty base.
+		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: ordinary}),
+			[]string{"deleted"}, []string{"edited", "executable"}, []string{"added", "link"})
+	})
+	t.Run("self comparison", func(ctx context.Context, t *testctx.T) {
+		changes := ordinary.Changes(dagger.GitCommitChangesOpts{Against: ordinary})
+		assertPaths(t, changes, nil, nil, nil)
+		empty, err := changes.IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, empty)
+	})
+	t.Run("unrelated history", func(ctx context.Context, t *testctx.T) {
+		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: repo.Head().TargetCommit()}),
+			[]string{"deleted", "edited", "executable"}, nil, []string{"unrelated"})
+	})
+	t.Run("different repository", func(ctx context.Context, t *testctx.T) {
+		other := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).WithWorkdir("/other").
+			WithExec([]string{"sh", "-ec", `
+git init
+git config user.name Other
+git config user.email other@example.com
+printf 'other\n' > other
+git add . && git commit -m other
+`}).Directory("/other").AsGit().Head().TargetCommit()
+		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: other}),
+			[]string{"deleted", "edited", "executable"}, nil, []string{"other"})
+	})
+	t.Run("stable recipe", func(ctx context.Context, t *testctx.T) {
+		first, err := ordinary.Changes().ID(ctx)
+		require.NoError(t, err)
+		sha, err := ordinary.Sha(ctx)
+		require.NoError(t, err)
+		second, err := repo.Commit(sha).Changes().ID(ctx)
+		require.NoError(t, err)
+		require.Equal(t, first, second)
+	})
+}
+
 func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -430,8 +552,133 @@ func (GitSuite) TestCheckoutOrigin(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", ".", "--depth=1"}).
 			Directory(".")
 		checkout := clone.AsGit().Head().Tree()
+		// The source repository's own origin carries over; the ephemeral
+		// engine-local clone path never does.
+		require.Equal(t, "https://github.com/dagger/dagger", getOrigin(ctx, t, checkout))
+	})
+
+	t.Run("local without origin", func(ctx context.Context, t *testctx.T) {
+		repo := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "init"}).
+			WithNewFile("base.txt", "base").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"}).
+			Directory(".")
+		checkout := repo.AsGit().Head().Tree()
 		require.Equal(t, "", getOrigin(ctx, t, checkout))
 	})
+}
+
+func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
+	serviceID, err := gitDaemon.ID(ctx)
+	require.NoError(t, err)
+
+	remoteURLs := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory, args ...string) string {
+		out, err := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", checkout).
+			WithExec(append([]string{"git", "remote", "get-url"}, args...)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	// Prime the checkout cache without any registered remotes. A later tree
+	// of the same ref must include its own .git/config, not reuse this one.
+	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	require.Equal(t, repoURL, remoteURLs(ctx, t, repo.Head().Tree(), "origin"))
+	require.Equal(t, repoURL, remoteURLs(ctx, t, repo.Head().TargetCommit().Tree(), "origin"))
+
+	const upstreamURL = "https://example.com/upstream/repo.git"
+	const upstreamPushURL = "ssh://git@example.com/upstream/repo.git"
+	var result struct {
+		Git struct {
+			WithRemote struct {
+				Head struct {
+					Tree struct{ ID dagger.ID }
+				}
+			}
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query: `query($url: String!, $service: ID!, $upstream: String!, $push: String!) {
+			git(url: $url, experimentalServiceHost: $service) {
+				withRemote(name: "upstream", url: $upstream, pushUrl: $push) {
+					head { tree { id } }
+				}
+			}
+		}`,
+		Variables: map[string]any{
+			"url": repoURL, "service": serviceID,
+			"upstream": upstreamURL, "push": upstreamPushURL,
+		},
+	}, &dagger.Response{Data: &result}))
+	checkout := dagger.Ref[*dagger.Directory](c, result.Git.WithRemote.Head.Tree.ID)
+
+	// The registered remote lands in the materialized checkout beside the
+	// clone URL's origin.
+	require.Equal(t, repoURL, remoteURLs(ctx, t, checkout, "origin"))
+	require.Equal(t, upstreamURL, remoteURLs(ctx, t, checkout, "upstream"))
+	require.Equal(t, upstreamPushURL, remoteURLs(ctx, t, checkout, "--push", "upstream"))
+
+	// Both tree APIs must distinguish changes to either URL, even when the
+	// repository, commit, and remote name remain the same.
+	for _, urls := range [][2]string{
+		{upstreamURL, upstreamPushURL},
+		{"https://example.com/other/repo.git", upstreamPushURL},
+		{"https://example.com/other/repo.git", "ssh://git@example.com/other/repo.git"},
+	} {
+		configured := repo.WithRemote("upstream", urls[0], dagger.GitRepositoryWithRemoteOpts{PushURL: urls[1]})
+		for _, tree := range []*dagger.Directory{configured.Head().Tree(), configured.Head().TargetCommit().Tree()} {
+			require.Equal(t, urls[0], remoteURLs(ctx, t, tree, "upstream"))
+			require.Equal(t, urls[1], remoteURLs(ctx, t, tree, "--push", "upstream"))
+		}
+	}
+
+	// Rebuilding the repository engine-side keeps the whole remote
+	// configuration, not just origin.
+	rebuilt := checkout.AsGit().Head().Tree()
+	require.Equal(t, repoURL, remoteURLs(ctx, t, rebuilt, "origin"))
+	require.Equal(t, upstreamURL, remoteURLs(ctx, t, rebuilt, "upstream"))
+	require.Equal(t, upstreamPushURL, remoteURLs(ctx, t, rebuilt, "--push", "upstream"))
+
+	// Bundle imports reconstruct a bare repository too; keep local remote
+	// routing through that path, including named remotes and push URLs.
+	local := checkout.AsGit()
+	head, err := local.Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	imported := local.WithBundle(local.Bundle([]string{"HEAD"})).Ref(head).Tree()
+	require.Equal(t, repoURL, remoteURLs(ctx, t, imported, "origin"))
+	require.Equal(t, upstreamURL, remoteURLs(ctx, t, imported, "upstream"))
+	require.Equal(t, upstreamPushURL, remoteURLs(ctx, t, imported, "--push", "upstream"))
+
+	// Registration validates its inputs: no passwords in recorded URLs, and
+	// no option-injection through names.
+	for name, variables := range map[string]map[string]any{
+		"password URL": {"name": "origin", "remoteUrl": "https://user:secret@example.com/repo.git"},
+		"option name":  {"name": "--mirror", "remoteUrl": upstreamURL},
+	} {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			var rejected any
+			err := c.Do(ctx, &dagger.Request{
+				Query: `query($url: String!, $service: ID!, $name: String!, $remoteUrl: String!) {
+					git(url: $url, experimentalServiceHost: $service) {
+						withRemote(name: $name, url: $remoteUrl) { id }
+					}
+				}`,
+				Variables: map[string]any{
+					"url": repoURL, "service": serviceID,
+					"name": variables["name"], "remoteUrl": variables["remoteUrl"],
+				},
+			}, &dagger.Response{Data: &rejected})
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "secret")
+		})
+	}
 }
 
 func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
@@ -590,18 +837,48 @@ sleep infinity
 	require.NoError(t, err)
 
 	repoURL := fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)
-	entries, err := c.Git(repoURL, dagger.GitOpts{
+	repo := c.Git(repoURL, dagger.GitOpts{
 		ExperimentalServiceHost: sshSvc,
 		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
 		SSHAuthSocket:           c.Host().UnixSocket(sock),
-	}).
-		Branch("main").
+	})
+	entries, err := repo.Branch("main").
 		Tree(dagger.GitRefTreeOpts{
 			DiscardGitDir: true,
 		}).
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
+	committed := repo.Branch("main").AsWorkspace().WithNewFile("pushed.txt", "SSH push").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "SSH push", workspaceCommitDate)
+	})
+	result, err := pushGitRef(ctx, c, committed.Git().Head(), repo, "ssh-push", nil)
+	require.NoError(t, err)
+	require.Equal(t, "CREATED", result.Disposition)
+
+	// A fresh CLI with an identity file but no SSH_AUTH_SOCK can push without
+	// receiving a checkout or an explicit socket capability. The source history
+	// is already frozen in the engine; only agent signing requests reach the CLI.
+	sourceID, err := committed.Git().Head().ID(ctx)
+	require.NoError(t, err)
+	destinationID, err := c.Git(repoURL, dagger.GitOpts{
+		ExperimentalServiceHost: sshSvc,
+		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
+	}).ID(ctx)
+	require.NoError(t, err)
+	cli := daggerCliBase(t, c).
+		WithExec([]string{"apk", "add", "openssh-client"}).
+		WithEnvVariable("SSH_AUTH_SOCK", "").
+		WithNewFile("/root/.ssh/id_rsa", userPrivateKey, dagger.ContainerWithNewFileOpts{Permissions: 0600})
+	out, err := cli.With(daggerQuery(`{ node(id: %q) { ... on GitRef { push(to: %q, branch: "auto-agent-push") { disposition sha } } } }`, sourceID, destinationID)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "CREATED")
+	// Starting an ordinary read must not auto-load the identity file.
+	serviceID, err := sshSvc.ID(ctx)
+	require.NoError(t, err)
+	_, err = cli.With(daggerQuery(`{ git(url: %q, experimentalServiceHost: %q) { head { commitSHA } } }`, repoURL, serviceID)).Sync(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
 }
 
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
@@ -1274,6 +1551,72 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	require.Equal(t, hostname(c1), hostname(c2))
 }
 
+func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("local repository", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			With(gitUserConfig).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "init"}).
+			WithExec([]string{"sh", "-c", `echo one > file && git add file && git commit -m "one" && echo two > file && git commit -am "two"`})
+
+		// an older commit: not the tip of any ref, so only object-database
+		// resolution can find it
+		oldCommit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~"}).Stdout(ctx)
+		require.NoError(t, err)
+		oldCommit = strings.TrimSpace(oldCommit)
+
+		git := ctr.Directory(".").AsGit()
+
+		// ref() expands an abbreviated SHA to the full commit
+		resolved, err := git.Ref(oldCommit[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, oldCommit, resolved)
+
+		// commit() accepts an abbreviated SHA too
+		sha, err := git.Commit(oldCommit[:7]).Sha(ctx)
+		require.NoError(t, err)
+		require.Equal(t, oldCommit, sha)
+
+		// a ref whose name looks like a hex prefix wins over prefix expansion
+		branchCtr := ctr.WithExec([]string{"git", "branch", oldCommit[:7]})
+		headCommit, err := branchCtr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+		require.NoError(t, err)
+		headCommit = strings.TrimSpace(headCommit)
+		resolved, err = branchCtr.Directory(".").AsGit().Ref(oldCommit[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, headCommit, resolved)
+
+		// a prefix that matches nothing errors
+		_, err = git.Ref("deadbeefdead").CommitSHA(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
+		svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+		repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: svc})
+
+		full, err := repo.Branch("main").CommitSHA(ctx)
+		require.NoError(t, err)
+
+		// nothing fetched yet: ls-remote only advertises refs, so the prefix
+		// cannot be expanded
+		_, err = repo.Ref(full[:7]).CommitSHA(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "already-fetched")
+
+		// once the commit's objects are fetched, the same prefix resolves
+		_, err = repo.Branch("main").Tree().Sync(ctx)
+		require.NoError(t, err)
+		resolved, err := repo.Ref(full[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, full, resolved)
+	})
+}
+
 func (GitSuite) TestGitLatest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := c.Container().
@@ -1406,31 +1749,7 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 	// serves the same repo, at the same URL, with the given tags added
 	serve := func(ctx context.Context, t *testctx.T, c *dagger.Client, tags ...string) {
 		t.Helper()
-
-		ctr := c.Container().
-			From(alpineImage).
-			WithExec([]string{"apk", "add", "git", "git-daemon"}).
-			With(gitUserConfig).
-			// pin the dates so both sessions serve the same commit SHA, whether
-			// or not the exec below is a cache hit
-			WithEnvVariable("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z").
-			WithEnvVariable("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z").
-			WithWorkdir("/src").
-			WithExec([]string{"sh", "-c", `
-				git init && echo content > README.md && git add -A && git commit -m init
-			`}).
-			WithExec([]string{"git", "clone", "--bare", "/src", "/root/srv/repo.git"})
-		for _, tag := range tags {
-			ctr = ctr.WithExec([]string{"git", "-C", "/root/srv/repo.git", "tag", tag, "main"})
-		}
-
-		_, err := ctr.
-			WithExposedPort(9418).
-			WithDefaultArgs([]string{"git", "daemon", "--verbose", "--export-all", "--base-path=/root/srv"}).
-			AsService().
-			WithHostname(hostname).
-			Start(ctx)
-		require.NoError(t, err)
+		serveGitDaemon(ctx, t, c, hostname, taggedRepoScript(tags...))
 	}
 
 	lookup := func(ctx context.Context, t *testctx.T, c *dagger.Client) (sha string, advertised []string, tag string) {
@@ -1464,6 +1783,108 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 	require.Equal(t, sha1, sha2, "both sessions must resolve the same commit")
 	require.Equal(t, []string{"v1.0.0", "v2.0.0"}, advertised2)
 	require.Equal(t, "refs/tags/v2.0.0", tag2)
+}
+
+// serveGitDaemon starts a git daemon at hostname serving /root/srv/repo.git,
+// built by running setup inside a fresh `git init` at /src. Dates are pinned
+// so serving the same script again yields the same commit SHAs, whether or not
+// the setup exec is a cache hit.
+func serveGitDaemon(ctx context.Context, t *testctx.T, c *dagger.Client, hostname, setup string) {
+	t.Helper()
+	_, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		With(gitUserConfig).
+		WithEnvVariable("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z").
+		WithEnvVariable("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z").
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-c", "git init && " + setup}).
+		WithExec([]string{"git", "clone", "--bare", "/src", "/root/srv/repo.git"}).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"git", "daemon", "--verbose", "--export-all", "--base-path=/root/srv"}).
+		AsService().
+		WithHostname(hostname).
+		Start(ctx)
+	require.NoError(t, err)
+}
+
+// taggedRepoScript makes one commit on main and tags it with each tag.
+func taggedRepoScript(tags ...string) string {
+	script := "echo content > README.md && git add -A && git commit -m init"
+	for _, tag := range tags {
+		script += " && git tag " + tag + " main"
+	}
+	return script
+}
+
+// The repository result behind Query.git is shared across sessions, and
+// results stay alive while any session holds them. A session that is still
+// open must not pin what a later session sees: tags and branches are listed
+// once per session, against that session's remote.
+func (GitSuite) TestGitTagsFreshnessWithOpenSession(ctx context.Context, t *testctx.T) {
+	const hostname = "git-tags-open-session"
+	repoURL := "git://" + hostname + "/repo.git"
+
+	c1 := connect(ctx, t)
+	serveGitDaemon(ctx, t, c1, hostname, taggedRepoScript("v1.0.0"))
+	tags1, err := c1.Git(repoURL).Tags(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"v1.0.0"}, tags1)
+	branches1, err := c1.Git(repoURL).Branches(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"main"}, branches1)
+
+	// c1 stays open, still holding its results, while a second session asks
+	// the same URL, which now advertises more refs.
+	c2 := connect(ctx, t)
+	serveGitDaemon(ctx, t, c2, hostname, taggedRepoScript("v1.0.0", "v2.0.0")+" && git branch feature")
+	tags2, err := c2.Git(repoURL).Tags(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"v1.0.0", "v2.0.0"}, tags2)
+	branches2, err := c2.Git(repoURL).Branches(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"feature", "main"}, branches2)
+
+	// The first session keeps the answer it already resolved.
+	tags1Again, err := c1.Git(repoURL).Tags(ctx)
+	require.NoError(t, err)
+	require.Equal(t, tags1, tags1Again)
+}
+
+// A bundle is persisted and its repository is shared across sessions, so a
+// bundle of a ref name must be keyed by where that ref points now, or a later
+// session would receive the bundle built when the ref pointed elsewhere.
+func (GitSuite) TestGitBundleRefFreshness(ctx context.Context, t *testctx.T) {
+	const hostname = "git-bundle-ref-freshness"
+	repoURL := "git://" + hostname + "/repo.git"
+	const first = "echo a > file && git add -A && git commit -m a"
+
+	bundleMain := func(ctx context.Context, t *testctx.T, c *dagger.Client) (sha string) {
+		t.Helper()
+		refs, err := c.Git(repoURL).Bundle([]string{"main"}).Refs(ctx)
+		require.NoError(t, err)
+		require.Len(t, refs, 1)
+		name, err := refs[0].Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/heads/main", name)
+		sha, err = refs[0].Sha(ctx)
+		require.NoError(t, err)
+		head, err := c.Git(repoURL).Branch("main").CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, head, sha, "bundle must carry the branch as this session resolves it")
+		return sha
+	}
+
+	c1 := connect(ctx, t)
+	serveGitDaemon(ctx, t, c1, hostname, first)
+	sha1 := bundleMain(ctx, t, c1)
+	require.NoError(t, c1.Close())
+
+	// same URL, but main has advanced
+	c2 := connect(ctx, t)
+	serveGitDaemon(ctx, t, c2, hostname, first+" && echo b > file && git commit -am b")
+	sha2 := bundleMain(ctx, t, c2)
+	require.NotEqual(t, sha1, sha2)
 }
 
 func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
@@ -2136,6 +2557,10 @@ replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
 		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
+		WithMountedDirectory("./engine/session/prompt/", client.Host().Directory(filepath.Join(wd, "../../engine/session/prompt"))).
+		WithMountedDirectory("./internal/buildkit/util/sshutil/", client.Host().Directory(filepath.Join(wd, "../../internal/buildkit/util/sshutil"))).
+		WithMountedDirectory("./util/gitutil/", client.Host().Directory(filepath.Join(wd, "../../util/gitutil"))).
+		WithMountedDirectory("./util/hashutil/", client.Host().Directory(filepath.Join(wd, "../../util/hashutil"))).
 		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
 		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
 
