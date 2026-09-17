@@ -697,6 +697,22 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 	now := time.Now().Unix()
 	observed := c.probeShareMembers(ctx, rows)
 
+	// Lookup preparation resolves a frame's numeric references through E, so
+	// it precedes the E section, as in newSessionlessPartSourceLease. A
+	// restored frame has derived none of its digests yet.
+	lookups := make(map[sharedResultID]partLookup, len(rows))
+	for _, row := range rows {
+		if !row.imported {
+			continue
+		}
+		lookup, err := c.partLookupFor(row)
+		if err != nil {
+			c.traceShareSkip(ctx, row, PersistedPartAddress{}, err)
+			continue
+		}
+		lookups[row.id] = lookup
+	}
+
 	// One graph section decides receiver eligibility and, for each ordered
 	// pair, whether the donor is an ordinary equivalent whose own resource
 	// requirements already fit inside the receiver's. Selecting a donor the
@@ -707,13 +723,9 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 	admits := map[sharePair]bool{}
 	c.egraphMu.Lock()
 	for _, row := range rows {
-		eligible[row.id] = c.shareReceiverEligibleLocked(row, now)
+		lookup, prepared := lookups[row.id]
+		eligible[row.id] = prepared && c.shareReceiverEligibleLocked(row, now)
 		if !eligible[row.id] {
-			continue
-		}
-		lookup, err := c.partLookupFor(row)
-		if err != nil {
-			eligible[row.id] = false
 			continue
 		}
 		for _, donor := range rows {
