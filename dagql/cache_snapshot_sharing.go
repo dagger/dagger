@@ -901,7 +901,6 @@ type shareSlotState struct {
 	ctx        context.Context
 	base       *readyPartPreparationBase
 	prepareNow chan struct{}
-	stopNow    chan struct{}
 	prepared   chan shareSlotPrepared
 	commit     chan bool
 	committed  chan shareSlotCommitted
@@ -909,20 +908,13 @@ type shareSlotState struct {
 	done       chan error
 	prepareOne sync.Once
 	commitOne  sync.Once
-	stopOne    sync.Once
 	// holds is set once a live preparation exists that must be committed or
 	// disposed; ready means its prefix is still intact; settled means its one
 	// terminal commit outcome has been consumed.
 	holds     bool
 	ready     bool
-	stopped   bool
 	settled   bool
 	installed bool
-}
-
-func (st *shareSlotState) stop() {
-	st.stopped = true
-	st.stopOne.Do(func() { close(st.stopNow) })
 }
 
 func (st *shareSlotState) reportPrepared(res shareSlotPrepared) {
@@ -947,11 +939,6 @@ func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, member
 	}
 	select {
 	case <-st.prepareNow:
-	case <-st.stopNow:
-		// A failed prefix aborts its dependent suffix before that suffix
-		// prepares anything.
-		st.reportPrepared(shareSlotPrepared{err: errShareSlotStopped})
-		return errShareSlotStopped
 	case <-ctx.Done():
 		st.reportPrepared(shareSlotPrepared{err: context.Cause(ctx)})
 		return errShareSlotStopped
@@ -1066,10 +1053,6 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 	// addresses are prepared in order, each from the previous slot's data-only
 	// next representation.
 	for i, st := range states {
-		if st.stopped {
-			<-st.prepared
-			continue
-		}
 		close(st.prepareNow)
 		res := <-st.prepared
 		if !res.ok {
@@ -1136,9 +1119,10 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 	}
 }
 
-// abortShareSuffix stops the dependent suffix of the same receiver after a
-// failed or refused prefix. Other receivers are untouched, and a suffix slot
-// that already prepared is disposed by the pass's disposal loop.
+// abortShareSuffix withdraws the dependent suffix of the same receiver after a
+// refused prefix Commit. It runs only in the commit phase, when every slot has
+// already prepared, so the pass's disposal loop releases each withdrawn
+// preparation. Other receivers are untouched.
 func (c *Cache) abortShareSuffix(states []*shareSlotState, from int) {
 	if from < 0 || from >= len(states) {
 		return
@@ -1150,7 +1134,6 @@ func (c *Cache) abortShareSuffix(states []*shareSlotState, from int) {
 		}
 		st.base = nil
 		st.ready = false
-		st.stop()
 	}
 }
 
@@ -1227,7 +1210,6 @@ func (c *Cache) planSharePass(ctx context.Context, item *snapshotShareItem) []*s
 			slot:       slot,
 			ctx:        slotCtx,
 			prepareNow: make(chan struct{}),
-			stopNow:    make(chan struct{}),
 			prepared:   make(chan shareSlotPrepared, 1),
 			commit:     make(chan bool, 1),
 			committed:  make(chan shareSlotCommitted, 1),
