@@ -269,34 +269,8 @@ func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 
 //nolint:gocyclo // one phase per fixture scenario kind; splitting hides the order of the phases
 func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args remoteCacheFixtureArgs) (core.JSON, error) {
-	if args.Operation != "export" && len(args.OutputIDs) != 0 {
-		return nil, fmt.Errorf("selected outputs require export")
-	}
-	switch args.Operation {
-	case "export":
-		if len(args.IDs) == 0 {
-			return nil, fmt.Errorf("export requires handles")
-		}
-		if err := fixtureBundlePath(args.Path); err != nil {
-			return nil, err
-		}
-	case "import":
-		if len(args.IDs) != 0 {
-			return nil, fmt.Errorf("import does not accept IDs")
-		}
-		if err := fixtureBundlePath(args.Path); err != nil {
-			return nil, err
-		}
-	case "report":
-		if args.Path != "" {
-			return nil, fmt.Errorf("report does not accept a path")
-		}
-	case "recordBody":
-		if args.Path != "" || len(args.IDs) != 0 {
-			return nil, fmt.Errorf("recordBody does not accept path or IDs")
-		}
-	default:
-		return nil, fmt.Errorf("unknown fixture operation %q", args.Operation)
+	if err := validateFixtureOperation(args); err != nil {
+		return nil, err
 	}
 	if err := context.Cause(ctx); err != nil {
 		return nil, err
@@ -436,6 +410,8 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		defer root.Close()
 		err = writeFixtureJSON(ctx, root, identity.NewID()+".json", entry)
 		response = entry
+	default:
+		response, err = runFixtureControl(ctx, q, cache, md.SessionID, path, args, ids)
 	}
 	if err != nil {
 		return nil, err
