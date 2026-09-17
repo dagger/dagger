@@ -949,3 +949,29 @@ func TestSnapshotSharingTypedReceiverFillsOnePartPerPass(t *testing.T) {
 	require.Equal(t, "fs-snap", value.Parts["fs"].Snapshot)
 	require.Equal(t, "mount-snap", value.Parts["mount"].Snapshot)
 }
+
+// A restored imported row carries a frame that has derived none of its
+// digests and names its receiver by result ID. Deriving them reads the graph
+// through E, so selection prepares every lookup before its own E section;
+// preparing one inside it would leave the worker waiting for a lock it holds,
+// and every later cache operation waiting for the worker.
+func TestSnapshotSharingSelectsRestoredFrame(t *testing.T) {
+	ctx, c, srv, _ := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	parent := persistedListTestResult(t, ctx, c, srv, "share-parent", String("parent"))
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}})
+	shareTestUnite(t, ctx, c, "restored-frame", donor, receiver)
+	require.Equal(t, 1, barrier.awaitPass(t), "the live frame shares as usual")
+	require.Equal(t, 0, barrier.awaitPass(t), "and its completion finds nothing left")
+
+	row := receiver.cacheSharedResult()
+	restored := row.loadResultCall().clone()
+	restored.Receiver = &ResultCallRef{ResultID: uint64(parent.cacheSharedResult().id)}
+	row.storeResultCall(restored)
+	c.notifySnapshotShareCompletion(ctx, row)
+	require.Equal(t, 0, barrier.awaitPass(t), "the restored frame is resolved and the pass ends")
+	pending, _ := shareTestQueueDepth(c)
+	require.Zero(t, pending, "the graph lock is free again")
+}
