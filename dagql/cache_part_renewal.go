@@ -393,7 +393,7 @@ func (d *PartDemandState) settleRenewal(episode *renewalEpisode, addresses map[d
 // at once, whenever it is consulted; only a waiting episode waits, at most
 // until its original deadline, and a result settled by then still wins.
 func (d *PartDemandState) awaitRenewal(ctx context.Context, episode *renewalEpisode) (map[digest.Digest]BlobAddress, error) {
-	if addresses, err, settled := d.renewalResult(episode); settled {
+	if addresses, settled, err := d.renewalResult(episode); settled {
 		return addresses, err
 	}
 	timer := time.NewTimer(time.Until(episode.deadline))
@@ -403,25 +403,25 @@ func (d *PartDemandState) awaitRenewal(ctx context.Context, episode *renewalEpis
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
 	case <-timer.C:
-		if addresses, err, settled := d.renewalResult(episode); settled {
+		if addresses, settled, err := d.renewalResult(episode); settled {
 			return addresses, err
 		}
 		return nil, renewalUnavailable("deadline exceeded")
 	}
-	addresses, err, _ := d.renewalResult(episode)
+	addresses, _, err := d.renewalResult(episode)
 	return addresses, err
 }
 
-func (d *PartDemandState) renewalResult(episode *renewalEpisode) (map[digest.Digest]BlobAddress, error, bool) {
+func (d *PartDemandState) renewalResult(episode *renewalEpisode) (map[digest.Digest]BlobAddress, bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	switch episode.state {
 	case renewalWaiting:
-		return nil, nil, false
+		return nil, false, nil
 	case renewalExhausted:
-		return nil, renewalUnavailable("renewed content exhausted"), true
+		return nil, true, renewalUnavailable("renewed content exhausted")
 	default:
-		return episode.addresses, episode.err, true
+		return episode.addresses, true, episode.err
 	}
 }
 
