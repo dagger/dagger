@@ -87,6 +87,19 @@ func TestFixtureBarrierPauseAndRelease(t *testing.T) {
 	require.Equal(t, 1, barrier.awaitPass(t))
 	require.True(t, shareTestHasLink(receiver, "fs-snap"), "the paused operation completed by itself")
 	require.Zero(t, c.TransferFixtureBarrierCount())
+
+	// Every reached point was journalled, armed or not, in order and with
+	// the pass that reached it.
+	var points []FixtureBarrierPoint
+	var last uint64
+	for _, o := range c.partFixtureReached() {
+		require.Greater(t, o.Sequence, last)
+		last = o.Sequence
+		if o.PassID == reached.Event.PassID {
+			points = append(points, o.Point)
+		}
+	}
+	require.Equal(t, []FixtureBarrierPoint{FixtureSharePassTaken, FixtureShareAllPrepared, FixtureShareMembersReleased, FixtureBeforeFinish}, points)
 }
 
 func TestFixtureBarrierCloseReleasesPausedOperation(t *testing.T) {

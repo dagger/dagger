@@ -12,6 +12,9 @@ import (
 // TransferFixturePartEvent is populated only after the gated fixture enables
 // acquisition observation. It does not participate in cache decisions.
 type TransferFixturePartEvent struct {
+	// Sequence orders part events and reached points of one cache lifetime on
+	// one counter, so a test can place an install inside a sharing pass.
+	Sequence   uint64                     `json:"sequence"`
 	Kind       string                     `json:"kind"`
 	ResultID   uint64                     `json:"resultID"`
 	Field      string                     `json:"field"`
@@ -26,7 +29,9 @@ type TransferFixturePartSource struct {
 }
 type partFixtureState struct {
 	mu         sync.Mutex
+	sequence   uint64
 	events     []TransferFixturePartEvent
+	reached    []FixtureObservation
 	eventCap   int
 	overflowed bool
 	barriers   fixtureBarriers
@@ -84,10 +89,12 @@ func (c *Cache) recordPartFixtureEvent(row *sharedResult, address PersistedPartA
 	if limit == 0 {
 		limit = transferFixtureEventCap
 	}
-	if len(state.events) >= limit {
+	if len(state.events)+len(state.reached) >= limit {
 		state.overflowed = true
 		return
 	}
+	state.sequence++
+	event.Sequence = state.sequence
 	state.events = append(state.events, event)
 }
 
@@ -112,6 +119,55 @@ func (c *Cache) partFixtureLazyContext(ctx context.Context, row *sharedResult, a
 		c.recordPartFixtureSnapshot(row, address, kind, id)
 	})
 }
+
+// FixtureObservation is one reached point of §3.3's closed set, recorded
+// whether or not a barrier was armed there. It carries the correlation the
+// part events lack: the demand's task generation, the sharing pass, the chosen
+// source route, the exchange.
+type FixtureObservation struct {
+	Sequence uint64 `json:"sequence"`
+	FixtureBarrierEvent
+}
+
+// observeFixtureReach journals one reached point under the same bound as the
+// part events. It never blocks and never changes the operation.
+func (state *partFixtureState) observeFixtureReach(event FixtureBarrierEvent) {
+	if event.Address != nil {
+		address := clonePartAddress(*event.Address)
+		event.Address = &address
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	limit := state.eventCap
+	if limit == 0 {
+		limit = transferFixtureEventCap
+	}
+	if len(state.events)+len(state.reached) >= limit {
+		state.overflowed = true
+		return
+	}
+	state.sequence++
+	state.reached = append(state.reached, FixtureObservation{Sequence: state.sequence, FixtureBarrierEvent: event})
+}
+
+func (c *Cache) partFixtureReached() []FixtureObservation {
+	state := c.partFixture.Load()
+	if state == nil {
+		return nil
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	reached := make([]FixtureObservation, len(state.reached))
+	for i, o := range state.reached {
+		reached[i] = o
+		if o.Address != nil {
+			address := clonePartAddress(*o.Address)
+			reached[i].Address = &address
+		}
+	}
+	return reached
+}
+
 func (c *Cache) partFixtureEvents() (_ []TransferFixturePartEvent, overflowed bool) {
 	state := c.partFixture.Load()
 	if state == nil {
