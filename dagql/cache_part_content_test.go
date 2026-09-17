@@ -45,6 +45,9 @@ type contentTestTransport struct {
 	requests map[string]int
 	ranges   []string
 	open     atomic.Int64
+	// bodies and closes count response bodies and every raw Close call.
+	bodies atomic.Int64
+	closes atomic.Int64
 	// progress, when set, gates each stalled body byte on a receive.
 	progress chan struct{}
 	// opened, when set and buffered, is signaled once per response body
@@ -130,6 +133,7 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 
 func (tr *contentTestTransport) body(ctx context.Context, data []byte, stallAfter int) io.ReadCloser {
 	tr.open.Add(1)
+	tr.bodies.Add(1)
 	if tr.opened != nil {
 		select {
 		case tr.opened <- struct{}{}:
@@ -193,6 +197,7 @@ func (b *contentTestBody) Read(p []byte) (int, error) {
 }
 
 func (b *contentTestBody) Close() error {
+	b.transport.closes.Add(1)
 	b.closeOnce.Do(func() {
 		close(b.done())
 		b.transport.open.Add(-1)
@@ -410,6 +415,87 @@ func TestPartContentIdleReader(t *testing.T) {
 			synctest.Wait()
 			require.Zero(t, bad.open.Load())
 			require.NoError(t, reader.Close())
+		})
+	})
+}
+
+// Each response body is closed exactly once, whichever path ends it.
+func TestPartContentBodyClosedOnce(t *testing.T) {
+	const data = "0123456789abcdefghijklmnopqrstuvwxyz"
+	requireOneClosePerBody := func(t *testing.T, transport *contentTestTransport) {
+		t.Helper()
+		synctest.Wait()
+		require.Positive(t, transport.bodies.Load())
+		require.Equal(t, transport.bodies.Load(), transport.closes.Load(), "raw Close calls")
+		require.Zero(t, transport.open.Load())
+	}
+	t.Run("end of blob", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			transport, source, offer, descriptor := contentReaderFixture(t, data)
+			reader, err := source.Provider(t.Context(), offer, nil).ReaderAt(t.Context(), descriptor)
+			require.NoError(t, err)
+			buf := make([]byte, 10)
+			for off := int64(0); off < descriptor.Size; off += 10 {
+				_, err := reader.ReadAt(buf, off)
+				if off+10 >= descriptor.Size {
+					require.ErrorIs(t, err, io.EOF)
+				} else {
+					require.NoError(t, err)
+				}
+			}
+			requireOneClosePerBody(t, transport)
+			require.NoError(t, reader.Close())
+			requireOneClosePerBody(t, transport)
+		})
+	})
+	t.Run("reader close", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			transport, source, offer, descriptor := contentReaderFixture(t, data)
+			reader, err := source.Provider(t.Context(), offer, nil).ReaderAt(t.Context(), descriptor)
+			require.NoError(t, err)
+			_, err = reader.ReadAt(make([]byte, 4), 0)
+			require.NoError(t, err)
+			_, err = reader.ReadAt(make([]byte, 4), 20)
+			require.NoError(t, err, "a reopen closes the first response")
+			require.NoError(t, reader.Close())
+			require.NoError(t, reader.Close())
+			requireOneClosePerBody(t, transport)
+			require.EqualValues(t, 2, transport.bodies.Load())
+		})
+	})
+	t.Run("concurrent cancellation", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			transport, source, offer, descriptor := contentReaderFixture(t, data)
+			transport.fault("https://blobs.invalid/blob", contentTestFault{stallAfter: 2})
+			ctx, cancel := context.WithCancel(t.Context())
+			reader, err := source.Provider(ctx, offer, nil).ReaderAt(ctx, descriptor)
+			require.NoError(t, err)
+			read := make(chan error, 1)
+			go func() {
+				_, err := reader.ReadAt(make([]byte, 4), 0)
+				read <- err
+			}()
+			synctest.Wait()
+			cancel()
+			require.NoError(t, reader.Close())
+			require.ErrorIs(t, <-read, context.Canceled)
+			requireOneClosePerBody(t, transport)
+		})
+	})
+	t.Run("idle expiry and status", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			transport, source, offer, descriptor := contentReaderFixture(t, data)
+			transport.fault("https://blobs.invalid/blob", contentTestFault{stallAfter: 2})
+			reader, err := source.Provider(t.Context(), offer, nil).ReaderAt(t.Context(), descriptor)
+			require.NoError(t, err)
+			_, err = reader.ReadAt(make([]byte, 4), 0)
+			require.ErrorIs(t, err, errPartContentIdle)
+			transport.fault("https://blobs.invalid/blob", contentTestFault{status: http.StatusInternalServerError})
+			_, err = reader.ReadAt(make([]byte, 4), 0)
+			require.ErrorContains(t, err, "status 500")
+			require.NoError(t, reader.Close())
+			requireOneClosePerBody(t, transport)
+			require.EqualValues(t, 2, transport.bodies.Load())
 		})
 	})
 }

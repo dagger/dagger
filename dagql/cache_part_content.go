@@ -357,13 +357,14 @@ type partHTTPStream struct {
 	once sync.Once
 }
 
+// close gives the body one closer: this path if it stops the cancellation
+// callback first, otherwise the callback that cancellation already started.
 func (s *partHTTPStream) close() {
 	s.once.Do(func() {
-		s.cancel(nil)
-		if s.body != nil {
-			s.stop()
+		if s.body != nil && s.stop() {
 			_ = s.body.Close()
 		}
+		s.cancel(nil)
 	})
 }
 
