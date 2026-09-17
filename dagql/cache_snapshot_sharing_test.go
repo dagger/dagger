@@ -988,3 +988,52 @@ func TestSnapshotSharingSelectsRestoredFrame(t *testing.T) {
 	pending, _ := shareTestQueueDepth(c)
 	require.Zero(t, pending, "the graph lock is free again")
 }
+
+// A slot runs as the ordinary obtain task of its address, so an ordinary
+// demand for that address joins the slot's generation. When the slot is then
+// refused, the demand must see batch 4's reselect and finish by its ordinary
+// route; it once received sharing's private stop error and failed a request
+// that would have succeeded with sharing off.
+func TestSnapshotSharingRefusedSlotReselectsJoinedDemand(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	row := receiver.cacheSharedResult()
+	address := PersistedPartAddress{Part: "fs"}
+
+	joined := make(chan struct{})
+	var joinOnce, pinOnce sync.Once
+	c.testAfterLazyEvalJoin = func(*lazyEvalAttempt) { joinOnce.Do(func() { close(joined) }) }
+	demandDone := make(chan error, 1)
+	manager.afterPin = func() {
+		// Only the slot's pin, inside its Prepare, while its generation is
+		// active. The demand's own later install pins again.
+		pinOnce.Do(func() {
+			go func() { demandDone <- c.demandPart(ctx, receiver, address) }()
+			select {
+			case <-joined:
+			case err := <-demandDone:
+				t.Errorf("the demand returned before joining the slot's obtain task: %v", err)
+				demandDone <- err
+			case <-time.After(10 * time.Second):
+				t.Error("the demand never joined the slot's obtain task")
+			}
+			// A concurrent representation change refuses the slot.
+			row.payloadMu.Lock()
+			row.payloadRevision++
+			row.payloadMu.Unlock()
+		})
+	}
+	shareTestUnite(t, ctx, c, "refused-slot-joined-demand", donor, receiver)
+	require.Equal(t, 1, barrier.awaitPass(t))
+	select {
+	case err := <-demandDone:
+		require.NoError(t, err, "the joined demand selects again; no private sharing error reaches it")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the joined demand never returned")
+	}
+	require.True(t, shareTestHasLink(receiver, "fs-snap"), "the demand installed the part by its ordinary route")
+}

@@ -222,6 +222,13 @@ func shareTestSnapshotValue(state sharePartState) *SnapshotValue {
 	return value
 }
 
+// RouteParts lets an ordinary demand route one of this family's parts: it has
+// no metadata part, no delegation and no saved Lazy operation, so a demand
+// can only take a completed equivalent.
+func (shareTestCodec) RouteParts(PersistedPayloadVisit, PartKey) (LazyOperationRoute, error) {
+	return LazyOperationRoute{}, nil
+}
+
 func (shareTestCodec) DescribeParts(v PersistedPayloadVisit) ([]PartProbe, error) {
 	outputs, err := (shareTestCodec{}).MapSnapshotParts(v)
 	if err != nil {
