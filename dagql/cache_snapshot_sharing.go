@@ -1060,7 +1060,7 @@ func shareSkipCause(err error, outcome GateOutcome) error {
 // every selected slot, commit in a fixed order, release every cohort hold,
 // then externally finish every receipt exactly once.
 func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareItem) {
-	states := c.planSharePass(ctx, item)
+	states, deferred := c.planSharePass(ctx, item)
 	if c.testBeforeSharePass != nil {
 		c.testBeforeSharePass(item, len(states))
 	}
@@ -1069,9 +1069,14 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 	}
 	membersReleased := make(chan struct{})
 	membersOnce := sync.Once{}
+	// successors are the decoded receivers whose one slot Installed while
+	// selection had left them a further address. Their successor cohort is
+	// queued in the same E section that releases this cohort, so the donor is
+	// held continuously between the two passes.
+	var successors []*sharedResult
 	releaseMembers := func() {
 		membersOnce.Do(func() {
-			c.releaseSnapshotShareMembers(ctx, item)
+			c.releaseSnapshotShareMembers(ctx, item, successors)
 			close(membersReleased)
 		})
 	}
@@ -1152,6 +1157,9 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 			continue
 		}
 		st.installed = true
+		if deferred[st.receiver] {
+			successors = append(successors, st.receiver)
+		}
 	}
 	// Dispose every uncommitted preparation and await its actual cleanup.
 	for _, st := range states {
@@ -1240,7 +1248,7 @@ func nextSharePrefix(st *shareSlotState, res shareSlotPrepared) *readyPartPrepar
 // planSharePass turns selected slots into ordered per-receiver sequences.
 // Receivers are visited by ID and their addresses in the frozen deterministic
 // order, and one receiver's sequence is never interleaved with another's.
-func (c *Cache) planSharePass(ctx context.Context, item *snapshotShareItem) []*shareSlotState {
+func (c *Cache) planSharePass(ctx context.Context, item *snapshotShareItem) ([]*shareSlotState, map[*sharedResult]bool) {
 	slots := c.selectShareSlots(ctx, item)
 	slices.SortFunc(slots, func(a, b *shareSlot) int {
 		if a.receiver.row.id != b.receiver.row.id {
@@ -1249,23 +1257,29 @@ func (c *Cache) planSharePass(ctx context.Context, item *snapshotShareItem) []*s
 		return strings.Compare(a.addressKey, b.addressKey)
 	})
 	var states []*shareSlotState
-	typedReceivers := map[sharedResultID]bool{}
+	// A receiver that is already decoded takes one slot per pass. A typed
+	// store computes its expected output revision, and a raw Container its
+	// published view, from the live value at preparation, so an ordered second
+	// typed slot could not name what its prefix will publish. deferred records
+	// the decoded receivers that had a further selected address left over.
+	typedPlanned := map[*sharedResult]bool{}
+	deferred := map[*sharedResult]bool{}
 	for _, slot := range slots {
-		if slot.receiver.version.payload.hasValue {
-			// A typed store computes its expected output revision from the
-			// live value at preparation, so an ordered second typed slot
-			// could not name the revision its prefix will publish. One typed
-			// slot per receiver per pass; a later trigger or an ordinary
-			// demand fills the rest.
-			if typedReceivers[slot.receiver.row.id] {
-				continue
-			}
-			typedReceivers[slot.receiver.row.id] = true
+		typed := slot.receiver.version.payload.hasValue
+		if typed && typedPlanned[slot.receiver.row] {
+			deferred[slot.receiver.row] = true
+			continue
 		}
 		slotCtx, err := c.shareSlotContext(ctx, slot)
 		if err != nil {
 			c.traceShareSkip(ctx, slot.receiver.row, slot.address, err)
 			continue
+		}
+		// The allowance is spent only by a slot that passed the slot-context
+		// checks: an ineligible first address must not suppress an eligible
+		// sibling.
+		if typed {
+			typedPlanned[slot.receiver.row] = true
 		}
 		states = append(states, &shareSlotState{
 			receiver:   slot.receiver.row,
@@ -1280,15 +1294,27 @@ func (c *Cache) planSharePass(ctx context.Context, item *snapshotShareItem) []*s
 			done:       make(chan error, 1),
 		})
 	}
-	return states
+	return states, deferred
 }
 
 // releaseSnapshotShareMembers drops every cohort member hold under E and runs
 // the resulting collection callbacks unlocked with an uncanceled cleanup
 // context. The item's counted operation ends later, with the item.
-func (c *Cache) releaseSnapshotShareMembers(ctx context.Context, item *snapshotShareItem) {
+//
+// Before the first decrement, in the same E section, it queues the current
+// output classes of each successor receiver. The successor item takes its own
+// holds while this cohort still holds the same rows, so a donor whose last
+// owner is this cohort is never unheld between the two passes. It is the
+// notification the completion trigger would send after Finish, sent earlier;
+// the later one coalesces into the same pending item. It is queued only after
+// an install, through the ordinary admission, so nothing is queued once close
+// has run and a receiver costs at most one pass per part.
+func (c *Cache) releaseSnapshotShareMembers(ctx context.Context, item *snapshotShareItem, successors []*sharedResult) {
 	cleanupCtx := context.WithoutCancel(ctx)
 	c.egraphMu.Lock()
+	for _, row := range successors {
+		c.queueSnapshotShareRowLocked(cleanupCtx, row)
+	}
 	var queue collectionQueue
 	var err error
 	for _, row := range item.members {
