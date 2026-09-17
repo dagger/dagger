@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -1632,6 +1633,88 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, logSHAs[1], reloadedSHA)
 	})
+}
+
+func (GitSuite) TestGitLogDuringCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Block only the submodule's pack transfer, after the main checkout has
+	// copied its objects out of the mirror. History reads must not wait for
+	// this unrelated worktree operation to finish.
+	svc := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon", "python3"}).
+		With(gitUserConfig).
+		WithWorkdir("/repos").
+		WithExec([]string{"sh", "-ec", `
+			git init sub
+			cd sub
+			echo sub > file.txt
+			git add . && git commit -m sub
+			sha=$(git rev-parse HEAD)
+			git config --system uploadpack.packObjectsHook /gate.sh
+			cd ..
+			git init main
+			cd main
+			printf '[submodule "sub"]\n path = sub\n url = ../sub\n' > .gitmodules
+			git add .gitmodules
+			git update-index --add --cacheinfo 160000,$sha,sub
+			git commit -m main
+		`}).
+		WithNewFile("/gate.sh", `#!/bin/sh
+set -eu
+case "$PWD" in
+    */sub/.git)
+        touch /started
+        while ! test -e /released; do sleep 0.1; done
+        ;;
+esac
+exec "$@"
+`, dagger.ContainerWithNewFileOpts{Permissions: 0755}).
+		WithNewFile("/gate.py", `from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/release":
+            Path("/released").touch()
+        self.send_response(200 if self.path == "/release" or Path("/started").exists() else 404)
+        self.end_headers()
+HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+`).
+		WithExposedPort(9418).
+		WithExposedPort(8080).
+		WithDefaultArgs([]string{"sh", "-ec", "git daemon --export-all --base-path=/repos & exec python3 /gate.py"}).
+		AsService()
+	host, err := svc.Hostname(ctx)
+	require.NoError(t, err)
+	_, err = svc.Start(ctx)
+	require.NoError(t, err)
+	defer svc.Stop(ctx)
+	repo := c.Git("git://"+host+"/main", dagger.GitOpts{ExperimentalServiceHost: svc})
+
+	checkoutCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	checkoutDone := make(chan error, 1)
+	go func() {
+		_, err := repo.Head().Tree().Sync(checkoutCtx)
+		checkoutDone <- err
+	}()
+
+	gate := c.Container().From(alpineImage).WithServiceBinding("git", svc)
+	_, err = gate.WithExec([]string{"sh", "-ec", "until wget -q -O /dev/null http://git:8080/started; do sleep 0.1; done"}).Sync(checkoutCtx)
+	require.NoError(t, err)
+
+	logCtx, cancelLog := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelLog()
+	commits, logErr := repo.Head().Log(logCtx, dagger.GitRefLogOpts{Limit: 3})
+	// Always unblock the checkout, including when a lock regression times out.
+	_, err = gate.WithExec([]string{"wget", "-q", "-O", "/dev/null", "http://git:8080/release"}).Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, <-checkoutDone)
+	require.NoError(t, logErr, "log must not wait for submodule checkout")
+	require.Len(t, commits, 1)
+	message, err := commits[0].Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "main", message)
 }
 
 func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {

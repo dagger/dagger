@@ -1,10 +1,66 @@
 package core
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGitCheckoutIndependentAfterFetch(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		refName string
+		depth   int
+		discard bool
+	}{
+		{name: "branch full history", refName: "refs/heads/main"},
+		{name: "detached shallow", depth: 1},
+		{name: "discard git dir", depth: 1, discard: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			source := t.TempDir()
+			git := gitutil.NewGitCLI(gitutil.WithDir(source), gitutil.WithConfig(map[string]string{
+				"user.name": "Test User", "user.email": "test@example.com",
+			}))
+			_, err := git.Run(ctx, "init", "-b", "main")
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(source, "file.txt"), []byte("content"), 0600))
+			_, err = git.Run(ctx, "add", ".")
+			require.NoError(t, err)
+			_, err = git.Run(ctx, "commit", "-m", "initial")
+			require.NoError(t, err)
+			out, err := git.Run(ctx, "rev-parse", "HEAD")
+			require.NoError(t, err)
+			ref := &gitutil.Ref{SHA: strings.TrimSpace(string(out)), Name: tc.refName}
+			checkout := t.TempDir()
+			checkoutGit := gitutil.NewGitCLI(gitutil.WithWorkTree(checkout), gitutil.WithGitDir(filepath.Join(checkout, ".git")))
+			tmpref, err := fetchGitCheckout(ctx, checkoutGit, "file://"+source, ref, tc.depth)
+			require.NoError(t, err)
+
+			// No alternates, borrowed paths or further reads may depend on the
+			// mirror once its locks and mount have been released.
+			require.NoError(t, os.RemoveAll(source))
+			require.NoError(t, finishGitCheckout(ctx, checkoutGit, "https://example.com/repo", source, ref, tmpref, tc.discard))
+			contents, err := os.ReadFile(filepath.Join(checkout, "file.txt"))
+			require.NoError(t, err)
+			require.Equal(t, "content", string(contents))
+			if tc.discard {
+				require.NoDirExists(t, filepath.Join(checkout, ".git"))
+			} else {
+				_, err := checkoutGit.Run(ctx, "fsck", "--full")
+				require.NoError(t, err)
+				out, err := checkoutGit.Run(ctx, "remote", "get-url", "origin")
+				require.NoError(t, err)
+				require.Equal(t, "https://example.com/repo\n", string(out))
+			}
+		})
+	}
+}
 
 func TestParseGitCommitMetadata(t *testing.T) {
 	raw := `tree 5209ad308282b6d6c7d6e4888cd807e29079248b
