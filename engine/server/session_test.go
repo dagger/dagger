@@ -1674,6 +1674,8 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 		}
 		_, span := sess.tracerProvider.Tracer("test").Start(ctx, name)
 		spanID := span.SpanContext().SpanID()
+		// Export the live snapshot separately so both updates exercise routing.
+		require.NoError(t, sess.tracerProvider.ForceFlush(ctx))
 		span.End()
 		rec := otellog.Record{}
 		rec.SetTimestamp(time.Now())
@@ -1740,8 +1742,8 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 	rootSpans, rootLogs, rootMetrics := load("root")
 	parentSpans, parentLogs, parentMetrics := load("parent")
 	childSpans, childLogs, childMetrics := load("child")
-	// Live span export emits one start and one end snapshot. Each snapshot must
-	// reach each visibility target once, without duplicate ancestry delivery.
+	// The explicit flush keeps start and end snapshots in separate batches.
+	// Each must reach each visibility target once, without duplicate delivery.
 	require.Equal(t, 2, countSpan(rootSpans, rootSpanID))
 	require.Equal(t, 2, countSpan(rootSpans, childSpanID))
 	require.Equal(t, 2, countSpan(parentSpans, childSpanID))
@@ -2375,14 +2377,20 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	defer db.Close()
 	spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
 	require.NoError(t, err)
-	var cleanupSnapshots int
+	var liveSnapshots, completedSnapshots int
 	for _, span := range spans {
 		if span.Name == "metric cleanup telemetry" {
-			cleanupSnapshots++
+			if span.EndTime.Valid {
+				completedSnapshots++
+			} else {
+				liveSnapshots++
+			}
 		}
 	}
-	require.Equal(t, 2, cleanupSnapshots,
-		"cleanup span start/end snapshots must pass the final session flush")
+	require.Equal(t, 1, completedSnapshots,
+		"the completed cleanup span must pass the final session flush")
+	// The live snapshot may be coalesced with the completed one in the same batch.
+	require.LessOrEqual(t, liveSnapshots, 1)
 }
 
 // newTeardownTestSession publishes an initialized session whose main client
