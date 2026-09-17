@@ -541,7 +541,7 @@ func (c *Cache) shareSlotContext(ctx context.Context, slot *shareSlot) (context.
 	if srv == nil {
 		return nil, fmt.Errorf("%w: preparation context supplied no server", ErrSnapshotShareIneligible)
 	}
-	if err := c.preflightShareDecode(prepared, slot.shareServiceRoots()); err != nil {
+	if err := c.preflightShareDecode(prepared, srv, slot.shareServiceRoots()); err != nil {
 		return nil, err
 	}
 	return srvToContext(prepared, srv), nil
@@ -805,16 +805,24 @@ func (c *Cache) traceShareSkip(ctx context.Context, row *sharedResult, address P
 }
 
 // preflightShareDecode checks, before any shared persisted-decode attempt is
-// created, that every exact record the selected decoding closure will load
-// belongs to an audited background-admitted family. It walks the copied
-// encoded records with batch 2's reference visitor, following the declared
-// child references a decoder actually loads; the recorded call's descriptive
-// references and storage roles are not decoding requests. Rows are held for
-// the walk, and a cycle is detected rather than followed.
+// created, that every exact record the selected decoding closure will decode
+// belongs to an audited background-admitted family whose native class the
+// supplied decoding server has. It walks the copied encoded records with
+// batch 2's reference visitor, following declared child references; the
+// recorded call's descriptive references and storage roles are not decoding
+// requests. A row that is already typed is not decoded again, so neither its
+// family nor its references belong to the closure: the walk stops there
+// rather than following producer data that row merely retains. Rows are held
+// for the walk, and a cycle is detected rather than followed.
 //
-// An unavailable family is ShareIneligible: a skip decided here, never a
-// guard trip inside a shared attempt that a foreground joiner would also see.
-func (c *Cache) preflightShareDecode(ctx context.Context, roots []uint64) error {
+// The walk is still conservative for an encoded row in a completed form,
+// whose visitor also reports the references of the operation it retains raw:
+// following them can only make a slot ineligible, never admit an unsafe one.
+//
+// An unavailable family or class is ShareIneligible: a skip decided here,
+// never a guard trip inside a shared attempt that a foreground joiner would
+// also see.
+func (c *Cache) preflightShareDecode(ctx context.Context, srv *Server, roots []uint64) error {
 	if len(roots) == 0 {
 		return nil
 	}
@@ -846,6 +854,10 @@ func (c *Cache) preflightShareDecode(ctx context.Context, roots []uint64) error 
 			return fmt.Errorf("%w: exact reference %d is not registered", ErrSnapshotShareIneligible, id)
 		}
 		held = append(held, row)
+		if row.loadPayloadState().hasValue {
+			// Already decoded: loading it decodes nothing.
+			continue
+		}
 		var version capturedRowRevision
 		record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
 		if err != nil {
@@ -857,6 +869,11 @@ func (c *Cache) preflightShareDecode(ctx context.Context, roots []uint64) error 
 		if err := walkTransferPayloads(&env, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 			if !f.BackgroundDecode {
 				return nil, fmt.Errorf("%w: payload family %q is not admitted for background decode", ErrSnapshotShareIneligible, f.Name)
+			}
+			if f.Typed != nil && f.Typed.Type() != nil {
+				if _, ok := srv.ObjectType(f.Typed.Type().Name()); !ok {
+					return nil, fmt.Errorf("%w: the decoding server has no native class for payload family %q", ErrSnapshotShareIneligible, f.Name)
+				}
 			}
 			return v.Payload, nil
 		}); err != nil {

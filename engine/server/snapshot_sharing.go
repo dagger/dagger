@@ -82,6 +82,12 @@ func (srv *Server) snapshotSharePreparation(ctx context.Context) (dagql.PartPrep
 		ctx = core.ContextWithPersistedDecodeDefaults(ctx, root, func(v call.View) *core.SchemaBuilder {
 			return core.NewSchemaBuilder(root, []core.Mod{base.CoreMod(v)})
 		})
+		// Root and factory agreement is settled here, before the cache can
+		// start a shared decode attempt with this context, not discovered
+		// inside one by the Module decoder.
+		if err := core.CheckPersistedDecodeDefaults(ctx, forked); err != nil {
+			return nil, nil, err
+		}
 		return ctx, forked, nil
 	}
 	return prepare, nil
