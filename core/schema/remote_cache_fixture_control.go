@@ -283,6 +283,11 @@ func runFixtureControl(ctx context.Context, q *core.Query, cache *dagql.Cache, s
 		if dispatcher := fixturetransport.Current(); dispatcher != nil {
 			dispatcher.SetObservationCap(req.Cap)
 		}
+		if controls, err := fixtureControls(q); err == nil {
+			if err := controls.RemoteCacheFixtureObserve(req.Cap); err != nil {
+				return nil, err
+			}
+		}
 		return req, nil
 	}
 	return nil, fmt.Errorf("unknown fixture operation %q", args.Operation)

@@ -410,6 +410,9 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 			}
 			if renewals, renewalErr := controls.RemoteCacheFixtureRenewals(); renewalErr == nil {
 				report.Renewal = &renewals
+				if renewals.Overflowed && err == nil {
+					err = fmt.Errorf("%w: renewal", dagql.ErrTransferFixtureOverflow)
+				}
 			}
 		}
 		response = report
