@@ -32,6 +32,7 @@ type fixtureEngine struct {
 	gated   bool
 
 	upstream, tunnel *dagger.Service
+	endpoint         string
 	client           *dagger.Client
 	unwatch          func()
 }
@@ -79,10 +80,25 @@ func (e *fixtureEngine) start() {
 	tunnel, err := e.outer.Host().Tunnel(e.upstream).Start(e.ctx)
 	require.NoError(e.t, err)
 	e.tunnel = tunnel
-	endpoint, err := e.tunnel.Endpoint(e.ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	e.endpoint, err = e.tunnel.Endpoint(e.ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(e.t, err)
-	e.client, err = dagger.Connect(e.ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(e.workdir), dagger.WithLogOutput(testutil.NewTWriter(e.t)))
+	e.client = e.connect()
+}
+
+// connect opens one more client session on the running engine.
+func (e *fixtureEngine) connect() *dagger.Client {
+	e.t.Helper()
+	client, err := dagger.Connect(e.ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithWorkdir(e.workdir), dagger.WithLogOutput(testutil.NewTWriter(e.t)))
 	require.NoError(e.t, err)
+	return client
+}
+
+// reconnect closes the engine's client session, ending everything that
+// session owned, and opens a fresh one that has loaded nothing.
+func (e *fixtureEngine) reconnect() {
+	e.t.Helper()
+	require.NoError(e.t, e.client.Close())
+	e.client = e.connect()
 }
 
 // fixtureEngineStopTimeout bounds one whole shutdown. It never inherits the
@@ -166,6 +182,26 @@ func (e *fixtureEngine) volumeExec(script string, env map[string]string, mounts 
 	return out
 }
 
+// stateExec runs a shell script in an outer container with this engine's
+// state volume at /state. The engine must be stopped: cache state volumes
+// never share storage with a running engine. It is for damaging saved state
+// on purpose, never for moving state between engines.
+func (e *fixtureEngine) stateExec(packages []string, script string, env map[string]string) string {
+	e.t.Helper()
+	require.Nil(e.t, e.upstream, "the engine must be stopped before its state volume is opened")
+	ctr := e.outer.Container().From(alpineImage)
+	if len(packages) > 0 {
+		ctr = ctr.WithExec(append([]string{"apk", "add", "--no-cache"}, packages...))
+	}
+	ctr = ctr.WithMountedCache("/state", e.outer.CacheVolume(e.state)).WithEnvVariable("CACHEBUST", identity.NewID())
+	for key, value := range env {
+		ctr = ctr.WithEnvVariable(key, value)
+	}
+	out, err := ctr.WithExec([]string{"sh", "-ec", script}).Stdout(e.ctx)
+	require.NoError(e.t, err)
+	return out
+}
+
 // control writes one request record under the fixture root's control/
 // directory and returns its name.
 func (e *fixtureEngine) control(name string, value any) string {
@@ -209,4 +245,26 @@ func partEventsOf(report transferFixtureReport, rowID uint64, kind string) []int
 		}
 	}
 	return indexes
+}
+
+// partKindsOf returns the row's part event kinds in order, for failure logs.
+func partKindsOf(report transferFixtureReport, rowID uint64) []string {
+	var kinds []string
+	for _, event := range report.Parts {
+		if event.ResultID == rowID {
+			kinds = append(kinds, event.Kind)
+		}
+	}
+	return kinds
+}
+
+// reachedOf returns the row's journalled points in order, for failure logs.
+func reachedOf(report fixtureControlsReport, rowID uint64) []string {
+	var points []string
+	for _, o := range report.Reached {
+		if o.ResultID == rowID {
+			points = append(points, string(o.Point)+"("+o.Detail+")")
+		}
+	}
+	return points
 }
