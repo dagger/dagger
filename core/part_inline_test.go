@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/dagql"
@@ -232,4 +233,4 @@ func TestPartInlineAddress(t *testing.T) {
 	}
 }
 
-func (partInlineSources) Available(dagql.PersistedPartOffer, int64) bool { return true }
+func (partInlineSources) Available(dagql.PersistedPartOffer, time.Time) bool { return true }
