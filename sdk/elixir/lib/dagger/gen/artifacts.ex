@@ -158,6 +158,17 @@ defmodule Dagger.Artifacts do
 
     Client.execute(artifacts.client, query_builder)
   end
+
+  @doc """
+  List concrete GraphQL types represented in this selection, sorted with no duplicates.
+  """
+  @spec types(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def types(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("types")
+
+    Client.execute(artifacts.client, query_builder)
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Artifacts do

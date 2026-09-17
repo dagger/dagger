@@ -108,4 +108,13 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pretty');
         return (array)$this->queryLeaf($leafQueryBuilder, 'pretty');
     }
+
+    /**
+     * List concrete GraphQL types represented in this selection, sorted with no duplicates.
+     */
+    public function types(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('types');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'types');
+    }
 }
