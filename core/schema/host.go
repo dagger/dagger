@@ -333,6 +333,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}); err != nil {
 			return inst, fmt.Errorf("failed to load client filesync mirror: %w", err)
 		}
+		if err := core.EnsureBackingSnapshot(ctx, persistedMirror); err != nil {
+			return inst, fmt.Errorf("failed to create client filesync mirror: %w", err)
+		}
 		mirror = persistedMirror.Self()
 	} else {
 		mirror = core.NewEphemeralClientFilesyncMirror(drive)
