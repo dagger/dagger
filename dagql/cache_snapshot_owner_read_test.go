@@ -35,7 +35,7 @@ func TestSnapshotOwnerSyncReadSelection(t *testing.T) {
 	})
 	require.NoError(t, err, "fresh publication uses the blocking read")
 	require.Equal(t, 2, value.reads, "read and final revision validation")
-	_, err = desiredSnapshotLinksForResult(res.cacheSharedResult())
+	_, err = desiredSnapshotLinksForResult(res.cacheSharedResult(), false)
 	require.ErrorIs(t, err, ErrPersistStateNotReady, "boot/import retain the nonblocking collector")
 	require.Equal(t, 2, value.reads)
 	require.NoError(t, c.SyncResultSnapshotOwnerLeases(ctx, res))
@@ -51,9 +51,9 @@ func TestSnapshotOwnerSyncInlineRead(t *testing.T) {
 	value := &syncSnapshotOwnerValue{persistSnapshotValue: persistSnapshotValue{SnapshotID: "owned"}}
 	self := DynamicResultArrayOutput{Elem: value, Values: []AnyResult{newDetachedResult(nil, value)}}
 	frame := persistCodecFrame("inline", self)
-	_, err := snapshotOwnerLinksFromTyped(self, frame)
+	_, err := collectSnapshotOwnerLinks(self, frame, false)
 	require.ErrorIs(t, err, ErrPersistStateNotReady)
-	links, err := snapshotOwnerLinksForSync(self, frame)
+	links, err := collectSnapshotOwnerLinks(self, frame, true)
 	require.NoError(t, err)
 	require.Len(t, links, 1)
 	require.Equal(t, PersistedRefPath{}.Field("items").Index(0), links[0].OutputPath)

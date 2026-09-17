@@ -65,16 +65,8 @@ func inlineValueAt(res AnyResult, frame *ResultCall, path PersistedRefPath) (Any
 	return res, nil
 }
 
-func snapshotOwnerLinksFromTyped(self Typed, frame *ResultCall) ([]PersistedSnapshotRefLink, error) {
-	return collectSnapshotOwnerLinks(self, frame, false)
-}
-
-// snapshotOwnerLinksForSync is only called outside graph locks. The ordinary
-// collector remains nonblocking for capture, boot and import.
-func snapshotOwnerLinksForSync(self Typed, frame *ResultCall) ([]PersistedSnapshotRefLink, error) {
-	return collectSnapshotOwnerLinks(self, frame, true)
-}
-
+// The sync mode is only used outside graph locks. Capture, boot and import
+// use the nonblocking mode.
 func collectSnapshotOwnerLinks(self Typed, frame *ResultCall, forSync bool) ([]PersistedSnapshotRefLink, error) {
 	if self == nil {
 		return nil, nil

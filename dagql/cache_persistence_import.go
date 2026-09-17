@@ -564,7 +564,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 		c.egraphMu.RUnlock()
 		for _, res := range results {
-			links, err := desiredSnapshotLinksForResult(res)
+			links, err := desiredSnapshotLinksForResult(res, false)
 			if err != nil {
 				return err
 			}

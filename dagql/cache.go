@@ -1603,24 +1603,13 @@ type snapshotOwnerKey struct {
 	Role string
 }
 
-func desiredSnapshotLinksForResult(res *sharedResult) ([]PersistedSnapshotRefLink, error) {
+func desiredSnapshotLinksForResult(res *sharedResult, forSync bool) ([]PersistedSnapshotRefLink, error) {
 	if res == nil {
 		return nil, nil
 	}
 	state := res.loadPayloadState()
 	if state.hasValue && state.self != nil {
-		return snapshotOwnerLinksFromTyped(state.self, res.loadResultCall())
-	}
-	if state.snapshotLinkIntent != nil {
-		return cloneSnapshotRefLinks(state.snapshotLinkIntent.Links), nil
-	}
-	return cloneSnapshotRefLinks(state.snapshotOwnerLinks), nil
-}
-
-func snapshotLinksForOwnerSync(res *sharedResult) ([]PersistedSnapshotRefLink, error) {
-	state := res.loadPayloadState()
-	if state.hasValue && state.self != nil {
-		return snapshotOwnerLinksForSync(state.self, res.loadResultCall())
+		return collectSnapshotOwnerLinks(state.self, res.loadResultCall(), forSync)
 	}
 	if state.snapshotLinkIntent != nil {
 		return cloneSnapshotRefLinks(state.snapshotLinkIntent.Links), nil
@@ -1673,7 +1662,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	res.leaseSyncMu.Lock()
 	defer res.leaseSyncMu.Unlock()
 
-	links, err := snapshotLinksForOwnerSync(res)
+	links, err := desiredSnapshotLinksForResult(res, true)
 	if err != nil {
 		return err
 	}
@@ -1783,7 +1772,7 @@ func (c *Cache) desiredImportedOwnerLeaseIDs() (map[string]struct{}, error) {
 
 	desired := make(map[string]struct{})
 	for _, res := range results {
-		links, err := desiredSnapshotLinksForResult(res)
+		links, err := desiredSnapshotLinksForResult(res, false)
 		if err != nil {
 			return nil, err
 		}
