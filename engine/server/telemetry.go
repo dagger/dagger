@@ -939,6 +939,7 @@ func legacyTelemetryEventName(path string) string {
 	return strings.TrimPrefix(path, "/v1/")
 }
 
+//nolint:gocyclo // Keep framing, cursor advancement, and drain handling in one stream state machine.
 func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher, maxPayloadSize int) error {
 	logger := slog.With("client", record.clientID, "path", r.URL.Path)
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
@@ -1001,7 +1002,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			return streamErr
 		}
 		if err := enginetel.WriteLiveError(w, since, streamErr); err != nil {
-			return fmt.Errorf("%w; write live stream error: %v", streamErr, err)
+			return fmt.Errorf("%w; write live stream error: %w", streamErr, err)
 		}
 		flush()
 		return nil
