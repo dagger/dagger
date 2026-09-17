@@ -847,11 +847,20 @@ func overrideNetworkConfig(hostsOverride, resolvOverride string) error {
 	return nil
 }
 
+// runProcessGroup runs cmd in its own process group so a cancelled context
+// tears down every helper it spawned, and asks the kernel to SIGTERM it if the
+// engine dies. Pdeathsig fires when the OS thread that forked the child exits,
+// not when the process does, and Go retires threads whenever a goroutine that
+// locked one exits. Pin this goroutine to its thread for the child's lifetime:
+// a locked thread only goes away with its goroutine, after Wait has returned,
+// so the child never sees a spurious SIGTERM from an unrelated thread's exit.
 func runProcessGroup(ctx context.Context, cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		Setpgid:   true,
 		Pdeathsig: unix.SIGTERM,
 	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := cmd.Start(); err != nil {
 		return err
 	}
