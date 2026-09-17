@@ -9513,8 +9513,7 @@ class GitRef(Type):
         to:
             Destination remote repository. Defaults to the origin remote's
             push routing, or the source's repository URL when none is
-            registered. Required when the source has multiple push URLs or no
-            remote URL.
+            registered. Required when the source has no remote URL.
         remote:
             Name of a registered remote to push to (see
             GitRepository.withRemote). Defaults to origin. The remote's push

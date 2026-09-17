@@ -9621,7 +9621,7 @@ func (r *GitRef) Name(ctx context.Context) (string, error) {
 
 // GitRefPushOpts contains options for GitRef.Push
 type GitRefPushOpts struct {
-	// Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has multiple push URLs or no remote URL.
+	// Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has no remote URL.
 	To *GitRepository
 	// Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead.
 	Remote string
