@@ -17,6 +17,10 @@ docker = "unix:///var/run/docker.sock"
 source = ".dagger/modules/docs-dev"
 legacy-default-path = true
 
+[modules.dotnet-client]
+source = ".dagger/modules/dotnet-client-dev"
+legacy-default-path = true
+
 [modules.elixir-client]
 source = ".dagger/modules/elixir-client-dev"
 legacy-default-path = true
