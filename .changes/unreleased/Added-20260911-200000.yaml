@@ -3,4 +3,4 @@ body: Add Workspace.git.directory to materialize self-contained Git metadata tha
 time: 2026-09-11T20:00:00Z
 custom:
   Author: vito
-  PR: ""
+  PR: "14147"
