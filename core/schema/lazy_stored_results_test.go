@@ -4,17 +4,17 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
-	"github.com/stretchr/testify/require"
 )
 
 func TestLazyStoredResultsWithoutBacking(t *testing.T) {
-	testutil.RequireNativeMount(t)
 	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 	actx, a, asrv := scratchTestCache(t, aStore, "", "stored-a")
 	bctx, b, bsrv := scratchTestCache(t, bStore, "", "stored-b")
@@ -23,11 +23,30 @@ func TestLazyStoredResultsWithoutBacking(t *testing.T) {
 		srv.InstallObject(dagql.NewClass[*core.Container](srv))
 		srv.InstallObject(dagql.NewClass[*core.SearchSubmatch](srv))
 		srv.InstallObject(dagql.NewClass[*core.SearchResult](srv))
-		fs := &fileSchema{}
-		dagql.Fields[*core.File]{dagql.NodeFunc("contents", fs.contents), dagql.NodeFunc("search", fs.search)}.Install(srv)
-		cs := &containerSchema{}
-		dagql.Fields[*core.Container]{dagql.NodeFunc("stdout", cs.stdout), dagql.NodeFunc("stderr", cs.stderr)}.Install(srv)
 	}
+	// The consumer has the real resolvers. The producer's compute the same
+	// fields from the same arguments without reading a snapshot, because the
+	// real ones read through a read-only mount and what is under test is the
+	// consumer: a stored result is returned without its backing, and a call
+	// that was not stored demands it.
+	fs, cs := &fileSchema{}, &containerSchema{}
+	dagql.Fields[*core.File]{dagql.NodeFunc("contents", fs.contents), dagql.NodeFunc("search", fs.search)}.Install(bsrv)
+	dagql.Fields[*core.Container]{dagql.NodeFunc("stdout", cs.stdout), dagql.NodeFunc("stderr", cs.stderr)}.Install(bsrv)
+	dagql.Fields[*core.File]{
+		dagql.NodeFunc("contents", func(context.Context, dagql.ObjectResult[*core.File], struct {
+			OffsetLines *int
+			LimitLines  *int
+		}) (dagql.String, error) {
+			return dagql.NewString("saved text\n"), nil
+		}),
+		dagql.NodeFunc("search", func(context.Context, dagql.ObjectResult[*core.File], searchArgs) (dagql.Array[*core.SearchResult], error) {
+			return dagql.Array[*core.SearchResult]{{FilePath: "data", LineNumber: 1, MatchedLines: "saved text\n",
+				Submatches: []*core.SearchSubmatch{{Text: "saved", Start: 0, End: 5}}}}, nil
+		}),
+	}.Install(asrv)
+	dagql.Fields[*core.Container]{dagql.NodeFunc("stdout", func(context.Context, dagql.ObjectResult[*core.Container], struct{}) (string, error) {
+		return "saved stdout\n", nil
+	})}.Install(asrv)
 	ref, _ := aStore.Build(t, nil, "data", "saved text\n")
 	file := &core.File{Platform: core.Platform{OS: "linux", Architecture: "arm64"}, File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File])}
 	file.SetPath("/data")
