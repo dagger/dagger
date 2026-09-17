@@ -505,12 +505,17 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 
 var ErrPartReselect = errors.New("part sources changed; reselect")
 
-// PartDemandState remains open for batch 5's independently keyed renewal set.
+// PartDemandState is one demand's runtime state. Its two sets have distinct
+// keys: exhaustion by source, full address, content and admitted offer
+// revision; renewal episodes by the demand's target address and blob digests.
 type PartDemandState struct {
 	mu               sync.Mutex
+	target           PersistedPartAddress
 	exhaustedContent map[string]struct{}
 	failures         []partContentFailure
-	revision         uint64
+	// revision changes only on exhaustion; SourceCheck treats a change as stale.
+	revision uint64
+	renewals map[renewalEpisodeKey]*renewalEpisode
 }
 
 func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) string {

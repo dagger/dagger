@@ -188,6 +188,7 @@ func (d *PartDemandState) exhaust(source *PartSourceLease, err error) {
 	}
 	d.exhaustedContent[partContentKey(sharedResultID(source.sourceID), source.descriptor.Address, source.offer, source.offerRev)] = struct{}{}
 	d.failures = append(d.failures, partContentFailure{source: source.sourceID, address: clonePartAddress(source.descriptor.Address), offerRevision: source.offerRev, cause: err})
+	d.exhaustRenewalsLocked(source.offer)
 	d.revision++
 }
 
