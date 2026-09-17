@@ -307,7 +307,10 @@ func foldWorkspacePull(ctx context.Context, dir, source string, dirty []string, 
 		slices.Sort(b)
 		fastForward = slices.Equal(a, b)
 	}
-	origins, patchIDs := map[string]bool{}, map[string]bool{}
+	origins := map[string]bool{}
+	// Only deduplicate against history present before the fold. Incoming
+	// commits may intentionally reapply the same patch after a revert.
+	targetPatchIDs := map[string]bool{}
 	if !fastForward {
 		local, err := pullGitList(ctx, dir, opts.MaxCommits, target, "^"+source)
 		if err != nil {
@@ -326,7 +329,7 @@ func foldWorkspacePull(ctx context.Context, dir, source string, dirty []string, 
 				return nil, err
 			}
 			if id != "" {
-				patchIDs[id] = true
+				targetPatchIDs[id] = true
 			}
 		}
 	}
@@ -345,7 +348,7 @@ func foldWorkspacePull(ctx context.Context, dir, source string, dirty []string, 
 			}
 			continue
 		}
-		if err := foldWorkspacePullCommit(ctx, dir, pick, dirty, opts, origins, patchIDs); err != nil {
+		if err := foldWorkspacePullCommit(ctx, dir, pick, dirty, opts, origins, targetPatchIDs); err != nil {
 			return nil, err
 		}
 	}
@@ -357,7 +360,7 @@ func foldWorkspacePull(ctx context.Context, dir, source string, dirty []string, 
 	return picks, nil
 }
 
-func foldWorkspacePullCommit(ctx context.Context, dir string, pick *WorkspacePullPick, dirty []string, opts WorkspacePullOpts, origins, patchIDs map[string]bool) error {
+func foldWorkspacePullCommit(ctx context.Context, dir string, pick *WorkspacePullPick, dirty []string, opts WorkspacePullOpts, origins, targetPatchIDs map[string]bool) error {
 	sha := pick.SHA
 	if origins[sha] {
 		pick.Status = WorkspaceCommitPicked
@@ -396,7 +399,7 @@ func foldWorkspacePullCommit(ctx context.Context, dir string, pick *WorkspacePul
 	if err != nil {
 		return err
 	}
-	if id != "" && patchIDs[id] {
+	if id != "" && targetPatchIDs[id] {
 		pick.Status = WorkspaceCommitRedundant
 		return nil
 	}
@@ -447,9 +450,6 @@ func foldWorkspacePullCommit(ctx context.Context, dir string, pick *WorkspacePul
 	origins[sha] = true
 	for _, origin := range pullCommitOrigins(meta[5]) {
 		origins[origin] = true
-	}
-	if id != "" {
-		patchIDs[id] = true
 	}
 	return nil
 }

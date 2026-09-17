@@ -402,6 +402,46 @@ func TestWorkspacePullRedundantAndDirty(t *testing.T) {
 	require.Equal(t, base, f.git("rev-parse", "HEAD"))
 }
 
+func TestWorkspacePullRepeatedPatchAfterRevert(t *testing.T) {
+	f := newPullFixture(t)
+	// Force a cherry-pick fold; fast-forwarding already preserves the entire
+	// source history without consulting patch IDs.
+	target := f.commit("local.txt", "local", "local")
+	f.git("switch", "source")
+	a := f.commit("a.txt", "a", "add a")
+	f.git("revert", "--no-edit", a)
+	revert := f.git("rev-parse", "HEAD")
+	again := f.commit("a.txt", "a", "add a again")
+	firstID, err := workspacePullPatchID(t.Context(), f.dir, a)
+	require.NoError(t, err)
+	againID, err := workspacePullPatchID(t.Context(), f.dir, again)
+	require.NoError(t, err)
+	require.NotEmpty(t, firstID)
+	require.Equal(t, firstID, againID)
+	f.git("switch", "main")
+
+	picks := f.fold(nil)
+	require.Len(t, picks, 3)
+	for i, sha := range []string{a, revert, again} {
+		require.Equal(t, sha, picks[i].SHA)
+		require.Equal(t, WorkspaceCommitPickable, picks[i].Status)
+	}
+	require.Equal(t, "3", f.git("rev-list", "--count", target+"..HEAD"))
+	require.Equal(t, "a", f.git("show", "HEAD:a.txt"))
+	require.Equal(t, "local", f.git("show", "HEAD:local.txt"))
+	require.Equal(t, "add a again", f.git("log", "-1", "--format=%B"))
+	require.Empty(t, f.git("status", "--porcelain"))
+
+	// A later fold still detects patches already in the receiver's history.
+	head := f.git("rev-parse", "HEAD")
+	picks = f.fold(nil)
+	require.Len(t, picks, 3)
+	for _, pick := range picks {
+		require.Equal(t, WorkspaceCommitRedundant, pick.Status)
+	}
+	require.Equal(t, head, f.git("rev-parse", "HEAD"))
+}
+
 func TestWorkspacePullConflictsContinueFold(t *testing.T) {
 	f := newPullFixture(t)
 	f.commit("base.txt", "local\n", "local")
