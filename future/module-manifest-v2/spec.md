@@ -316,6 +316,19 @@ The runtime cases exist because the runtimes predate this interface. A runtime
 that grows a `ModuleEntrypoint` implementation moves to the first row without a
 manifest change.
 
+The engine records which of these it chose, so the choice is not silent. The
+span is internal: it stays out of ordinary output and appears when inspecting a
+trace, or at `-vvv`.
+
+| Span | Meaning |
+| --- | --- |
+| `module entrypoint interface` | `ModuleEntrypoint`, called directly. |
+| `module entrypoint runtime adapter` | A runtime named by `entrypoint.source`. |
+| `legacy runtime interface` | A runtime named by `runtime.source`, with no entrypoint in play. |
+
+A fat manifest carries both keys, so exactly one of these says which one the
+engine honored.
+
 Each driver chain must end at a built-in driver. A chain that returns to an
 entrypoint it already loaded is a cycle, and the error names the modules on the
 way back to it. A module that names itself is caught earlier, by the module

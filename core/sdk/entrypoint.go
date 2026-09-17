@@ -10,7 +10,40 @@ import (
 	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
 	entrypointmodule "github.com/dagger/dagger/core/sdk/entrypoint/module"
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// Which interface the engine ended up driving a module through. The choice is
+// not otherwise visible: a module that does not implement ModuleEntrypoint
+// falls back to its runtime without saying so, and a fat manifest carries both
+// an entrypoint and a runtime, so only one of its two keys is honored.
+//
+// These spans are internal, so they stay out of normal output and show up when
+// inspecting a trace or at -vvv.
+const (
+	// interfaceEntrypoint is ModuleEntrypoint, called directly.
+	interfaceEntrypoint = "module entrypoint interface"
+	// interfaceEntrypointAdapter is a runtime named by entrypoint.source and
+	// driven through the runtime adapter.
+	interfaceEntrypointAdapter = "module entrypoint runtime adapter"
+	// interfaceLegacyRuntime is a runtime named by runtime.source, with no
+	// entrypoint in play.
+	interfaceLegacyRuntime = "legacy runtime interface"
+)
+
+func recordInterface(ctx context.Context, iface, source string) {
+	_, span := core.Tracer(ctx).Start(ctx,
+		fmt.Sprintf("%s: %s", iface, source),
+		telemetry.Internal(),
+		trace.WithAttributes(
+			attribute.String("dagger.io/module.interface", iface),
+			attribute.String("dagger.io/module.interface.source", source),
+		),
+	)
+	span.End()
+}
 
 type entrypointSDK struct {
 	kind modules.ModuleEntrypointKind
@@ -26,6 +59,7 @@ func (l *Loader) entrypointForModule(
 	}
 	switch src.Entrypoint.Kind {
 	case modules.ModuleEntrypointKindDang:
+		recordInterface(ctx, interfaceEntrypoint, src.Entrypoint.Source)
 		return &entrypointSDK{kind: src.Entrypoint.Kind}, nil
 	case modules.ModuleEntrypointKindModule:
 		return l.moduleEntrypointForModule(ctx, query, src)
@@ -52,6 +86,7 @@ func (l *Loader) moduleEntrypointForModule(
 	// A built-in name is a runtime, never a ModuleEntrypoint implementation.
 	builtin, builtinErr := l.namedSDK(ctx, query, sdkCfg)
 	if builtinErr == nil {
+		recordInterface(ctx, interfaceEntrypointAdapter, sdkCfg.Source)
 		return builtin, nil
 	}
 	if !errors.Is(builtinErr, errUnknownBuiltinSDK) {
@@ -63,8 +98,10 @@ func (l *Loader) moduleEntrypointForModule(
 		return nil, err
 	}
 	if isEntrypoint {
+		recordInterface(ctx, interfaceEntrypoint, sdkCfg.Source)
 		return &entrypointSDK{kind: modules.ModuleEntrypointKindModule}, nil
 	}
+	recordInterface(ctx, interfaceEntrypointAdapter, sdkCfg.Source)
 	return l.externalSDKForModule(ctx, query, sdkCfg, src)
 }
 
