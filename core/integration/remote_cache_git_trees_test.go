@@ -200,8 +200,9 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 	}
 	// transferWithRepo exports a tree with its own chain and its repository
 	// Directory's, imports both on B and returns the tree's handle and row.
-	var lastRepoHandle string
-	transferWithRepo := func(ctx context.Context, t *testctx.T, s *gitTreesScenario, repo, tree *dagger.Directory, more ...string) (string, uint64) {
+	// transferWithRepo returns the tree's handle and row and the repository's
+	// handle on B; each subtest binds them locally.
+	transferWithRepo := func(ctx context.Context, t *testctx.T, s *gitTreesScenario, repo, tree *dagger.Directory, more ...string) (string, uint64, string) {
 		_, err := tree.Sync(ctx)
 		require.NoError(t, err)
 		snapshot := dagql.PersistedPartAddress{Part: "snapshot"}
@@ -224,8 +225,7 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 		require.GreaterOrEqual(t, len(imported), 2)
 		require.Equal(t, "Directory", imported[0].Type.NamedType)
 		require.Equal(t, "Directory", imported[1].Type.NamedType)
-		lastRepoHandle = imported[1].Handle
-		return imported[0].Handle, imported[0].ResultID
+		return imported[0].Handle, imported[0].ResultID, imported[1].Handle
 	}
 	failTreeChain := func(t *testctx.T, s *gitTreesScenario, key string, rowID uint64) {
 		require.NoError(t, s.b.fixture("barrierArm", s.b.control("chain-"+key+".json", dagql.FixtureBarrierRequest{Key: "chain-" + key, Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: rowID}, Action: dagql.FixtureFailChainOpen}), nil, nil))
@@ -259,7 +259,7 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 		for name, tree := range trees {
 			want := gitFacts(ctx, t, s.a.client, tree())
 			// Download: the tree comes from its chain and nothing runs.
-			handle, rowID := transferWithRepo(ctx, t, s, repo, tree())
+			handle, rowID, _ := transferWithRepo(ctx, t, s, repo, tree())
 			got := gitFacts(ctx, t, s.b.client, dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(handle)))
 			require.Equal(t, want, got, "%s download", name)
 			var report fixtureControlsReport
@@ -270,7 +270,7 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 		s.b = newFixtureEngine(ctx, t, outer, "git-local-fallback-b", true)
 		for name, tree := range trees {
 			want := gitFacts(ctx, t, s.a.client, tree())
-			handle, rowID := transferWithRepo(ctx, t, s, repo, tree())
+			handle, rowID, _ := transferWithRepo(ctx, t, s, repo, tree())
 			failTreeChain(t, s, name, rowID)
 			got := gitFacts(ctx, t, s.b.client, dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(handle)))
 			require.Equal(t, want, got, "%s fallback: the re-evaluated tree equals the eager one", name)
@@ -306,14 +306,14 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 		require.Equal(t, "gone\n", want["deleted"], "and the deleted one")
 		require.NotContains(t, want["entries"], "untracked")
 
-		handle, rowID := transferWithRepo(ctx, t, s, dirty, cleaned)
+		handle, rowID, repoHandle := transferWithRepo(ctx, t, s, dirty, cleaned)
 		failTreeChain(t, s, "cleaned", rowID)
 		got := read(s.b.client, dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(handle)))
 		require.Equal(t, want, got, "the re-evaluated cleaned tree equals the eager one")
 		ranOnce(t, s, "cleaned", rowID)
 
 		// The source repository on B is untouched by that evaluation.
-		source := dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(lastRepoHandle))
+		source := dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(repoHandle))
 		stillDirty, err := source.File("tracked").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "dirty\n", stillDirty, "the source's dirty file is untouched")
@@ -361,7 +361,7 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 			require.NoError(t, err)
 			bundleID, err := tc.bundle().AsFile().ID(ctx)
 			require.NoError(t, err)
-			handle, rowID := transferWithRepo(ctx, t, s, tc.target, tree(), string(sourceID), string(bundleID))
+			handle, rowID, _ := transferWithRepo(ctx, t, s, tc.target, tree(), string(sourceID), string(bundleID))
 			failTreeChain(t, s, "bundle-"+tc.name, rowID)
 			got := gitFacts(ctx, t, s.b.client, dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(handle)))
 			require.Equal(t, want, got, "%s: the re-evaluated tree equals the eager one", tc.name)
