@@ -169,4 +169,95 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 		require.Empty(t, all.reachedAt(dagql.FixtureChainReaderOpen), "a refused offer reads nothing")
 		require.Empty(t, row.Offers)
 	})
+	// Two offer owners. R's first offer O1 is being read, its reader held at
+	// the first chainRead, when a second offer O2 for the same address
+	// replaces it and the engine's real collection runs. O1's acquisition
+	// keeps what it holds: the read completes from O1, nothing is read twice,
+	// the producer never runs, and the final settlement retires the current
+	// replacement too, so no offer and no fixture hold is left.
+	t.Run("Replacement", func(ctx context.Context, t *testctx.T) {
+		s := newOffersScenario(ctx, t, "offers-replacement")
+		first := s.offer(t)
+		require.Equal(t, "accepted", first.Dispositions[0].Outcome)
+		require.False(t, first.Dispositions[0].Replaced)
+
+		var armed dagql.FixtureBarrierArmed
+		require.NoError(t, s.b.fixture("barrierArm", s.b.control("pause.json", dagql.FixtureBarrierRequest{Key: "pause", Point: dagql.FixtureChainRead, Selector: dagql.FixtureBarrierSelector{ResultID: s.rID}, Action: dagql.FixturePause}), nil, &armed))
+		done := s.read(ctx)
+		s.await(ctx, t, armed)
+
+		// O2 is a different record for the same chain: it names addresses.
+		chain := s.offers[0].(map[string]any)["chain"].(map[string]any)
+		addresses := map[string]any{}
+		for _, layer := range chain["layers"].([]any) {
+			blob := layer.(map[string]any)["Descriptor"].(map[string]any)["digest"].(string)
+			addresses[blob] = map[string]any{"url": "https://content.remote-cache.invalid/" + blob, "expiresAtUnix": time.Now().Add(time.Hour).Unix()}
+		}
+		chain["addresses"] = addresses
+		second := s.offer(t)
+		t.Logf("first %+v; second %+v", first.Dispositions[0], second.Dispositions[0])
+		require.Equal(t, "accepted", second.Dispositions[0].Outcome, "an offer for an address whose output is still pending is accepted")
+		require.True(t, second.Dispositions[0].Replaced, "and replaces the current offer")
+		require.Greater(t, second.Dispositions[0].OfferRev, first.Dispositions[0].OfferRev)
+		require.NoError(t, s.b.fixture("gc", "", nil, nil), "a collection while O1's reader is held")
+
+		require.NoError(t, s.b.fixture("barrierRelease", "pause-wait.json", nil, nil))
+		require.NoError(t, <-done, "O1's acquisition survived the swap and the collection")
+		all, row := s.report(t)
+		t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))
+		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), 1)
+		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"))
+		require.Empty(t, row.Offers, "the final settlement retired the replacement as well")
+		require.Len(t, row.SnapshotLinks, 1)
+		require.Equal(t, dagql.TransferFixtureControls{}, all.Controls)
+		opens := 0
+		for _, o := range all.reachedAt(dagql.FixtureChainReaderOpen) {
+			if o.ResultID == s.rID {
+				opens++
+			}
+		}
+		require.Equal(t, len(s.offers[0].(map[string]any)["chain"].(map[string]any)["layers"].([]any)), opens, "each layer was opened once, by O1's acquisition only")
+	})
+	// Offer-only resources. The offer's owner depends on a row that needs a
+	// session resource, a Secret only the offering session holds. A session
+	// without it still gets the ordinary hit on R: lookup is not gated by an
+	// offer's requirements. Only that offer is skipped for it, so its demand
+	// is served by the saved producer. The session that holds the resource
+	// may install from the offer.
+	t.Run("Resources", func(ctx context.Context, t *testctx.T) {
+		for _, authorized := range []bool{false, true} {
+			name := map[bool]string{false: "SessionWithoutResource", true: "SessionWithResource"}[authorized]
+			t.Run(name, func(ctx context.Context, t *testctx.T) {
+				s := newOffersScenario(ctx, t, "offers-resources")
+				secret := s.b.client.SetSecret("b7-offer-resource", "value "+identity.NewID())
+				secretID, err := secret.ID(ctx)
+				require.NoError(t, err)
+				resource := rowOf(t, s.b, string(secretID))
+				offer := s.offers[0].(map[string]any)
+				offer["owner"] = map[string]any{"dependencyIDs": []uint64{resource.ResultID}}
+				result := s.offer(t)
+				t.Logf("offer with a resource-bearing owner: %+v", result.Dispositions[0])
+				require.Equal(t, "accepted", result.Dispositions[0].Outcome)
+
+				reader := s.b.client
+				if !authorized {
+					reader = s.b.connect()
+					defer reader.Close()
+				}
+				contents, err := dagger.Ref[*dagger.Directory](reader, dagger.ID(s.rHandle)).File("payload.txt").Contents(ctx)
+				require.NoError(t, err, "the ordinary hit is never gated by an offer's requirements")
+				require.Equal(t, s.payload, contents)
+				all, _ := s.report(t)
+				t.Logf("%s: R=%d events: %v", name, s.rID, partKindsOf(all.transferFixtureReport, s.rID))
+				if authorized {
+					require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), 1, "the session that holds the resource installs from the offer")
+					require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"))
+				} else {
+					require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), "the offer is skipped for a session that lacks its resource")
+					require.Empty(t, all.reachedAt(dagql.FixtureChainReaderOpen), "and none of its content is read")
+					require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"), 1, "the saved producer serves it instead")
+				}
+			})
+		}
+	})
 }
