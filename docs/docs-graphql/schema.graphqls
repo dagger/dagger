@@ -519,6 +519,11 @@ type Artifacts implements Node {
 
   """Display lines for this selection, with no trailing newlines."""
   pretty: [String!]!
+
+  """
+  List concrete GraphQL types represented in this selection, sorted with no duplicates.
+  """
+  types: [String!]!
 }
 
 """Key value object that represents a build argument."""
@@ -6459,7 +6464,12 @@ type Workspace implements Node {
   """
   Discover static object artifacts from workspace modules without evaluating their values.
   """
-  artifacts: Artifacts!
+  artifacts(
+    """
+    Only include artifacts matching these path patterns, as with checks and services.
+    """
+    include: [String!]
+  ): Artifacts!
 
   """
   Return this workspace's changes, with paths relative to its working directory.

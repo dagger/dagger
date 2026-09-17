@@ -96,15 +96,21 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, _ map
 	return result, nil
 }
 
-func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], _ struct{}) (*core.Artifacts, error) {
-	nodes, err := collectWorkspaceModuleTargets(ctx, s, parent, nil, nil, "artifacts", "artifact", core.ModuleArtifactNodes, func(node *core.ModTreeNode) *core.ModTreeNode { return node })
+func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct {
+	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+}) (*core.Artifacts, error) {
+	nodes, err := collectWorkspaceModuleTargets(ctx, s, parent, workspaceIncludePatterns(args.Include), nil, "artifacts", "artifact", core.ModuleArtifactNodes, func(node *core.ModTreeNode) *core.ModTreeNode { return node })
 	if err != nil {
 		return nil, err
 	}
 	result := &core.Artifacts{Entries: make([]*core.Artifact, 0, len(nodes))}
 	for _, node := range nodes {
+		query := node.CommandPath().CliCase()
+		if len(query) == 0 {
+			query = node.Path().CliCase()
+		}
 		result.Entries = append(result.Entries, &core.Artifact{
-			Query: node.CommandPath().CliCase(), CollectionKeys: []*core.ArtifactCollectionKey{},
+			Query: query, CollectionKeys: []*core.ArtifactCollectionKey{},
 			TypeName: node.ObjectType().Name, Node: node, Workspace: parent,
 		})
 	}

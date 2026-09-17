@@ -40,9 +40,12 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Discover static object artifacts from workspace modules without evaluating their values.
      */
-    public function artifacts(): Artifacts
+    public function artifacts(?array $include = null): Artifacts
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifacts');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

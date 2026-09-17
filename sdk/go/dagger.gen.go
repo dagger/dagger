@@ -17888,9 +17888,21 @@ func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentMiddlewareGroup {
 	}
 }
 
+// WorkspaceArtifactsOpts contains options for Workspace.Artifacts
+type WorkspaceArtifactsOpts struct {
+	// Only include artifacts matching these path patterns, as with checks and services.
+	Include []string
+}
+
 // Discover static object artifacts from workspace modules without evaluating their values.
-func (r *Workspace) Artifacts() *Artifacts {
+func (r *Workspace) Artifacts(opts ...WorkspaceArtifactsOpts) *Artifacts {
 	q := r.query.Select("artifacts")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
 
 	return &Artifacts{
 		query: q,
