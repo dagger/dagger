@@ -81,14 +81,23 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		// and every client with the same inputs shares one result and one
 		// downstream cache lineage.
 		dagql.NodeFunc("__gitRepository", s.gitRepository).
+			// Still honor a deliberate per-client cache bust (a workspace lock
+			// refresh or override): those callers need fresh remote metadata,
+			// which this result caches for its lifetime.
+			WithInput(dagql.CacheScopeInput).
 			View(AllVersion).
 			Doc(`(Internal-only) Construct a remote Git repository from fully explicit inputs.`),
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRepository]{
+		// Named ref lookups consult the calling client's workspace lock (which
+		// pin applies, and whether one should be written), so their results
+		// are scoped per client even though the repository itself is shared.
 		dagql.NodeFunc("head", s.head).
+			WithInput(dagql.PerClientInput).
 			Doc(`Returns details for HEAD.`),
 		dagql.NodeFunc("ref", s.ref).
+			WithInput(gitLockScopedInput("name")).
 			Doc(`Returns details of a ref.`).
 			Args(
 				dagql.Arg("name").Doc(
@@ -96,12 +105,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					`Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.`),
 			),
 		dagql.NodeFunc("branch", s.branch).
+			WithInput(dagql.PerClientInput).
 			View(AllVersion).
 			Doc(`Returns details of a branch.`).
 			Args(
 				dagql.Arg("name").Doc(`Branch's name (e.g., "main").`),
 			),
 		dagql.NodeFunc("tag", s.tag).
+			WithInput(dagql.PerClientInput).
 			View(AllVersion).
 			Doc(`Returns details of a tag.`).
 			Args(
@@ -117,6 +128,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					`May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded against locally available objects. Remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA otherwise.`),
 			),
 		dagql.NodeFunc("commit", s.commitRef).
+			WithInput(gitLockScopedInput("id")).
 			View(BeforeVersion("v1.0.0-0")).
 			Doc(`Returns details of a commit.`).
 			Args(
@@ -124,6 +136,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
 			),
 		dagql.NodeFunc("latest", s.latest).
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(
 				`Return the latest stable release tag, falling back to HEAD when no release exists.`,
@@ -1003,6 +1016,24 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		View:  curCall.View,
 	})
 	return inst, err
+}
+
+// gitLockScopedInput scopes a ref lookup per client when its resolution can
+// consult the calling client's workspace lock. The repository result is shared
+// across clients, but which pin applies to a named ref (and whether a missing
+// pin should be written) is per workspace, so clients must not share those
+// lookups. A full commit SHA never consults the lock, so SHA lookups stay
+// shared: that is what workspace snapshots pin their refs by.
+func gitLockScopedInput(argName string) dagql.ImplicitInput {
+	return dagql.ImplicitInput{
+		Name: "cachePerClientLock:" + argName,
+		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+			if name, ok := args[argName].(dagql.String); ok && gitutil.IsCommitSHA(name.String()) {
+				return dagql.NewString(""), nil
+			}
+			return dagql.PerClientInput.Resolver(ctx, args)
+		},
+	}
 }
 
 // gitRepositoryNamedInputs spells out the arguments for __gitRepository. Only

@@ -51,6 +51,20 @@ var PerClientInput = ImplicitInput{
 	},
 }
 
+// CacheScopeInput scopes a call ID to the named per-client cache scope on ctx
+// (see WithPerClientCacheScope) without also mixing in the client ID. Use it on
+// fields whose results are safe to share across clients but must still be
+// re-resolved when a caller deliberately busts its per-client cache, such as a
+// lock refresh that needs fresh remote metadata. Without a scope it resolves
+// to "", so ordinary calls from every client share one result.
+var CacheScopeInput = ImplicitInput{
+	Name: "cacheScope",
+	Resolver: func(ctx context.Context, _ map[string]Input) (Input, error) {
+		scope, _ := ctx.Value(perClientCacheScopeKey{}).(string)
+		return NewString(scope), nil
+	},
+}
+
 // PerSessionInput scopes a call ID per session by mixing in the session ID as
 // an implicit call input.
 var PerSessionInput = ImplicitInput{
