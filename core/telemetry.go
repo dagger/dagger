@@ -75,7 +75,7 @@ func AroundFunc(
 		return ctx, dagql.NoopDone
 	}
 	var q *Query
-	var payloadKeys dagql.TelemetrySeenKeyStore
+	var payloadKeys dagql.CallPayloadSeenKeyStore
 	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
 		q = currentQuery
 		// Payload delivery is scoped per route, unlike the session-wide span
