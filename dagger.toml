@@ -277,12 +277,6 @@ is-module = true
 source = ".dagger/modules/dagger-dev"
 entrypoint = true
 
-[modules.claude]
-source = "modules/claude"
-
-[modules.codex]
-source = "modules/codex"
-
 [sdks.dang.scopes."modules/claude"]
 is-module = true
 
