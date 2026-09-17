@@ -45,6 +45,37 @@ type RemoteCacheFixtureControls interface {
 	// RemoteCacheFixtureArmRenewalReply stores a pre-staged reply, keyed by
 	// the chain fingerprint it expects, for the consumer loop to send itself.
 	RemoteCacheFixtureArmRenewalReply(RemoteCacheFixtureRenewalReply) error
+	// RemoteCacheFixtureRenewals reads the report's renewal group.
+	RemoteCacheFixtureRenewals() (RemoteCacheFixtureRenewals, error)
+}
+
+// RemoteCacheFixtureRenewals is the report's renewal group: what the
+// fixture's one consumer loop did with the real mailbox's requests. The
+// exchanges themselves are in the report's reached points.
+type RemoteCacheFixtureRenewals struct {
+	// Delivered counts requests the loop took that no armed reply answered.
+	Delivered uint64 `json:"delivered"`
+	// Taken counts delivered requests handed to a takeRenewal call; Retired
+	// counts those whose own Done ended them first. Live is the rest.
+	Taken   uint64 `json:"taken"`
+	Retired uint64 `json:"retired"`
+	Live    int    `json:"live"`
+	// ArmedPending is how many staged replies no request has used yet.
+	ArmedPending int `json:"armedPending"`
+	// ArmedReplies is every staged reply the loop sent, with what the real
+	// ReplyRenewal did with it. A discarded reply fails a success case even
+	// if the Lazy operation then produced the bytes.
+	ArmedReplies []RemoteCacheFixtureArmedReply `json:"armedReplies"`
+	// RepliesAccepted and RepliesDiscarded count replyRenewal calls.
+	RepliesAccepted  uint64 `json:"repliesAccepted"`
+	RepliesDiscarded uint64 `json:"repliesDiscarded"`
+}
+
+// RemoteCacheFixtureArmedReply is one staged reply the consumer loop sent.
+type RemoteCacheFixtureArmedReply struct {
+	Chain       digest.Digest `json:"chain"`
+	Sequence    uint64        `json:"sequence"`
+	Disposition string        `json:"disposition"`
 }
 
 // RemoteCacheFixtureGC reports one completed collection. The counts are read

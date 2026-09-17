@@ -132,3 +132,58 @@ func TestRemoteCacheFixtureStopReleasesPausedReply(t *testing.T) {
 	require.NoError(t, srv.stopRemoteCacheIntegration(stopCtx), "detaching the bridge ends a pause at its points")
 	require.NoError(t, cache.Close(boundedContext(t)))
 }
+
+// A delivered request nobody takes is dropped when its own Done closes, so the
+// controller's records never outnumber the bridge's live exchanges. 65
+// sequential requests, each canceled after its real delivery and never taken,
+// leave nothing behind.
+func TestRemoteCacheFixtureRetiresUntakenDeliveries(t *testing.T) {
+	t.Setenv(core.RemoteCacheFixtureRootEnv, t.TempDir())
+	cache := newGCTestCache(t)
+	srv := &Server{engineCache: cache, shutdownCtx: t.Context()}
+	require.NoError(t, srv.startRemoteCacheIntegration(srv.remoteCacheFixtureIntegration(nil)))
+	t.Cleanup(func() {
+		// The test's own context is already canceled here.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		require.NoError(t, srv.stopRemoteCacheIntegration(ctx), "Run joined its watchers")
+		require.NoError(t, cache.Close(ctx))
+	})
+	ctx := boundedContext(t)
+	offer := renewalOnlyOffer()
+	controller := srv.remoteCacheFixture
+	// await blocks on the controller's own change signal until cond holds.
+	await := func(what string, cond func() bool) {
+		t.Helper()
+		for {
+			controller.mu.Lock()
+			ok, changed := cond(), controller.ready
+			controller.mu.Unlock()
+			if ok {
+				return
+			}
+			select {
+			case <-changed:
+			case <-ctx.Done():
+				t.Fatalf("%s: %d delivered records remain", what, len(controller.delivered))
+			}
+		}
+	}
+	for i := 0; i < 65; i++ {
+		requestCtx, cancelRequest := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() {
+			provider := cache.PartContentSource().Provider(requestCtx, offer, &dagql.PartDemandState{})
+			_, err := provider.ReaderAt(requestCtx, offer.Chain.Layers[0].Descriptor)
+			done <- err
+		}()
+		await("the request was never delivered", func() bool { return len(controller.delivered) == 1 })
+		cancelRequest()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			t.Fatal("the canceled requester never returned")
+		}
+		await("a request whose Done closed was not retired", func() bool { return len(controller.delivered) == 0 })
+	}
+}
