@@ -143,6 +143,19 @@ func (apple) ContainerExists(ctx context.Context, name string) (bool, error) {
 	return err == nil, nil
 }
 
+// ContainerInspect: the container CLI identifies containers by name, so
+// the name is the identity.
+func (a apple) ContainerInspect(ctx context.Context, name string) (string, bool, error) {
+	if exists, _ := a.ContainerExists(ctx, name); !exists {
+		return "", false, fmt.Errorf("no such container: %s", name)
+	}
+	running, err := a.ContainerIsRunning(ctx, name)
+	if err != nil {
+		return "", false, err
+	}
+	return name, running, nil
+}
+
 func (apple) ContainerIsRunning(ctx context.Context, name string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "container", "ls", "-a", "--format", "json")
 	stdout, _, err := traceexec.ExecOutput(ctx, cmd)
