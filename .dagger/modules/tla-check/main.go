@@ -53,6 +53,27 @@ var expectedOutcome = map[string]string{
 	"remote_owners_witness_old_acquisition":         "WitnessOldAcquisitionSurvivesReplacement",
 	"remote_owners_witness_unauthorized_hit":        "WitnessUnauthorizedHitOfferSkipped",
 	"remote_owners_witness_offer_row_outlives":      "WitnessOfferRowOutlivesItsRetention",
+	// RemoteSharing.tla and RemoteCheckpoint.tla, on the same convention.
+	"remote_sharing":                                  "",
+	"remote_sharing_decoded":                          "",
+	"remote_sharing_fault_finish_before_release":      "MembersReleasedBeforeFinish",
+	"remote_sharing_fault_stale_role_map":             "DesiredCoversInstalled",
+	"remote_sharing_fault_decrement_before_successor": "MembersAreLive",
+	"remote_sharing_fault_typed_two_slots":            "DecodedReceiverOneSlotPerPass",
+	"remote_sharing_fault_retry_repins":               "PinsBalanced",
+	"remote_sharing_witness_donor_collected":          "WitnessDonorCollectedBeforeReceiverRead",
+	"remote_sharing_witness_decoded_while_finish":     "WitnessDecodedWhileFinishPaused",
+	"remote_sharing_witness_two_parts_one_pass":       "WitnessTwoPartsInOnePass",
+	"remote_sharing_witness_successor_fills":          "WitnessSuccessorFillsDecodedReceiver",
+	"remote_sharing_witness_stale_revision":           "WitnessStaleRevisionRefusesSlot",
+	"remote_checkpoint":                               "",
+	"remote_checkpoint_fault_unpin_before_attach":     "DesiredRolesStayProtected",
+	"remote_checkpoint_fault_repeat_producer":         "ProducerRunsOnce",
+	"remote_checkpoint_fault_restore_applied_only":    "CheckpointHasCompleteDesiredRoles",
+	"remote_checkpoint_witness_desired_survives":      "WitnessInstalledDesiredSurvivesEpoch",
+	"remote_checkpoint_witness_last_owner":            "WitnessFailedFinishLastOwnerCollected",
+	"remote_checkpoint_witness_producer_preserved":    "WitnessProducerPreservedAcrossRestart",
+	"remote_checkpoint_witness_pending_offer":         "WitnessPendingOfferRestored",
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
@@ -544,6 +565,10 @@ func modelFiles(name string) (string, string) {
 		return "RemoteParts.tla", fmt.Sprintf("RemoteParts_%s.cfg", name)
 	case strings.HasPrefix(name, "remote_owners"):
 		return "RemoteOwners.tla", fmt.Sprintf("RemoteOwners_%s.cfg", name)
+	case strings.HasPrefix(name, "remote_sharing"):
+		return "RemoteSharing.tla", fmt.Sprintf("RemoteSharing_%s.cfg", name)
+	case strings.HasPrefix(name, "remote_checkpoint"):
+		return "RemoteCheckpoint.tla", fmt.Sprintf("RemoteCheckpoint_%s.cfg", name)
 	default:
 		return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
 	}
