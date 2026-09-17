@@ -51,10 +51,12 @@ defmodule Dagger.Workspace do
   @doc """
   Discover static object artifacts from workspace modules without evaluating their values.
   """
-  @spec artifacts(t()) :: Dagger.Artifacts.t()
-  def artifacts(%__MODULE__{} = workspace) do
+  @spec artifacts(t(), [{:include, [String.t()]}]) :: Dagger.Artifacts.t()
+  def artifacts(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("artifacts")
+      workspace.query_builder
+      |> QB.select("artifacts")
+      |> QB.maybe_put_arg("include", optional_args[:include])
 
     %Dagger.Artifacts{
       query_builder: query_builder,

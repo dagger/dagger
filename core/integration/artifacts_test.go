@@ -99,7 +99,7 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{
-  "types":["Artifact","Artifacts","Container","Directory","File"],
+  "types":["Artifact","Artifacts","Consumer","Container","Directory","File","Provider","ProviderDocs"],
   "containers":{"types":["Container"],"items":[
     {"query":["base"],"collectionKeys":[],"pretty":"base"},
     {"query":["broken"],"collectionKeys":[],"pretty":"broken"},
@@ -109,7 +109,7 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
   "sibling":{"items":[{"pretty":"other-docs:source"}]},
   "optional":{"pretty":[]},"list":{"pretty":[]},"cycle":{"pretty":[]},
   "noType":{"types":[],"pretty":[]},"unknown":{"pretty":[]},"noCollection":{"pretty":[]},"noKey":{"pretty":[]},
-  "exact":{"pretty":[]},"colon":{"pretty":[]},"order":{"pretty":[]},"prefix":{"pretty":[]},
+  "exact":{"pretty":[]},"colon":{"pretty":[]},"order":{"pretty":[]},"prefix":{"pretty":["docs"]},
   "first":{"filterQuery":{"pretty":["base"]}},"second":{"filterTypes":{"pretty":["base"]}},
   "contradiction":{"filterTypes":{"pretty":[]}},"collections":[],"collectionKeys":[]
 }}}`, string(*got))
@@ -118,6 +118,47 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
   node(id: $ws) { ... on Workspace { artifacts { `+filter+` { one { pretty } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 		require.ErrorContains(t, err, "expected exactly one artifact")
+	}
+}
+
+func (ArtifactsSuite) TestModuleObjects(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := artifactSource(c).AsWorkspace()
+	for _, tc := range []struct {
+		query    []string
+		typeName string
+	}{
+		{[]string{"provider"}, "Provider"},
+		{[]string{"consumer"}, "Consumer"},
+		{[]string{"docs"}, "ProviderDocs"},
+		{[]string{"docs", "again"}, "ProviderDocs"},
+	} {
+		artifact := ws.Artifacts().FilterQuery(tc.query).One()
+		id, err := artifact.ID(ctx)
+		require.NoError(t, err)
+		got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($id: ID!) {
+  node(id: $id) { ... on Artifact { value { __typename id } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
+		require.NoError(t, err)
+		require.Contains(t, string(*got), `"__typename":"`+tc.typeName+`"`)
+	}
+}
+
+func (ArtifactsSuite) TestInclude(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := artifactSource(c).AsWorkspace()
+	for _, tc := range []struct {
+		patterns []string
+		want     []string
+	}{
+		{[]string{"docs"}, []string{"docs", "docs:again", "docs:source"}},
+		{[]string{"provider:docs"}, []string{"docs", "docs:again", "docs:source"}},
+		{[]string{"**:source"}, []string{"docs:source", "other-docs:source"}},
+		{[]string{"base", "consumer:base"}, []string{"base", "consumer:base"}},
+	} {
+		got, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: tc.patterns}).Pretty(ctx)
+		require.NoError(t, err)
+		require.Equal(t, tc.want, got)
 	}
 }
 
@@ -242,6 +283,7 @@ func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		{"files", "consumer:input\nmarker\n"},
 		{"Artifact", "consumer:single\n"},
 		{"Artifacts", "consumer:selected\n"},
+		{"provider-docs", "docs\ndocs:again\nother-docs\nother-docs:again\n"},
 	} {
 		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "workspace", tc.command)).Stdout(ctx)
@@ -266,6 +308,52 @@ func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "workspace", "dir")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "directories\tList Directory artifacts\n")
+}
+
+func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).WithDirectory("/work/selected", artifactSource(c))
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"list", "--type", "Container"}, "base\nbroken\nconsumer:base\n"},
+		{[]string{"list", "consumer", "--type", "Container", "--type", "File"}, "consumer:base\nconsumer:input\n"},
+		{[]string{"list", "docs"}, "docs\ndocs:again\ndocs:source\n"},
+		{[]string{"list", "provider:docs"}, "docs\ndocs:again\ndocs:source\n"},
+		{[]string{"list", "**:source"}, "docs:source\nother-docs:source\n"},
+		{[]string{"list", "base", "consumer:base"}, "base\nconsumer:base\n"},
+		{[]string{"types"}, "Artifact\nArtifacts\nConsumer\nContainer\nDirectory\nFile\nProvider\nProviderDocs\n"},
+		{[]string{"types", "docs"}, "Directory\nProviderDocs\n"},
+		{[]string{"collections"}, ""},
+		{[]string{"keys", "go-module"}, ""},
+		{[]string{"list", "--collection-key", "go-module=sdk/go"}, ""},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
+			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
+			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, out)
+		})
+	}
+	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "--help")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "--type")
+	require.Contains(t, out, "List types of matching artifacts")
+	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "artifacts", "--type", "Pro")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "ProviderDocs\n")
+	reserved := base.
+		WithNewFile("/work/selected/dagger.toml", `[modules.provider]
+source = "./provider"
+entrypoint = true
+`).
+		WithNewFile("/work/selected/provider/main.dang", `type Provider {
+  pub types: Directory! { directory }
+}`)
+	out, err = reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "list", "types")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "types\n", out)
 }
 
 func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
