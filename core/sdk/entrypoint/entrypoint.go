@@ -363,12 +363,32 @@ func FunctionArgsJSON(args []*core.FunctionCallArgValue) (core.JSON, error) {
 // ValidateConstructors applies the engine's current limit of at most one
 // object constructor per module.
 func ValidateConstructors(typeDefs dagql.ObjectResultArray[*core.TypeDef]) error {
+	defs := make([]*core.TypeDef, len(typeDefs))
+	for i, typeDef := range typeDefs {
+		defs[i] = typeDef.Self()
+	}
+	return validateConstructors(defs)
+}
+
+func validateConstructors(typeDefs []*core.TypeDef) error {
 	var constructors []string
-	for _, typeDef := range typeDefs {
-		if typeDef.Self().Kind != core.TypeDefKindObject || !typeDef.Self().AsObject.Value.Self().Constructor.Valid {
+	for i, typeDef := range typeDefs {
+		if typeDef == nil {
+			return fmt.Errorf("module entrypoint type %d is null", i)
+		}
+		if typeDef.Kind != core.TypeDefKindObject {
 			continue
 		}
-		constructors = append(constructors, typeDef.Self().AsObject.Value.Self().OriginalName)
+		// TypeDef.withKind sets the kind alone, so an entrypoint can return an
+		// object type that carries no object definition.
+		if !typeDef.AsObject.Valid || typeDef.AsObject.Value.Self() == nil {
+			return fmt.Errorf("module entrypoint type %d has kind %s but defines no object", i, typeDef.Kind)
+		}
+		object := typeDef.AsObject.Value.Self()
+		if !object.Constructor.Valid {
+			continue
+		}
+		constructors = append(constructors, object.OriginalName)
 	}
 	if len(constructors) > 1 {
 		return fmt.Errorf("multiple object constructors are not supported: %s", strings.Join(constructors, ", "))

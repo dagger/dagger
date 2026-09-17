@@ -132,3 +132,18 @@ func TestModuleWorkspacePath(t *testing.T) {
 	_, ok = moduleWorkspacePath(&core.Workspace{}, local("/home/me/repo", "mod"))
 	require.False(t, ok)
 }
+
+func TestValidateConstructorsRejectsObjectWithoutDefinition(t *testing.T) {
+	t.Parallel()
+
+	// TypeDef.withKind(OBJECT_KIND) yields exactly this value: the kind is set
+	// and the object definition is not.
+	err := validateConstructors([]*core.TypeDef{
+		{Kind: core.TypeDefKindString},
+		{Kind: core.TypeDefKindObject},
+	})
+	require.ErrorContains(t, err, "type 1 has kind OBJECT_KIND but defines no object")
+
+	require.ErrorContains(t, validateConstructors([]*core.TypeDef{nil}), "type 0 is null")
+	require.NoError(t, validateConstructors([]*core.TypeDef{{Kind: core.TypeDefKindString}}))
+}
