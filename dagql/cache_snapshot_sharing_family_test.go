@@ -35,6 +35,9 @@ type shareTestValue struct {
 	mu    sync.RWMutex
 	rev   atomic.Uint64
 	links []PersistedSnapshotRefLink
+	// afterStoreUnlock runs when a prepared store that published is unlocked:
+	// the first point after a typed Commit's publication that test code sees.
+	afterStoreUnlock func()
 }
 
 type shareTestEncoded struct {
@@ -107,11 +110,12 @@ func (v *shareTestValue) PreparePartStore(_ context.Context, _ *PersistDecodeCon
 }
 
 type shareTestPartStore struct {
-	receiver *shareTestValue
-	part     string
-	snapshot string
-	expected OutputRevision
-	ref      snapshots.ImmutableRef
+	published bool
+	receiver  *shareTestValue
+	part      string
+	snapshot  string
+	expected  OutputRevision
+	ref       snapshots.ImmutableRef
 }
 
 func (s *shareTestPartStore) TryLock() bool {
@@ -125,9 +129,15 @@ func (s *shareTestPartStore) TryLock() bool {
 	return true
 }
 
-func (s *shareTestPartStore) Unlock() { s.receiver.mu.Unlock() }
+func (s *shareTestPartStore) Unlock() {
+	s.receiver.mu.Unlock()
+	if s.published && s.receiver.afterStoreUnlock != nil {
+		s.receiver.afterStoreUnlock()
+	}
+}
 
 func (s *shareTestPartStore) Publish() {
+	s.published = true
 	state := s.receiver.Parts[s.part]
 	state.Snapshot = s.snapshot
 	s.receiver.Parts[s.part] = state

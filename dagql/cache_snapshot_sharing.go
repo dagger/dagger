@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/engine"
@@ -916,9 +917,20 @@ type shareSlotCommitted struct {
 // shareSlotState is worker-owned phase state for one selected slot. No wait
 // on any of its latches holds E, G, P or D.
 type shareSlotState struct {
-	slot       *shareSlot
-	ctx        context.Context
-	base       *readyPartPreparationBase
+	// receiver and address are what the pass and a retained continuation may
+	// keep for the slot's whole life: receiver-owned state only.
+	receiver *sharedResult
+	address  PersistedPartAddress
+	// slot and base carry the donor's probe and record and the prepared
+	// prefix. The pass clears both before the first Finish, so a continuation
+	// retained after a failed Finish keeps nothing of the donor.
+	slot *shareSlot
+	base *readyPartPreparationBase
+	ctx  context.Context
+	// admitted is set by the Body as its first act. Each slot outcome has one
+	// reporter: the launching call only when the kernel never admitted a
+	// Body, otherwise that Body alone.
+	admitted   atomic.Bool
 	prepareNow chan struct{}
 	prepared   chan shareSlotPrepared
 	commit     chan bool
@@ -948,7 +960,20 @@ func (st *shareSlotState) reportCommitted(res shareSlotCommitted) {
 // task token and permit, creates the sessionless source lease under E,
 // releases E before preparing, reports its outcome and then parks until the
 // worker authorizes Commit or abort. It never calls Finish.
+//
+// Once admitted, this Body is the only reporter of the slot's two outcomes.
+// It reports a refusal or an abort after its own cleanup has finished, and it
+// delivers an Installed commit's receipt on every path. The launching call
+// waits for the kernel's attempt without a cancelable context, so the Body
+// takes the pass's cancellation here instead.
 func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, membersReleased <-chan struct{}) error {
+	st.admitted.Store(true)
+	ctx, cancel := context.WithCancelCause(ctx)
+	stopCancel := context.AfterFunc(st.ctx, func() { cancel(context.Cause(st.ctx)) })
+	defer func() {
+		stopCancel()
+		cancel(nil)
+	}()
 	slot := st.slot
 	receiver := Result[Typed]{shared: slot.receiver.row}
 	token := PartTaskFromContext(ctx)
@@ -977,6 +1002,8 @@ func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, member
 		return shareSlotEnded(ctx, err)
 	}
 	// Prepare consumes the source and the permit on every return.
+	// The pass wrote this slot's base before it closed prepareNow, and clears
+	// it only after this Body's last report.
 	prepared, err := c.prepareReadyPartFromBase(ctx, receiver, source, permit, st.base)
 	if err != nil {
 		st.reportPrepared(shareSlotPrepared{err: err})
@@ -996,12 +1023,14 @@ func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, member
 		commit = false
 	}
 	if !commit {
-		st.reportCommitted(shareSlotCommitted{outcome: PartInstallRefused})
 		// An aborted slot's release error is a cleanup error of sharing's
-		// own; it is recorded, not handed to a joined demand.
+		// own; it is recorded, not handed to a joined demand. The abort is
+		// reported only once the release has finished: the pass takes the
+		// report to mean this Body owns nothing any more.
 		if err := prepared.Release(context.WithoutCancel(ctx)); err != nil {
 			c.recordShareCleanupError(err)
 		}
+		st.reportCommitted(shareSlotCommitted{outcome: PartInstallRefused})
 		return shareSlotEnded(ctx, nil)
 	}
 	receipt, installOutcome, err := c.CommitReadyPart(ctx, prepared)
@@ -1012,11 +1041,11 @@ func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, member
 		return shareSlotEnded(ctx, err)
 	}
 	// Every cohort member hold is released before this Body returns, so the
-	// receipt's and the task's own receiver holds are the only ones left.
-	select {
-	case <-membersReleased:
-	case <-ctx.Done():
-	}
+	// receipt's and the task's own receiver holds are the only ones left and
+	// no owner synchronization starts through this task before member
+	// release. The pass releases its members on every path, so this wait needs
+	// no cancellation.
+	<-membersReleased
 	return err
 }
 
@@ -1055,17 +1084,26 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 			// The slot context carries the preparation marker, the
 			// receiver's recorded call and, when the slot reconstructs
 			// services, the registered root and schema-only server.
-			err := c.RunLazyTask(st.ctx, Result[Typed]{shared: st.slot.receiver.row}, partTaskKey("obtain", st.slot.address), LazyTaskSpec{
+			//
+			// The launcher waits without a cancelable context. A canceled
+			// caller wait is not evidence that a Body stopped, and the kernel
+			// would return it while the Body still owned a preparation or an
+			// undelivered receipt. Uncanceled, this call returns exactly when
+			// the kernel's attempt has ended, or at once if the kernel refused
+			// admission. The Body takes the pass's cancellation itself.
+			err := c.RunLazyTask(context.WithoutCancel(st.ctx), Result[Typed]{shared: st.receiver}, partTaskKey("obtain", st.address), LazyTaskSpec{
 				NoJoin:         true,
 				OwnerSyncReady: st.ownerSync,
 				Body: func(bodyCtx context.Context) error {
 					return c.runShareSlotBody(bodyCtx, st, membersReleased)
 				},
 			})
-			// A NoJoin admission failure reports the slot's one terminal
-			// outcome even though Body never ran.
-			st.reportPrepared(shareSlotPrepared{err: err})
-			st.reportCommitted(shareSlotCommitted{outcome: PartInstallRefused, err: err})
+			if !st.admitted.Load() {
+				// The kernel refused admission, or the attempt ended before
+				// its Body ran: no Body exists, so the launcher reports.
+				st.reportPrepared(shareSlotPrepared{err: err})
+				st.reportCommitted(shareSlotCommitted{outcome: PartInstallRefused, err: err})
+			}
 			st.done <- err
 		}(st)
 	}
@@ -1080,7 +1118,7 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 			// A failed preparation is omitted before any later prefix is
 			// built: the next address of the same receiver simply starts its
 			// own chain from the real record.
-			c.traceShareSkip(ctx, st.slot.receiver.row, st.slot.address, res.err)
+			c.traceShareSkip(ctx, st.receiver, st.address, res.err)
 			continue
 		}
 		st.holds, st.ready = true, true
@@ -1105,7 +1143,7 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 			receipts = append(receipts, out.receipt)
 		}
 		if out.outcome != PartInstalled {
-			c.traceShareSkip(ctx, st.slot.receiver.row, st.slot.address, out.err)
+			c.traceShareSkip(ctx, st.receiver, st.address, out.err)
 			// A refused or stale prefix aborts its dependent suffix; other
 			// receivers continue.
 			c.abortShareSuffix(states, i)
@@ -1123,9 +1161,18 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 		st.settled = true
 	}
 
+	// Every Body has now delivered its terminal outcome, after its own
+	// cleanup, so none owns a preparation or holds an undelivered receipt.
+	// Drop what the slots kept of the donors and the prepared prefix: a
+	// continuation retained after a failed Finish keeps receiver-owned state
+	// only. No Body reads these fields after its prepared report.
+	for _, st := range states {
+		st.slot, st.base = nil, nil
+	}
+
 	// Member release phase, then the external Finish phase. Neither waits for
 	// the full RunLazyTask result: those two waits would deadlock the
-	// protocol.
+	// protocol. Every Installed receipt is finished, under cancellation too.
 	releaseMembers()
 	for _, receipt := range receipts {
 		if c.testBeforeShareFinish != nil {
@@ -1148,9 +1195,9 @@ func (c *Cache) abortShareSuffix(states []*shareSlotState, from int) {
 	if from < 0 || from >= len(states) {
 		return
 	}
-	receiver := states[from].slot.receiver.row
+	receiver := states[from].receiver
 	for _, st := range states[from+1:] {
-		if st.slot.receiver.row != receiver {
+		if st.receiver != receiver {
 			continue
 		}
 		st.base = nil
@@ -1228,6 +1275,8 @@ func (c *Cache) planSharePass(ctx context.Context, item *snapshotShareItem) []*s
 			continue
 		}
 		states = append(states, &shareSlotState{
+			receiver:   slot.receiver.row,
+			address:    clonePartAddress(slot.address),
 			slot:       slot,
 			ctx:        slotCtx,
 			prepareNow: make(chan struct{}),

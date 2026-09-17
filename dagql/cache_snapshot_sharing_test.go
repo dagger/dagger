@@ -21,14 +21,17 @@ import (
 // shareTestRef is a snapshot reference with no storage behind it: sharing
 // pins, opens and releases references, and never reads their bytes.
 type shareTestRef struct {
-	id       string
-	released *atomic.Int32
+	id      string
+	manager *shareTestManager
 }
 
 func (r *shareTestRef) ID() string         { return r.id }
 func (r *shareTestRef) SnapshotID() string { return r.id }
 func (r *shareTestRef) Release(context.Context) error {
-	r.released.Add(1)
+	if r.manager.beforeRelease != nil {
+		r.manager.beforeRelease()
+	}
+	r.manager.released.Add(1)
 	return nil
 }
 func (r *shareTestRef) Size(context.Context) (int64, error) { return 0, nil }
@@ -51,6 +54,8 @@ type shareTestManager struct {
 	attaches  atomic.Int32
 	attachErr atomic.Pointer[error]
 	afterPin  func()
+	// beforeRelease runs inside a reference's Release, before it is counted.
+	beforeRelease func()
 }
 
 func (m *shareTestManager) PinSnapshot(_ context.Context, id string) (snapshots.ImmutableRef, error) {
@@ -58,12 +63,12 @@ func (m *shareTestManager) PinSnapshot(_ context.Context, id string) (snapshots.
 	if m.afterPin != nil {
 		m.afterPin()
 	}
-	return &shareTestRef{id: id, released: &m.released}, nil
+	return &shareTestRef{id: id, manager: m}, nil
 }
 
 func (m *shareTestManager) GetBySnapshotID(_ context.Context, id string, _ ...snapshots.RefOption) (snapshots.ImmutableRef, error) {
 	m.opens.Add(1)
-	return &shareTestRef{id: id, released: &m.released}, nil
+	return &shareTestRef{id: id, manager: m}, nil
 }
 
 // failAttach makes the next owner synchronization fail, which is how a real
@@ -1036,4 +1041,133 @@ func TestSnapshotSharingRefusedSlotReselectsJoinedDemand(t *testing.T) {
 		t.Fatal("the joined demand never returned")
 	}
 	require.True(t, shareTestHasLink(receiver, "fs-snap"), "the demand installed the part by its ordinary route")
+}
+
+// shareTestNoPassYet fails if a pass finishes within a short window. It is the
+// file's one negative wait: the barrier the test holds is what must keep the
+// pass from completing.
+func shareTestNoPassYet(t *testing.T, b *sharePassBarrier, why string) {
+	t.Helper()
+	select {
+	case <-b.passes:
+		t.Fatalf("the pass completed %s", why)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// Cancellation while a Body is preparing: the launching call's return is not
+// evidence that the Body ended, so the pass keeps waiting for the Body's own
+// report, which comes after the preparation is released.
+func TestSnapshotSharingCancelDuringPreparation(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	donorHolds, receiverHolds := shareTestHolds(c, donor), shareTestHolds(c, receiver)
+	entered, resume := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(resume) })
+	defer unblock()
+	manager.afterPin = func() { close(entered); <-resume }
+	shareTestUnite(t, ctx, c, "cancel-preparing", donor, receiver)
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the preparation never reached PinSnapshot")
+	}
+	require.NoError(t, c.closeSnapshotSharing(ctx))
+	shareTestNoPassYet(t, barrier, "while its Body was still inside PinSnapshot")
+	unblock()
+	require.Equal(t, 1, barrier.awaitPass(t))
+	require.False(t, shareTestHasLink(receiver, "fs-snap"), "a canceled preparation installs nothing")
+	require.Equal(t, manager.pins.Load(), manager.released.Load(), "the canceled preparation released its pin")
+	require.Equal(t, donorHolds, shareTestHolds(c, donor))
+	require.Equal(t, receiverHolds, shareTestHolds(c, receiver))
+}
+
+// Cancellation after a preparation exists: the Body aborts, and reports the
+// abort only after its release has finished. The pass takes that report to
+// mean the Body owns nothing, so it must not release members or complete
+// while the release is still running.
+func TestSnapshotSharingAbortReportsAfterCleanup(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	donorHolds := shareTestHolds(c, donor)
+	releasing, resume := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(resume) })
+	defer unblock()
+	// Cancel inside Prepare, so the Body finds its context done at the commit
+	// latch and aborts a live preparation.
+	manager.afterPin = func() { require.NoError(t, c.closeSnapshotSharing(ctx)) }
+	manager.beforeRelease = sync.OnceFunc(func() { close(releasing); <-resume })
+	shareTestUnite(t, ctx, c, "abort-cleanup", donor, receiver)
+	select {
+	case <-releasing:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the aborted preparation never reached its release")
+	}
+	shareTestNoPassYet(t, barrier, "while an aborted preparation was still being released")
+	require.Greater(t, shareTestHolds(c, donor), donorHolds, "member release waits for the abort's cleanup")
+	unblock()
+	require.Equal(t, 1, barrier.awaitPass(t))
+	require.False(t, shareTestHasLink(receiver, "fs-snap"))
+	require.Equal(t, manager.pins.Load(), manager.released.Load())
+	require.Equal(t, donorHolds, shareTestHolds(c, donor))
+}
+
+// Cancellation between a Commit's publication and the delivery of its
+// receipt: the Body alone reports, so the receipt reaches the pass, is
+// finished after member release, and the output settles. The launching call
+// once reported a refusal here and the installed receipt, its pin and a
+// receiver hold were lost.
+func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	donor := persistedListTestResult(t, ctx, c, srv, "publish-donor", newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+	receiverValue := newShareTestValue("receiver", map[string]sharePartState{"fs": {}})
+	receiver := persistedListTestResult(t, ctx, c, srv, "publish-receiver", receiverValue)
+	row := receiver.cacheSharedResult()
+	c.egraphMu.Lock()
+	row.imported = true
+	c.egraphMu.Unlock()
+	partTestEquivalent(t, c, receiver, donor)
+	receiverHolds := shareTestHolds(c, receiver)
+
+	// Commit's last act, after every lock is released, is its fixture event.
+	// Holding the fixture's mutex parks the Body between publication and its
+	// receipt report.
+	fixture := new(partFixtureState)
+	fixture.mu.Lock()
+	release := sync.OnceFunc(fixture.mu.Unlock)
+	defer release()
+	manager.afterPin = func() { c.partFixture.Store(fixture) }
+	published := make(chan struct{})
+	receiverValue.afterStoreUnlock = sync.OnceFunc(func() { close(published) })
+
+	shareTestUnite(t, ctx, c, "cancel-after-publication", donor, receiver)
+	select {
+	case <-published:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the slot never published")
+	}
+	require.NoError(t, c.closeSnapshotSharing(ctx))
+	shareTestNoPassYet(t, barrier, "while its Body still held an undelivered receipt")
+	release()
+	require.Equal(t, 1, barrier.awaitPass(t))
+
+	key, _ := partAddressKey(PersistedPartAddress{Part: "fs"})
+	gate := row.partGate.gate.Load()
+	gate.mu.Lock()
+	phase := gate.outputs[key].phase
+	gate.mu.Unlock()
+	require.Equal(t, PartComplete, phase, "the delivered receipt was finished and the output settled")
+	require.Equal(t, "fs-snap", receiverValue.Parts["fs"].Snapshot)
+	require.Equal(t, receiverHolds, shareTestHolds(c, receiver), "the receipt's and the task's receiver holds ended")
+	require.Equal(t, int32(1), manager.released.Load(), "the installed part's protection was released once")
 }
