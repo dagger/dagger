@@ -2314,7 +2314,7 @@ func (ChangesetSuite) TestFilterDeletionKeepsSiblings(ctx context.Context, t *te
 	// A directory that really is gone on the after side still reports as
 	// removed, and applying the selection removes it.
 	t.Run("whole directory", func(ctx context.Context, t *testctx.T) {
-		before := c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("keep.txt", "keep")
+		before := c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b").WithNewFile("keep.txt", "keep")
 		all := before.WithoutDirectory("src").WithNewFile("other.txt", "other").Changes(before)
 		unfiltered, err := all.RemovedPaths(ctx)
 		require.NoError(t, err)
@@ -2327,4 +2327,56 @@ func (ChangesetSuite) TestFilterDeletionKeepsSiblings(ctx context.Context, t *te
 		require.NoError(t, err)
 		require.Equal(t, []string{"keep.txt"}, entries)
 	})
+}
+
+func (ChangesetSuite) TestFilterRemovedDirectoryKeepsUnselectedEntries(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	before := c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b").
+		WithNewFile("src/nested/c.txt", "c").WithNewFile("src/nested/d.txt", "d").
+		WithNewDirectory("src/empty").WithNewFile("keep.txt", "keep")
+	all := before.WithoutDirectory("src").WithNewFile("other.txt", "other").Changes(before)
+	for _, tc := range []struct {
+		name    string
+		filter  dagger.ChangesetFilterOpts
+		removed []string
+		after   *dagger.Directory
+	}{
+		{
+			name:    "include one file",
+			filter:  dagger.ChangesetFilterOpts{Include: []string{"src/a.txt"}},
+			removed: []string{"src/a.txt"},
+			after:   before.WithoutFile("src/a.txt"),
+		},
+		{
+			name:    "exclude siblings",
+			filter:  dagger.ChangesetFilterOpts{Include: []string{"src/**"}, Exclude: []string{"src/b.txt", "src/nested", "src/empty"}},
+			removed: []string{"src/a.txt"},
+			after:   before.WithoutFile("src/a.txt"),
+		},
+		{
+			name:    "nested file",
+			filter:  dagger.ChangesetFilterOpts{Include: []string{"src/nested/c.txt"}},
+			removed: []string{"src/nested/c.txt"},
+			after:   before.WithoutFile("src/nested/c.txt"),
+		},
+		{
+			name:    "whole subdirectory",
+			filter:  dagger.ChangesetFilterOpts{Include: []string{"src/nested/**"}},
+			removed: []string{"src/nested/"},
+			after:   before.WithoutDirectory("src/nested"),
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			selected := all.Filter(tc.filter)
+			removed, err := selected.RemovedPaths(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.removed, removed)
+			equal, err := selected.After().Changes(tc.after).IsEmpty(ctx)
+			require.NoError(t, err)
+			require.True(t, equal, "filtered after must preserve unselected entries")
+			equal, err = before.WithChanges(selected).Changes(tc.after).IsEmpty(ctx)
+			require.NoError(t, err)
+			require.True(t, equal, "applying the selection must preserve unselected entries")
+		})
+	}
 }

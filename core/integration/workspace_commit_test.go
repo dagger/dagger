@@ -419,6 +419,33 @@ func (WorkspaceSuite) TestWorkspaceWithCommitValidation(ctx context.Context, t *
 	require.ErrorContains(t, err, "not in a git repository")
 }
 
+func (WorkspaceSuite) TestWorkspaceWithCommitFilteredDirectoryDeletion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b"))
+	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().WithoutDirectory("src")
+	partial, err := commitWorkspace(ctx, c, ws, "delete only a", []string{"src/a.txt"})
+	require.NoError(t, err)
+	committed := dagger.Ref[*dagger.Workspace](c, partial.ID)
+	tree := committed.Git().Head().Tree()
+	exists, err := tree.Exists(ctx, "src/a.txt")
+	require.NoError(t, err)
+	require.False(t, exists)
+	contents, err := tree.File("src/b.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "b", contents, "the excluded deletion must not enter the commit")
+	require.Equal(t, []string{"src/"}, partial.Git.Uncommitted.RemovedPaths)
+	exists, err = committed.Directory("/").Exists(ctx, "src/b.txt")
+	require.NoError(t, err)
+	require.False(t, exists, "the excluded deletion must remain in the working tree")
+
+	rest, err := commitWorkspace(ctx, c, committed, "delete b", nil)
+	require.NoError(t, err)
+	require.Empty(t, rest.Git.Uncommitted.RemovedPaths)
+	exists, err = dagger.Ref[*dagger.Workspace](c, rest.ID).Git().Head().Tree().Exists(ctx, "src/b.txt")
+	require.NoError(t, err)
+	require.False(t, exists)
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitRestoresWithoutClient(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c)

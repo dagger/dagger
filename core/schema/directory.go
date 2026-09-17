@@ -2021,17 +2021,16 @@ func (s *directorySchema) changesetFilter(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return inst, err
 	}
-	// Filtering can strip every selected entry out of a directory that the
-	// full after side still has (say, when only one of its files is deleted).
-	// The filtered comparison then reports the directory itself as removed,
-	// and applying that to the complete baseline would delete its unselected
-	// siblings. Put those directories back on the filtered after side so only
-	// the selected entries count as removed.
+	// A removed directory may contain unselected baseline entries, even when
+	// the full after side no longer has it. Restore these directories on the
+	// filtered after side so applying the selection only deletes selected
+	// entries. Fully selected directory removals must remain intact.
 	selectedPaths, err := selected.Self().ComputePaths(ctx)
 	if err != nil {
 		return inst, err
 	}
 	restored := false
+	var excludedPaths *core.ChangesetPaths
 	for _, removed := range selectedPaths.AllRemoved {
 		if !strings.HasSuffix(removed, "/") {
 			continue
@@ -2045,7 +2044,21 @@ func (s *directorySchema) changesetFilter(ctx context.Context, parent dagql.Obje
 			return inst, err
 		}
 		if !exists {
-			continue
+			if excludedPaths == nil {
+				excluded, err := core.NewChangeset(ctx, parent.Self().Before, before)
+				if err != nil {
+					return inst, err
+				}
+				excludedPaths, err = excluded.ComputePaths(ctx)
+				if err != nil {
+					return inst, err
+				}
+			}
+			if !slices.ContainsFunc(excludedPaths.AllRemoved, func(p string) bool {
+				return strings.HasPrefix(p, removed)
+			}) {
+				continue
+			}
 		}
 		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withNewDirectory", Args: []dagql.NamedInput{
 			{Name: "path", Value: dagql.NewString(removed)},
