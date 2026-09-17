@@ -619,10 +619,12 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	source.descriptor.SnapshotID = imported.SnapshotID()
 	// Keep admitted authority across a stale receiver preparation. Its donor
 	// can disappear during download; re-preparation must not require re-admission.
+	watch := partReselectWatch{loop: "installChainPart"}
 	for {
 		if err := context.Cause(ctx); err != nil {
 			return err
 		}
+		watch.again(ctx, receiver.cacheSharedResult(), source.target)
 		c.egraphMu.Lock()
 		if !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
 			c.egraphMu.Unlock()
@@ -648,6 +650,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		if !partCanReselect(err) {
 			return err
 		}
+		watch.refused(err)
 		task := PartTaskFromContext(ctx)
 		var outcome GateOutcome
 		if permit.decision {
