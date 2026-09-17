@@ -29,12 +29,15 @@ func (p *partCleanup) release(ctx context.Context) error {
 	return nil
 }
 func (c *Cache) publishEvaluatedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) error {
+	watch := partReselectWatch{loop: "publishEvaluatedParts"}
 	for {
 		if err := context.Cause(ctx); err != nil {
 			return err
 		}
+		watch.again(ctx, res.cacheSharedResult(), demanded)
 		prepared, err := c.prepareEvaluatedParts(ctx, res, demanded, produced, original, cleanup)
 		if partCanReselect(err) {
+			watch.refused(err)
 			continue
 		}
 		if err != nil {
@@ -48,6 +51,7 @@ func (c *Cache) publishEvaluatedParts(ctx context.Context, res AnyResult, demand
 			return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
 		}
 		if partCanReselect(err) {
+			watch.refused(err)
 			continue
 		}
 		return err
