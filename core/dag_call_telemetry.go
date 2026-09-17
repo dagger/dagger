@@ -61,6 +61,9 @@ func recordCallPayloadsForSpan(
 	if store == nil || frame == nil {
 		return
 	}
+	if policy, ok := store.(dagql.CallPayloadLogPolicy); ok && policy.RequireCallPayloadLogs() {
+		rootOnSpan = false
+	}
 	if rootOnSpan {
 		if !store.CallPayloadNeedsEmission(callDigest) {
 			return

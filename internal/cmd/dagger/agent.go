@@ -10,8 +10,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var agentListMode bool
@@ -29,8 +32,8 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
-With --trace, a past session is restored from the trace it published to Dagger
-Cloud: every agent it ran comes back under the same identity, with the
+With --trace, a past session is restored from the connected engine archive,
+falling back to Dagger Cloud when no local archive exists: every agent it ran comes back under the same identity, with the
 conversation and lifecycle state it had, and the old session's whole progress
 view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
 agents are still running FORKS them — the restored instances are new runtimes
@@ -44,7 +47,7 @@ Examples:
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
   dagger agent -r                 # Resume a saved session (interactive picker)
   dagger agent -r=<session>       # Resume a specific saved session
-  dagger agent --trace <id>       # Restore a past session from its Dagger Cloud trace
+  dagger agent --trace <id>       # Restore a past session from its engine archive or Cloud trace
 `,
 	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
@@ -60,9 +63,10 @@ Examples:
 		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
 			return err
 		}
-		return withEngine(
+		return withEngineAfterClose(
 			cmd.Context(),
 			client.Params{
+				ArchiveTelemetry: !agentListMode,
 				// A trace carries the workspace and module recipes needed to restore
 				// its agents. Loading modules from the destination checkout would
 				// both be unnecessary and make cold restore depend on that checkout.
@@ -106,7 +110,16 @@ Examples:
 					resume:               resume,
 					restore:              restore,
 					generateSessionTitle: true,
+					restoreSource:        newEngineTraceRestoreSource(engineClient.ArchiveClient()),
+					archiveMetadata: func(updateCtx context.Context, title string) error {
+						return engineClient.ArchiveClient().UpdateMetadata(updateCtx, engineClient.ArchiveTraceID, archive.MetadataUpdate{Title: title})
+					},
 				})
+			},
+			func(engineClient *client.Client) {
+				if !agentListMode {
+					setAgentResumeHint(Frontend, engineClient.ArchiveTraceID)
+				}
 			},
 		)
 	},
@@ -151,7 +164,7 @@ func init() {
 	// parsed as a positional agent name.)
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentSessionPicker)
 	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
-		"Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback")
+		"Restore a past session from its engine archive or Cloud trace (use picker to select an engine archive)")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
@@ -273,4 +286,18 @@ func listAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *
 		fmt.Fprintf(tw, "%s\t%s\n", cliName(agent.Name), firstLine)
 	}
 	return tw.Flush()
+}
+
+const agentResumeHintTitle = "RESUME SESSION"
+
+func setAgentResumeHint(frontend any, traceID string) {
+	parsed, err := trace.TraceIDFromHex(traceID)
+	if err != nil || !parsed.IsValid() || parsed.String() != traceID {
+		return
+	}
+	suggester, ok := frontend.(idtui.SuggestedCommandFrontend)
+	if !ok {
+		return
+	}
+	suggester.SetSuggestedCommand(agentResumeHintTitle, "dagger agent --trace="+traceID)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -222,6 +223,7 @@ type sessionSpanExporter struct {
 func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	byTarget := map[string][]sdktrace.ReadOnlySpan{}
 	for _, span := range spans {
+		_ = exp.sess.validateArchiveTrace(span.SpanContext().TraceID(), "persisted span")
 		origin := spanOriginClientID(span)
 		if origin == "" {
 			return fmt.Errorf("span %s is missing telemetry origin client ID", span.SpanContext().SpanID())
@@ -257,8 +259,13 @@ type sessionLogExporter struct {
 func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
 	byTarget := map[string][]sdklog.Record{}
 	for _, rec := range records {
+		_ = exp.sess.validateArchiveTrace(rec.TraceID(), "persisted log")
 		digest, payload, err := classifyCallPayloadRecord(rec)
 		if err != nil {
+			if exp.sess.archiveManifest != nil {
+				exp.sess.markArchiveIncomplete(err)
+				return fmt.Errorf("malformed archived call payload record: %w", err)
+			}
 			slog.Warn("dropping malformed call payload record", "err", err)
 			continue
 		}
@@ -293,7 +300,7 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	var eg errgroup.Group
 	for target, targetRecords := range byTarget {
 		eg.Go(func() error {
-			if err := exp.ps.Logs(target).Export(ctx, targetRecords); err != nil {
+			if err := exp.ps.logs(target, exp.sess.archiveManifest != nil).Export(ctx, targetRecords); err != nil {
 				return fmt.Errorf("export logs to %s: %w", target, err)
 			}
 			return nil
@@ -467,6 +474,8 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
+	requestCtx := telemetry.Propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	_ = record.daggerSession.validateArchiveTrace(trace.SpanContextFromContext(requestCtx).TraceID(), "metric export request")
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -746,15 +755,21 @@ func (ps clientSpans) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientSpans) Shutdown(context.Context) error       { return nil }
 
 func (ps *PubSub) Logs(clientID string) sdklog.Exporter {
+	return ps.logs(clientID, false)
+}
+
+func (ps *PubSub) logs(clientID string, strict bool) sdklog.Exporter {
 	return clientLogs{
 		PubSub:   ps,
 		clientID: clientID,
+		strict:   strict,
 	}
 }
 
 type clientLogs struct {
 	*PubSub
 	clientID string
+	strict   bool
 }
 
 var _ sdklog.Exporter = clientLogs{}
@@ -782,8 +797,11 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	stats, appendErr := db.AppendLogs(inserts)
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
 	if appendErr != nil {
-		// Log export remains best-effort, but the append-only store's I/O
-		// failures apply to the entire batch rather than an individual row.
+		if ps.strict {
+			return appendErr
+		}
+		// Ordinary command log export remains best-effort, but the append-only
+		// store's I/O failures apply to the entire batch rather than one row.
 		slog.Warn("failed to append log records", "error", appendErr)
 	}
 
@@ -939,6 +957,7 @@ func legacyTelemetryEventName(path string) string {
 	return strings.TrimPrefix(path, "/v1/")
 }
 
+//nolint:gocyclo // Keep framing, cursor advancement, and drain handling in one stream state machine.
 func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher, maxPayloadSize int) error {
 	logger := slog.With("client", record.clientID, "path", r.URL.Path)
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
@@ -1001,7 +1020,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			return streamErr
 		}
 		if err := enginetel.WriteLiveError(w, since, streamErr); err != nil {
-			return fmt.Errorf("%w; write live stream error: %v", streamErr, err)
+			return fmt.Errorf("%w; write live stream error: %w", streamErr, err)
 		}
 		flush()
 		return nil

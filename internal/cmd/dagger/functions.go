@@ -1077,7 +1077,9 @@ func handleChangesetResponseWithApply(
 
 // startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
 func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, response any) error {
-	return startInteractivePromptModeWithResume(ctx, dag, response, interactivePromptModeOpts{})
+	return startInteractivePromptModeWithResume(ctx, dag, response, interactivePromptModeOpts{
+		restoreSource: traceRestoreSourceFromContext(ctx),
+	})
 }
 
 // interactivePromptModeOpts holds the startup behavior that only `dagger agent`
@@ -1087,7 +1089,9 @@ type interactivePromptModeOpts struct {
 	sessionID            string
 	resume               bool
 	restore              traceRestore
+	restoreSource        traceRestoreSource
 	generateSessionTitle bool
+	archiveMetadata      func(context.Context, string) error
 }
 
 // startInteractivePromptModeWithResume is like startInteractivePromptMode but
@@ -1120,7 +1124,9 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	// Set up the shell handler with prompt mode
 	handler := newShellCallHandler(dag, Frontend)
 	handler.mode = modePrompt
+	handler.restoreSource = opts.restoreSource
 	handler.generateSessionTitle = opts.generateSessionTitle
+	handler.archiveMetadata = opts.archiveMetadata
 
 	// Initialize the handler
 	if err := handler.Initialize(ctx); err != nil {
@@ -1158,6 +1164,12 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	// nothing may address a restored instance before every one of them
 	// exists (hack/designs/resume-from-trace.md §5.3).
 	if opts.restore.traceID != "" {
+		if opts.restore.source == nil {
+			opts.restore.source = opts.restoreSource
+		}
+		if opts.restore.traceID == "picker" {
+			opts.restore.traceID = ""
+		}
 		if err := restoreFromTrace(ctx, handler, opts.restore); err != nil {
 			return err
 		}

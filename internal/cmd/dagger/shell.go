@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
@@ -56,6 +57,7 @@ var scriptCmd = &cobra.Command{
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			handler := newShellCallHandler(dag, Frontend)
+			handler.restoreSource = newEngineTraceRestoreSource(engineClient.ArchiveClient())
 
 			err := handler.RunAll(ctx, args)
 
@@ -205,6 +207,13 @@ type shellCallHandler struct {
 	initialPrompt string
 	sessionUUID   string
 	promptL       sync.Mutex
+
+	// restoreSource is the connected engine archive source shared by startup
+	// startup trace restore.
+	restoreSource traceRestoreSource
+
+	// archiveMetadata publishes generated titles to the active archive best-effort.
+	archiveMetadata func(context.Context, string) error
 
 	// generateSessionTitle is set only by `dagger agent`. Generic shell prompt
 	// mode and function-returned LLMs retain their command span names.
@@ -958,6 +967,13 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 		if h.generateSessionTitle {
 			if title := s.ensureTitle(a, initialPrompt); title != "" {
 				sessionName = title
+				if h.archiveMetadata != nil {
+					updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+					if err := h.archiveMetadata(updateCtx, title); err != nil {
+						slog.Debug("update archive title", "error", err)
+					}
+					cancel()
+				}
 			}
 		}
 		savedUUID, err := a.AutoSaveSession(ctx, sessionName, sessionUUID)

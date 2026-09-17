@@ -451,7 +451,7 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, cb
 
 	slog.Debug("connecting to cloud OTLP stream", "url", endpoint, "kind", kind)
 
-	resp, err := c.openStream(ctx, kind, endpoint)
+	resp, err := c.openStream(ctx, kind, endpoint) //nolint:bodyclose // Closed by the defer below; the watchdog also closes stalled bodies.
 	if err != nil {
 		return err
 	}

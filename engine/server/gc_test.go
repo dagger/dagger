@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -644,6 +645,51 @@ func TestResolveDagqlCacheGCConfig(t *testing.T) {
 	require.False(t, enabled)
 	require.Zero(t, maximum)
 	require.Zero(t, target)
+}
+
+func TestLocalCacheResetPreservesClientTelemetry(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	srv := &Server{
+		rootDir:       root,
+		workerRootDir: filepath.Join(root, "worker"),
+		clientDBDir:   filepath.Join(root, "clientdbs"),
+	}
+	workerMarker := filepath.Join(srv.workerRootDir, "cache", "marker")
+	archiveMarker := filepath.Join(srv.clientDBDir, "archives", "session.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(workerMarker), 0o700))
+	require.NoError(t, os.WriteFile(workerMarker, []byte("disposable"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(archiveMarker), 0o700))
+	require.NoError(t, os.WriteFile(archiveMarker, []byte("retained"), 0o600))
+
+	require.NoError(t, srv.removeLocalCacheStateOnDisk())
+	require.NoFileExists(t, workerMarker)
+	require.FileExists(t, archiveMarker)
+	contents, err := os.ReadFile(archiveMarker)
+	require.NoError(t, err)
+	require.Equal(t, "retained", string(contents))
+}
+
+func TestMigrateLegacyClientDBDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	srv := &Server{
+		workerRootDir: filepath.Join(root, "worker"),
+		clientDBDir:   filepath.Join(root, "clientdbs"),
+	}
+	legacyArchive := filepath.Join(srv.workerRootDir, "clientdbs", "archives", "legacy.json")
+	currentArchive := filepath.Join(srv.clientDBDir, "archives", "current.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyArchive), 0o700))
+	require.NoError(t, os.WriteFile(legacyArchive, []byte("legacy"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(currentArchive), 0o700))
+	require.NoError(t, os.WriteFile(currentArchive, []byte("current"), 0o600))
+
+	require.NoError(t, srv.migrateLegacyClientDBDir())
+	require.NoDirExists(t, filepath.Join(srv.workerRootDir, "clientdbs"))
+	require.FileExists(t, filepath.Join(srv.clientDBDir, "archives", "legacy.json"))
+	require.FileExists(t, currentArchive)
 }
 
 func TestGCLockedPrunesMetadataWithoutWorkerDiskPolicies(t *testing.T) {

@@ -374,3 +374,18 @@ func TestRecordCallPayloadsRequiresSeenKeyStore(t *testing.T) {
 	recordCallPayloads(ctx, nil, rootDigest.String(), agent, false)
 	require.Equal(t, 0, rec.len())
 }
+
+type archivePayloadSeenKeys struct{ testSeenKeys }
+
+func (*archivePayloadSeenKeys) RequireCallPayloadLogs() bool { return true }
+
+func TestRecordCallPayloadsArchiveIncludesSpannedRoot(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	root, _, _ := skillsChain()
+	digest, err := root.RecipeDigest(ctx)
+	require.NoError(t, err)
+	seen := &archivePayloadSeenKeys{}
+	recordCallPayloadsForSpan(ctx, seen, digest.String(), root, true)
+	require.NotNil(t, rec.get(digest.String()), "archive bootstrap needs a log even when the root also rides a span")
+	require.True(t, seen.CallPayloadNeedsEmission(digest.String()), "only the log exporter may claim archived payload delivery")
+}
