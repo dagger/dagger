@@ -1070,28 +1070,10 @@ type withoutDirectoriesArgs struct {
 	Paths []string
 }
 
-//nolint:dupl // Symmetric with withoutFiles, matching the separate file and directory APIs.
-func (s *directorySchema) withoutDirectories(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoriesArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-
-	dir := &core.Directory{
-		Platform: parent.Self().Platform,
-		Services: slices.Clone(parent.Self().Services),
-		Lazy: &core.DirectoryWithoutLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Paths:     slices.Clone(args.Paths),
-		},
-		Dir:      new(core.LazyAccessor[string, *core.Directory]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
-	}
-	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+// Both removal APIs use the same lazy path operation, preserving one recipe
+// frame for the complete batch.
+func (s *directorySchema) withoutDirectories(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoriesArgs) (dagql.ObjectResult[*core.Directory], error) {
+	return s.withoutFiles(ctx, parent, withoutFilesArgs(args))
 }
 
 type withoutFileArgs struct {
