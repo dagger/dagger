@@ -442,7 +442,7 @@ func renewalConsumer(t *testing.T, bridge *RemoteCacheBridge, reply func(*Renewa
 	}()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		within(t, done)
 	})
 	return func() []*RenewalRequest {
 		mu.Lock()
@@ -984,16 +984,7 @@ func TestRenewalExhaustion(t *testing.T) {
 				_, _ = bridge.request(ctx, RenewalRequest{Deadline: time.Now().Add(time.Hour)})
 			})
 		}
-		// Each enqueue closes the ready signal; wait on it rather than polling.
-		for {
-			bridge.mu.Lock()
-			live, ready := len(bridge.exchanges), bridge.ready
-			bridge.mu.Unlock()
-			if live == renewalMailboxCapacity {
-				break
-			}
-			<-ready
-		}
+		waitQueued(t, bridge, renewalMailboxCapacity)
 		f.attach(t, f.receiver, exhaustionOffer(chain, "receiver-key", false))
 		requireFallback(t, f, f.run(), "mailbox full")
 		live, queued := liveExchanges(bridge)
