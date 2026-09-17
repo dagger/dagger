@@ -105,3 +105,11 @@ func writeFixtureChains(ctx context.Context, path string, chains *dagql.Selected
 }
 
 func (fixturePartContentSource) Available(dagql.PersistedPartOffer, time.Time) bool { return true }
+
+// Overrides leaves an offer that names addresses or a renewal key to the real
+// content source: its requests then go through the real HTTP client, the
+// renewal mailbox and the fixture's transport dispatcher. An offer with
+// neither is served from the peer's copied blob files, as before.
+func (fixturePartContentSource) Overrides(offer dagql.PersistedPartOffer) bool {
+	return len(offer.Chain.Addresses) == 0 && offer.Chain.RenewalKey == ""
+}
