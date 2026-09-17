@@ -2522,6 +2522,12 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		return nil, err
 	}
 
+	// A manifest version 2 module declares no engine version. It always runs
+	// against the running engine, so there is no declared version to check.
+	if src.Entrypoint != nil {
+		return modCfg, nil
+	}
+
 	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
 		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
