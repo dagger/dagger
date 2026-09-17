@@ -49,6 +49,14 @@ func (s *operationExecutionServer) Platform() Platform {
 	return Platform{OS: "linux", Architecture: "amd64"}
 }
 
+// foldedIntoNative marks a test whose production path mounts read-only or
+// enters a mount namespace, which no unit test may need. Its rows are owed by
+// the named case in core/integration, and the test is deleted when that case
+// lands. The skip is unconditional: it does not depend on who runs the test.
+func foldedIntoNative(t *testing.T, native string) {
+	t.Helper()
+	t.Skipf("folded into native %s; deleted when that case lands", native)
+}
 type executionFixtureValues struct {
 	ctx    context.Context
 	store  *testutil.Store
