@@ -41,6 +41,12 @@ func (cm *snapshotManager) newResourcePin(ctx context.Context) (*resourcePin, co
 // snapshot owners have been restored and before any transfers can start.
 // Retained typed refs are not released at clean shutdown. Their Go ownership
 // ends with that process, so only durable owners should survive its transfers.
+// IsTransferLease reports whether a lease is one of the temporary leases that
+// pin resources only while a transfer or a share is running.
+func IsTransferLease(lease leases.Lease) bool {
+	return lease.Labels[snapshotTransferLeaseLabel] == "true"
+}
+
 func ReleaseTransferLeasesAfterRestart(ctx context.Context, lm leases.Manager) error {
 	previous, err := lm.List(ctx)
 	if err != nil {

@@ -33,6 +33,8 @@ type RemoteCacheFixtureControls interface {
 	// RemoteCacheFixtureGC runs the engine's actual metadata and snapshot
 	// garbage collection under its existing serialization.
 	RemoteCacheFixtureGC(context.Context) (RemoteCacheFixtureGC, error)
+	// RemoteCacheFixtureStorage reads the report's storage group.
+	RemoteCacheFixtureStorage(context.Context) (RemoteCacheFixtureStorage, error)
 	// RemoteCacheFixtureOffer makes the real adapter OfferParts call.
 	RemoteCacheFixtureOffer(context.Context, dagql.AnyResult, []dagql.PersistedPartOffer) ([]dagql.OfferDisposition, error)
 	// RemoteCacheFixtureTakeRenewal awaits the next renewal request the real
@@ -55,6 +57,18 @@ type RemoteCacheFixtureGC struct {
 	BlobsAfter      uint64 `json:"blobsAfter"`
 	LeasesBefore    uint64 `json:"leasesBefore"`
 	LeasesAfter     uint64 `json:"leasesAfter"`
+}
+
+// RemoteCacheFixtureStorage is the report's storage group: what the engine's
+// real stores hold now. OwnerLeases are the result owner leases by ID, so a
+// test can name a receiver's role lease; TransientPins counts the temporary
+// transfer leases that pin a snapshot or a chain only while work is running.
+type RemoteCacheFixtureStorage struct {
+	Snapshots     uint64   `json:"snapshots"`
+	Blobs         uint64   `json:"blobs"`
+	OwnerLeases   []string `json:"ownerLeases"`
+	TransientPins uint64   `json:"transientPins"`
+	OtherLeases   uint64   `json:"otherLeases"`
 }
 
 // RemoteCacheFixtureRenewal is the serializable part of a delivered renewal
