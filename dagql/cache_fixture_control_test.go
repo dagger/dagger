@@ -2,10 +2,13 @@ package dagql
 
 import (
 	"context"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -321,4 +324,74 @@ func TestFixtureObserverOverflow(t *testing.T) {
 	require.Empty(t, report.Parts, "the new bound cleared the old scenario's events")
 	require.Zero(t, report.Controls.HoldTokens)
 	require.Zero(t, report.Controls.ArmedBarriers)
+}
+
+// decodeJoined is the joiner's side of a shared persisted decode: a second
+// demand that parks on the leader's channel reaches it, by row, while the
+// leader is still inside the decode.
+func TestFixtureBarrierDecodeJoined(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	persistRetryDecodeSnapshotID.Store("")
+	resultID := persistRetryDecodeSeed(t, ctx, dbPath, nil)
+	c, err := NewCache(ctx, dbPath, nil, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, c.Close(context.Background())) }()
+	c.EnableTransferFixtureParts()
+	srv := newPersistRetryDecodeTestServer()
+
+	leaderEntered, releaseLeader := make(chan struct{}), make(chan struct{})
+	var entries atomic.Int32
+	persistRetryDecodeHooks.Store(resultID, func(hookCtx context.Context) error {
+		if entries.Add(1) == 1 {
+			close(leaderEntered)
+			select {
+			case <-releaseLeader:
+			case <-hookCtx.Done():
+				return hookCtx.Err()
+			}
+		}
+		return nil
+	})
+	defer persistRetryDecodeHooks.Delete(resultID)
+	armed, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "joined", Point: FixtureDecodeJoined, Selector: FixtureBarrierSelector{ResultID: resultID}, Action: FixturePause})
+	require.NoError(t, err)
+
+	load := func(sessionID string) <-chan error {
+		loadCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: sessionID + "-client", SessionID: sessionID})
+		loadCtx = srvToContext(ContextWithCache(loadCtx, c), srv)
+		done := make(chan error, 1)
+		go func() {
+			_, err := c.LoadResultByResultID(loadCtx, sessionID, srv, resultID)
+			done <- err
+		}()
+		t.Cleanup(func() { _ = c.ReleaseSession(loadCtx, sessionID) })
+		return done
+	}
+	leader := load("decode-joined-leader")
+	select {
+	case <-leaderEntered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the leader never entered the decode")
+	}
+	joiner := load("decode-joined-joiner")
+	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	reached, err := c.WaitTransferFixtureBarrier(waitCtx, "joined", armed.Generation)
+	require.NoError(t, err, "the joiner never parked")
+	require.Equal(t, FixtureDecodeJoined, reached.Event.Point)
+	require.Equal(t, resultID, reached.Event.ResultID)
+	require.EqualValues(t, 1, entries.Load(), "the joiner did not start a decode of its own")
+
+	require.NoError(t, c.ReleaseTransferFixtureBarrier("joined", armed.Generation))
+	close(releaseLeader)
+	for _, done := range []<-chan error{leader, joiner} {
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("a load never returned")
+		}
+	}
+	require.EqualValues(t, 1, entries.Load(), "one decode served both")
 }

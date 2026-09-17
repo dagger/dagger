@@ -42,8 +42,11 @@ const (
 	FixtureRenewalEnqueued      FixtureBarrierPoint = "renewalEnqueued"
 	FixtureRenewalDelivered     FixtureBarrierPoint = "renewalDelivered"
 	FixtureRenewalReplied       FixtureBarrierPoint = "renewalReplied"
-	FixtureDecodeCopied         FixtureBarrierPoint = "decodeCopied"
-	FixtureDecodeBeforePublish  FixtureBarrierPoint = "decodeBeforePublish"
+	// FixtureDecodeJoined is a joiner parked on another demand's persisted
+	// decode, after it captured the leader's channel and outside every lock.
+	FixtureDecodeJoined        FixtureBarrierPoint = "decodeJoined"
+	FixtureDecodeCopied        FixtureBarrierPoint = "decodeCopied"
+	FixtureDecodeBeforePublish FixtureBarrierPoint = "decodeBeforePublish"
 )
 
 // FixtureBarrierAction is one of the closed set of actions. A fault may fail
@@ -75,7 +78,7 @@ var fixtureBarrierPoints = []FixtureBarrierPoint{
 	FixtureBeforeBeginOriginal, FixtureOriginalSealed, FixtureLazyEntry,
 	FixtureChainReaderOpen, FixtureChainRead, FixtureChainClose,
 	FixtureRenewalEnqueued, FixtureRenewalDelivered, FixtureRenewalReplied,
-	FixtureDecodeCopied, FixtureDecodeBeforePublish,
+	FixtureDecodeJoined, FixtureDecodeCopied, FixtureDecodeBeforePublish,
 }
 
 // fixtureBarrierFaults is the one legal point of each error action.
