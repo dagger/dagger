@@ -705,8 +705,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		if res.persistDecodeWaitCh != nil {
 			waitCh := res.persistDecodeWaitCh
 			res.persistDecodeMu.Unlock()
-			if c.testPersistDecodeJoined != nil {
-				c.testPersistDecodeJoined(uint64(res.id))
+			if err := c.reachDecodeJoined(ctx, res); err != nil {
+				return nil, err
 			}
 
 			select {
@@ -885,4 +885,13 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		}
 		finishPersistDecode(nil, true)
 	}
+}
+
+// reachDecodeJoined is the joiner's one observation point: the in-process
+// hook, then the gated fixture's barrier. Both are nil off their gates.
+func (c *Cache) reachDecodeJoined(ctx context.Context, res *sharedResult) error {
+	if c.testPersistDecodeJoined != nil {
+		c.testPersistDecodeJoined(uint64(res.id))
+	}
+	return c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureDecodeJoined, ResultID: uint64(res.id)})
 }
