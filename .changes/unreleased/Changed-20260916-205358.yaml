@@ -1,0 +1,6 @@
+kind: Changed
+body: The engine no longer hashes the whole GraphQL schema on every schema build; the digest is computed on first use instead. It is only read by schema-scoped cache inputs, not by query validation.
+time: 2026-09-16T20:53:58-07:00
+custom:
+    Author: grouville
+    PR: "14183"
