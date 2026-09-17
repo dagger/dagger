@@ -1414,12 +1414,16 @@ func TestSnapshotSharingPrefixCarriedOverRefusedAddress(t *testing.T) {
 		once    sync.Once
 		a, b, c bool
 		pins    int32
+		// released counts references given back: with an encoded receiver the
+		// pass opens none, so these are its transient pins.
+		released int32
 	}
 	passed := c.testAfterSharePass
 	c.testAfterSharePass = func(item *snapshotShareItem) {
 		firstPass.once.Do(func() {
 			firstPass.a, firstPass.b, firstPass.c = shareTestHasLink(receiver, "a-snap"), shareTestHasLink(receiver, "b-snap"), shareTestHasLink(receiver, "c-snap")
 			firstPass.pins = manager.pins.Load()
+			firstPass.released = manager.released.Load()
 		})
 		passed(item)
 	}
@@ -1429,6 +1433,7 @@ func TestSnapshotSharingPrefixCarriedOverRefusedAddress(t *testing.T) {
 	require.False(t, firstPass.b, "the busy address is refused")
 	require.True(t, firstPass.c, "the address after the refused one installs in the same pass")
 	require.Equal(t, int32(2), firstPass.pins)
+	require.Equal(t, firstPass.pins, firstPass.released, "zero transient pins afterwards: the pass released every pin it took, and took none for the refused address")
 	unblock()
 	select {
 	case err := <-taskDone:
