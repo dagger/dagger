@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
@@ -47,6 +48,8 @@ var fixtureOperations = map[string]fixtureOperationArgs{
 	"releaseHold":       {path: true},
 	"dropRetainedRoots": {ids: true, needIDs: true},
 	"gc":                {},
+	"transport":         {path: true},
+	"observe":           {path: true},
 }
 
 func validateFixtureOperation(args remoteCacheFixtureArgs) error {
@@ -119,6 +122,9 @@ type fixtureBarrierToken struct {
 }
 type fixtureHoldToken struct {
 	Token string `json:"token"`
+}
+type fixtureObserveRequest struct {
+	Cap int `json:"cap"`
 }
 
 func readFixtureControl(path, name string, value any) error {
@@ -246,6 +252,38 @@ func runFixtureControl(ctx context.Context, q *core.Query, cache *dagql.Cache, s
 			return nil, err
 		}
 		return controls.RemoteCacheFixtureGC(ctx)
+	case "transport":
+		// A copied response script for the fixture's own hosts, swapped in as
+		// one immutable generation. It sets statuses, headers, body files and
+		// named read faults; it cannot alter a URL, an identity or a cache
+		// output.
+		var script fixturetransport.Script
+		if err := readFixtureControl(path, args.Path, &script); err != nil {
+			return nil, err
+		}
+		dispatcher := fixturetransport.Current()
+		if dispatcher == nil {
+			return nil, fmt.Errorf("this engine has no fixture transport")
+		}
+		generation, err := dispatcher.SetScript(script)
+		return struct {
+			Generation uint64 `json:"generation"`
+		}{generation}, err
+	case "observe":
+		// The per-scenario observation bound. Overflow fails the report
+		// instead of dropping events.
+		var req fixtureObserveRequest
+		if err := readFixtureControl(path, args.Path, &req); err != nil {
+			return nil, err
+		}
+		if req.Cap <= 0 {
+			return nil, fmt.Errorf("observe requires a positive cap")
+		}
+		cache.SetTransferFixtureEventCap(req.Cap)
+		if dispatcher := fixturetransport.Current(); dispatcher != nil {
+			dispatcher.SetObservationCap(req.Cap)
+		}
+		return req, nil
 	}
 	return nil, fmt.Errorf("unknown fixture operation %q", args.Operation)
 }

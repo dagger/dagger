@@ -25,9 +25,27 @@ type TransferFixturePartSource struct {
 	Address  PersistedPartAddress `json:"address"`
 }
 type partFixtureState struct {
-	mu       sync.Mutex
-	events   []TransferFixturePartEvent
-	barriers fixtureBarriers
+	mu         sync.Mutex
+	events     []TransferFixturePartEvent
+	eventCap   int
+	overflowed bool
+	barriers   fixtureBarriers
+}
+
+// transferFixtureEventCap bounds the observed part events of one scenario.
+const transferFixtureEventCap = 1 << 16
+
+// SetTransferFixtureEventCap sets the bound and clears the events. An
+// overflow is reported by TransferFixtureSnapshot as an error; events are
+// never silently dropped.
+func (c *Cache) SetTransferFixtureEventCap(n int) {
+	state := c.partFixture.Load()
+	if state == nil {
+		return
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.eventCap, state.events, state.overflowed = n, nil, false
 }
 
 func (c *Cache) EnableTransferFixtureParts() {
@@ -61,8 +79,16 @@ func (c *Cache) recordPartFixtureEvent(row *sharedResult, address PersistedPartA
 		}
 	}
 	state.mu.Lock()
+	defer state.mu.Unlock()
+	limit := state.eventCap
+	if limit == 0 {
+		limit = transferFixtureEventCap
+	}
+	if len(state.events) >= limit {
+		state.overflowed = true
+		return
+	}
 	state.events = append(state.events, event)
-	state.mu.Unlock()
 }
 
 type partFixtureReleaseKey struct{}
@@ -86,10 +112,10 @@ func (c *Cache) partFixtureLazyContext(ctx context.Context, row *sharedResult, a
 		c.recordPartFixtureSnapshot(row, address, kind, id)
 	})
 }
-func (c *Cache) partFixtureEvents() []TransferFixturePartEvent {
+func (c *Cache) partFixtureEvents() (_ []TransferFixturePartEvent, overflowed bool) {
 	state := c.partFixture.Load()
 	if state == nil {
-		return nil
+		return nil, false
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -101,7 +127,7 @@ func (c *Cache) partFixtureEvents() []TransferFixturePartEvent {
 			events[i].Source = &TransferFixturePartSource{ResultID: e.Source.ResultID, Address: clonePartAddress(e.Source.Address)}
 		}
 	}
-	return events
+	return events, state.overflowed
 }
 
 type partFixtureProvider struct {

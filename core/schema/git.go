@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
@@ -44,6 +45,21 @@ func init() {
 	}
 	client.InstallProtocol("http", githttp.NewClient(customClient))
 	client.InstallProtocol("https", githttp.NewClient(customClient))
+}
+
+// InstallRemoteCacheFixtureGitTransport re-registers go-git's HTTP and HTTPS
+// clients with the test fixture's dispatcher around the same injectable
+// transport init installs. The clients init registered keep the delegate they
+// were given, so enabling the dispatcher later cannot reach them. The engine
+// calls this once at startup, under the fixture gate, after enabling the
+// dispatcher and before any request; a disabled engine keeps init's
+// registration untouched.
+func InstallRemoteCacheFixtureGitTransport() {
+	fixtureClient := &http.Client{
+		Transport: fixturetransport.Wrap(netconfhttp.NewInjectableTransport(http.DefaultTransport)),
+	}
+	client.InstallProtocol("http", githttp.NewClient(fixtureClient))
+	client.InstallProtocol("https", githttp.NewClient(fixtureClient))
 }
 
 var _ SchemaResolvers = &gitSchema{}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -105,7 +106,9 @@ func (s *PartContentSource) roundTripper() http.RoundTripper {
 	if s != nil && s.transport != nil {
 		return s.transport
 	}
-	return defaultPartTransport()
+	// The gated test fixture's dispatcher answers its own content host and
+	// delegates the rest; off-gate Wrap returns its argument unchanged.
+	return fixturetransport.Wrap(defaultPartTransport())
 }
 
 // Available reports whether an offer can supply bytes now. An empty chain is

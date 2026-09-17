@@ -486,6 +486,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// The integration attaches after local cache initialization and before
 	// the server dispatches any request.
+	if err := enableRemoteCacheFixtureTransports(); err != nil {
+		return nil, fmt.Errorf("enable remote cache fixture transports: %w", err)
+	}
 	if err := srv.startRemoteCacheIntegration(srv.remoteCacheFixtureIntegration(opts.RemoteCacheIntegration)); err != nil {
 		return nil, err
 	}
