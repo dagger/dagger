@@ -35,6 +35,30 @@ func (funcs goTemplateFuncs) isStandaloneClient() bool {
 	return funcs.cfg.ClientConfig != nil
 }
 
+// isCoreLibrary is true when generating the dagger.io/dagger library itself
+// (sdk/go), as opposed to module code or a standalone client. In this mode,
+// the generated API bindings live in their own "core" package rather than
+// alongside the hand-written Client/Connect (see sdk/go/core), to avoid an
+// import cycle between the two.
+func (funcs goTemplateFuncs) isCoreLibrary() bool {
+	return !funcs.isModuleCode() && !funcs.isStandaloneClient()
+}
+
+// coreConstructorName returns the Go function name for a top-level Query
+// field in the core library package. Query field names frequently match
+// their own return type's name (e.g. "container" -> Container, returning
+// *Container), which works fine as a free function in a separate package
+// (see sdk/go/dag), but would redeclare the type if placed in the same
+// package as the generated types. In that case, prefix the function with
+// "New" instead.
+func (funcs goTemplateFuncs) coreConstructorName(f introspection.Field) string {
+	name := formatName(f.Name)
+	if funcs.schema.Types.Get(name) != nil {
+		return "New" + name
+	}
+	return name
+}
+
 func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependency {
 	return funcs.cfg.ClientConfig.ModuleDependencies
 }
