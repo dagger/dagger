@@ -3,6 +3,12 @@
 > [!WARNING]
 > This is an experimental draft. It is not ready for implementation.
 
+> [!NOTE]
+> Superseded. This design relies on an entrypoint of kind `module`, which
+> manifest v2 no longer defines. A legacy runtime is named by `runtime.source`
+> in the previous format and driven by the engine directly, so no wrapper
+> module is needed. The text below is kept as written.
+
 Builds on [Module Manifest v2 and Module Entrypoints](spec.md).
 
 status: draft spec

@@ -125,7 +125,7 @@ func parseModuleManifestV2TOML(tree *toml.Tree) (*ModuleConfigWithUserFields, er
 		return nil, fmt.Errorf("%s manifest version 2 requires name", Filename)
 	}
 	switch manifest.Entrypoint.Kind {
-	case ModuleEntrypointKindDang, ModuleEntrypointKindModule:
+	case ModuleEntrypointKindDang:
 	case "":
 		return nil, fmt.Errorf("%s manifest version 2 requires entrypoint.kind", Filename)
 	default:

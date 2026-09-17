@@ -11,8 +11,7 @@ import (
 type ModuleEntrypointKind string
 
 const (
-	ModuleEntrypointKindDang   ModuleEntrypointKind = "dang"
-	ModuleEntrypointKindModule ModuleEntrypointKind = "module"
+	ModuleEntrypointKindDang ModuleEntrypointKind = "dang"
 )
 
 // ModuleManifestV2 is the version 2 dagger-module.toml schema. The presence of

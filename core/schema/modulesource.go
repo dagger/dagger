@@ -1104,21 +1104,13 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		}
 	} else if modCfg.Entrypoint != nil {
 		// SDK is an internal adapter for the existing module execution path. The
-		// manifest contains only the entrypoint configuration, so the adapter is
-		// named after the entrypoint kind that loads it.
+		// manifest contains only the entrypoint configuration.
 		src.SDK = &core.SDKConfig{Source: string(modCfg.Entrypoint.Kind)}
 	}
 
 	var sdkSource string
-	switch {
-	case modCfg.SDK != nil:
+	if modCfg.SDK != nil {
 		sdkSource = modCfg.SDK.Source
-	case modCfg.Entrypoint != nil && modCfg.Entrypoint.Kind == modules.ModuleEntrypointKindModule:
-		// A module entrypoint can resolve to a runtime, which runs this
-		// module's own source, so the source subpath defaults the way it does
-		// for a runtime. The dang kind reads a separate directory instead, so
-		// it keeps no source subpath.
-		sdkSource = string(modCfg.Entrypoint.Kind)
 	}
 	switch {
 	case sdkSource == "" && modCfg.Source != "":
