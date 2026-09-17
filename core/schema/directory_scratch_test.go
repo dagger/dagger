@@ -337,8 +337,7 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			require.EqualValues(t, want, observed.calls.Load())
 			require.Equal(t, want, scratchCount(t, ctx, b, "b", row))
 			t.Logf("scratch mode=%s acquisition=%s scratch-calls=%d provider-reads=0", mode, time.Since(started), observed.calls.Load())
-			entries, err := result.Self().Entries(ctx, result, "")
-			require.NoError(t, err)
+			entries := demandedDirectoryEntries(t, ctx, result)
 			require.Empty(t, entries)
 			require.Equal(t, "linux/arm64", result.Self().Platform.Format())
 			record, err := b.CapturePersistedRecord(ctx, result)
@@ -369,8 +368,7 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 				require.EqualValues(t, 1, donor.releases.Load())
 				ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "receiver", SessionID: "receiver"})
 			}
-			entries, err = result.Self().Entries(ctx, result, "")
-			require.NoError(t, err)
+			entries = demandedDirectoryEntries(t, ctx, result)
 			require.Empty(t, entries)
 			require.Zero(t, installed.releases.Load())
 			if mode == "pending-restart" {

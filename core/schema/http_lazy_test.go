@@ -156,8 +156,7 @@ func TestHTTPPendingInternalHits(t *testing.T) {
 				require.False(t, installed)
 			} else {
 				require.NoError(t, err)
-				bytes, err := pending.Self().Contents(ctx, pending, nil, nil)
-				require.NoError(t, err)
+				bytes := demandedFileContents(t, ctx, pending)
 				require.Equal(t, "saved", string(bytes))
 				completed := selectSaved()
 				require.Same(t, pending.Self(), completed.Self())
