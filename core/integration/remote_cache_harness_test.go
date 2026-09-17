@@ -98,8 +98,38 @@ func (e *fixtureEngine) connect() *dagger.Client {
 // session owned, and opens a fresh one that has loaded nothing.
 func (e *fixtureEngine) reconnect() {
 	e.t.Helper()
-	require.NoError(e.t, e.client.Close())
+	client := e.client
+	e.client = nil
+	require.NoError(e.t, closeClientBounded(e.ctx, client))
 	e.client = e.connect()
+}
+
+// closeClientBounded joins a client's Close, which takes no context, under a
+// fresh deadline that does not inherit the test's cancellation.
+func closeClientBounded(ctx context.Context, client *dagger.Client) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fixtureEngineStopTimeout)
+	defer cancel()
+	closed := make(chan error, 1)
+	go func() { closed <- client.Close() }()
+	select {
+	case err := <-closed:
+		return err
+	case <-ctx.Done():
+		return fmt.Errorf("client close did not return: %w", context.Cause(ctx))
+	}
+}
+
+// joinBounded waits for one result of a demand started on its own goroutine.
+// A demand that never returns fails here, not at the native test timeout.
+func joinBounded(t *testctx.T, done <-chan error, what string) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(3 * time.Minute):
+		t.Fatalf("%s never returned", what)
+		return nil
+	}
 }
 
 // fixtureEngineStopTimeout bounds each step of a shutdown. A step never
@@ -119,17 +149,7 @@ func (e *fixtureEngine) shutdown() error {
 	}
 	var errs error
 	if client := e.client; client != nil {
-		err := step(func(ctx context.Context) error {
-			// Close takes no context; join it under the deadline.
-			closed := make(chan error, 1)
-			go func() { closed <- client.Close() }()
-			select {
-			case err := <-closed:
-				return err
-			case <-ctx.Done():
-				return fmt.Errorf("client close did not return: %w", context.Cause(ctx))
-			}
-		})
+		err := closeClientBounded(e.ctx, client)
 		// A client is closed at most once, whatever it answered.
 		e.client = nil
 		errs = errors.Join(errs, err)
