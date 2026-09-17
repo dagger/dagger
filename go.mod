@@ -62,7 +62,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
-	github.com/dagger/otel-go v1.43.1-0.20260810200237-752a39ce1610
+	github.com/dagger/otel-go v1.43.1-0.20260917165636-2bca4f5622cf
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
 	github.com/dave/jennifer v1.7.1

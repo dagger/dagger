@@ -31,6 +31,9 @@ const (
 // exporter (internal/cmd/dagger) and the engine's per-client store exporters so a
 // big-burst trace arrives complete.
 func NewLargeQueueLiveSpanProcessor(exp sdktrace.SpanExporter) *telemetry.LiveSpanProcessor {
+	if exp != nil {
+		exp = telemetry.CoalescingSpanExporter{SpanExporter: exp}
+	}
 	return &telemetry.LiveSpanProcessor{
 		SpanProcessor: newLargeQueueBSP(exp),
 	}
