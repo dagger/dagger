@@ -4808,6 +4808,285 @@ export class AgentMiddlewareGroup extends BaseClient {
 }
 
 /**
+ * One workspace value with a complete query and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+ */
+export class Artifact extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _pretty?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _pretty?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._pretty = _pretty
+  }
+
+  /**
+   * A unique identifier for this Artifact.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * One key per collection along the query. Unordered; empty for static artifacts.
+   */
+  collectionKeys = async (): Promise<ArtifactCollectionKey[]> => {
+    type collectionKeys = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("collectionKeys").select("id")
+
+    const response: Awaited<collectionKeys[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new ArtifactCollectionKey(
+          ctx.copy().selectNode(r.id, "ArtifactCollectionKey"),
+        ),
+    )
+  }
+
+  /**
+   * The full address, formatted for CLI input with consistent flag order.
+   */
+  pretty = async (): Promise<string> => {
+    if (this._pretty) {
+      return this._pretty
+    }
+
+    const ctx = this._ctx.select("pretty")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+   */
+  query = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("query")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Evaluate the target in the workspace that supplied this artifact.
+   */
+  value = (): Node => {
+    const ctx = this._ctx.select("value")
+    return new _NodeClient(ctx)
+  }
+}
+
+export class ArtifactCollectionKey extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _collection?: string = undefined
+  private readonly _key?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _collection?: string, _key?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._collection = _collection
+    this._key = _key
+  }
+
+  /**
+   * A unique identifier for this ArtifactCollectionKey.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The collection identifier, fixed across the workspace schema.
+   */
+  collection = async (): Promise<string> => {
+    if (this._collection) {
+      return this._collection
+    }
+
+    const ctx = this._ctx.select("collection")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The collection item's key.
+   */
+  key = async (): Promise<string> => {
+    if (this._key) {
+      return this._key
+    }
+
+    const ctx = this._ctx.select("key")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * An immutable selection of workspace artifacts. Listed types, collections, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or collection identifiers.
+ */
+export class Artifacts extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Artifacts.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List keys represented in this selection for the given collection, sorted with no duplicates.
+   */
+  collectionKeys = async (collection: string): Promise<string[]> => {
+    const ctx = this._ctx.select("collectionKeys", { collection })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List collection identifiers represented in this selection, sorted with no duplicates.
+   */
+  collections = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("collections")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Keep artifacts with any listed key in this collection.
+   */
+  filterCollectionKeys = (collection: string, keys: string[]): Artifacts => {
+    const ctx = this._ctx.select("filterCollectionKeys", { collection, keys })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Keep artifacts selected through any listed collection.
+   */
+  filterCollections = (collections: string[]): Artifacts => {
+    const ctx = this._ctx.select("filterCollections", { collections })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Match one complete, ordered field sequence exactly.
+   */
+  filterQuery = (query: string[]): Artifacts => {
+    const ctx = this._ctx.select("filterQuery", { query })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Keep artifacts of any listed concrete GraphQL type.
+   */
+  filterTypes = (types: string[]): Artifacts => {
+    const ctx = this._ctx.select("filterTypes", { types })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Enumerate complete artifacts without evaluating their values.
+   */
+  items = async (): Promise<Artifact[]> => {
+    type items = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("items").select("id")
+
+    const response: Awaited<items[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Artifact(ctx.copy().selectNode(r.id, "Artifact")),
+    )
+  }
+
+  /**
+   * Require exactly one artifact; fail if there are zero or multiple matches.
+   */
+  one = (): Artifact => {
+    const ctx = this._ctx.select("one")
+    return new Artifact(ctx)
+  }
+
+  /**
+   * Display lines for this selection, with no trailing newlines.
+   */
+  pretty = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("pretty")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Call the provided function with current Artifacts.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Artifacts) => Artifacts) => {
+    return arg(this)
+  }
+}
+
+/**
  * A directory whose contents persist across runs.
  */
 export class CacheVolume extends BaseClient {
@@ -14601,7 +14880,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * initialize an address to load directories, containers, secrets or other object types.
+   * Resolve external references only.
    */
   address = (value: string): Address => {
     const ctx = this._ctx.select("address", { value })
@@ -16846,6 +17125,14 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Discover static object artifacts from workspace modules without evaluating their values.
+   */
+  artifacts = (): Artifacts => {
+    const ctx = this._ctx.select("artifacts")
+    return new Artifacts(ctx)
+  }
+
+  /**
    * Return this workspace's changes, with paths relative to its working directory.
    *
    * Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
@@ -17185,6 +17472,18 @@ export class Workspace extends BaseClient {
       (r) =>
         new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
     )
+  }
+
+  /**
+   * Try workspace references before external resolution.
+   *
+   * Local errors stop resolution; only absence permits fallback.
+   *
+   * The Address retains this workspace across module calls and ID reloads.
+   */
+  resolve = (value: string): Address => {
+    const ctx = this._ctx.select("resolve", { value })
+    return new Address(ctx)
   }
 
   /**
