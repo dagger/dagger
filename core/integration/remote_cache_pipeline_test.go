@@ -18,7 +18,10 @@ import (
 // an ordinary File and a variant, mounts the File in a normal Container, runs
 // one deterministic command on a digest-pinned image, and returns two
 // separately addressable output Directories. Each measured function records
-// its body entry first; summary stays uncalled on A.
+// its body entry first. Design §2 step 6, an uncalled contextual method
+// invoked on B through node(id:) after B's notes change and again after a
+// restart, is carried by TestSchemaRecovery and TestSchemaRecoveryCold on the
+// same module's Report (noteFile, noteDirectory), so Build has no summary.
 var pipelineProbeSource = transferProbeSource + `
 type Build struct { Variant string; Dirs []*dagger.Directory }
 func(m *CacheProbe) Build(ctx context.Context, input *dagger.File,
@@ -32,14 +35,6 @@ func(m *CacheProbe) Build(ctx context.Context, input *dagger.File,
   WithEnvVariable("VARIANT", variant).
   WithExec([]string{"sh","-ec","mkdir -p /out/copy /out/manifest; cp /input/data.json /out/copy/data.json; printf 'variant=%s' \"$VARIANT\" > /out/manifest/manifest.txt"})
  return &Build{Variant:variant,Dirs:[]*dagger.Directory{ctr.Directory("/out/copy"),ctr.Directory("/out/manifest")}},nil
-}
-func(b *Build) Summary(ctx context.Context,
- // +defaultPath="notes.md"
- notes *dagger.File,
-)(string,error){
- if err:=recordBody(ctx);err!=nil{return "",err}
- text,err:=notes.Contents(ctx); if err!=nil{return "",err}
- return b.Variant+":"+text,nil
 }
 `
 
@@ -69,7 +64,6 @@ func newPipelineScenario(ctx context.Context, t *testctx.T, name string) *pipeli
 		e.hostFile("dagger.json", `{"name":"cache-probe","engineVersion":"latest","sdk":{"source":"go"},"source":".dagger"}`)
 		e.hostFile(".dagger/main.go", pipelineProbeSource)
 		e.hostFile("notes.txt", "operation notes")
-		e.hostFile("notes.md", "summary notes")
 		e.writeFile("origins/data.json", s.input)
 		scriptOrigin(t, e, fixturetransport.Response{URL: s.url, BodyFile: "origins/data.json", Headers: map[string]string{"ETag": `"v1"`}})
 	}
@@ -117,7 +111,6 @@ func (s *pipelineScenario) export(ctx context.Context, t *testctx.T) fixtureExpo
 	var exported fixtureExportSelectedResult
 	require.NoError(t, s.a.fixture("exportSelected", s.a.control("export.json", map[string]any{"bundle": "pipeline.json", "outputs": []map[string]any{{"handle": built.Dirs[0].ID, "address": dagql.PersistedPartAddress{Part: "snapshot"}}}}), []string{built.ID}, &exported))
 	require.Len(t, exported.Outputs, 1, "the unselected sibling caused no export open")
-	require.Zero(t, pipelineBodies(t, s.a, "summary"), "summary stays uncalled on A")
 	s.a.copyFixtureTo(s.b, "pipeline.json")
 	return exported
 }
@@ -182,6 +175,21 @@ func (s *pipelineScenario) dirRows(t *testctx.T, built pipelineBuild) []uint64 {
 // result without entering the function, and a changed variant enters it once.
 func (s *pipelineScenario) hit(ctx context.Context, t *testctx.T) pipelineBuild {
 	t.Helper()
+	// D and H: A's and B's own setups, from different checkouts and clients,
+	// record the same Module source digest and the same resolved http File
+	// identity. Neither is manufactured or copied from A.
+	aModule, err := s.a.client.ModuleSource(".").Digest(ctx)
+	require.NoError(t, err)
+	bModule, err := s.b.client.ModuleSource(".").Digest(ctx)
+	require.NoError(t, err)
+	require.Equal(t, aModule, bModule, "D: the Module source digest")
+	aInput, err := s.a.client.HTTP(s.url).Digest(ctx)
+	require.NoError(t, err)
+	bInput, err := s.b.client.HTTP(s.url).Digest(ctx)
+	require.NoError(t, err)
+	require.Equal(t, aInput, bInput, "H: the resolved http File identity")
+	t.Logf("D=%s H=%s", bModule, bInput)
+
 	built := s.build(ctx, t, s.b, "same")
 	require.Zero(t, pipelineBodies(t, s.b, "build"), "B's ordinary call used the transferred result")
 	row := rowOf(t, s.b, built.ID)
