@@ -157,8 +157,8 @@ func (f *fakeCloud) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The real endpoints keep quiet connections alive with heartbeat frames —
 	// data frames with an EMPTY payload. Opening with one keeps the client's
 	// "an empty data frame is not a payload" path under test everywhere: a
-	// client that handed it to the sink would fail the exact call-sequence
-	// assertion in TestFetchSealsOnceAfterTheSpanStream.
+	// client that handed it to the sink would fail the per-stream call-count
+	// assertion in TestFetchSealsOnceAfterAllStreams.
 	_ = fw.WriteHeartbeat()
 	flush()
 
@@ -219,8 +219,9 @@ func cannedCloud(withWorker bool) *fakeCloud {
 var _ cloud.TraceImportSink = (*enginetel.TraceImporter)(nil)
 
 // recordingSink wraps the real importer and records the call sequence, so the
-// order the fetch drives it in — and the fact that Seal happens once, after
-// the span stream — is asserted rather than assumed.
+// fact that Seal happens once, after every stream, is asserted rather than
+// assumed. FetchTrace serializes sink callbacks even though it overlaps the
+// three streams, so the slice needs no lock of its own.
 type recordingSink struct {
 	inner cloud.TraceImportSink
 	calls []string
@@ -292,7 +293,9 @@ func TestFetchStreamsTheWholeTraceIntoTheLiveDB(t *testing.T) {
 	srv := cannedCloud(true)
 	db, _ := fetchIntoDB(t, srv)
 
-	require.Equal(t, []string{
+	// The three streams are fetched concurrently, so the requests may land
+	// in any order.
+	require.ElementsMatch(t, []string{
 		"GET /v1/traces/" + fetchTraceIDHex,
 		"GET /v1/logs/" + fetchTraceIDHex,
 		"GET /v1/metrics/" + fetchTraceIDHex,
@@ -318,19 +321,22 @@ func TestFetchStreamsTheWholeTraceIntoTheLiveDB(t *testing.T) {
 	require.Equal(t, int64(4200), points[0].Value)
 }
 
-// TestFetchSealsOnceAfterTheSpanStream pins §13.5's deliberate decision: the
-// three streams run sequentially, spans first, and Seal happens exactly once,
-// between the span stream and the rest.
+// TestFetchSealsOnceAfterAllStreams pins the seal's place: the three streams
+// overlap, so their payloads may reach the sink in any order, but Seal happens
+// exactly once, after the last of them.
 //
 // Sealing early — or letting a span arrive after it — leaves the span with a
 // stale end time, because the seal's fallback bound is "the newest timestamp
 // seen", which only holds for one bounded fetch.
-func TestFetchSealsOnceAfterTheSpanStream(t *testing.T) {
+func TestFetchSealsOnceAfterAllStreams(t *testing.T) {
 	srv := cannedCloud(true)
 	db, sink := fetchIntoDB(t, srv)
 
-	require.Equal(t, []string{"spans", "seal", "logs", "metrics"}, sink.calls,
-		"the fetch must drain the span stream, then seal, exactly once")
+	require.NotEmpty(t, sink.calls)
+	require.Equal(t, "seal", sink.calls[len(sink.calls)-1],
+		"the fetch must seal after every stream has been drained")
+	require.ElementsMatch(t, []string{"spans", "logs", "metrics"}, sink.calls[:len(sink.calls)-1],
+		"each stream delivers one payload, and the fetch seals exactly once")
 
 	// The seal's effect, stated where a user would see it: the crashed
 	// session's never-ended spans stop rendering as live work.
@@ -405,8 +411,7 @@ func TestFetchFailsOnATruncatedStream(t *testing.T) {
 
 	err := fetchClient(t).FetchTrace(t.Context(), srv.traceID, sink)
 	require.ErrorContains(t, err, "truncated")
-	require.NotContains(t, sink.calls, "metrics",
-		"the fetch carried on past a stream that never finished")
+	requireSealedLast(t, sink, "a hole in one stream must still bound whatever the others imported")
 }
 
 // TestFetchFailsOnAnUndecodablePayload: a payload this client cannot decode is
@@ -422,35 +427,63 @@ func TestFetchFailsOnAnUndecodablePayload(t *testing.T) {
 
 	err := fetchClient(t).FetchTrace(t.Context(), srv.traceID, sink)
 	require.ErrorContains(t, err, "unmarshal logs")
-	require.NotContains(t, sink.calls, "metrics",
-		"the fetch carried on past a payload it could not decode")
+	requireSealedLast(t, sink, "a payload this client cannot decode must still bound whatever the others imported")
 }
 
 // TestFetchFailsOnAnErrorResponse: an endpoint that is down, or a trace that
 // is not there, must fail the command with what the server said — not import
 // an empty trace and restore nothing.
+//
+// The other two streams overlap the failed one and may or may not have
+// delivered by the time it is refused, so the assertion is on what the user
+// would see: no span of the trace reached the DB.
 func TestFetchFailsOnAnErrorResponse(t *testing.T) {
 	srv := cannedCloud(false)
 	srv.status = map[string]int{"traces": http.StatusServiceUnavailable}
-	_, sink := fetchTargets(t)
+	db, sink := fetchTargets(t)
 	srv.start(t)
 
 	err := fetchClient(t).FetchTrace(t.Context(), srv.traceID, sink)
 	require.ErrorContains(t, err, "503")
 	require.ErrorContains(t, err, "cloud is having a moment")
-	require.Empty(t, sink.calls, "a failed fetch must not seal a trace it never imported")
+	require.NotContains(t, sink.calls, "spans", "the refused span stream reached the sink")
+	requireNoImportedSpans(t, db)
 }
 
 // TestFetchFailsOnAnUnknownTrace: a trace ID Cloud does not have is a 404, and
 // the restore says so rather than opening an empty session.
 func TestFetchFailsOnAnUnknownTrace(t *testing.T) {
 	srv := cannedCloud(false)
-	_, sink := fetchTargets(t)
+	db, sink := fetchTargets(t)
 	srv.start(t)
 
 	err := fetchClient(t).FetchTrace(t.Context(), "0123456789abcdef0123456789abcdef", sink)
 	require.ErrorContains(t, err, "404")
-	require.Empty(t, sink.calls)
+	require.NotContains(t, sink.calls, "spans", "an unknown trace delivered spans")
+	requireNoImportedSpans(t, db)
+}
+
+// requireSealedLast asserts that a fetch which failed partway still sealed,
+// once, after its last import: the streams overlap, so a stream that failed
+// cannot promise the others never delivered, but whatever they delivered must
+// end up bounded rather than rendering as live work forever.
+func requireSealedLast(t *testing.T, sink *recordingSink, msg string) {
+	t.Helper()
+	require.NotEmpty(t, sink.calls, msg)
+	require.Equal(t, "seal", sink.calls[len(sink.calls)-1], msg)
+	require.NotContains(t, sink.calls[:len(sink.calls)-1], "seal", "the fetch sealed more than once")
+}
+
+// requireNoImportedSpans asserts no span of the foreign trace was received by
+// db. A log or metric stream that outran the refused span stream may have
+// minted a stub for the span it is attributed to, which is not a received span
+// and renders as nothing.
+func requireNoImportedSpans(t *testing.T, db *dagui.DB) {
+	t.Helper()
+	for _, id := range []byte{foreignRootSpanID, foreignLoopSpanID, foreignWorkerSpanID, foreignTurnSpanID} {
+		span := db.Spans.Map[prettyTestSpanID(id)]
+		require.False(t, span != nil && span.Received, "span %d of the refused trace reached the DB", id)
+	}
 }
 
 // TestFetchRequiresAuth: no credential is a clear instruction, not a 401 from

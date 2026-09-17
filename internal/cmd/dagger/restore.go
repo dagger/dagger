@@ -107,7 +107,7 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 // restored session the old session's TUI plus a live prompt.
 //
 // Two things the reference trace client does and this must not: Seal (the
-// fetch does it internally, once the span stream has drained) and SetPrimary
+// fetch does it internally, once every stream has stopped) and SetPrimary
 // (§5.1.1 — the live CLI's root stays the primary span, and repointing it
 // would take the restore plan's live-vs-imported discriminator with it).
 func fetchTraceIntoFrontend(ctx context.Context, traceID string) error {
