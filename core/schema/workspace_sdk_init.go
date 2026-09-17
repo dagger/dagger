@@ -13,7 +13,7 @@ import (
 
 func (s *workspaceSchema) loadWorkspaceSDKModule(
 	ctx context.Context,
-	ws *core.Workspace,
+	ws dagql.ObjectResult[*core.Workspace],
 	configDir string,
 	sdkRef string,
 	settings map[string]any,
@@ -29,21 +29,12 @@ func (s *workspaceSchema) loadWorkspaceSDKModule(
 
 	var workspaceSource *core.ModuleSource
 	if core.FastModuleSourceKindCheck(sdkRef, "") == core.ModuleSourceKindLocal {
-		workspaceRoot, err := s.workspaceOverlayRootfs(ctx, ws)
-		if err != nil {
-			return nil, fmt.Errorf("load workspace SDK-module root: %w", err)
-		}
-		configDir = filepath.ToSlash(cleanWorkspaceRelPath(configDir))
+		// Resolve the provider relative to the config directory through the
+		// workspace, retaining its source kind and cache-volume namespace.
 		workspaceSource = &core.ModuleSource{
 			ModuleName:        "workspace",
-			SourceRootSubpath: configDir,
-			ContextDirectory:  workspaceRoot,
-			Kind:              core.ModuleSourceKindDir,
-			DirSrc: &core.DirModuleSource{
-				OriginalContextDir:        workspaceRoot,
-				OriginalSourceRootSubpath: configDir,
-				ContextIdentity:           ws.GitOrigin(),
-			},
+			SourceRootSubpath: filepath.ToSlash(cleanWorkspaceRelPath(configDir)),
+			Workspace:         ws,
 		}
 	}
 

@@ -590,31 +590,43 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 		return nil, fmt.Errorf("build scale-out module query: missing module")
 	}
 	modSrc := mod.Source.Value.Self()
-	switch modSrc.Kind {
-	case ModuleSourceKindLocal:
-		query = query.Select("moduleSource").
-			Arg("refString", filepath.Join(
-				modSrc.Local.ContextDirectoryPath,
-				modSrc.SourceRootSubpath,
-			))
-	case ModuleSourceKindGit:
-		query = query.Select("moduleSource").
-			Arg("refString", modSrc.AsString()).
-			Arg("refPin", modSrc.Git.Commit).
-			Arg("requireKind", modSrc.Kind)
-	case ModuleSourceKindDir:
-		dirID, err := modSrc.DirSrc.OriginalContextDir.ID()
+	if modSrc.Workspace.Self() != nil {
+		workspaceID, err := modSrc.Workspace.ID()
 		if err != nil {
-			return nil, fmt.Errorf("get dir ID: %w", err)
+			return nil, fmt.Errorf("get workspace ID: %w", err)
 		}
-		dirIDEnc, err := dirID.Encode()
+		encoded, err := workspaceID.Encode()
 		if err != nil {
-			return nil, fmt.Errorf("encode dir ID: %w", err)
+			return nil, fmt.Errorf("encode workspace ID: %w", err)
 		}
-		query = query.Select("node").Arg("id", dirIDEnc).InlineFragment("Directory")
-		query = query.Select("asModuleSource").
-			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath).
-			Arg("contextIdentity", modSrc.DirSrc.ContextIdentity)
+		query = query.Select("node").Arg("id", encoded).InlineFragment("Workspace").
+			Select("moduleSource").Arg("path", "/"+filepath.ToSlash(modSrc.SourceRootSubpath))
+	} else {
+		switch modSrc.Kind {
+		case ModuleSourceKindLocal:
+			query = query.Select("moduleSource").
+				Arg("refString", filepath.Join(
+					modSrc.Local.ContextDirectoryPath,
+					modSrc.SourceRootSubpath,
+				))
+		case ModuleSourceKindGit:
+			query = query.Select("moduleSource").
+				Arg("refString", modSrc.AsString()).
+				Arg("refPin", modSrc.Git.Commit).
+				Arg("requireKind", modSrc.Kind)
+		case ModuleSourceKindDir:
+			dirID, err := modSrc.DirSrc.OriginalContextDir.ID()
+			if err != nil {
+				return nil, fmt.Errorf("get dir ID: %w", err)
+			}
+			dirIDEnc, err := dirID.Encode()
+			if err != nil {
+				return nil, fmt.Errorf("encode dir ID: %w", err)
+			}
+			query = query.Select("node").Arg("id", dirIDEnc).InlineFragment("Directory")
+			query = query.Select("asModuleSource").
+				Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
+		}
 	}
 	query = query.Select("asModule")
 	if mod.Name() != "" && mod.Name() != modSrc.ModuleName {

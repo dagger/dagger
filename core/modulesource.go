@@ -459,7 +459,6 @@ type persistedGitModuleSourcePayload struct {
 type persistedDirModuleSourcePayload struct {
 	OriginalSourceRootSubpath  string `json:"originalSourceRootSubpath,omitempty"`
 	OriginalContextDirResultID uint64 `json:"originalContextDirResultID,omitempty"`
-	ContextIdentity            string `json:"contextIdentity,omitempty"`
 }
 
 type persistedModuleSourceSDKCapabilities struct {
@@ -915,7 +914,6 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	if src.DirSrc != nil {
 		payload.DirSrc = &persistedDirModuleSourcePayload{
 			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
-			ContextIdentity:           src.DirSrc.ContextIdentity,
 		}
 		if src.DirSrc.OriginalContextDir.Self() != nil {
 			originalContextDirID, err := encodePersistedObjectRef(cache, src.DirSrc.OriginalContextDir, "module source dir original context dir")
@@ -1015,7 +1013,6 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 	if persisted.DirSrc != nil {
 		src.DirSrc = &DirModuleSource{
 			OriginalSourceRootSubpath: persisted.DirSrc.OriginalSourceRootSubpath,
-			ContextIdentity:           persisted.DirSrc.ContextIdentity,
 		}
 		if persisted.DirSrc.OriginalContextDirResultID != 0 {
 			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
@@ -2123,11 +2120,6 @@ type DirModuleSource struct {
 	OriginalContextDir dagql.ObjectResult[*Directory]
 	// the original source root subpath provided to AsModuleSource
 	OriginalSourceRootSubpath string
-	// ContextIdentity is stable provenance inherited from the Workspace that
-	// produced this directory source. For Git workspaces it is the normalized
-	// origin; empty means the directory is synthetic and content identity is the
-	// only safe cache-volume fallback.
-	ContextIdentity string
 }
 
 type moduleDependencyResolutionKey struct{}
@@ -2298,7 +2290,6 @@ func ResolveDepToSource(
 				Args: []dagql.NamedInput{
 					{Name: "sourceRootPath", Value: dagql.String(depPath)},
 					{Name: "disableFindUp", Value: dagql.Boolean(true)},
-					{Name: "contextIdentity", Value: dagql.String(parentSrc.DirSrc.ContextIdentity)},
 				},
 			}}
 			if depName != "" {

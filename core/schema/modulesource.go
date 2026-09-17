@@ -863,13 +863,11 @@ func (s *moduleSourceSchema) gitModuleSource(
 }
 
 type directoryAsModuleArgs struct {
-	SourceRootPath  string `default:"."`
-	ContextIdentity string `internal:"true" default:""`
+	SourceRootPath string `default:"."`
 }
 
 type directoryAsModuleSourceArgs struct {
-	ContextIdentity string `internal:"true" default:""`
-	SourceRootPath  string `default:"."`
+	SourceRootPath string `default:"."`
 
 	// AllowNotExists tolerates a directory holding no dagger config file at
 	// the source root, returning a context-only source (ConfigExists=false)
@@ -895,7 +893,6 @@ func (s *moduleSourceSchema) directoryAsModule(
 			Field: "asModuleSource",
 			Args: []dagql.NamedInput{
 				{Name: "sourceRootPath", Value: dagql.String(args.SourceRootPath)},
-				{Name: "contextIdentity", Value: dagql.String(args.ContextIdentity)},
 			},
 		},
 		dagql.Selector{
@@ -924,7 +921,6 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		DirSrc: &core.DirModuleSource{
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
-			ContextIdentity:           workspace.NormalizeGitRemote(args.ContextIdentity),
 		},
 	}
 	if dirSrc.SourceRootSubpath == "" {

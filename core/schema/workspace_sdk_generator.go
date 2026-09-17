@@ -454,7 +454,7 @@ func (s *workspaceSchema) resolveSDKModuleScopeClients(
 			return ctx, nil, err
 		}
 	}
-	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, current.Self(), staged.ConfigDir)
+	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, current, staged.ConfigDir)
 	if err != nil {
 		return operationCtx, nil, err
 	}

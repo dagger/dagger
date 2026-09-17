@@ -323,7 +323,7 @@ func (s *workspaceSchema) withModuleInstall(
 			return parent, nil
 		}
 	}
-	selected, overlayLock, err := s.prepareWorkspaceOverlayLock(ctx, parent.Self(), staged.ConfigDir)
+	selected, overlayLock, err := s.prepareWorkspaceOverlayLock(ctx, parent, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -695,7 +695,7 @@ func (s *workspaceSchema) withUpdatedModules(
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	selected, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, ws, staged.ConfigDir)
+	selected, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, parent, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

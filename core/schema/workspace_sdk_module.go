@@ -287,7 +287,7 @@ func (s *workspaceSchema) withSDKModuleClient(
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, ws, staged.ConfigDir)
+	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, parent, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -550,7 +550,7 @@ func (s *workspaceSchema) withUpdatedSDKModuleClients(
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, ws, staged.ConfigDir)
+	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, parent, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -753,7 +753,7 @@ func (s *workspaceSchema) resolveCurrentSDKModuleScope(
 	if err != nil {
 		return resolvedSDKModuleScope{}, err
 	}
-	provider, err := s.loadWorkspaceSDKModule(ctx, parent.Self(), staged.ConfigDir, selected.ref, settings)
+	provider, err := s.loadWorkspaceSDKModule(ctx, parent, staged.ConfigDir, selected.ref, settings)
 	if err != nil {
 		return resolvedSDKModuleScope{}, err
 	}
@@ -863,7 +863,7 @@ func (s *workspaceSchema) sdkDefaultModulePath(
 		maps.Copy(merged, explicitSettings)
 		settings = merged
 	}
-	provider, err := s.loadWorkspaceSDKModule(ctx, parent.Self(), staged.ConfigDir, selected.ref, settings)
+	provider, err := s.loadWorkspaceSDKModule(ctx, parent, staged.ConfigDir, selected.ref, settings)
 	if err != nil {
 		return "", err
 	}
@@ -984,7 +984,7 @@ func (s *workspaceSchema) generateSDKModuleScope(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	provider, err := s.loadWorkspaceSDKModule(ctx, ws.Self(), staged.ConfigDir, selected.ref, effectiveSettings)
+	provider, err := s.loadWorkspaceSDKModule(ctx, ws, staged.ConfigDir, selected.ref, effectiveSettings)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

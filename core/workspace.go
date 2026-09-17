@@ -92,8 +92,6 @@ func BumpWorkspaceReadEpoch(ctx context.Context) error {
 
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
-	// gitOrigin is credential-free provenance for directory-backed module caches.
-	gitOrigin string
 	// source is the private backing source for workspace filesystem and git
 	// behavior. It is intentionally not exposed through GraphQL.
 	source WorkspaceSource
@@ -624,7 +622,6 @@ var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
 var _ dagql.HasDependencyResults = (*Workspace)(nil)
 
 type persistedWorkspacePayload struct {
-	GitOrigin       string                        `json:"gitOrigin,omitempty"`
 	RootfsResultID  uint64                        `json:"rootfsResultID,omitempty"`
 	MountsResultID  uint64                        `json:"mountsResultID,omitempty"`
 	MountPoints     []string                      `json:"mountPoints,omitempty"`
@@ -779,7 +776,6 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		GitOrigin:       ws.gitOrigin,
 		CompatWorkspace: ws.compatWorkspace,
 		Address:         ws.Address,
 		Cwd:             ws.Cwd,
@@ -864,7 +860,6 @@ func (*Workspace) DecodePersistedObject(
 	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	ws := &Workspace{
-		gitOrigin:       workspacepkg.NormalizeGitRemote(persisted.GitOrigin),
 		rootfs:          rootfs,
 		mounts:          mounts,
 		mountPoints:     persisted.MountPoints,
@@ -1095,22 +1090,4 @@ func (*WorkspaceGit) DecodePersistedObject(
 		wg.Workspace = ws
 	}
 	return wg, nil
-}
-
-// SetGitOrigin records the normalized, credential-free Git origin for this
-// workspace. It is internal provenance, not a public address: callers derive it
-// from the selected remote and checkpoints preserve it across reconstruction.
-func (ws *Workspace) SetGitOrigin(origin string) {
-	if ws != nil {
-		ws.gitOrigin = workspacepkg.NormalizeGitRemote(origin)
-	}
-}
-
-// GitOrigin returns the normalized Git origin associated with this workspace,
-// or empty when the workspace has no stable Git provenance.
-func (ws *Workspace) GitOrigin() string {
-	if ws == nil {
-		return ""
-	}
-	return ws.gitOrigin
 }

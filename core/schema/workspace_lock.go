@@ -20,22 +20,36 @@ type workspaceOverlayLock struct {
 
 func (s *workspaceSchema) prepareWorkspaceOverlayLock(
 	ctx context.Context,
-	ws *core.Workspace,
+	parent dagql.ObjectResult[*core.Workspace],
 	configDir string,
-) (*core.Workspace, *workspaceOverlayLock, error) {
-	selected := ws.Clone()
-	setWorkspaceConfigSelection(selected, configDir)
-	lock, err := s.readWorkspaceLockForOverlay(ctx, selected)
+) (dagql.ObjectResult[*core.Workspace], *workspaceOverlayLock, error) {
+	var selected dagql.ObjectResult[*core.Workspace]
+	metadata := parent.Self().Clone()
+	setWorkspaceConfigSelection(metadata, configDir)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, nil, err
+		return selected, nil, err
+	}
+	if err := srv.Select(ctx, parent, &selected, dagql.Selector{
+		Field: "withConfigPaths",
+		Args: []dagql.NamedInput{
+			{Name: "configFile", Value: dagql.String(metadata.ConfigFile)},
+			{Name: "lockFile", Value: dagql.String(metadata.LockFile)},
+		},
+	}); err != nil {
+		return selected, nil, err
+	}
+	lock, err := s.readWorkspaceLockForOverlay(ctx, selected.Self())
+	if err != nil {
+		return selected, nil, err
 	}
 	originalData, err := lock.Marshal()
 	if err != nil {
-		return nil, nil, fmt.Errorf("marshal original workspace lock: %w", err)
+		return selected, nil, fmt.Errorf("marshal original workspace lock: %w", err)
 	}
 	return selected, &workspaceOverlayLock{
 		Lock:         lock,
-		Path:         selected.LockFile,
+		Path:         selected.Self().LockFile,
 		originalData: originalData,
 	}, nil
 }

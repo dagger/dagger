@@ -203,15 +203,16 @@ type workspaceInstallResolution struct {
 
 func (s *workspaceSchema) resolveWorkspaceInstall(
 	ctx context.Context,
-	ws *core.Workspace,
+	parent dagql.ObjectResult[*core.Workspace],
 	ref string,
 	name string,
 	here bool,
 ) (workspaceInstallResolution, error) {
+	ws := parent.Self()
 	var resolved workspaceInstallResolution
 
 	configDir := workspaceConfigDirectoryForWrite(ws, here)
-	src, sourcePath, err := s.resolveWorkspaceInstallSource(ctx, ws, ref, configDir)
+	src, sourcePath, err := s.resolveWorkspaceInstallSource(ctx, parent, ref, configDir)
 	if err != nil {
 		return resolved, err
 	}
@@ -237,10 +238,11 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 
 func (s *workspaceSchema) resolveWorkspaceInstallSource(
 	ctx context.Context,
-	ws *core.Workspace,
+	parent dagql.ObjectResult[*core.Workspace],
 	ref string,
 	configDir string,
 ) (dagql.ObjectResult[*core.ModuleSource], string, error) {
+	ws := parent.Self()
 	var src dagql.ObjectResult[*core.ModuleSource]
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -281,25 +283,26 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 		if !inside {
 			return s.resolveExternalWorkspaceInstallSource(ctx, ws, ref, hostRoot, configDir)
 		}
-		return s.resolveWorkspaceInstallSourceFromRoot(ctx, srv, ws, workspaceRoot, ref, workspacePath, configDir)
+		return s.resolveWorkspaceInstallSourceFromRoot(ctx, srv, parent, workspaceRoot, ref, workspacePath, configDir)
 	}
 
 	resolvedPath, err := resolveWorkspacePath(ref, ws.Cwd)
 	if err != nil {
 		return src, "", err
 	}
-	return s.resolveWorkspaceInstallSourceFromRoot(ctx, srv, ws, workspaceRoot, ref, resolvedPath, configDir)
+	return s.resolveWorkspaceInstallSourceFromRoot(ctx, srv, parent, workspaceRoot, ref, resolvedPath, configDir)
 }
 
 func (s *workspaceSchema) resolveWorkspaceInstallSourceFromRoot(
 	ctx context.Context,
 	srv *dagql.Server,
-	ws *core.Workspace,
+	parent dagql.ObjectResult[*core.Workspace],
 	root dagql.ObjectResult[*core.Directory],
 	ref string,
 	resolvedPath string,
 	configDir string,
 ) (dagql.ObjectResult[*core.ModuleSource], string, error) {
+	ws := parent.Self()
 	var src dagql.ObjectResult[*core.ModuleSource]
 	var err error
 	if root.Self() == nil {
@@ -315,11 +318,10 @@ func (s *workspaceSchema) resolveWorkspaceInstallSourceFromRoot(
 	if !found {
 		return src, "", fmt.Errorf("ref %q does not point to an initialized module", ref)
 	}
-	if err := srv.Select(ctx, root, &src, dagql.Selector{
-		Field: "asModuleSource",
+	if err := srv.Select(ctx, parent, &src, dagql.Selector{
+		Field: "moduleSource",
 		Args: []dagql.NamedInput{
-			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
-			{Name: "contextIdentity", Value: dagql.String(ws.GitOrigin())},
+			{Name: "path", Value: dagql.String("/" + filepath.ToSlash(resolvedPath))},
 		},
 	}); err != nil {
 		return src, "", fmt.Errorf("load module source: %w", err)
@@ -368,12 +370,12 @@ func relativePathWithinRoot(root, target string) (string, bool, error) {
 
 func (s *workspaceSchema) resolveWorkspaceInstallForOverlay(
 	ctx context.Context,
-	ws *core.Workspace,
+	parent dagql.ObjectResult[*core.Workspace],
 	ref string,
 	name string,
 	here bool,
 ) (workspaceInstallResolution, error) {
-	return s.resolveWorkspaceInstall(ctx, ws, ref, name, here)
+	return s.resolveWorkspaceInstall(ctx, parent, ref, name, here)
 }
 
 func workspaceInstallModuleSourceSelector(ref string) dagql.Selector {

@@ -111,6 +111,48 @@ func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryForModuleLoadedFromDi
 	)
 }
 
+// Workspace IDs preserve overlays and owner routing that cannot be rebuilt
+// from the module's host path or remote Git ref alone.
+func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryPreservesWorkspace(ctx context.Context, t *testctx.T) {
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	dag := newCoreDagqlServerForTest(t, &Query{})
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Workspace]{Typed: &Workspace{}}))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleSource]{Typed: &ModuleSource{}}))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+
+	ws := newTypeDefAttachedResult(t, ctx, cache, dag, "workspace", &Workspace{Cwd: "apps/app"})
+	wsID, err := ws.ID()
+	require.NoError(t, err)
+	encodedID, err := wsID.Encode()
+	require.NoError(t, err)
+	for _, kind := range []ModuleSourceKind{ModuleSourceKindLocal, ModuleSourceKindGit} {
+		source := newTypeDefAttachedResult(t, ctx, cache, dag, string(kind), &ModuleSource{
+			Kind:              kind,
+			Workspace:         ws,
+			SourceRootSubpath: "tools/checks",
+		})
+		mod := newTypeDefAttachedResult(t, ctx, cache, dag, "module"+string(kind), &Module{
+			Source: dagql.NonNull(source),
+		})
+		query, err := (&ModTreeNode{Module: mod}).buildScaleOutModuleQuery(querybuilder.Query())
+		require.NoError(t, err)
+		generated, err := query.Select("id").Build(ctx)
+		require.NoError(t, err)
+		doc, err := parser.ParseQuery(&ast.Source{Input: generated})
+		require.NoError(t, err)
+		node := doc.Operations[0].SelectionSet[0].(*ast.Field)
+		require.Equal(t, "node", node.Name)
+		require.Equal(t, encodedID, node.Arguments.ForName("id").Value.Raw)
+		fragment := node.SelectionSet[0].(*ast.InlineFragment)
+		require.Equal(t, "Workspace", fragment.TypeCondition)
+		moduleSource := fragment.SelectionSet[0].(*ast.Field)
+		require.Equal(t, "moduleSource", moduleSource.Name)
+		require.Equal(t, "/tools/checks", moduleSource.Arguments.ForName("path").Value.Raw)
+	}
+}
+
 func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryPreservesAsModuleOptions(ctx context.Context, t *testctx.T) {
 	cache, err := dagql.NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
