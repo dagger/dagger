@@ -1485,3 +1485,32 @@ func TestSnapshotSharingTypedSuccessorHoldsTheDonor(t *testing.T) {
 	require.Equal(t, "mount-snap", receiverValue.Parts["mount"].Snapshot)
 	require.Equal(t, int32(2), manager.pins.Load())
 }
+
+// The decode preflight covers exactly what a shared attempt would decode. A
+// row that is already typed is decoded by nobody, so its unadmitted family
+// does not make a slot ineligible; the same row encoded does. An admitted
+// family whose native class the supplied decoding server lacks is ineligible
+// too, decided before any shared decode attempt exists.
+func TestSnapshotSharingDecodePreflight(t *testing.T) {
+	ctx, c, srv, _ := shareTestCache(t)
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	// transferTestValue's family is not admitted for background decode.
+	unadmitted := persistedListTestResult(t, ctx, c, srv, "preflight-unadmitted", &transferTestValue{Text: "typed"})
+	unadmittedID := uint64(unadmitted.cacheSharedResult().id)
+	require.NoError(t, c.preflightShareDecode(ctx, srv, []uint64{unadmittedID}), "an already typed row is outside the decode closure")
+	shareTestEncodedReceiver(t, ctx, c, unadmitted)
+	err := c.preflightShareDecode(ctx, srv, []uint64{unadmittedID})
+	require.ErrorIs(t, err, ErrSnapshotShareIneligible)
+	require.ErrorContains(t, err, "not admitted for background decode")
+
+	admitted := persistedListTestResult(t, ctx, c, srv, "preflight-admitted", newShareTestValue("admitted", map[string]sharePartState{"fs": {}}))
+	shareTestEncodedReceiver(t, ctx, c, admitted)
+	admittedID := uint64(admitted.cacheSharedResult().id)
+	require.NoError(t, c.preflightShareDecode(ctx, srv, []uint64{admittedID}))
+	bare := newDagqlServerForTest(t, &persistCodecRoot{})
+	err = c.preflightShareDecode(ctx, bare, []uint64{admittedID})
+	require.ErrorIs(t, err, ErrSnapshotShareIneligible)
+	require.ErrorContains(t, err, "no native class")
+
+	require.ErrorIs(t, c.preflightShareDecode(ctx, srv, []uint64{1 << 40}), ErrSnapshotShareIneligible, "an unregistered exact reference is ineligible")
+}

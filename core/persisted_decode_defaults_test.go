@@ -90,3 +90,24 @@ func TestSnapshotSharePreparationCoreGuards(t *testing.T) {
 	require.NotErrorIs(t, lazy.Evaluate(t.Context(), "TestValue", run), engine.ErrSnapshotShareEvaluation)
 	require.Equal(t, 1, ran)
 }
+
+// Root and factory agreement is checked on the preparation context itself,
+// before the cache can start a shared decode attempt with it.
+func TestCheckPersistedDecodeDefaults(t *testing.T) {
+	ctx := t.Context()
+	root := NewRoot(nil)
+	srv, err := dagql.NewServer(ctx, root)
+	require.NoError(t, err)
+	factory := func(call.View) *SchemaBuilder { return NewSchemaBuilder(root, nil) }
+
+	require.NoError(t, CheckPersistedDecodeDefaults(ContextWithPersistedDecodeDefaults(ctx, root, factory), srv))
+	require.ErrorContains(t, CheckPersistedDecodeDefaults(ctx, srv), "none registered")
+	require.ErrorContains(t, CheckPersistedDecodeDefaults(ContextWithPersistedDecodeDefaults(ctx, root, factory), nil), "no decoding server root")
+
+	otherSrv, err := dagql.NewServer(ctx, NewRoot(nil))
+	require.NoError(t, err)
+	require.ErrorContains(t, CheckPersistedDecodeDefaults(ContextWithPersistedDecodeDefaults(ctx, root, factory), otherSrv), "does not carry the registered engine root")
+
+	empty := func(call.View) *SchemaBuilder { return nil }
+	require.ErrorContains(t, CheckPersistedDecodeDefaults(ContextWithPersistedDecodeDefaults(ctx, root, empty), srv), "returned nothing")
+}

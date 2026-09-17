@@ -60,3 +60,27 @@ func persistedDecodeDefaultDeps(ctx context.Context, dec *dagql.PersistDecodeCon
 	}
 	return deps, nil
 }
+
+// CheckPersistedDecodeDefaults verifies, before any shared decode attempt is
+// started with ctx and dag, what persistedDecodeDefaultDeps would otherwise
+// discover inside one: ctx carries registered defaults, dag's root is that
+// registered engine root, and the factory yields a builder for dag's view.
+// The engine's preparation callback calls it on every preparation context it
+// hands out.
+func CheckPersistedDecodeDefaults(ctx context.Context, dag *dagql.Server) error {
+	defaults, _ := ctx.Value(persistedDecodeDefaultsKey{}).(*persistedDecodeDefaults)
+	if defaults == nil {
+		return fmt.Errorf("persisted decode defaults: none registered")
+	}
+	if dag == nil || dag.Root() == nil {
+		return fmt.Errorf("persisted decode defaults: no decoding server root")
+	}
+	query, ok := dagql.UnwrapAs[*Query](dag.Root())
+	if !ok || query != defaults.root {
+		return fmt.Errorf("persisted decode defaults: the decoding server does not carry the registered engine root")
+	}
+	if defaults.factory(dag.View) == nil {
+		return fmt.Errorf("persisted decode defaults: the registered factory returned nothing")
+	}
+	return nil
+}
