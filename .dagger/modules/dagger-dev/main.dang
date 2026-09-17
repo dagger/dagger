@@ -45,13 +45,13 @@ type DaggerDev {
         [modules.hello]
         source = ".dagger/modules/hello"
         """)
-      .withNewFile(".dagger/modules/hello/dagger-module.toml", """
+      .withNewFile(".dagger/modules/hello/dagger-module.toml", ```toml
         name = "hello"
         engineVersion = "latest"
 
         [runtime]
         source = "dang"
-        """)
+      ```)
       .withNewFile(".dagger/modules/hello/main.dang", """
         type Hello {
           ok: Void @check {
