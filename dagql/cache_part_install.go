@@ -290,7 +290,13 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 	if err := version.check(row); err != nil {
 		return nil, err
 	}
-	return p.seal(row, base)
+	if _, err := p.seal(row, base); err != nil {
+		return nil, err
+	}
+	if err := c.reachPrepared(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 // recordFor validates that the preparation base still describes row's
@@ -491,6 +497,15 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if p.store != nil && p.published != nil {
 		return nil, PartInstallRefused, fmt.Errorf("commit part: preparation carries both a typed store and an envelope")
 	}
+	// Outside the Commit lock interval, on both sides of it.
+	if err := c.fixtureReach(ctx, p.fixtureEvent(FixtureBeforeCommit, "")); err != nil {
+		return nil, PartInstallRefused, err
+	}
+	defer func() {
+		if outcome == PartInstalled {
+			_ = c.fixtureReach(ctx, p.fixtureEvent(FixtureCommitPublished, ""))
+		}
+	}()
 	// A preparation with a prepared prefix deliberately no longer matches the
 	// original observation: its prefix has published since. Its expected
 	// representation and every predecessor's installation identity are
@@ -735,4 +750,27 @@ func (c *Cache) InstallReadyPart(ctx context.Context, receiver AnyResult, source
 		return partRefused("install: commit refused")
 	}
 	return nil
+}
+
+// fixtureEvent is the preparation's observation at one of its barrier points.
+func (p *PreparedReadyPart) fixtureEvent(point FixtureBarrierPoint, detail string) FixtureBarrierEvent {
+	event := FixtureBarrierEvent{Point: point, Detail: detail}
+	if p.receiver != nil {
+		event.ResultID = uint64(p.receiver.id)
+	}
+	if p.permit != nil {
+		address := p.permit.address
+		event.Address = &address
+		if p.permit.task != nil {
+			event.TaskGeneration = p.permit.task.generation
+		}
+	}
+	return event
+}
+
+// reachPrepared stands after a protected preparation exists, outside every
+// lock. If the paused operation is canceled the caller's own error path
+// releases the preparation.
+func (c *Cache) reachPrepared(ctx context.Context, p *PreparedReadyPart) error {
+	return c.fixtureReach(ctx, p.fixtureEvent(FixturePrepareDone, ""))
 }
