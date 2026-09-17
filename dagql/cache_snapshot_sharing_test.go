@@ -1514,3 +1514,29 @@ func TestSnapshotSharingDecodePreflight(t *testing.T) {
 
 	require.ErrorIs(t, c.preflightShareDecode(ctx, srv, []uint64{1 << 40}), ErrSnapshotShareIneligible, "an unregistered exact reference is ineligible")
 }
+
+// A donor whose row-wide lease reconciliation is in flight is busy for the
+// pass: the probe sees the held lease guard without waiting for it, and
+// selects nothing from that row. Once the reconciliation has ended a later
+// trigger shares as usual.
+func TestSnapshotSharingDonorLeaseReconciliationIsBusy(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	donorRow := donor.cacheSharedResult()
+	// What syncResultSnapshotLeases holds for the whole of a reconciliation.
+	donorRow.leaseSyncMu.Lock()
+	reconciled := sync.OnceFunc(donorRow.leaseSyncMu.Unlock)
+	defer reconciled()
+	shareTestUnite(t, ctx, c, "lease-reconciliation", donor, receiver)
+	require.Equal(t, 0, barrier.awaitPass(t), "a reconciling donor is not Ready, and the probe did not wait for it")
+	require.Zero(t, manager.pins.Load())
+
+	reconciled()
+	c.notifySnapshotShareCompletion(ctx, donorRow)
+	require.Equal(t, 1, barrier.awaitPass(t))
+	require.True(t, shareTestHasLink(receiver, "fs-snap"))
+}

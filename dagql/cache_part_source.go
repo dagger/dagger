@@ -436,6 +436,18 @@ func (c *Cache) probeAllParts(ctx context.Context, row *sharedResult) (Persisted
 		}
 		gate.mu.Unlock()
 	}
+	// An active row-wide lease reconciliation makes every part of the row
+	// busy for this pass. The observation never blocks: a reconciliation that
+	// holds the row's lease guard is simply seen. One that finished during the
+	// probe advanced the payload revision, which the version check above or
+	// the constructor's and Commit's revalidation under E catches.
+	if !row.leaseSyncMu.TryLock() {
+		for i := range probes {
+			probes[i].Busy = true
+		}
+	} else {
+		row.leaseSyncMu.Unlock()
+	}
 	return record, version, probes, nil
 }
 
