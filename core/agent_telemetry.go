@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
@@ -124,6 +126,50 @@ func EmitAgentSnapshot(ctx context.Context, digest string) {
 		log.String(telemetryattrs.AgentSnapshotDigestAttr, digest),
 	)
 	telemetry.Logger(ctx, AgentInstrumentationScope).Emit(ctx, rec)
+}
+
+// AgentCheckpointVersion is the current lossless resume-control record format.
+const AgentCheckpointVersion = 1
+
+// AgentCheckpoint is the complete resume-critical state of one agent at one
+// registry-wide sequence. The JSON representation is the durable wire format;
+// adding or changing semantics requires a version bump.
+type AgentCheckpoint struct {
+	Version               int             `json:"version"`
+	Sequence              uint64          `json:"sequence"`
+	AgentID               string          `json:"agentID"`
+	Name                  string          `json:"name"`
+	CallDigest            string          `json:"callDigest"`
+	ParentAgentID         string          `json:"parentAgentID,omitempty"`
+	SnapshotDigest        string          `json:"snapshotDigest"`
+	State                 AgentState      `json:"state"`
+	PreTeardownState      AgentState      `json:"preTeardownState,omitempty"`
+	StopReason            AgentStopReason `json:"stopReason,omitempty"`
+	Error                 string          `json:"error,omitempty"`
+	Final                 bool            `json:"final,omitempty"`
+	ExpectedFinalSequence uint64          `json:"expectedFinalSequence,omitempty"`
+}
+
+// EmitAgentCheckpoint publishes a versioned resume-control record. The
+// dedicated session processor accepts only this scope/marker/contract shape and
+// drains it losslessly during provider shutdown.
+func EmitAgentCheckpoint(ctx context.Context, checkpoint AgentCheckpoint) {
+	checkpoint.Version = AgentCheckpointVersion
+	body, err := json.Marshal(checkpoint)
+	if err != nil {
+		return // All fields are scalar; retained defensively for future versions.
+	}
+
+	rec := log.Record{}
+	rec.SetTimestamp(time.Now())
+	rec.SetBody(log.BytesValue(body))
+	rec.AddAttributes(
+		log.Bool(telemetryattrs.AgentCheckpointAttr, true),
+		log.String(telemetryattrs.AgentCheckpointContractAttr, telemetryattrs.AgentCheckpointContractV1),
+		log.String(telemetryattrs.AgentCheckpointSequenceAttr, strconv.FormatUint(checkpoint.Sequence, 10)),
+		log.Bool(telemetryattrs.AgentCheckpointFinalAttr, checkpoint.Final),
+	)
+	telemetry.Logger(ctx, telemetryattrs.AgentCheckpointInstrumentationScope).Emit(ctx, rec)
 }
 
 // emitAgentFailure publishes a failed loop's terminal error as a permanent

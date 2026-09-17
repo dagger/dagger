@@ -594,10 +594,11 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 // seed), spawn is the only verb that creates an entry, and every other verb
 // addresses one that exists.
 func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
-	Name   dagql.Optional[dagql.String]
-	Handle dagql.Optional[dagql.String]
-	State  core.AgentState `default:"IDLE"`
-	Error  string          `default:""`
+	ParentHandle dagql.Optional[dagql.String]
+	Name         dagql.Optional[dagql.String]
+	Handle       dagql.Optional[dagql.String]
+	State        core.AgentState `default:"IDLE"`
+	Error        string          `default:""`
 }) (res dagql.Result[core.AgentID], _ error) {
 	name := args.Name.Value.String()
 	if name == "" {
@@ -645,7 +646,11 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 	if err != nil {
 		return res, err
 	}
-	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored); err != nil {
+	parentHandles := []string{}
+	if args.ParentHandle.Valid {
+		parentHandles = append(parentHandles, args.ParentHandle.Value.String())
+	}
+	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored, parentHandles...); err != nil {
 		return res, err
 	}
 	pinnedID, err := pinned.ID()
