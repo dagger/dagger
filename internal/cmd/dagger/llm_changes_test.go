@@ -110,6 +110,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	git("config", "user.email", "ui@localhost")
 	git("config", "commit.gpgSign", "false")
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("base\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, ".gitignore"), []byte("ignored.txt\n"), 0o644))
 	git("add", ".")
 	git("commit", "-m", "base")
 	// Pre-existing dirt is part of the baseline, not a change by the agent.
@@ -181,6 +182,9 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 		{"addition", committed.WithNewFile("pending.txt", "new\n"), patchpreview.Entry{Path: "pending.txt", Kind: "ADDED", Added: 1}},
 		{"modification", committed.WithNewFile("saved.txt", "pending\n"), patchpreview.Entry{Path: "saved.txt", Kind: "MODIFIED", Added: 1, Removed: 1}},
 		{"deletion", committed.WithoutFile("saved.txt"), patchpreview.Entry{Path: "saved.txt", Kind: "REMOVED", Removed: 1}},
+		// Not an uncommitted change in git's eyes, but still an edit the
+		// user will save, so it stays visible after the agent commits.
+		{"ignored addition", committed.WithNewFile("ignored.txt", "new\n"), patchpreview.Entry{Path: "ignored.txt", Kind: "ADDED", Added: 1}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			preview, err := previewWorkspaceChanges(ctx, dag, tc.ws, baseline)

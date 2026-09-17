@@ -64,8 +64,12 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 		// The commit list already accounts for changes to HEAD. Only show
 		// pending edits above it, including edits that undo a committed change.
 		// With unchanged history, retain the checkpoint comparison so saved
-		// or pre-existing dirt is not reported as new work.
-		changes = ws.Git().Uncommitted()
+		// or pre-existing dirt is not reported as new work. Compare against
+		// HEAD as a workspace rather than git.uncommitted: that follows
+		// gitignore, but an ignored file the agent wrote is still an edit
+		// the user will save, so the sidebar shows it like the checkpoint
+		// comparison does.
+		changes = ws.Changes(dagger.WorkspaceChangesOpts{From: ws.Git().Head().AsWorkspace()})
 	}
 	entries, err := idtui.PreviewPatch(ctx, dag, changes)
 	if err != nil {
