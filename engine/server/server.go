@@ -855,10 +855,11 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	srv.daggerSessionsMu.Unlock()
 
 	// Decide the integration's stop outcome before draining sessions or closing
-	// the cache, and join Run outside gcmu and every cache lock.
-	if adapterStopErr := srv.stopRemoteCacheIntegration(ctx); adapterStopErr != nil {
+	// the cache, and join Run outside gcmu and every cache lock. A failed stop
+	// keeps the cache checkpoint dirty and is returned.
+	adapterStopErr := srv.stopRemoteCacheIntegration(ctx)
+	if adapterStopErr != nil {
 		slog.Error("failed to stop remote cache integration", "error", adapterStopErr)
-		err = errors.Join(err, adapterStopErr)
 	}
 
 	if srv.engineCache != nil {
@@ -896,7 +897,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 
 	if srv.engineCache != nil {
-		if closeErr := srv.engineCache.Close(ctx); closeErr != nil {
+		if closeErr := srv.engineCache.CloseWithShutdownError(ctx, adapterStopErr); closeErr != nil {
 			slog.Error("failed to close base dagql cache", "error", closeErr)
 			err = errors.Join(err, closeErr)
 		}
@@ -955,10 +956,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}()
 
 	select {
-	case err := <-doneClosingCh:
-		return err
+	case dbCloseErr := <-doneClosingCh:
+		return errors.Join(adapterStopErr, dbCloseErr)
 	case <-ctx.Done():
-		return ctx.Err()
+		return errors.Join(adapterStopErr, ctx.Err())
 	}
 }
 
