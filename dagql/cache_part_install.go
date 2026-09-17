@@ -482,9 +482,6 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if err := context.Cause(ctx); err != nil {
 		return nil, PartInstallRefused, err
 	}
-	if hook := c.testBeforePartCommit; hook != nil {
-		hook(p)
-	}
 	// Construction invariants, checked before any lock. A violation is a
 	// defect in the constructor, not a changed source: it is an error, so no
 	// retry loop can mistake it for a reason to select again.
@@ -498,7 +495,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		return nil, PartInstallRefused, fmt.Errorf("commit part: preparation carries both a typed store and an envelope")
 	}
 	// Outside the Commit lock interval, on both sides of it.
-	if err := c.fixtureReach(ctx, p.fixtureEvent(FixtureBeforeCommit, "")); err != nil {
+	if err := c.reachBeforeCommit(ctx, p); err != nil {
 		return nil, PartInstallRefused, err
 	}
 	defer func() {
@@ -766,6 +763,16 @@ func (p *PreparedReadyPart) fixtureEvent(point FixtureBarrierPoint, detail strin
 		}
 	}
 	return event
+}
+
+// reachBeforeCommit is the one site before Commit's locks: the in-package
+// test field, which sees the preparation itself, then the gated fixture's
+// barrier for the same point.
+func (c *Cache) reachBeforeCommit(ctx context.Context, p *PreparedReadyPart) error {
+	if c.testBeforePartCommit != nil {
+		c.testBeforePartCommit(p)
+	}
+	return c.fixtureReach(ctx, p.fixtureEvent(FixtureBeforeCommit, ""))
 }
 
 // reachPrepared stands after a protected preparation exists, outside every
