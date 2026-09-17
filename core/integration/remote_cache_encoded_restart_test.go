@@ -118,6 +118,51 @@ func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testc
 		}
 	})
 
+	// The same fault, then an exact demand of R before any restart: it pays
+	// only the owning generation's owed bookkeeping. While B's own capture L
+	// is alive an ordinary read of R's handle is served by L, the complete
+	// equivalent row, and never touches R (author B's in-process
+	// TestSharingOwedBookkeepingIsPaidByAnExactDemand). So L's owners are
+	// released first, as in TestSharingDonorRestart; R then serves the read.
+	t.Run("RetryOnlyBookkeeping", func(ctx context.Context, t *testctx.T) {
+		var attach, synced dagql.FixtureBarrierArmed
+		s := newEncodedRestartScenario(ctx, t, func(b *fixtureEngine) {
+			require.NoError(t, b.fixture("barrierArm", b.control("attach.json", dagql.FixtureBarrierRequest{Key: "attach", Point: dagql.FixtureAfterOwnerAttach, Action: dagql.FixtureFailOwnerAttachAfter}), nil, &attach))
+			require.NoError(t, b.fixture("barrierArm", b.control("synced.json", dagql.FixtureBarrierRequest{Key: "synced", Point: dagql.FixtureOwnerSyncDone, Action: dagql.FixturePause}), nil, &synced))
+		})
+		b := s.b
+		s.await(ctx, t, "attach", attach.Generation)
+		s.await(ctx, t, "synced", synced.Generation)
+		require.NoError(t, b.fixture("barrierRelease", "synced-wait.json", nil, nil))
+
+		// The owed state, measured: the install is published, its settlement
+		// is not, and the pass's protection is still held for the retry.
+		var owed fixtureControlsReport
+		require.NoError(t, b.fixture("report", "", nil, &owed))
+		require.Len(t, partEventsOf(owed.transferFixtureReport, s.rID, "installed-ready"), 1)
+		require.Empty(t, partEventsOf(owed.transferFixtureReport, s.rID, "settled"))
+		t.Logf("owed bookkeeping: transient pins=%d %v", owed.Storage.TransientPins, owed.Storage.TransientPinResources)
+		require.Positive(t, owed.Storage.TransientPins, "the installed output's protection is kept for the bookkeeping retry")
+
+		// End L's one owner, its session, and collect it.
+		b.reconnect()
+		require.NoError(t, b.fixture("gc", "", nil, nil))
+
+		contents, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(s.rHandle)).File("notes.txt").Contents(ctx)
+		require.NoError(t, err, "the demand completes the owed bookkeeping")
+		require.Equal(t, s.notes, contents)
+		var report fixtureControlsReport
+		require.NoError(t, b.fixture("report", "", nil, &report))
+		t.Logf("R=%d events after the retry: %v; reached: %v", s.rID, partKindsOf(report.transferFixtureReport, s.rID), reachedOf(report, s.rID))
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-ready"), 1, "no second installation")
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "settled"), 1)
+		for _, kind := range []string{"provider-read", "installed-chain", "lazy-enter", "selected-ready", "selected-chain"} {
+			require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, kind), "the retry is bookkeeping only: %s", kind)
+		}
+		t.Logf("after the retry: transient pins=%d %v", report.Storage.TransientPins, report.Storage.TransientPinResources)
+		require.Zero(t, report.Storage.TransientPins, "the settlement released the protection")
+	})
+
 	// G3. A local restore failure is not a cache hit and is not repaired row
 	// by row: one saved owner link that cannot attach resets the whole cache,
 	// the engine still boots, and nothing is requested from anywhere.
