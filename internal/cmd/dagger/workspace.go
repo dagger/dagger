@@ -28,9 +28,9 @@ import (
 )
 
 var workspaceCmd = &cobra.Command{
-	Use:     "workspace",
+	Use:     "workspace [TYPE]",
 	Aliases: []string{"ws"},
-	Short:   "Inspect or configure your workspace (cwd, remotes, config, etc.)",
+	Short:   "Inspect workspace files, config, and artifacts",
 	Long: `Inspect or configure your workspace.
 
 A workspace is a project configured to use Dagger — a directory holding
@@ -38,11 +38,18 @@ a dagger.toml that records installed modules, environment overlays, and
 settings. Most commands (install, check, generate, up, settings, ...)
 operate on the workspace reachable from the current directory. The -W
 flag selects a different workspace (local path or git ref); --env
-applies a named overlay; dagger.toml is the source of truth.`,
+applies a named overlay; dagger.toml is the source of truth.
+
+List artifact addresses with a plural type name, such as containers,
+directories, files, or services. Use kebab case for multiword types,
+such as git-repositories. If plural names conflict, use the exact GraphQL
+type name. Tab completion lists the available types.`,
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "ws",
 	},
-	Args: cobra.NoArgs,
+	Args:              cobra.MaximumNArgs(1),
+	RunE:              runWorkspaceArtifacts,
+	ValidArgsFunction: completeWorkspaceArtifacts,
 }
 
 var workspaceRootCmd = &cobra.Command{
