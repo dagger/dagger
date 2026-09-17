@@ -1,0 +1,6 @@
+kind: Changed
+body: When logged in to Dagger Cloud, commands no longer upload an empty metrics report at exit. Commands that record no metrics, which is most of them, skip that request entirely.
+time: 2026-09-16T20:53:37-07:00
+custom:
+    Author: grouville
+    PR: "14182"
