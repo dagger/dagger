@@ -1,6 +1,8 @@
 package idtui
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -8,8 +10,249 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/protobuf/proto"
 )
+
+func TestConsoleAgents(t *testing.T) {
+	db := dagui.NewDB()
+	start := time.Unix(100, 0)
+	chief, child, restored := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: chief, Name: "agent: chief", Agent: true, AgentID: "chief-id", AgentName: "chief", AgentState: "STOPPED", StartTime: start},
+		{ID: child, ParentID: chief, Agent: true, AgentID: "worker-id", AgentName: "worker", AgentState: "RUNNING", StartTime: start.Add(time.Second)},
+		{ID: restored, Agent: true, AgentID: "worker-id", AgentName: "worker", AgentState: "IDLE", AgentSnapshotDigest: "xxh3:snapshot", StartTime: start.Add(2 * time.Second)},
+	})
+	fe := NewWithDB(io.Discard, db)
+	w := httptest.NewRecorder()
+	fe.consoleAgentsHandler(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	var got struct {
+		Agents                           []consoleAgent
+		LoadedSpansOnly, EngineConnected bool
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.True(t, got.LoadedSpansOnly)
+	require.False(t, got.EngineConnected)
+	require.Len(t, got.Agents, 2)
+	require.Equal(t, "worker-id", got.Agents[1].ID)
+	require.Equal(t, "chief-id", got.Agents[1].ParentID)
+	require.Equal(t, "IDLE", got.Agents[1].State)
+	require.Equal(t, "xxh3:snapshot", got.Agents[1].SnapshotDigest)
+	require.Equal(t, []string{child.String(), restored.String()}, got.Agents[1].SpanIDs)
+}
+
+func TestConsoleTranscript(t *testing.T) {
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: prettyTestSpanID(1), Agent: true, AgentID: "chief-id", AgentName: "chief", AgentState: "IDLE"},
+		{ID: prettyTestSpanID(2), Agent: true, AgentID: "worker-1", AgentName: "worker"},
+		{ID: prettyTestSpanID(3), Agent: true, AgentID: "worker-2", AgentName: "worker"},
+		// A display name that collides with another agent's handle must not
+		// make that handle ambiguous.
+		{ID: prettyTestSpanID(4), Agent: true, AgentID: "other", AgentName: "chief-id"},
+	})
+	fe := NewWithDB(io.Discard, db)
+	fe.FocusedSpan = prettyTestSpanID(3)
+	longText := strings.Repeat("<source> α & ?\n", 1000) + "\x1b[31mnot a terminal\x1b[0m"
+	msg := func(role, text string) consoleTranscriptMessage {
+		return consoleTranscriptMessage{Role: role, Content: []consoleTranscriptBlock{{Kind: "TEXT", Text: text}}}
+	}
+	var snap consoleAgentSnapshot
+	snap.State = "IDLE"
+	snap.Snapshot.ID = "snapshot-id"
+	snap.Snapshot.Messages = []consoleTranscriptMessage{
+		msg("SYSTEM", "system"), msg("USER", longText), msg("ASSISTANT", "answer"),
+		{Role: "ASSISTANT", Content: []consoleTranscriptBlock{
+			{Kind: "THINKING", Text: "considering"},
+			{Kind: "TOOL_CALL", ToolName: "staff_spawn", CallID: "call-1", Arguments: `{"task":"restart a worker"}`},
+		}},
+		{Role: "USER", Content: []consoleTranscriptBlock{{Kind: "TOOL_RESULT", CallID: "call-1", Text: "result", Errored: true}}},
+		msg("USER", "second prompt"),
+	}
+	snap.Snapshot.Messages[5].Origin = &consoleTranscriptOrigin{Kind: "AGENT", AgentName: "worker", Ref: "#3", ReplyTo: "#2"}
+	calls := 0
+	read := func(ctx context.Context, id, _ string) (consoleAgentSnapshot, error) { //nolint:unparam // Successful consoleSnapshotReader test double.
+		calls++
+		require.True(t, fe.consoleMu.TryLock(), "engine I/O held the console lock")
+		fe.consoleMu.Unlock()
+		require.Equal(t, "chief-id", id)
+		_, bounded := ctx.Deadline()
+		require.True(t, bounded)
+		return snap, nil
+	}
+	request := func(query string, reader consoleSnapshotReader) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		fe.serveConsoleTranscript(w, httptest.NewRequest(http.MethodGet, "/transcript"+query, nil), reader)
+		return w
+	}
+	for _, tc := range []struct {
+		query string
+		code  int
+	}{
+		{"", 400}, {"?agent=chief&role=oops", 400}, {"?agent=chief&offset=-1", 400},
+		{"?agent=chief&offset=bad", 400}, {"?agent=chief&limit=0", 400},
+		{"?agent=chief&limit=101", 400}, {"?agent=chief&limit=bad", 400},
+		{"?agent=chief&grep=%5B", 400}, {"?agent=missing", 404}, {"?agent=worker", 409},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			require.Equal(t, tc.code, request(tc.query, read).Code)
+		})
+	}
+	require.Zero(t, calls, "invalid or ambiguous requests contacted the engine")
+	require.Equal(t, 409, request("?agent=chief", nil).Code)
+
+	var page struct {
+		Agent                consoleAgent
+		SnapshotID           string
+		Total, Offset, Limit int
+		HasMore              bool
+		Messages             []consoleTranscriptMessage
+	}
+	decode := func(query string) {
+		w := request(query, read)
+		require.Equal(t, 200, w.Code, w.Body.String())
+		require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
+	}
+	decode("?agent=chief-id&limit=1")
+	require.Equal(t, 5, page.Total)
+	require.True(t, page.HasMore)
+	require.Equal(t, 1, page.Messages[0].Index)
+	require.Equal(t, longText, page.Messages[0].Content[0].Text)
+	require.Equal(t, "snapshot-id", page.SnapshotID)
+	require.Equal(t, "IDLE", page.Agent.State)
+	decode("?agent=chief&role=user&offset=1&limit=1")
+	require.Equal(t, 3, page.Total)
+	require.Equal(t, 4, page.Messages[0].Index)
+	require.True(t, page.Messages[0].Content[0].Errored)
+	decode("?agent=chief&tool=staff_spawn&grep=restart")
+	require.Equal(t, 1, page.Total)
+	require.Equal(t, 3, page.Messages[0].Index)
+	require.Len(t, page.Messages[0].Content, 2, "tool filter preserves whole messages")
+	require.Equal(t, `{"task":"restart a worker"}`, page.Messages[0].Content[1].Arguments)
+	decode("?agent=chief&role=user&grep=second")
+	require.Equal(t, snap.Snapshot.Messages[5].Origin, page.Messages[0].Origin)
+	decode("?agent=chief&role=system")
+	require.Equal(t, 0, page.Messages[0].Index)
+	decode("?agent=chief&grep=not-found")
+	require.Empty(t, page.Messages)
+	require.False(t, page.HasMore)
+	decode("?agent=chief&offset=999999999&limit=100")
+	require.Empty(t, page.Messages)
+	require.False(t, page.HasMore)
+	require.Equal(t, prettyTestSpanID(3), fe.FocusedSpan, "read changed focus")
+	require.Equal(t, "IDLE", db.Agents()[0].State, "read changed the roster")
+
+	w := request("?agent=chief", func(context.Context, string, string) (consoleAgentSnapshot, error) {
+		return consoleAgentSnapshot{}, io.EOF
+	})
+	require.Equal(t, 502, w.Code)
+	require.Contains(t, w.Body.String(), "read agent checkpoint")
+	w = request("?agent=chief", func(context.Context, string, string) (consoleAgentSnapshot, error) {
+		return consoleAgentSnapshot{}, nil
+	})
+	require.Equal(t, 502, w.Code)
+}
+
+func TestConsoleRecordedCheckpoint(t *testing.T) {
+	llmType := &ast.Type{NamedType: "LLM", NonNull: true}
+	id := call.New().Append(llmType, "llm")
+	root := id.Digest().String()
+	arg := func(name string, value any) *call.Argument {
+		lit, err := call.ToLiteral(value)
+		require.NoError(t, err)
+		return call.NewArgument(name, lit, false)
+	}
+	appendFrame := func(field string, args ...*call.Argument) {
+		id = id.Append(llmType, field, call.WithArgs(args...))
+	}
+	// The tool's source is not available at all. Message extraction must not
+	// require this frame or its dependencies, let alone evaluate it.
+	tool := call.New().Append(&ast.Type{NamedType: "MissingTool"}, "unavailable")
+	appendFrame("withTools", call.NewArgument("object", call.NewLiteralID(tool), false))
+	appendFrame("withSystemPrompt", arg("prompt", "system"))
+	appendFrame("withPrompt", arg("prompt", "user\nprompt"), arg("origin", map[string]any{"kind": "AGENT", "agentName": "chief", "ref": "#3"}))
+	appendFrame("withResponse", arg("content", []any{
+		map[string]any{"kind": "THINKING", "text": "thinking"},
+		map[string]any{"kind": "TOOL_CALL", "toolName": "staff_spawn", "callId": "call-1", "arguments": `{"task":"do work"}`},
+	}))
+	appendFrame("withToolResult", arg("callId", "call-1"), arg("content", "result\n"), arg("errored", true))
+	dag, err := id.ToProto()
+	require.NoError(t, err)
+	newDB := func() *dagui.DB {
+		db := dagui.NewDB()
+		db.Calls = proto.Clone(dag).(*callpbv1.DAG).GetRecipe().CallsByDigest
+		delete(db.Calls, tool.Digest().String())
+		return db
+	}
+	agent := consoleAgent{ID: "worker", State: "RUNNING", SnapshotDigest: id.Digest().String()}
+	db := newDB()
+	got, err := decodeConsoleCheckpoint(db, agent)
+	require.NoError(t, err)
+	require.Equal(t, "recorded-checkpoint", got.Source)
+	require.Equal(t, agent.SnapshotDigest, got.Digest)
+	require.Empty(t, got.Snapshot.ID, "must not invent an engine handle")
+	require.Len(t, got.Snapshot.Messages, 4)
+	require.Equal(t, "system", got.Snapshot.Messages[0].Content[0].Text)
+	require.Equal(t, "user\nprompt", got.Snapshot.Messages[1].Content[0].Text)
+	require.Equal(t, "chief", got.Snapshot.Messages[1].Origin.AgentName)
+	require.Equal(t, `{"task":"do work"}`, got.Snapshot.Messages[2].Content[1].Arguments)
+	require.Equal(t, "call-1", got.Snapshot.Messages[3].Content[0].CallID)
+	require.True(t, got.Snapshot.Messages[3].Content[0].Errored)
+	require.Equal(t, "result\n", got.Snapshot.Messages[3].Content[0].Text)
+
+	// Exercise the recorded HTTP route with no engine client and a separate
+	// (empty) rendered DB. It must read only the cached extraction payloads.
+	db.ImportSnapshots([]dagui.SpanSnapshot{{ID: prettyTestSpanID(9), Agent: true, AgentID: agent.ID, AgentName: "worker", AgentState: "RUNNING", AgentSnapshotDigest: agent.SnapshotDigest}})
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.traceID = "recorded"
+	inspector := &consoleTraceInspector{frontend: fe, traceID: "recorded", db: db}
+	w := httptest.NewRecorder()
+	inspector.agents(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Body.String(), `"source":"recorded-trace"`)
+	require.Contains(t, w.Body.String(), `"loadedSpansOnly":false`)
+	w = httptest.NewRecorder()
+	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&tool=staff_spawn", nil))
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var extracted struct {
+		Source, SnapshotDigest string
+		Messages               []consoleTranscriptMessage
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &extracted))
+	require.Equal(t, "recorded-checkpoint", extracted.Source)
+	require.Equal(t, agent.SnapshotDigest, extracted.SnapshotDigest)
+	require.Len(t, extracted.Messages, 1)
+	require.Equal(t, 2, extracted.Messages[0].Index)
+	require.Empty(t, fe.db.Agents(), "extraction mutated the rendered DB")
+
+	for _, tc := range []struct {
+		name, want string
+		mutate     func(*dagui.DB)
+	}{
+		{"missing", "missing", func(db *dagui.DB) { delete(db.Calls, root) }},
+		{"cycle", "cycle", func(db *dagui.DB) { db.Calls[root].ReceiverDigest = agent.SnapshotDigest }},
+		{"unknown", "unsupported", func(db *dagui.DB) { db.Calls[agent.SnapshotDigest].Field = "step" }},
+		{"module", "not a core LLM", func(db *dagui.DB) { db.Calls[root].Module = &callpbv1.Module{Name: "custom"} }},
+		{"missing message data", "invalid withToolResult", func(db *dagui.DB) { db.Calls[agent.SnapshotDigest].Args = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newDB()
+			tc.mutate(db)
+			_, err := decodeConsoleCheckpoint(db, agent)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+	_, err = decodeConsoleCheckpoint(db, consoleAgent{ID: "no-anchor"})
+	require.ErrorContains(t, err, "no recorded checkpoint")
+	_, err = consoleLiteralData(&callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: "not-data"}})
+	require.ErrorContains(t, err, "expected recorded literal data")
+}
 
 func TestConsoleTimings(t *testing.T) {
 	db := dagui.NewDB()

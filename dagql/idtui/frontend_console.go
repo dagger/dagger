@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,8 +16,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"dagger.io/dagger"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/vito/tuist"
@@ -261,6 +264,9 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, detail)
 	})
+	inspector := &consoleTraceInspector{frontend: fe}
+	mux.HandleFunc("/agents", inspector.agents)
+	mux.HandleFunc("/transcript", inspector.transcript)
 	mux.HandleFunc("/timings", fe.consoleTimingsHandler)
 	mux.HandleFunc("/help", fe.consoleHelp)
 	mux.HandleFunc("/", fe.consoleHelp)
@@ -693,6 +699,9 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  GET  /span?id=<hex>  span detail: status, timing, flags, parent chain\n"+
 		"  GET  /timings?root=<hex>[&minDuration=10ms&limit=200]  loaded subtree wall timings (0 limit = unlimited)\n"+
 		"  GET  /toolset        the interactive LLM session's tool docs, when one is live\n"+
+		"  GET  /agents         trace-derived roster (handles, names, state, parent, spans)\n"+
+		"  GET  /transcript?agent=<handle|name>[&role=user&tool=...&grep=...&offset=0&limit=20]\n"+
+		"                      recorded checkpoint data for dagger trace; idle runtime snapshots in engine sessions\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
 		"r error origin · L logs · +/- verbosity · / search\n"+
@@ -807,4 +816,277 @@ func (fe *frontendPretty) SetLLMToolsProvider(fn LLMToolsProvider) {
 	fe.dispatch(func() {
 		fe.llmToolsFn = fn
 	})
+}
+
+// Agent extraction is deliberately request-driven and console-only. Discovery
+// uses the same roster as --trace restoration; transcripts come from committed
+// checkpoints or runtime snapshots, never log buffers or rendered rows.
+// No observers, buffers, or callbacks are installed on the production path.
+type consoleAgent struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	State          string   `json:"state"`
+	ParentID       string   `json:"parentID,omitempty"`
+	SpanIDs        []string `json:"spanIDs"`
+	SnapshotDigest string   `json:"snapshotDigest,omitempty"`
+}
+
+func (fe *frontendPretty) consoleAgents() []consoleAgent {
+	return consoleAgentsFromDB(fe.db)
+}
+
+func consoleAgentsFromDB(db *dagui.DB) []consoleAgent {
+	agents := make([]consoleAgent, 0)
+	for _, node := range db.Agents() {
+		agent := consoleAgent{
+			ID: node.ID, Name: node.Name, State: node.State,
+			SnapshotDigest: node.SnapshotDigest, SpanIDs: []string{},
+		}
+		for _, span := range node.Spans {
+			agent.SpanIDs = append(agent.SpanIDs, span.ID.String())
+			for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+				if parent.Agent && parent.AgentID != "" && parent.AgentID != node.ID {
+					agent.ParentID = parent.AgentID
+					break
+				}
+			}
+		}
+		agents = append(agents, agent)
+	}
+	return agents
+}
+
+func (fe *frontendPretty) consoleAgentsHandler(w http.ResponseWriter, _ *http.Request) {
+	fe.consoleMu.Lock()
+	if fe.tui != nil {
+		fe.tui.Step()
+	}
+	agents := fe.consoleAgents()
+	connected := fe.dag != nil
+	fe.consoleMu.Unlock()
+	consoleJSON(w, struct {
+		Agents          []consoleAgent `json:"agents"`
+		LoadedSpansOnly bool           `json:"loadedSpansOnly"`
+		EngineConnected bool           `json:"engineConnected"`
+		Note            string         `json:"note"`
+	}{agents, true, connected, "Use dagger agent --trace to restore the full roster before reading transcripts. Discovery does not start agents."})
+}
+
+type consoleTranscriptBlock struct {
+	Kind      string `json:"kind"`
+	Text      string `json:"text,omitempty"`
+	CallID    string `json:"callId,omitempty"`
+	ToolName  string `json:"toolName,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	Errored   bool   `json:"errored,omitempty"`
+}
+
+type consoleTranscriptOrigin struct {
+	Kind      string `json:"kind"`
+	AgentName string `json:"agentName,omitempty"`
+	Ref       string `json:"ref,omitempty"`
+	ReplyTo   string `json:"replyTo,omitempty"`
+}
+
+type consoleTranscriptMessage struct {
+	Index   int                      `json:"index"`
+	Role    string                   `json:"role"`
+	Origin  *consoleTranscriptOrigin `json:"origin,omitempty"`
+	Content []consoleTranscriptBlock `json:"content"`
+}
+
+type consoleAgentSnapshot struct {
+	Source   string `json:"-"`
+	Digest   string `json:"-"`
+	State    string `json:"state"`
+	Snapshot struct {
+		ID       string                     `json:"id"`
+		Messages []consoleTranscriptMessage `json:"messages"`
+	} `json:"snapshot"`
+}
+
+type consoleSnapshotReader func(context.Context, string, string) (consoleAgentSnapshot, error)
+
+// Only pure lookup and snapshot reads: in particular no spawn, send, resume,
+// wait, tool listing, or bound receiver evaluation. Suppress observation traffic
+// so repeatedly reading a long conversation doesn't grow its telemetry.
+const consoleTranscriptQuery = `query ConsoleTranscript($handle: String!, $name: String!) {
+  llm {
+    agent(handle: $handle, name: $name) {
+      state
+      snapshot {
+        id
+        messages {
+          role
+          origin { kind agentName ref replyTo }
+          content { kind text callId toolName arguments errored }
+        }
+      }
+    }
+  }
+}`
+
+func readConsoleAgentSnapshot(ctx context.Context, dag *dagger.Client, handle, name string) (consoleAgentSnapshot, error) {
+	var res struct {
+		LLM struct {
+			Agent consoleAgentSnapshot `json:"agent"`
+		} `json:"llm"`
+	}
+	err := dag.Do(engine.ContextWithTelemetrySuppression(ctx), &dagger.Request{
+		Query: consoleTranscriptQuery, OpName: "ConsoleTranscript",
+		Variables: map[string]any{"handle": handle, "name": name},
+	}, &dagger.Response{Data: &res})
+	res.LLM.Agent.Source = "runtime-snapshot"
+	return res.LLM.Agent, err
+}
+
+func (fe *frontendPretty) consoleTranscriptHandler(w http.ResponseWriter, r *http.Request) {
+	fe.consoleMu.Lock()
+	dag := fe.dag
+	fe.consoleMu.Unlock()
+	var read consoleSnapshotReader
+	if dag != nil {
+		read = func(ctx context.Context, handle, name string) (consoleAgentSnapshot, error) {
+			return readConsoleAgentSnapshot(ctx, dag, handle, name)
+		}
+	}
+	fe.serveConsoleTranscript(w, r, read)
+}
+
+func (fe *frontendPretty) serveConsoleTranscript(w http.ResponseWriter, r *http.Request, read consoleSnapshotReader) {
+	fe.consoleMu.Lock()
+	if fe.tui != nil {
+		fe.tui.Step()
+	}
+	agents := fe.consoleAgents()
+	fe.consoleMu.Unlock()
+	serveConsoleTranscript(w, r, agents, read)
+}
+
+func serveConsoleTranscript(w http.ResponseWriter, r *http.Request, agents []consoleAgent, read consoleSnapshotReader) {
+	q := r.URL.Query()
+	name := q.Get("agent")
+	if name == "" {
+		http.Error(w, "agent is required: use /agents, then select a handle or unique name", http.StatusBadRequest)
+		return
+	}
+	role := strings.ToUpper(q.Get("role"))
+	if role != "" && role != "USER" && role != "ASSISTANT" && role != "SYSTEM" {
+		http.Error(w, "role must be user, assistant, or system", http.StatusBadRequest)
+		return
+	}
+	offset, limit := 0, 20
+	var err error
+	if raw := q.Get("offset"); raw != "" {
+		offset, err = strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			http.Error(w, "offset must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+	}
+	if raw := q.Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 100 {
+			http.Error(w, "limit must be between 1 and 100", http.StatusBadRequest)
+			return
+		}
+	}
+	var grep *regexp.Regexp
+	if pattern := q.Get("grep"); pattern != "" {
+		grep, err = regexp.Compile(pattern)
+		if err != nil {
+			http.Error(w, "invalid grep regexp: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	var matches []consoleAgent
+	for _, agent := range agents {
+		if agent.ID == name {
+			matches = []consoleAgent{agent}
+			break
+		}
+		if agent.Name == name {
+			matches = append(matches, agent)
+		}
+	}
+	if len(matches) == 0 {
+		http.Error(w, "agent not found in loaded roster; use /agents", http.StatusNotFound)
+		return
+	}
+	if len(matches) > 1 {
+		http.Error(w, "agent name is ambiguous; select a handle from /agents", http.StatusConflict)
+		return
+	}
+	if read == nil {
+		http.Error(w, "transcripts require an engine session: use dagger agent --trace <trace-id> without prompting the agents", http.StatusConflict)
+		return
+	}
+	// The network read must not hold consoleMu, change focus, or drive a turn.
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	snapshot, err := read(ctx, matches[0].ID, matches[0].Name)
+	if err != nil {
+		http.Error(w, "read agent checkpoint: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if snapshot.Snapshot.ID == "" && snapshot.Digest == "" {
+		http.Error(w, "engine returned no committed snapshot", http.StatusBadGateway)
+		return
+	}
+	messages := selectConsoleTranscript(snapshot.Snapshot.Messages, role, q.Get("tool"), grep)
+	total := len(messages)
+	start := min(offset, total)
+	end := start + min(limit, total-start)
+	agent := matches[0]
+	agent.State = snapshot.State
+	consoleJSON(w, struct {
+		Agent          consoleAgent               `json:"agent"`
+		Source         string                     `json:"source"`
+		SnapshotDigest string                     `json:"snapshotDigest,omitempty"`
+		SnapshotID     string                     `json:"snapshotID,omitempty"`
+		Total          int                        `json:"total"`
+		Offset         int                        `json:"offset"`
+		Limit          int                        `json:"limit"`
+		HasMore        bool                       `json:"hasMore"`
+		Messages       []consoleTranscriptMessage `json:"messages"`
+	}{agent, snapshot.Source, snapshot.Digest, snapshot.Snapshot.ID, total, offset, limit, end < total, messages[start:end]})
+}
+
+func selectConsoleTranscript(messages []consoleTranscriptMessage, role, tool string, grep *regexp.Regexp) []consoleTranscriptMessage {
+	selected := make([]consoleTranscriptMessage, 0)
+	for index, message := range messages {
+		if role == "" && message.Role == "SYSTEM" || role != "" && message.Role != role {
+			continue
+		}
+		toolMatches := tool == ""
+		var text strings.Builder
+		for _, block := range message.Content {
+			toolMatches = toolMatches || block.Kind == "TOOL_CALL" && block.ToolName == tool
+			if grep != nil {
+				text.WriteString(block.Text)
+				text.WriteString("\n")
+				text.WriteString(block.ToolName)
+				text.WriteString("\n")
+				text.WriteString(block.Arguments)
+				text.WriteString("\n")
+			}
+		}
+		if !toolMatches || grep != nil && !grep.MatchString(text.String()) {
+			continue
+		}
+		message.Index = index
+		selected = append(selected, message)
+	}
+	return selected
+}
+
+func consoleJSON(w http.ResponseWriter, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	// Preserve HTML-like source text verbatim; JSON encoding still escapes
+	// control characters without terminal wrapping or ANSI interpretation.
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(value)
 }
