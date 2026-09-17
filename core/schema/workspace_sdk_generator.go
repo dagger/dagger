@@ -247,6 +247,13 @@ func sdkModuleGraphDependencies(
 		if dependency == nil || seen[dependency.key] {
 			continue
 		}
+		// A scope may record a client for its own module — `dagger module client
+		// add .` — so a module can call itself through a generated client. That
+		// is a target like any other for the SDK, not a generation dependency:
+		// the scope's own pass renders it, so no edge, and no false self-cycle.
+		if dependency.key == node.key {
+			continue
+		}
 		seen[dependency.key] = true
 		dependencies = append(dependencies, dependency)
 	}

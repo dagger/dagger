@@ -460,7 +460,17 @@ func TestValidateSDKModuleGenerationGraph(t *testing.T) {
 	}
 	require.NoError(t, validateSDKModuleGenerationGraph(cfg, "apps/demo"))
 
+	// A scope recording a client for its own module (`dagger module client
+	// add .`) is a target, not a generation dependency: no self-cycle, in
+	// either spelling the config can carry.
+	root := cfg.SDKs["go"].Scopes["."]
+	root.Clients = append(root.Clients, ".")
+	cfg.SDKs["go"].Scopes["."] = root
 	target := cfg.SDKs["go"].Scopes["target"]
+	target.Clients = []string{"./target"}
+	cfg.SDKs["go"].Scopes["target"] = target
+	require.NoError(t, validateSDKModuleGenerationGraph(cfg, "apps/demo"))
+
 	target.Clients = []string{"."}
 	cfg.SDKs["go"].Scopes["target"] = target
 	require.EqualError(
