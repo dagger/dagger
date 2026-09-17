@@ -239,7 +239,7 @@ func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	}{
 		{"containers", "base\nbroken\nconsumer:base\n"},
 		{"directories", "docs:source\nother-docs:source\n"},
-		{"files", "marker\n"},
+		{"files", "consumer:input\nmarker\n"},
 		{"Artifact", "consumer:single\n"},
 		{"Artifacts", "consumer:selected\n"},
 	} {
@@ -249,7 +249,7 @@ func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.want, out)
 		})
 	}
-	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "__complete", "workspace", "dir")).Stdout(ctx)
+	out, err := base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "workspace", "dir")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "directories\tList Directory artifacts\n")
 }
