@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"dagger.io/dagger"
@@ -173,6 +174,102 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 					require.Empty(t, after.SnapshotLinks, "the new File did not fill the saved one")
 				}
 			})
+		}
+	})
+	// The writer table, under the named StateResolveLayout control: the
+	// internal _httpState._resolve field takes the file name and permissions
+	// as given, so A's real HTTPState.fileResult is the reference output.
+	// After transfer and a failed chain the saved producer restores the File
+	// with the same layout: equal recorded name, actual mode and bytes, or the
+	// matching error where A had no output either. One A and one B serve the
+	// whole table; every case has its own URL, so no File hides another's
+	// route, and each chain fault is selected by its own row.
+	t.Run("StateResolveLayout", func(ctx context.Context, t *testctx.T) {
+		outer := connect(ctx, t)
+		a := newFixtureEngine(ctx, t, outer, "http-layout-a", true)
+		b := newFixtureEngine(ctx, t, outer, "http-layout-b", true)
+		type layoutCase struct {
+			name        string
+			permissions int
+			url, body   string
+		}
+		var cases []layoutCase
+		for _, name := range []string{"data.txt", "/data.txt", "../data.txt", "a/../data.txt", "./data.txt"} {
+			cases = append(cases, layoutCase{name: name, permissions: 0o644})
+		}
+		for _, permissions := range []int{0, 0o600, 0o755} {
+			cases = append(cases, layoutCase{name: "data.txt", permissions: permissions})
+		}
+		var responses []fixturetransport.Response
+		for i := range cases {
+			cases[i].url = "https://" + fixturetransport.OriginHost + "/" + identity.NewID() + "/data.txt"
+			cases[i].body = fmt.Sprintf("layout case %d %s", i, identity.NewID())
+			file := fmt.Sprintf("origins/layout-%d", i)
+			a.writeFile(file, cases[i].body)
+			b.writeFile(file, cases[i].body)
+			responses = append(responses, fixturetransport.Response{URL: cases[i].url, BodyFile: file})
+		}
+		absent := "https://" + fixturetransport.OriginHost + "/" + identity.NewID() + "/data.txt"
+		a.writeFile("origins/layout-absent", "absent parent")
+		responses = append(responses, fixturetransport.Response{URL: absent, BodyFile: "origins/layout-absent"})
+		scriptOrigin(t, a, responses...)
+		scriptOrigin(t, b, responses...)
+
+		resolve := func(e *fixtureEngine, url, name string, permissions int) (string, error) {
+			var data struct {
+				State struct {
+					Resolve struct{ ID string } `json:"_resolve"`
+				} `json:"_httpState"`
+			}
+			err := e.client.Do(ctx, &dagger.Request{Query: `query($url:String!,$name:String!,$permissions:Int!){_httpState(url:$url){_resolve(name:$name,permissions:$permissions){id}}}`, Variables: map[string]any{"url": url, "name": name, "permissions": permissions}}, &dagger.Response{Data: &data})
+			return data.State.Resolve.ID, err
+		}
+		// facts are what identifies the written file: its recorded name, its
+		// actual mode on a real mount, and its bytes.
+		facts := func(e *fixtureEngine, handle string) string {
+			file := dagger.Ref[*dagger.File](e.client, dagger.ID(handle))
+			name, err := file.Name(ctx)
+			require.NoError(t, err)
+			out, err := e.client.Container().From(alpineImage).WithMountedFile("/probe/file", file).
+				WithExec([]string{"sh", "-ec", "stat -c '%a' /probe/file; cat /probe/file"}).Stdout(ctx)
+			require.NoError(t, err)
+			return name + " " + out
+		}
+
+		_, err := resolve(a, absent, "sub/data.txt", 0o644)
+		require.Error(t, err, "an absent parent is the ordinary writer error on A")
+		t.Logf("absent parent on A: %v", err)
+
+		handles := make([]string, len(cases))
+		outputs := make([]map[string]any, len(cases))
+		want := make([]string, len(cases))
+		for i, tc := range cases {
+			id, err := resolve(a, tc.url, tc.name, tc.permissions)
+			require.NoError(t, err, "%q %o", tc.name, tc.permissions)
+			want[i] = facts(a, id)
+			t.Logf("A %q %o -> %q", tc.name, tc.permissions, want[i])
+			handles[i] = id
+			outputs[i] = map[string]any{"handle": id, "address": dagql.PersistedPartAddress{Part: "snapshot"}}
+		}
+		var exported fixtureExportSelectedResult
+		require.NoError(t, a.fixture("exportSelected", a.control("export.json", map[string]any{"bundle": "layout.json", "outputs": outputs}), handles, &exported))
+		require.Len(t, exported.Outputs, len(cases))
+		a.copyFixtureTo(b, "layout.json")
+		var imported []transferFixtureMapping
+		require.NoError(t, b.fixture("import", "layout.json", nil, &imported))
+		require.GreaterOrEqual(t, len(imported), len(cases))
+
+		for i, tc := range cases {
+			row := imported[i]
+			require.Equal(t, "File", row.Type.NamedType)
+			key := fmt.Sprintf("chain-%d", i)
+			require.NoError(t, b.fixture("barrierArm", b.control(key+".json", dagql.FixtureBarrierRequest{Key: key, Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: row.ResultID}, Action: dagql.FixtureFailChainOpen}), nil, nil))
+			got := facts(b, row.Handle)
+			require.Equal(t, want[i], got, "%q %o: the restored File has A's recorded name, actual mode and bytes", tc.name, tc.permissions)
+			var report fixtureControlsReport
+			require.NoError(t, b.fixture("report", "", nil, &report))
+			require.Len(t, partEventsOf(report.transferFixtureReport, row.ResultID, "lazy-enter"), 1, "%q %o: restored by the saved producer", tc.name, tc.permissions)
+			require.Empty(t, partEventsOf(report.transferFixtureReport, row.ResultID, "installed-chain"))
 		}
 	})
 }
