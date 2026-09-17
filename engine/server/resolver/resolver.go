@@ -329,7 +329,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		}
 	}
 
-	resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
+	resolvedRef, rootDesc, resolver, err := r.resolvePullRootDescriptor(ctx, ref, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -438,6 +438,28 @@ type localizedImageClosure struct {
 	ConfigDesc   ocispecs.Descriptor
 	Layers       []ocispecs.Descriptor
 	Nonlayers    []ocispecs.Descriptor
+}
+
+// Reuse source-matched metadata for a pinned pull even when its layers have
+// not arrived yet. Config resolution already verifies and retains this data.
+// Tags, force-pulls and service-bound registry names keep remote resolution.
+func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, opts PullOpts) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+	if opts.ResolveMode == ResolveModeDefault && len(opts.Network.HostAliases) == 0 {
+		resolvedRef, dgst, _, found, err := r.tryLocalCanonicalConfigMetadata(ctx, ref, ResolveImageConfigOpts{Platform: &opts.Platform})
+		if err != nil {
+			return "", ocispecs.Descriptor{}, nil, err
+		}
+		if found {
+			rootDesc, found, err := r.localCanonicalRootDescriptor(ctx, dgst)
+			if err != nil {
+				return "", ocispecs.Descriptor{}, nil, err
+			}
+			if found {
+				return resolvedRef, rootDesc, docker.NewResolver(docker.ResolverOptions{Hosts: r.registryHosts(opts.Network, opts.RegistryTransport)}), nil
+			}
+		}
+	}
+	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
 }
 
 func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport) (string, ocispecs.Descriptor, remotes.Resolver, error) {
