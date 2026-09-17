@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	telemetry "github.com/dagger/otel-go"
 	"maps"
 	"slices"
 	"sort"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	telemetry "github.com/dagger/otel-go"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
