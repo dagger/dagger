@@ -147,7 +147,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Equal(t, donorRef, installedRow.SnapshotLinks[0].RefKey, "it is the donor's exact snapshot, owned independently")
 
 	// Restart B: ownership survives, and reading through the saved handle
-	// adds no further part event for that row.
+	// installs, downloads, evaluates and settles nothing for that row.
 	stop(b)
 	b = start(bState, bVolume, bDir)
 	var restored transferFixtureReport
@@ -165,7 +165,14 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Contains(t, restoredEntries, "notes.txt")
 	var afterRead transferFixtureReport
 	require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &afterRead))
+	// The demand's own task always records its row-level owner-sync; nothing
+	// else may name the row, and nothing may name one of its parts.
 	for _, event := range afterRead.Parts {
-		require.NotEqual(t, restoredRow.ResultID, event.ResultID, "a read of a restored owned snapshot needs no part operation: %+v", event)
+		if event.ResultID != restoredRow.ResultID {
+			continue
+		}
+		t.Logf("restored read event for row=%d: %+v", restoredRow.ResultID, event)
+		require.Equal(t, "owner-sync", event.Kind, "a read of a restored owned snapshot needs no part operation: %+v", event)
+		require.Empty(t, event.Address.Part, "a read of a restored owned snapshot needs no part operation: %+v", event)
 	}
 }
