@@ -126,12 +126,12 @@ type testSeenKeys struct {
 	keys sync.Map
 }
 
-func (s *testSeenKeys) LoadOrStoreTelemetrySeenKey(key string) bool {
+func (s *testSeenKeys) CallPayloadNeedsEmission(key string) bool {
 	_, seen := s.keys.LoadOrStore(key, struct{}{})
-	return seen
+	return !seen
 }
 
-func (s *testSeenKeys) StoreTelemetrySeenKey(key string) {
+func (s *testSeenKeys) CallPayloadDelivered(key string) {
 	s.keys.Store(key, struct{}{})
 }
 
@@ -140,9 +140,22 @@ type alreadySeenTelemetryStore struct{}
 func (alreadySeenTelemetryStore) LoadOrStoreTelemetrySeenKey(string) bool { return true }
 func (alreadySeenTelemetryStore) StoreTelemetrySeenKey(string)            {}
 
+type testSpanSeenKeys struct {
+	keys sync.Map
+}
+
+func (s *testSpanSeenKeys) LoadOrStoreTelemetrySeenKey(key string) bool {
+	_, seen := s.keys.LoadOrStore(key, struct{}{})
+	return seen
+}
+
+func (s *testSpanSeenKeys) StoreTelemetrySeenKey(key string) {
+	s.keys.Store(key, struct{}{})
+}
+
 type payloadRoutingTestServer struct {
 	*mockServer
-	payloadStore dagql.TelemetrySeenKeyStore
+	payloadStore dagql.CallPayloadSeenKeyStore
 	spanStore    dagql.TelemetrySeenKeyStore
 }
 
@@ -153,7 +166,7 @@ func (s *payloadRoutingTestServer) TelemetrySeenKeyStore(context.Context) (dagql
 	return alreadySeenTelemetryStore{}, nil
 }
 
-func (s *payloadRoutingTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+func (s *payloadRoutingTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.CallPayloadSeenKeyStore, error) {
 	return s.payloadStore, nil
 }
 
@@ -196,7 +209,7 @@ func TestAroundFuncRoutesPayloadsBeforeSpanDeduplication(t *testing.T) {
 	agent, _, _ := skillsChain()
 	req := &dagql.CallRequest{ResultCall: agent}
 
-	runRoute := func(store dagql.TelemetrySeenKeyStore) (*payloadRecorder, context.Context) {
+	runRoute := func(store dagql.CallPayloadSeenKeyStore) (*payloadRecorder, context.Context) {
 		recorder, ctx := payloadRecorderCtx(t)
 		ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
 			mockServer:   &mockServer{},
@@ -229,7 +242,7 @@ func TestAroundFuncLogsOnlyPayloadsMissingFromSpans(t *testing.T) {
 	ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
 		mockServer:   &mockServer{},
 		payloadStore: &testSeenKeys{},
-		spanStore:    &testSeenKeys{},
+		spanStore:    &testSpanSeenKeys{},
 	}})
 	req := &dagql.CallRequest{ResultCall: agent}
 	_, done := AroundFunc(ctx, req)
@@ -306,8 +319,7 @@ func TestRecordCallPayloadsSkipsFramesDeliveredBySpans(t *testing.T) {
 	require.NoError(t, err)
 
 	seen := &testSeenKeys{}
-	require.True(t, dagql.ShouldEmitCallPayload(seen, spannedDigest.String()),
-		"fixture must claim the transitive frame as span-delivered")
+	seen.CallPayloadDelivered(spannedDigest.String())
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
 
 	require.Equal(t, 4, rec.emissionCount())
