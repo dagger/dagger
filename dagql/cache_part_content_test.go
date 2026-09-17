@@ -507,6 +507,8 @@ type chainRunOptions struct {
 	key       string
 	reply     func(chainFixture, *RenewalRequest) RenewalReply
 	configure func(*testutil.Store)
+	// keyOnly offers the chain with a renewal key and no addresses at all.
+	keyOnly bool
 }
 
 type chainRunResult struct {
@@ -558,6 +560,9 @@ func runChainImport(t *testing.T, fixture chainFixture, opts chainRunOptions) ch
 		opts.configure(store)
 	}
 	offer := PersistedPartOffer{Chain: OfferedChain{Layers: fixture.chain.Layers, RenewalKey: opts.key, Addresses: map[digest.Digest]BlobAddress{fixture.digest(0): lower, fixture.digest(1): opts.upper}}}
+	if opts.keyOnly {
+		offer.Chain.Addresses = nil
+	}
 	provider := source.Provider(t.Context(), offer, &PartDemandState{target: PersistedPartAddress{Part: "snapshot"}})
 	for i := range fixture.chain.Layers {
 		_, err := provider.Info(t.Context(), fixture.digest(i))
@@ -625,6 +630,18 @@ func TestRenewalChainControls(t *testing.T) {
 		require.NoError(t, again.Release(t.Context()))
 		require.Zero(t, transport.total())
 		require.Empty(t, taken())
+	})
+	// An offer may carry a renewal key and no address yet. Its first renewal
+	// supplies every address the chain needs.
+	t.Run("a key-only offer renews into its first addresses", func(t *testing.T) {
+		got := runChainImport(t, fixture, chainRunOptions{keyOnly: true, attach: true, key: "key", reply: func(f chainFixture, request *RenewalRequest) RenewalReply {
+			return RenewalReply{ID: request.ID, Chain: request.Chain, Addresses: map[digest.Digest]BlobAddress{f.digest(0): {URL: "https://renewed.invalid/lower"}, f.digest(1): {URL: "https://renewed.invalid/upper"}}}
+		}})
+		require.NoError(t, got.err)
+		require.Len(t, got.requests, 1)
+		require.Equal(t, 1, got.transport.count("https://renewed.invalid/lower"))
+		require.Equal(t, 1, got.transport.count("https://renewed.invalid/upper"))
+		require.Equal(t, 2, got.transport.total())
 	})
 	t.Run("one episode covers the chain", func(t *testing.T) {
 		got := runChainImport(t, fixture, chainRunOptions{lower: expiredTestAddress, upper: expiredTestAddress, attach: true, key: "key", reply: func(f chainFixture, request *RenewalRequest) RenewalReply {
