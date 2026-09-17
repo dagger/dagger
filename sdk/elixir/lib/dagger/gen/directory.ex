@@ -662,6 +662,20 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Return a snapshot with subdirectories removed
+  """
+  @spec without_directories(t(), [String.t()]) :: Dagger.Directory.t()
+  def without_directories(%__MODULE__{} = directory, paths) do
+    query_builder =
+      directory.query_builder |> QB.select("withoutDirectories") |> QB.put_arg("paths", paths)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return a snapshot with a subdirectory removed
   """
   @spec without_directory(t(), String.t()) :: Dagger.Directory.t()

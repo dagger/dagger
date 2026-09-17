@@ -5678,6 +5678,21 @@ class Directory(Type):
         _ctx = self._select("withTimestamps", _args)
         return Directory(_ctx)
 
+    def without_directories(self, paths: list[str]) -> Self:
+        """Return a snapshot with subdirectories removed
+
+        Parameters
+        ----------
+        paths:
+            Paths of the subdirectories to remove. Example:
+            [".github/workflows"]
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutDirectories", _args)
+        return Directory(_ctx)
+
     def without_directory(self, path: str) -> Self:
         """Return a snapshot with a subdirectory removed
 

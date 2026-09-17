@@ -2594,6 +2594,12 @@ type Directory implements Exportable & Node & Syncer {
     timestamp: Int!
   ): Directory!
 
+  """Return a snapshot with subdirectories removed"""
+  withoutDirectories(
+    """Paths of the subdirectories to remove. Example: [".github/workflows"]"""
+    paths: [String!]!
+  ): Directory!
+
   """Return a snapshot with a subdirectory removed"""
   withoutDirectory(
     """

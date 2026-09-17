@@ -202,6 +202,13 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
 			),
+		dagql.NodeFunc("withoutDirectories", s.withoutDirectories).
+			View(AfterVersion("v1.0.0-beta.14")).
+			IsPersistable().
+			Doc(`Return a snapshot with subdirectories removed`).
+			Args(
+				dagql.Arg("paths").Doc(`Paths of the subdirectories to remove. Example: [".github/workflows"]`),
+			),
 		dagql.NodeFunc("diff", s.diff).
 			IsPersistable().
 			Doc(`Return the difference between this directory and an another directory. The difference is encoded as a directory.`).
@@ -1049,6 +1056,34 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
 			Paths:     []string{args.Path},
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if parentDir, ok := parent.Self().Dir.Peek(); ok {
+		dir.Dir.SetValue(parentDir)
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+type withoutDirectoriesArgs struct {
+	Paths []string
+}
+
+//nolint:dupl // Symmetric with withoutFiles, matching the separate file and directory APIs.
+func (s *directorySchema) withoutDirectories(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoriesArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithoutLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Paths:     slices.Clone(args.Paths),
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),

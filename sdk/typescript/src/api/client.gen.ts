@@ -7309,6 +7309,15 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a snapshot with subdirectories removed
+   * @param paths Paths of the subdirectories to remove. Example: [".github/workflows"]
+   */
+  withoutDirectories = (paths: string[]): Directory => {
+    const ctx = this._ctx.select("withoutDirectories", { paths })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return a snapshot with a subdirectory removed
    * @param path Path of the subdirectory to remove. Example: ".github/workflows"
    */
