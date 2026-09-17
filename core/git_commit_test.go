@@ -1,10 +1,172 @@
 package core
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+type singleGitRefMountBackend struct {
+	GitRefBackend
+	mountFn func(context.Context, int, bool, func(*gitutil.GitCLI) error) error
+}
+
+func (b singleGitRefMountBackend) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+	return b.mountFn(ctx, depth, includeTags, fn)
+}
+
+func TestMountSingleGitRefDoesNotExpandRecipe(t *testing.T) {
+	git := gitutil.NewGitCLI()
+	mounted := false
+	backend := singleGitRefMountBackend{mountFn: func(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+		mounted = true
+		require.Zero(t, depth, "history must remain complete")
+		require.False(t, includeTags)
+		return fn(git)
+	}}
+	// Deliberately omit Repo: mounting a single ref only needs its backend,
+	// not a repository recipe or a dagql server to expand that recipe with.
+	ref := &GitRef{Backend: backend, Ref: &gitutil.Ref{SHA: "abc"}}
+	err := mountRefs(t.Context(), []*GitRef{ref}, func(got *gitutil.GitCLI, shas []string) error {
+		require.Same(t, git, got)
+		require.Equal(t, []string{"abc"}, shas)
+		return nil
+	})
+	require.NoError(t, err)
+	require.True(t, mounted)
+}
+
+func TestGitLogBoundedHistory(t *testing.T) {
+	ctx := t.Context()
+	source := t.TempDir()
+	date := ""
+	sourceGit := gitutil.NewGitCLI(gitutil.WithDir(source), gitutil.WithConfig(map[string]string{
+		"user.name": "Test User", "user.email": "test@example.com",
+	}), gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
+		cmd.Env = append(cmd.Env, "GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date)
+		return cmd.Run()
+	}))
+	run := func(args ...string) string {
+		t.Helper()
+		out, err := sourceGit.Run(ctx, args...)
+		require.NoError(t, err)
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	require.NoError(t, os.WriteFile(filepath.Join(source, "old.txt"), []byte("old"), 0600))
+	run("add", ".")
+	tree := run("write-tree")
+	commit := func(name string, timestamp int, parents ...string) string {
+		date = fmt.Sprintf("%d +0000", 1700000000+timestamp)
+		args := []string{"commit-tree", tree, "-m", name}
+		for _, parent := range parents {
+			args = append(args, "-p", parent)
+		}
+		return run(args...)
+	}
+	root := commit("root", 0)
+	main := root
+	for i := 1; i <= 10; i++ {
+		main = commit(fmt.Sprint("main", i), i, main)
+	}
+	// Skewed dates: an ancestor of the second parent is newer than both its
+	// child and the first parent. Compare Git's actual traversal, not a sort.
+	side1 := commit("side1", 40, root)
+	side2 := commit("side2", 20, side1)
+	merge := commit("merge", 30, main, side2)
+	run("update-ref", "refs/heads/main", merge)
+
+	for _, tc := range []struct {
+		name  string
+		sha   string
+		limit int
+		paths []string
+		warm  bool
+	}{
+		{name: "cold linear", sha: main, limit: 3},
+		{name: "single commit", sha: merge, limit: 1},
+		{name: "merge boundary at limit", sha: merge, limit: 2},
+		{name: "merge skewed ancestor", sha: merge, limit: 3},
+		{name: "merge with skewed dates", sha: merge, limit: 5},
+		{name: "exhausted history", sha: main, limit: 20},
+		{name: "path filter requires full history", sha: main, limit: 3, paths: []string{"old.txt"}},
+		{name: "uneven warm merge", sha: merge, limit: 5, warm: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mirror := t.TempDir()
+			git := gitutil.NewGitCLI(gitutil.WithDir(mirror))
+			_, err := git.Run(ctx, "init", "--bare")
+			require.NoError(t, err)
+			fetch := func(depth int, sha string) {
+				t.Helper()
+				args := []string{"fetch", "--no-tags"}
+				if depth > 0 {
+					args = append(args, "--depth="+strconv.Itoa(depth))
+				} else if _, err := os.Stat(filepath.Join(mirror, "shallow")); err == nil {
+					args = append(args, "--unshallow")
+				}
+				_, err := git.Run(ctx, append(args, "file://"+source, sha)...)
+				require.NoError(t, err)
+			}
+			if tc.warm {
+				// A long first-parent chain makes mount's depth estimate pass,
+				// despite the second parent still being a shallow boundary.
+				fetch(2, merge)
+				fetch(10, main)
+			}
+			var depths []int
+			backend := singleGitRefMountBackend{mountFn: func(ctx context.Context, depth int, tags bool, fn func(*gitutil.GitCLI) error) error {
+				depths = append(depths, depth)
+				require.False(t, tags)
+				if !tc.warm || depth == 0 {
+					fetch(depth, tc.sha)
+				}
+				return fn(git)
+			}}
+			ref := &GitRef{Backend: backend, Ref: &gitutil.Ref{SHA: tc.sha}}
+			commits, err := ref.Log(ctx, GitLogOptions{Limit: tc.limit, Paths: tc.paths})
+			require.NoError(t, err)
+			args := []string{"rev-list", "-n", strconv.Itoa(tc.limit), tc.sha}
+			if len(tc.paths) > 0 {
+				args = append(args, "--")
+				args = append(args, tc.paths...)
+			}
+			want := strings.Fields(run(args...))
+			var got []string
+			for _, meta := range commits {
+				got = append(got, meta.SHA)
+				raw := run("cat-file", "commit", meta.SHA)
+				expected, err := parseGitCommitMetadata(meta.SHA, raw)
+				require.NoError(t, err)
+				require.Equal(t, expected, meta, "shallow commits must retain their real parents")
+			}
+			require.Equal(t, want, got)
+			switch {
+			case len(tc.paths) > 0:
+				require.Equal(t, []int{0}, depths)
+			case tc.warm:
+				require.Equal(t, []int{tc.limit, 0}, depths)
+			default:
+				require.Equal(t, []int{tc.limit}, depths, "a cold bounded log must not request full history")
+			}
+			if tc.name == "cold linear" {
+				out, err := git.Run(ctx, "rev-list", "--count", tc.sha)
+				require.NoError(t, err)
+				require.Equal(t, "3", strings.TrimSpace(string(out)))
+				_, err = git.Run(ctx, "cat-file", "-e", root)
+				require.Error(t, err, "unrequested ancestors must not be downloaded")
+			}
+		})
+	}
+}
 
 func TestParseGitCommitMetadata(t *testing.T) {
 	raw := `tree 5209ad308282b6d6c7d6e4888cd807e29079248b

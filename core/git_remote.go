@@ -207,6 +207,9 @@ func (repo *RemoteGitRepository) Cleaned(ctx context.Context) (inst dagql.Object
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "configure git command: "+repo.URL.Remote(), telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, err
