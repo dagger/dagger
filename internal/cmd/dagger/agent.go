@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -73,8 +74,8 @@ Examples:
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
 				}
-				// Compose all selected agents onto a frozen workspace-bound LLM,
-				// then hand the composed LLM to the interactive prompt. A module
+				// Compose all selected agents onto a workspace-bound LLM, capturing
+				// a stable baseline when possible, then open the prompt. A module
 				// function returning LLM already lands in prompt mode today.
 				//
 				// Trace restore deliberately starts from an unbound base instead:
@@ -231,12 +232,17 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 	return res.Workspace.Agents.Compose.ID, nil
 }
 
-// Materialize the effectful capture once before binding or composing tools.
-// Reload uses the same approval policy as the initial agent bind.
+// Attempt the effectful capture once before binding or composing tools. Capture
+// is best effort: startup and reload can use the live workspace if it fails.
 func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
-	id, err := dag.CurrentWorkspace().Snapshot().ID(ctx)
+	workspace := dag.CurrentWorkspace()
+	id, err := workspace.Snapshot().ID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("snapshot workspace: %w", err)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		slog.WarnContext(ctx, "could not snapshot workspace; continuing with the live workspace", "error", err)
+		return workspace, nil
 	}
 	return dagger.Ref[*dagger.Workspace](dag, id), nil
 }

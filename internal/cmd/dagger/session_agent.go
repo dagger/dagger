@@ -1212,9 +1212,9 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 // LLM to the live workspace without exporting first.
 // It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
 // "uploads" the host's current state to the agent by throwing away the agent's
-// accumulated changes rather than writing them out. Workspace.snapshot captures a
-// fresh baseline from the current checkout. Bind it eagerly so a failure
-// surfaces here rather than corrupting later saves.
+// accumulated changes rather than writing them out. Try to capture a fresh
+// baseline from the checkout, falling back to the live workspace otherwise.
+// Bind it eagerly so binding failures surface here.
 func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
 	if a.llm == nil {
 		return fmt.Errorf("no LLM session active")
