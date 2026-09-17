@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"dagger.io/dagger"
@@ -216,6 +217,50 @@ func (e *fixtureEngine) control(name string, value any) string {
 func (e *fixtureEngine) writeFile(path, content string) {
 	e.t.Helper()
 	e.volumeExec(`mkdir -p "$(dirname "/fixture/$NAME")"; printf '%s' "$CONTENT" > "/fixture/$NAME"`, map[string]string{"NAME": path, "CONTENT": content}, nil)
+}
+
+// editBundle rewrites one bundle in the fixture volume. It is how a scenario
+// gives an exported offer addresses, an expiry or a renewal key before the
+// import, as an integration would; layers and references are never edited.
+// Numbers stay json.Number, so 64-bit IDs survive the round trip.
+func (e *fixtureEngine) editBundle(name string, edit func(bundle map[string]any)) {
+	e.t.Helper()
+	bundle := e.readBundle(name)
+	edit(bundle)
+	out, err := json.Marshal(bundle)
+	require.NoError(e.t, err)
+	e.writeFile(filepath.Join("bundles", name), string(out))
+}
+
+// readBundle decodes one bundle from the fixture volume.
+func (e *fixtureEngine) readBundle(name string) map[string]any {
+	e.t.Helper()
+	raw := e.volumeExec(`cat "/fixture/bundles/$NAME"`, map[string]string{"NAME": name}, nil)
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var bundle map[string]any
+	require.NoError(e.t, decoder.Decode(&bundle))
+	return bundle
+}
+
+// bundleOffers turns a bundle's selected outputs into offer records, as an
+// integration that learned of the chains later would present them.
+func (e *fixtureEngine) bundleOffers(name string) []any {
+	e.t.Helper()
+	var offers []any
+	for _, output := range e.readBundle(name)["outputs"].([]any) {
+		entry := output.(map[string]any)
+		if entry["chain"] == nil {
+			continue
+		}
+		offer := map[string]any{"address": entry["address"], "value": entry["value"], "chain": entry["chain"]}
+		if owner, ok := entry["owner"]; ok {
+			offer["owner"] = owner
+		}
+		offers = append(offers, offer)
+	}
+	require.NotEmpty(e.t, offers)
+	return offers
 }
 
 // copyFixtureTo copies bundles and blobs to another engine's fixture volume.

@@ -17,10 +17,11 @@ import (
 
 type fixtureControlsReport struct {
 	transferFixtureReport
-	Reached   []dagql.FixtureObservation            `json:"reached"`
-	Controls  dagql.TransferFixtureControls         `json:"controls"`
-	Transport *fixturetransport.Report              `json:"transport"`
-	Storage   *enginecore.RemoteCacheFixtureStorage `json:"storage"`
+	Reached   []dagql.FixtureObservation             `json:"reached"`
+	Controls  dagql.TransferFixtureControls          `json:"controls"`
+	Transport *fixturetransport.Report               `json:"transport"`
+	Storage   *enginecore.RemoteCacheFixtureStorage  `json:"storage"`
+	Renewal   *enginecore.RemoteCacheFixtureRenewals `json:"renewal"`
 }
 
 // reachedAt returns the journalled observations of one point.
