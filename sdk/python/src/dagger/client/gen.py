@@ -1567,13 +1567,13 @@ class AgentMiddlewareGroup(Type):
 
 @typecheck
 class Artifact(Type):
-    """One workspace value with a complete query and all required
+    """One workspace value with a complete path and all required
     collection keys. Reading metadata does not evaluate the value.
     Different addresses remain distinct even if they return the same
     object."""
 
     async def collection_keys(self) -> list["ArtifactCollectionKey"]:
-        """One key per collection along the query. Unordered; empty for static
+        """One key per collection along the path. Unordered; empty for static
         artifacts.
         """
         _args: list[Arg] = []
@@ -1608,6 +1608,28 @@ class Artifact(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    async def path(self) -> list[str]:
+        """Ordered, literal fields to follow. Entrypoint targets use their
+        shorthand.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
     async def pretty(self) -> str:
         """The full address, formatted for CLI input with consistent flag order.
 
@@ -1628,28 +1650,6 @@ class Artifact(Type):
         _args: list[Arg] = []
         _ctx = self._select("pretty", _args)
         return await _ctx.execute(str)
-
-    async def query(self) -> list[str]:
-        """Ordered, literal fields to follow. Entrypoint targets use their
-        shorthand.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("query", _args)
-        return await _ctx.execute(list[str])
 
     def value(self) -> Node:
         """Evaluate the target in the workspace that supplied this artifact."""
@@ -1801,12 +1801,12 @@ class Artifacts(Type):
         _ctx = self._select("filterCollections", _args)
         return Artifacts(_ctx)
 
-    def filter_query(self, query: list[str]) -> Self:
+    def filter_path(self, path: list[str]) -> Self:
         """Match one complete, ordered field sequence exactly."""
         _args = [
-            Arg("query", query),
+            Arg("path", path),
         ]
-        _ctx = self._select("filterQuery", _args)
+        _ctx = self._select("filterPath", _args)
         return Artifacts(_ctx)
 
     def filter_types(self, types: list[str]) -> Self:

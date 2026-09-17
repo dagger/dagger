@@ -9,12 +9,12 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * One workspace value with a complete query and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+ * One workspace value with a complete path and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
  */
 class Artifact extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * One key per collection along the query. Unordered; empty for static artifacts.
+     * One key per collection along the path. Unordered; empty for static artifacts.
      */
     public function collectionKeys(): array
     {
@@ -32,21 +32,21 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+     */
+    public function path(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
      * The full address, formatted for CLI input with consistent flag order.
      */
     public function pretty(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pretty');
         return (string)$this->queryLeaf($leafQueryBuilder, 'pretty');
-    }
-
-    /**
-     * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
-     */
-    public function query(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('query');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'query');
     }
 
     /**

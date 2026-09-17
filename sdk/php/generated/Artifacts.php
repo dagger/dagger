@@ -56,10 +56,10 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Match one complete, ordered field sequence exactly.
      */
-    public function filterQuery(array $query): Artifacts
+    public function filterPath(array $path): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterQuery');
-        $innerQueryBuilder->setArgument('query', $query);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterPath');
+        $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

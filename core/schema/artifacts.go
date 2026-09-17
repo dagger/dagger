@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -20,7 +21,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Artifacts]{
 		dagql.Func("types", s.types).Doc("List concrete GraphQL types represented in this selection, sorted with no duplicates."),
 		dagql.Func("filterTypes", s.filterTypes).Doc("Keep artifacts of any listed concrete GraphQL type."),
-		dagql.Func("filterQuery", s.filterQuery).Doc("Match one complete, ordered field sequence exactly."),
+		dagql.Func("filterPath", s.filterPath).Doc("Match one complete, ordered field sequence exactly."),
 		dagql.Func("filterCollections", s.filterCollections).Doc("Keep artifacts selected through any listed collection."),
 		dagql.Func("filterCollectionKeys", s.filterCollectionKeys).Doc("Keep artifacts with any listed key in this collection."),
 		dagql.Func("collections", s.collections).Doc("List collection identifiers represented in this selection, sorted with no duplicates."),
@@ -45,8 +46,8 @@ func (*artifactsSchema) types(_ context.Context, parent *core.Artifacts, _ struc
 func (*artifactsSchema) filterTypes(_ context.Context, parent *core.Artifacts, args struct{ Types []string }) (*core.Artifacts, error) {
 	return parent.FilterTypes(args.Types), nil
 }
-func (*artifactsSchema) filterQuery(_ context.Context, parent *core.Artifacts, args struct{ Query []string }) (*core.Artifacts, error) {
-	return parent.FilterQuery(args.Query), nil
+func (*artifactsSchema) filterPath(_ context.Context, parent *core.Artifacts, args struct{ Path []string }) (*core.Artifacts, error) {
+	return parent.FilterPath(args.Path), nil
 }
 func (*artifactsSchema) filterCollections(_ context.Context, parent *core.Artifacts, args struct{ Collections []string }) (*core.Artifacts, error) {
 	return parent.FilterCollections(args.Collections), nil
@@ -99,25 +100,29 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, _ map
 func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct {
 	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 }) (*core.Artifacts, error) {
-	nodes, err := collectWorkspaceModuleTargets(ctx, s, parent, workspaceIncludePatterns(args.Include), nil, "artifacts", "artifact", core.ModuleArtifactNodes, func(node *core.ModTreeNode) *core.ModTreeNode { return node })
+	include := workspaceIncludePatterns(args.Include)
+	for i := range include {
+		include[i] = strings.ReplaceAll(include[i], "/", ":")
+	}
+	nodes, err := collectWorkspaceModuleTargets(ctx, s, parent, include, nil, "artifacts", "artifact", core.ModuleArtifactNodes, func(node *core.ModTreeNode) *core.ModTreeNode { return node })
 	if err != nil {
 		return nil, err
 	}
 	result := &core.Artifacts{Entries: make([]*core.Artifact, 0, len(nodes))}
 	for _, node := range nodes {
-		query := node.CommandPath().CliCase()
-		if len(query) == 0 {
-			query = node.Path().CliCase()
+		path := node.CommandPath().CliCase()
+		if len(path) == 0 {
+			path = node.Path().CliCase()
 		}
 		result.Entries = append(result.Entries, &core.Artifact{
-			Query: query, CollectionKeys: []*core.ArtifactCollectionKey{},
+			Path: path, CollectionKeys: []*core.ArtifactCollectionKey{},
 			TypeName: node.ObjectType().Name, Node: node, Workspace: parent,
 		})
 	}
-	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Query, b.Query) })
+	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	for i := 1; i < len(result.Entries); i++ {
-		if slices.Equal(result.Entries[i-1].Query, result.Entries[i].Query) {
-			return nil, fmt.Errorf("ambiguous artifact query %q", result.Entries[i].Pretty())
+		if slices.Equal(result.Entries[i-1].Path, result.Entries[i].Path) {
+			return nil, fmt.Errorf("ambiguous artifact path %q", result.Entries[i].Pretty())
 		}
 	}
 	return result, nil
