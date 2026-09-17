@@ -331,6 +331,13 @@ func cloneExportLayers(layers []snapshots.ExportLayer) ([]snapshots.ExportLayer,
 
 // renewalChainFingerprint correlates replies with the exact ordered layer
 // records. It is never a result identity or egraph extra.
+// RenewalChainFingerprint is the fingerprint a renewal request carries for
+// these exact ordered layers. The gated test fixture uses it to key a
+// pre-staged reply before the request exists.
+func RenewalChainFingerprint(layers []snapshots.ExportLayer) (digest.Digest, error) {
+	return renewalChainFingerprint(layers)
+}
+
 func renewalChainFingerprint(layers []snapshots.ExportLayer) (digest.Digest, error) {
 	data, err := json.Marshal(layers)
 	if err != nil {
