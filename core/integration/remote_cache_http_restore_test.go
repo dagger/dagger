@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"dagger.io/dagger"
@@ -270,6 +271,98 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 			require.NoError(t, b.fixture("report", "", nil, &report))
 			require.Len(t, partEventsOf(report.transferFixtureReport, row.ResultID, "lazy-enter"), 1, "%q %o: restored by the saved producer", tc.name, tc.permissions)
 			require.Empty(t, partEventsOf(report.transferFixtureReport, row.ResultID, "installed-chain"))
+		}
+	})
+	// Status codes the stateless restoration can meet, recorded according to
+	// the existing writer's behavior rather than a new 200-only rule. The
+	// invariant asserted for every case: either the File is restored with
+	// exactly A's bytes, or the demand is an ordinary restoration error and
+	// nothing is installed under the saved identity. Which of the two each
+	// status gives is logged for the measurement report. One A and one B
+	// serve the table; every case has its own URL and row.
+	t.Run("StatusTable", func(ctx context.Context, t *testctx.T) {
+		outer := connect(ctx, t)
+		a := newFixtureEngine(ctx, t, outer, "http-status-a", true)
+		b := newFixtureEngine(ctx, t, outer, "http-status-b", true)
+		type statusCase struct {
+			name      string
+			saved     string
+			response  fixturetransport.Response
+			url, file string
+		}
+		cases := []statusCase{
+			{name: "204 empty saved body", saved: "", response: fixturetransport.Response{Status: 204}},
+			{name: "204 nonempty saved body", saved: "kept", response: fixturetransport.Response{Status: 204}},
+			{name: "206 whole body", saved: "partial", response: fixturetransport.Response{Status: 206, BodyFile: "saved"}},
+			// One empty saved body only: two empty Files are one row, and a
+			// bundle cannot name a root twice.
+			{name: "304 nonempty saved body", saved: "kept", response: fixturetransport.Response{Status: 304}},
+			{name: "403", saved: "kept", response: fixturetransport.Response{Status: 403}},
+			{name: "503", saved: "kept", response: fixturetransport.Response{Status: 503}},
+		}
+		var onA, onB []fixturetransport.Response
+		for i := range cases {
+			tc := &cases[i]
+			tc.url = "https://" + fixturetransport.OriginHost + "/" + identity.NewID() + "/data.txt"
+			tc.file = fmt.Sprintf("origins/status-%d", i)
+			if tc.saved != "" {
+				tc.saved += " " + identity.NewID()
+			}
+			a.writeFile(tc.file, tc.saved)
+			b.writeFile(tc.file, tc.saved)
+			onA = append(onA, fixturetransport.Response{URL: tc.url, BodyFile: tc.file})
+			response := tc.response
+			response.URL = tc.url
+			if response.BodyFile == "saved" {
+				response.BodyFile = tc.file
+			}
+			onB = append(onB, response)
+		}
+		scriptOrigin(t, a, onA...)
+		scriptOrigin(t, b, onB...)
+
+		handles := make([]string, len(cases))
+		outputs := make([]map[string]any, len(cases))
+		for i, tc := range cases {
+			file, err := a.client.HTTP(tc.url).Sync(ctx)
+			require.NoError(t, err, tc.name)
+			id, err := file.ID(ctx)
+			require.NoError(t, err)
+			handles[i] = string(id)
+			outputs[i] = map[string]any{"handle": string(id), "address": dagql.PersistedPartAddress{Part: "snapshot"}}
+		}
+		require.NoError(t, a.fixture("exportSelected", a.control("export.json", map[string]any{"bundle": "status.json", "outputs": outputs}), handles, nil))
+		a.copyFixtureTo(b, "status.json")
+		var imported []transferFixtureMapping
+		require.NoError(t, b.fixture("import", "status.json", nil, &imported))
+		require.GreaterOrEqual(t, len(imported), len(cases))
+
+		for i, tc := range cases {
+			row := imported[i]
+			require.Equal(t, "File", row.Type.NamedType)
+			key := fmt.Sprintf("chain-%d", i)
+			require.NoError(t, b.fixture("barrierArm", b.control(key+".json", dagql.FixtureBarrierRequest{Key: key, Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: row.ResultID}, Action: dagql.FixtureFailChainOpen}), nil, nil))
+			contents, err := dagger.Ref[*dagger.File](b.client, dagger.ID(row.Handle)).Contents(ctx)
+			var report, single fixtureControlsReport
+			require.NoError(t, b.fixture("report", "", nil, &report))
+			require.NoError(t, b.fixture("report", "", []string{row.Handle}, &single))
+			require.Len(t, single.Rows, 1)
+			require.Len(t, partEventsOf(report.transferFixtureReport, row.ResultID, "lazy-enter"), 1, "%s: the saved producer ran once", tc.name)
+			if err == nil {
+				t.Logf("writer behavior: %s -> restored", tc.name)
+				require.Equal(t, tc.saved, contents, "%s: a restored File has exactly A's bytes", tc.name)
+				require.Len(t, single.Rows[0].SnapshotLinks, 1, tc.name)
+			} else {
+				t.Logf("writer behavior: %s -> restoration error: %v", tc.name, strings.ReplaceAll(err.Error(), "\n", " | "))
+				require.Empty(t, single.Rows[0].SnapshotLinks, "%s: nothing is installed under the saved identity", tc.name)
+			}
+			for _, request := range report.Transport.Requests {
+				if request.URL == tc.url {
+					require.Empty(t, request.IfNoneMatch, "%s: no conditional validator", tc.name)
+					require.Empty(t, request.IfModifiedSince, tc.name)
+					require.True(t, request.Closed, "%s: the response body is closed", tc.name)
+				}
+			}
 		}
 	})
 }
