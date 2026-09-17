@@ -52,6 +52,7 @@ func (l *Loader) SDKForModule(
 	if sdk == nil {
 		return nil, errMissingSDKRef
 	}
+	recordInterface(ctx, interfaceLegacyRuntime, sdk.Source)
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load SDK: %s", sdk.Source))
 	defer telemetry.EndWithCause(span, &rerr)

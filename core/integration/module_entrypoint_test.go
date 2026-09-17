@@ -169,3 +169,34 @@ source = "."
 	// circular dependency check sees the loop first.
 	require.Contains(t, out, `module "loop" has a circular dependency on itself`)
 }
+
+// The engine records which interface it drove a module through, but the span is
+// internal: it belongs in a trace, not in the output of an ordinary call.
+func (ModuleSuite) TestModuleEntrypointInterfaceSpanIsInternal(ctx context.Context, t *testctx.T) {
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
+
+	out, err := goGitBase(t, c).
+		WithNewFile("dagger.toml", `[modules.app]
+source = ".dagger/modules/app"
+`).
+		WithNewFile(".dagger/modules/app/dagger-module.toml", `name = "app"
+
+[entrypoint]
+kind = "module"
+source = "./entrypoint-module"
+`).
+		WithDirectory(
+			".dagger/modules/app/entrypoint-module",
+			c.Host().Directory("./testdata/modules/dang/entrypoint-module"),
+		).
+		With(daggerCallAt("app", "message")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "loaded through the module entrypoint", strings.TrimSpace(out))
+
+	require.NoError(t, c.Close()) // close + flush logs
+	require.NotContains(t, logs.String(), "module entrypoint interface")
+	require.NotContains(t, logs.String(), "module entrypoint runtime adapter")
+	require.NotContains(t, logs.String(), "legacy runtime interface")
+}
