@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/stretchr/testify/require"
 )
 
@@ -266,4 +269,110 @@ func TestDemandPartStopsWithoutProgress(t *testing.T) {
 	require.Equal(t, "demandPart acquire", stuck.Loop)
 	require.Equal(t, "commit: receiver representation", stuck.Site)
 	require.Equal(t, uint64(receiver.cacheSharedResult().id), stuck.ResultID)
+}
+
+// chainLoopFixture runs installChainPart as its real owner does, inside an
+// obtain Body over a real store, for an encoded receiver whose equivalent
+// donor row carries the offer. It returns the donor's row for a test that
+// wants to move it.
+func chainLoopFixture(t *testing.T, demand *PartDemandState, arm func(c *Cache, receiver, donor *sharedResult)) (*sharedResult, error) {
+	t.Helper()
+	a, b := testutil.NewStore(t), testutil.NewStore(t)
+	ref, _ := a.Build(t, nil, "payload", "chain bytes")
+	chain, err := ref.ExportChain(t.Context(), config.RefConfig{Compression: compression.New(compression.Uncompressed)})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
+	ctx, c, srv := transferTestCache(t)
+	c.snapshotManager = b.Manager
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "pending"})
+	dependency := persistedListTestResult(t, ctx, c, srv, "owner-dependency", String("owner only"))
+	partTestEquivalent(t, c, receiver, donor)
+	address := PersistedPartAddress{Part: "snapshot"}
+	record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}, Chain: OfferedChain{Layers: chain.Layers, RenewalKey: "in-process"},
+		Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(dependency.cacheSharedResult().id)}}}
+	c.egraphMu.Lock()
+	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
+	require.NoError(t, err)
+	require.NoError(t, c.attachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner}))
+	c.egraphMu.Unlock()
+	captured, err := c.CapturePersistedRecord(ctx, receiver)
+	require.NoError(t, err)
+	row := receiver.cacheSharedResult()
+	row.payloadMu.Lock()
+	row.self, row.hasValue, row.persistedEnvelope = nil, false, &captured.Envelope
+	row.payloadRevision++
+	row.payloadMu.Unlock()
+	c.SetPartContentSource(lifetimeChainSource{&testutil.Provider{InfoReaderProvider: chain.Provider}})
+	arm(c, row, donor.cacheSharedResult())
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return row, c.RunLazyTask(ctx, receiver, "obtain:chain-loop", LazyTaskSpec{Body: func(ctx context.Context) error {
+		source, err := c.AcquireEquivalentPartSource(ctx, receiver, address)
+		if err != nil {
+			return err
+		}
+		permit, _, err := c.TryAcquire(ctx, receiver, address, PartTaskFromContext(ctx))
+		if err != nil {
+			return errors.Join(err, source.Release(ctx))
+		}
+		return c.installChainPart(ctx, receiver, source, permit, demand)
+	}})
+}
+
+// installChainPart's re-preparation loop records a counted Commit refusal
+// itself and never hands it on: it retries, and what it returns to the obtain
+// Body's caller is success, a hard error or its own uncounted refusal. So the
+// refusal is recorded once, not once per loop it passes through.
+//
+// The loop rebuilds its source from what it knew before the download. That
+// rebuilt source is downloadable: it names no source row, version or facts,
+// and Commit's two source-row sites apply only to a Ready source. The only
+// counted sites the loop can reach compare the receiver's payload revision,
+// captured afresh by each round's preparation. So a donor whose counters moved
+// once, here together with the receiver's, costs one reselect and no more.
+func TestInstallChainPartRecordsOnce(t *testing.T) {
+	demand := &PartDemandState{}
+	var commits int
+	row, err := chainLoopFixture(t, demand, func(c *Cache, receiver, donor *sharedResult) {
+		c.testBeforePartCommit = func(*PreparedReadyPart) {
+			if commits++; commits > 1 {
+				return
+			}
+			receiver.storeSnapshotOwnerLinks(receiver.loadSnapshotOwnerLinks())
+			donor.storeSnapshotOwnerLinks(donor.loadSnapshotOwnerLinks())
+			c.egraphMu.Lock()
+			donor.transferRevision++
+			donor.dependencyOwnershipRevision++
+			c.egraphMu.Unlock()
+		}
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, commits, "one refusal, then the install")
+	require.Len(t, demand.progress, 1)
+	for key := range demand.progress {
+		require.Equal(t, "commit: receiver version", key.site)
+		require.Equal(t, row.id, key.row, "the counters recorded are the receiver's")
+	}
+	require.Len(t, row.loadSnapshotOwnerLinks(), 1, "the chain was installed")
+}
+
+// The same loop with an expectation that is wrong every round: the second
+// refusal repeats the first, and the hard error leaves the obtain Body.
+func TestInstallChainPartStopsWithoutProgress(t *testing.T) {
+	demand := &PartDemandState{}
+	var commits int
+	row, err := chainLoopFixture(t, demand, func(c *Cache, _, _ *sharedResult) {
+		c.testBeforePartCommit = func(p *PreparedReadyPart) {
+			commits++
+			p.expectedRepresentation.payloadRevision += 100
+		}
+	})
+	var stuck *PartNoProgressError
+	require.ErrorAs(t, err, &stuck)
+	require.Equal(t, 2, commits)
+	require.Equal(t, "installChainPart", stuck.Loop)
+	require.Equal(t, "commit: receiver representation", stuck.Site)
+	require.Equal(t, uint64(row.id), stuck.ResultID)
+	require.Len(t, demand.progress, 1)
 }
