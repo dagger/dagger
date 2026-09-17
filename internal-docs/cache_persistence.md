@@ -117,10 +117,16 @@ The engine shutdown path matters here.
 `engine/server/server.go:GracefulStop` does the important sequencing:
 
 1. mark the server as gracefully stopping
-2. remove all Dagger sessions
-3. optionally prune the dagql cache using the normal prune policies
-4. close the dagql cache, which persists current state
-5. only after successful persistence mark `clean_shutdown=1`
+2. stop the optional remote cache integration: refuse its control calls,
+   detach its renewal bridge, cancel its callback and wait for it within the
+   shutdown deadline
+3. remove all Dagger sessions
+4. optionally prune the dagql cache using the normal prune policies
+5. close the dagql cache, which persists current state
+6. only after successful persistence mark `clean_shutdown=1`
+
+`GracefulStop` returns the errors collected along the way, joined with the
+integration's stop error and the final database close result.
 
 The session removal part is critical. Before persistence, the engine tries to
 get rid of session-owned state first so the retained graph is in a steady state.
@@ -169,6 +175,13 @@ If persistence fails during `Cache.Close()`:
 - the error is logged
 - `clean_shutdown=1` is **not** recorded
 - DB handles are still closed
+
+The same applies when the remote cache integration did not stop in time.
+`GracefulStop` then closes the cache with `Cache.CloseWithShutdownError`, which
+records that failure before draining, so persistence and the clean marker are
+skipped even if the drain succeeds. Both close entries share one run-once
+guard: a later `Close` returns the same failure and makes no second
+checkpoint attempt.
 
 Then on the next startup, the store is seen as unclean and wiped.
 
