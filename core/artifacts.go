@@ -25,8 +25,8 @@ func (*ArtifactCollectionKey) Type() *ast.Type {
 // Artifact holds a complete address and its deferred object value. The module
 // tree and workspace are retained so evaluation does not depend on the caller.
 type Artifact struct {
-	Query          []string                 `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
-	CollectionKeys []*ArtifactCollectionKey `field:"true" doc:"One key per collection along the query. Unordered; empty for static artifacts."`
+	Path           []string                 `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
+	CollectionKeys []*ArtifactCollectionKey `field:"true" doc:"One key per collection along the path. Unordered; empty for static artifacts."`
 	TypeName       string
 	Node           *ModTreeNode
 	Workspace      dagql.ObjectResult[*Workspace]
@@ -47,7 +47,7 @@ func (a *Artifact) Clone() *Artifact {
 
 func (*Artifact) Type() *ast.Type { return &ast.Type{NamedType: "Artifact", NonNull: true} }
 func (*Artifact) TypeDescription() string {
-	return "One workspace value with a complete query and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object."
+	return "One workspace value with a complete path and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object."
 }
 
 // Artifacts is an immutable selection. Filtering changes only the entry list,
@@ -85,8 +85,8 @@ func (a *Artifacts) Types() []string {
 	}
 	return slices.Sorted(maps.Keys(types))
 }
-func (a *Artifacts) FilterQuery(query []string) *Artifacts {
-	return a.filter(func(artifact *Artifact) bool { return slices.Equal(query, artifact.Query) })
+func (a *Artifacts) FilterPath(path []string) *Artifacts {
+	return a.filter(func(artifact *Artifact) bool { return slices.Equal(path, artifact.Path) })
 }
 func (a *Artifacts) FilterCollections(collections []string) *Artifacts {
 	return a.filter(func(artifact *Artifact) bool {
@@ -138,7 +138,7 @@ func (a *Artifacts) One() (*Artifact, error) {
 // Static artifacts have no collection flags. Their literal field names are
 // already in CLI case and can be joined without interpreting user input.
 func (a *Artifact) Pretty() string {
-	return strings.Join(a.Query, ":")
+	return strings.Join(a.Path, "/")
 }
 func (a *Artifacts) Pretty() []string {
 	lines := make([]string, 0, len(a.Entries))
@@ -212,7 +212,7 @@ func ModuleArtifactNodes(ctx context.Context, mod dagql.ObjectResult[*Module]) (
 // Persist both individual artifacts and selections. One tree encoding shares
 // module and type references across all entries in a selection.
 type persistedArtifact struct {
-	Query          []string
+	Path           []string
 	CollectionKeys []*ArtifactCollectionKey
 	TypeName       string
 	Node           int
@@ -227,7 +227,7 @@ func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact) (dag
 	tree := newPersistedModTreeEncoder(cache)
 	payload := persistedArtifacts{}
 	for _, a := range entries {
-		p := persistedArtifact{Query: a.Query, CollectionKeys: a.CollectionKeys, TypeName: a.TypeName}
+		p := persistedArtifact{Path: a.Path, CollectionKeys: a.CollectionKeys, TypeName: a.TypeName}
 		var err error
 		p.Node, err = tree.Add(a.Node)
 		if err != nil {
@@ -255,7 +255,7 @@ func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage
 	}
 	result := &Artifacts{}
 	for _, p := range payload.Entries {
-		a := &Artifact{Query: p.Query, CollectionKeys: p.CollectionKeys, TypeName: p.TypeName, Node: nodes[p.Node]}
+		a := &Artifact{Path: p.Path, CollectionKeys: p.CollectionKeys, TypeName: p.TypeName, Node: nodes[p.Node]}
 		if a.Node == nil {
 			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
 		}

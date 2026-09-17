@@ -41,7 +41,8 @@ func resolveModuleRef(ctx context.Context, address *core.Address, dest any) (boo
 		return true, err
 	}
 	ctx = core.WorkspaceToContext(ctx, ws)
-	module, rest, qualified := strings.Cut(addr, ":")
+	path := strings.ReplaceAll(addr, "/", ":")
+	module, rest, qualified := strings.Cut(path, ":")
 	var srv *dagql.Server
 	if qualified {
 		srv, err = workspaceModuleSchema(ctx, ws, module)
@@ -60,7 +61,7 @@ func resolveModuleRef(ctx context.Context, address *core.Address, dest any) (boo
 		if srv == nil {
 			return false, nil
 		}
-		rest = addr
+		rest = path
 	}
 	return true, selectModuleRef(ctx, srv, addr, module, rest, dest)
 }
