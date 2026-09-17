@@ -48,7 +48,13 @@ type remoteCacheFixtureController struct {
 	ready    chan struct{}
 	stopped  bool
 	renewals core.RemoteCacheFixtureRenewals
+	// observationCap bounds the staged-reply history, like every other
+	// observation of a scenario. Zero is the default bound.
+	observationCap int
 }
+
+// remoteCacheFixtureObservationCap is the default bound of one scenario.
+const remoteCacheFixtureObservationCap = 1 << 16
 
 var errRemoteCacheFixtureStopped = errors.New("remote cache fixture: the integration has stopped")
 
@@ -166,7 +172,16 @@ func (f *remoteCacheFixtureController) run(ctx context.Context, adapter *RemoteC
 		// The controller is the only witness of what became of it.
 		disposition := adapter.ReplyRenewal(dagql.RenewalReply{ID: request.ID, Chain: template.Chain, Unavailable: template.Unavailable, Addresses: template.Addresses})
 		f.mu.Lock()
-		f.renewals.ArmedReplies = append(f.renewals.ArmedReplies, core.RemoteCacheFixtureArmedReply{Chain: request.Chain, Sequence: request.ID.Sequence, Disposition: renewalDispositionName(disposition)})
+		limit := f.observationCap
+		if limit == 0 {
+			limit = remoteCacheFixtureObservationCap
+		}
+		if len(f.renewals.ArmedReplies) >= limit {
+			// Never dropped silently: the report fails on this.
+			f.renewals.Overflowed = true
+		} else {
+			f.renewals.ArmedReplies = append(f.renewals.ArmedReplies, core.RemoteCacheFixtureArmedReply{Chain: request.Chain, Sequence: request.ID.Sequence, Disposition: renewalDispositionName(disposition)})
+		}
 		f.mu.Unlock()
 	}
 }
@@ -176,6 +191,25 @@ func renewalDispositionName(disposition dagql.RenewalReplyDisposition) string {
 		return "accepted"
 	}
 	return "discarded"
+}
+
+// RemoteCacheFixtureObserve starts a new observation scope: the counters and
+// the staged-reply history are cleared and the bound is set. Live delivered
+// records and staged replies not yet used are state, not observations, and
+// stay.
+func (srv *Server) RemoteCacheFixtureObserve(limit int) error {
+	f, err := srv.fixtureController()
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return fmt.Errorf("observe requires a positive cap")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.observationCap = limit
+	f.renewals = core.RemoteCacheFixtureRenewals{}
+	return nil
 }
 
 func (srv *Server) RemoteCacheFixtureRenewals() (core.RemoteCacheFixtureRenewals, error) {
