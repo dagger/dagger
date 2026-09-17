@@ -126,13 +126,19 @@ func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOff
 	if override := s.loadOverride(); override != nil {
 		return override.Provider(ctx, offer, demand)
 	}
+	// Always a map: an offer may carry a renewal key and no address yet, and
+	// its first renewal writes the addresses it receives here.
+	addresses := maps.Clone(offer.Chain.Addresses)
+	if addresses == nil {
+		addresses = map[digest.Digest]BlobAddress{}
+	}
 	return &partContentProvider{
 		source:     s,
 		client:     &http.Client{Transport: s.roundTripper()},
 		layers:     offer.Chain.Layers,
 		renewalKey: offer.Chain.RenewalKey,
 		demand:     demand,
-		addresses:  maps.Clone(offer.Chain.Addresses),
+		addresses:  addresses,
 		renewed:    map[digest.Digest]bool{},
 	}
 }
