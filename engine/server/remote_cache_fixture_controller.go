@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/fixturetransport"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -236,6 +239,34 @@ func (srv *Server) RemoteCacheFixtureGC(ctx context.Context) (core.RemoteCacheFi
 	f.gcGeneration++
 	report.Generation = f.gcGeneration
 	f.mu.Unlock()
+	return report, nil
+}
+
+func (srv *Server) RemoteCacheFixtureStorage(ctx context.Context) (core.RemoteCacheFixtureStorage, error) {
+	if _, err := srv.fixtureController(); err != nil {
+		return core.RemoteCacheFixtureStorage{}, err
+	}
+	var report core.RemoteCacheFixtureStorage
+	var err error
+	if report.Snapshots, report.Blobs, _, err = srv.fixtureStorageCounts(ctx); err != nil {
+		return report, err
+	}
+	all, err := srv.leaseManager.List(ctx)
+	if err != nil {
+		return report, fmt.Errorf("list leases: %w", err)
+	}
+	report.OwnerLeases = []string{}
+	for _, lease := range all {
+		switch {
+		case bkcache.IsTransferLease(lease):
+			report.TransientPins++
+		case strings.HasPrefix(lease.ID, "dagql/result/"):
+			report.OwnerLeases = append(report.OwnerLeases, lease.ID)
+		default:
+			report.OtherLeases++
+		}
+	}
+	slices.Sort(report.OwnerLeases)
 	return report, nil
 }
 

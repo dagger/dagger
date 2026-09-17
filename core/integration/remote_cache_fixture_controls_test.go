@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	enginecore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -16,8 +17,35 @@ import (
 
 type fixtureControlsReport struct {
 	transferFixtureReport
-	Controls  dagql.TransferFixtureControls `json:"controls"`
-	Transport *fixturetransport.Report      `json:"transport"`
+	Reached   []dagql.FixtureObservation            `json:"reached"`
+	Controls  dagql.TransferFixtureControls         `json:"controls"`
+	Transport *fixturetransport.Report              `json:"transport"`
+	Storage   *enginecore.RemoteCacheFixtureStorage `json:"storage"`
+}
+
+// reachedAt returns the journalled observations of one point.
+func (r fixtureControlsReport) reachedAt(point dagql.FixtureBarrierPoint) []dagql.FixtureObservation {
+	var out []dagql.FixtureObservation
+	for _, o := range r.Reached {
+		if o.Point == point {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// fixtureExportSelectedResult is the exportSelected operation's reply.
+type fixtureExportSelectedResult struct {
+	Roots   []transferFixtureMapping `json:"roots"`
+	Outputs []struct {
+		Ordinal dagql.TransferOrdinal      `json:"ordinal"`
+		Address dagql.PersistedPartAddress `json:"address"`
+		Layers  []struct {
+			Digest      string `json:"digest"`
+			Size        int64  `json:"size"`
+			CopiedBytes int64  `json:"copiedBytes"`
+		} `json:"layers"`
+	} `json:"outputs"`
 }
 
 // TestFixtureControls is the native half of the fixture's own correctness:

@@ -54,6 +54,9 @@ type remoteCacheFixtureReport struct {
 	// Transport is what the in-process dispatcher saw of requests to the
 	// fixture's own hosts, and how many other requests it delegated.
 	Transport *fixturetransport.Report `json:"transport,omitempty"`
+	// Storage is read from the engine's real stores; absent where the
+	// fixture runs without an engine server.
+	Storage *core.RemoteCacheFixtureStorage `json:"storage,omitempty"`
 }
 
 func installRemoteCacheFixture(srv *dagql.Server) error {
@@ -397,6 +400,12 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 				err = fmt.Errorf("%w: transport", dagql.ErrTransferFixtureOverflow)
 			}
 			report.Transport = &transport
+		}
+		if controls, controlsErr := fixtureControls(q); controlsErr == nil && err == nil {
+			var storage core.RemoteCacheFixtureStorage
+			if storage, err = controls.RemoteCacheFixtureStorage(ctx); err == nil {
+				report.Storage = &storage
+			}
 		}
 		response = report
 	case "recordBody":
