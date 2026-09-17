@@ -123,6 +123,16 @@ type partProgressSeen struct {
 // although nothing it counts had moved: its expectation is wrong, and retrying
 // would spin. Every other refusal, and every caller without demand state, is
 // retried as before.
+//
+// One refusal is one record, because a loop that records a refusal never
+// returns it onward into another loop that records into the same demand
+// state. publishEvaluatedParts, installChainPart's re-preparation loop and the
+// Lazy decision's two scans retry what they record, and return only success,
+// an error outside the class or an uncounted refusal of their own. demandPart's
+// acquire loop records what reaches it unrecorded: from selection, from
+// InstallReadyPart in the obtain Body, and from a source check that failed
+// before the decision's scans saw it. A loop that handed a recorded refusal on
+// would make the next loop's record of it look like a repeat.
 func (s *PartDemandState) refused(loop string, iteration uint64, address PersistedPartAddress, err error) error {
 	var refusal *partRefusal
 	if s == nil || !errors.As(err, &refusal) || !refusal.changed {
