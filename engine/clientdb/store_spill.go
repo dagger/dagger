@@ -30,9 +30,10 @@ type spillFile[Row any] struct {
 	file   *os.File
 	codec  rowCodec[Row]
 	writer *bufio.Writer
-	// testWriteHook is a fault-injection seam. Tests install it only while the
-	// single spiller is idle; production always leaves it nil.
+	// testWriteHook and testSyncHook are fault-injection seams. Tests install
+	// them only while the single spiller is idle; production leaves them nil.
 	testWriteHook func([]byte) (int, error)
+	testSyncHook  func() error
 
 	// The fields below are owned by the single writer.
 	writeOffset int64
@@ -309,6 +310,22 @@ func (s *spillFile[Row]) readBounds(id int64) (offset, committed int64, ok bool)
 		indexAt--
 	}
 	return s.index[indexAt].offset, s.committed, true
+}
+
+func (s *spillFile[Row]) sync() error {
+	if err := s.writer.Flush(); err != nil {
+		return fmt.Errorf("flush spill file: %w", err)
+	}
+	if s.testSyncHook != nil {
+		if err := s.testSyncHook(); err != nil {
+			return fmt.Errorf("sync spill file: %w", err)
+		}
+		return nil
+	}
+	if err := s.file.Sync(); err != nil {
+		return fmt.Errorf("sync spill file: %w", err)
+	}
+	return nil
 }
 
 func (s *spillFile[Row]) close() error {

@@ -70,3 +70,29 @@ type SelectSpansSinceParams struct {
 	ID    int64
 	Limit int64
 }
+
+// HighWater is a fixed inclusive cursor for each telemetry stream.
+// A zero cursor denotes an empty stream.
+type HighWater struct {
+	Spans   int64
+	Logs    int64
+	Metrics int64
+}
+
+type SelectSpansRangeParams struct {
+	AfterID   int64
+	ThroughID int64
+	Limit     int64
+}
+
+type SelectLogsRangeParams struct {
+	AfterID   int64
+	ThroughID int64
+	Limit     int64
+}
+
+type SelectMetricsRangeParams struct {
+	AfterID   int64
+	ThroughID int64
+	Limit     int64
+}

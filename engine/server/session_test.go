@@ -1804,7 +1804,7 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 	require.Equal(t, 1, metricPointCount(childMetrics))
 	require.Empty(t, originAttr(rootLogs[len(rootLogs)-1].Attributes))
 
-	require.Equal(t, 0, dbs.OpenStats().Stores, "exports and reads must release DB handles")
+	require.Equal(t, 0, dbs.OpenStats().Refs, "exports and reads must release DB handles")
 
 	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
 	sess.state.Store(sessionStateInitialized)

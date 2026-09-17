@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/tuist"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -383,4 +385,148 @@ func TestFocusedAgentTranscriptIncludesTheImportedTurns(t *testing.T) {
 	require.Equal(t, map[string]bool{"imported turn": true, "live turn": true},
 		revealedNames(t, fe),
 		"the promoted transcript must span both of the agent's lives")
+}
+
+func TestEventLoopBarrierWaitsForAppliedExports(t *testing.T) {
+	ctx := context.Background()
+	db := dagui.NewDB()
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(80, 20))
+	fe.setupTUI()
+
+	root := cannedTrace(foreignTraceIDByte, cannedSpan{
+		id: foreignRootSpanID, name: "imported root", start: foreignRootStart,
+	})
+	cut := enginetel.ArchiveCut{
+		Generation: "generation-1",
+		HighWater:  enginetel.ArchiveHighWater{Spans: 1},
+		SealAt:     time.Unix(200, 0),
+	}
+	imp, err := enginetel.NewArchiveTraceImporter(enginetel.TraceImportSinks{
+		Spans: fe.SpanExporter(), Logs: fe.LogExporter(), Metrics: fe.MetricExporter(), Barrier: fe,
+	}, cut)
+	require.NoError(t, err)
+
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		close(started)
+		done <- imp.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Spans: root})
+	}()
+	<-started
+	require.NotContains(t, db.Spans.Map, prettyTestSpanID(foreignRootSpanID),
+		"the asynchronous exporter unexpectedly applied before the event loop ran")
+	select {
+	case err := <-done:
+		t.Fatalf("barrier acknowledged before the event loop applied the export: %v", err)
+	default:
+	}
+
+	var ackErr error
+	require.Eventually(t, func() bool {
+		fe.tui.Step()
+		select {
+		case ackErr = <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+	require.NoError(t, ackErr)
+	require.Contains(t, db.Spans.Map, prettyTestSpanID(foreignRootSpanID))
+}
+
+func TestArchiveImportUsesOneFixedCutAndSealsOnlyAtSpanTerminal(t *testing.T) {
+	ctx := context.Background()
+	db := dagui.NewDB()
+	require.NoError(t, db.ExportSpans(ctx, telemetry.SpansFromPB(
+		cannedTrace(liveTraceIDByte, cannedSpan{
+			id: liveRootSpanID, name: "live root", start: 1000,
+		}).GetResourceSpans())))
+	fe := NewASCIIReporterWithDB(io.Discard, db)
+	cut := enginetel.ArchiveCut{
+		Generation: "generation-1",
+		HighWater: enginetel.ArchiveHighWater{
+			Spans: 19, Logs: 23, Metrics: 29,
+		},
+		SealAt: time.Unix(777, 0),
+	}
+	imp, err := enginetel.NewArchiveTraceImporter(enginetel.TraceImportSinks{
+		Spans: fe.SpanExporter(), Logs: fe.LogExporter(), Metrics: fe.MetricExporter(), Barrier: fe,
+	}, cut)
+	require.NoError(t, err)
+
+	// The bootstrap contains a running source span. Its acknowledged import and
+	// terminal barrier must not seal it: remainder span snapshots may still end
+	// it normally.
+	require.NoError(t, imp.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{
+		Spans: foreignSessionTrace(false),
+	}))
+	require.NoError(t, imp.Wait(ctx, cut))
+	foreign := db.Spans.Map[prettyTestSpanID(foreignRootSpanID)]
+	require.NotNil(t, foreign)
+	require.True(t, foreign.IsRunning(), "bootstrap completion sealed the source trace")
+	require.Equal(t, cannedTraceID(foreignTraceIDByte), foreign.TraceID.TraceID[:],
+		"the import rewrote the source trace ID")
+	require.Equal(t, prettyTestSpanID(liveRootSpanID), db.PrimarySpan,
+		"the archive import replaced the live primary span")
+
+	// Other signal terminals do not decide when spans are complete, and a span
+	// terminal short of the immutable high-water cannot choose an early seal.
+	require.NoError(t, imp.CompleteRemainder(ctx, cut, enginetel.ArchiveLogs, cut.HighWater.Logs))
+	require.True(t, foreign.IsRunning())
+	require.Error(t, imp.CompleteRemainder(ctx, cut, enginetel.ArchiveSpans, cut.HighWater.Spans-1))
+	require.True(t, foreign.IsRunning())
+
+	require.NoError(t, imp.CompleteRemainder(ctx, cut, enginetel.ArchiveSpans, cut.HighWater.Spans))
+	foreign = db.Spans.Map[prettyTestSpanID(foreignRootSpanID)]
+	require.False(t, foreign.IsRunning())
+	require.Equal(t, cut.SealAt, foreign.EndTime,
+		"the span was not sealed at the manifest's fixed timestamp")
+	require.True(t, foreign.Canceled)
+	require.True(t, foreign.LeftRunning)
+}
+
+func TestArchiveSpanAbandonmentIsPermanent(t *testing.T) {
+	ctx := context.Background()
+	db := dagui.NewDB()
+	fe := NewASCIIReporterWithDB(io.Discard, db)
+	cut := enginetel.ArchiveCut{
+		Generation: "generation-1",
+		HighWater:  enginetel.ArchiveHighWater{Spans: 10, Logs: 20, Metrics: 30},
+		SealAt:     time.Unix(888, 0),
+	}
+	imp, err := enginetel.NewArchiveTraceImporter(enginetel.TraceImportSinks{
+		Spans: fe.SpanExporter(), Logs: fe.LogExporter(), Metrics: fe.MetricExporter(), Barrier: fe,
+	}, cut)
+	require.NoError(t, err)
+	require.NoError(t, imp.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{
+		Spans: foreignSessionTrace(false),
+	}))
+
+	mismatch := cut
+	mismatch.Generation = "replacement-generation"
+	err = imp.ImportAndWait(ctx, mismatch, enginetel.ArchiveImportBatch{
+		Spans: foreignSessionTrace(false),
+	})
+	require.ErrorIs(t, err, enginetel.ErrArchiveCutMismatch)
+
+	require.NoError(t, imp.AbandonRemainder(ctx, cut, enginetel.ArchiveSpans))
+	foreign := db.Spans.Map[prettyTestSpanID(foreignRootSpanID)]
+	require.False(t, foreign.IsRunning())
+	require.Equal(t, cut.SealAt, foreign.EndTime)
+
+	err = imp.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{
+		Spans: cannedTrace(foreignTraceIDByte, cannedSpan{
+			id: 99, name: "late retry", start: 999,
+		}),
+	})
+	require.ErrorIs(t, err, enginetel.ErrArchiveSpanAbandoned)
+	require.NotContains(t, db.Spans.Map, prettyTestSpanID(99))
+
+	// A permanently abandoned span remainder does not prevent the independent
+	// log stream from finishing its historical import.
+	err = imp.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{
+		Logs: cannedAgentStateLogs(foreignTraceIDByte),
+	})
+	require.NoError(t, err)
 }

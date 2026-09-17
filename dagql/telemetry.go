@@ -111,3 +111,10 @@ type CallPayloadSeenKeyStore interface {
 	CallPayloadNeedsEmission(string) bool
 	CallPayloadDelivered(string)
 }
+
+// CallPayloadLogPolicy optionally requires a self-contained payload log lane.
+// Archives use this so their fixed-cut bootstrap need not depend on presentation
+// spans, whose payload attributes are otherwise sufficient for live consumers.
+type CallPayloadLogPolicy interface {
+	RequireCallPayloadLogs() bool
+}
