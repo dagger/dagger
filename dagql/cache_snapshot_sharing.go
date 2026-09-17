@@ -1109,20 +1109,22 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 	}
 
 	// Prepare phase. At most one local Prepare at a time; a receiver's
-	// addresses are prepared in order, each from the previous slot's data-only
-	// next representation.
-	for i, st := range states {
+	// addresses are prepared in order, each from the data-only next
+	// representation of that receiver's last successful preparation. A failed
+	// preparation published nothing and is simply omitted: the prefix it was
+	// given is carried to the receiver's next address, so one refused address
+	// in the middle does not cost the ones after it.
+	prefix := map[*sharedResult]*readyPartPreparationBase{}
+	for _, st := range states {
+		st.base = prefix[st.receiver]
 		close(st.prepareNow)
 		res := <-st.prepared
 		if !res.ok {
-			// A failed preparation is omitted before any later prefix is
-			// built: the next address of the same receiver simply starts its
-			// own chain from the real record.
 			c.traceShareSkip(ctx, st.receiver, st.address, res.err)
 			continue
 		}
 		st.holds, st.ready = true, true
-		c.extendSharePrefix(states, i, res)
+		prefix[st.receiver] = nextSharePrefix(st, res)
 	}
 
 	// Commit phase.
@@ -1205,36 +1207,27 @@ func (c *Cache) abortShareSuffix(states []*shareSlotState, from int) {
 	}
 }
 
-// extendSharePrefix gives the next slot of the same receiver the immutable
-// next representation, expected stamp and predecessor identities this slot
-// has just prepared.
-func (c *Cache) extendSharePrefix(states []*shareSlotState, i int, res shareSlotPrepared) {
-	st := states[i]
-	if i+1 >= len(states) {
-		return
-	}
-	next := states[i+1]
-	if next.slot.receiver.row != st.slot.receiver.row {
-		return
-	}
-	base := st.base
+// nextSharePrefix is the base for the next address of the same receiver after
+// st prepared: the immutable next representation, the stamp it will have
+// published, and every predecessor's reserved installation identity so far.
+func nextSharePrefix(st *shareSlotState, res shareSlotPrepared) *readyPartPreparationBase {
 	predecessors := []readyPartPredecessor{}
 	original := st.slot.receiver.version.payload
-	if base != nil {
-		predecessors = slices.Clone(base.predecessors)
-		original = base.original
+	if st.base != nil {
+		predecessors = slices.Clone(st.base.predecessors)
+		original = st.base.original
 	}
 	predecessors = append(predecessors, readyPartPredecessor{
-		address:    clonePartAddress(st.slot.address),
-		receiver:   st.slot.receiver.row,
+		address:    clonePartAddress(st.address),
+		receiver:   st.receiver,
 		key:        res.key,
 		generation: res.generation,
 	})
-	next.base = &readyPartPreparationBase{
-		receiver: st.slot.receiver.row,
+	return &readyPartPreparationBase{
+		receiver: st.receiver,
 		original: original,
 		expected: readyPartRepresentation{
-			receiver:        st.slot.receiver.row,
+			receiver:        st.receiver,
 			payloadRevision: original.payloadRevision + uint64(len(predecessors)),
 			envelope:        res.published,
 			hasValue:        original.hasValue,

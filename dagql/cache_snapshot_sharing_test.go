@@ -1363,3 +1363,62 @@ func TestSnapshotSharingImportTriggers(t *testing.T) {
 		})
 	}
 }
+
+// A refused address in the middle of a receiver's sequence costs only itself:
+// the last successful prefix is carried over it, so the address after it
+// prepares from that prefix and installs in the same pass.
+func TestSnapshotSharingPrefixCarriedOverRefusedAddress(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"a": {Snapshot: "a-snap"}, "b": {Snapshot: "b-snap"}, "c": {Snapshot: "c-snap"}},
+		map[string]sharePartState{"a": {}, "b": {}, "c": {}},
+	)
+	// Keep the middle address busy, so its slot is refused admission.
+	blocked, entered := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(blocked) })
+	defer unblock()
+	taskDone := make(chan error, 1)
+	go func() {
+		taskDone <- c.RunLazyTask(ctx, receiver, partTaskKey("obtain", PersistedPartAddress{Part: "b"}), LazyTaskSpec{
+			Body: func(context.Context) error {
+				close(entered)
+				<-blocked
+				return nil
+			},
+		})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the preseeded obtain task never started")
+	}
+	// What the first pass installed, read at its end on the worker's own
+	// goroutine, before any successor pass can start.
+	var firstPass struct {
+		once    sync.Once
+		a, b, c bool
+		pins    int32
+	}
+	passed := c.testAfterSharePass
+	c.testAfterSharePass = func(item *snapshotShareItem) {
+		firstPass.once.Do(func() {
+			firstPass.a, firstPass.b, firstPass.c = shareTestHasLink(receiver, "a-snap"), shareTestHasLink(receiver, "b-snap"), shareTestHasLink(receiver, "c-snap")
+			firstPass.pins = manager.pins.Load()
+		})
+		passed(item)
+	}
+	shareTestUnite(t, ctx, c, "prefix-carried", donor, receiver)
+	require.Equal(t, 3, barrier.awaitPass(t))
+	require.True(t, firstPass.a, "the first address installs")
+	require.False(t, firstPass.b, "the busy address is refused")
+	require.True(t, firstPass.c, "the address after the refused one installs in the same pass")
+	require.Equal(t, int32(2), firstPass.pins)
+	unblock()
+	select {
+	case err := <-taskDone:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the preseeded obtain task never finished")
+	}
+}
