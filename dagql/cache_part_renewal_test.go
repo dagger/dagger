@@ -155,6 +155,50 @@ func TestRenewalMailbox(t *testing.T) {
 			require.ErrorContains(t, got.err, "integration reported no address")
 		})
 	})
+	t.Run("cancellation seen before the requester runs", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			bridge, err := newRemoteCacheBridge(new(sync.Mutex))
+			require.NoError(t, err)
+			// No goroutine waits on these exchanges yet, so only Take and
+			// Reply can observe the cancellation.
+			deliveredCtx, cancelDelivered := context.WithCancel(t.Context())
+			delivered, err := bridge.enqueue(deliveredCtx, renewalTestRequest(t, layers))
+			require.NoError(t, err)
+			request := takeNow(t, bridge)
+			cancelDelivered()
+			require.Equal(t, RenewalReplyDiscarded, bridge.ReplyRenewal(RenewalReply{ID: request.ID, Chain: request.Chain, Addresses: map[digest.Digest]BlobAddress{request.NeededBlob: {URL: "https://renewed.invalid/upper"}}}))
+			select {
+			case <-request.Done:
+			default:
+				t.Fatal("a reply for a canceled requester retires its exchange")
+			}
+			_, err = bridge.wait(deliveredCtx, delivered)
+			require.ErrorIs(t, err, context.Canceled)
+
+			queuedCtx, cancelQueued := context.WithCancel(t.Context())
+			queued, err := bridge.enqueue(queuedCtx, renewalTestRequest(t, layers))
+			require.NoError(t, err)
+			cancelQueued()
+			takeCtx, cancelTake := context.WithCancel(t.Context())
+			cancelTake()
+			_, err = bridge.TakeRenewalRequest(takeCtx)
+			require.ErrorIs(t, err, context.Canceled, "Take skipped the canceled request")
+			_, err = bridge.wait(queuedCtx, queued)
+			require.ErrorIs(t, err, context.Canceled)
+			live, pending := liveExchanges(bridge)
+			require.Zero(t, live, "both exchanges freed their capacity")
+			require.Zero(t, pending)
+
+			// With a waiting requester, cancel and reply at once.
+			ctx, cancel := context.WithCancel(t.Context())
+			result := startRenewal(ctx, bridge, renewalTestRequest(t, layers))
+			synctest.Wait()
+			request = takeNow(t, bridge)
+			cancel()
+			require.Equal(t, RenewalReplyDiscarded, bridge.ReplyRenewal(RenewalReply{ID: request.ID, Chain: request.Chain, Unavailable: true}))
+			require.ErrorIs(t, (<-result).err, context.Canceled)
+		})
+	})
 	t.Run("replies", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			bridge, err := newRemoteCacheBridge(new(sync.Mutex))
