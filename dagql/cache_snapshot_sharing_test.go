@@ -1422,3 +1422,66 @@ func TestSnapshotSharingPrefixCarriedOverRefusedAddress(t *testing.T) {
 		t.Fatal("the preseeded obtain task never finished")
 	}
 }
+
+// A decoded receiver's one slot per pass is spent only by a slot that passed
+// the slot-context checks. Its first address here needs a service
+// reconstruction context that is not registered, so it is ineligible; the
+// service-free sibling still installs in the same pass.
+func TestSnapshotSharingTypedIneligibleFirstAddress(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	donor := persistedListTestResult(t, ctx, c, srv, "ineligible-donor", newShareTestValue("donor", map[string]sharePartState{
+		"fs": {Snapshot: "fs-snap", Service: 999}, "mount": {Snapshot: "mount-snap"},
+	}))
+	receiver := persistedListTestResult(t, ctx, c, srv, "ineligible-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}, "mount": {}}))
+	c.egraphMu.Lock()
+	receiver.cacheSharedResult().imported = true
+	c.egraphMu.Unlock()
+	partTestEquivalent(t, c, receiver, donor)
+	shareTestUnite(t, ctx, c, "typed-ineligible-first", donor, receiver)
+
+	require.Equal(t, 1, barrier.awaitPass(t), "the eligible sibling is planned: %v", barrier.skipCauses())
+	require.True(t, shareTestHasLink(receiver, "mount-snap"), "the ineligible service address did not suppress its service-free sibling")
+	require.False(t, shareTestHasLink(receiver, "fs-snap"))
+	require.Equal(t, int32(1), manager.pins.Load())
+}
+
+// A decoded receiver fills one part per pass. When its slot installs and
+// selection left it a further address, the successor cohort is queued in the
+// E section that releases the active cohort, so a donor whose last owner is
+// that cohort stays held until the successor has taken the next part. The
+// donor keeps no ordinary owner across the two passes.
+func TestSnapshotSharingTypedSuccessorHoldsTheDonor(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	release := barrier.holdPasses()
+	defer release()
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	donor := persistedListTestResult(t, ctx, c, srv, "window-donor", newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}, "mount": {Snapshot: "mount-snap"}}))
+	receiverValue := newShareTestValue("receiver", map[string]sharePartState{"fs": {}, "mount": {}})
+	receiver := persistedListTestResult(t, ctx, c, srv, "window-receiver", receiverValue)
+	donorRow := donor.cacheSharedResult()
+	c.egraphMu.Lock()
+	receiver.cacheSharedResult().imported = true
+	c.egraphMu.Unlock()
+	partTestEquivalent(t, c, receiver, donor)
+	shareTestUnite(t, ctx, c, "typed-successor", donor, receiver)
+	require.Equal(t, 1, barrier.awaitEntered(t), "a decoded receiver plans one slot")
+
+	// With the first pass parked at its start, take away every ordinary owner
+	// of the donor: its session and its saved edge. The cohort holds it alone.
+	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+	_, err := c.removePersistedEdge(ctx, donorRow.id)
+	require.NoError(t, err)
+	c.egraphMu.RLock()
+	require.Same(t, donorRow, c.resultsByID[donorRow.id])
+	c.egraphMu.RUnlock()
+
+	release()
+	require.Equal(t, 1, barrier.awaitPass(t), "the first pass installs one part")
+	require.Equal(t, 1, barrier.awaitPass(t), "the successor still finds the donor and installs the other")
+	require.Equal(t, "fs-snap", receiverValue.Parts["fs"].Snapshot)
+	require.Equal(t, "mount-snap", receiverValue.Parts["mount"].Snapshot)
+	require.Equal(t, int32(2), manager.pins.Load())
+}
