@@ -24,6 +24,10 @@ import (
 type fixtureHolds struct {
 	mu     sync.Mutex
 	tokens map[string][]*sharedResult
+	// closed is set by close's one sweep, under mu. A hold admitted before
+	// close but publishing after the sweep is refused, so no token is ever
+	// published that nothing would release.
+	closed bool
 }
 
 // TransferFixtureHold is the result of a fixture hold.
@@ -66,6 +70,12 @@ func (c *Cache) HoldTransferFixtureRoots(ctx context.Context, sessionID string, 
 	c.egraphMu.Unlock()
 
 	c.fixtureHolds.mu.Lock()
+	if c.fixtureHolds.closed {
+		c.fixtureHolds.mu.Unlock()
+		// Close already swept. Give back what this hold took, through the
+		// ordinary release path, before close finishes draining operations.
+		return TransferFixtureHold{}, errors.Join(ErrCacheClosed, c.releaseFixtureRows(ctx, rows))
+	}
 	if c.fixtureHolds.tokens == nil {
 		c.fixtureHolds.tokens = map[string][]*sharedResult{}
 	}
@@ -103,6 +113,7 @@ func (c *Cache) releaseAllFixtureHolds(ctx context.Context) error {
 	c.fixtureHolds.mu.Lock()
 	tokens := c.fixtureHolds.tokens
 	c.fixtureHolds.tokens = nil
+	c.fixtureHolds.closed = true
 	c.fixtureHolds.mu.Unlock()
 	var err error
 	for _, rows := range tokens {

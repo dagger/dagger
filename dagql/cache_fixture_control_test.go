@@ -234,6 +234,70 @@ func TestFixtureHoldTokensEndAtClose(t *testing.T) {
 	require.Zero(t, c.TransferFixtureHoldCount(), "no token survives the cache")
 }
 
+// A hold admitted before Close but resumed after Close swept the tokens must
+// not publish one: Close would then succeed with a fixture owner outstanding,
+// and closeOnce means nothing would ever release it. The late hold is refused
+// and the ownership it had already taken is released through the ordinary
+// path, so the row is as collectable as if the hold had never been asked for.
+func TestFixtureHoldAdmittedBeforeCloseLeavesNoToken(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	held := persistedListTestResult(t, ctx, c, srv, "held-across-close", String("held"))
+	id := fixtureTestHandle(t, c, held)
+	row := held.cacheSharedResult()
+	c.egraphMu.RLock()
+	before := row.incomingOwnershipCount
+	c.egraphMu.RUnlock()
+
+	entered, resume, swept := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	c.testAfterSessionOperationEnter = func(string) {
+		close(entered)
+		select {
+		case <-resume:
+		case <-ctx.Done():
+		}
+	}
+	// Close calls this after it swept the tokens, as it starts to drain the
+	// admitted operations.
+	c.testAfterCacheClosing = func() { close(swept) }
+	holdErr := make(chan error, 1)
+	go func() {
+		_, err := c.HoldTransferFixtureRoots(ctx, "test-session", []*call.ID{id})
+		holdErr <- err
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("the hold was never admitted")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- c.Close(ctx) }()
+	select {
+	case <-swept:
+	case <-ctx.Done():
+		t.Fatal("close never reached its drain")
+	}
+	close(resume)
+	select {
+	case err := <-holdErr:
+		require.ErrorIs(t, err, ErrCacheClosed, "a hold that lost the race with Close is refused")
+	case <-ctx.Done():
+		t.Fatal("the hold never returned")
+	}
+	select {
+	case err := <-closed:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("close never returned")
+	}
+	require.Zero(t, c.TransferFixtureHoldCount(), "no token was published after the sweep")
+	c.egraphMu.RLock()
+	after := row.incomingOwnershipCount
+	c.egraphMu.RUnlock()
+	require.LessOrEqual(t, after, before, "the refused hold's ownership was rolled back")
+}
+
 // The observation bound: a report whose bound was exceeded fails instead of
 // returning a silently shortened event list, and a new bound starts a new
 // scenario.
