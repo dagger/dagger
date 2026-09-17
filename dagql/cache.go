@@ -4557,7 +4557,18 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 }
 
 func (c *Cache) Close(ctx context.Context) error {
+	return c.CloseWithShutdownError(ctx, nil)
+}
+
+// CloseWithShutdownError is Close for a shutdown that has already failed. A
+// non-nil cause keeps the persistence checkpoint dirty even if drain and
+// cleanup succeed, and is returned joined with any close errors. It shares
+// Close's once, as does CloseDiscardingPersistence: after either has run, it
+// returns that earlier result and makes no checkpoint attempt.
+func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 	c.closeOnce.Do(func() {
+		// A nil cause leaves ordinary Close unchanged.
+		c.closeErr = errors.Join(cause)
 		slog.Info(
 			"starting dagql cache close",
 			"hasSQLDB", c.sqlDB != nil,
