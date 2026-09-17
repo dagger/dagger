@@ -16,9 +16,11 @@ import (
 )
 
 // workspaceSettingFields lists the setting fields to request, richest first.
-// Older engines lack the later additions (defaultValue, isList, isObject),
-// so loading falls back through this list on "Cannot query field" errors.
+// Older engines lack the later additions (isString, defaultValue, isList,
+// isObject), so loading falls back through this list on "Cannot query field"
+// errors.
 var workspaceSettingFields = []string{
+	"key value description defaultValue isString isList isObject",
 	"key value description defaultValue isList isObject",
 	"key value description isList isObject",
 	"key value description",
@@ -82,6 +84,7 @@ func init() {
 var (
 	workspaceSettingsUnset  bool
 	workspaceSettingsGlobal bool
+	workspaceSettingsWide   bool
 )
 
 func newSettingsCmd(hidden bool) *cobra.Command {
@@ -94,6 +97,7 @@ func newSettingsCmd(hidden bool) *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&workspaceSettingsUnset, "unset", "u", false, "Remove the setting from workspace config")
 	cmd.Flags().BoolVarP(&workspaceSettingsGlobal, "global", "g", false, "Store the setting in user-level config instead of the repository, keyed by the workspace's git remote")
+	cmd.Flags().BoolVar(&workspaceSettingsWide, "wide", false, "List settings with full values and descriptions instead of fitting the terminal width")
 	return cmd
 }
 
@@ -103,6 +107,9 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 	}
 	if workspaceSettingsGlobal && !workspaceSettingsUnset && len(args) < 3 {
 		return fmt.Errorf("--global stores a setting in user-level config; pass MODULE KEY VALUE to set or use --unset (reads always show the effective value)")
+	}
+	if workspaceSettingsWide && len(args) > 1 {
+		return fmt.Errorf("--wide applies to listing settings; pass at most a MODULE argument")
 	}
 	envWrite := len(args) >= 3 && !workspaceSettingsUnset && workspaceEnv != ""
 	err := runWorkspaceSettingsSession(cmd, args, envWrite, false)
@@ -166,7 +173,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 
 		switch len(args) {
 		case 0, 1:
-			return writeWorkspaceSettingsTable(cmd.OutOrStdout(), state.Settings)
+			return writeWorkspaceSettingsTable(cmd.OutOrStdout(), state.Settings, workspaceSettingsWide)
 		case 2:
 			setting, err := state.lookupSetting(args[1])
 			if err != nil {
@@ -194,7 +201,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 				// through userScopedConfigKey, and a personal env comes into
 				// being by the write itself, so none of the env staging below
 				// applies.
-				return writeUserConfigValue(ctx, userScopedConfigKey(workspaceSettingConfigKey(setting.Module, setting.Key)), value, values)
+				return writeUserConfigValue(ctx, userScopedConfigKey(workspaceSettingConfigKey(setting.Module, setting.Key)), value, values, setting.storesString())
 			}
 			key := workspaceSettingConfigKey(setting.Module, setting.Key)
 			target := state.Workspace
@@ -229,8 +236,17 @@ type workspaceSetting struct {
 	Value        string
 	Description  string
 	DefaultValue string
+	IsString     bool
 	IsList       bool
 	IsObject     bool
+}
+
+// storesString reports whether the setting's value is stored as a config
+// string whatever it looks like: a string, or the address of an object.
+// Engines that predate isString report every string setting as untyped, and
+// there the value is typed by what it looks like.
+func (s workspaceSetting) storesString() bool {
+	return s.IsString || s.IsObject
 }
 
 // workspaceSettingDisplayValue renders a setting for output: the configured
@@ -414,9 +430,18 @@ func workspaceEnvSettingConfigKey(envName, moduleName, settingName string) strin
 	return workspacepkg.JoinConfigPath("env", envName, "modules", moduleName, "settings", settingName)
 }
 
-func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting) error {
+// writeWorkspaceSettingsTable lists settings as a table fitted to the terminal
+// width, or, when wide, with every cell shown whole.
+func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting, wide bool) error {
+	if wide {
+		return writeWorkspaceSettingsTableAtWidth(out, settings, workspaceSettingsUnlimitedWidth)
+	}
 	return writeWorkspaceSettingsTableAtWidth(out, settings, getViewWidth())
 }
+
+// workspaceSettingsUnlimitedWidth is the view width of a table that is never
+// truncated: columns take their full width and descriptions are shown whole.
+const workspaceSettingsUnlimitedWidth = -1
 
 const (
 	workspaceSettingsColumnPadding = 2
@@ -435,18 +460,28 @@ func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetti
 		return err
 	}
 
+	unlimited := viewWidth == workspaceSettingsUnlimitedWidth
 	rows := make([][]string, 0, len(settings)+1)
 	rows = append(rows, workspaceSettingsHeaders)
 	for _, setting := range settings {
+		description := workspaceSettingShortDescription(setting.Description)
+		if unlimited {
+			description = strings.Join(strings.Fields(setting.Description), " ")
+		}
 		rows = append(rows, []string{
 			workspaceSettingSingleLine(setting.Module),
 			workspaceSettingSingleLine(setting.Key),
 			workspaceSettingSingleLine(workspaceSettingDisplayValue(setting)),
-			workspaceSettingSingleLine(workspaceSettingShortDescription(setting.Description)),
+			workspaceSettingSingleLine(description),
 		})
 	}
 
-	widths := workspaceSettingsColumnWidths(rows, viewWidth)
+	var widths []int
+	if unlimited {
+		widths = workspaceSettingsFullColumnWidths(rows)
+	} else {
+		widths = workspaceSettingsColumnWidths(rows, viewWidth)
+	}
 	for _, row := range rows {
 		var line strings.Builder
 		for column, cell := range row {
@@ -462,6 +497,17 @@ func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetti
 		}
 	}
 	return nil
+}
+
+// workspaceSettingsFullColumnWidths sizes every column to its widest cell.
+func workspaceSettingsFullColumnWidths(rows [][]string) []int {
+	widths := make([]int, len(workspaceSettingsHeaders))
+	for _, row := range rows {
+		for column, cell := range row {
+			widths[column] = max(widths[column], ansi.StringWidth(cell))
+		}
+	}
+	return widths
 }
 
 func workspaceSettingsColumnWidths(rows [][]string, viewWidth int) []int {

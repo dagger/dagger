@@ -18879,6 +18879,7 @@ type WorkspaceModuleSetting struct {
 	id           *ID
 	isList       *bool
 	isObject     *bool
+	isString     *bool
 	key          *string
 	value        *string
 }
@@ -18974,6 +18975,19 @@ func (r *WorkspaceModuleSetting) IsObject(ctx context.Context) (bool, error) {
 		return *r.isObject, nil
 	}
 	q := r.query.Select("isObject")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+func (r *WorkspaceModuleSetting) IsString(ctx context.Context) (bool, error) {
+	if r.isString != nil {
+		return *r.isString, nil
+	}
+	q := r.query.Select("isString")
 
 	var response bool
 

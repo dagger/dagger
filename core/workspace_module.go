@@ -56,6 +56,7 @@ type WorkspaceModuleSetting struct {
 	Value        string `field:"true" doc:"The value stored in workspace config after applying the selected workspace environment, or empty when unset."`
 	Description  string `field:"true" doc:"The constructor argument description."`
 	DefaultValue string `field:"true" doc:"The constructor argument's declared default, formatted like value, or empty when the argument has no default."`
+	IsString     bool   `field:"true" doc:"Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean."`
 	IsList       bool   `field:"true" doc:"Whether the setting accepts a list of values."`
 	IsObject     bool   `field:"true" doc:"Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference."`
 }

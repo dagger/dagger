@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
@@ -69,6 +70,66 @@ func TestWorkspaceSettingHintTypeInfo(t *testing.T) {
 				require.Equal(t, tt.exampleValue, exampleValue)
 			}
 		})
+	}
+}
+
+func TestWriteSettingValueUsesSettingType(t *testing.T) {
+	t.Parallel()
+
+	base, err := workspace.WriteConfigValue(nil, "modules.go.source", "modules/go")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		hint   constructorArgHint
+		value  string
+		stored any
+	}{
+		{"string keeps a number-looking value", constructorArgHint{Name: "version", IsString: true}, "1.20", "1.20"},
+		{"string keeps a bool-looking value", constructorArgHint{Name: "version", IsString: true}, "true", "true"},
+		{"string keeps commas", constructorArgHint{Name: "version", IsString: true}, "a,b", "a,b"},
+		{"string drops marking quotes", constructorArgHint{Name: "version", IsString: true}, `"1.27"`, "1.27"},
+		{"address keeps a number-looking value", constructorArgHint{Name: "version", IsObject: true}, "0123", "0123"},
+		{"list stores an array", constructorArgHint{Name: "version", IsList: true}, "1.20", []any{"1.20"}},
+		{"int is typed from the value", constructorArgHint{Name: "version"}, "42", int64(42)},
+		{"float is typed from the value", constructorArgHint{Name: "version"}, "1.5", 1.5},
+		{"bool is typed from the value", constructorArgHint{Name: "version"}, "true", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			data, err := writeSettingValue(base, "modules.go.settings.version", "go", tt.hint, tt.value)
+			require.NoError(t, err)
+			cfg, err := workspace.ParseConfig(data)
+			require.NoError(t, err)
+			require.Equal(t, tt.stored, cfg.Modules["go"].Settings["version"])
+		})
+	}
+
+	_, err = writeSettingValue(base, "modules.go.settings.tags", "go", constructorArgHint{Name: "tags", IsList: true}, `["a" "b"]`)
+	require.ErrorContains(t, err, `setting "tags" of module "go" is a list: `)
+}
+
+func TestWorkspaceSettingHintIsString(t *testing.T) {
+	t.Parallel()
+
+	dag := workspaceSettingHintTypeTestDag(t)
+	for _, tt := range []struct {
+		name     string
+		typeDef  *core.TypeDef
+		isString bool
+	}{
+		{"string", &core.TypeDef{Kind: core.TypeDefKindString}, true},
+		{"integer", &core.TypeDef{Kind: core.TypeDefKindInteger}, false},
+		{"float", &core.TypeDef{Kind: core.TypeDefKindFloat}, false},
+		{"boolean", &core.TypeDef{Kind: core.TypeDefKindBoolean}, false},
+		{"string list", listTypeDef(t, dag, &core.TypeDef{Kind: core.TypeDefKindString}), false},
+		{"address backed object", objectTypeDef(t, dag, "Secret"), false},
+	} {
+		hint, ok := buildHintFromArg(&core.FunctionArg{Name: "arg", TypeDef: objectResult(t, dag, "arg-"+tt.name, tt.typeDef)})
+		require.True(t, ok, tt.name)
+		require.Equal(t, tt.isString, hint.IsString, tt.name)
 	}
 }
 

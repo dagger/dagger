@@ -18340,6 +18340,11 @@ impl WorkspaceModuleSetting {
         let query = self.selection.select("isObject");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+    pub async fn is_string(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isString");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The setting key.
     pub async fn key(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("key");

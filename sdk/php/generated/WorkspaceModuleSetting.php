@@ -59,6 +59,15 @@ class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdA
     }
 
     /**
+     * Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+     */
+    public function isString(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isString');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isString');
+    }
+
+    /**
      * The setting key.
      */
     public function key(): string

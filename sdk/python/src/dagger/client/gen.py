@@ -18019,6 +18019,26 @@ class WorkspaceModuleSetting(Type):
         _ctx = self._select("isObject", _args)
         return await _ctx.execute(bool)
 
+    async def is_string(self) -> bool:
+        """Whether the setting accepts a string, stored as a TOML string even
+        when the value reads as a number or boolean.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("isString", _args)
+        return await _ctx.execute(bool)
+
     async def key(self) -> str:
         """The setting key.
 

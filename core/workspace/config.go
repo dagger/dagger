@@ -761,6 +761,34 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 	})
 }
 
+// WriteConfigStringValue writes a string value to config TOML at the given
+// dotted key. The value is stored as a string whatever it looks like, so 1.27
+// stores as "1.27" rather than a float; see StringValue.
+func WriteConfigStringValue(existingData []byte, key string, rawValue string) ([]byte, error) {
+	return writeConfigValueAtKey(existingData, key, func([]string) any {
+		return StringValue(rawValue)
+	})
+}
+
+// StringValue is the string a raw value denotes for a string-typed setting:
+// the value itself, without the pair of double or single quotes that may wrap
+// it to mark it as a string ("1.27" and '1.27' both denote 1.27). Quotes are
+// only removed when they wrap the whole value, so `"a" and "b"` is unchanged.
+func StringValue(rawValue string) string {
+	if len(rawValue) < 2 {
+		return rawValue
+	}
+	quote := rawValue[0]
+	if (quote != '"' && quote != '\'') || rawValue[len(rawValue)-1] != quote {
+		return rawValue
+	}
+	inner := rawValue[1 : len(rawValue)-1]
+	if strings.IndexByte(inner, quote) >= 0 {
+		return rawValue
+	}
+	return inner
+}
+
 // WriteConfigValues writes a string-array value to config TOML at the given
 // dotted key. Elements are stored verbatim, with no comma-splitting or type
 // auto-detection.

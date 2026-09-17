@@ -629,6 +629,37 @@ region = "us-east-1"
 		require.Equal(t, strings.TrimSpace(string(configEnv)), strings.TrimSpace(string(settingsEnv)))
 	})
 
+	t.Run("a string setting stores number-looking and quoted values as strings", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "modules/aws"
+entrypoint = true
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		for _, test := range []struct{ written, stored string }{
+			// A float would lose the trailing zero.
+			{"1.20", "1.20"},
+			{"42", "42"},
+			{"true", "true"},
+			{"a,b", "a,b"},
+			// Quotes that mark the value as a string are not part of it.
+			{`"1.27"`, "1.27"},
+			{`'1.27'`, "1.27"},
+		} {
+			_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "aws", "region", test.written)
+			require.NoError(t, err, test.written)
+			require.Equal(t, test.stored, readInstalledWorkspaceConfig(t, workdir).Modules["aws"].Settings["region"], test.written)
+
+			out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "region")
+			require.NoError(t, err, test.written)
+			require.Equal(t, test.stored, strings.TrimSpace(string(out)), test.written)
+		}
+
+		// Raw config writes to the setting are typed the same way.
+		_, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.aws.settings.region", "1.30")
+		require.NoError(t, err)
+		require.Equal(t, "1.30", readInstalledWorkspaceConfig(t, workdir).Modules["aws"].Settings["region"])
+	})
+
 	t.Run("writes through settings are visible immediately through config and runtime behavior", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"

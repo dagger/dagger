@@ -71,6 +71,17 @@ defmodule Dagger.WorkspaceModuleSetting do
   end
 
   @doc """
+  Whether the setting accepts a string, stored as a TOML string even when the value reads as a number or boolean.
+  """
+  @spec string?(t()) :: {:ok, boolean()} | {:error, term()}
+  def string?(%__MODULE__{} = workspace_module_setting) do
+    query_builder =
+      workspace_module_setting.query_builder |> QB.select("isString")
+
+    Client.execute(workspace_module_setting.client, query_builder)
+  end
+
+  @doc """
   The setting key.
   """
   @spec key(t()) :: {:ok, String.t()} | {:error, term()}

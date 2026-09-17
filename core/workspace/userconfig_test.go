@@ -336,6 +336,27 @@ func TestApplyUserOverlay(t *testing.T) {
 	})
 }
 
+func TestWriteUserConfigStringValue(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct{ raw, stored string }{
+		{"1.20", "1.20"},
+		{"true", "true"},
+		{"a,b", "a,b"},
+		{`"1.27"`, "1.27"},
+	} {
+		out, err := WriteUserConfigStringValue(nil, "github.com/acme/api", "modules.go.settings.version", test.raw)
+		require.NoError(t, err, test.raw)
+
+		cfg, err := ParseUserConfig(out)
+		require.NoError(t, err, test.raw)
+		require.Equal(t, test.stored, cfg.Workspaces["github.com/acme/api"].Modules["go"].Settings["version"], test.raw)
+	}
+
+	_, err := WriteUserConfigStringValue(nil, "github.com/acme/api", "modules.go.source", "1.27")
+	require.ErrorContains(t, err, "cannot be stored in user-level config")
+}
+
 func TestWriteUserConfigValue(t *testing.T) {
 	t.Parallel()
 
