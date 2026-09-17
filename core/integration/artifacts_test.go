@@ -116,7 +116,6 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 		require.ErrorContains(t, err, "expected exactly one artifact")
 	}
-
 }
 
 func (ArtifactsSuite) TestWorkspaceBindingAndIDs(ctx context.Context, t *testctx.T) {
@@ -167,6 +166,37 @@ func (ArtifactsSuite) TestModuleBoundary(ctx context.Context, t *testctx.T) {
 	out, err = base.With(daggerCall("consumer", "resolve", "--address=provider:base", "container", "file", "--path=/marker", "contents")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "configured:original")
+}
+
+func (ArtifactsSuite) TestLegacyAddress(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).
+		WithNewFile("dep/dagger.json", `{"name":"dep","sdk":"dang","engineVersion":"v0.21.5"}`).
+		WithNewFile("dep/main.dang", `type Dep {
+  pub base: Container! { container.withNewFile("/marker", "legacy") }
+}`).
+		WithNewFile("legacy/dagger.json", `{"name":"legacy","sdk":"dang","engineVersion":"v0.21.5",
+"dependencies":[{"name":"dep","source":"../dep"}]}`).
+		WithNewFile("legacy/main.dang", `type Legacy {
+  pub base: Container! { address("dep:base").container }
+}`)
+	out, err := base.With(daggerCallAt("./legacy", "base", "file", "--path=/marker", "contents")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "legacy", strings.TrimSpace(out))
+}
+
+func (ArtifactsSuite) TestExplicitEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c)).
+		WithNewFile("extra/dagger-module.toml", "name = \"extra\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("extra/main.dang", `type Extra {
+  pub base: Container! { container.withNewFile("/marker", "extra") }
+}`)
+	out, err := base.With(daggerQueryAt("./extra", `{ currentWorkspace {
+  resolve(value: "base") { container { file(path: "/marker") { contents } } }
+} }`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"currentWorkspace":{"resolve":{"container":{"file":{"contents":"extra"}}}}}`, out)
 }
 
 func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {

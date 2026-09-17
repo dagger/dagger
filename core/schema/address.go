@@ -22,119 +22,112 @@ import (
 // module-reference strings, used to detect reference cycles.
 type moduleRefCycleKey struct{}
 
-// resolveModuleRef tries a qualified module query, then an entrypoint shorthand.
-// Only a missing reference permits external fallback. Once a module or entrypoint
-// field matches, invalid fields, argument errors, type errors and cycles are fatal.
-// Unbound legacy addresses use the current client's schema; new unbound addresses
-// are external-only. Typed Select enforces the conversion's requested result type.
-func resolveModuleRef(ctx context.Context, address *core.Address, dest any) (matched bool, err error) {
-	boundWorkspace := address.BoundWorkspace
-	bound := boundWorkspace.Self() != nil
-	if !bound && address.ExternalOnly {
-		return false, nil
-	}
-	if bound {
-		ctx, err = withWorkspaceClientContext(ctx, boundWorkspace.Self())
-		if err != nil {
-			return true, err
-		}
-		ctx = core.WorkspaceToContext(ctx, boundWorkspace)
-	}
+// resolveModuleRef uses the address's workspace, or the legacy client schema.
+// Only an absent reference permits external fallback.
+func resolveModuleRef(ctx context.Context, address *core.Address, dest any) (bool, error) {
 	addr := address.Value
-	// URL-ish strings are never module refs.
 	if strings.Contains(addr, "://") {
 		return false, nil
 	}
+	ws := address.BoundWorkspace
+	if ws.Self() == nil {
+		if address.ExternalOnly {
+			return false, nil
+		}
+		return resolveLegacyModuleRef(ctx, addr, dest)
+	}
+	ctx, err := withWorkspaceClientContext(ctx, ws.Self())
+	if err != nil {
+		return true, err
+	}
+	ctx = core.WorkspaceToContext(ctx, ws)
 	module, rest, qualified := strings.Cut(addr, ":")
-	shortForm := !qualified
+	var srv *dagql.Server
+	if qualified {
+		srv, err = workspaceModuleSchema(ctx, ws, module)
+		if err != nil {
+			return true, fmt.Errorf("resolve module reference %q: %w", addr, err)
+		}
+	}
+	if srv == nil {
+		if !workspace.IsShortFormModuleRef(module) {
+			return false, nil
+		}
+		module, srv, err = workspaceShorthandModule(ctx, ws, module)
+		if err != nil {
+			return true, fmt.Errorf("resolve module reference %q: %w", addr, err)
+		}
+		if srv == nil {
+			return false, nil
+		}
+		rest = addr
+	}
+	return true, selectModuleRef(ctx, srv, addr, module, rest, dest)
+}
+
+// resolveLegacyModuleRef retains the current-client lookup and single-field
+// syntax used before Workspace.resolve.
+func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, error) {
+	module, rest, qualified := strings.Cut(addr, ":")
+	if !qualified {
+		if !workspace.IsShortFormModuleRef(addr) {
+			return false, nil
+		}
+		entrypoint, found := workspaceEntrypointModuleName(ctx)
+		if !found {
+			return false, nil
+		}
+		module, rest = entrypoint, addr
+	} else if module == "" || rest == "" {
+		return false, nil
+	}
 	srv := dagql.CurrentDagqlServer(ctx)
 	if srv == nil {
 		return false, nil
 	}
-	if bound {
-		installed := false
-		if qualified {
-			srv, installed, err = workspaceModuleSchema(ctx, boundWorkspace, module)
-			if err != nil {
-				return true, fmt.Errorf("resolve module reference %q: %w", addr, err)
-			}
-		}
-		if !installed {
-			if !workspace.IsShortFormModuleRef(module) {
-				return false, nil
-			}
-			module, srv, err = workspaceShorthandModule(ctx, boundWorkspace, module)
-			if err != nil {
-				return true, fmt.Errorf("resolve module reference %q: %w", addr, err)
-			}
-			if srv == nil {
-				return false, nil
-			}
-			rest, shortForm = addr, true
-		}
-	} else {
-		if !qualified {
-			if !workspace.IsShortFormModuleRef(addr) {
-				return false, nil
-			}
-			entrypoint, found := workspaceEntrypointModuleName(ctx)
-			if !found {
-				return false, nil
-			}
-			module, rest = entrypoint, addr
-		} else if module == "" || rest == "" {
-			return false, nil
-		}
-	}
 	srv = srv.Canonical()
-	root := srv.Root()
 	moduleField := strcase.ToLowerCamel(module)
-	// Detect whether the module is actually installed by checking the Query
-	// root's object type for a field of that name, rather than probing via a
-	// Select. If it is not installed, this is not a module ref.
-	spec, exists := root.ObjectType().FieldSpec(moduleField, srv.View)
+	spec, exists := srv.Root().ObjectType().FieldSpec(moduleField, srv.View)
 	if !exists {
-		if bound {
-			return true, fmt.Errorf("workspace module %q has no constructor", module)
-		}
-		// The name may be an installed workspace module that was not loaded
-		// for this command: selector verbs (`dagger check <mod>:<item>`)
-		// narrow module loading to the modules their patterns name, so a
-		// module referenced only through another module's wiring is never
-		// loaded. When the workspace config installs a module by this name,
-		// demand-load it and retry against the refreshed client schema.
-		// Loading is gated on config membership, so image refs (postgres:16)
-		// never trigger module loads.
-		refreshed, installed, loadErr := demandLoadInstalledModule(ctx, module)
+		// Selector commands may have loaded only the consumer of this module.
+		refreshed, installed, err := demandLoadInstalledModule(ctx, module)
 		if !installed {
 			return false, nil
 		}
-		if loadErr != nil {
-			// Committed: the workspace installs this module, so the string is
-			// a module ref and the load failure is the real error.
-			return true, fmt.Errorf("resolve module reference %q: load module %q: %w", addr, module, loadErr)
+		if err != nil {
+			return true, fmt.Errorf("resolve module reference %q: load module %q: %w", addr, module, err)
 		}
 		srv = refreshed.Canonical()
-		root = srv.Root()
-		spec, exists = root.ObjectType().FieldSpec(moduleField, srv.View)
+		spec, exists = srv.Root().ObjectType().FieldSpec(moduleField, srv.View)
 		if !exists {
 			return false, nil
 		}
 	}
-	// Core Query fields (host, git, secret, engine, container, http, module, ...)
-	// share the Query root's namespace with module entrypoints, but only
-	// module entrypoints carry module provenance (spec.Module). A field with no
-	// Module is a core field — a reserved word — so leave it to the caller's normal
-	// address decoding (e.g. "git:2.40" or "secret:foo" as an image/URL) rather
-	// than committing it as a module ref.
+	// Core fields such as git and container are not installed modules.
 	if spec.Module == nil {
 		return false, nil
 	}
-
-	// Committed: from here on, any error is a hard module-ref error.
-
-	if !bound && strings.Contains(rest, ":") {
+	if strings.Contains(rest, ":") {
 		return true, fmt.Errorf("invalid module reference %q: only %s:<function> is supported today (a single function segment); got extra segments in %q", addr, module, rest)
+	}
+	if !qualified {
+		obj, exists := srv.ObjectType(spec.Type.Type().Name())
+		if exists {
+			if _, exists := obj.FieldSpec(strcase.ToLowerCamel(rest), srv.View); !exists {
+				return false, nil
+			}
+		}
+	}
+	return true, selectModuleRef(ctx, srv, addr, module, rest, dest)
+}
+
+func selectModuleRef(ctx context.Context, srv *dagql.Server, addr, module, rest string, dest any) error {
+	srv = srv.Canonical()
+	root := srv.Root()
+	moduleField := strcase.ToLowerCamel(module)
+	spec, exists := root.ObjectType().FieldSpec(moduleField, srv.View)
+	if !exists {
+		return fmt.Errorf("workspace module %q has no constructor", module)
 	}
 	fields := core.NewModTreePath(rest).APICase()
 	selectors := []dagql.Selector{{
@@ -142,17 +135,14 @@ func resolveModuleRef(ctx context.Context, address *core.Address, dest any) (mat
 		Args:  core.WithBoundWorkspaceArgs(ctx, srv, spec.Args.Inputs(srv.View), nil),
 	}}
 	parentType := spec.Type.Type()
-	for i, field := range fields {
+	for _, field := range fields {
 		objType, exists := srv.ObjectType(parentType.Name())
 		if !exists || parentType.Elem != nil {
-			return true, fmt.Errorf("resolve module reference %q: cannot traverse %s", addr, parentType)
+			return fmt.Errorf("resolve module reference %q: cannot traverse %s", addr, parentType)
 		}
 		fieldSpec, exists := objType.FieldSpec(field, srv.View)
 		if !exists {
-			if shortForm && i == 0 {
-				return false, nil
-			}
-			return true, fmt.Errorf("resolve module reference %q: %s has no field %q", addr, parentType.Name(), field)
+			return fmt.Errorf("resolve module reference %q: %s has no field %q", addr, parentType.Name(), field)
 		}
 		selectors = append(selectors, dagql.Selector{
 			Field: field,
@@ -161,22 +151,13 @@ func resolveModuleRef(ctx context.Context, address *core.Address, dest any) (mat
 		parentType = fieldSpec.Type.Type()
 	}
 
-	// Cycle guard: track the chain of in-flight module refs on the context
-	// and refuse to descend into one already present. Context values propagate
-	// through dagql Select into nested module construction, so re-entry of an
-	// in-flight ref is detectable here. Without this, reference cycles hang the
-	// engine with unbounded goroutine growth.
-	//
-	// The chain stores the NORMALIZED "<moduleField>:<functionField>" (both
-	// lower-camel), not the raw addr, so equivalently-spelled refs (e.g. case
-	// variants like "Foo:Bar" vs "foo:bar") still collide and produce the clean
-	// cycle error instead of wedging on a cache wait. The raw addr is kept in the
-	// user-facing message for readability.
+	// Normalize names so case variants cannot evade cycle detection during
+	// nested module construction.
 	normalized := moduleField + ":" + strings.Join(fields, ":")
 	chain, _ := ctx.Value(moduleRefCycleKey{}).([]string)
 	for _, seen := range chain {
 		if seen == normalized {
-			return true, fmt.Errorf("module reference cycle detected: %s -> %s",
+			return fmt.Errorf("module reference cycle detected: %s -> %s",
 				strings.Join(chain, " -> "), normalized)
 		}
 	}
@@ -186,9 +167,9 @@ func resolveModuleRef(ctx context.Context, address *core.Address, dest any) (mat
 	ctx = context.WithValue(ctx, moduleRefCycleKey{}, newChain)
 
 	if err := srv.Select(ctx, root, dest, selectors...); err != nil {
-		return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
+		return fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
 	}
-	return true, nil
+	return nil
 }
 
 // demandLoadInstalledModule loads and serves the named workspace module when
@@ -1214,10 +1195,10 @@ func firstQueryKey(vals url.Values) string {
 
 // workspaceModuleSchema resolves one module from the selected workspace,
 // including sibling modules. It never borrows ambient modules from the caller.
-func workspaceModuleSchema(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], name string) (*dagql.Server, bool, error) {
+func workspaceModuleSchema(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], name string) (*dagql.Server, error) {
 	cfg, err := workspaceEffectiveConfig(ctx, ws.Self())
 	if err != nil {
-		return nil, true, err
+		return nil, err
 	}
 	installedName := ""
 	for candidate := range cfg.Modules {
@@ -1230,7 +1211,7 @@ func workspaceModuleSchema(ctx context.Context, ws dagql.ObjectResult[*core.Work
 	if installedName != "" {
 		mods, err := (&workspaceSchema{}).workspaceTargetModules(ctx, ws, []string{installedName})
 		if err != nil {
-			return nil, true, err
+			return nil, err
 		}
 		for _, mod := range mods {
 			if mod.Self().Name() == installedName {
@@ -1239,14 +1220,14 @@ func workspaceModuleSchema(ctx context.Context, ws dagql.ObjectResult[*core.Work
 			}
 		}
 		if selected.Self() == nil {
-			return nil, true, fmt.Errorf("workspace module %q was not loaded", installedName)
+			return nil, fmt.Errorf("workspace module %q was not loaded", installedName)
 		}
 	} else if !ws.Self().IsValueWorkspace() {
 		// Explicit -m modules need not be in config. Inspect only modules already
 		// served to this live workspace; frozen values must not borrow them.
 		mods, err := currentWorkspacePrimaryModules(ctx)
 		if err != nil {
-			return nil, true, err
+			return nil, err
 		}
 		for _, mod := range mods {
 			if strcase.ToLowerCamel(mod.Self().Name()) == strcase.ToLowerCamel(name) {
@@ -1257,26 +1238,25 @@ func workspaceModuleSchema(ctx context.Context, ws dagql.ObjectResult[*core.Work
 		if selected.Self() != nil {
 			removed, err := workspaceRemovedModuleNames(ctx, ws.Self())
 			if err != nil {
-				return nil, true, err
+				return nil, err
 			}
 			if removed[canonicalOverlayModuleName(name)] {
-				return nil, false, nil
+				return nil, nil
 			}
 		}
 	}
 	if selected.Self() == nil {
-		return nil, false, nil
+		return nil, nil
 	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, true, err
+		return nil, err
 	}
 	deps, err := query.DefaultDeps(ctx)
 	if err != nil {
-		return nil, true, err
+		return nil, err
 	}
-	srv, err := deps.Append(core.NewUserMod(selected)).Schema(ctx)
-	return srv, true, err
+	return deps.Append(core.NewUserMod(selected)).Schema(ctx)
 }
 
 // workspaceShorthandModule matches entrypoint fields without running constructors.
@@ -1311,16 +1291,21 @@ func workspaceShorthandModule(ctx context.Context, ws dagql.ObjectResult[*core.W
 	if !ws.Self().IsValueWorkspace() {
 		// A served entrypoint outside config is an explicit -m extra. It keeps
 		// precedence over ambient nominations, including after config edits.
+		mods, err := currentWorkspacePrimaryModules(ctx)
+		if err != nil {
+			return "", nil, err
+		}
+		removed, err := workspaceRemovedModuleNames(ctx, ws.Self())
+		if err != nil {
+			return "", nil, err
+		}
 		var extras []string
-		for _, name := range names {
-			if _, configured := cfg.Modules[name]; configured {
+		for _, mod := range mods {
+			name := mod.Self().Name()
+			if !entrypoints[name] || removed[canonicalOverlayModuleName(name)] {
 				continue
 			}
-			_, installed, err := workspaceModuleSchema(ctx, ws, name)
-			if err != nil {
-				return "", nil, err
-			}
-			if installed {
+			if _, configured := cfg.Modules[name]; !configured {
 				extras = append(extras, name)
 			}
 		}
@@ -1332,7 +1317,7 @@ func workspaceShorthandModule(ctx context.Context, ws dagql.ObjectResult[*core.W
 	var matchedName string
 	var matchedServer *dagql.Server
 	for _, name := range names {
-		srv, _, err := workspaceModuleSchema(ctx, ws, name)
+		srv, err := workspaceModuleSchema(ctx, ws, name)
 		if err != nil {
 			return "", nil, err
 		}

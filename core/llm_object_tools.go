@@ -830,7 +830,7 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 // An object-typed argument of a liftable type (see liftableTypes) additionally
 // accepts an address string: when the value fails to decode as an ID, it is
 // lifted into the object via the core Address API
-// (Query.address(value: <addr>).<field>) and the resulting object's ID is used
+// (Workspace.resolve(value: <addr>).<field>) and the resulting object's ID is used
 // instead — the same lifting the CLI performs for object flags
 // (internal/cmd/dagger/flags.go). ctx and srv are the session's, so addresses
 // resolve against the workspace client schema with all installed modules
