@@ -21,6 +21,8 @@ type TransferFixturePartEvent struct {
 	Address    PersistedPartAddress       `json:"address"`
 	SnapshotID string                     `json:"snapshotID,omitempty"`
 	Source     *TransferFixturePartSource `json:"source,omitempty"`
+	// Detail is the cause of a share-skipped event, as text.
+	Detail string `json:"detail,omitempty"`
 }
 
 type TransferFixturePartSource struct {
@@ -68,12 +70,25 @@ func (c *Cache) recordPartFixtureDelegation(row *sharedResult, address Persisted
 	}
 	c.recordPartFixtureEvent(row, address, kind, "", &TransferFixturePartSource{ResultID: uint64(proof.parent.id), Address: clonePartAddress(proof.source)})
 }
+
+// recordPartFixtureSkip records a slot a sharing pass left alone, with why.
+func (c *Cache) recordPartFixtureSkip(row *sharedResult, address PersistedPartAddress, cause error) {
+	if c.partFixture.Load() == nil {
+		return
+	}
+	c.recordPartFixtureDetail(row, address, "share-skipped", "", nil, cause.Error())
+}
+
 func (c *Cache) recordPartFixtureEvent(row *sharedResult, address PersistedPartAddress, kind, snapshotID string, source *TransferFixturePartSource) {
+	c.recordPartFixtureDetail(row, address, kind, snapshotID, source, "")
+}
+
+func (c *Cache) recordPartFixtureDetail(row *sharedResult, address PersistedPartAddress, kind, snapshotID string, source *TransferFixturePartSource, detail string) {
 	state := c.partFixture.Load()
 	if state == nil {
 		return
 	}
-	event := TransferFixturePartEvent{Kind: kind, Address: clonePartAddress(address), SnapshotID: snapshotID}
+	event := TransferFixturePartEvent{Kind: kind, Address: clonePartAddress(address), SnapshotID: snapshotID, Detail: detail}
 	if kind == "selected-delegation" || kind == "installed-delegation" {
 		event.Source = source
 	}
