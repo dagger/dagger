@@ -134,6 +134,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		upstream, tunnel *dagger.Service
 		client           *dagger.Client
 		endpoint         string
+		unwatch          func()
 	}
 	stop := func(t *testctx.T, e *running) {
 		t.Helper()
@@ -142,6 +143,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			e.client = nil
 		}
 		if e.upstream != nil {
+			e.unwatch()
 			_, err := e.upstream.Stop(ctx)
 			require.NoError(t, err)
 			e.upstream = nil
@@ -162,6 +164,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		}
 		e := &running{upstream: devEngineContainerAsService(ctr)}
+		e.unwatch = watchNestedEngine(t, outer, e.upstream, t.Name()+" state="+state)
 		var err error
 		e.tunnel, err = outer.Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)

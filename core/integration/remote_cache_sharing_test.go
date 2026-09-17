@@ -32,12 +32,14 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	type running struct {
 		upstream, tunnel *dagger.Service
 		client           *dagger.Client
+		unwatch          func()
 	}
 	stop := func(e *running) {
 		if e.client != nil {
 			require.NoError(t, e.client.Close())
 		}
 		if e.upstream != nil {
+			e.unwatch()
 			_, err := e.upstream.Stop(context.WithoutCancel(ctx))
 			require.NoError(t, err)
 		}
@@ -52,6 +54,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		e := &running{upstream: devEngineContainerAsService(ctr)}
+		e.unwatch = watchNestedEngine(t, outer, e.upstream, t.Name()+" state="+state)
 		tunnel, err := outer.Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
 		e.tunnel = tunnel
