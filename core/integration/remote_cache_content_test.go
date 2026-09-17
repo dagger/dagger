@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -158,6 +159,25 @@ func contentClassificationCases(t *testctx.T) {
 			}
 			require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"), 1, "one fallback")
 			require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"))
+			// The named fault was really exercised: a request reached a blob
+			// of the chain and ended the way the script says.
+			var reached []*fixturetransport.Observation
+			for _, blob := range s.digests {
+				reached = append(reached, s.requests(report, blob)...)
+			}
+			require.NotEmpty(t, reached, "a request reached the affected blob")
+			for _, request := range reached {
+				switch {
+				case strings.HasPrefix(tc.name, "Status"):
+					require.Equal(t, strings.TrimPrefix(tc.name, "Status"), strconv.Itoa(request.Status))
+				case tc.name == "TransportFault":
+					require.Zero(t, request.Status)
+					require.Contains(t, request.Error, "fixture transport fault")
+				case tc.name == "TruncatedBody":
+					require.Contains(t, []int{200, 206}, request.Status)
+					require.Equal(t, int64(7), request.BodyBytesRead, "the body ended early where the script truncates it")
+				}
+			}
 			if strings.HasPrefix(tc.name, "Status4") {
 				require.Len(t, s.requests(report, s.digests[0]), 1, "a permanent status is requested once")
 			}
@@ -189,5 +209,56 @@ func contentClassificationCases(t *testctx.T) {
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(report.transferFixtureReport, s.rID))
 		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"), 1)
 		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"), "corrupt bytes are never installed")
+		corrupt := s.requests(report, blob)
+		require.NotEmpty(t, corrupt, "the corrupt blob was really fetched")
+		var read int64
+		for _, request := range corrupt {
+			require.Contains(t, []int{200, 206}, request.Status)
+			read += request.BodyBytesRead
+		}
+		require.Positive(t, read, "its bytes reached the real verifier")
+	})
+
+	// A well-addressed, digest-valid blob that is not an archive. The offer's
+	// last layer is re-described, before the import, as a blob of random
+	// bytes that B really has under that digest, so the transport, the length
+	// and the digest checks all pass and the production applier itself meets
+	// the malformed archive. Nothing is installed from the chain and the
+	// saved producer restores the Directory once.
+	t.Run("MalformedArchive", func(ctx context.Context, t *testctx.T) {
+		s := newContentScenario(ctx, t, "content-malformed")
+		out := s.b.volumeExec(`mkdir -p /fixture/blobs/sha256; head -c 4096 /dev/urandom > /tmp/garbage; hex=$(sha256sum /tmp/garbage | cut -d' ' -f1); cp /tmp/garbage "/fixture/blobs/sha256/$hex"; printf '%s' "$hex"`, nil, nil)
+		garbage := "sha256:" + strings.TrimSpace(out)
+		original := s.digests[len(s.digests)-1]
+		s.b.editBundle("content.json", func(bundle map[string]any) {
+			chain := bundle["outputs"].([]any)[0].(map[string]any)["chain"].(map[string]any)
+			layers := chain["layers"].([]any)
+			descriptor := layers[len(layers)-1].(map[string]any)["Descriptor"].(map[string]any)
+			require.Equal(t, original, descriptor["digest"])
+			descriptor["digest"] = garbage
+			descriptor["size"] = 4096
+			addresses := chain["addresses"].(map[string]any)
+			delete(addresses, original)
+			addresses[garbage] = map[string]any{"url": s.url(garbage), "expiresAtUnix": time.Now().Add(time.Hour).Unix()}
+		})
+		s.digests[len(s.digests)-1] = garbage
+		s.script(t, nil)
+		contents, err := s.importAndRead(ctx, t)
+		require.NoError(t, err, "the saved producer restores the Directory")
+		require.Equal(t, s.payload, contents)
+		var report fixtureControlsReport
+		require.NoError(t, s.b.fixture("report", "", nil, &report))
+		t.Logf("R=%d events: %v", s.rID, partKindsOf(report.transferFixtureReport, s.rID))
+		fetched := s.requests(report, garbage)
+		require.NotEmpty(t, fetched, "the malformed blob was really fetched")
+		var read int64
+		for _, request := range fetched {
+			require.Contains(t, []int{200, 206}, request.Status)
+			require.True(t, request.Closed)
+			read += request.BodyBytesRead
+		}
+		require.GreaterOrEqual(t, read, int64(4096), "the whole blob passed the length and digest checks and reached the applier")
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"), 1, "one fallback")
+		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"), "a malformed archive is never installed")
 	})
 }
