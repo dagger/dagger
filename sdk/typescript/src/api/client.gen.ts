@@ -3131,6 +3131,13 @@ export type ClientSecretOpts = {
   cacheKey?: string
 }
 
+export type ClientServeModuleOpts = {
+  /**
+   * The pinned version of a remote module address.
+   */
+  refPin?: string
+}
+
 export type ClientSshfsVolumeOpts = {
   /**
    * known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
@@ -14552,6 +14559,7 @@ export class Client extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _currentTimestamp?: string = undefined
   private readonly _defaultPlatform?: Platform = undefined
+  private readonly _serveModule?: Void = undefined
   private readonly _version?: string = undefined
 
   /**
@@ -14562,6 +14570,7 @@ export class Client extends BaseClient {
     _id?: ID,
     _currentTimestamp?: string,
     _defaultPlatform?: Platform,
+    _serveModule?: Void,
     _version?: string,
   ) {
     super(ctx)
@@ -14569,6 +14578,7 @@ export class Client extends BaseClient {
     this._id = _id
     this._currentTimestamp = _currentTimestamp
     this._defaultPlatform = _defaultPlatform
+    this._serveModule = _serveModule
     this._version = _version
   }
 
@@ -14945,6 +14955,26 @@ export class Client extends BaseClient {
   secret = (uri: string, opts?: ClientSecretOpts): Secret => {
     const ctx = this._ctx.select("secret", { uri, ...opts })
     return new Secret(ctx)
+  }
+
+  /**
+   * Load the module at the given address and serve its API in the current session.
+   *
+   * A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+   * @param address A module address, or an explicit path into the caller's workspace.
+   *
+   * Absolute paths (e.g. "/.dagger/modules/hello") resolve from the workspace root, relative ones (e.g. "./hello") from the workspace cwd.
+   *
+   * Installed module names are not accepted.
+   * @param opts.refPin The pinned version of a remote module address.
+   */
+  serveModule = async (
+    address: string,
+    opts?: ClientServeModuleOpts,
+  ): Promise<void> => {
+    const ctx = this._ctx.select("serveModule", { address, ...opts })
+
+    await ctx.execute()
   }
 
   /**

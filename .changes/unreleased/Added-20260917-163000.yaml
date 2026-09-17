@@ -1,0 +1,19 @@
+kind: Added
+body: |
+  Add `serveModule(address, refPin)` on the `Query` root, which loads the module
+  at an address and serves its API in the current session.
+
+  A remote address resolves like any module reference; a local one — `./hello`,
+  `/.dagger/modules/hello` — resolves against the caller's workspace, from the
+  workspace cwd or the workspace root respectively. Installed module names are
+  not accepted.
+
+  Generated clients use it to install the module they are bound to. The local
+  case previously had to be spelled as a raw GraphQL query against
+  `currentWorkspace`, since the workspace APIs are absent from a module's
+  schema; `serveModule` does that resolution engine-side and returns nothing but
+  `Void`, so it stays callable from inside a module.
+time: 2026-09-17T16:30:00.000000000+00:00
+custom:
+    Author: TomChv
+    PR: "14210"

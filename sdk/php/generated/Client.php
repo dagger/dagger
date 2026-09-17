@@ -466,6 +466,21 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load the module at the given address and serve its API in the current session.
+     *
+     * A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+     */
+    public function serveModule(string $address, ?string $refPin = ''): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('serveModule');
+        $leafQueryBuilder->setArgument('address', $address);
+        if (null !== $refPin) {
+        $leafQueryBuilder->setArgument('refPin', $refPin);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'serveModule');
+    }
+
+    /**
      * Sets a secret given a user defined name to its plaintext and returns the secret.
      *
      * The plaintext value is limited to a size of 128000 bytes.

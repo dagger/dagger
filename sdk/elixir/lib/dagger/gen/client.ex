@@ -612,6 +612,25 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load the module at the given address and serve its API in the current session.
+
+  A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+  """
+  @spec serve_module(t(), String.t(), [{:ref_pin, String.t() | nil}]) :: :ok | {:error, term()}
+  def serve_module(%__MODULE__{} = client, address, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("serveModule")
+      |> QB.put_arg("address", address)
+      |> QB.maybe_put_arg("refPin", optional_args[:ref_pin])
+
+    case Client.execute(client.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
+  @doc """
   Sets a secret given a user defined name to its plaintext and returns the secret.
 
   The plaintext value is limited to a size of 128000 bytes.

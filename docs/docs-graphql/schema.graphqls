@@ -5653,6 +5653,27 @@ type Query implements Node {
   ): Secret!
 
   """
+  Load the module at the given address and serve its API in the current session.
+
+  A local address resolves against the caller's workspace, so a generated client
+  can serve the module it is bound to without reaching for the workspace itself.
+  """
+  serveModule(
+    """
+    A module address, or an explicit path into the caller's workspace.
+
+    Absolute paths (e.g. "/.dagger/modules/hello") resolve from the workspace
+    root, relative ones (e.g. "./hello") from the workspace cwd.
+
+    Installed module names are not accepted.
+    """
+    address: String!
+
+    """The pinned version of a remote module address."""
+    refPin: String = ""
+  ): Void
+
+  """
   Sets a secret given a user defined name to its plaintext and returns the secret.
 
   The plaintext value is limited to a size of 128000 bytes.

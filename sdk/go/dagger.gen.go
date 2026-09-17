@@ -14262,6 +14262,7 @@ type Query struct {
 	currentTimestamp *string
 	defaultPlatform  *Platform
 	id               *ID
+	serveModule      *Void
 	version          *string
 }
 
@@ -14917,6 +14918,28 @@ func (r *Query) Secret(uri string, opts ...SecretOpts) *Secret {
 	return &Secret{
 		query: q,
 	}
+}
+
+// ServeModuleOpts contains options for Query.ServeModule
+type ServeModuleOpts struct {
+	// The pinned version of a remote module address.
+	RefPin string
+}
+
+// Load the module at the given address and serve its API in the current session.
+//
+// A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+func (r *Query) ServeModule(ctx context.Context, address string, opts ...ServeModuleOpts) error {
+	q := r.query.Select("serveModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `refPin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RefPin) {
+			q = q.Arg("refPin", opts[i].RefPin)
+		}
+	}
+	q = q.Arg("address", address)
+
+	return q.Execute(ctx)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.

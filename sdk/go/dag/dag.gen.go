@@ -246,6 +246,14 @@ func Secret(uri string, opts ...dagger.SecretOpts) *dagger.Secret {
 	return client.Secret(uri, opts...)
 }
 
+// Load the module at the given address and serve its API in the current session.
+//
+// A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+func ServeModule(ctx context.Context, address string, opts ...dagger.ServeModuleOpts) error {
+	client := initClient()
+	return client.ServeModule(ctx, address, opts...)
+}
+
 // Sets a secret given a user defined name to its plaintext and returns the secret.
 //
 // The plaintext value is limited to a size of 128000 bytes.
