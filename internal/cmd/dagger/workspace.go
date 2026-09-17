@@ -28,7 +28,7 @@ import (
 )
 
 var workspaceCmd = &cobra.Command{
-	Use:     "workspace [TYPE]",
+	Use:     "workspace",
 	Aliases: []string{"ws"},
 	Short:   "Inspect workspace files, config, and artifacts",
 	Long: `Inspect or configure your workspace.
@@ -43,13 +43,11 @@ applies a named overlay; dagger.toml is the source of truth.
 List artifact addresses with a plural type name, such as containers,
 directories, files, or services. Use kebab case for multiword types,
 such as git-repositories. If plural names conflict, use the exact GraphQL
-type name. Tab completion lists the available types.`,
+type name. Help and tab completion list the available types.`,
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "ws",
 	},
-	Args:              cobra.MaximumNArgs(1),
-	RunE:              runWorkspaceArtifacts,
-	ValidArgsFunction: completeWorkspaceArtifacts,
+	Args: cobra.NoArgs,
 }
 
 var workspaceRootCmd = &cobra.Command{

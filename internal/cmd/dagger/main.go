@@ -1030,6 +1030,10 @@ func Main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
+	if err := prepareWorkspaceArtifactCommands(ctx, rootCmd, commandArgs); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
 	// A trailing inherited --x-release is known only after SDK discovery.
 	if err := execXRelease(ctx); err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
