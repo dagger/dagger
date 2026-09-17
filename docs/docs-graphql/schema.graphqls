@@ -6398,7 +6398,7 @@ type Workspace implements Node {
   maxCommits fails rather than returning a partial preview. Divergent merge
   commits require manual integration.
   """
-  commitsFrom(
+  compareCommitsFrom(
     """
     Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
     """
@@ -6830,7 +6830,7 @@ type Workspace implements Node {
   otherwise cherry-pick them oldest first. Already integrated commits and
   patches already present are skipped. Any conflict fails the operation. Source
   uncommitted changes are not transferred; merge them explicitly if needed. Use
-  commitsFrom to preview the integration.
+  compareCommitsFrom to preview the integration.
 
   A local receiver is snapshotted automatically; untracked files require
   interactive approval. The checkout is not modified. Export the result with an

@@ -3611,7 +3611,7 @@ export type WorkspaceChecksOpts = {
   onlyGenerate?: boolean
 }
 
-export type WorkspaceCommitsFromOpts = {
+export type WorkspaceCompareCommitsFromOpts = {
   /**
    * Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
    */
@@ -16848,19 +16848,19 @@ export class Workspace extends BaseClient {
    * @param opts.commits Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
    * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
    */
-  commitsFrom = async (
+  compareCommitsFrom = async (
     source: Workspace,
-    opts?: WorkspaceCommitsFromOpts,
+    opts?: WorkspaceCompareCommitsFromOpts,
   ): Promise<WorkspaceCommitPick[]> => {
-    type commitsFrom = {
+    type compareCommitsFrom = {
       id: ID
     }
 
     const ctx = this._ctx
-      .select("commitsFrom", { source, ...opts })
+      .select("compareCommitsFrom", { source, ...opts })
       .select("id")
 
-    const response: Awaited<commitsFrom[]> = await ctx.execute()
+    const response: Awaited<compareCommitsFrom[]> = await ctx.execute()
 
     return response.map(
       (r) =>
@@ -17308,7 +17308,7 @@ export class Workspace extends BaseClient {
   /**
    * Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
    *
-   * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+   * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.
    *
    * A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
    *

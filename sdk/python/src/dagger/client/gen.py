@@ -16669,7 +16669,7 @@ class Workspace(Type):
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
-    async def commits_from(
+    async def compare_commits_from(
         self,
         source: Self,
         *,
@@ -16709,7 +16709,7 @@ class Workspace(Type):
             Arg("commits", [] if commits is None else commits, []),
             Arg("maxCommits", max_commits, 100),
         ]
-        _ctx = self._select("commitsFrom", _args)
+        _ctx = self._select("compareCommitsFrom", _args)
         return await _ctx.execute_object_list(WorkspaceCommitPick)
 
     async def config_file(self) -> str:
@@ -17517,7 +17517,8 @@ class Workspace(Type):
         their tip; otherwise cherry-pick them oldest first. Already integrated
         commits and patches already present are skipped. Any conflict fails
         the operation. Source uncommitted changes are not transferred; merge
-        them explicitly if needed. Use commitsFrom to preview the integration.
+        them explicitly if needed. Use compareCommitsFrom to preview the
+        integration.
 
         A local receiver is snapshotted automatically; untracked files require
         interactive approval. The checkout is not modified. Export the result

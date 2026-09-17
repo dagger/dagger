@@ -83,9 +83,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
      */
-    public function commitsFrom(Workspace $source, ?array $commits = [], ?int $maxCommits = 100): array
+    public function compareCommitsFrom(Workspace $source, ?array $commits = [], ?int $maxCommits = 100): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commitsFrom');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('compareCommitsFrom');
         $leafQueryBuilder->setArgument('source', $source);
         if (null !== $commits) {
         $leafQueryBuilder->setArgument('commits', $commits);
@@ -93,7 +93,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $maxCommits) {
         $leafQueryBuilder->setArgument('maxCommits', $maxCommits);
         }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'commitsFrom');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'compareCommitsFrom');
     }
 
     /**
@@ -549,7 +549,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
      *
-     * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+     * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.
      *
      * A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
      *

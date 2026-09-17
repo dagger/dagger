@@ -100,14 +100,14 @@ defmodule Dagger.Workspace do
 
   A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
   """
-  @spec commits_from(t(), Dagger.Workspace.t(), [
+  @spec compare_commits_from(t(), Dagger.Workspace.t(), [
           {:commits, [String.t()]},
           {:max_commits, integer() | nil}
         ]) :: {:ok, [Dagger.WorkspaceCommitPick.t()]} | {:error, term()}
-  def commits_from(%__MODULE__{} = workspace, source, optional_args \\ []) do
+  def compare_commits_from(%__MODULE__{} = workspace, source, optional_args \\ []) do
     query_builder =
       workspace.query_builder
-      |> QB.select("commitsFrom")
+      |> QB.select("compareCommitsFrom")
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("commits", optional_args[:commits])
       |> QB.maybe_put_arg("maxCommits", optional_args[:max_commits])
@@ -685,7 +685,7 @@ defmodule Dagger.Workspace do
   @doc """
   Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
 
-  Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+  Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.
 
   A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
 

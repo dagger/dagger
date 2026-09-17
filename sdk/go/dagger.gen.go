@@ -17520,8 +17520,8 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	}
 }
 
-// WorkspaceCommitsFromOpts contains options for Workspace.CommitsFrom
-type WorkspaceCommitsFromOpts struct {
+// WorkspaceCompareCommitsFromOpts contains options for Workspace.CompareCommitsFrom
+type WorkspaceCompareCommitsFromOpts struct {
 	// Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
 	Commits []string
 	// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
@@ -17535,9 +17535,9 @@ type WorkspaceCommitsFromOpts struct {
 // Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
 //
 // A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
-func (r *Workspace) CommitsFrom(ctx context.Context, source *Workspace, opts ...WorkspaceCommitsFromOpts) ([]WorkspaceCommitPick, error) {
+func (r *Workspace) CompareCommitsFrom(ctx context.Context, source *Workspace, opts ...WorkspaceCompareCommitsFromOpts) ([]WorkspaceCommitPick, error) {
 	assertNotNil("source", source)
-	q := r.query.Select("commitsFrom")
+	q := r.query.Select("compareCommitsFrom")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `commits` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Commits) {
@@ -17552,11 +17552,11 @@ func (r *Workspace) CommitsFrom(ctx context.Context, source *Workspace, opts ...
 
 	q = q.Select("id")
 
-	type commitsFrom struct {
+	type compareCommitsFrom struct {
 		Id ID
 	}
 
-	convert := func(fields []commitsFrom) []WorkspaceCommitPick {
+	convert := func(fields []compareCommitsFrom) []WorkspaceCommitPick {
 		out := []WorkspaceCommitPick{}
 
 		for i := range fields {
@@ -17567,7 +17567,7 @@ func (r *Workspace) CommitsFrom(ctx context.Context, source *Workspace, opts ...
 
 		return out
 	}
-	var response []commitsFrom
+	var response []compareCommitsFrom
 
 	q = q.Bind(&response)
 
@@ -18326,7 +18326,7 @@ type WorkspaceWithCommitsFromOpts struct {
 
 // Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
 //
-// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.
 //
 // A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
 //

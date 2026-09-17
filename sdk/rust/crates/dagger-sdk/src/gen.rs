@@ -16594,7 +16594,7 @@ pub struct WorkspaceChecksOpts<'a> {
     pub skip: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceCommitsFromOpts<'a> {
+pub struct WorkspaceCompareCommitsFromOpts<'a> {
     /// Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
     #[builder(setter(into, strip_option), default)]
     pub commits: Option<Vec<&'a str>>,
@@ -17004,11 +17004,11 @@ impl Workspace {
     ///
     /// * `source` - Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn commits_from(
+    pub async fn compare_commits_from(
         &self,
         source: impl IntoID<Id>,
     ) -> Result<Vec<WorkspaceCommitPick>, DaggerError> {
-        let mut query = self.selection.select("commitsFrom");
+        let mut query = self.selection.select("compareCommitsFrom");
         query = query.arg_lazy(
             "source",
             Box::new(move || {
@@ -17038,12 +17038,12 @@ impl Workspace {
     ///
     /// * `source` - Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn commits_from_opts<'a>(
+    pub async fn compare_commits_from_opts<'a>(
         &self,
         source: impl IntoID<Id>,
-        opts: WorkspaceCommitsFromOpts<'a>,
+        opts: WorkspaceCompareCommitsFromOpts<'a>,
     ) -> Result<Vec<WorkspaceCommitPick>, DaggerError> {
-        let mut query = self.selection.select("commitsFrom");
+        let mut query = self.selection.select("compareCommitsFrom");
         query = query.arg_lazy(
             "source",
             Box::new(move || {
@@ -17809,7 +17809,7 @@ impl Workspace {
         }
     }
     /// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
-    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.
     /// A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
     /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
     ///
@@ -17833,7 +17833,7 @@ impl Workspace {
         }
     }
     /// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
-    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.
     /// A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
     /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
     ///
