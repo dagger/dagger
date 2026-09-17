@@ -30,7 +30,7 @@ func workspaceArtifactCommands(types []string) map[string]string {
 	return commands
 }
 
-func prepareWorkspaceArtifactCommands(ctx context.Context, root *cobra.Command, args []string) error {
+func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		switch args[0] {
 		case "help", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
@@ -38,13 +38,21 @@ func prepareWorkspaceArtifactCommands(ctx context.Context, root *cobra.Command, 
 		}
 	}
 	cmd, _ := resolveCommand(root, args)
-	if cmd != workspaceCmd {
+	if cmd != workspaceCmd && cmd != artifactsCmd && cmd.Parent() != artifactsCmd {
 		return nil
 	}
 	return withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
 		types, err := ec.Dagger().CurrentWorkspace().Artifacts().Types(ctx)
 		if err != nil {
 			return err
+		}
+		if cmd != workspaceCmd {
+			collections, err := ec.Dagger().CurrentWorkspace().Artifacts().Collections(ctx)
+			if err != nil {
+				return err
+			}
+			registerArtifactCollectionFlags(artifactsCmd, collections)
+			return artifactsCmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(types, cobra.ShellCompDirectiveNoFileComp))
 		}
 		for name, typeName := range workspaceArtifactCommands(types) {
 			cmd := &cobra.Command{

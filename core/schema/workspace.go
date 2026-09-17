@@ -564,7 +564,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("artifacts", s.artifacts).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Discover static object artifacts from workspace modules without evaluating their values."),
+			Doc("Discover static object artifacts from workspace modules without evaluating their values.").
+			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with checks and services.")),
 		migrateField,
 	}.Install(srv)
 

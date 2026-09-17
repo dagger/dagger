@@ -17004,11 +17004,23 @@ class Workspace(Type):
         _ctx = self._select("agents", _args)
         return AgentMiddlewareGroup(_ctx)
 
-    def artifacts(self) -> Artifacts:
+    def artifacts(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> Artifacts:
         """Discover static object artifacts from workspace modules without
         evaluating their values.
+
+        Parameters
+        ----------
+        include:
+            Only include artifacts matching these path patterns, as with
+            checks and services.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("include", include, None),
+        ]
         _ctx = self._select("artifacts", _args)
         return Artifacts(_ctx)
 

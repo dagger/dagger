@@ -3589,6 +3589,13 @@ export type WorkspaceAgentsOpts = {
   exclude?: string[]
 }
 
+export type WorkspaceArtifactsOpts = {
+  /**
+   * Only include artifacts matching these path patterns, as with checks and services.
+   */
+  include?: string[]
+}
+
 export type WorkspaceChangesOpts = {
   /**
    * An earlier workspace state to compare against.
@@ -17137,9 +17144,10 @@ export class Workspace extends BaseClient {
 
   /**
    * Discover static object artifacts from workspace modules without evaluating their values.
+   * @param opts.include Only include artifacts matching these path patterns, as with checks and services.
    */
-  artifacts = (): Artifacts => {
-    const ctx = this._ctx.select("artifacts")
+  artifacts = (opts?: WorkspaceArtifactsOpts): Artifacts => {
+    const ctx = this._ctx.select("artifacts", { ...opts })
     return new Artifacts(ctx)
   }
 

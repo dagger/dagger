@@ -1420,6 +1420,11 @@ impl Artifacts {
         let query = self.selection.select("pretty");
         query.execute(self.graphql_client.clone()).await
     }
+    /// List concrete GraphQL types represented in this selection, sorted with no duplicates.
+    pub async fn types(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("types");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 impl Node for Artifacts {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
@@ -16901,6 +16906,12 @@ pub struct WorkspaceAgentsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceArtifactsOpts<'a> {
+    /// Only include artifacts matching these path patterns, as with checks and services.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChangesOpts {
     /// An earlier workspace state to compare against.
     #[builder(setter(into, strip_option), default)]
@@ -17256,8 +17267,28 @@ impl Workspace {
         }
     }
     /// Discover static object artifacts from workspace modules without evaluating their values.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn artifacts(&self) -> Artifacts {
         let query = self.selection.select("artifacts");
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Discover static object artifacts from workspace modules without evaluating their values.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn artifacts_opts<'a>(&self, opts: WorkspaceArtifactsOpts<'a>) -> Artifacts {
+        let mut query = self.selection.select("artifacts");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
         Artifacts {
             proc: self.proc.clone(),
             selection: query,

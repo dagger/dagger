@@ -148,9 +148,9 @@ func (a *Artifacts) Pretty() []string {
 	return lines
 }
 
-// ModuleArtifactNodes walks metadata only. Module objects are namespaces; the
-// first non-null core object on each path is an artifact. Caller arguments,
-// nullable values, and lists cannot be resolved through this no-argument API.
+// ModuleArtifactNodes lists object values without evaluating them. Walk through
+// module objects and stop at core objects. Skip caller arguments, nullable
+// values, and lists.
 func ModuleArtifactNodes(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeNode, []*ModTreeNode, error) {
 	root, err := NewModTree(ctx, mod)
 	if err != nil {
@@ -185,6 +185,11 @@ func ModuleArtifactNodes(ctx context.Context, mod dagql.ObjectResult[*Module]) (
 		if obj == nil {
 			return false, nil
 		}
+		path := node.PathString()
+		if !seen[path] {
+			seen[path] = true
+			nodes = append(nodes, node)
+		}
 		if fullType, ok := node.OriginalModule.Self().objectTypeDefResultByName(obj.Name); ok {
 			// Field types can be references with no members. ModTree already
 			// adds a separate complete subtree for function return types.
@@ -198,11 +203,6 @@ func ModuleArtifactNodes(ctx context.Context, mod dagql.ObjectResult[*Module]) (
 		}
 		if node == root {
 			return true, nil
-		}
-		path := node.PathString()
-		if !seen[path] {
-			seen[path] = true
-			nodes = append(nodes, node)
 		}
 		return false, nil
 	})
