@@ -17908,6 +17908,28 @@ class WorkspaceModule(Type):
 class WorkspaceModuleSetting(Type):
     """A constructor-backed module setting."""
 
+    async def default_value(self) -> str:
+        """The constructor argument's declared default, formatted like value, or
+        empty when the argument has no default.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("defaultValue", _args)
+        return await _ctx.execute(str)
+
     async def description(self) -> str:
         """The constructor argument description.
 
@@ -18019,8 +18041,8 @@ class WorkspaceModuleSetting(Type):
         return await _ctx.execute(str)
 
     async def value(self) -> str:
-        """The configured value after applying the selected workspace
-        environment, or empty when unset.
+        """The value stored in workspace config after applying the selected
+        workspace environment, or empty when unset.
 
         Returns
         -------

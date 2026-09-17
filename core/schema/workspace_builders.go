@@ -174,7 +174,8 @@ func (s *workspaceSchema) withConfigValue(
 	}
 
 	var updated []byte
-	if args.Values.Valid {
+	switch {
+	case args.Values.Valid:
 		if args.Value != "" {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("value and values are mutually exclusive")
 		}
@@ -183,8 +184,19 @@ func (s *workspaceSchema) withConfigValue(
 			elements = append(elements, v.String())
 		}
 		updated, err = workspace.WriteConfigValues(staged.Data, writeKey, elements)
-	} else {
-		updated, err = workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
+	default:
+		// A string written to a list-typed module setting stores as an
+		// array, so raw config writes and API calls agree with what
+		// `dagger module settings` produces.
+		elements, isList, listErr := s.listSettingElements(ctx, parent.Self(), staged, writeKey, args.Value)
+		if listErr != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, listErr
+		}
+		if isList {
+			updated, err = workspace.WriteConfigValues(staged.Data, writeKey, elements)
+		} else {
+			updated, err = workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
+		}
 	}
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err

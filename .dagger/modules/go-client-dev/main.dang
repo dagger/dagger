@@ -57,7 +57,7 @@ type GoClientDev {
   """
   pub generate: Changeset! @generate {
     devContainer
-      .withExec(["go", "generate", "-v", "./..."])
+      .withExec(["go", "generate", "-v", "."])
       .withExec(["go", "mod", "tidy"])
       .directory("../..") # pop back to repo root
       .changes(workspaceDir)

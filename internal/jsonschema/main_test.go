@@ -13,7 +13,7 @@ func TestWorkspaceSchemaUsesConfigFieldNames(t *testing.T) {
 
 	var targetDef *target
 	for i := range targets {
-		if targets[i].id == "dagger.toml" {
+		if targets[i].output == "dagger-workspace.schema.json" {
 			targetDef = &targets[i]
 			break
 		}

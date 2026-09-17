@@ -211,7 +211,12 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if err != nil {
 		return nil, nil, err
 	}
-	var opts []gitutil.Option
+	// Keep automatic maintenance inside the mirror lock and mount lifetime.
+	// Detached repacks can otherwise rewrite shallow during a later fetch.
+	opts := []gitutil.Option{gitutil.WithConfig(map[string]string{
+		"gc.autoDetach":          "false",
+		"maintenance.autoDetach": "false",
+	})}
 
 	cleanups := cleanups.Cleanups{}
 	defer func() {
@@ -288,50 +293,13 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 		}
 		defer cleanup()
 		git = git.New(gitutil.WithGitDir(remote))
-		gitDir, err := git.GitDir(ctx)
-		if err != nil {
-			return fmt.Errorf("could not find git dir: %w", err)
+		remoteRefs := make([]*RemoteGitRef, len(refs))
+		for i, ref := range refs {
+			remoteRefs[i] = ref.(*RemoteGitRef)
 		}
-
-		var fetchRefs []*RemoteGitRef
-		for _, ref := range refs {
-			ref := ref.(*RemoteGitRef)
-
-			// skip fetch if commit already exists
-			doFetch := true
-			if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
-				return fmt.Errorf("failed to rev-parse: %w", err)
-			} else if strings.TrimSpace(string(res)) == ref.SHA {
-				doFetch = false
-
-				if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
-					// if shallow, check we have enough depth
-					if depth <= 0 {
-						doFetch = true
-					} else {
-						// HACK: this is a pretty terrible way to guess the depth,
-						// since it only traces *one* path.
-						res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.SHA)
-						if err != nil {
-							return fmt.Errorf("failed to rev-list: %w", err)
-						}
-						res = bytes.TrimSpace(res)
-						count, err := strconv.Atoi(string(res))
-						if err != nil {
-							return fmt.Errorf("failed to parse rev-list output: %w", err)
-						}
-						if count < depth {
-							doFetch = true
-						}
-					}
-				}
-			}
-
-			// TODO: should set doFetch if a tag in ls-remote has been updated?
-
-			if doFetch {
-				fetchRefs = append(fetchRefs, ref)
-			}
+		fetchRefs, err := gitRefsToFetch(ctx, git, depth, remoteRefs)
+		if err != nil {
+			return err
 		}
 		err = repo.fetch(ctx, git, depth, includeTags, fetchRefs)
 		if err != nil {
@@ -344,6 +312,57 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 
 		return fn(git)
 	})
+}
+
+// gitRefsToFetch checks mirror coverage and retains existing commits, including
+// those fetched by older engines which left their objects only in FETCH_HEAD.
+func gitRefsToFetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []*RemoteGitRef) ([]*RemoteGitRef, error) {
+	gitDir, err := git.GitDir(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not find git dir: %w", err)
+	}
+
+	var fetchRefs []*RemoteGitRef
+	for _, ref := range refs {
+		// skip fetch if commit already exists
+		doFetch := true
+		if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
+			return nil, fmt.Errorf("failed to rev-parse: %w", err)
+		} else if strings.TrimSpace(string(res)) == ref.SHA {
+			doFetch = false
+			if _, err := git.Run(ctx, "update-ref", fetchedGitRef(ref.SHA), ref.SHA); err != nil {
+				return nil, fmt.Errorf("failed to retain fetched sha %s: %w", ref.SHA, err)
+			}
+
+			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+				// if shallow, check we have enough depth
+				if depth <= 0 {
+					doFetch = true
+				} else {
+					// HACK: this is a pretty terrible way to guess the depth,
+					// since it only traces *one* path.
+					res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.SHA)
+					if err != nil {
+						return nil, fmt.Errorf("failed to rev-list: %w", err)
+					}
+					res = bytes.TrimSpace(res)
+					count, err := strconv.Atoi(string(res))
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse rev-list output: %w", err)
+					}
+					if count < depth {
+						doFetch = true
+					}
+				}
+			}
+		}
+
+		// TODO: should set doFetch if a tag in ls-remote has been updated?
+		if doFetch {
+			fetchRefs = append(fetchRefs, ref)
+		}
+	}
+	return fetchRefs, nil
 }
 
 func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (rerr error) {
@@ -366,6 +385,26 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}()
 	git = git.New(gitutil.WithStreams(gitFetchProgressStreams(ctx)))
 
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, repo.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	return repo.fetchObjects(ctx, git, depth, includeTags, refs)
+}
+
+// fetchObjects operates on the private mirror; service bindings and progress
+// streams are supplied by fetch so the Git protocol can also be tested directly.
+func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) error {
+	if len(refs) == 0 && !includeTags {
+		return nil
+	}
+
 	// Fetch by object SHA in the hot path (`--no-tags`), and only retry by named refs for SHA-incompatible remotes.
 	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
 
@@ -376,8 +415,10 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 	shaRefSpecs := make([]string, len(refs))
 	for i, ref := range refs {
-		// Default hot path: fetch exact objects by SHA; ref names are already resolved via ls-remote.
-		shaRefSpecs[i] = ref.SHA
+		// FETCH_HEAD alone is not a negotiation tip. Keep each pinned commit
+		// reachable so subsequent fetches advertise its objects as "have",
+		// without populating the public branch or tag namespaces.
+		shaRefSpecs[i] = ref.SHA + ":" + fetchedGitRef(ref.SHA)
 	}
 
 	runFetch := func(refSpecs []string) error {
@@ -450,16 +491,6 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		return nil
 	}
 
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, repo.Services)
-	if err != nil {
-		return err
-	}
-	defer detach()
-
 	if len(shaRefSpecs) > 0 {
 		err = runFetch(shaRefSpecs)
 		if err != nil {
@@ -480,6 +511,13 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 			if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
 				return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
 			}
+			// The named ref may have moved since resolution. Retain the verified
+			// pinned SHA, not the scratch ref's potentially newer target.
+			for _, ref := range refs {
+				if _, pinErr := git.Run(ctx, "update-ref", fetchedGitRef(ref.SHA), ref.SHA); pinErr != nil {
+					return fmt.Errorf("failed to retain fetched sha %s: %w", ref.SHA, pinErr)
+				}
+			}
 			logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
 		}
 	}
@@ -491,6 +529,11 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}
 
 	return nil
+}
+
+// fetchedGitRef is private to the mutable mirror, never a checkout refspec.
+func fetchedGitRef(sha string) string {
+	return "refs/dagger.fetched/" + sha
 }
 
 // namedFetchRefSpecs builds the bounded fallback refspec set used when SHA fetch is unsupported.

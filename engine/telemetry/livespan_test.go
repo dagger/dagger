@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"encoding/binary"
 	"sync"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func TestLiveSpanProcessorBoundedNonBlocking(t *testing.T) {
 	proc := NewLargeQueueLiveSpanProcessor(exp)
 
 	// The batch processor only enqueues sampled spans.
-	snap := tracetest.SpanStub{
+	span := tracetest.SpanStub{
 		Name: "test-span",
 		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
 			TraceID:    trace.TraceID{1},
@@ -72,13 +73,17 @@ func TestLiveSpanProcessorBoundedNonBlocking(t *testing.T) {
 		}),
 		StartTime: time.Now(),
 		EndTime:   time.Now(),
-	}.Snapshot()
+	}
 
 	// Emit 2x the queue capacity while the exporter is fully stalled.
 	emitted := 2 * LargeSpanQueueSize
 	start := time.Now()
-	for range emitted {
-		proc.OnEnd(snap)
+	for i := range emitted {
+		// Use distinct spans so export coalescing doesn't affect queue accounting.
+		var spanID trace.SpanID
+		binary.BigEndian.PutUint64(spanID[:], uint64(i+1))
+		span.SpanContext = span.SpanContext.WithSpanID(spanID)
+		proc.OnEnd(span.Snapshot())
 	}
 	elapsed := time.Since(start)
 

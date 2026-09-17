@@ -427,7 +427,10 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 		WithServiceBinding("github.test", env.mockSvc).
 		WithMountedFile("/github-ca.pem", env.certs.caRootCert)
 
-	return dev.InstallClient(client, dagger.EngineDevInstallClientOpts{Service: engine})
+	return dev.InstallClient(dagger.EngineDevInstallClientOpts{
+		Client:  client,
+		Service: engine,
+	})
 }
 
 func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag string) (string, error) {

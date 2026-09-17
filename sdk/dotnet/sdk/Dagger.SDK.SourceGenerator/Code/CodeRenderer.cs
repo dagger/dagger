@@ -403,7 +403,9 @@ public class CodeRenderer : ICodeRenderer
 
         if (arg.DefaultValue != null)
         {
-            if (arg.Type.IsList() && arg.DefaultValue == "[]")
+            // C# cannot express a list as a default parameter value. Leave the
+            // argument unset, so the engine applies its own default.
+            if (arg.Type.IsList())
             {
                 return $"{nullableType} {arg.GetVarName()} = null";
             }

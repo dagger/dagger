@@ -62,7 +62,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
-	github.com/dagger/otel-go v1.43.1-0.20260810200237-752a39ce1610
+	github.com/dagger/otel-go v1.43.1-0.20260917165636-2bca4f5622cf
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
 	github.com/dave/jennifer v1.7.1
@@ -156,7 +156,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.32
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/dang v1.0.1
-	github.com/vito/dang/v2 v2.1.3
+	github.com/vito/dang/v2 v2.1.4
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5

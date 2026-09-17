@@ -15,54 +15,40 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-const workspaceSettingsQuery = `
+// workspaceSettingFields lists the setting fields to request, richest first.
+// Older engines lack the later additions (defaultValue, isList, isObject),
+// so loading falls back through this list on "Cannot query field" errors.
+var workspaceSettingFields = []string{
+	"key value description defaultValue isList isObject",
+	"key value description isList isObject",
+	"key value description",
+}
+
+func workspaceSettingsQuery(fields string) string {
+	return `
 query WorkspaceSettings {
   currentWorkspace {
     modules {
       name
-      settings {
-        key
-        value
-        description
-      }
+      settings { ` + fields + ` }
     }
   }
 }
 `
+}
 
-const workspaceModuleSettingsQuery = `
+func workspaceModuleSettingsQuery(fields string) string {
+	return `
 query WorkspaceModuleSettings($module: String!) {
   currentWorkspace {
     module(name: $module) {
       name
-      settings {
-        key
-        value
-        description
-      }
+      settings { ` + fields + ` }
     }
   }
 }
 `
-
-// workspaceModuleSettingsQueryForWrite adds isList and isObject, which older
-// engines don't expose; writes fall back to the query above against them.
-const workspaceModuleSettingsQueryForWrite = `
-query WorkspaceModuleSettings($module: String!) {
-  currentWorkspace {
-    module(name: $module) {
-      name
-      settings {
-        key
-        value
-        description
-        isList
-        isObject
-      }
-    }
-  }
 }
-`
 
 const workspaceEntrypointQuery = `
 query WorkspaceEntrypoint {
@@ -101,7 +87,7 @@ var (
 func newSettingsCmd(hidden bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "settings [module] [key] [value...]",
-		Short:  "Get, set, or unset module settings",
+		Short:  "Get, set, or unset module settings (use --env for an env overlay)",
 		Hidden: hidden,
 		Args:   cobra.ArbitraryArgs,
 		RunE:   runWorkspaceSettings,
@@ -160,7 +146,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 			moduleName = args[0]
 		}
 
-		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName, len(args) > 2)
+		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName)
 		if err != nil {
 			return err
 		}
@@ -186,7 +172,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), setting.Value)
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), workspaceSettingDisplayValue(setting))
 			return err
 		default:
 			setting, err := state.lookupSetting(args[1])
@@ -238,12 +224,23 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 }
 
 type workspaceSetting struct {
-	Module      string
-	Key         string
-	Value       string
-	Description string
-	IsList      bool
-	IsObject    bool
+	Module       string
+	Key          string
+	Value        string
+	Description  string
+	DefaultValue string
+	IsList       bool
+	IsObject     bool
+}
+
+// workspaceSettingDisplayValue renders a setting for output: the configured
+// value when set, otherwise the constructor default marked as such so a
+// default is never mistaken for a value the user wrote.
+func workspaceSettingDisplayValue(setting workspaceSetting) string {
+	if setting.Value != "" || setting.DefaultValue == "" {
+		return setting.Value
+	}
+	return setting.DefaultValue + " (default)"
 }
 
 // normalizeEntrypointFunctionRef rewrites a short-form entrypoint function
@@ -305,18 +302,33 @@ func isUnknownGraphQLFieldError(err error) bool {
 }
 
 // workspaceSettingWriteValue maps trailing CLI args onto WithConfigValue's
-// value/values split. A single value passes through unchanged so existing
-// scalar and comma-separated forms keep their behavior. Multiple values are
-// only valid for list settings and are passed as an explicit list so elements
-// round-trip exactly, without comma-splitting.
+// value/values split. A scalar setting takes a single value, passed through
+// unchanged so auto-detection keeps its behavior. A list setting always
+// writes an explicit list so the config stores a TOML array: multiple values
+// are its elements verbatim, and a single value is parsed into elements
+// (comma-separated, optionally bracketed or quoted) so "." stores as ["."]
+// rather than ".". An empty list is written as the "[]" value, which the
+// engine converts, because the SDK omits an empty values list. Engines that
+// predate isList report every setting as scalar, and there the single-value
+// form falls back to the string write.
 func workspaceSettingWriteValue(setting workspaceSetting, args []string) (string, []string, error) {
-	if len(args) == 1 {
-		return args[0], nil, nil
-	}
 	if !setting.IsList {
+		if len(args) == 1 {
+			return args[0], nil, nil
+		}
 		return "", nil, fmt.Errorf("setting %q of module %q is not a list and accepts a single value", setting.Key, setting.Module)
 	}
-	return "", args, nil
+	if len(args) > 1 {
+		return "", args, nil
+	}
+	values, err := workspacepkg.ParseListValue(args[0])
+	if err != nil {
+		return "", nil, fmt.Errorf("setting %q of module %q is a list: %w", setting.Key, setting.Module, err)
+	}
+	if len(values) == 0 {
+		return "[]", values, nil
+	}
+	return "", values, nil
 }
 
 type workspaceSettingsState struct {
@@ -325,46 +337,40 @@ type workspaceSettingsState struct {
 	Settings  []workspaceSetting
 }
 
-func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string, forWrite bool) (*workspaceSettingsState, error) {
+func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string) (*workspaceSettingsState, error) {
 	type settingsModule struct {
 		Name     string
 		Settings []workspaceSetting
 	}
 	var modules []settingsModule
-	if moduleName == "" {
-		var res struct {
-			CurrentWorkspace struct {
-				Modules []settingsModule
+	var err error
+	for _, fields := range workspaceSettingFields {
+		if moduleName == "" {
+			var res struct {
+				CurrentWorkspace struct {
+					Modules []settingsModule
+				}
 			}
-		}
-		if err := dag.Do(ctx, &dagger.Request{Query: workspaceSettingsQuery}, &dagger.Response{Data: &res}); err != nil {
-			return nil, err
-		}
-		modules = res.CurrentWorkspace.Modules
-	} else {
-		query := workspaceModuleSettingsQuery
-		if forWrite {
-			query = workspaceModuleSettingsQueryForWrite
-		}
-		var res struct {
-			CurrentWorkspace struct {
-				Module settingsModule
+			err = dag.Do(ctx, &dagger.Request{Query: workspaceSettingsQuery(fields)}, &dagger.Response{Data: &res})
+			modules = res.CurrentWorkspace.Modules
+		} else {
+			var res struct {
+				CurrentWorkspace struct {
+					Module settingsModule
+				}
 			}
-		}
-		err := dag.Do(ctx, &dagger.Request{
-			Query:     query,
-			Variables: map[string]any{"module": moduleName},
-		}, &dagger.Response{Data: &res})
-		if err != nil && forWrite && isUnknownGraphQLFieldError(err) {
 			err = dag.Do(ctx, &dagger.Request{
-				Query:     workspaceModuleSettingsQuery,
+				Query:     workspaceModuleSettingsQuery(fields),
 				Variables: map[string]any{"module": moduleName},
 			}, &dagger.Response{Data: &res})
+			modules = []settingsModule{res.CurrentWorkspace.Module}
 		}
-		if err != nil {
-			return nil, err
+		if !isUnknownGraphQLFieldError(err) {
+			break
 		}
-		modules = []settingsModule{res.CurrentWorkspace.Module}
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	settings := make([]workspaceSetting, 0)
@@ -435,7 +441,7 @@ func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetti
 		rows = append(rows, []string{
 			workspaceSettingSingleLine(setting.Module),
 			workspaceSettingSingleLine(setting.Key),
-			workspaceSettingSingleLine(setting.Value),
+			workspaceSettingSingleLine(workspaceSettingDisplayValue(setting)),
 			workspaceSettingSingleLine(workspaceSettingShortDescription(setting.Description)),
 		})
 	}

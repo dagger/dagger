@@ -192,7 +192,10 @@ func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 To change an installed version, use dagger mod update.
 
 If no workspace config is selected, this creates one at the workspace root first.
-Use --here to create the workspace config at the workspace cwd instead.`,
+Use --here to create the workspace config at the workspace cwd instead.
+
+With --env the module is recorded in that env's overlay (env.<name>.modules.*)
+and the env is created if missing.`,
 		Example: "dagger module install github.com/shykes/daggerverse/hello@v0.3.0",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
@@ -211,7 +214,9 @@ func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 		Long: `Uninstall a module from the current workspace, removing it from dagger.toml.
 
 Match an installed name first, then a source without a version.
-The source must match exactly one installation. Version selectors are not accepted.`,
+The source must match exactly one installation. Version selectors are not accepted.
+
+With --env only the env's overlay entry is removed, never the base module.`,
 		Example: "dagger module uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),

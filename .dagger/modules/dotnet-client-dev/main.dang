@@ -39,7 +39,7 @@ type DotnetClientDev {
       .from(dotnetSdkImage)
       .withWorkdir("/src")
 
-    ctr = daggerEngine(ws: self.ws).installClient(ctr)
+    ctr = engineDev(ws: self.ws).installClient(ctr)
   }
 
   ######################################
@@ -71,7 +71,7 @@ type DotnetClientDev {
   """
   pub test: Void @check {
     devContainer
-      .withFile("Dagger.SDK/introspection.json", daggerEngine(ws: self.ws).introspectionJson)
+      .withFile("Dagger.SDK/introspection.json", engineDev(ws: self.ws).introspectionJson)
       .withExec(["dotnet", "restore"])
       .withExec(["dotnet", "build", "--no-restore"])
       .withExec(["dagger", "run", "dotnet", "test", "--no-build"])
@@ -116,7 +116,7 @@ type DotnetClientDev {
         sourcePath,
         directory.withFile(
           "Dagger.SDK/introspection.json",
-          daggerEngine.introspectionJson,
+          engineDev(ws: self.ws).introspectionJson,
         ),
       )
 

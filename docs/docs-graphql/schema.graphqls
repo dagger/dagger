@@ -6939,6 +6939,11 @@ type WorkspaceModule implements Node {
 
 """A constructor-backed module setting."""
 type WorkspaceModuleSetting implements Node {
+  """
+  The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+  """
+  defaultValue: String!
+
   """The constructor argument description."""
   description: String!
 
@@ -6959,7 +6964,7 @@ type WorkspaceModuleSetting implements Node {
   key: String!
 
   """
-  The configured value after applying the selected workspace environment, or empty when unset.
+  The value stored in workspace config after applying the selected workspace environment, or empty when unset.
   """
   value: String!
 }
