@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sync"
 	"sync/atomic"
+
+	"github.com/dagger/dagger/engine/snapshots"
 
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -26,8 +29,25 @@ type sharePartState struct {
 type shareTestValue struct {
 	Name  string                    `json:"name"`
 	Parts map[string]sharePartState `json:"parts,omitempty"`
+	// mu guards Parts, links and rev the way a core value's output guard
+	// does: readers copy under it, and a prepared store holds it from TryLock
+	// to Unlock so its Publish cannot race an encoder.
+	mu    sync.RWMutex
 	rev   atomic.Uint64
 	links []PersistedSnapshotRefLink
+}
+
+type shareTestEncoded struct {
+	Name  string                    `json:"name"`
+	Parts map[string]sharePartState `json:"parts,omitempty"`
+}
+
+func (v *shareTestValue) payloadLocked() shareTestEncoded {
+	parts := make(map[string]sharePartState, len(v.Parts))
+	for name, state := range v.Parts {
+		parts[name] = state
+	}
+	return shareTestEncoded{Name: v.Name, Parts: parts}
 }
 
 func newShareTestValue(name string, parts map[string]sharePartState) *shareTestValue {
@@ -54,7 +74,9 @@ func (*shareTestValue) Type() *ast.Type {
 }
 
 func (v *shareTestValue) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
-	raw, err := json.Marshal(v)
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	raw, err := json.Marshal(v.payloadLocked())
 	return PersistedObjectEncoding{JSON: raw, SnapshotLinks: cloneSnapshotRefLinks(v.links)}, err
 }
 
@@ -65,7 +87,61 @@ func (v *shareTestValue) PersistedOutputRevision() (OutputRevision, error) {
 // PersistedSnapshotRefLinks is what makes an ordinary publication apply this
 // value's owner links, exactly as a completed core value does.
 func (v *shareTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
 	return cloneSnapshotRefLinks(v.links)
+}
+
+// PreparePartStore is the typed receiver's writer: a closed assignment that
+// cannot fail, allocate storage or run cleanup once prepared, with its own
+// expected output revision, exactly like the File and Directory stores.
+func (v *shareTestValue) PreparePartStore(_ context.Context, _ *PersistDecodeContext, _ PersistedRecord, d PartDescriptor, ref snapshots.ImmutableRef) (PreparedPartStore, error) {
+	if d.SnapshotID == "" {
+		return nil, fmt.Errorf("share test store: donated part %q has no snapshot", d.Address.Part)
+	}
+	revision, err := v.PersistedOutputRevision()
+	if err != nil {
+		return nil, err
+	}
+	return &shareTestPartStore{receiver: v, part: string(d.Address.Part), snapshot: d.SnapshotID, expected: revision, ref: ref}, nil
+}
+
+type shareTestPartStore struct {
+	receiver *shareTestValue
+	part     string
+	snapshot string
+	expected OutputRevision
+	ref      snapshots.ImmutableRef
+}
+
+func (s *shareTestPartStore) TryLock() bool {
+	if !s.receiver.mu.TryLock() {
+		return false
+	}
+	if OutputRevision(s.receiver.rev.Load()) != s.expected {
+		s.receiver.mu.Unlock()
+		return false
+	}
+	return true
+}
+
+func (s *shareTestPartStore) Unlock() { s.receiver.mu.Unlock() }
+
+func (s *shareTestPartStore) Publish() {
+	state := s.receiver.Parts[s.part]
+	state.Snapshot = s.snapshot
+	s.receiver.Parts[s.part] = state
+	replaced := false
+	for i := range s.receiver.links {
+		if s.receiver.links[i].Role == s.part {
+			s.receiver.links[i].RefKey = s.snapshot
+			replaced = true
+		}
+	}
+	if !replaced {
+		s.receiver.links = append(s.receiver.links, PersistedSnapshotRefLink{Role: s.part, RefKey: s.snapshot})
+	}
+	s.receiver.rev.Add(1)
 }
 
 func (*shareTestValue) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, raw json.RawMessage) (Typed, error) {

@@ -923,3 +923,29 @@ func TestSnapshotSharingTypedServiceReceiverNeedsRegistration(t *testing.T) {
 	}
 	require.True(t, found, "the skip is ShareIneligible, not a guard trip: %v", causes)
 }
+
+// A typed receiver takes one slot per pass, and the installing task's own
+// completion queues the successor that fills the next part. Nothing is lost;
+// it costs one extra pass per additional part.
+func TestSnapshotSharingTypedReceiverFillsOnePartPerPass(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	donor := persistedListTestResult(t, ctx, c, srv, "typed-donor", newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}, "mount": {Snapshot: "mount-snap"}}))
+	receiver := persistedListTestResult(t, ctx, c, srv, "typed-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}, "mount": {}}))
+	c.egraphMu.Lock()
+	receiver.cacheSharedResult().imported = true
+	c.egraphMu.Unlock()
+	partTestEquivalent(t, c, receiver, donor)
+	shareTestUnite(t, ctx, c, "typed-one-per-pass", donor, receiver)
+
+	require.Equal(t, 1, barrier.awaitPass(t), "a typed receiver plans one slot")
+	require.Equal(t, 1, barrier.awaitPass(t), "its completion queues a successor that plans the other")
+	require.Equal(t, 0, barrier.awaitPass(t), "the second install's successor finds nothing left")
+	require.Equal(t, int32(2), manager.pins.Load(), "both parts are installed, one per pass")
+	require.Equal(t, int32(2), manager.opens.Load(), "a typed receiver opens its own accessor ref per part")
+	value, ok := receiver.Unwrap().(*shareTestValue)
+	require.True(t, ok)
+	require.Equal(t, "fs-snap", value.Parts["fs"].Snapshot)
+	require.Equal(t, "mount-snap", value.Parts["mount"].Snapshot)
+}
