@@ -351,6 +351,25 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Run future evaluation through an official CLI in the given container.
+
+  The container's configured working directory is the mutable workspace mount. The supplied container is the cold seed for a new harness lineage; existing messages are imported when they are not represented by a valid checkpoint.
+  """
+  @spec with_harness(t(), Dagger.Container.t(), Dagger.LLMHarnessKind.t()) :: Dagger.LLM.t()
+  def with_harness(%__MODULE__{} = llm, harness, kind) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withHarness")
+      |> QB.put_arg("harness", Dagger.ID.id!(harness))
+      |> QB.put_arg("kind", kind)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   Add an external MCP server to the LLM
   """
   @spec with_mcp_server(t(), String.t(), Dagger.Service.t()) :: Dagger.LLM.t()

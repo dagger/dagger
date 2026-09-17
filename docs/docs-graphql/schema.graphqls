@@ -4178,6 +4178,21 @@ type LLM implements Node & Syncer {
   """
   transcript: String!
 
+  """
+  Run future evaluation through an official CLI in the given container.
+
+  The container's configured working directory is the mutable workspace mount.
+  The supplied container is the cold seed for a new harness lineage; existing
+  messages are imported when they are not represented by a valid checkpoint.
+  """
+  withHarness(
+    """The container containing the official CLI and its configuration."""
+    harness: ID! @expectedType(name: "Container")
+
+    """The official CLI to use."""
+    kind: LLMHarnessKind!
+  ): LLM!
+
   """Add an external MCP server to the LLM"""
   withMCPServer(
     """The name of the MCP server"""
@@ -4405,6 +4420,15 @@ enum LLMContentBlockKind {
 
   """A tool/function result."""
   TOOL_RESULT
+}
+
+"""The official CLI used to execute an LLM conversation."""
+enum LLMHarnessKind {
+  """Anthropic's Claude Code CLI."""
+  CLAUDE
+
+  """OpenAI's Codex CLI."""
+  CODEX
 }
 
 """A single message in an LLM conversation."""

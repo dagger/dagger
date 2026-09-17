@@ -29,6 +29,34 @@ func TestConsumeRecursiveReadOnlyOption(t *testing.T) {
 	require.Equal(t, []string{"rbind", "ro"}, got.Options)
 }
 
+func TestSetupExecHTTPAuth(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+	state := &execState{
+		spec: &specs.Spec{Process: &specs.Process{}},
+		execMD: &ExecutionMetadata{
+			ExecHTTPHandlerToken: "handler-token",
+		},
+	}
+	require.NoError(t, client.setupExecHTTPAuth(t.Context(), state))
+	require.Contains(t, state.spec.Process.Env, DaggerExecHTTPTokenEnv+"=handler-token")
+	require.Contains(t, state.execMD.SecretEnvNames, DaggerExecHTTPTokenEnv)
+}
+
+func TestSetupExecHTTPAuthWithoutHandler(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+	state := &execState{
+		spec:   &specs.Spec{Process: &specs.Process{}},
+		execMD: &ExecutionMetadata{},
+	}
+	require.NoError(t, client.setupExecHTTPAuth(t.Context(), state))
+	require.Empty(t, state.spec.Process.Env)
+	require.Empty(t, state.execMD.SecretEnvNames)
+}
+
 func TestSetupNetworkUsesPoolForDefaultHostname(t *testing.T) {
 	provider := &recordingNetworkProvider{}
 	client := &Client{

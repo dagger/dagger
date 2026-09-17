@@ -215,6 +215,16 @@ class LLMContentBlockKind(Enum):
     """A tool/function result."""
 
 
+class LLMHarnessKind(Enum):
+    """The official CLI used to execute an LLM conversation."""
+
+    CLAUDE = "CLAUDE"
+    """Anthropic's Claude Code CLI."""
+
+    CODEX = "CODEX"
+    """OpenAI's Codex CLI."""
+
+
 class LLMMessageOriginKind(Enum):
     """EXPERIMENTAL: Agent APIs are likely to change.  Who put a message
     on the conversation record."""
@@ -10932,6 +10942,32 @@ class LLM(Type):
         _ctx = self._select("transcript", _args)
         return await _ctx.execute(str)
 
+    def with_harness(
+        self,
+        harness: Container,
+        kind: LLMHarnessKind,
+    ) -> Self:
+        """Run future evaluation through an official CLI in the given container.
+
+        The container's configured working directory is the mutable workspace
+        mount. The supplied container is the cold seed for a new harness
+        lineage; existing messages are imported when they are not represented
+        by a valid checkpoint.
+
+        Parameters
+        ----------
+        harness:
+            The container containing the official CLI and its configuration.
+        kind:
+            The official CLI to use.
+        """
+        _args = [
+            Arg("harness", harness),
+            Arg("kind", kind),
+        ]
+        _ctx = self._select("withHarness", _args)
+        return LLM(_ctx)
+
     def with_mcp_server(self, name: str, service: "Service") -> Self:
         """Add an external MCP server to the LLM
 
@@ -18227,6 +18263,7 @@ __all__ = [
     "LLMContentBlock",
     "LLMContentBlockInput",
     "LLMContentBlockKind",
+    "LLMHarnessKind",
     "LLMMessage",
     "LLMMessageOrigin",
     "LLMMessageOriginInput",

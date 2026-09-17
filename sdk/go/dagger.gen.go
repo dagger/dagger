@@ -11174,6 +11174,20 @@ func (r *LLM) Transcript(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Run future evaluation through an official CLI in the given container.
+//
+// The container's configured working directory is the mutable workspace mount. The supplied container is the cold seed for a new harness lineage; existing messages are imported when they are not represented by a valid checkpoint.
+func (r *LLM) WithHarness(harness *Container, kind LLMHarnessKind) *LLM {
+	assertNotNil("harness", harness)
+	q := r.query.Select("withHarness")
+	q = q.Arg("harness", harness)
+	q = q.Arg("kind", kind)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Add an external MCP server to the LLM
 func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	assertNotNil("service", service)
@@ -20285,6 +20299,63 @@ const (
 
 	// A tool/function result.
 	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+)
+
+// The official CLI used to execute an LLM conversation.
+type LLMHarnessKind string
+
+func (LLMHarnessKind) IsEnum() {}
+
+func (v LLMHarnessKind) Name() string {
+	switch v {
+	case LLMHarnessKindClaude:
+		return "CLAUDE"
+	case LLMHarnessKindCodex:
+		return "CODEX"
+	default:
+		return ""
+	}
+}
+
+func (v LLMHarnessKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMHarnessKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMHarnessKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CLAUDE":
+		*v = LLMHarnessKindClaude
+	case "CODEX":
+		*v = LLMHarnessKindCodex
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Anthropic's Claude Code CLI.
+	LLMHarnessKindClaude LLMHarnessKind = "CLAUDE"
+
+	// OpenAI's Codex CLI.
+	LLMHarnessKindCodex LLMHarnessKind = "CODEX"
 )
 
 // EXPERIMENTAL: Agent APIs are likely to change.

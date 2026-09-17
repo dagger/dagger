@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
@@ -108,6 +109,10 @@ type RunningService struct {
 	// graceful stop.
 	Stop func(ctx context.Context, force bool) error
 
+	// Signal delivers an OS signal to the service process without closing its
+	// stdio. It is only supported for services with a backing container.
+	Signal func(ctx context.Context, signal syscall.Signal) error
+
 	// Wait blocks until the service has exited or the provided context is canceled.
 	Wait func(ctx context.Context) error
 
@@ -125,6 +130,7 @@ type RunningService struct {
 	clientScopeLease      *engine.ClientLifecycleLease
 
 	workspaceMu sync.Mutex
+	mountStates []*execMountState
 
 	dependencyExitPropagationMu         sync.Mutex
 	dependencyExitPropagationSuppressed int
@@ -724,6 +730,35 @@ func (ss *Services) StartInteractive(
 	svc Startable,
 	sio *ServiceIO,
 ) (_ *RunningService, release func(), err error) {
+	return ss.startInteractive(ctx, dig, svc, sio, nil)
+}
+
+// StartInteractiveResult starts a unique interactive instance of a Service
+// result while preserving the API spans that installed it. Interactive
+// services cannot use the ordinary shared runtime key because each caller owns
+// a distinct stdio stream and process lifetime.
+func (ss *Services) StartInteractiveResult(
+	ctx context.Context,
+	svc dagql.ObjectResult[*Service],
+	sio *ServiceIO,
+) (_ *RunningService, release func(), err error) {
+	if svc.Self() == nil {
+		return nil, nil, fmt.Errorf("service result is nil")
+	}
+	dig, err := svc.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("service digest: %w", err)
+	}
+	return ss.startInteractive(ctx, dig, svc.Self(), sio, lookupServiceOriginSpanContexts(ctx, svc))
+}
+
+func (ss *Services) startInteractive(
+	ctx context.Context,
+	dig digest.Digest,
+	svc Startable,
+	sio *ServiceIO,
+	originSpanContexts []trace.SpanContext,
+) (_ *RunningService, release func(), err error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -739,8 +774,9 @@ func (ss *Services) StartInteractive(
 		InstanceID: identity.NewID(),
 	}
 	return ss.startWithKey(ctx, key, svc, ServiceStartOpts{
-		ClientSpecific: true,
-		IO:             sio,
+		ClientSpecific:     true,
+		IO:                 sio,
+		OriginSpanContexts: originSpanContexts,
 	}, false)
 }
 

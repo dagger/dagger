@@ -2429,6 +2429,50 @@ export function LLMContentBlockKindNameToValue(
       return name as LLMContentBlockKind
   }
 }
+/**
+ * The official CLI used to execute an LLM conversation.
+ */
+export enum LLMHarnessKind {
+  /**
+   * Anthropic's Claude Code CLI.
+   */
+  Claude = "CLAUDE",
+
+  /**
+   * OpenAI's Codex CLI.
+   */
+  Codex = "CODEX",
+}
+
+/**
+ * Utility function to convert a LLMHarnessKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function LLMHarnessKindValueToName(value: LLMHarnessKind): string {
+  switch (value) {
+    case LLMHarnessKind.Claude:
+      return "CLAUDE"
+    case LLMHarnessKind.Codex:
+      return "CODEX"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a LLMHarnessKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function LLMHarnessKindNameToValue(name: string): LLMHarnessKind {
+  switch (name) {
+    case "CLAUDE":
+      return LLMHarnessKind.Claude
+    case "CODEX":
+      return LLMHarnessKind.Codex
+    default:
+      return name as LLMHarnessKind
+  }
+}
 export type LLMMessageOriginInput = {
   /**
    * The display name of the sending or observed agent.
@@ -11726,6 +11770,26 @@ export class LLM extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Run future evaluation through an official CLI in the given container.
+   *
+   * The container's configured working directory is the mutable workspace mount. The supplied container is the cold seed for a new harness lineage; existing messages are imported when they are not represented by a valid checkpoint.
+   * @param harness The container containing the official CLI and its configuration.
+   * @param kind The official CLI to use.
+   */
+  withHarness = (harness: Container, kind: LLMHarnessKind): LLM => {
+    const metadata = {
+      kind: { is_enum: true, value_to_name: LLMHarnessKindValueToName },
+    }
+
+    const ctx = this._ctx.select("withHarness", {
+      harness,
+      kind,
+      __metadata: metadata,
+    })
+    return new LLM(ctx)
   }
 
   /**

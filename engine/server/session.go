@@ -137,9 +137,10 @@ type daggerSession struct {
 	telemetryPubSub *PubSub
 	seenKeys        sync.Map
 
-	services *core.Services
-	agents   *core.AgentRuntimes
-	resolver *serverresolver.Resolver
+	services         *core.Services
+	agents           *core.AgentRuntimes
+	resolver         *serverresolver.Resolver
+	execHTTPHandlers *execHTTPHandlerRegistry
 
 	analytics analytics.Tracker
 
@@ -847,6 +848,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.agents = core.NewAgentRuntimes()
+	sess.execHTTPHandlers = newExecHTTPHandlerRegistry()
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.resolver = serverresolver.New(serverresolver.Opts{
 		Hosts: srv.registryHosts,
@@ -976,6 +978,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 			slog.Warn("error stopping agents", "error", err)
 			errs = errors.Join(errs, fmt.Errorf("stop session agents: %w", err))
 		}
+	}
+
+	if sess.execHTTPHandlers != nil {
+		sess.execHTTPHandlers.Close()
 	}
 
 	if sess.resolver != nil {

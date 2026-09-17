@@ -242,6 +242,19 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Run future evaluation through an official CLI in the given container.
+     *
+     * The container's configured working directory is the mutable workspace mount. The supplied container is the cold seed for a new harness lineage; existing messages are imported when they are not represented by a valid checkpoint.
+     */
+    public function withHarness(Container $harness, LLMHarnessKind $kind): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withHarness');
+        $innerQueryBuilder->setArgument('harness', $harness);
+        $innerQueryBuilder->setArgument('kind', $kind);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Add an external MCP server to the LLM
      */
     public function withMCPServer(string $name, Service $service): LLM
