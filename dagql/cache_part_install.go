@@ -251,7 +251,7 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 		if version.payload.payloadRevision != base.original.payloadRevision ||
 			version.payload.persistedEnvelope != base.original.persistedEnvelope ||
 			version.payload.hasValue != base.original.hasValue {
-			return nil, ErrPartReselect
+			return nil, partRefused("prepare: prefix base no longer matches the receiver")
 		}
 		// Build the next representation from the validated prefix, not from
 		// the real record, so this envelope contains every earlier role.
@@ -515,10 +515,10 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		// changes, so an earlier same-pass install that added edges already
 		// inside Own(R) does not refuse this slot.
 		if row.id != source.receiverID || row.requiredSessionResourcesGen.Load() != source.receiverOwnGen {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: sessionless receiver requirements changed")
 		}
 		if partRowExpired(row, time.Now().Unix()) {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: sessionless receiver expired")
 		}
 	}
 	if p.original == nil && source.readiness == PartReady {
@@ -611,10 +611,10 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		}
 		state := gate.outputs[key]
 		if state.phase == PartPending || state.task == nil {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: predecessor not installed")
 		}
 		if state.task.row != pred.receiver || state.task.key != pred.key || state.task.generation != pred.generation {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: predecessor installed by another task")
 		}
 	}
 	if gate.revision == math.MaxUint64 {

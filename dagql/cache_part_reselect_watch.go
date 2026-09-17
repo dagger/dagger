@@ -12,10 +12,11 @@ import (
 // this far is almost certainly answering a refusal that will never change.
 const partReselectWarnAfter = 1 << 14
 
-// partReselectWatch observes one unbounded reselect loop. It is a diagnostic
-// only: it never fails, delays or otherwise changes the request. Once the
-// loop has gone round partReselectWarnAfter times it logs a warning carrying
-// the last refusal cause, and again at each doubling. A deterministic refusal
+// partReselectWatch observes one unbounded reselect loop; all seven carry one.
+// It is a diagnostic only: it never fails, delays or otherwise changes the
+// request. Once the loop has gone round partReselectWarnAfter times it logs a
+// warning carrying the last refusal cause, which names the refusing site (see
+// partRefusal), and again at each doubling. A deterministic refusal
 // answered with a reselect, which these loops retry forever, then shows up in
 // the engine log instead of as a silent spin.
 type partReselectWatch struct {

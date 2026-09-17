@@ -731,7 +731,7 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 	// which for an ordinary demand is also the first candidate.
 	now := time.Now().Unix()
 	if partRowExpired(receiver, now) || partRowExpired(donor, now) {
-		return nil, ErrPartReselect
+		return nil, partRefused("sessionless source: row expired")
 	}
 	if _, err := partAddressKey(target); err != nil {
 		return nil, err
@@ -767,7 +767,7 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 	source.donated = c.partDonatedFactsLocked(donor, key, address, source.descriptor.SnapshotID)
 	// A donated snapshot must be owned by the donor now, not merely desired.
 	if source.descriptor.SnapshotID != "" && !source.donated.ownerLink {
-		return nil, ErrPartReselect
+		return nil, partRefused("sessionless source: donor does not own the snapshot")
 	}
 	c.incrementIncomingOwnershipLocked(ctx, donor)
 	return source, nil

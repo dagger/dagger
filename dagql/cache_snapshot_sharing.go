@@ -905,7 +905,7 @@ func shareSlotEnded(ctx context.Context, cause error) error {
 		errors.Is(cause, ErrPersistStateNotReady),
 		errors.Is(cause, ErrSnapshotShareIneligible),
 		errors.Is(cause, engine.ErrSnapshotShareEvaluation):
-		return ErrPartReselect
+		return partRefusedBy("share: slot ended without installing", cause)
 	}
 	return cause
 }
