@@ -101,9 +101,14 @@ skipping when it is unset. Test code and application code never appear.
 commands, `dagger.toml`, and prose explaining how the pieces fit together. The
 one exception is a platform-native directive or config line when the section
 is about that line: show it on its own, never the code around it. The module
-the reader writes gets a name that says what it supplies to the official module
-(not `myapp`) and stays deliberately minimal. Say why it is minimal. When the
-guide extends that module later, add a second snippet directory for the
+the reader writes is the project's dev module. `dagger module init <sdk>` with
+no name creates `<project>-dev` as the workspace entrypoint, and a reader who
+already has a dev module adds to it, so write `<project>-dev` as the placeholder
+in commands and config. Say that the snippet's type name stands in for the one
+`dagger module init` generated, since a mismatched type fails to load. Functions
+get names that say what they supply to the official module (`testRuntime`) and
+stay deliberately minimal. Say why they are minimal. When the guide extends that
+module later, add a second snippet directory for the
 extended version rather than editing the first one in prose.
 
 **The official module does the heavy lifting.** Lean on the platform module and
@@ -144,7 +149,7 @@ source and diffing the guide against it. Write to that standard:
 - **Output shown is output printed.** Every command output block comes from a
   real run against the current CLI. Never tell the reader to look for something
   the report omits: zero counts are not printed, and a cached re-run prints no
-  per-test section at all, so capture proof steps on a cache miss.
+  per-test section at all, so capture test output on a cache miss.
 - **Side effects get a sentence.** Files the tooling touches, such as
   `dagger.lock` keeping stale image pins, are explained where the reader first
   meets them so the first surprise is self-explanatory.
@@ -180,8 +185,8 @@ Do this before sending a guide for review, and again after every merge of main.
    changeset. The settings table truncates to the terminal width, so capture
    it under a wide pseudo-terminal.
 4. **Exercise every failure path the guide mentions**, so its failure text is
-   real: settings it calls mutually exclusive, a proof step that removes
-   wiring, a directive or setting it says is required. Confirm each fails the
+   real: settings it calls mutually exclusive, a type name it says must match,
+   a directive or setting it says is required. Confirm each fails the
    way the guide says.
 5. **Run the docs checks** from the repo root:
 
@@ -234,11 +239,11 @@ the Go guide section that shows it.
    adds what the project plausibly needs, a command proving it, and `### Wire
    it into the <name> module` with the full `dagger.toml` and the sentence on
    what wiring does. For services:
-   the conventions on the test side, extend the same module, and a proof step
-   that removes the wiring. Go: "Provide the runtime the tests and generators
-   run in" builds a `go-runtime` module with one `base` function and wires it;
-   "Give the tests the services they need" adds Postgres to that same module as
-   a second snippet stage.
+   the conventions on the test side, extend the same module, and a short
+   wiring step for readers who skipped the previous section. Go: "Provide the
+   runtime the tests and generators run in" adds a `testRuntime` function to
+   the project's dev module and wires it; "Give the tests the services they
+   need" adds Postgres to that same module as a second snippet stage.
 8. `Run every Check`: real output, then the commit step naming `dagger.toml`,
    `dagger.lock`, and `.dagger`, with a sentence on what the lock file holds.
    Go: "Run every Check".
