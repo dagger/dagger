@@ -115,7 +115,7 @@ Commit ==
     /\ IF \E i \in SlotIdx : pass.slots[i].state = "prepared"
        THEN LET i == CHOOSE j \in SlotIdx : pass.slots[j].state = "prepared" /\ \A k \in SlotIdx : k < j => pass.slots[k].state # "prepared"
                 p == pass.slots[i].part
-                ok == phase[p] = "Pending" /\ (rev = pass.slots[i].expRev \/ Fault = "StaleRoleMap") IN
+                ok == phase[p] = "Pending" /\ rev = pass.slots[i].expRev IN
             IF ok
             THEN /\ phase' = [phase EXCEPT ![p] = "Installed"]
                  /\ desired' = pass.slots[i].roles

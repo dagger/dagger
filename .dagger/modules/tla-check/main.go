@@ -72,6 +72,7 @@ var expectedOutcome = map[string]string{
 	"remote_checkpoint_fault_unpin_before_attach":     "DesiredRolesStayProtected",
 	"remote_checkpoint_fault_repeat_producer":         "ProducerRunsOnce",
 	"remote_checkpoint_fault_restore_applied_only":    "CheckpointHasCompleteDesiredRoles",
+	"remote_checkpoint_fault_drop_operation":          "OperationRetained",
 	"remote_checkpoint_witness_desired_survives":      "WitnessInstalledDesiredSurvivesEpoch",
 	"remote_checkpoint_witness_last_owner":            "WitnessFailedFinishLastOwnerCollected",
 	"remote_checkpoint_witness_producer_preserved":    "WitnessProducerPreservedAcrossRestart",
