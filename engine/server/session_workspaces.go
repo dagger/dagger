@@ -833,7 +833,15 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	if hasWorkspaceEnv {
+	// Applying the env overlay needs the env to already exist. Config-editing
+	// commands (`dagger workspace config --env=X k v`, `dagger module install
+	// --env=X ./dep`) name an env they are about to create, and they do not
+	// auto-load workspace modules, so for them a missing dagger.toml or an
+	// undefined env is normal: skip the overlay rather than fail, and do not
+	// open an "applying env" span that would only be marked failed. Clients
+	// that auto-load modules still need the env to resolve, and every other
+	// overlay error (e.g. an unknown module alias) still fails for both.
+	if hasWorkspaceEnv && (workspace.HasEnv(wsConfig, workspaceEnv) || client.autoLoadWorkspaceModules()) {
 		if wsConfig == nil {
 			return fmt.Errorf("workspace env %q requires dagger.toml", workspaceEnv)
 		}
