@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -17,6 +18,8 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"golang.org/x/oauth2"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -78,8 +81,10 @@ import (
 //
 // Seal is what turns "no end time" into a fact: a live span is exported at
 // START and again at end, so a span the capture shows running is only really
-// unfinished once the stream is over. FetchTrace calls it exactly once, after
-// the span stream is drained.
+// unfinished once importing has stopped. FetchTrace calls it exactly once after
+// all three stream goroutines return, including on partial or failed fetches.
+// Implementations need not be concurrency-safe; FetchTrace serializes all
+// callbacks while fetching the streams in parallel.
 type TraceImportSink interface {
 	ImportSpans(context.Context, *coltracepb.ExportTraceServiceRequest) error
 	ImportLogs(context.Context, *collogspb.ExportLogsServiceRequest) error
@@ -96,14 +101,21 @@ const (
 
 // OTLPClient streams a whole published trace out of Dagger Cloud as OTLP.
 type OTLPClient struct {
-	h          *http.Client
-	u          *url.URL
-	authHeader string
-	stats      *clientStats
+	h     *http.Client
+	u     *url.URL
+	auth  *otlpAuthState
+	stats *clientStats
 	// stall is how long a stream may deliver NO bytes before the fetch gives
 	// up on it. Zero disables the watchdog (no test depends on that; it is
 	// the natural meaning of the zero value).
 	stall time.Duration
+}
+
+type otlpAuthState struct {
+	mu      sync.Mutex
+	header  string
+	token   *oauth2.Token
+	refresh func(context.Context, *oauth2.Token) (*oauth2.Token, error)
 }
 
 // defaultStallTimeout bounds how long a fetch waits on a silent stream.
@@ -124,6 +136,9 @@ type OTLPClient struct {
 // far apart while keeping the connection audibly alive with heartbeat
 // frames, which never reach the sink but do count as bytes.
 const defaultStallTimeout = 60 * time.Second
+
+// ErrStreamStalled identifies a stream that exceeded its idle timeout.
+var ErrStreamStalled = errors.New("cloud OTLP stream stalled")
 
 // NewOTLPClient returns a client for the binary OTLP stream endpoints,
 // reading the base URL from DAGGER_CLOUD_URL exactly as NewClient does.
@@ -146,12 +161,21 @@ func NewOTLPClient(ctx context.Context, cloudAuth *auth.Cloud) (*OTLPClient, err
 		return nil, fmt.Errorf("parse cloud URL %q: %w", api, err)
 	}
 
+	token := *cloudAuth.Token
+	authState := &otlpAuthState{
+		header: authHeader,
+		token:  &token,
+	}
+	if token.RefreshToken != "" && token.TokenType != "Basic" && token.TokenType != "OIDC" {
+		authState.refresh = auth.RefreshToken
+	}
+
 	return &OTLPClient{
-		h:          http.DefaultClient,
-		u:          u,
-		authHeader: authHeader,
-		stats:      newClientStats(),
-		stall:      defaultStallTimeout,
+		h:     http.DefaultClient,
+		u:     u,
+		auth:  authState,
+		stats: newClientStats(),
+		stall: defaultStallTimeout,
 	}, nil
 }
 
@@ -171,6 +195,16 @@ func (c *OTLPClient) WithBaseURL(base string) (*OTLPClient, error) {
 	clone := *c
 	clone.u = u
 	return &clone, nil
+}
+
+// WithStallTimeout returns a copy that stops any stream after it delivers
+// no bytes for timeout. The timeout measures idle time, not total fetch time;
+// Heartbeat frames and payloads both reset it. A non-positive timeout disables the
+// watchdog.
+func (c *OTLPClient) WithStallTimeout(timeout time.Duration) *OTLPClient {
+	clone := *c
+	clone.stall = timeout
+	return &clone
 }
 
 // otlpAuthHeader renders the Authorization header for a Cloud credential.
@@ -195,6 +229,43 @@ func otlpAuthHeader(ctx context.Context, cloudAuth *auth.Cloud) (string, error) 
 	}
 }
 
+func (a *otlpAuthState) currentHeader() string {
+	if a == nil {
+		return ""
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.header
+}
+
+func (a *otlpAuthState) canRefresh() bool {
+	return a != nil && a.refresh != nil
+}
+
+// refreshHeader holds the lock across the grant so concurrent 401 responses
+// cannot spend the same refresh token. A waiter compares the header its failed
+// request used and reuses the winner's result instead of refreshing again.
+func (a *otlpAuthState) refreshHeader(ctx context.Context, usedHeader string) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.header != usedHeader {
+		return a.header, nil
+	}
+
+	refreshed, err := a.refresh(ctx, a.token)
+	if err != nil {
+		return "", err
+	}
+	header, err := otlpAuthHeader(ctx, &auth.Cloud{Token: refreshed})
+	if err != nil {
+		return "", fmt.Errorf("render refreshed authorization: %w", err)
+	}
+	a.token = refreshed
+	a.header = header
+	return header, nil
+}
+
 // StatsSummary returns a human-readable breakdown of what the fetch pulled
 // from Cloud, for --debug diagnostics.
 func (c *OTLPClient) StatsSummary() string {
@@ -203,52 +274,70 @@ func (c *OTLPClient) StatsSummary() string {
 
 // FetchTrace streams the whole of traceID into sink and seals it.
 //
-// THE THREE STREAMS RUN SEQUENTIALLY, spans first. The reference
-// implementation fans them out across an errgroup, and TraceImporter is
-// concurrency-safe, so the temptation is real — but the SINK is what decides,
-// and a sink is not required to be concurrency-safe. The OTel SDK's exporter
-// interfaces say so in as many words: sdktrace.SpanExporter.ExportSpans is
-// "called synchronously, so there is no concurrency safety requirement", and
-// sdklog.Exporter.Export "should never be called concurrently with other
-// Export calls". Slice 4 deliberately made the sinks an argument so a bare
-// dagui.DB — a plain struct with no locking — can be one, and the frontend's
-// own exporters only happen to serialize because they dispatch onto the UI
-// goroutine. Fanning out would impose a requirement the type never stated, on
-// every sink anyone ever passes. Measured, not argued: the fan-out shape trips
-// the race detector on the canned capture, deep in dagui.DB.
+// The three network streams run concurrently so a slow or blocked endpoint
+// does not prevent the others from transferring. Sink callbacks remain
+// serialized: TraceImportSink deliberately makes no concurrency-safety
+// promise, and common sinks (including the OTel SDK exporters and a bare
+// dagui.DB) require callers not to invoke exports concurrently.
 //
-// Spans FIRST, and drained, buys two more things. The seal is then trivially
-// "after the span stream ended", with no window in which a late span lands
-// already-sealed and keeps a stale end time. And every span a log record
-// refers to is real by the time the record arrives, so the record folds onto
-// it instead of minting the placeholder dagui.DB allocates for an unknown span
-// ID — a parentless, never-ended span the importer cannot know about and
-// therefore never seals.
-//
-// The cost is one startup fetch paying the sum of three round trips rather
-// than the max; §5.3 already runs it under a span so the wait is visible.
+// Once all three streams stop, no late span callbacks remain. FetchTrace then
+// calls Seal exactly once with the parent context, even after a stream error,
+// so partial span snapshots become a consistent bounded import. A seal error
+// is joined with the stream error rather than masking it.
 func (c *OTLPClient) FetchTrace(ctx context.Context, traceID string, sink TraceImportSink) error {
 	if traceID == "" {
 		return errors.New("no trace ID to fetch")
 	}
 
-	if err := c.streamTraces(ctx, traceID, sink); err != nil {
-		return err
-	}
+	sink = &serializedTraceImportSink{sink: sink}
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		return c.streamTraces(groupCtx, traceID, sink)
+	})
+	group.Go(func() error {
+		return c.streamLogs(groupCtx, traceID, sink)
+	})
+	group.Go(func() error {
+		return c.streamMetrics(groupCtx, traceID, sink)
+	})
+	streamErr := group.Wait()
 
-	// The span stream is drained: what is still running now really was left
-	// running (§5.1.2). Sealing HERE rather than after all three streams keeps
-	// the span half self-consistent even if a later stream fails, and nothing
-	// in the log or metric streams can move the seal's bound — the importer
-	// computes it from span timestamps alone.
+	var sealErr error
 	if err := sink.Seal(ctx); err != nil {
-		return fmt.Errorf("seal imported trace: %w", err)
+		sealErr = fmt.Errorf("seal imported trace: %w", err)
 	}
+	return errors.Join(streamErr, sealErr)
+}
 
-	if err := c.streamLogs(ctx, traceID, sink); err != nil {
-		return err
-	}
-	return c.streamMetrics(ctx, traceID, sink)
+// serializedTraceImportSink preserves TraceImportSink's synchronous callback
+// contract while FetchTrace overlaps the three network streams.
+type serializedTraceImportSink struct {
+	mu   sync.Mutex
+	sink TraceImportSink
+}
+
+func (s *serializedTraceImportSink) ImportSpans(ctx context.Context, req *coltracepb.ExportTraceServiceRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sink.ImportSpans(ctx, req)
+}
+
+func (s *serializedTraceImportSink) ImportLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sink.ImportLogs(ctx, req)
+}
+
+func (s *serializedTraceImportSink) ImportMetrics(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sink.ImportMetrics(ctx, req)
+}
+
+func (s *serializedTraceImportSink) Seal(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sink.Seal(ctx)
 }
 
 func (c *OTLPClient) streamTraces(ctx context.Context, traceID string, sink TraceImportSink) error {
@@ -284,6 +373,68 @@ func (c *OTLPClient) streamMetrics(ctx context.Context, traceID string, sink Tra
 	})
 }
 
+func (c *OTLPClient) openStream(ctx context.Context, kind, endpoint string) (*http.Response, error) {
+	usedHeader := c.auth.currentHeader()
+	resp, err := c.requestStream(ctx, kind, endpoint, usedHeader)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusOK {
+		return resp, nil
+	}
+
+	status := resp.StatusCode
+	unauthorizedErr := closeResponseError(endpoint, resp)
+	if status != http.StatusUnauthorized || !c.auth.canRefresh() {
+		return nil, unauthorizedErr
+	}
+
+	refreshedHeader, err := c.auth.refreshHeader(ctx, usedHeader)
+	if err != nil {
+		return nil, errors.Join(unauthorizedErr, fmt.Errorf("refresh cloud OAuth credential: %w", err))
+	}
+
+	resp, err = c.requestStream(ctx, kind, endpoint, refreshedHeader)
+	if err != nil {
+		return nil, errors.Join(unauthorizedErr, fmt.Errorf("retry after refreshing authorization: %w", err))
+	}
+	if resp.StatusCode != http.StatusOK {
+		retryErr := closeResponseError(endpoint, resp)
+		return nil, errors.Join(unauthorizedErr, fmt.Errorf("retry after refreshing authorization: %w", retryErr))
+	}
+	return resp, nil
+}
+
+func (c *OTLPClient) requestStream(ctx context.Context, kind, endpoint, authHeader string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request for %s: %w", kind, err)
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", otlpstream.ContentType)
+
+	c.stats.addRequest(kind)
+	resp, err := c.h.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("connect to %s: %w", endpoint, err)
+	}
+	return resp, nil
+}
+
+func closeResponseError(endpoint string, resp *http.Response) error {
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	closeErr := resp.Body.Close()
+
+	err := fmt.Errorf("fetch %s: %s: %s", endpoint, resp.Status, strings.TrimSpace(string(body)))
+	if readErr != nil {
+		err = errors.Join(err, fmt.Errorf("read error response: %w", readErr))
+	}
+	if closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close error response: %w", closeErr))
+	}
+	return err
+}
+
 // consumeStream connects to one of the OTLP endpoints and feeds every data
 // frame's payload to cb.
 //
@@ -298,19 +449,11 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, cb
 	// prefix silently dropped.
 	endpoint := c.u.JoinPath("/v1/", kind, traceID).String()
 
-	c.stats.addRequest(kind)
 	slog.Debug("connecting to cloud OTLP stream", "url", endpoint, "kind", kind)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	resp, err := c.openStream(ctx, kind, endpoint)
 	if err != nil {
-		return fmt.Errorf("create request for %s: %w", kind, err)
-	}
-	req.Header.Set("Authorization", c.authHeader)
-	req.Header.Set("Accept", otlpstream.ContentType)
-
-	resp, err := c.h.Do(req) //nolint:bodyclose // closed by the defer below; the stall watchdog may close it early
-	if err != nil {
-		return fmt.Errorf("connect to %s: %w", endpoint, err)
+		return err
 	}
 	defer resp.Body.Close()
 
@@ -377,8 +520,8 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, cb
 			// and what that surfaces as (a closed-body error, sometimes even
 			// EOF) must not be mistaken for anything the server said.
 			if stalled.Load() {
-				return fmt.Errorf("fetch %s stalled: no data for %s (after %d payloads, %d bytes): "+
-					"the server stopped sending without ending the stream", endpoint, c.stall, payloads, bytes)
+				return fmt.Errorf("%w: fetch %s: no data for %s (after %d payloads, %d bytes): "+
+					"the server stopped sending without ending the stream", ErrStreamStalled, endpoint, c.stall, payloads, bytes)
 			}
 			// A canceled fetch is NOT a server failure; report the caller's
 			// cancellation as itself.
