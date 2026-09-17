@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -49,20 +48,16 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		switch {
 		case named == nil:
 			return inst, fmt.Errorf("no remote named %q is registered on the source; register it with withRemote or pass an explicit destination with to", args.Remote)
-		case len(named.PushURLs) > 1:
-			return inst, fmt.Errorf("remote %q has multiple push URLs; pass an explicit destination repository with to", args.Remote)
-		case len(named.PushURLs) == 1:
-			destinationURL = named.PushURLs[0]
+		case named.PushURL != "":
+			destinationURL = named.PushURL
 		case named.URL != "":
 			destinationURL = named.URL
 		default:
 			return inst, fmt.Errorf("remote %q has no URL; pass an explicit destination repository with to", args.Remote)
 		}
-	} else if origin := repo.Self().RemoteConfig("origin"); origin != nil && len(origin.PushURLs) > 1 {
-		return inst, fmt.Errorf("origin has multiple push URLs; pass an explicit destination repository with to")
-	} else if origin != nil && len(origin.PushURLs) == 1 {
+	} else if origin := repo.Self().RemoteConfig("origin"); origin != nil && origin.PushURL != "" {
 		opts.SkipDestinationRewrite = true
-		destinationURL = origin.PushURLs[0]
+		destinationURL = origin.PushURL
 	} else if origin != nil && origin.URL != "" {
 		opts.SkipDestinationRewrite = true
 		destinationURL = origin.URL
@@ -109,39 +104,23 @@ type withRemoteArgs struct {
 	PushURL string `name:"pushUrl" default:""`
 }
 
-func (s *gitSchema) withRemote(ctx context.Context, parent *core.GitRepository, args withRemoteArgs) (*core.GitRepository, error) {
-	captured := withCapturedRemoteArgs{Name: args.Name, URL: args.URL}
-	if args.PushURL != "" {
-		captured.PushURLs = []string{args.PushURL}
-	}
-	return s.withCapturedRemote(ctx, parent, captured)
-}
-
-type withCapturedRemoteArgs struct {
-	Name     string
-	URL      string   `name:"url"`
-	PushURLs []string `name:"pushUrls" default:"[]"`
-}
-
-// Capture retains every configured destination so an ambiguous host remote
-// cannot silently become a push to whichever URL happened to come first.
-func (s *gitSchema) withCapturedRemote(_ context.Context, parent *core.GitRepository, args withCapturedRemoteArgs) (*core.GitRepository, error) {
+func (s *gitSchema) withRemote(_ context.Context, parent *core.GitRepository, args withRemoteArgs) (*core.GitRepository, error) {
 	if err := validateGitRemoteName(args.Name); err != nil {
 		return nil, err
 	}
 	if err := validateGitRemoteURL(args.URL); err != nil {
 		return nil, err
 	}
-	for _, pushURL := range args.PushURLs {
-		if err := validateGitRemoteURL(pushURL); err != nil {
+	if args.PushURL != "" {
+		if err := validateGitRemoteURL(args.PushURL); err != nil {
 			return nil, err
 		}
 	}
 	repo := parent.CloneWithBackend(parent.Backend)
 	repo.Remotes = core.WithGitRemote(repo.Remotes, core.GitRemote{
-		Name:     args.Name,
-		URL:      args.URL,
-		PushURLs: args.PushURLs,
+		Name:    args.Name,
+		URL:     args.URL,
+		PushURL: args.PushURL,
 	})
 	return repo, nil
 }
@@ -185,10 +164,9 @@ func validateGitRemoteURL(remoteURL string) error {
 // gitRemoteDigestInputs flattens registered remotes for content digesting,
 // with explicit counts so entry boundaries never collide.
 func gitRemoteDigestInputs(remotes []core.GitRemote) []string {
-	inputs := make([]string, 0, len(remotes)*4)
+	inputs := make([]string, 0, len(remotes)*3)
 	for _, remote := range remotes {
-		inputs = append(inputs, remote.Name, remote.URL, strconv.Itoa(len(remote.PushURLs)))
-		inputs = append(inputs, remote.PushURLs...)
+		inputs = append(inputs, remote.Name, remote.URL, remote.PushURL)
 	}
 	return inputs
 }

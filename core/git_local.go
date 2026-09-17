@@ -302,7 +302,11 @@ func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote
 			// Later values shadow earlier ones, like `git config --get`.
 			remote.URL = value
 		case "pushurl":
-			remote.PushURLs = append(remote.PushURLs, value)
+			// Git pushes to every configured pushurl; only the first one is
+			// retained here, since a push routes to one destination.
+			if remote.PushURL == "" {
+				remote.PushURL = value
+			}
 		}
 	}
 	remotes := make([]GitRemote, 0, len(order))

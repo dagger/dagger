@@ -40,9 +40,7 @@ type GitRepository struct {
 	DiscardGitDir bool
 
 	// Remotes is registered routing metadata, not a credential grant: named
-	// remotes recorded in materialized checkouts and consulted by push. An
-	// origin remote with multiple push URLs requires an explicit push
-	// destination.
+	// remotes recorded in materialized checkouts and consulted by push.
 	Remotes []GitRemote
 }
 
@@ -52,13 +50,12 @@ type GitRepository struct {
 // route push when no explicit destination is given. They are routing
 // metadata only, never a credential grant.
 type GitRemote struct {
-	Name     string   `json:"name"`
-	URL      string   `json:"url,omitempty"`
-	PushURLs []string `json:"pushURLs,omitempty"`
+	Name    string `json:"name"`
+	URL     string `json:"url,omitempty"`
+	PushURL string `json:"pushURL,omitempty"`
 }
 
 func (remote GitRemote) Clone() GitRemote {
-	remote.PushURLs = slices.Clone(remote.PushURLs)
 	return remote
 }
 
@@ -622,9 +619,9 @@ type persistedGitRepositoryPayload struct {
 }
 
 type persistedGitRemotePayload struct {
-	Name     string   `json:"name"`
-	URL      string   `json:"url,omitempty"`
-	PushURLs []string `json:"pushURLs,omitempty"`
+	Name    string `json:"name"`
+	URL     string `json:"url,omitempty"`
+	PushURL string `json:"pushURL,omitempty"`
 }
 
 type persistedLocalGitRepositoryPayload struct {
@@ -652,9 +649,9 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 	}
 	for _, remote := range repo.Remotes {
 		payload.Remotes = append(payload.Remotes, persistedGitRemotePayload{
-			Name:     remote.Name,
-			URL:      remote.URL,
-			PushURLs: slices.Clone(remote.PushURLs),
+			Name:    remote.Name,
+			URL:     remote.URL,
+			PushURL: remote.PushURL,
 		})
 	}
 	if repo.URL.Valid {
@@ -709,9 +706,9 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 	}
 	for _, persistedRemote := range persisted.Remotes {
 		repo.Remotes = append(repo.Remotes, GitRemote{
-			Name:     persistedRemote.Name,
-			URL:      persistedRemote.URL,
-			PushURLs: slices.Clone(persistedRemote.PushURLs),
+			Name:    persistedRemote.Name,
+			URL:     persistedRemote.URL,
+			PushURL: persistedRemote.PushURL,
 		})
 	}
 	if persisted.URL != "" {
@@ -1214,9 +1211,9 @@ func doGitCheckout(
 }
 
 // writeGitCheckoutRemote records one remote in a checkout's configuration:
-// its fetch URL (when known) and any push destinations.
+// its fetch URL (when known) and its push destination, if any.
 func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, remote GitRemote) error {
-	if remote.Name == "" || (remote.URL == "" && len(remote.PushURLs) == 0) {
+	if remote.Name == "" || (remote.URL == "" && remote.PushURL == "") {
 		return nil
 	}
 	if remote.URL != "" {
@@ -1224,9 +1221,9 @@ func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, re
 			return fmt.Errorf("failed to add remote %s: %w", remote.Name, err)
 		}
 	}
-	for _, pushURL := range remote.PushURLs {
-		if _, err := checkoutGit.Run(ctx, "config", "--add", "remote."+remote.Name+".pushurl", pushURL); err != nil {
-			return fmt.Errorf("failed to add remote %s push URL: %w", remote.Name, err)
+	if remote.PushURL != "" {
+		if _, err := checkoutGit.Run(ctx, "config", "remote."+remote.Name+".pushurl", remote.PushURL); err != nil {
+			return fmt.Errorf("failed to set remote %s push URL: %w", remote.Name, err)
 		}
 	}
 	return nil

@@ -312,9 +312,9 @@ func TestGitRepositoryCloneWithBackendResetsRemoteMetadata(t *testing.T) {
 		},
 		DiscardGitDir: true,
 		Remotes: []GitRemote{{
-			Name:     "origin",
-			URL:      "https://example.test/repo",
-			PushURLs: []string{"ssh://git@example.test/repo"},
+			Name:    "origin",
+			URL:     "https://example.test/repo",
+			PushURL: "ssh://git@example.test/repo",
 		}},
 	}
 
@@ -323,8 +323,8 @@ func TestGitRepositoryCloneWithBackendResetsRemoteMetadata(t *testing.T) {
 	require.Same(t, backend, clone.Backend)
 	require.True(t, clone.DiscardGitDir)
 	require.Equal(t, repo.Remotes, clone.Remotes)
-	clone.Remotes[0].PushURLs[0] = "ssh://git@example.test/other"
-	require.Equal(t, "ssh://git@example.test/repo", repo.Remotes[0].PushURLs[0])
+	clone.Remotes[0].PushURL = "ssh://git@example.test/other"
+	require.Equal(t, "ssh://git@example.test/repo", repo.Remotes[0].PushURL)
 	require.Empty(t, clone.Remote.Refs)
 	require.Empty(t, clone.Remote.Symrefs)
 	require.Equal(t, repo.Remote.Head, clone.Remote.Head)

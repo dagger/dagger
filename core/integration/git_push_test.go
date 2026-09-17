@@ -330,16 +330,18 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	require.Equal(t, sha, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/explicit"))
 	require.Empty(t, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/explicit"))
 
-	// Capturing multiple pushurls must not silently turn one API call into a
-	// fan-out push or choose just the first URL. An explicit to remains usable.
+	// Git pushes to every configured pushurl, but capture retains only the
+	// first: a push routes to one destination. An explicit to remains usable.
 	multiRecipe, err := checkout.WithExec([]string{"git", "config", "--add", "remote.origin.pushurl", fetchURL}).
 		With(daggerShell(`llm | with-workspace --workspace $(current-workspace | snapshot) | portable-id`)).Stdout(ctx)
 	require.NoError(t, err)
 	multi := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(multiRecipe))).Workspace()
+	multiHead, err := multi.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
 	_, err = pushGitRef(ctx, c, multi.Git().Head(), nil, "multiple", nil)
-	require.ErrorContains(t, err, "multiple push URLs")
+	require.NoError(t, err)
+	require.Equal(t, multiHead, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/multiple"))
 	require.Empty(t, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/multiple"))
-	require.Empty(t, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/multiple"))
 	_, err = pushGitRef(ctx, c, multi.Git().Head(), fetchRepo, "multiple-explicit", nil)
 	require.NoError(t, err)
 

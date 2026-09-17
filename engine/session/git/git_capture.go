@@ -54,7 +54,7 @@ type captureLimits struct {
 type captureRemote struct {
 	name, sanitizedURL, ref, advertisedSHA, baseSHA string
 	distance                                        int
-	pushURLs                                        []string
+	pushURL                                         string
 }
 
 // captureAdvertisedRef is one ref a remote currently advertises, reduced to
@@ -190,7 +190,7 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 		remote = captureRemote{baseSHA: state.headSHA}
 	}
 	if remote.name != "" {
-		remote.pushURLs, err = capturePushURLs(ctx, checkout, remote.name, remote.sanitizedURL)
+		remote.pushURL, err = capturePushURL(ctx, checkout, remote.name, remote.sanitizedURL)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +242,7 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 		FormatVersion:       captureGitFormatVersion,
 		ObjectFormat:        state.objectFormat,
 		RemoteUrl:           remote.sanitizedURL,
-		RemotePushUrls:      remote.pushURLs,
+		RemotePushUrl:       remote.pushURL,
 		RemoteRef:           remote.ref,
 		BaseSha:             remote.baseSHA,
 		HeadSha:             state.headSHA,
@@ -595,37 +595,36 @@ func sanitizeRemoteURL(raw string) string {
 }
 
 // Let Git apply pushurl, insteadOf and pushInsteadOf with its own precedence.
-// Preserve multiple destinations so push can reject implicit fan-out rather
-// than silently selecting one. Never probe or authenticate to these URLs here.
-func capturePushURLs(ctx context.Context, checkout, name, fetchURL string) ([]string, error) {
-	out, err := runHostGit(ctx, checkout, "remote", "get-url", "--push", "--all", name)
+// Git pushes to every configured pushurl, but only the first is retained: a
+// push routes to one destination. Never probe or authenticate to it here.
+// Empty when pushes go to the fetch URL.
+func capturePushURL(ctx context.Context, checkout, name, fetchURL string) (string, error) {
+	out, err := runHostGit(ctx, checkout, "remote", "get-url", "--push", name)
 	if err != nil {
-		return nil, errors.New("read checkpoint push destinations failed")
+		return "", errors.New("read checkpoint push destination failed")
 	}
-	var urls []string
-	for _, raw := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
-		if raw == "" {
-			return nil, errors.New("checkpoint remote has an empty push destination")
+	raw := strings.TrimSuffix(out, "\n")
+	if raw == "" {
+		return "", errors.New("checkpoint remote has an empty push destination")
+	}
+	// The sanitizer permits non-URL Git spellings (SCP and local paths).
+	// A malformed scheme URL must not take that fallback and retain an
+	// embedded password. Do not include its text in the error either.
+	if strings.Contains(raw, "://") {
+		if _, err := url.Parse(raw); err != nil {
+			return "", errors.New("checkpoint remote has an invalid push URL")
 		}
-		// The sanitizer permits non-URL Git spellings (SCP and local paths).
-		// A malformed scheme URL must not take that fallback and retain an
-		// embedded password. Do not include its text in the error either.
-		if strings.Contains(raw, "://") {
-			if _, err := url.Parse(raw); err != nil {
-				return nil, errors.New("checkpoint remote has an invalid push URL")
-			}
-		}
-		urls = append(urls, sanitizeRemoteURL(raw))
 	}
-	if len(urls) == 1 && urls[0] == fetchURL {
-		return nil, nil
+	pushURL := sanitizeRemoteURL(raw)
+	if pushURL == fetchURL {
+		return "", nil
 	}
-	return urls, nil
+	return pushURL, nil
 }
 
 func revalidateCaptureRemote(ctx context.Context, checkout string, remote captureRemote) error {
-	pushURLs, err := capturePushURLs(ctx, checkout, remote.name, remote.sanitizedURL)
-	if err != nil || !slices.Equal(pushURLs, remote.pushURLs) {
+	pushURL, err := capturePushURL(ctx, checkout, remote.name, remote.sanitizedURL)
+	if err != nil || pushURL != remote.pushURL {
 		return errors.New("remote push destinations changed during capture; retry")
 	}
 	out, err := runHostGit(ctx, checkout, "ls-remote", "--refs", remote.name, remote.ref)

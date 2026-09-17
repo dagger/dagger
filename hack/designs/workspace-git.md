@@ -333,8 +333,8 @@ enum GitPushDisposition {
 A workspace pushes through `ws.git.head.push(branch: "feature/x")`. Without
 `to`, routing uses the selected remote's push URL, then its fetch URL; default
 origin routing can fall back to the repository's logical URL. Captured push
-routing survives snapshots and subsequent repository edits. A source with
-multiple push URLs requires an explicit `to`.
+routing survives snapshots and subsequent repository edits. A checkout with
+several `pushurl` entries contributes only the first.
 
 An empty or omitted `expectedRemoteSHA` uses ordinary non-force rules, including
 creation of a missing ref. A supplied SHA permits replacement only under that

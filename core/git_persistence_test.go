@@ -20,7 +20,7 @@ func TestGitRepositoryRemotesPersistence(t *testing.T) {
 	for _, remotes := range [][]GitRemote{
 		nil,
 		{
-			{Name: "origin", URL: "https://fetch.test/repo", PushURLs: []string{"ssh://git@example.test/repo", "https://other.test/repo"}},
+			{Name: "origin", URL: "https://fetch.test/repo", PushURL: "ssh://git@example.test/repo"},
 			{Name: "upstream", URL: "https://upstream.test/repo"},
 		},
 	} {

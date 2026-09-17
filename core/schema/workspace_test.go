@@ -193,16 +193,16 @@ func TestWorkspaceExportBaseCandidate(t *testing.T) {
 			repo := &core.GitRepository{
 				Backend: backend,
 				URL:     dagql.NonNull(dagql.String("https://example.com/origin.git")),
-				Remotes: []core.GitRemote{{Name: "origin", URL: "https://example.com/origin.git", PushURLs: []string{"ssh://git@example.com/push.git"}}},
+				Remotes: []core.GitRemote{{Name: "origin", URL: "https://example.com/origin.git", PushURL: "ssh://git@example.com/push.git"}},
 			}
-			metadata := &gitsession.CaptureGitMetadata{HeadSha: sha, RemoteUrl: string(repo.URL.Value), RemotePushUrls: append([]string(nil), repo.Remotes[0].PushURLs...)}
+			metadata := &gitsession.CaptureGitMetadata{HeadSha: sha, RemoteUrl: string(repo.URL.Value), RemotePushUrl: repo.Remotes[0].PushURL}
 			switch scenario {
 			case "matching no remote":
 				repo.URL, repo.Remotes = dagql.Nullable[dagql.String]{}, nil
-				metadata.RemoteUrl, metadata.RemotePushUrls = "", nil
+				metadata.RemoteUrl, metadata.RemotePushUrl = "", ""
 			case "matching implicit origin":
 				repo.Remotes = nil
-				metadata.RemotePushUrls = nil
+				metadata.RemotePushUrl = ""
 			case "origin mismatch":
 				repo.Remotes[0].URL = "https://example.com/other.git"
 			case "extra remote":
@@ -212,7 +212,7 @@ func TestWorkspaceExportBaseCandidate(t *testing.T) {
 			case "routing mismatch":
 				metadata.RemoteUrl = "https://example.com/other.git"
 			case "push mismatch":
-				metadata.RemotePushUrls = nil
+				metadata.RemotePushUrl = ""
 			case "remote backend":
 				repo.Backend = &core.RemoteGitRepository{}
 			}

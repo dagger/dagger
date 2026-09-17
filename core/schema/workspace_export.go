@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -214,14 +213,14 @@ func workspaceExportBaseCandidate(ws *core.Workspace, metadata *gitsession.Captu
 	if repo.URL.Valid {
 		url = string(repo.URL.Value)
 	}
-	var pushURLs []string
+	pushURL := ""
 	for _, remote := range repo.Remotes {
 		if remote.Name != "origin" || remote.URL != metadata.RemoteUrl {
 			return none, false
 		}
-		pushURLs = remote.PushURLs
+		pushURL = remote.PushURL
 	}
-	if url != metadata.RemoteUrl || !slices.Equal(pushURLs, metadata.RemotePushUrls) {
+	if url != metadata.RemoteUrl || pushURL != metadata.RemotePushUrl {
 		return none, false
 	}
 	return source.Ref, true

@@ -365,13 +365,13 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	}
 
 	nextPhase("checkpoint construct HEAD workspace")
-	if len(metadata.RemotePushUrls) > 0 {
+	if metadata.RemotePushUrl != "" {
 		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
-			Field: "__withCapturedRemote",
+			Field: "withRemote",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString("origin")},
 				{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)},
-				{Name: "pushUrls", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(metadata.RemotePushUrls...))},
+				{Name: "pushUrl", Value: dagql.NewString(metadata.RemotePushUrl)},
 			},
 		}); err != nil {
 			return inst, fmt.Errorf("record workspace push destinations: %w", err)
