@@ -147,7 +147,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 	if err := p.version.check(row); err != nil {
 		return nil, err
 	}
-	return p, nil
+	return p.seal(row, nil)
 }
 
 // addProducedOutputs merges the saved operation's outputs for every write-set

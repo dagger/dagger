@@ -63,21 +63,53 @@ type PreparedReadyPart struct {
 	extraProtections  []*partProtection
 	extraAccessors    []snapshots.ImmutableRef
 	beforeSyncCleanup *partCleanup
-	// expectedRepresentation is the receiver representation a preparation
-	// with a prepared prefix requires at Commit: the one that prefix will have
-	// published. It is set only together with expectedPredecessors; with none,
-	// Commit holds the preparation to its own observation (version), whichever
-	// constructor built it. Only cache orchestration can supply a non-nil
-	// base, so this is never caller-supplied wire data.
+	// expectedRepresentation is the receiver representation this preparation
+	// requires at Commit: its own observation, or with a prepared prefix the
+	// one that prefix will have published. seal sets it for every
+	// constructor. Only cache orchestration can supply a non-nil base, so
+	// this is never caller-supplied wire data.
 	expectedRepresentation readyPartRepresentation
 	// expectedPredecessors names each preceding address of the same receiver
 	// and the owning installation identity reserved for it. Copied scalars
 	// only: no task authority, receipt, hold or live carrier is borrowed.
 	expectedPredecessors []readyPartPredecessor
-	// published is the envelope pointer an encoded Commit installs. It is
-	// allocated during preparation so a successor prepared from this
-	// representation can name the exact pointer it must find.
+	// published is the envelope pointer an encoded Commit installs. seal
+	// allocates it for every encoded preparation, so a successor prepared from
+	// this representation can name the exact pointer it must find.
 	published *PersistedResultEnvelope
+	// sealed records that the constructor finished with seal. Commit refuses
+	// an unsealed preparation with an error, never with a reselect.
+	sealed bool
+}
+
+// seal is the step every constructor of a PreparedReadyPart ends with. It
+// establishes what Commit relies on, in one place: the receiver
+// representation Commit must find, the predecessors whose installations it
+// must see, and for an encoded receiver the envelope it installs. A typed
+// receiver must carry its prepared store instead. A preparation that breaks
+// this is a construction defect and is reported as one: answering it with a
+// reselect would send its caller round an unbounded retry.
+func (p *PreparedReadyPart) seal(row *sharedResult, base *readyPartPreparationBase) (*PreparedReadyPart, error) {
+	observed := p.version.payload
+	if observed.hasValue != (p.store != nil) {
+		return nil, fmt.Errorf("prepare part: typed receiver %t but prepared store %t", observed.hasValue, p.store != nil)
+	}
+	p.expectedRepresentation = readyPartRepresentation{
+		receiver:        row,
+		payloadRevision: observed.payloadRevision,
+		envelope:        observed.persistedEnvelope,
+		hasValue:        observed.hasValue,
+	}
+	if base != nil {
+		p.expectedRepresentation = base.expected
+		p.expectedPredecessors = slices.Clone(base.predecessors)
+	}
+	if !observed.hasValue {
+		env := p.next.Envelope
+		p.published = &env
+	}
+	p.sealed = true
+	return p, nil
 }
 
 // readyPartRepresentation is the receiver stamp a Commit must find: the
@@ -221,8 +253,6 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 			version.payload.hasValue != base.original.hasValue {
 			return nil, ErrPartReselect
 		}
-		p.expectedRepresentation = base.expected
-		p.expectedPredecessors = slices.Clone(base.predecessors)
 		// Build the next representation from the validated prefix, not from
 		// the real record, so this envelope contains every earlier role.
 		current = base.record
@@ -263,12 +293,6 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 	if err != nil {
 		return nil, err
 	}
-	if !version.payload.hasValue {
-		// Allocate the envelope this Commit will publish, so an ordered
-		// successor can expect that exact pointer.
-		env := p.next.Envelope
-		p.published = &env
-	}
 	if version.payload.hasValue {
 		if err := p.prepareValueStore(ctx, row, current); err != nil {
 			return nil, err
@@ -277,7 +301,7 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 	if err := version.check(row); err != nil {
 		return nil, err
 	}
-	return p, nil
+	return p.seal(row, base)
 }
 
 // preparePartDependenciesLocked computes every fallible graph/requirement
@@ -444,6 +468,18 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if err := context.Cause(ctx); err != nil {
 		return nil, PartInstallRefused, err
 	}
+	// Construction invariants, checked before any lock. A violation is a
+	// defect in the constructor, not a changed source: it is an error, so no
+	// retry loop can mistake it for a reason to select again.
+	if !p.sealed {
+		return nil, PartInstallRefused, fmt.Errorf("commit part: preparation was not sealed by its constructor")
+	}
+	if p.store == nil && p.published == nil {
+		return nil, PartInstallRefused, fmt.Errorf("commit part: encoded preparation carries no envelope to install")
+	}
+	if p.store != nil && p.published != nil {
+		return nil, PartInstallRefused, fmt.Errorf("commit part: preparation carries both a typed store and an envelope")
+	}
 	// A preparation with a prepared prefix deliberately no longer matches the
 	// original observation: its prefix has published since. Its expected
 	// representation and every predecessor's installation identity are
@@ -592,19 +628,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	}
 	row.payloadMu.Lock()
 	defer row.payloadMu.Unlock()
-	// With no prepared prefix the expectation is the preparation's own
-	// observation, whichever constructor built it: a lazy operation's
-	// publication is prepared by prepareEvaluatedParts and records no
-	// expected representation.
-	expected := readyPartRepresentation{
-		receiver:        row,
-		payloadRevision: p.version.payload.payloadRevision,
-		envelope:        p.version.payload.persistedEnvelope,
-		hasValue:        p.version.payload.hasValue,
-	}
-	if len(p.expectedPredecessors) > 0 {
-		expected = p.expectedRepresentation
-	}
+	expected := p.expectedRepresentation
 	if row.payloadRevision != expected.payloadRevision || row.hasValue != expected.hasValue || row.persistedEnvelope != expected.envelope {
 		return nil, PartInstallRefused, partRefused("commit: receiver representation")
 	}
