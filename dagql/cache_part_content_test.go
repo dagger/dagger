@@ -782,6 +782,7 @@ func (o *renewalFallbackOperation) Release(context.Context) error { return nil }
 type exhaustionFixture struct {
 	ctx       context.Context
 	cache     *Cache
+	srv       *Server
 	transport *contentTestTransport
 	receiver  AnyResult
 	donor     AnyResult
@@ -795,7 +796,7 @@ func newExhaustionFixture(t *testing.T, chains ...chainFixture) *exhaustionFixtu
 	store := testutil.NewStore(t)
 	ctx, c, srv := transferTestCache(t)
 	c.snapshotManager = store.Manager
-	f := &exhaustionFixture{ctx: ctx, cache: c, transport: newContentTestTransport(), operation: new(renewalFallbackOperation), address: PersistedPartAddress{Part: "snapshot"}}
+	f := &exhaustionFixture{ctx: ctx, cache: c, srv: srv, transport: newContentTestTransport(), operation: new(renewalFallbackOperation), address: PersistedPartAddress{Part: "snapshot"}}
 	for _, chain := range chains {
 		for i, blob := range chain.blobs {
 			f.transport.serve(fmt.Sprintf("https://fixed.invalid/%s/%d", chain.tag, i), blob)
