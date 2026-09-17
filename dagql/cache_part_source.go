@@ -379,6 +379,65 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 	}
 	return record, version, probe, nil
 }
+// probeAllParts describes every declared part of one row, outside E, with the
+// same nonblocking capture and gate reads probePart uses for one address. It
+// performs no typed decode, open, hash, content request or evaluation.
+func (c *Cache) probeAllParts(ctx context.Context, row *sharedResult) (PersistedRecord, capturedRowRevision, []PartProbe, error) {
+	var version capturedRowRevision
+	record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
+	if err != nil {
+		return record, version, nil, err
+	}
+	var probes []PartProbe
+	err = walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		d, ok := f.Transfer.(PersistedPartDescriber)
+		if !ok {
+			return v.Payload, nil
+		}
+		found, err := d.DescribeParts(v)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range found {
+			p.Descriptor.Family = f.Name
+			p.DescriptorRev = version.payload.payloadRevision
+			p.captured = &partProbeCapture{row: row, record: record, version: version}
+			probes = append(probes, p)
+		}
+		return v.Payload, nil
+	})
+	if err != nil {
+		return record, version, nil, err
+	}
+	if err = version.check(row); err != nil {
+		return record, version, nil, err
+	}
+	if gate := row.partGate.gate.Load(); gate != nil {
+		gate.mu.Lock()
+		for i := range probes {
+			key, err := partAddressKey(probes[i].Descriptor.Address)
+			if err != nil {
+				continue
+			}
+			state := gate.outputs[key]
+			probes[i].Busy = state.phase == PartOutputInstalled
+			probes[i].OutputRev = OutputRevision(state.installation)
+			for _, group := range gate.groups {
+				if group.phase == LazyEvaluationRunning && containsPart(group.writeSet, probes[i].Descriptor.Address) {
+					probes[i].Busy = true
+				}
+			}
+			for _, writer := range gate.writers {
+				if containsPart([]PersistedPartAddress{writer.address}, probes[i].Descriptor.Address) {
+					probes[i].Busy = true
+				}
+			}
+		}
+		gate.mu.Unlock()
+	}
+	return record, version, probes, nil
+}
+
 func (c *Cache) AcquireEquivalentPartSource(ctx context.Context, receiver AnyResult, address PersistedPartAddress) (*PartSourceLease, error) {
 	source, _, err := c.scanPartSources(ctx, receiver, address, partDemandFromContext(ctx))
 	return source, err

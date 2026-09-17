@@ -2,8 +2,12 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
+	"time"
 )
 
 // Early snapshot sharing gives an imported row R its own ownership of a
@@ -480,8 +484,354 @@ func (c *Cache) recordShareCleanupError(err error) {
 	c.recordReleaseCleanupError("", true, fmt.Errorf("snapshot sharing: %w", err))
 }
 
+// shareSlotNeedsServices reports whether installing this slot reconstructs
+// persisted Service objects, which is the only part of a typed preparation
+// that needs the engine's registered root and default-dependency factory.
+func (slot *shareSlot) shareSlotNeedsServices() bool {
+	if !slot.receiver.version.payload.hasValue {
+		// An encoded receiver keeps the exact service IDs without decoding
+		// them, so it needs no schema at all.
+		return false
+	}
+	return slot.probe.Descriptor.Value != nil && len(slot.probe.Descriptor.Value.Services) > 0
+}
+
+func (slot *shareSlot) shareServiceRoots() []uint64 {
+	if slot.probe.Descriptor.Value == nil {
+		return nil
+	}
+	roots := make([]uint64, 0, len(slot.probe.Descriptor.Value.Services))
+	for _, svc := range slot.probe.Descriptor.Value.Services {
+		roots = append(roots, svc.ServiceResultID)
+	}
+	return roots
+}
+
+// shareSlotContext builds one slot's preparation context outside every lock:
+// the marked worker base, the receiver's exact recorded call, and, only for a
+// typed preparation that must reconstruct services, the engine's registered
+// context and its schema-only server bound through DagQL's own server helper
+// so a decoder cannot fall back to the root's client-dependent server.
+//
+// Root, factory and native decoder availability are all checked before the
+// first exact reference load.
+func (c *Cache) shareSlotContext(ctx context.Context, slot *shareSlot) (context.Context, error) {
+	if call := slot.receiver.record.Call; call != nil {
+		ctx = ContextWithCall(ctx, call)
+	}
+	if !slot.shareSlotNeedsServices() {
+		return ctx, nil
+	}
+	prepare := c.partPreparationContext()
+	if prepare == nil {
+		return nil, fmt.Errorf("%w: no registered preparation context for a typed service receiver", ErrSnapshotShareIneligible)
+	}
+	prepared, srv, err := prepare(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: preparation context: %w", ErrSnapshotShareIneligible, err)
+	}
+	if srv == nil {
+		return nil, fmt.Errorf("%w: preparation context supplied no server", ErrSnapshotShareIneligible)
+	}
+	if err := c.preflightShareDecode(prepared, slot.shareServiceRoots()); err != nil {
+		return nil, err
+	}
+	return srvToContext(prepared, srv), nil
+}
+
 // runSnapshotSharePass probes the frozen cohort and installs what it can.
 func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareItem) {
+	for _, slot := range c.selectShareSlots(ctx, item) {
+		slotCtx, err := c.shareSlotContext(ctx, slot)
+		if err != nil {
+			c.traceShareSkip(ctx, slot.receiver.row, slot.address, err)
+			continue
+		}
+		_ = slotCtx
+	}
+}
+
+// PartPreparationContext builds the engine-root context and schema-only
+// server a typed sharing preparation needs to decode persisted services. The
+// cache never constructs one itself: a cache with no registered callback
+// treats a typed receiver that needs service construction as ineligible, and
+// leaves service-free and encoded installs available.
+type PartPreparationContext func(context.Context) (context.Context, *Server, error)
+
+// ErrSnapshotShareIneligible marks a slot the pass will not attempt. It is a
+// skip, not a failure: it changes no row state and no lookup eligibility.
+var ErrSnapshotShareIneligible = errors.New("snapshot share ineligible")
+
+// SetPartPreparationContext registers the engine's preparation callback. It
+// is set once before live sharing admission; replacing it after admission is
+// an initialization error, and NewCache defaults it to nil.
+func (c *Cache) SetPartPreparationContext(prepare PartPreparationContext) error {
+	if c == nil {
+		return fmt.Errorf("set part preparation context: nil cache")
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	if c.shareAdmission == snapshotShareOn && c.partPreparation != nil {
+		return fmt.Errorf("set part preparation context: already registered and admitted")
+	}
+	c.partPreparation = prepare
+	return nil
+}
+
+func (c *Cache) partPreparationContext() PartPreparationContext {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.partPreparation
+}
+
+// clearPartPreparationContext drops the registered callback after the cache
+// has drained. A decoded value never retains it.
+func (c *Cache) clearPartPreparationContext() {
+	if c == nil {
+		return
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	c.partPreparation = nil
+}
+
+// shareRowProbe is one member's unlocked observation: its copied record, the
+// revision that observation belongs to, and its declared parts by full
+// address. No graph lock is held while it is taken.
+type shareRowProbe struct {
+	row     *sharedResult
+	record  PersistedRecord
+	version capturedRowRevision
+	probes  map[string]PartProbe
+	order   []string
+	usable  bool
+}
+
+// shareSlot is one selected (receiver, full address) installation with its
+// chosen donor. The pass owns it; it holds no lease or permit until its Body
+// admits one.
+type shareSlot struct {
+	receiver   *shareRowProbe
+	donor      *shareRowProbe
+	address    PersistedPartAddress
+	addressKey string
+	probe      PartProbe
+}
+
+// shareMemberOrder is the deterministic member order used for both receiver
+// visits and donor ties: ascending registered result ID.
+func shareMemberOrder(members map[sharedResultID]*sharedResult) []*sharedResult {
+	rows := make([]*sharedResult, 0, len(members))
+	for _, row := range members {
+		rows = append(rows, row)
+	}
+	slices.SortFunc(rows, func(a, b *sharedResult) int { return int(a.id) - int(b.id) })
+	return rows
+}
+
+// probeShareMembers observes every cohort member without graph locks. An
+// unreadable member is skipped, not an error: its state is simply not stable
+// enough to share from or into during this pass.
+func (c *Cache) probeShareMembers(ctx context.Context, rows []*sharedResult) map[sharedResultID]*shareRowProbe {
+	out := make(map[sharedResultID]*shareRowProbe, len(rows))
+	for _, row := range rows {
+		probe := &shareRowProbe{row: row, probes: map[string]PartProbe{}}
+		out[row.id] = probe
+		if row.attachmentState() != resultAttachmentClean {
+			// An unfinished or failed publication is skipped. A queue hold
+			// taken by the early publication flush can retain such a row for
+			// exactly one pass; releasing the cohort ends that retention.
+			continue
+		}
+		record, version, probes, err := c.probeAllParts(ctx, row)
+		if err != nil {
+			// A busy or not-yet-ready row is an ordinary skip; its cause
+			// belongs to diagnostics, not to a row-sticky sharing error.
+			c.traceShareSkip(ctx, row, PersistedPartAddress{}, err)
+			continue
+		}
+		probe.record, probe.version = record, version
+		for _, p := range probes {
+			key, err := partAddressKey(p.Descriptor.Address)
+			if err != nil {
+				continue
+			}
+			if _, seen := probe.probes[key]; seen {
+				continue
+			}
+			probe.probes[key] = p
+			probe.order = append(probe.order, key)
+		}
+		slices.Sort(probe.order)
+		probe.usable = true
+	}
+	return out
+}
+
+// shareReceiverEligible reports the graph-visible facts a receiver needs. The
+// pending-part decision belongs to the unlocked probe, not here.
+func (c *Cache) shareReceiverEligibleLocked(row *sharedResult, now int64) bool {
+	return row != nil && row.imported && c.resultsByID[row.id] == row && !partRowExpired(row, now)
+}
+
+// shareDonorReady is the unlocked half of the Ready donor rule: a stable
+// complete descriptor for that address, real bytes behind it, no overlapping
+// writer and no unfinished ownership bookkeeping for that output. The applied
+// role naming the same SnapshotID is proved under E by the sessionless
+// constructor.
+func shareDonorReady(p PartProbe) bool {
+	return p.LocalComplete && !p.Busy && !p.Descriptor.Absent &&
+		p.Descriptor.SnapshotID != "" && p.Descriptor.Value != nil
+}
+
+// shareReceiverPending selects an eligible missing address. Legal absence is
+// already final, an installed or complete part is never overwritten, and a
+// part with no snapshot descriptor on the donor side is not a
+// snapshot-sharing target at all.
+func shareReceiverPending(p PartProbe) bool {
+	return !p.LocalComplete && !p.Busy && !p.Descriptor.Absent
+}
+
+// selectShareSlots picks one Ready donor for each eligible missing address,
+// in deterministic member and address order. Probing an unready earlier
+// member does not prevent examining a later Ready member.
+func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) []*shareSlot {
+	rows := shareMemberOrder(item.members)
+	now := time.Now().Unix()
+	c.egraphMu.RLock()
+	eligible := make(map[sharedResultID]bool, len(rows))
+	for _, row := range rows {
+		eligible[row.id] = c.shareReceiverEligibleLocked(row, now)
+	}
+	c.egraphMu.RUnlock()
+
+	observed := c.probeShareMembers(ctx, rows)
+	var slots []*shareSlot
+	taken := map[sharedResultID]map[string]bool{}
+	for _, row := range rows {
+		if !eligible[row.id] {
+			continue
+		}
+		receiver := observed[row.id]
+		if receiver == nil || !receiver.usable {
+			continue
+		}
+		for _, key := range receiver.order {
+			if !shareReceiverPending(receiver.probes[key]) {
+				continue
+			}
+			if taken[row.id][key] {
+				continue
+			}
+			for _, candidate := range rows {
+				if candidate == row {
+					continue
+				}
+				donor := observed[candidate.id]
+				if donor == nil || !donor.usable {
+					continue
+				}
+				p, ok := donor.probes[key]
+				if !ok || !shareDonorReady(p) {
+					continue
+				}
+				if taken[row.id] == nil {
+					taken[row.id] = map[string]bool{}
+				}
+				taken[row.id][key] = true
+				slots = append(slots, &shareSlot{
+					receiver:   receiver,
+					donor:      donor,
+					address:    clonePartAddress(p.Descriptor.Address),
+					addressKey: key,
+					probe:      p,
+				})
+				break
+			}
+		}
+	}
+	return slots
+}
+
+// traceShareSkip records one pass diagnostic. Sharing adds no fixture event
+// kind: a sharing Commit emits the existing installed-ready, and until batch
+// 7's sharing report group exists the absence of selected-ready distinguishes
+// it from a demand install.
+func (c *Cache) traceShareSkip(ctx context.Context, row *sharedResult, address PersistedPartAddress, cause error) {
 	_ = ctx
-	_ = item
+	slog.Debug("snapshot sharing skipped", "row", uint64(row.id), "part", string(address.Part), "cause", cause)
+}
+
+// preflightShareDecode checks, before any shared persisted-decode attempt is
+// created, that every exact record the selected decoding closure will load
+// belongs to an audited background-admitted family. It walks the copied
+// encoded records with batch 2's reference visitor, following the declared
+// child references a decoder actually loads; the recorded call's descriptive
+// references and storage roles are not decoding requests. Rows are held for
+// the walk, and a cycle is detected rather than followed.
+//
+// An unavailable family is ShareIneligible: a skip decided here, never a
+// guard trip inside a shared attempt that a foreground joiner would also see.
+func (c *Cache) preflightShareDecode(ctx context.Context, roots []uint64) error {
+	if len(roots) == 0 {
+		return nil
+	}
+	seen := map[uint64]bool{}
+	var held []*sharedResult
+	defer func() {
+		for _, row := range held {
+			if err := c.releasePartRow(context.WithoutCancel(ctx), row); err != nil {
+				c.recordShareCleanupError(err)
+			}
+		}
+	}()
+	queue := slices.Clone(roots)
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if id == 0 || seen[id] {
+			// A reference back into the walk is a cycle: already checked.
+			continue
+		}
+		seen[id] = true
+		c.egraphMu.Lock()
+		row := c.resultsByID[sharedResultID(id)]
+		if row != nil {
+			c.incrementIncomingOwnershipLocked(ctx, row)
+		}
+		c.egraphMu.Unlock()
+		if row == nil {
+			return fmt.Errorf("%w: exact reference %d is not registered", ErrSnapshotShareIneligible, id)
+		}
+		held = append(held, row)
+		var version capturedRowRevision
+		record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
+		if err != nil {
+			return fmt.Errorf("%w: exact reference %d is not readable: %w", ErrSnapshotShareIneligible, id, err)
+		}
+		// Inline payloads count too: a list row's items carry their own
+		// object families, and each is decoded by its own native decoder.
+		env := record.Envelope
+		if err := walkTransferPayloads(&env, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+			if !f.BackgroundDecode {
+				return nil, fmt.Errorf("%w: payload family %q is not admitted for background decode", ErrSnapshotShareIneligible, f.Name)
+			}
+			return v.Payload, nil
+		}); err != nil {
+			if errors.Is(err, ErrSnapshotShareIneligible) {
+				return err
+			}
+			return fmt.Errorf("%w: payload families of row %d: %w", ErrSnapshotShareIneligible, id, err)
+		}
+		if _, err := VisitEncodedReferences(record, func(ref *PersistedRef) error {
+			if ref.Kind != PersistedRefChild || ref.ResultID == 0 {
+				return nil
+			}
+			queue = append(queue, ref.ResultID)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("%w: exact references of row %d: %w", ErrSnapshotShareIneligible, id, err)
+		}
+	}
+	return nil
 }

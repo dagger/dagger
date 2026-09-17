@@ -535,6 +535,13 @@ type PersistedObjectFamily struct {
 	// Visitor walks the family's declared references.
 	Visitor  PersistedPayloadVisitor
 	Transfer PersistedTransferCodec
+	// BackgroundDecode marks a family whose decoder has been audited for a
+	// background, sessionless decode attempt: it loads only exact persisted
+	// references and performs no client lookup, service start, schema
+	// evaluation or output evaluation. It is false by default, so a newly
+	// registered or unaudited decoder makes a receiver that needs it
+	// ineligible for early sharing instead of entering a shared attempt.
+	BackgroundDecode bool
 }
 
 var (

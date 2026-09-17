@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -123,6 +124,13 @@ func (s *PartContentSource) Available(offer PersistedPartOffer, now time.Time) b
 // Provider freezes the copied offer's layers and copies its addresses. It
 // creates no request.
 func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOffer, demand *PartDemandState) content.InfoReaderProvider {
+	// Provider returns an interface rather than an error, so marked
+	// construction returns a refusing provider. The check precedes the
+	// override lookup: a gated engine installs a fixture override, and a
+	// marked context must not reach the delegate that counts reads.
+	if engine.IsSnapshotSharePreparation(ctx) {
+		return refusingContentProvider{}
+	}
 	if override := s.loadOverride(); override != nil {
 		return override.Provider(ctx, offer, demand)
 	}
@@ -577,6 +585,12 @@ func (d *PartDemandState) causes() error {
 }
 func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit, demand *PartDemandState) (rerr error) {
 	defer func() { rerr = errors.Join(rerr, source.Release(ctx)); permit.Release() }()
+	// The content-source boundary: refuse before the offer clone and before
+	// the fixture's provider-read counter, so the sentinel precedes any
+	// observable read.
+	if err := engine.CheckSnapshotSharePreparation(ctx, "acquire chain content"); err != nil {
+		return err
+	}
 	if c.snapshotManager == nil {
 		return fmt.Errorf("chain acquisition: no snapshot manager")
 	}
@@ -696,4 +710,17 @@ func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address Persi
 }
 func (c *Cache) retireFinalPartOffersLocked(ctx context.Context, row *sharedResult, address PersistedPartAddress) (collectionQueue, error) {
 	return c.retirePartOfferLocked(ctx, row, address)
+}
+
+// refusingContentProvider holds no pointer to the source, the transport or
+// the renewal bridge. Info and ReaderAt return the sentinel without touching
+// any of them.
+type refusingContentProvider struct{}
+
+func (refusingContentProvider) Info(context.Context, digest.Digest) (content.Info, error) {
+	return content.Info{}, engine.ErrSnapshotShareEvaluation
+}
+
+func (refusingContentProvider) ReaderAt(context.Context, ocispecs.Descriptor) (content.ReaderAt, error) {
+	return nil, engine.ErrSnapshotShareEvaluation
 }

@@ -475,6 +475,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
+	// Early snapshot sharing is admitted only on an engine that can receive
+	// imports, after restored ownership is ready and before any external
+	// control or request can arrive.
+	if err := srv.initSnapshotSharing(ctx, opts); err != nil {
+		return nil, err
+	}
+
 	// The integration attaches after local cache initialization and before
 	// the server dispatches any request.
 	if err := srv.startRemoteCacheIntegration(opts.RemoteCacheIntegration); err != nil {

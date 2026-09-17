@@ -1522,6 +1522,12 @@ func (sess *daggerSession) clientRuntimeForRecord(record *clientRecord) (*client
 // ClientScope from that exact session. Metadata alone is never execution
 // authority.
 func (srv *Server) executableClientFromContext(ctx context.Context) (*clientRuntime, error) {
+	// Guards never grant authority, and they are checked before it: an
+	// accidental ClientScope on a share's preparation context does not make
+	// this lookup legitimate.
+	if err := engine.CheckSnapshotSharePreparation(ctx, "look up executable client"); err != nil {
+		return nil, err
+	}
 	scope, ok := engine.ClientScopeFromContext(ctx)
 	if !ok {
 		return nil, errors.New("executable client lookup requires a client scope")

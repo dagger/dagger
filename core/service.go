@@ -513,6 +513,9 @@ func (svc *Service) Start(
 	dig digest.Digest,
 	opts ServiceStartOpts,
 ) error {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "start service"); err != nil {
+		return err
+	}
 	switch {
 	case svc.Container.Self() != nil:
 		return svc.startContainer(ctx, running, dig, opts)
