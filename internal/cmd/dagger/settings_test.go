@@ -18,14 +18,50 @@ func TestWorkspaceSettingWriteValue(t *testing.T) {
 	listSetting := workspaceSetting{Module: "vitest", Key: "tags", IsList: true}
 	scalarSetting := workspaceSetting{Module: "aws", Key: "region"}
 
-	t.Run("a single value passes through unchanged", func(t *testing.T) {
-		for _, setting := range []workspaceSetting{listSetting, scalarSetting} {
-			for _, value := range []string{"plain", "a,b", "[abc]*", ""} {
-				got, values, err := workspaceSettingWriteValue(setting, []string{value})
-				require.NoError(t, err)
-				require.Equal(t, value, got)
-				require.Nil(t, values)
-			}
+	t.Run("a single value for a scalar setting passes through unchanged", func(t *testing.T) {
+		for _, value := range []string{"plain", "a,b", "[abc]*", ""} {
+			got, values, err := workspaceSettingWriteValue(scalarSetting, []string{value})
+			require.NoError(t, err)
+			require.Equal(t, value, got)
+			require.Nil(t, values)
+		}
+	})
+
+	t.Run("a single value for a list setting becomes an explicit list", func(t *testing.T) {
+		for value, want := range map[string][]string{
+			".":                 {"."},
+			"a,b":               {"a", "b"},
+			"[.]":               {"."},
+			"[a, b]":            {"a", "b"},
+			`["a,b", "c"]`:      {"a,b", "c"},
+			`["C:\foo"]`:        {`C:\foo`},
+			"[abc]*":            {"[abc]*"},
+			"smoke, regression": {"smoke", "regression"},
+		} {
+			got, values, err := workspaceSettingWriteValue(listSetting, []string{value})
+			require.NoError(t, err, value)
+			require.Empty(t, got, value)
+			require.Equal(t, want, values, value)
+		}
+	})
+
+	t.Run("an empty list writes the [] value with an empty explicit list", func(t *testing.T) {
+		value, values, err := workspaceSettingWriteValue(listSetting, []string{"[]"})
+		require.NoError(t, err)
+		require.Equal(t, "[]", value)
+		require.NotNil(t, values)
+		require.Empty(t, values)
+	})
+
+	t.Run("malformed single values for a list setting fail", func(t *testing.T) {
+		for value, wantErr := range map[string]string{
+			"":          "list value is empty",
+			"a,b,":      "list value has an empty element",
+			`["a" "b"]`: "list value has unexpected text",
+			`[a"b]`:     "list value has a stray quote",
+		} {
+			_, _, err := workspaceSettingWriteValue(listSetting, []string{value})
+			require.ErrorContains(t, err, `setting "tags" of module "vitest" is a list: `+wantErr, value)
 		}
 	})
 
@@ -52,6 +88,12 @@ func TestWorkspaceSettingWriteValue(t *testing.T) {
 		_, _, err := workspaceSettingWriteValue(workspaceSetting{Module: "m", Key: "k"}, []string{"one", "two"})
 		require.ErrorContains(t, err, "is not a list")
 	})
+}
+
+func TestWorkspaceSettingDisplayValue(t *testing.T) {
+	require.Equal(t, "us-west-2", workspaceSettingDisplayValue(workspaceSetting{Value: "us-west-2", DefaultValue: "us-east-1"}))
+	require.Equal(t, "us-east-1 (default)", workspaceSettingDisplayValue(workspaceSetting{DefaultValue: "us-east-1"}))
+	require.Equal(t, "", workspaceSettingDisplayValue(workspaceSetting{}))
 }
 
 func TestIsUndefinedEnvError(t *testing.T) {

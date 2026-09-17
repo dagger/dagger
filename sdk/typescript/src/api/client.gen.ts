@@ -17348,6 +17348,7 @@ export class WorkspaceModule extends BaseClient {
  */
 export class WorkspaceModuleSetting extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _defaultValue?: string = undefined
   private readonly _description?: string = undefined
   private readonly _isList?: boolean = undefined
   private readonly _isObject?: boolean = undefined
@@ -17360,6 +17361,7 @@ export class WorkspaceModuleSetting extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _defaultValue?: string,
     _description?: string,
     _isList?: boolean,
     _isObject?: boolean,
@@ -17369,6 +17371,7 @@ export class WorkspaceModuleSetting extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._defaultValue = _defaultValue
     this._description = _description
     this._isList = _isList
     this._isObject = _isObject
@@ -17387,6 +17390,21 @@ export class WorkspaceModuleSetting extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+   */
+  defaultValue = async (): Promise<string> => {
+    if (this._defaultValue) {
+      return this._defaultValue
+    }
+
+    const ctx = this._ctx.select("defaultValue")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -17452,7 +17470,7 @@ export class WorkspaceModuleSetting extends BaseClient {
   }
 
   /**
-   * The configured value after applying the selected workspace environment, or empty when unset.
+   * The value stored in workspace config after applying the selected workspace environment, or empty when unset.
    */
   value = async (): Promise<string> => {
     if (this._value) {

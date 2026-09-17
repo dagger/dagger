@@ -254,11 +254,12 @@ func (s *workspaceSchema) moduleSettings(
 			}
 		}
 		settings = append(settings, &core.WorkspaceModuleSetting{
-			Key:         hint.Name,
-			Value:       value,
-			Description: hint.Description,
-			IsList:      hint.IsList,
-			IsObject:    hint.IsObject,
+			Key:          hint.Name,
+			Value:        value,
+			Description:  hint.Description,
+			DefaultValue: hint.DefaultValue,
+			IsList:       hint.IsList,
+			IsObject:     hint.IsObject,
 		})
 	}
 
