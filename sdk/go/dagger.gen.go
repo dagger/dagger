@@ -11169,9 +11169,9 @@ type LLMTranscriptOpts struct {
 	Last int
 	// Number of matching messages to skip. Skips from the end when last is positive, otherwise from the start. Must be non-negative.
 	Offset int
-	// Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing.
+	// Only include these message roles. Omitted or empty includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts.
 	Roles []LLMMessageRole
-	// Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots.
+	// Only render these content block kinds. Omitted or empty includes all renderable kinds. Messages without matching renderable content do not consume pagination slots.
 	ContentKinds []LLMContentBlockKind
 }
 

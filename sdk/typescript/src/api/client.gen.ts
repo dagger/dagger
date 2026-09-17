@@ -2295,12 +2295,12 @@ export type LLMTranscriptOpts = {
   offset?: number
 
   /**
-   * Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing.
+   * Only include these message roles. Omitted or empty includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts.
    */
   roles?: LLMMessageRole[]
 
   /**
-   * Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots.
+   * Only render these content block kinds. Omitted or empty includes all renderable kinds. Messages without matching renderable content do not consume pagination slots.
    */
   contentKinds?: LLMContentBlockKind[]
 }
@@ -11747,8 +11747,8 @@ export class LLM extends BaseClient {
    * @param opts.limit Maximum number of matching messages from the start, after offset. Must be non-negative. Zero is equivalent to omitting this argument. Positive limit and last values are mutually exclusive. If neither is positive, return all matching messages after offset.
    * @param opts.last Maximum number of matching messages from the end, after offset. Must be non-negative. Zero is equivalent to omitting this argument. Positive limit and last values are mutually exclusive.
    * @param opts.offset Number of matching messages to skip. Skips from the end when last is positive, otherwise from the start. Must be non-negative.
-   * @param opts.roles Only include these message roles. Omitted includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts. An empty list matches nothing.
-   * @param opts.contentKinds Only render these content block kinds. Omitted includes all renderable kinds; an empty list matches nothing. Messages without matching renderable content do not consume pagination slots.
+   * @param opts.roles Only include these message roles. Omitted or empty includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts.
+   * @param opts.contentKinds Only render these content block kinds. Omitted or empty includes all renderable kinds. Messages without matching renderable content do not consume pagination slots.
    */
   transcript = async (opts?: LLMTranscriptOpts): Promise<string> => {
     if (this._transcript) {

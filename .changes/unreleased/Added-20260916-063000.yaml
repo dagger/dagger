@@ -3,7 +3,7 @@ body: >-
   Add role and content-kind filtering, head/tail limits, and offsets to
   `LLM.transcript`. Pagination counts matching renderable messages, preserving
   message grouping and chronological order. System prompts remain omitted unless
-  explicitly requested. Zero limits are equivalent to omitted limits across SDKs.
+  explicitly requested. Zero limits and empty filters are equivalent to omitted arguments across SDKs.
 time: 2026-09-16T06:30:00Z
 custom:
   Author: vito

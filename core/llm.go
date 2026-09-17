@@ -2862,7 +2862,7 @@ func (llm *LLM) Replay(ctx context.Context) {
 }
 
 // LLMTranscriptArgs selects renderable messages before formatting them.
-// An absent filter keeps the default; an explicitly empty filter matches nothing.
+// Absent and empty filters keep the defaults.
 // Zero pagination limits are equivalent to omitted limits in every SDK.
 type LLMTranscriptArgs struct {
 	Limit        dagql.Optional[dagql.Int]
@@ -2893,7 +2893,7 @@ func transcriptBlockRenderable(role LLMMessageRole, block *LLMContentBlock) bool
 
 func (args LLMTranscriptArgs) includesBlock(role LLMMessageRole, block *LLMContentBlock) bool {
 	return transcriptBlockRenderable(role, block) &&
-		(!args.ContentKinds.Valid || slices.Contains(args.ContentKinds.Value, block.Kind))
+		(!args.ContentKinds.Valid || len(args.ContentKinds.Value) == 0 || slices.Contains(args.ContentKinds.Value, block.Kind))
 }
 
 func (args LLMTranscriptArgs) validate() error {
@@ -2932,7 +2932,7 @@ func (args LLMTranscriptArgs) selectMessages(messages []*LLMMessage) []*LLMMessa
 		if msg == nil {
 			continue
 		}
-		if args.Roles.Valid {
+		if args.Roles.Valid && len(args.Roles.Value) > 0 {
 			if !slices.Contains(args.Roles.Value, msg.Role) {
 				continue
 			}
