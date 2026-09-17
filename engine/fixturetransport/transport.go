@@ -266,7 +266,9 @@ func (d *Dispatcher) respond(req *http.Request, response Response, observation *
 	for key, value := range response.Headers {
 		header.Set(key, value)
 	}
-	var body io.ReadCloser = http.NoBody
+	// An empty body is observed too: whether the client closed the response
+	// of an error status is exactly what a test wants to know.
+	var body io.ReadCloser = &observedBody{reader: http.NoBody, closer: http.NoBody, dispatcher: d, observation: observation, truncateAt: -1}
 	var length int64
 	if response.BodyFile != "" && req.Method != http.MethodHead {
 		root, err := os.OpenRoot(d.root)

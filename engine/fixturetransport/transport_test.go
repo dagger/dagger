@@ -88,6 +88,19 @@ func TestFixtureTransport(t *testing.T) {
 	resp, err = get(t, rt, "https://origin.remote-cache.invalid/gone", nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	// A response with no body is observed too: whether the client closed an
+	// error status's body is what a native case asserts.
+	gone := func() *Observation {
+		for _, o := range d.Report().Requests {
+			if o.URL == "https://origin.remote-cache.invalid/gone" {
+				return o
+			}
+		}
+		return nil
+	}
+	require.False(t, gone().Closed)
+	require.NoError(t, resp.Body.Close())
+	require.True(t, gone().Closed)
 	_, err = get(t, rt, "https://origin.remote-cache.invalid/unknown", nil)
 	require.ErrorIs(t, err, ErrUnscripted, "an unknown fixture URL fails explicitly")
 	require.Zero(t, base.calls, "no fixture-host request ever reaches the delegate")
