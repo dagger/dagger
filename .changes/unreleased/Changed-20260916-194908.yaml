@@ -1,0 +1,6 @@
+kind: Changed
+body: Loading a local module no longer syncs its directory three times to read the module config and to check for a `.env`; the config is read and the `.env` candidates are stat-ed over the session instead. About 40ms less per command that loads a local module.
+time: 2026-09-16T19:49:08-07:00
+custom:
+    Author: grouville
+    PR: "14179"
