@@ -169,3 +169,151 @@ func TestSnapshotSharingMarkedDecodeOfModuleAncestry(t *testing.T) {
 	}
 	require.Equal(t, []uint64{ids["dependency"]}, dependencies, "the exact persisted dependency Module row")
 }
+
+type engineServer = Server
+
+// foregroundDecodeServer is a client's engine root as a persisted decode sees
+// it: everything is the real Server except the default dependencies, which a
+// real client would supply and which the test counts.
+type foregroundDecodeServer struct {
+	// Embedded under another name: core.Server has a method called Server.
+	*engineServer
+	deps  func() *core.SchemaBuilder
+	calls atomic.Int32
+}
+
+func (s *foregroundDecodeServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
+	s.calls.Add(1)
+	return s.deps(), nil
+}
+
+// One shared decode attempt of a persisted Service and its Module, met by the
+// sharing worker and a foreground demand in both orders. The leader is parked
+// inside its attempt and the other party is parked at the kernel's join point,
+// so the join is real and not a late arrival taking the finished value. The
+// attempt runs in its leader's context alone: led by the worker it takes the
+// pure factory and no client, led by the foreground it takes the client's
+// defaults and the marked joiner trips no guard by waiting. Either way both
+// receive the same native rows.
+func TestSnapshotSharingDecodeLeaderOrders(t *testing.T) {
+	for _, workerLeads := range []bool{true, false} {
+		name := "foreground leads, worker joins"
+		if workerLeads {
+			name = "worker leads, foreground joins"
+		}
+		t.Run(name, func(t *testing.T) {
+			lives := &markedDecodeLives{t: t, path: filepath.Join(t.TempDir(), "cache.db"), session: "leader-order-session"}
+			ctx, _, cache, prepare := lives.open()
+			_, dag, err := prepare(engine.WithSnapshotSharePreparation(ctx))
+			require.NoError(t, err)
+			module := markedDecodeObject[*core.Module](t, lives.attach(ctx, cache, dag, "leaderOrderModule", &core.Module{NameField: "ordered", OriginalName: "ordered"}))
+			service := lives.attach(ctx, cache, dag, "leaderOrderService", &core.Service{CustomHostname: "ordered-service", ModuleContext: module})
+			serviceID, err := cache.PersistedResultID(service)
+			require.NoError(t, err)
+			moduleID, err := cache.PersistedResultID(module)
+			require.NoError(t, err)
+			lives.checkpoint(ctx, cache)
+
+			ctx, srv, cache, prepare := lives.open()
+			cache.EnableTransferFixtureParts()
+			base, err := srv.getCoreSchemaBase(ctx)
+			require.NoError(t, err)
+
+			// The worker's side, with the pure factory counted.
+			workerCtx, workerDag, err := prepare(engine.WithSnapshotSharePreparation(ctx))
+			require.NoError(t, err)
+			root, err := core.CurrentQuery(workerCtx)
+			require.NoError(t, err)
+			var factoryCalls atomic.Int32
+			workerCtx = core.ContextWithPersistedDecodeDefaults(workerCtx, root, func(view call.View) *core.SchemaBuilder {
+				factoryCalls.Add(1)
+				return core.NewSchemaBuilder(root, []core.Mod{base.CoreMod(view)})
+			})
+
+			// The foreground's side: its own root and decoding server, unmarked.
+			foreground := &foregroundDecodeServer{engineServer: srv}
+			foregroundRoot := core.NewRoot(foreground)
+			foreground.deps = func() *core.SchemaBuilder {
+				return core.NewSchemaBuilder(foregroundRoot, []core.Mod{base.CoreMod(workerDag.View)})
+			}
+			foregroundDag, err := base.ForkForPersistedDecode(ctx, foregroundRoot, workerDag.View)
+			require.NoError(t, err)
+			foregroundCtx := core.ContextWithQuery(ctx, foregroundRoot)
+
+			type party struct {
+				ctx context.Context
+				dag *dagql.Server
+			}
+			leader, joiner := party{foregroundCtx, foregroundDag}, party{workerCtx, workerDag}
+			if workerLeads {
+				leader, joiner = joiner, leader
+			}
+			type loaded struct {
+				res dagql.AnyResult
+				err error
+			}
+			load := func(p party) <-chan loaded {
+				done := make(chan loaded, 1)
+				go func() {
+					res, err := cache.LoadResultByResultID(p.ctx, "", p.dag, serviceID)
+					done <- loaded{res, err}
+				}()
+				return done
+			}
+			bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			arm := func(key string, point dagql.FixtureBarrierPoint) (reached func(), release func()) {
+				armed, err := cache.ArmTransferFixtureBarrier(dagql.FixtureBarrierRequest{Key: key, Point: point, Action: dagql.FixturePause,
+					Selector: dagql.FixtureBarrierSelector{ResultID: serviceID}})
+				require.NoError(t, err)
+				released := false
+				release = func() {
+					if !released {
+						released = true
+						require.NoError(t, cache.ReleaseTransferFixtureBarrier(armed.Key, armed.Generation))
+					}
+				}
+				return func() {
+					t.Helper()
+					_, err := cache.WaitTransferFixtureBarrier(bounded, armed.Key, armed.Generation)
+					require.NoError(t, err, "%s was never reached", point)
+				}, release
+			}
+			leading, releaseLeader := arm("leader", dagql.FixtureDecodeCopied)
+			defer releaseLeader()
+			joined, releaseJoiner := arm("joiner", dagql.FixtureDecodeJoined)
+			defer releaseJoiner()
+
+			leaderDone := load(leader)
+			leading()
+			joinerDone := load(joiner)
+			joined()
+			releaseJoiner()
+			releaseLeader()
+
+			for who, done := range map[string]<-chan loaded{"leader": leaderDone, "joiner": joinerDone} {
+				select {
+				case got := <-done:
+					require.NoError(t, got.err, who)
+					decoded, ok := got.res.Unwrap().(*core.Service)
+					require.True(t, ok, "%s: %T", who, got.res.Unwrap())
+					require.Equal(t, "ordered-service", decoded.CustomHostname)
+					require.NotNil(t, decoded.ModuleContext.Self(), who)
+					require.NotNil(t, decoded.ModuleContext.Self().Deps, who)
+					row, err := cache.PersistedResultID(decoded.ModuleContext)
+					require.NoError(t, err)
+					require.Equal(t, moduleID, row, "%s holds the exact persisted Module row", who)
+				case <-bounded.Done():
+					t.Fatalf("the %s never returned", who)
+				}
+			}
+			if workerLeads {
+				require.Equal(t, int32(1), factoryCalls.Load(), "the worker's attempt asked the pure factory")
+				require.Zero(t, foreground.calls.Load(), "and the joined foreground decoded nothing itself")
+			} else {
+				require.Equal(t, int32(1), foreground.calls.Load(), "the foreground's attempt asked its client's defaults")
+				require.Zero(t, factoryCalls.Load(), "and the joined worker decoded nothing itself")
+			}
+		})
+	}
+}
