@@ -141,6 +141,20 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		require.True(t, cache.DetachRemoteCacheBridge(bridge))
 		require.NoError(t, adapter.Stop(boundedContext(t)))
 	})
+	t.Run("an exited run has stopped under an expired context", func(t *testing.T) {
+		cache := newGCTestCache(t)
+		expired, cancel := context.WithCancel(t.Context())
+		cancel()
+		for range 20 {
+			bridge, created, err := cache.AttachRemoteCacheBridge()
+			require.NoError(t, err)
+			require.True(t, created)
+			adapter := newRemoteCacheAdapter(cache, bridge)
+			close(adapter.runDone)
+			require.NoError(t, adapter.Stop(expired))
+			require.False(t, bridgeAttached(cache))
+		}
+	})
 	t.Run("noncooperative run is reported", func(t *testing.T) {
 		cache := newGCTestCache(t)
 		srv := &Server{engineCache: cache, shutdownCtx: t.Context()}

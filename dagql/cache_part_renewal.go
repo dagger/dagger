@@ -77,7 +77,6 @@ type RemoteCacheBridge struct {
 type renewalExchange struct {
 	request   RenewalRequest
 	requester context.Context
-	delivered bool
 	done      chan struct{}
 	addresses map[digest.Digest]BlobAddress
 	err       error
@@ -202,7 +201,6 @@ func (b *RemoteCacheBridge) TakeRenewalRequest(ctx context.Context) (*RenewalReq
 				// The requester's own deadline completes an expired exchange.
 				continue
 			}
-			exchange.delivered = true
 			request := exchange.request
 			b.mu.Unlock()
 			// The exchange's copy is immutable; give the consumer its own.

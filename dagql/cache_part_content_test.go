@@ -237,9 +237,19 @@ func TestPartContentSourceAvailability(t *testing.T) {
 			require.Equal(t, tc.attached, attached.Available(tc.offer, now))
 		})
 	}
-	// A non-HTTP address is unavailable, not a malformed offer.
-	offer := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Chain: OfferedChain{Layers: layers, Addresses: usable("s3://bucket/upper", 0)}}
+	// A non-HTTP address is unavailable, not a malformed offer, and is never
+	// opened or treated as a renewal failure.
+	offer := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Chain: OfferedChain{Layers: layers, Addresses: usable("s3://bucket/upper", 0), RenewalKey: "key"}}
 	require.NoError(t, validateTransferOffer(offer, CapturedCodecOutput{Address: offer.Address, State: "pending", Value: &SnapshotValue{Kind: "directory"}}))
+	transport := newContentTestTransport()
+	_, err = NewPartContentSource(transport).Provider(t.Context(), offer, &PartDemandState{}).ReaderAt(t.Context(), layers[1].Descriptor)
+	var contentErr *snapshots.ChainContentError
+	require.ErrorAs(t, err, &contentErr)
+	require.Equal(t, "provider", contentErr.Stage)
+	require.ErrorContains(t, err, "not HTTP(S)")
+	require.NotErrorIs(t, err, ErrRenewalUnavailable)
+	require.Zero(t, transport.total())
+	offer.Chain.RenewalKey = ""
 
 	// The test override replaces both methods inside the one source.
 	override := &partAvailabilityHook{fn: func() {}}
@@ -796,7 +806,8 @@ func TestRenewalChainControls(t *testing.T) {
 	t.Run("non-HTTP address is unavailable", func(t *testing.T) {
 		got := runChainImport(t, fixture, chainRunOptions{localPrefix: true, upper: BlobAddress{URL: "s3://bucket/upper"}, attach: true, key: "key", reply: renewUpper("https://renewed.invalid/upper")})
 		requireChainContentFailure(t, got.err, upper, "provider")
-		require.ErrorIs(t, got.err, ErrRenewalUnavailable)
+		require.ErrorContains(t, got.err, "not HTTP(S)")
+		require.NotErrorIs(t, got.err, ErrRenewalUnavailable)
 		require.Empty(t, got.requests, "a non-HTTP scheme is not a renewal trigger")
 		require.Zero(t, got.transport.total())
 	})

@@ -247,7 +247,7 @@ func (p *partContentProvider) address(ctx context.Context, blob digest.Digest, f
 	case failed == "" && use == blobAddressUsable, renewed && address.URL != failed && use == blobAddressUsable:
 		return address.URL, renewed, nil
 	case failed == "" && use == blobAddressNotHTTP:
-		return "", false, fmt.Errorf("%w: supplied blob %s address is not HTTP(S)", ErrRenewalUnavailable, blob)
+		return "", false, fmt.Errorf("supplied blob %s is unavailable: its address is not HTTP(S)", blob)
 	case renewed:
 		return "", false, renewalUnavailable("renewed address is unusable")
 	}
