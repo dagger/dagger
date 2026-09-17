@@ -18,6 +18,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type ChecksSuite struct{}
@@ -242,6 +243,47 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, `non-empty-generate:is-empty.*ERROR`, out)
+	})
+
+	t.Run("the module API resolves the name it reports", func(ctx context.Context, t *testctx.T) {
+		// Round-trip: whatever Module.checks names a generate-derived check has
+		// to select it again through Module.check and Module.checks(include:).
+		out, err := modGen.
+			With(daggerQuery(`{host{directory(path:"."){asModule{checks{list{name path checkType}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		strs := func(result gjson.Result) []string {
+			var values []string
+			for _, value := range result.Array() {
+				values = append(values, value.String())
+			}
+			return values
+		}
+		listed := gjson.Get(out, `host.directory.asModule.checks.list.#(checkType=="generate")#`).Array()
+		require.Len(t, listed, 2)
+		for _, check := range listed {
+			name := check.Get("name").String()
+			require.Contains(t, []string{"empty-generate:is-empty", "non-empty-generate:is-empty"}, name)
+			// name and path are the same identity: path keeps the functions'
+			// own casing, but it carries the is-empty leaf too.
+			path := strs(check.Get("path"))
+			require.Len(t, path, 2)
+			require.Equal(t, "is-empty", path[1])
+
+			out, err := modGen.
+				With(daggerQuery(`{host{directory(path:"."){asModule{check(name:%q){name} checks(include:[%q]){list{name}}}}}}`, name, name)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, name, gjson.Get(out, "host.directory.asModule.check.name").String())
+			require.Equal(t, []string{name}, strs(gjson.Get(out, "host.directory.asModule.checks.list.#.name")))
+		}
+
+		// The generator's own name keeps selecting the check.
+		out, err = modGen.
+			With(daggerQuery(`{host{directory(path:"."){asModule{check(name:"empty-generate"){name}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "empty-generate:is-empty", gjson.Get(out, "host.directory.asModule.check.name").String())
 	})
 
 	t.Run("a wildcard matching the generator still selects the check", func(ctx context.Context, t *testctx.T) {

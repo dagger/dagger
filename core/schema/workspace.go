@@ -3984,7 +3984,7 @@ func (s *workspaceSchema) checks(
 	// was asked for by name.
 	var allChecks, declaredChecks []*core.Check
 	for _, mod := range mods {
-		checkGroup, err := core.NewCheckGroup(ctx, mod, nil, noGenerate, onlyGenerate)
+		checkGroup, err := core.NewCheckGroup(ctx, mod, noGenerate, onlyGenerate)
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
 		}
@@ -4072,10 +4072,10 @@ func (s *workspaceSchema) syntheticSDKGeneratorChecks(
 		if _, exists := taken[generator.Node.CommandName()]; exists {
 			continue
 		}
-		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
 		// The generator is namespaced under its SDK's provider module, and an
 		// SDK names exactly one installed module, so that module's configured
 		// check skips apply to this check alone.
+		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
 		filtered, err := filterChecksByExclude(ctx, []*core.Check{check}, ignoreChecks[generator.Node.Path()[0]], true)
 		if err != nil {
 			return nil, err
@@ -4090,60 +4090,16 @@ func (s *workspaceSchema) syntheticSDKGeneratorChecks(
 	return filterChecksByExclude(ctx, derived, skip, false)
 }
 
-// matchCheck reports whether a pattern selects the check, by any of the nodes
-// it answers to. moduleLocal also accepts a pattern relative to the module, as
-// filterNodesByExclude does.
-func matchCheck(ctx context.Context, check *core.Check, patterns []string, moduleLocal bool) (bool, error) {
-	for _, node := range check.MatchNodes() {
-		match, err := matchWorkspaceInclude(ctx, node, patterns)
-		if err != nil || match {
-			return match, err
-		}
-		if !moduleLocal {
-			continue
-		}
-		match, err = matchSingleModuleInclude(ctx, node, patterns)
-		if err != nil || match {
-			return match, err
-		}
-	}
-	return false, nil
-}
-
+// filterChecksByInclude and filterChecksByExclude are the one place checks are
+// matched against patterns, for the workspace and the module API alike. The
+// matching itself is the generic one; a check only differs in answering to
+// every node Check.MatchNodes lists.
 func filterChecksByInclude(ctx context.Context, checks []*core.Check, include []string) ([]*core.Check, error) {
-	if len(include) == 0 {
-		return checks, nil
-	}
-
-	filtered := make([]*core.Check, 0, len(checks))
-	for _, check := range checks {
-		match, err := matchCheck(ctx, check, include, false)
-		if err != nil {
-			return nil, fmt.Errorf("check %q include match: %w", check.Name(), err)
-		}
-		if match {
-			filtered = append(filtered, check)
-		}
-	}
-	return filtered, nil
+	return filterNodesByInclude(ctx, checks, include, (*core.Check).MatchNodes, (*core.Check).Name, "check")
 }
 
 func filterChecksByExclude(ctx context.Context, checks []*core.Check, exclude []string, moduleLocal bool) ([]*core.Check, error) {
-	if len(exclude) == 0 {
-		return checks, nil
-	}
-
-	filtered := make([]*core.Check, 0, len(checks))
-	for _, check := range checks {
-		match, err := matchCheck(ctx, check, exclude, moduleLocal)
-		if err != nil {
-			return nil, fmt.Errorf("check %q exclude match: %w", check.Name(), err)
-		}
-		if !match {
-			filtered = append(filtered, check)
-		}
-	}
-	return filtered, nil
+	return filterNodesByExclude(ctx, checks, exclude, moduleLocal, (*core.Check).MatchNodes, (*core.Check).Name, "check")
 }
 
 type workspaceGeneratorModule struct {
@@ -4301,7 +4257,7 @@ func (s *workspaceSchema) generators(
 				filtered,
 				exclude,
 				true,
-				func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
+				singleNode(func(generator *core.Generator) *core.ModTreeNode { return generator.Node }),
 				func(generator *core.Generator) string { return generator.Name() },
 				"generator",
 			)
@@ -4371,7 +4327,7 @@ func (s *workspaceSchema) services(
 			ctx,
 			upGroup.Ups,
 			include,
-			func(up *core.Up) *core.ModTreeNode { return up.Node },
+			singleNode(func(up *core.Up) *core.ModTreeNode { return up.Node }),
 			func(up *core.Up) string { return up.Name() },
 			"service",
 		)
@@ -4384,7 +4340,7 @@ func (s *workspaceSchema) services(
 				filtered,
 				exclude,
 				true,
-				func(up *core.Up) *core.ModTreeNode { return up.Node },
+				singleNode(func(up *core.Up) *core.ModTreeNode { return up.Node }),
 				func(up *core.Up) string { return up.Name() },
 				"service",
 			)
@@ -4535,11 +4491,11 @@ func collectWorkspaceModuleTargets[T any](
 			return nil, fmt.Errorf("%s from module %q: %w", groupLabel, mod.Self().Name(), err)
 		}
 		reparentWorkspaceTreeRoot(root, mod.Self().Name(), entrypoints[mod.Self().Name()])
-		filtered, err := filterNodesByInclude(ctx, targets, include, node, name, targetLabel)
+		filtered, err := filterNodesByInclude(ctx, targets, include, singleNode(node), name, targetLabel)
 		if err != nil {
 			return nil, err
 		}
-		filtered, err = filterNodesByExclude(ctx, filtered, exclude, false, node, name, targetLabel)
+		filtered, err = filterNodesByExclude(ctx, filtered, exclude, false, singleNode(node), name, targetLabel)
 		if err != nil {
 			return nil, err
 		}
@@ -4742,7 +4698,7 @@ func filterNodesByExclude[T any](
 	items []T,
 	exclude []string,
 	moduleLocal bool,
-	nodeOf func(T) *core.ModTreeNode,
+	nodesOf func(T) []*core.ModTreeNode,
 	nameOf func(T) string,
 	itemKind string,
 ) ([]T, error) {
@@ -4752,15 +4708,9 @@ func filterNodesByExclude[T any](
 
 	filtered := make([]T, 0, len(items))
 	for _, item := range items {
-		match, err := matchWorkspaceInclude(ctx, nodeOf(item), exclude)
+		match, err := matchAnyNode(ctx, nodesOf(item), exclude, moduleLocal)
 		if err != nil {
 			return nil, fmt.Errorf("%s %q exclude match: %w", itemKind, nameOf(item), err)
-		}
-		if !match && moduleLocal {
-			match, err = matchSingleModuleInclude(ctx, nodeOf(item), exclude)
-			if err != nil {
-				return nil, fmt.Errorf("%s %q exclude compat match: %w", itemKind, nameOf(item), err)
-			}
 		}
 		if !match {
 			filtered = append(filtered, item)
@@ -4792,11 +4742,37 @@ func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include 
 	return matchWorkspaceIncludePath(ctx, node.CommandPath(), include)
 }
 
+// matchAnyNode reports whether a pattern selects any of the nodes a target
+// answers to. Most targets answer to their one node; a check also answers to
+// the aliases Check.MatchNodes lists. moduleLocal also accepts a pattern
+// relative to the module.
+func matchAnyNode(ctx context.Context, nodes []*core.ModTreeNode, patterns []string, moduleLocal bool) (bool, error) {
+	for _, node := range nodes {
+		match, err := matchWorkspaceInclude(ctx, node, patterns)
+		if err != nil || match {
+			return match, err
+		}
+		if !moduleLocal {
+			continue
+		}
+		match, err = matchSingleModuleInclude(ctx, node, patterns)
+		if err != nil || match {
+			return match, err
+		}
+	}
+	return false, nil
+}
+
+// singleNode adapts a target that answers to exactly one node.
+func singleNode[T any](nodeOf func(T) *core.ModTreeNode) func(T) []*core.ModTreeNode {
+	return func(item T) []*core.ModTreeNode { return []*core.ModTreeNode{nodeOf(item)} }
+}
+
 func filterNodesByInclude[T any](
 	ctx context.Context,
 	items []T,
 	include []string,
-	nodeOf func(T) *core.ModTreeNode,
+	nodesOf func(T) []*core.ModTreeNode,
 	nameOf func(T) string,
 	itemKind string,
 ) ([]T, error) {
@@ -4806,7 +4782,7 @@ func filterNodesByInclude[T any](
 
 	filtered := make([]T, 0, len(items))
 	for _, item := range items {
-		match, err := matchWorkspaceInclude(ctx, nodeOf(item), include)
+		match, err := matchAnyNode(ctx, nodesOf(item), include, false)
 		if err != nil {
 			return nil, fmt.Errorf("%s %q include match: %w", itemKind, nameOf(item), err)
 		}

@@ -97,7 +97,11 @@ type CheckGroup struct {
 	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
-func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string, noGenerate, onlyGenerate bool) (*CheckGroup, error) {
+// NewCheckGroup rolls up every check of the module. It takes no include
+// patterns: a generate-derived check only gets its name once it is a Check, so
+// callers filter the finished checks by Check.MatchNodes instead of the tree
+// nodes here, where a pattern naming such a check would match nothing.
+func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], noGenerate, onlyGenerate bool) (*CheckGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -105,7 +109,7 @@ func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include
 
 	var checks []*Check
 	if !onlyGenerate {
-		checkNodes, err := rootNode.RollupChecks(ctx, include, nil)
+		checkNodes, err := rootNode.RollupChecks(ctx, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -116,7 +120,7 @@ func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include
 	}
 
 	if !noGenerate {
-		genNodes, err := rootNode.RollupGenerator(ctx, include, nil)
+		genNodes, err := rootNode.RollupGenerator(ctx, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -249,8 +253,9 @@ func (r *CheckGroup) Clone() *CheckGroup {
 	return &cp
 }
 
+// Path agrees with Name: both identify the check, not the node that runs it.
 func (c *Check) Path() []string {
-	return c.Node.Path()
+	return c.NamingNode().Path()
 }
 
 func (c *Check) Description() string {
@@ -282,11 +287,12 @@ func (c *Check) Name() string {
 	return c.NamingNode().CommandName()
 }
 
-// NamingNode is the node a check is named and matched by. A generate-derived
-// check reports under an is-empty leaf its generator node does not carry, so
-// this wraps that node the way NewModuleLoadFailureCheck builds its own
-// naming-only nodes. Node itself has to stay the real generator node, because
-// that is what RunGeneratorAsCheck and Generator{Node: ...} dispatch on.
+// NamingNode is the canonical node a check is named by; MatchNodes adds the
+// compatibility aliases patterns may still be written against. A
+// generate-derived check reports under an is-empty leaf its generator node does
+// not carry, so this wraps that node the way NewModuleLoadFailureCheck builds
+// its own naming-only nodes. Node itself has to stay the real generator node,
+// because that is what RunGeneratorAsCheck and Generator{Node: ...} dispatch on.
 func (c *Check) NamingNode() *ModTreeNode {
 	if !c.IsGenerate {
 		return c.Node

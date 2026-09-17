@@ -601,7 +601,7 @@ func TestWorkspaceTargetSkipNames(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			filtered, err := filterNodesByExclude(ctx, []*core.ModTreeNode{app, other}, test.exclude, test.moduleLocal,
-				func(node *core.ModTreeNode) *core.ModTreeNode { return node },
+				singleNode(func(node *core.ModTreeNode) *core.ModTreeNode { return node }),
 				func(node *core.ModTreeNode) string { return node.CommandName() }, "test")
 			require.NoError(t, err)
 			require.ElementsMatch(t, test.want, filtered)
@@ -646,6 +646,8 @@ func TestGenerateCheckPatterns(t *testing.T) {
 				wantName = "generate:is-empty"
 			}
 			require.Equal(t, wantName, check.Name())
+			// path is the qualified identity of the same check name reports.
+			require.Equal(t, []string{"alpha-sdk", "generate", "is-empty"}, check.Path())
 
 			included, err := filterChecksByInclude(ctx, []*core.Check{check}, test.patterns)
 			require.NoError(t, err)
@@ -667,6 +669,18 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		match, err := matchWorkspaceInclude(ctx, check.NamingNode(), []string{"alpha-sdk:*"})
 		require.NoError(t, err)
 		require.False(t, match)
+	})
+
+	t.Run("a module's own check is selected by the name it reports", func(t *testing.T) {
+		// Module.check and Module.checks match against the module's own tree,
+		// whose functions sit directly under the root.
+		check := &core.Check{Node: modTreeNode("empty-generate"), IsGenerate: true}
+		require.Equal(t, "empty-generate:is-empty", check.Name())
+		for _, pattern := range []string{check.Name(), "empty-generate", "empty-*"} {
+			included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{pattern})
+			require.NoError(t, err)
+			require.Len(t, included, 1, pattern)
+		}
 	})
 
 	t.Run("an ordinary check has no is-empty name", func(t *testing.T) {
