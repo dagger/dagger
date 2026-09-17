@@ -233,7 +233,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 
 // sshAuthSock is an operation-local agent mount, never a repository capability.
 func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAuthSock string) (_ *gitutil.GitCLI, _ func() error, rerr error) {
-	if repo.URL.Scheme == gitutil.SSHProtocol && repo.SSHAuthSocket.Self() == nil && sshAuthSock == "" {
+	if repo.URL != nil && repo.URL.Scheme == gitutil.SSHProtocol && repo.SSHAuthSocket.Self() == nil && sshAuthSock == "" {
 		return nil, nil, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
 	}
 	query, err := CurrentQuery(ctx)
