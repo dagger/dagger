@@ -111,7 +111,7 @@ func ReadLiveFrame(r io.Reader) (cursor int64, payload []byte, terminal bool, er
 	}
 
 	wireCursor := binary.BigEndian.Uint64(header[4:12])
-	if wireCursor > uint64(^uint64(0)>>1) {
+	if wireCursor > (^uint64(0) >> 1) {
 		return 0, nil, false, fmt.Errorf("%w: cursor %d overflows int64", ErrInvalidLiveFrame, wireCursor)
 	}
 	cursor = int64(wireCursor)
