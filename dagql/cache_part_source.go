@@ -147,6 +147,10 @@ type partCandidate struct {
 	probe   *PartProbe
 	offer   *PersistedPartOffer
 	owner   *offerOwner
+	// unready is set when the row could not be captured in this scan. It has
+	// no validated record, so nothing about it may be selected, its offer
+	// included.
+	unready bool
 }
 type partSourceFacts struct {
 	payload, gate, offers, resources, ownership uint64
@@ -390,6 +394,14 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		candidate := &candidates[i]
 		candidate.record, candidate.version, candidate.probe, err = c.probePart(ctx, candidate.row, address)
 		if errors.Is(err, ErrPersistStateNotReady) {
+			// What holds the receiver is another capture or a sibling part's
+			// publication, which concurrent demands of one row make ordinary
+			// and which ends soon: scan again. Another row can stay unready
+			// for as long as its own evaluation runs, so it is passed over.
+			if candidate.row == row {
+				return nil, nil, partRefusedBy("scan: receiver not ready", err)
+			}
+			candidate.record, candidate.version, candidate.probe, candidate.unready = PersistedRecord{}, capturedRowRevision{}, nil, true
 			continue
 		}
 		if err != nil {
@@ -401,6 +413,9 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 	rank := PartRunnable
 	for i := range candidates {
 		candidate := &candidates[i]
+		if candidate.unready {
+			continue
+		}
 		p := candidate.probe
 		r := PartRunnable
 		if p != nil && p.LocalComplete && !p.Busy {

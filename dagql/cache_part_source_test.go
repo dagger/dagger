@@ -299,3 +299,62 @@ func TestPartNativeCompletionRetiresOffer(t *testing.T) {
 	require.Equal(t, PartComplete, gate.outputs[key].phase)
 	gate.mu.Unlock()
 }
+
+// A candidate whose probe is not ready has no record in this scan, so it must
+// not be selected, not even by its offer. Two parts of one imported row are
+// demanded concurrently by default, and one part's publication is exactly what
+// makes the other's probe of the receiver not ready. Selecting the receiver's
+// own offer then handed the chain installation an empty record, which failed
+// the demand with "snapshot path does not name a declared inline envelope" or
+// "part scope is not a codec envelope" instead of retrying.
+func TestPartSourceScanSkipsUnreadyCandidate(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	value := &transferTestValue{Text: "pending"}
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", value)
+	leaf := persistedListTestResult(t, ctx, c, srv, "leaf", String("owned"))
+	transferTestOffer(t, c, ctx, receiver, leaf)
+	address := PersistedPartAddress{Part: "snapshot"}
+
+	source, err := c.AcquireEquivalentPartSource(ctx, receiver, address)
+	require.NoError(t, err)
+	require.Equal(t, PartDownloadable, source.Readiness())
+	require.NotZero(t, source.record.ResultID, "a selected source carries its row's record")
+	require.NoError(t, source.Release(ctx))
+
+	// The receiver's typed output is published during the scan's capture, as
+	// a sibling part's Commit does. Every read moves it again.
+	value.revisionHook = func() { value.rev.Add(1) }
+	source, err = c.AcquireEquivalentPartSource(ctx, receiver, address)
+	require.Nil(t, source, "an unready row's offer is not selected")
+	require.True(t, partCanReselect(err), "the receiver's own probe is retried: %v", err)
+
+	// Or its persistence guard is held, and the capture itself fails.
+	value.revisionHook = nil
+	value.unready.Store(true)
+	source, err = c.AcquireEquivalentPartSource(ctx, receiver, address)
+	require.Nil(t, source, "an unready row's offer is not selected")
+	require.True(t, partCanReselect(err), "the receiver's own probe is retried: %v", err)
+
+	value.unready.Store(false)
+	source, err = c.AcquireEquivalentPartSource(ctx, receiver, address)
+	require.NoError(t, err)
+	require.NotZero(t, source.record.ResultID)
+	require.NoError(t, source.Release(ctx))
+}
+
+// An unready row that is not the receiver is skipped without a retry: it can
+// stay busy for as long as its own evaluation runs, and the demand has other
+// routes.
+func TestPartSourceScanSkipsUnreadyDonor(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	busy := &transferTestValue{Text: "pending too"}
+	donor := persistedListTestResult(t, ctx, c, srv, "donor", busy)
+	leaf := persistedListTestResult(t, ctx, c, srv, "leaf", String("owned"))
+	transferTestOffer(t, c, ctx, donor, leaf)
+	partTestEquivalent(t, ctx, c, receiver, donor)
+	busy.unready.Store(true)
+	source, err := c.AcquireEquivalentPartSource(ctx, receiver, PersistedPartAddress{Part: "snapshot"})
+	require.NoError(t, err)
+	require.Nil(t, source)
+}

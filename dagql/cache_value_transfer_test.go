@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -25,6 +26,10 @@ type transferTestValue struct {
 	rev     atomic.Uint64
 	release OnReleaseFunc
 	links   []PersistedSnapshotRefLink
+	// revisionHook runs on each output revision read, in the reader's goroutine.
+	revisionHook func()
+	// unready makes the output revision read report a held persistence guard.
+	unready atomic.Bool
 }
 
 func (*transferTestValue) Type() *ast.Type {
@@ -35,6 +40,12 @@ func (v *transferTestValue) EncodePersistedObject(context.Context, *PersistEncod
 	return PersistedObjectEncoding{JSON: raw, SnapshotLinks: cloneSnapshotRefLinks(v.links)}, err
 }
 func (v *transferTestValue) PersistedOutputRevision() (OutputRevision, error) {
+	if v.revisionHook != nil {
+		v.revisionHook()
+	}
+	if v.unready.Load() {
+		return 0, fmt.Errorf("%w: test output in use", ErrPersistStateNotReady)
+	}
 	return OutputRevision(v.rev.Load()), nil
 }
 func (*transferTestValue) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, raw json.RawMessage) (Typed, error) {
