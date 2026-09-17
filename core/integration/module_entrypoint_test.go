@@ -200,3 +200,36 @@ source = "./entrypoint-module"
 	require.NotContains(t, logs.String(), "module entrypoint runtime adapter")
 	require.NotContains(t, logs.String(), "legacy runtime interface")
 }
+
+// entrypoint.source can be a module reference, resolved the way runtime.source
+// is. One entrypoint served from a git repository can then back many modules,
+// with nothing generated into them.
+func (ModuleSuite) TestDangModuleEntrypointFromModuleRef(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The served repository holds only Dang files under entrypoint/: an
+	// entrypoint directory is not a module and carries no manifest.
+	served := c.Directory().WithDirectory(
+		"entrypoint",
+		c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+	)
+	gitDaemon, repoURL := gitService(ctx, t, c, served)
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	out, err := goGitBase(t, c).
+		WithServiceBinding(gitHost, gitDaemon).
+		WithNewFile("dagger.toml", `[modules.tiny]
+source = ".dagger/modules/tiny"
+`).
+		WithNewFile(".dagger/modules/tiny/dagger-module.toml", `name = "tiny"
+
+[entrypoint]
+kind = "dang"
+source = "`+repoURL+`#main:entrypoint"
+`).
+		With(daggerCallAt("tiny", "hello")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello", strings.TrimSpace(out))
+}

@@ -34,27 +34,33 @@ func TestSourceSubpath(t *testing.T) {
 	}
 }
 
-func TestIsLocalSource(t *testing.T) {
+func TestClassifySource(t *testing.T) {
 	t.Parallel()
 
-	// Values that the fast heuristic settles without a module context directory.
+	// Values that the heuristics settle without a module context directory.
 	src := dagql.ObjectResult[*core.ModuleSource]{}
-	for _, source := range []string{".", "./entrypoint", "entrypoint", "internal/dagger/entrypoint", "/entrypoint", "../entrypoint"} {
-		local, err := isLocalSource(t.Context(), src, source)
-		require.NoError(t, err, source)
-		require.True(t, local, source)
-	}
-	for _, source := range []string{
-		"https://github.com/dagger/dagger#main:modules/foo",
-		"ssh://git@github.com/dagger/dagger",
-		"git@github.com:dagger/dagger.git",
-		"module:source",
-		"module:sourceDir",
-		"github.com/dagger/dagger/modules/foo@v1.0.0",
+	for source, want := range map[string]sourceKind{
+		".":                          sourceKindLocal,
+		"./entrypoint":               sourceKindLocal,
+		"entrypoint":                 sourceKindLocal,
+		"internal/dagger/entrypoint": sourceKindLocal,
+		"/entrypoint":                sourceKindLocal,
+		"../entrypoint":              sourceKindLocal,
+		// A module reference resolves like runtime.source, with or without a
+		// scheme, so a shared entrypoint can be named the way a runtime is.
+		"github.com/dagger/python-sdk/entrypoint@v1":        sourceKindModuleRef,
+		"github.com/dagger/dagger/modules/foo@v1.0.0":       sourceKindModuleRef,
+		"https://github.com/dagger/dagger#main:modules/foo": sourceKindModuleRef,
+		"git://git.example.com/team/repo#main:src":          sourceKindModuleRef,
+		"ssh://git@github.com/dagger/dagger":                sourceKindModuleRef,
+		// Address.directory keeps module:function and scp-style git.
+		"module:source":                    sourceKindAddress,
+		"module:sourceDir":                 sourceKindAddress,
+		"git@github.com:dagger/dagger.git": sourceKindAddress,
 	} {
-		local, err := isLocalSource(t.Context(), src, source)
+		got, err := classifySource(t.Context(), src, source)
 		require.NoError(t, err, source)
-		require.False(t, local, source)
+		require.Equal(t, want, got, source)
 	}
 }
 
