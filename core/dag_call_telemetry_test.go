@@ -379,6 +379,11 @@ type archivePayloadSeenKeys struct{ testSeenKeys }
 
 func (*archivePayloadSeenKeys) RequireCallPayloadLogs() bool { return true }
 
+func (s *archivePayloadSeenKeys) CallPayloadNeedsEmission(key string) bool {
+	_, seen := s.keys.Load(key)
+	return !seen
+}
+
 func TestRecordCallPayloadsArchiveIncludesSpannedRoot(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	root, _, _ := skillsChain()
