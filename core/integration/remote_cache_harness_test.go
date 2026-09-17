@@ -134,8 +134,12 @@ func joinBounded(t *testctx.T, done <-chan error, what string) error {
 
 // fixtureEngineStopTimeout bounds each step of a shutdown. A step never
 // inherits the test's context, which is usually already canceled when
-// cleanup runs, nor the remains of an earlier step's deadline.
-const fixtureEngineStopTimeout = 45 * time.Second
+// cleanup runs, nor the remains of an earlier step's deadline. A clean stop
+// of a nested engine writes its checkpoint; with the whole native set running
+// on a host that other engines were also loading (load average 60 on 16
+// CPUs) ten of some 120 stops took longer than 45 seconds, so the bound is two
+// minutes. It is a bound on a failure, not a wait.
+const fixtureEngineStopTimeout = 2 * time.Minute
 
 // shutdown is idempotent. Every step gets its own fresh deadline, so one that
 // times out cannot hand the next an already-canceled context, and every
