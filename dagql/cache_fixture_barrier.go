@@ -336,6 +336,7 @@ func (c *Cache) fixtureReach(ctx context.Context, event FixtureBarrierEvent) err
 	if state == nil {
 		return nil
 	}
+	state.observeFixtureReach(event)
 	b := &state.barriers
 	b.mu.Lock()
 	var hit *fixtureBarrier
