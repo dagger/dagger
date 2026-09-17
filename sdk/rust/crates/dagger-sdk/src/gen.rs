@@ -10240,8 +10240,8 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `directory` - Existing Git storage to open. Git metadata and object dependencies must be contained in this directory.
-    pub fn with_directory(&self, directory: impl IntoID<Id>) -> GitRepository {
-        let mut query = self.selection.select("withDirectory");
+    pub fn with_contents(&self, directory: impl IntoID<Id>) -> GitRepository {
+        let mut query = self.selection.select("withContents");
         query = query.arg_lazy(
             "directory",
             Box::new(move || {

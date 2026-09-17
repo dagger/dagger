@@ -3895,7 +3895,7 @@ type GitRepository implements Node {
   configuration is not rewritten. Use Directory.asGit to open the supplied
   repository without retaining the receiver's routing.
   """
-  withDirectory(
+  withContents(
     """
     Existing Git storage to open. Git metadata and object dependencies must be contained in this directory.
     """

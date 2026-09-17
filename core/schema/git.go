@@ -216,7 +216,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("__cleaned", s.cleaned).
 			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
-		dagql.NodeFunc("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withContents", s.withContents).
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
 			Doc("Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.",
@@ -1480,7 +1480,7 @@ func (s *gitSchema) withBundle(
 	}); err != nil {
 		return inst, err
 	}
-	return gitRepositoryWithDirectory(ctx, srv, parent, dir)
+	return gitRepositoryWithContents(ctx, srv, parent, dir)
 }
 
 func (s *gitSchema) withBundleDirectory(
@@ -1914,11 +1914,11 @@ func (s *gitSchema) gitRefAsRepository(ctx context.Context, parent dagql.ObjectR
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
 
-type gitWithDirectoryArgs struct {
+type gitWithContentsArgs struct {
 	Directory dagql.ID[*core.Directory]
 }
 
-func (s *gitSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args gitWithDirectoryArgs) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+func (s *gitSchema) withContents(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args gitWithContentsArgs) (inst dagql.ObjectResult[*core.GitRepository], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -1941,12 +1941,12 @@ func (s *gitSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
 
-func gitRepositoryWithDirectory(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository], dir dagql.ObjectResult[*core.Directory]) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+func gitRepositoryWithContents(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository], dir dagql.ObjectResult[*core.Directory]) (inst dagql.ObjectResult[*core.GitRepository], err error) {
 	id, err := dir.ID()
 	if err != nil {
 		return inst, err
 	}
-	err = srv.Select(ctx, repo, &inst, dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{{Name: "directory", Value: dagql.NewID[*core.Directory](id)}}})
+	err = srv.Select(ctx, repo, &inst, dagql.Selector{Field: "withContents", Args: []dagql.NamedInput{{Name: "directory", Value: dagql.NewID[*core.Directory](id)}}})
 	return inst, err
 }
 

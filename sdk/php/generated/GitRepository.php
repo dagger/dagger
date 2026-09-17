@@ -174,9 +174,9 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
      *
      * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
      */
-    public function withDirectory(Directory $directory): GitRepository
+    public function withContents(Directory $directory): GitRepository
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContents');
         $innerQueryBuilder->setArgument('directory', $directory);
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

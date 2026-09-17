@@ -201,7 +201,7 @@ self-contained **Git metadata directory** with full reachable history and an
 index matching HEAD. Mount it at `.git` alongside `workspace.directory("/")`.
 The overlay stays uncommitted; the original host staging split is not retained.
 Git writes to that mounted copy do not update the workspace automatically.
-`GitRepository.withDirectory(directory:)` can adopt a resulting repository
+`GitRepository.withContents(directory:)` can adopt a resulting repository
 while retaining the receiver's logical URL and remote routing.
 
 Implementation: [workspace commit](../../core/schema/workspace_commit.go),

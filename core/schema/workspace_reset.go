@@ -55,7 +55,7 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 	if err := srv.Select(ctx, frozen, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
 		return inst, err
 	}
-	repo, err := gitRepositoryWithDirectory(ctx, srv, head.Self().Repo, dir)
+	repo, err := gitRepositoryWithContents(ctx, srv, head.Self().Repo, dir)
 	if err != nil {
 		return inst, err
 	}

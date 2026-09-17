@@ -229,7 +229,7 @@ func workspaceRepositoryFromDirectory(ctx context.Context, parent dagql.ObjectRe
 	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
 		return inst, err
 	}
-	return gitRepositoryWithDirectory(ctx, srv, head.Self().Repo, dir)
+	return gitRepositoryWithContents(ctx, srv, head.Self().Repo, dir)
 }
 
 func validateWorkspaceGitAuthor(name, email string) error {

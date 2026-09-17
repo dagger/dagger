@@ -228,11 +228,11 @@ defmodule Dagger.GitRepository do
 
   The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
   """
-  @spec with_directory(t(), Dagger.Directory.t()) :: Dagger.GitRepository.t()
-  def with_directory(%__MODULE__{} = git_repository, directory) do
+  @spec with_contents(t(), Dagger.Directory.t()) :: Dagger.GitRepository.t()
+  def with_contents(%__MODULE__{} = git_repository, directory) do
     query_builder =
       git_repository.query_builder
-      |> QB.select("withDirectory")
+      |> QB.select("withContents")
       |> QB.put_arg("directory", Dagger.ID.id!(directory))
 
     %Dagger.GitRepository{

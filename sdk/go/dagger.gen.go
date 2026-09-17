@@ -10059,9 +10059,9 @@ func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithB
 // Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
 //
 // The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
-func (r *GitRepository) WithDirectory(directory *Directory) *GitRepository {
+func (r *GitRepository) WithContents(directory *Directory) *GitRepository {
 	assertNotNil("directory", directory)
-	q := r.query.Select("withDirectory")
+	q := r.query.Select("withContents")
 	q = q.Arg("directory", directory)
 
 	return &GitRepository{

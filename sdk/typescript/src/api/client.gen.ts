@@ -11201,8 +11201,8 @@ export class GitRepository extends BaseClient {
    * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
    * @param directory Existing Git storage to open. Git metadata and object dependencies must be contained in this directory.
    */
-  withDirectory = (directory: Directory): GitRepository => {
-    const ctx = this._ctx.select("withDirectory", { directory })
+  withContents = (directory: Directory): GitRepository => {
+    const ctx = this._ctx.select("withContents", { directory })
     return new GitRepository(ctx)
   }
 

@@ -9955,7 +9955,7 @@ class GitRepository(Type):
         _ctx = self._select("withBundle", _args)
         return GitRepository(_ctx)
 
-    def with_directory(self, directory: Directory) -> Self:
+    def with_contents(self, directory: Directory) -> Self:
         """Replace this repository's storage with the supplied self-contained Git
         repository, retaining its logical URL and push destinations.
 
@@ -9977,7 +9977,7 @@ class GitRepository(Type):
         _args = [
             Arg("directory", directory),
         ]
-        _ctx = self._select("withDirectory", _args)
+        _ctx = self._select("withContents", _args)
         return GitRepository(_ctx)
 
     def with_remote(

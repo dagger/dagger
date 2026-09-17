@@ -75,7 +75,7 @@ func (s *gitSchema) gitRefWithCommit(ctx context.Context, parent dagql.ObjectRes
 	if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "__withCommitDirectory", Args: args.selectors()}); err != nil {
 		return inst, err
 	}
-	repo, err := gitRepositoryWithDirectory(ctx, srv, parent.Self().Repo, dir)
+	repo, err := gitRepositoryWithContents(ctx, srv, parent.Self().Repo, dir)
 	if err != nil {
 		return inst, err
 	}
