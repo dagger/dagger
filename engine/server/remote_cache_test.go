@@ -203,14 +203,15 @@ func TestRemoteCacheGracefulStop(t *testing.T) {
 			return nil
 		}}))
 		// The shutdown deadline passes once Run has ignored its cancellation;
-		// the cache is otherwise quiescent.
-		stopCtx, expire := context.WithCancel(context.Background())
+		// the cache is otherwise quiescent. The context's own deadline bounds
+		// GracefulStop if that signal never arrives.
+		stopCtx, expire := context.WithTimeout(context.Background(), 10*time.Second)
 		defer expire()
 		go func() {
 			select {
 			case <-canceled:
 				expire()
-			case <-time.After(10 * time.Second):
+			case <-stopCtx.Done():
 			}
 		}()
 		err := srv.GracefulStop(stopCtx)
