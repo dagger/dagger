@@ -39,11 +39,7 @@ func ContextWithPersistedDecodeDefaults(ctx context.Context, root *Query, factor
 // and factory, checks that the decoding server really has that engine root,
 // and returns a fresh builder for that server's view: the same immutable
 // core view the decoding fork uses. Nested Module decodes make their own.
-func persistedDecodeDefaultDeps(ctx context.Context, dec *dagql.PersistDecodeContext) (*SchemaBuilder, error) {
-	query, err := persistedDecodeQuery(dec)
-	if err != nil {
-		return nil, err
-	}
+func persistedDecodeDefaultDeps(ctx context.Context, dec *dagql.PersistDecodeContext, query *Query) (*SchemaBuilder, error) {
 	if !engine.IsSnapshotSharePreparation(ctx) {
 		return query.DefaultDeps(ctx)
 	}

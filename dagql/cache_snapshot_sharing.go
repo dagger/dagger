@@ -339,7 +339,6 @@ func (c *Cache) ensureSnapshotShareWorkerLocked() {
 	c.shareWake = make(chan struct{}, 1)
 	ctx, cancel := context.WithCancelCause(c.snapshotShareWorkerBase())
 	c.shareWorkerCancel = cancel
-	c.shareWorkerDone = make(chan struct{})
 	go c.runSnapshotShareWorker(ctx)
 }
 
@@ -381,7 +380,6 @@ func (c *Cache) takeSnapshotShareItemLocked() *snapshotShareItem {
 }
 
 func (c *Cache) runSnapshotShareWorker(ctx context.Context) {
-	defer close(c.shareWorkerDone)
 	for {
 		c.egraphMu.Lock()
 		item := c.takeSnapshotShareItemLocked()
@@ -421,24 +419,8 @@ func (c *Cache) retireExtraShareOperations(item *snapshotShareItem) {
 // resulting collection callbacks unlocked with an uncanceled cleanup context,
 // and ends the item's counted operation last.
 func (c *Cache) releaseSnapshotShareItem(ctx context.Context, item *snapshotShareItem) {
-	cleanupCtx := context.WithoutCancel(ctx)
-	c.egraphMu.Lock()
-	var queue collectionQueue
-	var err error
-	for _, row := range item.members {
-		q, decErr := c.decrementIncomingOwnershipLocked(cleanupCtx, row, queue)
-		queue = q
-		err = errors.Join(err, decErr)
-	}
-	item.members = nil
-	callbacks, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
-	duplicates := c.takeShareDuplicateHoldsLocked()
-	c.egraphMu.Unlock()
-	err = errors.Join(err, collectErr, runOnReleaseFuncs(cleanupCtx, callbacks))
-	c.releaseShareDuplicateHolds(cleanupCtx, duplicates)
-	if err != nil {
-		c.recordShareCleanupError(err)
-	}
+	// A pass has already released its members; a dropped item has not.
+	c.releaseSnapshotShareMembers(ctx, item, nil)
 	for i := range item.ops {
 		item.ops[i].finish(false)
 	}
@@ -463,12 +445,13 @@ func (c *Cache) dropSnapshotShareQueue(ctx context.Context) {
 // closeSnapshotSharing closes admission and stops the worker. It runs
 // immediately after the remote-cache bridge detach and before the cache waits
 // for quiescence, so an enqueue either finished its E section before this
-// step, and is dropped here, or fails admission afterwards. Its errors are
-// joined into the caller's close error and never assigned over a seeded
+// step, and is dropped here, or fails admission afterwards. It cannot fail:
+// a pass's cleanup errors are recorded as release cleanup errors, which the
+// close path already joins into its error without replacing a seeded
 // shutdown cause.
-func (c *Cache) closeSnapshotSharing(ctx context.Context) error {
+func (c *Cache) closeSnapshotSharing() {
 	if c == nil {
-		return nil
+		return
 	}
 	c.egraphMu.Lock()
 	c.shareAdmission = snapshotShareClosed
@@ -478,11 +461,10 @@ func (c *Cache) closeSnapshotSharing(ctx context.Context) error {
 	if !started {
 		// No worker ever ran, so nothing can be queued; there is nothing to
 		// drain and no goroutine to wake.
-		return nil
+		return
 	}
 	cancel(ErrSnapshotSharingClosed)
 	c.wakeSnapshotShareWorker()
-	return nil
 }
 
 func (c *Cache) recordShareCleanupError(err error) {
@@ -559,16 +541,25 @@ type PartPreparationContext func(context.Context) (context.Context, *Server, err
 var ErrSnapshotShareIneligible = errors.New("snapshot share ineligible")
 
 // SetPartPreparationContext registers the engine's preparation callback. It
-// is set once before live sharing admission; replacing it after admission is
-// an initialization error, and NewCache defaults it to nil.
+// is set once, before live sharing admission: a replacement, a first
+// registration after admission was enabled and any registration after close
+// are initialization errors. NewCache defaults it to nil.
 func (c *Cache) SetPartPreparationContext(prepare PartPreparationContext) error {
 	if c == nil {
 		return fmt.Errorf("set part preparation context: nil cache")
 	}
+	if prepare == nil {
+		return fmt.Errorf("set part preparation context: nil callback")
+	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	if c.shareAdmission == snapshotShareOn && c.partPreparation != nil {
-		return fmt.Errorf("set part preparation context: already registered and admitted")
+	switch {
+	case c.partPreparation != nil:
+		return fmt.Errorf("set part preparation context: already registered")
+	case c.shareAdmission == snapshotShareOn:
+		return fmt.Errorf("set part preparation context: sharing admission is already enabled")
+	case c.shareAdmission == snapshotShareClosed:
+		return ErrSnapshotSharingClosed
 	}
 	c.partPreparation = prepare
 	return nil
@@ -962,10 +953,9 @@ type shareSlotState struct {
 	// holds is set once a live preparation exists that must be committed or
 	// disposed; ready means its prefix is still intact; settled means its one
 	// terminal commit outcome has been consumed.
-	holds     bool
-	ready     bool
-	settled   bool
-	installed bool
+	holds   bool
+	ready   bool
+	settled bool
 }
 
 func (st *shareSlotState) reportPrepared(res shareSlotPrepared) {
@@ -1176,7 +1166,6 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 			c.abortShareSuffix(states, i)
 			continue
 		}
-		st.installed = true
 		if deferred[st.receiver] {
 			successors = append(successors, st.receiver)
 		}

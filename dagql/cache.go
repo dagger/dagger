@@ -1892,7 +1892,6 @@ type Cache struct {
 	shareQueue         []eqClassID
 	shareWorkerStarted bool
 	shareWorkerCancel  context.CancelCauseFunc
-	shareWorkerDone    chan struct{}
 	shareWake          chan struct{}
 	// shareDuplicateHolds are member holds dropped by coalescing, released
 	// through the ordinary unlocked path by the next queue operation.
@@ -4623,9 +4622,7 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 		// either finished its E section before this step, and is dropped
 		// here, or fails admission. Placed before it, an enqueue in between
 		// could strand a counted operation with no worker.
-		if err := c.closeSnapshotSharing(ctx); err != nil {
-			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("close snapshot sharing: %w", err))
-		}
+		c.closeSnapshotSharing()
 		if err := c.waitForQuiescence(ctx); err != nil {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
@@ -4676,9 +4673,7 @@ func (c *Cache) CloseDiscardingPersistence() error {
 		c.closeRemoteCacheBridge()
 		// The discard path is the boot reset, before sharing is enabled:
 		// this closes admission and has nothing to drain.
-		if err := c.closeSnapshotSharing(context.Background()); err != nil {
-			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("close snapshot sharing: %w", err))
-		}
+		c.closeSnapshotSharing()
 		slog.Info(
 			"discarding dagql cache without persistence",
 			"hasSQLDB", c.sqlDB != nil,
