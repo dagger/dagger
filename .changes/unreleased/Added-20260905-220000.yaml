@@ -1,6 +1,6 @@
 kind: Added
 body: |
-  Add Workspace.commitsFrom and Workspace.withCommitsFrom to preview and pull
+  Add Workspace.compareCommitsFrom and Workspace.withCommitsFrom to preview and pull
   commits between frozen workspaces. Pulls fast-forward complete ancestry or
   cherry-pick selected commits, skip already-picked and redundant patches, and
   preserve receiver uncommitted changes and metadata. Conflicts fail the whole
