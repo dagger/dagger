@@ -318,3 +318,115 @@ func TestRenewalClaimKeepsSourceCheck(t *testing.T) {
 		return nil
 	}}))
 }
+
+// within bounds a wait outside a synctest bubble.
+func within[T any](t *testing.T, ch <-chan T) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting")
+		panic("unreachable")
+	}
+}
+
+// waitQueued blocks on the mailbox's ready signal until live exchanges exist.
+func waitQueued(t *testing.T, bridge *RemoteCacheBridge, live int) {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		bridge.mu.Lock()
+		n, ready := len(bridge.exchanges), bridge.ready
+		bridge.mu.Unlock()
+		if n >= live {
+			return
+		}
+		select {
+		case <-ready:
+		case <-deadline:
+			t.Fatalf("timed out waiting for %d live exchanges, have %d", live, n)
+		}
+	}
+}
+
+func TestRemoteCacheBridgeAttachment(t *testing.T) {
+	layers := renewalTestLayers("lower", "upper")
+	ctx, c, _ := transferTestCache(t)
+	source := c.PartContentSource()
+	require.Nil(t, source.bridge.Load())
+	first, created, err := c.AttachRemoteCacheBridge()
+	require.NoError(t, err)
+	require.True(t, created)
+	again, created, err := c.AttachRemoteCacheBridge()
+	require.NoError(t, err)
+	require.False(t, created)
+	require.Same(t, first, again, "a live attachment is returned, not replaced")
+	require.Same(t, first, source.bridge.Load())
+
+	pending := startRenewal(ctx, first, renewalTestRequest(t, layers))
+	waitQueued(t, first, 1)
+	oldRequest := takeNow(t, first)
+	require.False(t, c.DetachRemoteCacheBridge(nil))
+	require.True(t, c.DetachRemoteCacheBridge(first))
+	require.False(t, c.DetachRemoteCacheBridge(first), "repeated detach")
+	require.ErrorContains(t, within(t, pending).err, "bridge detached")
+	within(t, oldRequest.Done)
+	require.Nil(t, source.bridge.Load())
+
+	second, created, err := c.AttachRemoteCacheBridge()
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NotSame(t, first, second)
+	require.NotEqual(t, first.epoch, second.epoch, "each attachment has a fresh epoch")
+	require.False(t, c.DetachRemoteCacheBridge(first), "a stale detach cannot close its successor")
+	require.Same(t, second, source.bridge.Load())
+	result := startRenewal(ctx, second, renewalTestRequest(t, layers))
+	waitQueued(t, second, 1)
+	request := takeNow(t, second)
+	require.Equal(t, oldRequest.ID.Sequence, request.ID.Sequence)
+	stale := RenewalReply{ID: oldRequest.ID, Chain: request.Chain, Unavailable: true}
+	require.Equal(t, RenewalReplyDiscarded, second.ReplyRenewal(stale), "an old attachment's reply cannot match")
+	require.Equal(t, RenewalReplyAccepted, second.ReplyRenewal(RenewalReply{ID: request.ID, Chain: request.Chain, Unavailable: true}))
+	require.ErrorIs(t, within(t, result).err, ErrRenewalUnavailable)
+
+	// Cache close detaches before waiting for operations and refuses a later
+	// attachment; an idle consumer cannot hold close open.
+	op, err := c.beginCacheOperation()
+	require.NoError(t, err)
+	finished := false
+	finish := func() {
+		if !finished {
+			finished = true
+			op.finish(false)
+		}
+	}
+	defer finish()
+	pending = startRenewal(ctx, second, renewalTestRequest(t, layers))
+	waitQueued(t, second, 1)
+	delivered := takeNow(t, second)
+	taken := make(chan error, 1)
+	go func() {
+		_, err := second.TakeRenewalRequest(ctx)
+		taken <- err
+	}()
+	// A failed check cancels close before the operation ends, so cleanup
+	// cannot wait on this close.
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelClose()
+	closed := make(chan error, 1)
+	go func() { closed <- c.Close(closeCtx) }()
+	require.ErrorContains(t, within(t, pending).err, "bridge detached")
+	within(t, delivered.Done)
+	require.ErrorIs(t, within(t, taken), ErrRemoteCacheBridgeClosed)
+	_, _, err = c.AttachRemoteCacheBridge()
+	require.ErrorIs(t, err, ErrCacheClosed)
+	select {
+	case err := <-closed:
+		t.Fatalf("close finished before the active operation: %v", err)
+	default:
+	}
+	finish()
+	require.NoError(t, within(t, closed))
+	require.False(t, c.DetachRemoteCacheBridge(second))
+}

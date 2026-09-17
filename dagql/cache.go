@@ -4563,6 +4563,7 @@ func (c *Cache) Close(ctx context.Context) error {
 			"hasSQLDB", c.sqlDB != nil,
 			"hasPersistDB", c.pdb != nil,
 		)
+		c.closeRemoteCacheBridge()
 		if err := c.waitForQuiescence(ctx); err != nil {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
@@ -4607,7 +4608,7 @@ func (c *Cache) Close(ctx context.Context) error {
 
 func (c *Cache) CloseDiscardingPersistence() error {
 	c.closeOnce.Do(func() {
-		c.closing.Store(true)
+		c.closeRemoteCacheBridge()
 		slog.Info(
 			"discarding dagql cache without persistence",
 			"hasSQLDB", c.sqlDB != nil,

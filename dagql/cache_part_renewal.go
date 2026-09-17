@@ -396,3 +396,64 @@ func (d *PartDemandState) targetKey() string {
 	raw, _ := json.Marshal(d.target)
 	return string(raw)
 }
+
+// AttachRemoteCacheBridge publishes this cache's renewal mailbox. A live
+// attachment is returned again with created=false and no added ownership;
+// otherwise a new mailbox with a fresh epoch is published. A closing cache
+// refuses.
+func (c *Cache) AttachRemoteCacheBridge() (bridge *RemoteCacheBridge, created bool, err error) {
+	s := c.partContentSource
+	if s == nil {
+		return nil, false, errors.New("attach remote cache bridge: cache has no content source")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c.closing.Load() {
+		return nil, false, ErrCacheClosed
+	}
+	if bridge := s.bridge.Load(); bridge != nil {
+		return bridge, false, nil
+	}
+	bridge, err = newRemoteCacheBridge(&s.mu)
+	if err != nil {
+		return nil, false, err
+	}
+	s.bridge.Store(bridge)
+	return bridge, true, nil
+}
+
+// DetachRemoteCacheBridge retires exactly this attachment, completing its
+// exchanges as unavailable. Nil, stale and repeated detach return false and
+// leave a newer attachment alone.
+func (c *Cache) DetachRemoteCacheBridge(bridge *RemoteCacheBridge) (detached bool) {
+	s := c.partContentSource
+	if s == nil || bridge == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.detachLocked(bridge)
+}
+
+func (s *PartContentSource) detachLocked(bridge *RemoteCacheBridge) bool {
+	if bridge == nil || s.bridge.Load() != bridge {
+		return false
+	}
+	bridge.closeLocked()
+	s.bridge.Store(nil)
+	return true
+}
+
+// closeRemoteCacheBridge closes attachment admission and detaches before the
+// cache waits for operations, so an idle consumer cannot hold close open.
+func (c *Cache) closeRemoteCacheBridge() {
+	s := c.partContentSource
+	if s == nil {
+		c.closing.Store(true)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c.closing.Store(true)
+	s.detachLocked(s.bridge.Load())
+}
