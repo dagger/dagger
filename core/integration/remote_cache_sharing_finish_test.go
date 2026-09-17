@@ -268,7 +268,14 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		case <-time.After(2 * time.Minute):
 			t.Fatal("the foreground read waited for the held pass")
 		}
+		// Let the pass go, and hold it again at R's first external Finish: the
+		// commit phase is then over, so every install of R is recorded before
+		// the report below is read.
+		var finish dagql.FixtureBarrierArmed
+		require.NoError(t, b.fixture("barrierArm", b.control("finish.json", dagql.FixtureBarrierRequest{Key: "finish", Point: dagql.FixtureBeforeFinish, Selector: dagql.FixtureBarrierSelector{ResultID: rID}, Action: dagql.FixturePause}), nil, &finish))
 		require.NoError(t, b.fixture("barrierRelease", key+"-wait.json", nil, nil))
+		s.await(ctx, t, "finish", finish.Generation)
+		require.NoError(t, b.fixture("barrierRelease", "finish-wait.json", nil, nil))
 		s.readAll(ctx, t, rHandle)
 		var after fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &after))
@@ -277,6 +284,7 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		for _, index := range partEventsOf(after.transferFixtureReport, rID, "installed-ready") {
 			installs[after.Parts[index].Address.Part]++
 		}
+		require.Len(t, installs, 4, "every address of R is installed: %v", installs)
 		for part, n := range installs {
 			require.Equal(t, 1, n, "%s is installed exactly once", part)
 		}
