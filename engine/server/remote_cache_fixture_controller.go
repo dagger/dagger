@@ -11,6 +11,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
@@ -239,6 +240,9 @@ func (srv *Server) RemoteCacheFixtureGC(ctx context.Context) (core.RemoteCacheFi
 }
 
 func (srv *Server) fixtureStorageCounts(ctx context.Context) (snapshotCount, blobs, leaseCount uint64, err error) {
+	// The metadata database's own views need the engine's namespace, the one
+	// its snapshotter, content store and lease manager are all opened with.
+	ctx = namespaces.WithNamespace(ctx, "dagger")
 	if err := srv.containerdMetaDB.Snapshotter(srv.snapshotterName).Walk(ctx, func(context.Context, snapshots.Info) error {
 		snapshotCount++
 		return nil
