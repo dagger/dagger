@@ -501,6 +501,7 @@ func TestSnapshotSharingCoalescing(t *testing.T) {
 // installs, releases members and finishes.
 func TestSnapshotSharingNoJoinRefusal(t *testing.T) {
 	ctx, c, srv, manager := shareTestCache(t)
+	c.EnableTransferFixtureParts()
 	barrier := newSharePassBarrier(c)
 	donor, receiver := shareTestPair(t, ctx, c, srv,
 		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}, "mount": {Snapshot: "mount-snap"}},
@@ -533,6 +534,21 @@ func TestSnapshotSharingNoJoinRefusal(t *testing.T) {
 	require.False(t, shareTestHasLink(receiver, "fs-snap"), "the busy address is refused")
 	require.True(t, shareTestHasLink(receiver, "mount-snap"), "the other address still installs")
 	require.Equal(t, int32(1), manager.pins.Load(), "the refused slot took no pin")
+	// The gated fixture sees the refused slot, by address and with its cause.
+	var skipped []TransferFixturePartEvent
+	events, _ := c.partFixtureEvents()
+	for _, event := range events {
+		if event.Kind == "share-skipped" {
+			skipped = append(skipped, event)
+		}
+	}
+	// A later pass may meet the same busy slot again.
+	require.NotEmpty(t, skipped)
+	for _, event := range skipped {
+		require.Equal(t, uint64(receiver.cacheSharedResult().id), event.ResultID)
+		require.Equal(t, PartKey("fs"), event.Address.Part)
+		require.Equal(t, ErrLazyTaskBusy.Error(), event.Detail)
+	}
 	unblock()
 	select {
 	case err := <-taskDone:
