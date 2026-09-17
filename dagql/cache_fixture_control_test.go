@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -338,11 +339,35 @@ func TestFixtureBarrierDecodeJoined(t *testing.T) {
 	resultID := persistRetryDecodeSeed(t, ctx, dbPath, nil)
 	c, err := NewCache(ctx, dbPath, nil, nil)
 	require.NoError(t, err)
-	defer func() { require.NoError(t, c.Close(context.Background())) }()
 	c.EnableTransferFixtureParts()
 	srv := newPersistRetryDecodeTestServer()
 
+	// Everything that can hold a load is released on every exit, and the
+	// loads are joined, before Close waits for them: a failed assertion must
+	// report promptly instead of consuming the package timeout. Deferred
+	// calls run last in, first out, so Close is deferred first.
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		require.NoError(t, c.Close(closeCtx))
+	}()
+	var loads []<-chan error
+	defer func() {
+		for _, done := range loads {
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Error("a load never returned during cleanup")
+			}
+		}
+	}()
 	leaderEntered, releaseLeader := make(chan struct{}), make(chan struct{})
+	unblockLeader := sync.OnceFunc(func() { close(releaseLeader) })
+	defer unblockLeader()
+	armed, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "joined", Point: FixtureDecodeJoined, Selector: FixtureBarrierSelector{ResultID: resultID}, Action: FixturePause})
+	require.NoError(t, err)
+	defer func() { _ = c.ReleaseTransferFixtureBarrier("joined", armed.Generation) }()
+
 	var entries atomic.Int32
 	persistRetryDecodeHooks.Store(resultID, func(hookCtx context.Context) error {
 		if entries.Add(1) == 1 {
@@ -356,8 +381,6 @@ func TestFixtureBarrierDecodeJoined(t *testing.T) {
 		return nil
 	})
 	defer persistRetryDecodeHooks.Delete(resultID)
-	armed, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "joined", Point: FixtureDecodeJoined, Selector: FixtureBarrierSelector{ResultID: resultID}, Action: FixturePause})
-	require.NoError(t, err)
 
 	load := func(sessionID string) <-chan error {
 		loadCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: sessionID + "-client", SessionID: sessionID})
@@ -366,8 +389,11 @@ func TestFixtureBarrierDecodeJoined(t *testing.T) {
 		go func() {
 			_, err := c.LoadResultByResultID(loadCtx, sessionID, srv, resultID)
 			done <- err
+			// Closed after its one value, so the cleanup's join returns at
+			// once for a load the test already received.
+			close(done)
 		}()
-		t.Cleanup(func() { _ = c.ReleaseSession(loadCtx, sessionID) })
+		loads = append(loads, done)
 		return done
 	}
 	leader := load("decode-joined-leader")
@@ -386,7 +412,7 @@ func TestFixtureBarrierDecodeJoined(t *testing.T) {
 	require.EqualValues(t, 1, entries.Load(), "the joiner did not start a decode of its own")
 
 	require.NoError(t, c.ReleaseTransferFixtureBarrier("joined", armed.Generation))
-	close(releaseLeader)
+	unblockLeader()
 	for _, done := range []<-chan error{leader, joiner} {
 		select {
 		case err := <-done:
