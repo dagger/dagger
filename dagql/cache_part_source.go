@@ -67,8 +67,63 @@ type PartSourceLease struct {
 	facts            partSourceFacts
 	lookup           partLookup
 	sessionID        string
-	once             sync.Once
-	releaseErr       error
+	// A sessionless share validates the donated address alone. donated holds
+	// the per-address facts observed at admission; receiverID/receiverOwnGen
+	// hold the receiver's original structural admission, so Commit can refuse
+	// an actual change to Own(R) without refusing an unrelated sibling change.
+	donated        partDonatedFacts
+	receiverID     sharedResultID
+	receiverOwnGen uint64
+	once           sync.Once
+	releaseErr     error
+}
+
+// partDonatedFacts are the donor facts that belong to one full address. A
+// sibling publication, an offer attached elsewhere or a whole-payload revision
+// change leaves every field unchanged; a real change to this address's
+// publication, ownership link or offer slot changes one of them.
+type partDonatedFacts struct {
+	output     partOutputState
+	offerOwner offerOwnerID
+	ownerLink  bool
+	expires    int64
+}
+
+// partDonatedFactsLocked reads the donor's facts for one full address. The
+// applied owner link is the design's "applied role naming the same B-local
+// SnapshotID": a desired link or an accessor preseed is not one. E is held; P
+// is taken under it, following the encoded installer's E -> G -> P order.
+func (c *Cache) partDonatedFactsLocked(row *sharedResult, key string, address PersistedPartAddress, snapshotID string) partDonatedFacts {
+	f := partDonatedFacts{expires: row.expiresAtUnix}
+	if gate := row.partGate.gate.Load(); gate != nil {
+		gate.mu.Lock()
+		f.output = gate.outputs[key]
+		gate.mu.Unlock()
+	}
+	if offer := row.partOffers[key]; offer != nil && offer.owner != nil {
+		f.offerOwner = offer.owner.id
+	}
+	if snapshotID != "" {
+		want, err := canonicalPath(address.OutputPath)
+		if err == nil {
+			row.payloadMu.RLock()
+			for _, link := range row.snapshotOwnerLinks {
+				if link.RefKey != snapshotID {
+					continue
+				}
+				if got, err := canonicalPath(link.OutputPath); err == nil && got == want {
+					f.ownerLink = true
+					break
+				}
+			}
+			row.payloadMu.RUnlock()
+		}
+	}
+	return f
+}
+
+func partRowExpired(row *sharedResult, now int64) bool {
+	return row != nil && row.expiresAtUnix != 0 && row.expiresAtUnix <= now
 }
 
 func (s *PartSourceLease) Descriptor() PartDescriptor {
@@ -599,6 +654,13 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 	if receiver == nil || donor == nil || !receiver.imported || c.resultsByID[receiver.id] != receiver || c.resultsByID[donor.id] != donor {
 		return nil, fmt.Errorf("sessionless part source requires registered rows and an imported receiver")
 	}
+	// Expiry blocks new sharing for either row. The candidate collector already
+	// excludes an expired donor, but it deliberately exempts the receiver,
+	// which for an ordinary demand is also the first candidate.
+	now := time.Now().Unix()
+	if partRowExpired(receiver, now) || partRowExpired(donor, now) {
+		return nil, ErrPartReselect
+	}
 	if _, err := partAddressKey(target); err != nil {
 		return nil, err
 	}
@@ -628,6 +690,13 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 		}
 	}
 	source.offerRev = source.facts.offers
+	source.receiverID = receiver.id
+	source.receiverOwnGen = receiver.requiredSessionResourcesGen.Load()
+	source.donated = c.partDonatedFactsLocked(donor, key, address, source.descriptor.SnapshotID)
+	// A donated snapshot must be owned by the donor now, not merely desired.
+	if source.descriptor.SnapshotID != "" && !source.donated.ownerLink {
+		return nil, ErrPartReselect
+	}
 	c.incrementIncomingOwnershipLocked(ctx, donor)
 	return source, nil
 }

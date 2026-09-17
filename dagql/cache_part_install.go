@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dagger/dagger/engine/snapshots"
 	set "github.com/hashicorp/go-set/v3"
@@ -367,7 +368,10 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 			return nil, PartInstallRefused, partRefused("commit: delegation child version")
 		}
 	}
-	if p.original == nil && source.readiness == PartReady {
+	if p.original == nil && source.readiness == PartReady && !source.sessionlessShare {
+		// A sessionless share validates its donated address alone, below. The
+		// donor's whole-row capture would refuse an unchanged donated part
+		// whenever a sibling of the donor published in the same pass.
 		if err := source.version.check(source.source); err != nil {
 			return nil, PartInstallRefused, partRefused("commit: donor version")
 		}
@@ -378,9 +382,32 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if c.resultsByID[row.id] != row || !p.permit.task.active.Load() {
 		return nil, PartInstallRefused, partRefused("commit: receiver unregistered or task inactive")
 	}
+	if source.sessionlessShare {
+		// The receiver's original structural admission must still hold. The
+		// requirement generation changes only when the stored set actually
+		// changes, so an earlier same-pass install that added edges already
+		// inside Own(R) does not refuse this slot.
+		if row.id != source.receiverID || row.requiredSessionResourcesGen.Load() != source.receiverOwnGen {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+		if partRowExpired(row, time.Now().Unix()) {
+			return nil, PartInstallRefused, ErrPartReselect
+		}
+	}
 	if p.original == nil && source.readiness == PartReady {
-		if source.source == nil || c.resultsByID[source.source.id] != source.source || source.facts != c.partFactsLocked(source.source) {
-			return nil, PartInstallRefused, partRefused("commit: donor unregistered or facts changed")
+		if source.source == nil || c.resultsByID[source.source.id] != source.source {
+			return nil, PartInstallRefused, partRefused("commit: donor unregistered")
+		}
+		if source.sessionlessShare {
+			key, err := partAddressKey(source.descriptor.Address)
+			if err != nil {
+				return nil, PartInstallRefused, err
+			}
+			if c.partDonatedFactsLocked(source.source, key, source.descriptor.Address, source.descriptor.SnapshotID) != source.donated {
+				return nil, PartInstallRefused, partRefused("commit: donated facts changed")
+			}
+		} else if source.facts != c.partFactsLocked(source.source) {
+			return nil, PartInstallRefused, partRefused("commit: donor facts changed")
 		}
 		found := false
 		if source.delegation != nil {
