@@ -338,6 +338,11 @@ type ExportedValues struct {
 	Sources []ImportedValue
 }
 
+// WithExportedValues captures the selected closure and lends it to consume.
+// It is a capture and never waits: if any row of the closure has a task in
+// flight (an evaluation, a part installation, a sharing slot) it returns
+// ErrPersistStateNotReady having kept nothing, and the caller retries later.
+//
 //nolint:gocyclo // one step per export phase over the held closure; splitting hides the order of the steps
 func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
 	op, err := c.beginCacheOperation()
