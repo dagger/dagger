@@ -46,9 +46,13 @@ func (l *Loader) SDKForModule(
 	sdk *core.SDKConfig,
 	parentSrc *core.ModuleSource,
 ) (_ core.SDK, rerr error) {
+	if parentSrc != nil && parentSrc.Entrypoint != nil {
+		return l.entrypointForModule(ctx, parentSrc)
+	}
 	if sdk == nil {
 		return nil, errMissingSDKRef
 	}
+	recordInterface(ctx, interfaceLegacyRuntime, sdk.Source)
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load SDK: %s", sdk.Source))
 	defer telemetry.EndWithCause(span, &rerr)

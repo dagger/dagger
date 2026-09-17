@@ -1,0 +1,31 @@
+# A shared entrypoint has no path generated into it. It finds the module it
+# serves through the workspace it is handed, whose working directory is that
+# module's directory. This one reports that directory back.
+type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Tiny")
+        .withConstructor(function("", typeDef.withObject("Tiny")))
+        .withFunction(
+          function("Where", typeDef.withKind(TypeDefKind.STRING_KIND)),
+        ),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Where") {
+      (("\"" + workspace.cwd + "\"") :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}
