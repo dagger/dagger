@@ -2401,7 +2401,10 @@ func materializedDirectorySnapshotAndPath(dir *Directory) (bkcache.ImmutableRef,
 	if dir == nil {
 		return nil, "", fmt.Errorf("materialized directory: nil directory")
 	}
-	if dir.Lazy != nil && !dir.Lazy.IsEvaluated() {
+	// Pending computation, not the operation's evaluated flag: a value whose
+	// part was acquired has a stored descriptor and an opened snapshot, and
+	// its restore operation never runs.
+	if dir.HasPendingLazyComputation() {
 		return nil, "", fmt.Errorf("materialized directory: still lazy %T", dir.Lazy)
 	}
 	dirRef, ok := dir.Snapshot.Peek()

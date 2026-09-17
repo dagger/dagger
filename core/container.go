@@ -875,7 +875,10 @@ func cloneDetachedDirectoryForContainerResult(ctx context.Context, src *Director
 	if src == nil {
 		return nil, nil
 	}
-	if src.Lazy != nil && !src.Lazy.IsEvaluated() {
+	// Pending computation, not the operation's evaluated flag: a value whose
+	// part was acquired has a stored descriptor and an opened snapshot, and
+	// its restore operation never runs.
+	if src.HasPendingLazyComputation() {
 		return nil, fmt.Errorf("clone detached directory for container result: directory must be materialized, got lazy %T", src.Lazy)
 	}
 
@@ -917,7 +920,10 @@ func cloneDetachedFileForContainerResult(ctx context.Context, src *File) (*File,
 	if src == nil {
 		return nil, nil
 	}
-	if src.Lazy != nil && !src.Lazy.IsEvaluated() {
+	// Pending computation, not the operation's evaluated flag: a value whose
+	// part was acquired has a stored descriptor and an opened snapshot, and
+	// its restore operation never runs.
+	if src.HasPendingLazyComputation() {
 		return nil, fmt.Errorf("clone detached file for container result: file must be materialized, got lazy %T", src.Lazy)
 	}
 
