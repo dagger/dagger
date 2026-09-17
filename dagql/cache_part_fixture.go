@@ -25,8 +25,9 @@ type TransferFixturePartSource struct {
 	Address  PersistedPartAddress `json:"address"`
 }
 type partFixtureState struct {
-	mu     sync.Mutex
-	events []TransferFixturePartEvent
+	mu       sync.Mutex
+	events   []TransferFixturePartEvent
+	barriers fixtureBarriers
 }
 
 func (c *Cache) EnableTransferFixtureParts() {
@@ -115,5 +116,45 @@ func (p partFixtureProvider) Info(ctx context.Context, id digest.Digest) (conten
 }
 func (p partFixtureProvider) ReaderAt(ctx context.Context, desc ocispec.Descriptor) (content.ReaderAt, error) {
 	p.cache.recordPartFixture(p.row, p.address, "provider-read")
-	return p.InfoReaderProvider.ReaderAt(ctx, desc)
+	// The real provider's open boundary: an injected failure returns no
+	// reader, exactly as a failed open does.
+	event := FixtureBarrierEvent{Point: FixtureChainReaderOpen, ResultID: uint64(p.row.id), Address: &p.address, Detail: desc.Digest.String()}
+	if err := p.cache.fixtureReach(ctx, event); err != nil {
+		return nil, err
+	}
+	reader, err := p.InfoReaderProvider.ReaderAt(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	return &partFixtureReader{ReaderAt: reader, ctx: ctx, cache: p.cache, event: event}, nil
+}
+
+// partFixtureReader decorates the actual chain reader. A read fault is a
+// truncated stream at that read boundary: earlier bytes and the Close
+// obligation stay real. A close fault closes the actual reader first and
+// never hides its error.
+type partFixtureReader struct {
+	content.ReaderAt
+	ctx   context.Context
+	cache *Cache
+	event FixtureBarrierEvent
+}
+
+func (r *partFixtureReader) ReadAt(b []byte, off int64) (int, error) {
+	event := r.event
+	event.Point = FixtureChainRead
+	if err := r.cache.fixtureReach(r.ctx, event); err != nil {
+		return 0, err
+	}
+	return r.ReaderAt.ReadAt(b, off)
+}
+
+func (r *partFixtureReader) Close() error {
+	err := r.ReaderAt.Close()
+	event := r.event
+	event.Point = FixtureChainClose
+	if fault := r.cache.fixtureReach(r.ctx, event); fault != nil && err == nil {
+		err = fault
+	}
+	return err
 }

@@ -228,6 +228,10 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					return err
 				}
 				if source != nil {
+					// The source is selected and held; nothing is prepared.
+					if err := c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureSourceSelected, ResultID: uint64(row.id), Address: &address, Detail: string(source.route)}); err != nil {
+						return errors.Join(err, source.Release(context.WithoutCancel(ctx)))
+					}
 					kind := "selected-ready"
 					if source.readiness == PartDownloadable {
 						kind = "selected-chain"
@@ -479,6 +483,16 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 				}
 				return err
 			}
+			// An offer accepted while this is paused invalidates the final
+			// source check BeginOriginal makes; one accepted after the seal
+			// below is answered ExecutionStarted even while lazyEntry is paused.
+			lazyEvent := FixtureBarrierEvent{Point: FixtureBeforeBeginOriginal, ResultID: uint64(row.id), Address: &address}
+			if task != nil {
+				lazyEvent.TaskGeneration = task.generation
+			}
+			if err := c.fixtureReach(ctx, lazyEvent); err != nil {
+				return err
+			}
 			original, outcome, err := c.BeginOriginal(ctx, scan.NoSource)
 			if err != nil {
 				return err
@@ -486,10 +500,19 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			if outcome != GateGranted {
 				return partRefused("decision: final source check refused")
 			}
+			lazyEvent.Point = FixtureOriginalSealed
+			if err := c.fixtureReach(ctx, lazyEvent); err != nil {
+				return err
+			}
 			if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
 				return err
 			}
 			c.recordPartFixture(row, address, "lazy-enter")
+			// Immediately before the real private invocation body.
+			lazyEvent.Point, lazyEvent.Detail = FixtureLazyEntry, local.Envelope.ObjectCodec
+			if err := c.fixtureReach(ctx, lazyEvent); err != nil {
+				return err
+			}
 			if err := invocation.Run(ctx); err != nil {
 				return err
 			}

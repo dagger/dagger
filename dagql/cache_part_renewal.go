@@ -66,6 +66,9 @@ const (
 type RemoteCacheBridge struct {
 	mu    *sync.Mutex
 	epoch [16]byte
+	// cache is the attaching cache, for the gated fixture's observation
+	// points only. They stand outside M and are nil-off.
+	cache *Cache
 
 	closed    bool
 	sequence  uint64
@@ -100,7 +103,16 @@ func (b *RemoteCacheBridge) request(ctx context.Context, request RenewalRequest)
 	if err != nil {
 		return nil, err
 	}
+	b.reachRenewal(ctx, FixtureRenewalEnqueued, exchange.request.ID)
 	return b.wait(ctx, exchange)
+}
+
+// reachRenewal observes the real exchange outside M.
+func (b *RemoteCacheBridge) reachRenewal(ctx context.Context, point FixtureBarrierPoint, id RenewalRequestID) {
+	if b.cache == nil {
+		return
+	}
+	_ = b.cache.fixtureReach(ctx, FixtureBarrierEvent{Point: point, Detail: fmt.Sprintf("exchange=%d", id.Sequence)})
 }
 
 // enqueue installs one exchange without waiting for capacity. The exchange
@@ -209,6 +221,7 @@ func (b *RemoteCacheBridge) TakeRenewalRequest(ctx context.Context) (*RenewalReq
 				return nil, err
 			}
 			request.Layers = layers
+			b.reachRenewal(ctx, FixtureRenewalDelivered, request.ID)
 			return &request, nil
 		}
 		ready := b.ready
@@ -225,7 +238,13 @@ func (b *RemoteCacheBridge) TakeRenewalRequest(ctx context.Context) (*RenewalReq
 // old-epoch, wrong-content and invalid replies are discarded without effect; a
 // rejected reply leaves the exchange eligible until its original deadline. A
 // reply for a canceled requester is discarded and retires the exchange.
-func (b *RemoteCacheBridge) ReplyRenewal(reply RenewalReply) RenewalReplyDisposition {
+func (b *RemoteCacheBridge) ReplyRenewal(reply RenewalReply) (disposition RenewalReplyDisposition) {
+	defer func() {
+		// Registered first, so it runs last: after M is released.
+		if b.cache != nil {
+			_ = b.cache.fixtureReach(context.Background(), FixtureBarrierEvent{Point: FixtureRenewalReplied, Detail: fmt.Sprintf("exchange=%d disposition=%d", reply.ID.Sequence, disposition)})
+		}
+	}()
 	b.mu.Lock()
 	exchange := b.liveExchangeLocked(reply)
 	if exchange != nil && b.retireCanceledLocked(exchange) {
@@ -462,6 +481,7 @@ func (c *Cache) AttachRemoteCacheBridge() (bridge *RemoteCacheBridge, created bo
 	if err != nil {
 		return nil, false, err
 	}
+	bridge.cache = c
 	s.bridge.Store(bridge)
 	return bridge, true, nil
 }
