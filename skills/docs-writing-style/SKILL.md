@@ -7,7 +7,8 @@ description: Writing style for Dagger documentation prose in docs/current_docs. 
 
 How Dagger docs prose should read. `docs/STYLE_GUIDE.md` covers the mechanics:
 Word Case titles, sentence-case headings, no personal pronouns outside
-guides (the quickstart and `guides/` are companion journeys and may use
+guides (the quickstart and `getting-started/platform-guides/` are companion
+journeys and may use
 "you"), list and bold rules, snippet layout. Follow it. This skill
 covers what the style guide does not: voice, scope, naming, and accuracy.
 
@@ -143,8 +144,8 @@ ships). It is not fine to guess. Say in the PR what is ahead of the release.
 ## Process
 
 - Run `dagger check markdown-lint:lint` and `dagger check docs:check` (the
-  full site build, which catches broken links) with the pin from `hack/build`:
-  `DAGGER_X_RELEASE=$(grep -o 'X_RELEASE=[^ ]*' hack/build | sed 's/X_RELEASE=\${DAGGER_X_RELEASE:-//; s/}//')`.
+  full site build, which catches broken links). Run `dagger` as it is on your
+  PATH and never set `DAGGER_X_RELEASE` in the command.
 - After merging main, grep the edited pages for moved links and renamed
   commands. Upstream moves reference pages and renames CLI verbs without
   touching every page that mentions them.

@@ -598,6 +598,11 @@
   status = 301
 
 [[redirects]]
+  from = "/guides"
+  to = "https://archive.docs.dagger.io/0.9/guides"
+  status = 301
+
+[[redirects]]
   from = "/quickstart/120918/setup"
   to = "https://archive.docs.dagger.io/0.9/quickstart/120918/setup"
   status = 301

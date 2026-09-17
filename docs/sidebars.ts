@@ -56,23 +56,19 @@ module.exports = {
         "getting-started/try-dagger",
         "getting-started/quickstart",
         "getting-started/cloud-checks",
-      ],
-    },
-
-    // ========================================
-    // GUIDES
-    // ========================================
-    {
-      type: "category",
-      label: "Guides",
-      link: {
-        type: "doc",
-        id: "guides/index",
-      },
-      collapsible: true,
-      collapsed: false,
-      items: [
-        { type: "doc", id: "guides/go/index" },
+        {
+          type: "category",
+          label: "Platform Guides",
+          link: {
+            type: "doc",
+            id: "getting-started/platform-guides/index",
+          },
+          collapsible: true,
+          collapsed: false,
+          items: [
+            { type: "doc", id: "getting-started/platform-guides/go/index" },
+          ],
+        },
       ],
     },
 

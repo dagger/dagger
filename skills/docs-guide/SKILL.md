@@ -1,12 +1,13 @@
 ---
 name: docs-guide
-description: Author or review a platform guide in docs/current_docs/guides ("Daggerize a Go Project", Go + Compose, TypeScript + Playwright, and similar). Use when asked to write, extend, or review a guide that takes a whole project type from installing an official module to Checks running on every push.
+description: Author or review a platform guide in docs/current_docs/getting-started/platform-guides ("Daggerize a Go Project", Go + Compose, TypeScript + Playwright, and similar). Use when asked to write, extend, or review a guide that takes a whole project type from installing an official module to every Check passing in a runtime the project controls.
 ---
 
 # Docs Guides
 
-How to write a guide under `docs/current_docs/guides/`. The exemplar is
-`docs/current_docs/guides/go/index.mdx`, the first guide of this kind. Read it
+How to write a guide under `docs/current_docs/getting-started/platform-guides/`.
+The exemplar is `getting-started/platform-guides/go/index.mdx`, the first guide
+of this kind. Read it
 before writing a new one and match its shape, keeping the sections that apply
 to what the platform's official module exposes and dropping the ones that do
 not. This skill describes the framework; the Go guide is the worked instance of
@@ -17,14 +18,19 @@ shows each kind.
 
 A guide answers one question: "I have a project of type X. How do I daggerize
 it, all the way up?" It is the end-to-end path for one platform, from installing
-the official module to Checks running on every push.
+the official module to every Check passing, including the ones that need a
+runtime or services of the project's own.
 
-Guides are a parallel axis to the rest of the docs:
+Platform guides are the last part of Getting Started and continue from the
+Quickstart:
 
-- Getting Started and Configuration teach Dagger concepts in a linear order.
-- Reference pages describe one module, command, or config file.
-- A guide cuts across all of that for a single platform so the reader never has
-  to assemble the journey themselves.
+- The Quickstart gets any project to its first passing Checks: `dagger init`,
+  the recommended modules, settings, generators, `dagger check`.
+- A platform guide picks up from there for one kind of project and goes as far
+  as that platform needs.
+- Reference pages describe one module, command, or config file. A guide links
+  to them for the full surface so the reader never has to assemble the journey
+  themselves.
 
 Once a guide owns the narrative for a platform, the matching pages under
 `reference/modules/` become pure reference. Each guide directory is shaped so it
@@ -33,20 +39,20 @@ pages and snippets are its resources.
 
 ## Layout
 
-- One directory per platform: `guides/<platform>/`.
+- One directory per platform: `getting-started/platform-guides/<platform>/`.
 - `index.mdx` is the trunk, a linear progression: install the module, configure
   it, add any companion module the platform splits out, run generators, extend
   it with a small module of the reader's own, wire that module in, run every
-  Check, run on every push, next steps. That order is both the order to
+  Check, next steps. That order is both the order to
   daggerize in and increasing complexity, so most readers finish early. Say so
-  in the intro and in "How the pieces fit together": name the point where a
+  in the intro and in "What this guide covers": name the point where a
   project with plain tests is done, and tell the reader to stop there.
-- Branch pages (`guides/go/compose.mdx`, `guides/go/playwright.mdx`) exist only
+- Branch pages (`go/compose.mdx`, `go/playwright.mdx`) exist only
   for a section that is conditional on project shape. A branch opens at a named
   trunk step and rejoins the trunk. Do not split a linear journey across pages.
 - Set `pagination_next: null` in frontmatter so prev/next does not imply an
   order between guides.
-- Module code lives in `guides/<platform>/snippets/<module-name>/` and is
+- Module code lives in `<platform>/snippets/<module-name>/` and is
   embedded with a code-import fence, never pasted inline:
 
   ````markdown
@@ -54,11 +60,36 @@ pages and snippets are its resources.
   ```
   ````
 
-- Register the page in `docs/sidebars.ts` under the "Guides" category as
-  `{ type: "doc", id: "guides/<platform>/index" }` with no `label`, so the
-  sidebar inherits the page title. Add a row to `guides/index.mdx`.
+- Register the page in `docs/sidebars.ts` in the "Platform Guides" category,
+  the last item of "Getting Started", as
+  `{ type: "doc", id: "getting-started/platform-guides/<platform>/index" }`
+  with no `label`, so the sidebar inherits the page title. Add a row to
+  `getting-started/platform-guides/index.mdx`.
 
 ## How a guide is written
+
+**Continues from the Quickstart.** The prerequisite is the Quickstart, not
+Install, and the reader is assumed to have set up Cloud Checks after it, so a
+guide has no "run it on every push" or CI section. The reader already has a
+`dagger.toml`, and `dagger module recommend` may have installed some of the
+guide's modules. Keep each install command, and say what the reader sees when
+the module is already there: Dagger reports `Module "<name>" is already
+installed`, exits cleanly, and changes nothing. Do not re-teach what the
+Quickstart covered. Go: the prerequisite paragraph and "Install the Dagger
+module for Go".
+
+**Open with what the guide covers, not how it works.** A reader at the top does
+not know what they are getting into yet. Give a short numbered list of the
+steps, one line each, and say which steps most projects need. Put the detail
+about each piece (what the official module discovers, what wiring does, why the
+reader's module is small) in the section that introduces that piece. Go: "What
+this guide covers".
+
+**Name the official module for someone who knows the platform but not Dagger.**
+"The Go module" means a `go.mod` to a Go user. Introduce it as "the Dagger
+module for <platform>", then define the name it is installed under, in code
+font, as the shorthand for the rest of the page (the `go` module), and keep the
+platform's own term for the platform's own thing.
 
 **For the reader's own project, not an example project.** No lab repository,
 no sample app to clone, no "we will build a greetings API". The guide assumes
@@ -135,16 +166,13 @@ Do this before sending a guide for review, and again after every merge of main.
 1. **Scaffold a throwaway project** of the target type in the scratchpad that
    follows every convention the guide asks of the reader's code, such as a test
    that skips when its service variable is unset. `git init` it.
-2. **Get a CLI that matches the docs.** The docs describe upstream main and the
-   next beta. The brew CLI and older betas reject newer refs and commands.
-   Options, in order of preference:
-   - The latest published beta: `DAGGER_X_RELEASE=v1.0.0-beta.N dagger ...`
-   - A dev build of the checkout: `./hack/build`, then
-     `./hack/with-dev dagger ...` from any directory. Only main commits with
-     published archives work with `--x-release <sha>`; a dev build is the
-     fallback when the docs are ahead of every published build.
-   The pin in `hack/build` may predate the commands a guide uses; it is only
-   for the docs checks in step 5.
+2. **Use a CLI that matches the docs.** The docs describe upstream main and the
+   next beta, and older CLIs reject newer refs and commands. Run `dagger` as it
+   is on your PATH. Maintainers pin the release they want with
+   `DAGGER_X_RELEASE` in their own shell, so never set or override it in a
+   command. When the docs are ahead of every published build, use a dev build
+   of the checkout: `./hack/build`, then `./hack/with-dev dagger ...` from any
+   directory.
 3. **Run the guide top to bottom** in the scratch project, exactly as written,
    and paste real output into the output blocks: `dagger check -l`, the settings
    table, the final `dagger check`, the resulting `dagger.toml`. Headless runs
@@ -155,12 +183,11 @@ Do this before sending a guide for review, and again after every merge of main.
    real: settings it calls mutually exclusive, a proof step that removes
    wiring, a directive or setting it says is required. Confirm each fails the
    way the guide says.
-5. **Run the docs checks** from the repo root with the pin hack/build uses:
+5. **Run the docs checks** from the repo root:
 
    ```bash
-   X=$(grep -o 'X_RELEASE=[^ ]*' hack/build | sed 's/X_RELEASE=\${DAGGER_X_RELEASE:-//; s/}//')
-   DAGGER_X_RELEASE=$X dagger check markdown-lint:lint
-   DAGGER_X_RELEASE=$X dagger check docs:check   # full site build, catches broken links
+   dagger check markdown-lint:lint
+   dagger check docs:check   # full site build, catches broken links
    ```
 
 6. **After merging main**, grep the guide for moved pages and renamed commands,
@@ -175,19 +202,21 @@ and 7 are kinds, not fixed titles: include one section for each thing the
 platform actually has, and none for things it does not. Each entry ends with
 the Go guide section that shows it.
 
-1. `How the pieces fit together`: the official module, its settings, any
-   companion module, the reader's small module, module wiring. One bullet
-   each. Say which projects need only the official module and its settings.
-   Go: "How the pieces fit together".
-2. `Install the <platform> module`: install command, `dagger check -l`, the
-   first `dagger check`, what each Check does, and how a Check that passes but
-   is incomplete appears (for example a skipped test). Go: "Install the Go
-   module".
-3. `Configure the <platform> module`: settings table, one `settings` command,
+1. `What this guide covers`: a numbered list of the steps, one short line each,
+   with no mechanism. Say which steps most projects need and that the reader
+   stops when the Checks cover their project. Then the prerequisite paragraph
+   linking the Quickstart. Go: "What this guide covers".
+2. `Install the Dagger module for <platform>`: what the module is and the name
+   it is installed under, the install command, what the reader sees if the
+   Quickstart already installed it, `dagger check -l`, the first `dagger
+   check`, what each Check does, and how a Check that passes but is incomplete
+   appears (for example a skipped test). Go: "Install the Dagger module for
+   Go".
+3. `Configure the <name> module`: settings table, one `settings` command,
    the settings that come up most often with their constraints, including how
    to select which of the project's units each workflow covers and how to mount
    files the module does not find on its own, and a complete
-   `[modules.<name>.settings]` example. Go: "Configure the Go module".
+   `[modules.<name>.settings]` example. Go: "Configure the `go` module".
 4. One section per companion module the platform splits out (a linter, a
    formatter): install it, show the Check list gaining a Check, its settings,
    and how it differs from the platform module. Go: "Lint the project",
@@ -203,7 +232,8 @@ the Go guide section that shows it.
    the one-line reason the module needs to be given one, `### Create a
    <purpose> module` with a function that starts from a published image and
    adds what the project plausibly needs, a command proving it, and `### Wire
-   it into the <platform> module` with the full `dagger.toml`. For services:
+   it into the <name> module` with the full `dagger.toml` and the sentence on
+   what wiring does. For services:
    the conventions on the test side, extend the same module, and a proof step
    that removes the wiring. Go: "Provide the runtime the tests and generators
    run in" builds a `go-runtime` module with one `base` function and wires it;
@@ -212,10 +242,8 @@ the Go guide section that shows it.
 8. `Run every Check`: real output, then the commit step naming `dagger.toml`,
    `dagger.lock`, and `.dagger`, with a sentence on what the lock file holds.
    Go: "Run every Check".
-9. `Run it on every push`: Cloud Checks and existing CI, by link. Go: "Run it
-   on every push".
-10. `Next steps`: reference pages, companion module references, and sibling
-    branch guides. Go: "Next steps".
+9. `Next steps`: reference pages, companion module references, and sibling
+   branch guides. Go: "Next steps".
 
 ## Checklist before opening the PR
 
@@ -225,7 +253,9 @@ the Go guide section that shows it.
 - [ ] Every output block was pasted from a real run with the current CLI
 - [ ] The final `dagger.toml` is complete, including SDK scope tables
 - [ ] Commands use the current `dagger module ...` forms and `dagger.io/` refs
-- [ ] Sidebar entry has no `label`; `guides/index.mdx` has a row
+- [ ] Prerequisite is the Quickstart, and each install says what an
+      already-installed module prints
+- [ ] Sidebar entry has no `label`; `platform-guides/index.mdx` has a row
 - [ ] `markdown-lint:lint` and `docs:check` pass
 - [ ] Reference pages for the platform link to the guide, and their narrative
       paragraphs were trimmed toward pure reference
