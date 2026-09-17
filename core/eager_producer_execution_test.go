@@ -100,9 +100,11 @@ func inUmaskChild(t *testing.T, mask int) bool {
 	for _, name := range strings.Split(t.Name(), "/") {
 		pattern = append(pattern, "^"+regexp.QuoteMeta(name)+"$")
 	}
+	// The child's own timeout fires first, so a hung child prints its stacks
+	// before this deadline kills it.
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	child := exec.CommandContext(ctx, os.Args[0], "-test.run="+strings.Join(pattern, "/"), "-test.count=1", "-test.timeout=30s")
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run="+strings.Join(pattern, "/"), "-test.count=1", "-test.timeout=20s")
 	child.Env = append(os.Environ(), marker+"="+t.Name())
 	output, err := child.CombinedOutput()
 	require.NoError(t, err, "%s", output)
