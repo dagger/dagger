@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -42,7 +43,11 @@ func TestSnapshotSharingPreparationContext(t *testing.T) {
 	srv := &Server{engineCache: cache, shutdownCtx: t.Context()}
 	opts := &NewServerOpts{RemoteCacheIntegration: &RemoteCacheIntegrationConfig{Run: func(context.Context, *RemoteCacheAdapter) error { return nil }}}
 	ctx := dagql.ContextWithCache(t.Context(), cache)
+	// Decision 4's measured cost: the static core schema base moves from the
+	// first client to startup on an engine that can receive imports.
+	started := time.Now()
 	require.NoError(t, srv.initSnapshotSharing(ctx, opts))
+	t.Logf("static core schema base construction: %s", time.Since(started))
 	require.True(t, cache.SnapshotSharingEnabled())
 	require.NotNil(t, srv.coreSchemaBase, "the static core base is built before admission")
 
