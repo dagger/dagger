@@ -70,7 +70,11 @@ type RemoteCacheBridge struct {
 	// points only. They stand outside M and are nil-off.
 	cache *Cache
 
-	closed    bool
+	closed bool
+	// detached closes with the attachment. A fixture pause at one of the
+	// bridge's points ends there: the adapter detaches and then joins its
+	// consumer, which may be the goroutine that is paused.
+	detached  chan struct{}
 	sequence  uint64
 	exchanges map[uint64]*renewalExchange
 	queue     []uint64
@@ -86,7 +90,7 @@ type renewalExchange struct {
 }
 
 func newRemoteCacheBridge(mu *sync.Mutex) (*RemoteCacheBridge, error) {
-	b := &RemoteCacheBridge{mu: mu, exchanges: map[uint64]*renewalExchange{}, ready: make(chan struct{})}
+	b := &RemoteCacheBridge{mu: mu, exchanges: map[uint64]*renewalExchange{}, ready: make(chan struct{}), detached: make(chan struct{})}
 	if _, err := rand.Read(b.epoch[:]); err != nil {
 		return nil, fmt.Errorf("remote cache bridge epoch: %w", err)
 	}
@@ -103,16 +107,16 @@ func (b *RemoteCacheBridge) request(ctx context.Context, request RenewalRequest)
 	if err != nil {
 		return nil, err
 	}
-	b.reachRenewal(ctx, FixtureRenewalEnqueued, exchange.request.ID)
+	b.reachRenewal(ctx, FixtureRenewalEnqueued, fmt.Sprintf("exchange=%d", exchange.request.ID.Sequence))
 	return b.wait(ctx, exchange)
 }
 
 // reachRenewal observes the real exchange outside M.
-func (b *RemoteCacheBridge) reachRenewal(ctx context.Context, point FixtureBarrierPoint, id RenewalRequestID) {
+func (b *RemoteCacheBridge) reachRenewal(ctx context.Context, point FixtureBarrierPoint, detail string) {
 	if b.cache == nil {
 		return
 	}
-	_ = b.cache.fixtureReach(ctx, FixtureBarrierEvent{Point: point, Detail: fmt.Sprintf("exchange=%d", id.Sequence)})
+	_ = b.cache.fixtureReachUntil(ctx, FixtureBarrierEvent{Point: point, Detail: detail}, b.detached)
 }
 
 // enqueue installs one exchange without waiting for capacity. The exchange
@@ -221,7 +225,7 @@ func (b *RemoteCacheBridge) TakeRenewalRequest(ctx context.Context) (*RenewalReq
 				return nil, err
 			}
 			request.Layers = layers
-			b.reachRenewal(ctx, FixtureRenewalDelivered, request.ID)
+			b.reachRenewal(ctx, FixtureRenewalDelivered, fmt.Sprintf("exchange=%d", request.ID.Sequence))
 			return &request, nil
 		}
 		ready := b.ready
@@ -240,10 +244,9 @@ func (b *RemoteCacheBridge) TakeRenewalRequest(ctx context.Context) (*RenewalReq
 // reply for a canceled requester is discarded and retires the exchange.
 func (b *RemoteCacheBridge) ReplyRenewal(reply RenewalReply) (disposition RenewalReplyDisposition) {
 	defer func() {
-		// Registered first, so it runs last: after M is released.
-		if b.cache != nil {
-			_ = b.cache.fixtureReach(context.Background(), FixtureBarrierEvent{Point: FixtureRenewalReplied, Detail: fmt.Sprintf("exchange=%d disposition=%d", reply.ID.Sequence, disposition)})
-		}
+		// Registered first, so it runs last: after M is released. A reply has
+		// no context of its own; the attachment's lifetime bounds a pause.
+		b.reachRenewal(context.Background(), FixtureRenewalReplied, fmt.Sprintf("exchange=%d disposition=%d", reply.ID.Sequence, disposition))
 	}()
 	b.mu.Lock()
 	exchange := b.liveExchangeLocked(reply)
@@ -307,6 +310,7 @@ func (b *RemoteCacheBridge) closeLocked() {
 		return
 	}
 	b.closed = true
+	close(b.detached)
 	for _, exchange := range b.exchanges {
 		b.finishLocked(exchange, nil, renewalUnavailable("bridge detached"))
 	}
