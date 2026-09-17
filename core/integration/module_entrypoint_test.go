@@ -233,3 +233,29 @@ source = "`+repoURL+`#main:entrypoint"
 	require.NoError(t, err)
 	require.Equal(t, "hello", strings.TrimSpace(out))
 }
+
+// The workspace an entrypoint receives has its working directory at the module
+// it serves, so a shared entrypoint can find the module without a path
+// generated into it.
+func (ModuleSuite) TestModuleEntrypointWorkspaceCwdIsModuleDirectory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := goGitBase(t, c).
+		WithNewFile("dagger.toml", `[modules.tiny]
+source = ".dagger/modules/tiny"
+`).
+		WithNewFile(".dagger/modules/tiny/dagger-module.toml", `name = "tiny"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+		WithDirectory(
+			".dagger/modules/tiny/entrypoint",
+			c.Host().Directory("./testdata/modules/dang/module-entrypoint-cwd"),
+		).
+		With(daggerCallAt("tiny", "where")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ".dagger/modules/tiny", strings.TrimPrefix(strings.TrimSpace(out), "/"))
+}

@@ -32,9 +32,9 @@ func ResolveSource(
 		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module entrypoint is not configured")
 	}
 
-	var workspace dagql.ObjectResult[*core.Workspace]
-	if err := dag.Select(ctx, dag.Root(), &workspace, dagql.Selector{Field: "currentWorkspace"}); err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("get module workspace: %w", err)
+	workspace, err := Workspace(ctx, dag, src)
+	if err != nil {
+		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
 	address := src.Self().Entrypoint.Source
@@ -65,6 +65,81 @@ func ResolveSource(
 		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("attach module entrypoint source: %w", err)
 	}
 	return entrySrcResult, workspace, nil
+}
+
+// Workspace returns the workspace to pass to a module entrypoint, with its
+// working directory at the module's directory.
+//
+// The engine already treats the workspace cwd as the module's scope when it
+// hands a workspace to an SDK, so an entrypoint can find the module it serves
+// through relative workspace paths, without a path generated into it. The root
+// is unchanged: an entrypoint can still read above the module with an
+// absolute workspace path.
+//
+// A git or directory source keeps the caller's cwd, because its files are not
+// in the workspace at all; they are in its context directory.
+func Workspace(
+	ctx context.Context,
+	dag *dagql.Server,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (dagql.ObjectResult[*core.Workspace], error) {
+	var workspace dagql.ObjectResult[*core.Workspace]
+	if err := dag.Select(ctx, dag.Root(), &workspace, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+		return workspace, fmt.Errorf("get module workspace: %w", err)
+	}
+	subpath, ok := moduleWorkspacePath(workspace.Self(), src.Self())
+	if !ok {
+		return workspace, nil
+	}
+	// withWorkdir takes a path relative to the workspace root, so reset first
+	// in case the current workspace already has a working directory.
+	var scoped dagql.ObjectResult[*core.Workspace]
+	if err := dag.Select(ctx, workspace, &scoped,
+		dagql.Selector{Field: "withWorkdir", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(".")}}},
+		dagql.Selector{Field: "withWorkdir", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}}},
+	); err != nil {
+		return workspace, fmt.Errorf("set module entrypoint workspace directory %q: %w", subpath, err)
+	}
+	return scoped, nil
+}
+
+// moduleWorkspacePath returns the module directory relative to the workspace
+// root, and whether the module is in the workspace at all.
+//
+// A source loaded through Workspace.moduleSource carries its workspace, and its
+// SourceRootSubpath is already workspace-root-relative. The engine's own module
+// loader goes through Query.moduleSource instead, which attaches no workspace:
+// there SourceRootSubpath is relative to the source's context directory, and
+// the two directories are related on the host, so the path is derived from
+// their host paths. A git or directory source has neither.
+func moduleWorkspacePath(ws *core.Workspace, src *core.ModuleSource) (string, bool) {
+	if ws == nil || src == nil {
+		return "", false
+	}
+	if src.Workspace.Self() != nil {
+		return cleanSubpath(src.SourceRootSubpath), true
+	}
+	if src.Kind != core.ModuleSourceKindLocal || src.Local == nil {
+		return "", false
+	}
+	root := ws.HostPath()
+	if root == "" || src.Local.ContextDirectoryPath == "" {
+		return "", false
+	}
+	moduleDir := filepath.Join(src.Local.ContextDirectoryPath, cleanSubpath(src.SourceRootSubpath))
+	rel, err := filepath.Rel(root, moduleDir)
+	if err != nil || !filepath.IsLocal(rel) {
+		// The module is not under the workspace root.
+		return "", false
+	}
+	return rel, true
+}
+
+func cleanSubpath(p string) string {
+	if p == "" {
+		return "."
+	}
+	return filepath.Clean(p)
 }
 
 // resolveSourceDirectory loads the directory named by entrypoint.source. A

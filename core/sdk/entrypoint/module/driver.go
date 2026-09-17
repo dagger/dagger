@@ -185,9 +185,9 @@ func load(
 		return nil, fmt.Errorf("get current query for module entrypoint: %w", err)
 	}
 
-	var workspace dagql.ObjectResult[*core.Workspace]
-	if err := dag.Select(ctx, dag.Root(), &workspace, dagql.Selector{Field: "currentWorkspace"}); err != nil {
-		return nil, fmt.Errorf("get module workspace: %w", err)
+	workspace, err := entrypoint.Workspace(ctx, dag, src)
+	if err != nil {
+		return nil, err
 	}
 
 	ctx, mod, err := resolveModule(ctx, dag, query, src.Self())
