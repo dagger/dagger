@@ -114,6 +114,13 @@ func (f *remoteCacheFixtureController) run(ctx context.Context, adapter *RemoteC
 	f.mu.Lock()
 	f.adapter = adapter
 	f.mu.Unlock()
+	// Run must return once its lifetime ends. An armed reply paused at a
+	// fixture barrier is inside this goroutine, and only a detachment ends
+	// that pause, which the server's wrapper does only after Run returns. So
+	// the lifetime's end detaches this adapter itself; close is idempotent
+	// and is what the wrapper would do next anyway.
+	stopDetach := context.AfterFunc(ctx, func() { adapter.close(context.Cause(ctx)) })
+	defer stopDetach()
 	var watchers sync.WaitGroup
 	defer func() {
 		// Every watcher ends with its request's Done or with ctx, and Run only
