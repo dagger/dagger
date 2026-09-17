@@ -102,37 +102,57 @@ func (e *fixtureEngine) reconnect() {
 	e.client = e.connect()
 }
 
-// fixtureEngineStopTimeout bounds one whole shutdown. It never inherits the
-// test's context, which is usually already canceled when cleanup runs.
-const fixtureEngineStopTimeout = 90 * time.Second
+// fixtureEngineStopTimeout bounds each step of a shutdown. A step never
+// inherits the test's context, which is usually already canceled when
+// cleanup runs, nor the remains of an earlier step's deadline.
+const fixtureEngineStopTimeout = 45 * time.Second
 
-// shutdown is idempotent. It attempts every step under one fresh deadline and
-// reports every failure, so one failed step never strands the rest.
+// shutdown is idempotent. Every step gets its own fresh deadline, so one that
+// times out cannot hand the next an already-canceled context, and every
+// failure is reported. A handle is forgotten only once its step succeeded, so
+// the registered cleanup tries again whatever a failed stop left behind.
 func (e *fixtureEngine) shutdown() error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(e.ctx), fixtureEngineStopTimeout)
-	defer cancel()
+	step := func(run func(ctx context.Context) error) error {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(e.ctx), fixtureEngineStopTimeout)
+		defer cancel()
+		return run(ctx)
+	}
 	var errs error
 	if client := e.client; client != nil {
+		err := step(func(ctx context.Context) error {
+			// Close takes no context; join it under the deadline.
+			closed := make(chan error, 1)
+			go func() { closed <- client.Close() }()
+			select {
+			case err := <-closed:
+				return err
+			case <-ctx.Done():
+				return fmt.Errorf("client close did not return: %w", context.Cause(ctx))
+			}
+		})
+		// A client is closed at most once, whatever it answered.
 		e.client = nil
-		// Close takes no context; join it under the deadline.
-		closed := make(chan error, 1)
-		go func() { closed <- client.Close() }()
-		select {
-		case err := <-closed:
-			errs = errors.Join(errs, err)
-		case <-ctx.Done():
-			errs = errors.Join(errs, fmt.Errorf("client close did not return: %w", context.Cause(ctx)))
-		}
+		errs = errors.Join(errs, err)
 	}
 	if upstream := e.upstream; upstream != nil {
-		e.upstream = nil
-		e.unwatch()
-		_, err := upstream.Stop(ctx)
+		err := step(func(ctx context.Context) error {
+			_, err := upstream.Stop(ctx)
+			return err
+		})
+		if err == nil {
+			e.unwatch()
+			e.upstream = nil
+		}
 		errs = errors.Join(errs, err)
 	}
 	if tunnel := e.tunnel; tunnel != nil {
-		e.tunnel = nil
-		_, err := tunnel.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		err := step(func(ctx context.Context) error {
+			_, err := tunnel.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+			return err
+		})
+		if err == nil {
+			e.tunnel = nil
+		}
 		errs = errors.Join(errs, err)
 	}
 	return errs
