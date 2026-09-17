@@ -318,7 +318,9 @@ func TestFixtureObserverOverflow(t *testing.T) {
 	_, err := c.TransferFixtureSnapshot(ctx, "test-session", nil)
 	require.ErrorIs(t, err, ErrTransferFixtureOverflow)
 
+	require.NotEmpty(t, c.partFixtureReached(), "the pass's reached points were journalled")
 	c.SetTransferFixtureEventCap(64)
+	require.Empty(t, c.partFixtureReached(), "a new observation scope starts without the old scenario's reached points")
 	report, err := c.TransferFixtureSnapshot(ctx, "test-session", nil)
 	require.NoError(t, err)
 	require.Empty(t, report.Parts, "the new bound cleared the old scenario's events")
