@@ -1211,6 +1211,403 @@ func (r *AgentMiddlewareGroup) AsNode() Node {
 	}
 }
 
+// One workspace value with a complete query and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+type Artifact struct {
+	query *querybuilder.Selection
+
+	id     *ID
+	pretty *string
+}
+
+func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
+	return &Artifact{
+		query: q,
+	}
+}
+
+// One key per collection along the query. Unordered; empty for static artifacts.
+func (r *Artifact) CollectionKeys(ctx context.Context) ([]ArtifactCollectionKey, error) {
+	q := r.query.Select("collectionKeys")
+
+	q = q.Select("id")
+
+	type collectionKeys struct {
+		Id ID
+	}
+
+	convert := func(fields []collectionKeys) []ArtifactCollectionKey {
+		out := []ArtifactCollectionKey{}
+
+		for i := range fields {
+			val := ArtifactCollectionKey{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactCollectionKey")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []collectionKeys
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this Artifact.
+func (r *Artifact) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Artifact) XXX_GraphQLType() string {
+	return "Artifact"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Artifact) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Artifact) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Artifact) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The full address, formatted for CLI input with consistent flag order.
+func (r *Artifact) Pretty(ctx context.Context) (string, error) {
+	if r.pretty != nil {
+		return *r.pretty, nil
+	}
+	q := r.query.Select("pretty")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+func (r *Artifact) Query(ctx context.Context) ([]string, error) {
+	q := r.query.Select("query")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Evaluate the target in the workspace that supplied this artifact.
+func (r *Artifact) Value() Node {
+	q := r.query.Select("value")
+	return &NodeClient{
+		query: q,
+	}
+}
+
+// AsNode returns this Artifact as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Artifact) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type ArtifactCollectionKey struct {
+	query *querybuilder.Selection
+
+	collection *string
+	id         *ID
+	key        *string
+}
+
+func (r *ArtifactCollectionKey) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactCollectionKey {
+	return &ArtifactCollectionKey{
+		query: q,
+	}
+}
+
+// The collection identifier, fixed across the workspace schema.
+func (r *ArtifactCollectionKey) Collection(ctx context.Context) (string, error) {
+	if r.collection != nil {
+		return *r.collection, nil
+	}
+	q := r.query.Select("collection")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ArtifactCollectionKey.
+func (r *ArtifactCollectionKey) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactCollectionKey) XXX_GraphQLType() string {
+	return "ArtifactCollectionKey"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactCollectionKey) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactCollectionKey) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactCollectionKey) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The collection item's key.
+func (r *ArtifactCollectionKey) Key(ctx context.Context) (string, error) {
+	if r.key != nil {
+		return *r.key, nil
+	}
+	q := r.query.Select("key")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactCollectionKey as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactCollectionKey) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// An immutable selection of workspace artifacts. Listed types, collections, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or collection identifiers.
+type Artifacts struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+type WithArtifactsFunc func(r *Artifacts) *Artifacts
+
+// With calls the provided function with current Artifacts.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Artifacts) With(f WithArtifactsFunc) *Artifacts {
+	return f(r)
+}
+
+func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// List keys represented in this selection for the given collection, sorted with no duplicates.
+func (r *Artifacts) CollectionKeys(ctx context.Context, collection string) ([]string, error) {
+	q := r.query.Select("collectionKeys")
+	q = q.Arg("collection", collection)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List collection identifiers represented in this selection, sorted with no duplicates.
+func (r *Artifacts) Collections(ctx context.Context) ([]string, error) {
+	q := r.query.Select("collections")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Keep artifacts with any listed key in this collection.
+func (r *Artifacts) FilterCollectionKeys(collection string, keys []string) *Artifacts {
+	q := r.query.Select("filterCollectionKeys")
+	q = q.Arg("collection", collection)
+	q = q.Arg("keys", keys)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Keep artifacts selected through any listed collection.
+func (r *Artifacts) FilterCollections(collections []string) *Artifacts {
+	q := r.query.Select("filterCollections")
+	q = q.Arg("collections", collections)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Match one complete, ordered field sequence exactly.
+func (r *Artifacts) FilterQuery(query []string) *Artifacts {
+	q := r.query.Select("filterQuery")
+	q = q.Arg("query", query)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Keep artifacts of any listed concrete GraphQL type.
+func (r *Artifacts) FilterTypes(types []string) *Artifacts {
+	q := r.query.Select("filterTypes")
+	q = q.Arg("types", types)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// A unique identifier for this Artifacts.
+func (r *Artifacts) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Artifacts) XXX_GraphQLType() string {
+	return "Artifacts"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Artifacts) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Artifacts) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Artifacts) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Enumerate complete artifacts without evaluating their values.
+func (r *Artifacts) Items(ctx context.Context) ([]Artifact, error) {
+	q := r.query.Select("items")
+
+	q = q.Select("id")
+
+	type items struct {
+		Id ID
+	}
+
+	convert := func(fields []items) []Artifact {
+		out := []Artifact{}
+
+		for i := range fields {
+			val := Artifact{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Artifact")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []items
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Require exactly one artifact; fail if there are zero or multiple matches.
+func (r *Artifacts) One() *Artifact {
+	q := r.query.Select("one")
+
+	return &Artifact{
+		query: q,
+	}
+}
+
+// Display lines for this selection, with no trailing newlines.
+func (r *Artifacts) Pretty(ctx context.Context) ([]string, error) {
+	q := r.query.Select("pretty")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Artifacts as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Artifacts) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	query *querybuilder.Selection
@@ -14483,7 +14880,7 @@ func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
 	}
 }
 
-// initialize an address to load directories, containers, secrets or other object types.
+// Resolve external references only.
 func (r *Query) Address(value string) *Address {
 	q := r.query.Select("address")
 	q = q.Arg("value", value)
@@ -17749,6 +18146,15 @@ func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentMiddlewareGroup {
 	}
 }
 
+// Discover static object artifacts from workspace modules without evaluating their values.
+func (r *Workspace) Artifacts() *Artifacts {
+	q := r.query.Select("artifacts")
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
 // WorkspaceChangesOpts contains options for Workspace.Changes
 type WorkspaceChangesOpts struct {
 	// An earlier workspace state to compare against.
@@ -18313,6 +18719,20 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	}
 
 	return convert(response), nil
+}
+
+// Try workspace references before external resolution.
+//
+// Local errors stop resolution; only absence permits fallback.
+//
+// The Address retains this workspace across module calls and ID reloads.
+func (r *Workspace) Resolve(value string) *Address {
+	q := r.query.Select("resolve")
+	q = q.Arg("value", value)
+
+	return &Address{
+		query: q,
+	}
 }
 
 // An installed SDK, by name.

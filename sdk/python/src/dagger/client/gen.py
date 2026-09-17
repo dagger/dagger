@@ -1646,6 +1646,329 @@ class AgentMiddlewareGroup(Type):
 
 
 @typecheck
+class Artifact(Type):
+    """One workspace value with a complete query and all required
+    collection keys. Reading metadata does not evaluate the value.
+    Different addresses remain distinct even if they return the same
+    object."""
+
+    async def collection_keys(self) -> list["ArtifactCollectionKey"]:
+        """One key per collection along the query. Unordered; empty for static
+        artifacts.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("collectionKeys", _args)
+        return await _ctx.execute_object_list(ArtifactCollectionKey)
+
+    async def id(self) -> str:
+        """A unique identifier for this Artifact.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def pretty(self) -> str:
+        """The full address, formatted for CLI input with consistent flag order.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("pretty", _args)
+        return await _ctx.execute(str)
+
+    async def query(self) -> list[str]:
+        """Ordered, literal fields to follow. Entrypoint targets use their
+        shorthand.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("query", _args)
+        return await _ctx.execute(list[str])
+
+    def value(self) -> Node:
+        """Evaluate the target in the workspace that supplied this artifact."""
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return _NodeClient(_ctx)
+
+
+@typecheck
+class ArtifactCollectionKey(Type):
+    async def collection(self) -> str:
+        """The collection identifier, fixed across the workspace schema.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("collection", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this ArtifactCollectionKey.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def key(self) -> str:
+        """The collection item's key.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("key", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class Artifacts(Type):
+    """An immutable selection of workspace artifacts. Listed types,
+    collections, and keys use OR; chained filters use AND. Empty
+    alternatives and unknown names match nothing. Filters never change
+    addresses or collection identifiers."""
+
+    async def collection_keys(self, collection: str) -> list[str]:
+        """List keys represented in this selection for the given collection,
+        sorted with no duplicates.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("collection", collection),
+        ]
+        _ctx = self._select("collectionKeys", _args)
+        return await _ctx.execute(list[str])
+
+    async def collections(self) -> list[str]:
+        """List collection identifiers represented in this selection, sorted with
+        no duplicates.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("collections", _args)
+        return await _ctx.execute(list[str])
+
+    def filter_collection_keys(self, collection: str, keys: list[str]) -> Self:
+        """Keep artifacts with any listed key in this collection."""
+        _args = [
+            Arg("collection", collection),
+            Arg("keys", keys),
+        ]
+        _ctx = self._select("filterCollectionKeys", _args)
+        return Artifacts(_ctx)
+
+    def filter_collections(self, collections: list[str]) -> Self:
+        """Keep artifacts selected through any listed collection."""
+        _args = [
+            Arg("collections", collections),
+        ]
+        _ctx = self._select("filterCollections", _args)
+        return Artifacts(_ctx)
+
+    def filter_query(self, query: list[str]) -> Self:
+        """Match one complete, ordered field sequence exactly."""
+        _args = [
+            Arg("query", query),
+        ]
+        _ctx = self._select("filterQuery", _args)
+        return Artifacts(_ctx)
+
+    def filter_types(self, types: list[str]) -> Self:
+        """Keep artifacts of any listed concrete GraphQL type."""
+        _args = [
+            Arg("types", types),
+        ]
+        _ctx = self._select("filterTypes", _args)
+        return Artifacts(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this Artifacts.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def items(self) -> list[Artifact]:
+        """Enumerate complete artifacts without evaluating their values."""
+        _args: list[Arg] = []
+        _ctx = self._select("items", _args)
+        return await _ctx.execute_object_list(Artifact)
+
+    def one(self) -> Artifact:
+        """Require exactly one artifact; fail if there are zero or multiple
+        matches.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("one", _args)
+        return Artifact(_ctx)
+
+    async def pretty(self) -> list[str]:
+        """Display lines for this selection, with no trailing newlines.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("pretty", _args)
+        return await _ctx.execute(list[str])
+
+    def with_(self, cb: Callable[["Artifacts"], "Artifacts"]) -> "Artifacts":
+        """Call the provided callable with current Artifacts.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class CacheVolume(Type):
     """A directory whose contents persist across runs."""
 
@@ -14189,9 +14512,7 @@ class Query(Root):
     """The root of the DAG."""
 
     def address(self, value: str) -> Address:
-        """initialize an address to load directories, containers, secrets or
-        other object types.
-        """
+        """Resolve external references only."""
         _args = [
             Arg("value", value),
         ]
@@ -16937,6 +17258,14 @@ class Workspace(Type):
         _ctx = self._select("agents", _args)
         return AgentMiddlewareGroup(_ctx)
 
+    def artifacts(self) -> Artifacts:
+        """Discover static object artifacts from workspace modules without
+        evaluating their values.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("artifacts", _args)
+        return Artifacts(_ctx)
+
     def changes(self, *, from_: "Workspace | None" = None) -> Changeset:
         """Return this workspace's changes, with paths relative to its working
         directory.
@@ -17569,6 +17898,19 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
+
+    def resolve(self, value: str) -> Address:
+        """Try workspace references before external resolution.
+
+        Local errors stop resolution; only absence permits fallback.
+
+        The Address retains this workspace across module calls and ID reloads.
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("resolve", _args)
+        return Address(_ctx)
 
     def sdk(self, name: str) -> "WorkspaceSDK":
         """An installed SDK, by name.
@@ -19340,6 +19682,9 @@ __all__ = [
     "AgentMiddleware",
     "AgentMiddlewareGroup",
     "AgentState",
+    "Artifact",
+    "ArtifactCollectionKey",
+    "Artifacts",
     "BuildArg",
     "Bytes",
     "CacheSharingMode",

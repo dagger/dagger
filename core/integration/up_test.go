@@ -489,7 +489,7 @@ settings.base = "container-provider:nonexistent"
 		requireErrOut(t, err, "container-provider")
 	})
 
-	t.Run("extra segments error", func(ctx context.Context, t *testctx.T) {
+	t.Run("unknown nested field is a hard error", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
@@ -501,7 +501,7 @@ settings.base = "container-provider:image:extra"
 `).
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Sync(ctx)
-		requireErrOut(t, err, "only container-provider:<function> is supported today")
+		requireErrOut(t, err, `Container has no field "extra"`)
 	})
 
 	t.Run("rejects reference cycle", func(ctx context.Context, t *testctx.T) {

@@ -54,6 +54,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFunc("resolve", s.resolve).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Try workspace references before external resolution.",
+				"Local errors stop resolution; only absence permits fallback.",
+				"The Address retains this workspace across module calls and ID reloads."),
 		dagql.NodeFunc("withInitialized", s.withInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
@@ -558,6 +563,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
 				dagql.Arg("exclude").Doc("Exclude agents matching the specified patterns"),
 			),
+		dagql.NodeFunc("artifacts", s.artifacts).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Discover static object artifacts from workspace modules without evaluating their values."),
 		migrateField,
 	}.Install(srv)
 
@@ -4427,7 +4435,46 @@ func (s *workspaceSchema) workspaceTargetModules(
 	parentResult dagql.ObjectResult[*core.Workspace],
 	include []string,
 ) ([]dagql.ObjectResult[*core.Module], error) {
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadStrict)
+	removed, err := workspaceRemovedModuleNames(ctx, parentResult.Self())
+	if err != nil {
+		return nil, err
+	}
+	var mods []dagql.ObjectResult[*core.Module]
+	if len(removed) > 0 {
+		// Config edits reload remaining native entries through the overlay.
+		// Legacy defaultPath entries still need the session loader; narrow its
+		// input so removed modules are not loaded before they can be filtered.
+		cfg, configErr := workspaceEffectiveConfig(ctx, parentResult.Self())
+		if configErr != nil {
+			return nil, configErr
+		}
+		names := make([]string, 0, len(cfg.Modules))
+		for name := range cfg.Modules {
+			names = append(names, name)
+		}
+		wanted := overlayIncludedModuleNames(names, include)
+		var legacy []string
+		for name, entry := range cfg.Modules {
+			if !entry.LegacyDefaultPath {
+				continue
+			}
+			if wanted != nil {
+				if _, selected := wanted[canonicalOverlayModuleName(name)]; !selected {
+					continue
+				}
+			}
+			legacy = append(legacy, name)
+		}
+		sort.Strings(legacy)
+		if len(legacy) > 0 {
+			if _, err := ensureWorkspaceModulesLoaded(ctx, legacy, core.ModuleLoadStrict); err != nil {
+				return nil, err
+			}
+		}
+		mods, err = currentWorkspacePrimaryModules(ctx)
+	} else {
+		mods, _, err = s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadStrict)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -4443,7 +4490,10 @@ func (s *workspaceSchema) workspaceTargetModules(
 	if err != nil {
 		return nil, err
 	}
-	return mergeOverlayModules(mods, overlayMods), nil
+	merged := mergeOverlayModules(mods, overlayMods)
+	return slices.DeleteFunc(merged, func(mod dagql.ObjectResult[*core.Module]) bool {
+		return removed[canonicalOverlayModuleName(mod.Self().Name())]
+	}), nil
 }
 
 // collectWorkspaceModuleTargets composes one kind of target (agents, terminal
@@ -4652,6 +4702,57 @@ func workspaceConfigWithCompatFallback(
 	return &workspace.Config{}, nil
 }
 
+// workspaceEffectiveConfig applies user and environment settings consistently
+// for workspace discovery and address resolution.
+func workspaceEffectiveConfig(ctx context.Context, ws *core.Workspace) (*workspace.Config, error) {
+	cfg, err := workspaceConfigWithCompatFallback(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err = workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	if err != nil {
+		return nil, err
+	}
+	if env, ok := selectedWorkspaceEnv(ctx, ws); ok {
+		return workspace.ApplyEnvOverlay(cfg, env)
+	}
+	return cfg, nil
+}
+
+// workspaceRemovedModuleNames distinguishes removed config entries from
+// explicit -m extras, which remain available despite being absent from config.
+func workspaceRemovedModuleNames(ctx context.Context, ws *core.Workspace) (map[string]bool, error) {
+	if ws.IsValueWorkspace() || ws.ConfigFile == "" || !ws.OverlayPathTouched(ws.ConfigFile) {
+		return nil, nil
+	}
+	current, err := workspaceEffectiveConfig(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	base := ws.Clone()
+	base.SetSource(ws.BaseSource())
+	original, err := workspaceEffectiveConfig(ctx, base)
+	if errors.Is(err, os.ErrNotExist) {
+		// The overlay created the config, so it removed no original entries.
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	present := map[string]bool{}
+	for name := range current.Modules {
+		present[canonicalOverlayModuleName(name)] = true
+	}
+	removed := map[string]bool{}
+	for name := range original.Modules {
+		name = canonicalOverlayModuleName(name)
+		if !present[name] {
+			removed[name] = true
+		}
+	}
+	return removed, nil
+}
+
 // workspaceConfigSkipPatterns reads per-module skip patterns from the served
 // workspace config shape, keyed by module name. In legacy compat workspaces,
 // there is no dagger.toml yet, so use the shared compat projection that
@@ -4831,4 +4932,13 @@ func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (contex
 		return ctx, fmt.Errorf("get client metadata: %w", err)
 	}
 	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+}
+
+func (*workspaceSchema) resolve(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct{ Value dagql.String }) (*core.Address, error) {
+	addr, err := newAddress(args.Value.String())
+	if err != nil {
+		return nil, err
+	}
+	addr.BoundWorkspace = parent
+	return addr, nil
 }

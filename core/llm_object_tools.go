@@ -559,7 +559,7 @@ func isObjectArg(arg *ast.ArgumentDefinition) bool {
 // object, and how to document the accepted syntaxes to the model.
 type liftableType struct {
 	// addressField is the Address field that loads the type:
-	// Query.address(value: <addr>).<addressField> — the same lifting the CLI
+	// Workspace.resolve(value: <addr>).<addressField> — the same lifting the CLI
 	// performs for object-typed flags (internal/cmd/dagger/flags.go), see
 	// core/schema/address.go.
 	addressField string
@@ -940,7 +940,7 @@ func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefiniti
 
 // liftObjectArg resolves an address string supplied for a liftable
 // object-typed argument into that object's ID. It selects
-// Query.address(value: <addr>).<addressField> on the session server, then
+// Workspace.resolve(value: <addr>).<addressField> on the session server, then
 // re-encodes the resulting object's ID through the argument's own decoder so
 // the input matches whatever ID type the field expects (including
 // optional-wrapped IDs). Returns ok=false — without an error — when the
@@ -965,12 +965,11 @@ func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDe
 	// image pull — not engine bookkeeping: run it non-internal (matching the
 	// method call's Select in callObjectMethod) so it renders in the trace as
 	// part of the tool call instead of hiding as internal spans.
-	if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), srv.Root(), &obj,
-		dagql.Selector{
-			View:  srv.View,
-			Field: "address",
-			Args:  []dagql.NamedInput{{Name: "value", Value: dagql.String(addr)}},
-		},
+	resolved, err := resolveUserAddress(ctx, srv, addr)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), resolved, &obj,
 		dagql.Selector{
 			View:  srv.View,
 			Field: liftableTypes[typeName].addressField,
