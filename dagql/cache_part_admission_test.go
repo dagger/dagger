@@ -222,6 +222,49 @@ func TestPartLazyOperationMissingOutputStopsOnce(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
+// A lazy operation's publication is prepared by prepareEvaluatedParts, not by
+// PrepareReadyPart. Its Commit must be held to the representation that
+// preparation observed, like every preparation with no prepared prefix: a
+// stamp it can never match makes publishEvaluatedParts reselect forever.
+func TestPartLazyOperationPublishesOverObservedRepresentation(t *testing.T) {
+	ctx, c, srv, _ := shareTestCache(t)
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	receiver := persistedListTestResult(t, ctx, c, srv, "lazy-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+	shareTestEncodedReceiver(t, ctx, c, receiver)
+	evaluated := persistedListTestResult(t, ctx, c, srv, "lazy-evaluated", newShareTestValue("evaluated", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+	address := PersistedPartAddress{Part: "fs"}
+
+	// Bounded: on a Commit that can never succeed the publication loop ends
+	// with this deadline instead of spinning.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	err := c.RunLazyTask(ctx, receiver, "lazy:publishes", LazyTaskSpec{Body: func(ctx context.Context) error {
+		drain, _, err := c.PrepareOriginal(ctx, receiver, LazyGroupAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, PartTaskFromContext(ctx))
+		if err != nil {
+			return err
+		}
+		if err = drain.Wait(ctx); err != nil {
+			return err
+		}
+		scan, err := c.CheckPartSources(ctx, receiver, address, drain, &PartDemandState{})
+		if err != nil {
+			return err
+		}
+		original, _, err := c.BeginOriginal(ctx, scan.NoSource)
+		if err != nil {
+			return err
+		}
+		var version capturedRowRevision
+		produced, err := c.capturePartRecord(ctx, evaluated.cacheSharedResult(), false, nil, &version)
+		if err != nil {
+			return err
+		}
+		return c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }})
+	}})
+	require.NoError(t, err)
+	require.True(t, shareTestHasLink(receiver, "fs-snap"), "the evaluated output was published once")
+}
+
 // CheckSessionlessRestoredDirectoryForTest is test-only so the external test
 // can use core's actual Directory codec without adding a dagql -> core import.
 func CheckSessionlessRestoredDirectoryForTest(t *testing.T, ctx context.Context, c *Cache, receiverID, donorID uint64) {

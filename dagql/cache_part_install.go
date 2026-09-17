@@ -63,11 +63,12 @@ type PreparedReadyPart struct {
 	extraProtections  []*partProtection
 	extraAccessors    []snapshots.ImmutableRef
 	beforeSyncCleanup *partCleanup
-	// expectedRepresentation is the receiver representation this preparation
-	// requires at Commit: the real observed one for a public single-demand
-	// preparation, or the one its prepared prefix will have published. Only
-	// cache orchestration can supply a non-nil base, so this is never
-	// caller-supplied wire data.
+	// expectedRepresentation is the receiver representation a preparation
+	// with a prepared prefix requires at Commit: the one that prefix will have
+	// published. It is set only together with expectedPredecessors; with none,
+	// Commit holds the preparation to its own observation (version), whichever
+	// constructor built it. Only cache orchestration can supply a non-nil
+	// base, so this is never caller-supplied wire data.
 	expectedRepresentation readyPartRepresentation
 	// expectedPredecessors names each preceding address of the same receiver
 	// and the owning installation identity reserved for it. Copied scalars
@@ -207,12 +208,6 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 	}
 	if probe.LocalComplete {
 		return nil, partRefused("prepare: receiver part already complete")
-	}
-	p.expectedRepresentation = readyPartRepresentation{
-		receiver:        row,
-		payloadRevision: version.payload.payloadRevision,
-		envelope:        version.payload.persistedEnvelope,
-		hasValue:        version.payload.hasValue,
 	}
 	if base != nil {
 		if base.receiver != row || base.expected.receiver != row {
@@ -597,7 +592,19 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	}
 	row.payloadMu.Lock()
 	defer row.payloadMu.Unlock()
-	expected := p.expectedRepresentation
+	// With no prepared prefix the expectation is the preparation's own
+	// observation, whichever constructor built it: a lazy operation's
+	// publication is prepared by prepareEvaluatedParts and records no
+	// expected representation.
+	expected := readyPartRepresentation{
+		receiver:        row,
+		payloadRevision: p.version.payload.payloadRevision,
+		envelope:        p.version.payload.persistedEnvelope,
+		hasValue:        p.version.payload.hasValue,
+	}
+	if len(p.expectedPredecessors) > 0 {
+		expected = p.expectedRepresentation
+	}
 	if row.payloadRevision != expected.payloadRevision || row.hasValue != expected.hasValue || row.persistedEnvelope != expected.envelope {
 		return nil, PartInstallRefused, partRefused("commit: receiver representation")
 	}
