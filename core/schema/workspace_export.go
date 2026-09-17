@@ -249,8 +249,8 @@ func (s *workspaceSchema) saveDirectory(ctx context.Context, source dagql.Object
 		if err := srv.Select(ctx, ws, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
 			return nil, nil, err
 		}
-		var dirty dagql.ObjectResult[*core.Changeset]
-		if err := srv.Select(ctx, ws, &dirty, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
+		dirty, err := workspaceExportChanges(ctx, srv, ws)
+		if err != nil {
 			return nil, nil, err
 		}
 		return head.Self(), dirty.Self(), nil

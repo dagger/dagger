@@ -3367,7 +3367,7 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 	ws := parent.Self().Workspace.Self()
 	if changes, ok := ws.OverlayChanges(); ok {
 		if ref, ok := ws.SourceGitRef(); ok {
-			return gitRefWorkspaceChanges(ctx, ws, ref)
+			return gitRefWorkspaceChanges(ctx, ws, ref, true)
 		}
 		return changes, nil
 	}
@@ -3396,10 +3396,15 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 	return inst, nil
 }
 
+// gitRefWorkspaceChanges compares a Git-backed workspace's overlay against its
+// ref's tree. With honorGitignore, additions the tree's .gitignore rules
+// ignore are left out, as git status would; export passes false because an
+// overlay edit is explicit content to write out even when a rule matches it.
 func gitRefWorkspaceChanges(
 	ctx context.Context,
 	ws *core.Workspace,
 	ref dagql.Result[*core.GitRef],
+	honorGitignore bool,
 ) (dagql.ObjectResult[*core.Changeset], error) {
 	var inst dagql.ObjectResult[*core.Changeset]
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -3431,15 +3436,152 @@ func gitRefWorkspaceChanges(
 	if err != nil {
 		return inst, err
 	}
-	if err := srv.Select(ctx, root, &inst, dagql.Selector{
-		Field: "changes",
-		Args: []dagql.NamedInput{
-			{Name: "from", Value: dagql.NewID[*core.Directory](baseID)},
-		},
-	}); err != nil {
+	changesFrom := func(after dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Changeset], error) {
+		var changes dagql.ObjectResult[*core.Changeset]
+		err := srv.Select(ctx, after, &changes, dagql.Selector{
+			Field: "changes",
+			Args: []dagql.NamedInput{
+				{Name: "from", Value: dagql.NewID[*core.Directory](baseID)},
+			},
+		})
+		return changes, err
+	}
+	inst, err = changesFrom(root)
+	if err != nil || !honorGitignore {
 		return inst, err
 	}
-	return inst, nil
+	after, changed, err := withoutGitIgnoredAdditions(ctx, srv, root, inst)
+	if err != nil {
+		return inst, err
+	}
+	if !changed {
+		return inst, nil
+	}
+	return changesFrom(after)
+}
+
+// withoutGitIgnoredAdditions removes from after every path that changes reports
+// as added and the after tree's .gitignore rules ignore, mirroring git: ignore
+// rules only ever hide untracked files, so modifications and deletions of
+// tracked paths are kept even when those paths match a rule. Directories left
+// empty by the removals, and that only exist because of them, are removed too,
+// since git never reports an empty directory. Reports whether anything was
+// removed.
+func withoutGitIgnoredAdditions(
+	ctx context.Context,
+	srv *dagql.Server,
+	after dagql.ObjectResult[*core.Directory],
+	changes dagql.ObjectResult[*core.Changeset],
+) (dagql.ObjectResult[*core.Directory], bool, error) {
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return after, false, err
+	}
+	ignored, err := after.Self().GitIgnoredPaths(ctx, after, paths.Added)
+	if err != nil {
+		return after, false, err
+	}
+	if len(ignored) == 0 {
+		return after, false, nil
+	}
+	added := make(map[string]struct{}, len(paths.Added))
+	for _, p := range paths.Added {
+		added[p] = struct{}{}
+	}
+	// Ignored directories are added wholesale (a directory in Added does not
+	// exist in the baseline), so dropping the outermost ones covers their
+	// contents. Everything else is dropped file by file.
+	var dirs, files []string
+	for _, p := range ignored {
+		if strings.HasSuffix(p, "/") {
+			dirs = append(dirs, p)
+		}
+	}
+	slices.Sort(dirs)
+	var outermost []string
+	for _, d := range dirs {
+		if !underAnyDir(d, outermost) {
+			outermost = append(outermost, d)
+		}
+	}
+	for _, p := range ignored {
+		if !strings.HasSuffix(p, "/") && !underAnyDir(p, outermost) {
+			files = append(files, p)
+		}
+	}
+	for _, d := range outermost {
+		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(strings.TrimSuffix(d, "/"))},
+		}}); err != nil {
+			return after, false, err
+		}
+	}
+	if len(files) > 0 {
+		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutFiles", Args: []dagql.NamedInput{
+			{Name: "paths", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(files...))},
+		}}); err != nil {
+			return after, false, err
+		}
+	}
+	// Prune newly added directories that held nothing but ignored files,
+	// deepest first so a chain of them collapses.
+	var parents []string
+	seen := map[string]struct{}{}
+	for _, f := range files {
+		for dir := path.Dir(f); dir != "." && dir != "/"; dir = path.Dir(dir) {
+			if _, ok := seen[dir]; ok {
+				break
+			}
+			seen[dir] = struct{}{}
+			if _, ok := added[dir+"/"]; ok {
+				parents = append(parents, dir)
+			}
+		}
+	}
+	slices.SortFunc(parents, func(a, b string) int { return strings.Count(b, "/") - strings.Count(a, "/") })
+	for _, dir := range parents {
+		entries, err := after.Self().Entries(ctx, after, dir)
+		if err != nil {
+			return after, false, err
+		}
+		if len(entries) > 0 {
+			continue
+		}
+		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(dir)},
+		}}); err != nil {
+			return after, false, err
+		}
+	}
+	return after, true, nil
+}
+
+// underAnyDir reports whether p lies beneath one of dirs (each ending in "/").
+func underAnyDir(p string, dirs []string) bool {
+	for _, d := range dirs {
+		if p != d && strings.HasPrefix(p, d) {
+			return true
+		}
+	}
+	return false
+}
+
+// workspaceExportChanges returns every pending overlay edit of a Git-backed
+// workspace, including additions its .gitignore rules would hide from
+// Workspace.git.uncommitted: an export writes what the agent explicitly wrote.
+func workspaceExportChanges(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws dagql.ObjectResult[*core.Workspace],
+) (dagql.ObjectResult[*core.Changeset], error) {
+	if _, ok := ws.Self().OverlayChanges(); ok {
+		if ref, ok := ws.Self().SourceGitRef(); ok {
+			return gitRefWorkspaceChanges(ctx, ws.Self(), ref, false)
+		}
+	}
+	var dirty dagql.ObjectResult[*core.Changeset]
+	err := srv.Select(ctx, ws, &dirty, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"})
+	return dirty, err
 }
 
 func (s *workspaceSchema) selectWorkspaceGitRepository(
