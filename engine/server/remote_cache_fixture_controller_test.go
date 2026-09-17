@@ -94,3 +94,41 @@ func TestRemoteCacheFixtureRenewal(t *testing.T) {
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 }
+
+// A reply paused at renewalReplied is inside the consumer's own Run
+// goroutine. Stopping the adapter detaches the bridge and joins Run before
+// the cache closes and releases barriers, so the pause must end at the
+// detachment; otherwise Stop waits out its whole deadline and the engine
+// cannot shut down cleanly.
+func TestRemoteCacheFixtureStopReleasesPausedReply(t *testing.T) {
+	t.Setenv(core.RemoteCacheFixtureRootEnv, t.TempDir())
+	cache := newGCTestCache(t)
+	cache.EnableTransferFixtureParts()
+	srv := &Server{engineCache: cache, shutdownCtx: t.Context()}
+	require.NoError(t, srv.startRemoteCacheIntegration(srv.remoteCacheFixtureIntegration(nil)))
+
+	armed, err := cache.ArmTransferFixtureBarrier(dagql.FixtureBarrierRequest{Key: "replied", Point: dagql.FixtureRenewalReplied, Action: dagql.FixturePause})
+	require.NoError(t, err)
+	offer := renewalOnlyOffer()
+	require.NoError(t, srv.RemoteCacheFixtureArmRenewalReply(core.RemoteCacheFixtureRenewalReply{Layers: offer.Chain.Layers, Unavailable: true}))
+	done := make(chan error, 1)
+	go func() {
+		provider := cache.PartContentSource().Provider(boundedContext(t), offer, &dagql.PartDemandState{})
+		_, err := provider.ReaderAt(boundedContext(t), offer.Chain.Layers[0].Descriptor)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, dagql.ErrRenewalUnavailable, "the reply was published before the pause")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the armed reply was never sent")
+	}
+	reached, err := cache.WaitTransferFixtureBarrier(boundedContext(t), "replied", armed.Generation)
+	require.NoError(t, err)
+	require.False(t, reached.Released, "the consumer is paused inside ReplyRenewal")
+
+	stopCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, srv.stopRemoteCacheIntegration(stopCtx), "detaching the bridge ends a pause at its points")
+	require.NoError(t, cache.Close(boundedContext(t)))
+}
