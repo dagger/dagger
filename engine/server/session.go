@@ -2572,7 +2572,9 @@ func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *clien
 func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, client *clientRuntime, r *http.Request, postLoad func()) error {
 	var filter func([]pendingModule) []pendingModule
 	scopeApplied := false
-	if client.hasPendingWorkspaceModules() {
+	if !client.autoLoadWorkspaceModules() {
+		filter = func([]pendingModule) []pendingModule { return nil }
+	} else if client.hasPendingWorkspaceModules() {
 		if ok, rootFields, err := dagql.PeekRootFields(r); err == nil && ok {
 			filter = func(mods []pendingModule) []pendingModule {
 				// runs under client.modulesMu, which also guards
@@ -2619,6 +2621,11 @@ func (client *clientRuntime) hasPendingWorkspaceModules() bool {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
 	return len(client.pendingModules) > 0
+}
+
+func (client *clientRuntime) autoLoadWorkspaceModules() bool {
+	md := client.clientMetadata
+	return client.pendingWorkspaceLoad && md != nil && md.LoadWorkspaceModules && !md.SkipWorkspaceModules
 }
 
 func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *clientRuntime) (rerr error) {

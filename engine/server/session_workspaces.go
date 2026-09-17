@@ -712,10 +712,6 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	remoteKey string,
 ) error {
 	clientMD := client.clientMetadata
-	loadModules := client.pendingWorkspaceLoad &&
-		clientMD != nil &&
-		clientMD.LoadWorkspaceModules &&
-		!clientMD.SkipWorkspaceModules
 	workspaceEnv, hasWorkspaceEnv := workspaceEnvFromClientMetadata(clientMD)
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
@@ -768,7 +764,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			// extra module). Clients that opted out of module loading (SDK
 			// codegen, client generators, internal tooling) would leak it
 			// into the calling session's output.
-			warnCompat := loadModules || (clientMD != nil && len(clientMD.ExtraModules) > 0)
+			warnCompat := client.autoLoadWorkspaceModules() || (clientMD != nil && len(clientMD.ExtraModules) > 0)
 			if warnCompat && (clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning) {
 				msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
 				console(ctx, msg)
@@ -828,10 +824,6 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 	client.workspace = coreWS
 
-	if !loadModules {
-		return nil
-	}
-
 	// User-level overrides merge over the repository config before any env
 	// overlay so that user-defined environments are selectable.
 	if overlay := coreWS.UserConfigOverlay(); overlay != nil {
@@ -855,7 +847,8 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// --- Gather all modules to load ---
+	// Keep module definitions available for explicit Workspace API calls,
+	// including when automatic loading is disabled by -m core.
 	var pending []pendingModule
 
 	pending = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
