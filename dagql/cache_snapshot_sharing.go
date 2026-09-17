@@ -789,7 +789,15 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 // it from a demand install.
 func (c *Cache) traceShareSkip(ctx context.Context, row *sharedResult, address PersistedPartAddress, cause error) {
 	_ = ctx
-	slog.Debug("snapshot sharing skipped", "row", uint64(row.id), "part", string(address.Part), "cause", cause)
+	if errors.Is(cause, engine.ErrSnapshotShareEvaluation) {
+		// A guard trip is not an ordinary skip. It means a marked preparation
+		// reached an evaluation, service or client boundary, which the audit
+		// of background-admitted families or the decode preflight should have
+		// ruled out beforehand: an invariant diagnostic, logged as a warning.
+		slog.Warn("snapshot sharing preparation reached a guarded boundary", "row", uint64(row.id), "part", string(address.Part), "cause", cause)
+	} else {
+		slog.Debug("snapshot sharing skipped", "row", uint64(row.id), "part", string(address.Part), "cause", cause)
+	}
 	if c.testShareSkipped != nil {
 		c.testShareSkipped(row.id, address, cause)
 	}
@@ -803,7 +811,7 @@ func (c *Cache) traceShareSkip(ctx context.Context, row *sharedResult, address P
 // recorded call's descriptive references and storage roles are not decoding
 // requests. A row that is already typed is not decoded again, so neither its
 // family nor its references belong to the closure: the walk stops there
-// rather than following producer data that row merely retains. Rows are held
+// rather than following the Lazy operation that row merely retains. Rows are held
 // for the walk, and a cycle is detected rather than followed.
 //
 // The walk is still conservative for an encoded row in a completed form,
