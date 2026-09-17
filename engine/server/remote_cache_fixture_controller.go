@@ -31,9 +31,11 @@ import (
 // TakeRenewalRequest and either answers a request itself from a pre-staged
 // reply armed for its chain fingerprint, or hands it to a waiting fixture
 // call. It is not a second mailbox: the bridge's own bound of live exchanges,
-// their original deadlines and their Done channels all stay authoritative,
-// and a delivered record is dropped when its Done closes whether or not the
-// harness ever took it.
+// their original deadlines and their Done channels all stay authoritative.
+// Each delivered record has one watcher on the request's own Done, which
+// drops the record when it closes whether or not the harness ever took it, so
+// the records never outnumber the bridge's live exchanges. Run joins the
+// watchers and clears everything when it ends.
 type remoteCacheFixtureController struct {
 	srv *Server
 
@@ -42,7 +44,33 @@ type remoteCacheFixtureController struct {
 	adapter      *RemoteCacheAdapter
 	armed        map[digest.Digest]core.RemoteCacheFixtureRenewalReply
 	delivered    []*dagql.RenewalRequest
-	ready        chan struct{}
+	// ready closes whenever delivered or stopped changes.
+	ready    chan struct{}
+	stopped  bool
+	renewals core.RemoteCacheFixtureRenewals
+}
+
+var errRemoteCacheFixtureStopped = errors.New("remote cache fixture: the integration has stopped")
+
+// wakeLocked wakes every waiting take to look again.
+func (f *remoteCacheFixtureController) wakeLocked() {
+	close(f.ready)
+	f.ready = make(chan struct{})
+}
+
+// retire drops a delivered record nobody took. It is a no-op for one that a
+// take already removed.
+func (f *remoteCacheFixtureController) retire(request *dagql.RenewalRequest) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, delivered := range f.delivered {
+		if delivered == request {
+			f.delivered = slices.Delete(f.delivered, i, i+1)
+			f.renewals.Retired++
+			f.wakeLocked()
+			return
+		}
+	}
 }
 
 var errRemoteCacheFixtureDisabled = errors.New("remote cache fixture is not enabled")
@@ -86,6 +114,18 @@ func (f *remoteCacheFixtureController) run(ctx context.Context, adapter *RemoteC
 	f.mu.Lock()
 	f.adapter = adapter
 	f.mu.Unlock()
+	var watchers sync.WaitGroup
+	defer func() {
+		// Every watcher ends with its request's Done or with ctx, and Run only
+		// returns once one of those holds for all of them.
+		watchers.Wait()
+		f.mu.Lock()
+		f.delivered = nil
+		f.armed = map[digest.Digest]core.RemoteCacheFixtureRenewalReply{}
+		f.stopped = true
+		f.wakeLocked()
+		f.mu.Unlock()
+	}()
 	for {
 		request, err := adapter.TakeRenewalRequest(ctx)
 		if err != nil {
@@ -97,17 +137,52 @@ func (f *remoteCacheFixtureController) run(ctx context.Context, adapter *RemoteC
 			delete(f.armed, request.Chain)
 		} else {
 			f.delivered = append(f.delivered, request)
-			close(f.ready)
-			f.ready = make(chan struct{})
+			f.renewals.Delivered++
+			f.wakeLocked()
 		}
 		f.mu.Unlock()
-		if armed {
-			// The harness staged this reply before the triggering demand. Only
-			// the exchange ID is filled in here; the mailbox, the original
-			// deadline and the reply's validation are all still the real ones.
-			adapter.ReplyRenewal(dagql.RenewalReply{ID: request.ID, Chain: template.Chain, Unavailable: template.Unavailable, Addresses: template.Addresses})
+		if !armed {
+			watchers.Add(1)
+			go func() {
+				defer watchers.Done()
+				select {
+				case <-request.Done:
+				case <-ctx.Done():
+				}
+				f.retire(request)
+			}()
+			continue
 		}
+		// The harness staged this reply before the triggering demand. Only
+		// the exchange ID is filled in here; the mailbox, the original
+		// deadline and the reply's validation are all still the real ones.
+		// The controller is the only witness of what became of it.
+		disposition := adapter.ReplyRenewal(dagql.RenewalReply{ID: request.ID, Chain: template.Chain, Unavailable: template.Unavailable, Addresses: template.Addresses})
+		f.mu.Lock()
+		f.renewals.ArmedReplies = append(f.renewals.ArmedReplies, core.RemoteCacheFixtureArmedReply{Chain: request.Chain, Sequence: request.ID.Sequence, Disposition: renewalDispositionName(disposition)})
+		f.mu.Unlock()
 	}
+}
+
+func renewalDispositionName(disposition dagql.RenewalReplyDisposition) string {
+	if disposition == dagql.RenewalReplyAccepted {
+		return "accepted"
+	}
+	return "discarded"
+}
+
+func (srv *Server) RemoteCacheFixtureRenewals() (core.RemoteCacheFixtureRenewals, error) {
+	f, err := srv.fixtureController()
+	if err != nil {
+		return core.RemoteCacheFixtureRenewals{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	report := f.renewals
+	report.Live = len(f.delivered)
+	report.ArmedPending = len(f.armed)
+	report.ArmedReplies = append([]core.RemoteCacheFixtureArmedReply{}, f.renewals.ArmedReplies...)
+	return report, nil
 }
 
 func (srv *Server) fixtureController() (*remoteCacheFixtureController, error) {
@@ -167,12 +242,14 @@ func (srv *Server) RemoteCacheFixtureTakeRenewal(ctx context.Context) (core.Remo
 			f.delivered = f.delivered[1:]
 			select {
 			case <-next.Done:
-				// Retired by its own Done; never handed out afterwards.
+				// Its Done closed before its watcher ran; never handed out.
+				f.renewals.Retired++
 			default:
 				request = next
+				f.renewals.Taken++
 			}
 		}
-		ready := f.ready
+		ready, stopped := f.ready, f.stopped
 		f.mu.Unlock()
 		if request != nil {
 			return core.RemoteCacheFixtureRenewal{
@@ -184,6 +261,9 @@ func (srv *Server) RemoteCacheFixtureTakeRenewal(ctx context.Context) (core.Remo
 				NeededBlob:        request.NeededBlob,
 				RemainingDeadline: time.Until(request.Deadline),
 			}, nil
+		}
+		if stopped {
+			return core.RemoteCacheFixtureRenewal{}, errRemoteCacheFixtureStopped
 		}
 		select {
 		case <-ready:
@@ -211,10 +291,15 @@ func (srv *Server) RemoteCacheFixtureReplyRenewal(reply core.RemoteCacheFixtureR
 	}
 	copy(id.Epoch[:], epoch)
 	id.Sequence = reply.Sequence
-	if adapter.ReplyRenewal(dagql.RenewalReply{ID: id, Chain: reply.Chain, Unavailable: reply.Unavailable, Addresses: reply.Addresses}) == dagql.RenewalReplyAccepted {
-		return "accepted", nil
+	disposition := adapter.ReplyRenewal(dagql.RenewalReply{ID: id, Chain: reply.Chain, Unavailable: reply.Unavailable, Addresses: reply.Addresses})
+	f.mu.Lock()
+	if disposition == dagql.RenewalReplyAccepted {
+		f.renewals.RepliesAccepted++
+	} else {
+		f.renewals.RepliesDiscarded++
 	}
-	return "discarded", nil
+	f.mu.Unlock()
+	return renewalDispositionName(disposition), nil
 }
 
 func (srv *Server) RemoteCacheFixtureGC(ctx context.Context) (core.RemoteCacheFixtureGC, error) {

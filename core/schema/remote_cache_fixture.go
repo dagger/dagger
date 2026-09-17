@@ -57,6 +57,8 @@ type remoteCacheFixtureReport struct {
 	// Storage is read from the engine's real stores; absent where the
 	// fixture runs without an engine server.
 	Storage *core.RemoteCacheFixtureStorage `json:"storage,omitempty"`
+	// Renewal is what the fixture's consumer loop did; absent likewise.
+	Renewal *core.RemoteCacheFixtureRenewals `json:"renewal,omitempty"`
 }
 
 func installRemoteCacheFixture(srv *dagql.Server) error {
@@ -405,6 +407,9 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 			var storage core.RemoteCacheFixtureStorage
 			if storage, err = controls.RemoteCacheFixtureStorage(ctx); err == nil {
 				report.Storage = &storage
+			}
+			if renewals, renewalErr := controls.RemoteCacheFixtureRenewals(); renewalErr == nil {
+				report.Renewal = &renewals
 			}
 		}
 		response = report
