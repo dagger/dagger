@@ -891,3 +891,35 @@ func TestSnapshotSharingCompletionRegistrationRace(t *testing.T) {
 		t.Fatal("the task never finished")
 	}
 }
+
+// A typed receiver whose donated descriptor carries Service references needs
+// the engine's registered reconstruction context. With none registered the
+// slot is ineligible, decided before any shared decode attempt is created;
+// service-free installs on the same cache still happen.
+func TestSnapshotSharingTypedServiceReceiverNeedsRegistration(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	service := persistedListTestResult(t, ctx, c, srv, "share-service", &transferTestValue{Text: "service"})
+	serviceID := uint64(service.cacheSharedResult().id)
+	donor := persistedListTestResult(t, ctx, c, srv, "svc-donor", newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap", Service: serviceID}}))
+	receiver := persistedListTestResult(t, ctx, c, srv, "svc-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+	// A typed imported receiver: decoded, not encoded, so its preparation
+	// reconstructs the donated descriptor's services.
+	c.egraphMu.Lock()
+	receiver.cacheSharedResult().imported = true
+	c.egraphMu.Unlock()
+	partTestEquivalent(t, c, receiver, donor)
+
+	require.Nil(t, c.partPreparationContext(), "no engine callback is registered on this cache")
+	shareTestUnite(t, ctx, c, "typed-service", donor, receiver)
+	require.Equal(t, 0, barrier.awaitPass(t), "the slot never reaches preparation")
+	require.Zero(t, manager.pins.Load(), "the slot is ineligible before any decode attempt")
+	causes := barrier.skipCauses()
+	require.NotEmpty(t, causes)
+	found := false
+	for _, err := range causes {
+		found = found || errors.Is(err, ErrSnapshotShareIneligible)
+	}
+	require.True(t, found, "the skip is ShareIneligible, not a guard trip: %v", causes)
+}

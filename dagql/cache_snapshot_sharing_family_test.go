@@ -17,6 +17,10 @@ import (
 type sharePartState struct {
 	Snapshot string `json:"snapshot,omitempty"`
 	Absent   bool   `json:"absent,omitempty"`
+	// Service is an exact Service row the donated descriptor carries, which
+	// is what makes a typed preparation need the engine's registered
+	// reconstruction context.
+	Service uint64 `json:"service,omitempty"`
 }
 
 type shareTestValue struct {
@@ -125,13 +129,21 @@ func (shareTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodec
 		case state.Snapshot != "":
 			o.State = "completed"
 			o.SnapshotID = state.Snapshot
-			o.Value = &SnapshotValue{Kind: "directory"}
+			o.Value = shareTestSnapshotValue(state)
 		default:
-			o.Value = &SnapshotValue{Kind: "directory"}
+			o.Value = shareTestSnapshotValue(state)
 		}
 		out = append(out, o)
 	}
 	return out, nil
+}
+
+func shareTestSnapshotValue(state sharePartState) *SnapshotValue {
+	value := &SnapshotValue{Kind: "directory"}
+	if state.Service != 0 {
+		value.Services = []TransferredServiceBinding{{ServiceResultID: state.Service, Hostname: "share-test"}}
+	}
+	return value
 }
 
 func (shareTestCodec) DescribeParts(v PersistedPayloadVisit) ([]PartProbe, error) {
