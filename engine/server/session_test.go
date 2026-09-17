@@ -2981,12 +2981,33 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	})
 }
 
+func TestEnsureRequestModulesLoadedSkipsAutomaticWorkspaceModules(t *testing.T) {
+	for _, md := range []*engine.ClientMetadata{
+		{},
+		{LoadWorkspaceModules: true, SkipWorkspaceModules: true},
+	} {
+		client := &clientRuntime{
+			clientRecord:         &clientRecord{clientMetadata: md},
+			pendingWorkspaceLoad: true,
+			pendingModules:       []pendingModule{{Kind: moduleLoadKindAmbient, Name: "unloaded"}},
+		}
+		req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{ __schema { types { name } } }"}`))
+		req.Header.Set("Content-Type", "application/json")
+		err := (&Server{}).ensureRequestModulesLoaded(context.Background(), client, req)
+		require.NoError(t, err)
+		require.Len(t, client.pendingModules, 1)
+		require.Equal(t, "unloaded", client.pendingModules[0].Name)
+	}
+}
+
 func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
 	client := &clientRuntime{clientRecord: &clientRecord{
 		clientID: "client",
 		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
 			WorkspaceModuleScope: "good",
 		}},
+		pendingWorkspaceLoad: true,
 		pendingModules: []pendingModule{
 			{Kind: moduleLoadKindAmbient, Name: "bad"},
 		},
@@ -3512,7 +3533,8 @@ func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *test
 	require.NoError(t, err)
 	require.NotNil(t, client.workspace)
 	require.NotNil(t, client.workspace.CompatWorkspace())
-	require.Empty(t, client.pendingModules)
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, "tool", client.pendingModules[0].Name)
 	require.Equal(t, extra, client.pendingExtraModules)
 }
 
@@ -3690,7 +3712,7 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 	require.True(t, client.pendingModules[0].Entrypoint)
 }
 
-func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
+func TestDetectAndLoadWorkspaceDiscoversModulesWithoutAutomaticLoading(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -3737,7 +3759,8 @@ func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client.workspace)
 	require.NotNil(t, client.workspace.CompatWorkspace())
-	require.Empty(t, client.pendingModules)
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, "changelog", client.pendingModules[0].Name)
 }
 
 func TestIsSameModuleReference(t *testing.T) {
