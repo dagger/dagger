@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type GitRepository struct {
@@ -28,6 +29,13 @@ type GitRepository struct {
 	Backend  GitRepositoryBackend
 	Remote   *gitutil.Remote
 	remoteMu sync.Mutex
+	// remoteSession is the session whose ls-remote populated Remote's refs.
+	// A remote repository result is shared across sessions, but its refs are
+	// only fresh for the session that listed them (RemoteGitRepository.Remote
+	// caches ls-remote per session): a later session must list again rather
+	// than be answered from an earlier session's tags. Empty for backends
+	// whose refs never move, and for restored results, which reload once.
+	remoteSession string
 
 	DiscardGitDir bool
 
@@ -363,7 +371,13 @@ func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, err
 	repo.remoteMu.Lock()
 	defer repo.remoteMu.Unlock()
 
-	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) {
+	var session string
+	if _, remote := repo.Backend.(*RemoteGitRepository); remote {
+		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+			session = clientMetadata.SessionID
+		}
+	}
+	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) && repo.remoteSession == session {
 		return repo.Remote, nil
 	}
 
@@ -379,6 +393,7 @@ func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, err
 		remote.Head = head
 	}
 	repo.Remote = remote
+	repo.remoteSession = session
 	return remote, nil
 }
 
