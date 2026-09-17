@@ -651,6 +651,9 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			return err
 		}
 		watch.refused(err)
+		if stuck := demand.refused(watch.loop, watch.n, source.target, err); stuck != nil {
+			return stuck
+		}
 		task := PartTaskFromContext(ctx)
 		var outcome GateOutcome
 		if permit.decision {
