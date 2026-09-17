@@ -128,6 +128,7 @@ func contentClassificationCases(t *testctx.T) {
 				read += request.BodyBytesRead
 			}
 			require.GreaterOrEqual(t, read, s.sizes[i], "the whole blob was read and verified")
+			t.Logf("measurement: layer %s size=%d provider bytes read=%d in %d requests", blob, s.sizes[i], read, len(requests))
 		}
 	})
 

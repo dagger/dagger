@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
@@ -104,7 +106,7 @@ func pipelineBodies(t *testctx.T, e *fixtureEngine, function string) uint64 {
 
 // export runs the pipeline once on A and exports the build's closure with
 // dirs[0]'s selected chain; dirs[1] travels unselected.
-func (s *pipelineScenario) export(ctx context.Context, t *testctx.T) {
+func (s *pipelineScenario) export(ctx context.Context, t *testctx.T) fixtureExportSelectedResult {
 	t.Helper()
 	require.NoError(t, s.a.client.ModuleSource(".").AsModule().Serve(ctx))
 	built := s.build(ctx, t, s.a, "same")
@@ -117,6 +119,7 @@ func (s *pipelineScenario) export(ctx context.Context, t *testctx.T) {
 	require.Len(t, exported.Outputs, 1, "the unselected sibling caused no export open")
 	require.Zero(t, pipelineBodies(t, s.a, "summary"), "summary stays uncalled on A")
 	s.a.copyFixtureTo(s.b, "pipeline.json")
+	return exported
 }
 
 func (s *pipelineScenario) importOnB(t *testctx.T) []transferFixtureMapping {
@@ -223,8 +226,8 @@ func (RemoteCacheTransferSuite) TestPipeline(ctx context.Context, t *testctx.T) 
 	// or origin resolution.
 	t.Run("Cold", func(ctx context.Context, t *testctx.T) {
 		s := newPipelineScenario(ctx, t, "pipeline-cold")
-		s.export(ctx, t)
-		s.importOnB(t)
+		exported := s.export(ctx, t)
+		imported := s.importOnB(t)
 		require.NoError(t, s.b.client.ModuleSource(".").AsModule().Serve(ctx))
 		built := s.hit(ctx, t)
 		copied, err := dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(built.Dirs[0].ID)).File("data.json").Contents(ctx)
@@ -241,12 +244,72 @@ func (RemoteCacheTransferSuite) TestPipeline(ctx context.Context, t *testctx.T) 
 			}
 		}
 		require.Positive(t, builtin, "the cold SDK builtin filesystem was obtained by a recorded route")
+
+		// Folded row, from core/schema's TestBuiltinMetadataSelectors: a file
+		// and a directory selected from the builtin Container by absolute and
+		// by relative path read on B what they read on A. The builtin row is
+		// found in A's exported closure by its recorded call and on B by the
+		// same transfer ordinal.
+		var aRows fixtureControlsReport
+		require.NoError(t, s.a.fixture("report", "", nil, &aRows))
+		builtinRows := map[uint64]bool{}
+		for _, row := range aRows.Rows {
+			if row.Call != nil && row.Call.Field == "_builtinContainer" {
+				builtinRows[row.ResultID] = true
+			}
+		}
+		var aHandle, bHandle string
+		for _, root := range exported.Roots {
+			if builtinRows[root.ResultID] {
+				aHandle = root.Handle
+				for _, mapping := range imported {
+					if mapping.Ordinal == root.Ordinal {
+						bHandle = mapping.Handle
+					}
+				}
+				break
+			}
+		}
+		require.NotEmpty(t, aHandle, "the SDK builtin Container is in the exported closure")
+		require.NotEmpty(t, bHandle)
+		selections := func(client *dagger.Client, handle string) map[string]string {
+			ctr := dagger.Ref[*dagger.Container](client, dagger.ID(handle))
+			out := map[string]string{}
+			release, err := ctr.File("/etc/os-release").Contents(ctx)
+			require.NoError(t, err)
+			out["absolute file"] = release
+			entries, err := ctr.Directory("/etc/ssl").Entries(ctx)
+			require.NoError(t, err)
+			out["absolute directory"] = strings.Join(entries, ",")
+			workdir, err := ctr.Workdir(ctx)
+			require.NoError(t, err)
+			out["workdir"] = workdir
+			entries, err = ctr.Directory(".").Entries(ctx)
+			require.NoError(t, err)
+			out["relative directory"] = strings.Join(entries, ",")
+			return out
+		}
+		want := selections(s.a.client, aHandle)
+		require.NotEmpty(t, want["absolute file"])
+		require.Equal(t, want, selections(s.b.client, bHandle), "builtin selections read on B what they read on A")
 	})
 
 	// The selected chain fails at its content reader: the retained exec runs
 	// once on the private receiver, reading its exact imported File input,
 	// and the bytes are the same. dirs[1] was never selected and its own
 	// demand runs the same saved exec's other output without a second entry.
+	// Design §2 step 5: a receiver-owned input does not depend on its donor.
+	// B's own http File shares its snapshot with the imported input; then
+	// B's File loses every owner and is collected, the origin is gone, the
+	// output's chain fails, and the saved exec still runs from the imported
+	// input it owns, before and after a clean restart.
+	t.Run("DonorReleased", func(ctx context.Context, t *testctx.T) {
+		for _, restart := range []bool{false, true} {
+			name := map[bool]string{false: "BeforeRestart", true: "AfterRestart"}[restart]
+			t.Run(name, func(ctx context.Context, t *testctx.T) { pipelineDonorReleased(ctx, t, restart) })
+		}
+	})
+
 	t.Run("FailedChain", func(ctx context.Context, t *testctx.T) {
 		t.Run("RetainedExec", pipelineRetainedExec)
 		contentClassificationCases(t)
@@ -285,5 +348,111 @@ func pipelineRetainedExec(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "variant=same", manifest)
 		require.NoError(t, s.b.fixture("report", "", nil, &report))
 		require.Equal(t, 1, execEntries(report, s.dirRows(t, built)...), "the sibling output came from the same run")
+	}
+}
+
+func pipelineDonorReleased(ctx context.Context, t *testctx.T, restart bool) {
+	s := newPipelineScenario(ctx, t, "pipeline-donor")
+	b := s.b
+	s.export(ctx, t)
+	require.NoError(t, b.client.ModuleSource(".").AsModule().Serve(ctx))
+	local, err := b.client.HTTP(s.url).Sync(ctx)
+	require.NoError(t, err)
+	localID, err := local.ID(ctx)
+	require.NoError(t, err)
+	donor := rowOf(t, b, string(localID))
+	require.False(t, donor.Imported)
+	require.Len(t, donor.SnapshotLinks, 1)
+
+	// Walk every external Finish until the imported input's: its share is
+	// then committed. The imported input is the imported File row in the
+	// donor's output class, which exists once the import has united them.
+	arm := func(i int) dagql.FixtureBarrierArmed {
+		var armed dagql.FixtureBarrierArmed
+		key := fmt.Sprintf("finish-%d", i)
+		require.NoError(t, b.fixture("barrierArm", b.control(key+".json", dagql.FixtureBarrierRequest{Key: key, Point: dagql.FixtureBeforeFinish, Action: dagql.FixturePause}), nil, &armed))
+		return armed
+	}
+	armed := arm(0)
+	imported := s.importOnB(t)
+	classes := map[uint64]bool{}
+	for _, class := range rowOf(t, b, string(localID)).OutputClasses {
+		classes[class] = true
+	}
+	var inputHandle string
+	var inputID uint64
+	for _, mapping := range imported {
+		if mapping.Type.NamedType != "File" {
+			continue
+		}
+		for _, class := range rowOf(t, b, mapping.Handle).OutputClasses {
+			if classes[class] && mapping.ResultID != donor.ResultID {
+				inputHandle, inputID = mapping.Handle, mapping.ResultID
+			}
+		}
+	}
+	require.NotZero(t, inputID, "the imported input joined the donor's output class")
+	for i := 0; ; i++ {
+		require.Less(t, i, 64, "the imported input was never shared")
+		key := fmt.Sprintf("finish-%d", i)
+		waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		var reached dagql.FixtureBarrierReached
+		err := transferFixture(waitCtx, b.client, "barrierWait", b.control(key+"-wait.json", map[string]any{"key": key, "generation": armed.Generation}), []string{}, &reached)
+		cancel()
+		require.NoError(t, err, "no pass shared the imported input")
+		found := reached.Event.ResultID == inputID
+		if !found {
+			armed = arm(i + 1)
+		}
+		require.NoError(t, b.fixture("barrierRelease", key+"-wait.json", nil, nil))
+		if found {
+			break
+		}
+	}
+	built := s.hit(ctx, t)
+	input := rowOf(t, b, inputHandle)
+	require.True(t, input.Imported)
+	require.Len(t, input.SnapshotLinks, 1, "the imported input owns a snapshot")
+	require.Equal(t, donor.SnapshotLinks[0].RefKey, input.SnapshotLinks[0].RefKey, "it is the donor's exact snapshot, owned independently")
+
+	// Release the donor: its saved edge if it has one, its session, then a
+	// real collection. The origin is gone too.
+	if donor.Persisted {
+		var dropped []dagql.TransferFixtureDroppedRoot
+		require.NoError(t, b.fixture("dropRetainedRoots", "", []string{string(localID)}, &dropped))
+		require.Len(t, dropped, 1)
+		require.True(t, dropped[0].Removed)
+	}
+	b.reconnect()
+	require.NoError(t, b.fixture("gc", "", nil, nil))
+	if restart {
+		b.restart()
+	} else {
+		scriptOrigin(t, b)
+	}
+	var before fixtureControlsReport
+	require.NoError(t, b.fixture("report", "", nil, &before))
+	for _, row := range before.Rows {
+		require.NotEqual(t, donor.ResultID, row.ResultID, "the donor is collected")
+	}
+	originBefore := uint64(0)
+	if before.Transport != nil {
+		originBefore = before.Transport.FixtureHosts
+	}
+
+	// A new reader with only the saved handles: the output's chain fails and
+	// the saved exec runs from the imported input.
+	dir0 := rowOf(t, b, built.Dirs[0].ID)
+	require.NoError(t, b.fixture("barrierArm", b.control("chain.json", dagql.FixtureBarrierRequest{Key: "chain", Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: dir0.ResultID}, Action: dagql.FixtureFailChainOpen}), nil, nil))
+	copied, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(built.Dirs[0].ID)).File("data.json").Contents(ctx)
+	require.NoError(t, err, "a receiver-owned input does not depend on its donor or on the origin")
+	require.Equal(t, s.input, copied)
+	var after fixtureControlsReport
+	require.NoError(t, b.fixture("report", "", nil, &after))
+	require.Equal(t, 1, execEntries(after, dir0.ResultID), "the saved exec ran once")
+	require.Empty(t, partEventsOf(after.transferFixtureReport, inputID, "lazy-enter"), "the input was not restored from anywhere: it was already owned")
+	require.Empty(t, partEventsOf(after.transferFixtureReport, inputID, "provider-read"))
+	if after.Transport != nil {
+		require.Equal(t, originBefore, after.Transport.FixtureHosts, "the origin was not resolved again")
 	}
 }
