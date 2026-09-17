@@ -604,7 +604,6 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 	})
 }
 
-//nolint:dupl
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
 		logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
@@ -624,7 +623,6 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, r
 	})
 }
 
-//nolint:dupl
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
