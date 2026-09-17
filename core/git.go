@@ -648,11 +648,7 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 		RemoteJSON:    remoteJSON,
 	}
 	for _, remote := range repo.Remotes {
-		payload.Remotes = append(payload.Remotes, persistedGitRemotePayload{
-			Name:    remote.Name,
-			URL:     remote.URL,
-			PushURL: remote.PushURL,
-		})
+		payload.Remotes = append(payload.Remotes, persistedGitRemotePayload(remote))
 	}
 	if repo.URL.Valid {
 		payload.URL = repo.URL.Value.String()
@@ -705,11 +701,7 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 		DiscardGitDir: persisted.DiscardGitDir,
 	}
 	for _, persistedRemote := range persisted.Remotes {
-		repo.Remotes = append(repo.Remotes, GitRemote{
-			Name:    persistedRemote.Name,
-			URL:     persistedRemote.URL,
-			PushURL: persistedRemote.PushURL,
-		})
+		repo.Remotes = append(repo.Remotes, GitRemote(persistedRemote))
 	}
 	if persisted.URL != "" {
 		repo.URL = dagql.NonNull(dagql.String(persisted.URL))
