@@ -23,12 +23,16 @@ func cmdProvider(ctx context.Context, cmd string) ([]byte, error) {
 	return trimCommandOutput(stdoutBytes), nil
 }
 
-// Like shell command substitution, strip trailing newlines, including CRLF
-// emitted by Windows commands. Preserve spaces and embedded line endings.
+// Strip a final LF or CRLF only from single-line output. Preserve multiline
+// secrets verbatim, since formats such as private keys may need the final newline.
 func trimCommandOutput(output []byte) []byte {
-	for bytes.HasSuffix(output, []byte("\n")) {
-		output = bytes.TrimSuffix(output, []byte("\n"))
-		output = bytes.TrimSuffix(output, []byte("\r"))
+	if !bytes.HasSuffix(output, []byte("\n")) {
+		return output
 	}
-	return output
+	line := bytes.TrimSuffix(output, []byte("\n"))
+	line = bytes.TrimSuffix(line, []byte("\r"))
+	if bytes.ContainsAny(line, "\r\n") {
+		return output
+	}
+	return line
 }
