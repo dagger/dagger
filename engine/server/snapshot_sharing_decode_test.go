@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -29,6 +30,18 @@ func TestSnapshotSharingMarkedDecodeOfEncodedService(t *testing.T) {
 	open := func() (context.Context, *Server, *dagql.Cache, dagql.PartPreparationContext) {
 		cache, err := dagql.NewCache(t.Context(), path, nil, nil)
 		require.NoError(t, err)
+		// Registered before any further assertion, so a failure below cannot
+		// leave this cache open. Close runs its body once: after the explicit
+		// checkpoint of the first life this only reports that result again.
+		// The context is fresh and bounded; the test's own context is
+		// canceled by the time cleanup runs and carries no deadline.
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := cache.Close(ctx); err != nil {
+				t.Errorf("close marked-decode cache: %v", err)
+			}
+		})
 		srv := &Server{engineCache: cache, shutdownCtx: t.Context()}
 		ctx := dagql.ContextWithCache(t.Context(), cache)
 		ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "marked-decode-client", SessionID: session})
@@ -59,11 +72,13 @@ func TestSnapshotSharingMarkedDecodeOfEncodedService(t *testing.T) {
 	moduleID, err := cache.PersistedResultID(moduleRes)
 	require.NoError(t, err)
 	require.NoError(t, cache.ReleaseSession(ctx, session))
-	require.NoError(t, cache.Close(ctx))
+	// The first life's checkpoint, with a short deadline of its own.
+	checkpoint, cancelCheckpoint := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelCheckpoint()
+	require.NoError(t, cache.Close(checkpoint))
 
 	// Second life: both rows are restored encoded.
 	ctx, srv, cache, prepare := open()
-	t.Cleanup(func() { require.NoError(t, cache.CloseDiscardingPersistence()) })
 	marked := engine.WithSnapshotSharePreparation(ctx)
 	prepared, decodeServer, err := prepare(marked)
 	require.NoError(t, err)
