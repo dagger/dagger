@@ -30,12 +30,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(t.TempDir()), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			require.NoError(t, client.Close())
-			unwatch()
-			_, err := upstream.Stop(context.WithoutCancel(ctx))
-			require.NoError(t, err)
-			_, err = tunnel.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
+			require.NoError(t, stopNestedEngine(ctx, &client, unwatch, &upstream, &tunnel))
 		})
 		return client
 	}

@@ -182,6 +182,51 @@ func (e *fixtureEngine) shutdown() error {
 	return errs
 }
 
+// stopNestedEngine is the same bounded shutdown for the older tests that
+// keep their own engine records: each step under its own fresh deadline,
+// every step attempted whatever an earlier one answered, errors joined, and a
+// handle forgotten only once its step succeeded so a later cleanup can retry
+// it. nil handles are skipped.
+func stopNestedEngine(ctx context.Context, client **dagger.Client, unwatch func(), upstream, tunnel **dagger.Service) error {
+	step := func(run func(ctx context.Context) error) error {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fixtureEngineStopTimeout)
+		defer cancel()
+		return run(ctx)
+	}
+	var errs error
+	if client != nil && *client != nil {
+		c := *client
+		*client = nil
+		errs = errors.Join(errs, closeClientBounded(ctx, c))
+	}
+	if upstream != nil && *upstream != nil {
+		svc := *upstream
+		err := step(func(ctx context.Context) error {
+			_, err := svc.Stop(ctx)
+			return err
+		})
+		if err == nil {
+			if unwatch != nil {
+				unwatch()
+			}
+			*upstream = nil
+		}
+		errs = errors.Join(errs, err)
+	}
+	if tunnel != nil && *tunnel != nil {
+		svc := *tunnel
+		err := step(func(ctx context.Context) error {
+			_, err := svc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+			return err
+		})
+		if err == nil {
+			*tunnel = nil
+		}
+		errs = errors.Join(errs, err)
+	}
+	return errs
+}
+
 // stop is a clean stop that the scenario depends on: a restart or an offline
 // edit of saved state must not proceed after a failed one.
 func (e *fixtureEngine) stop() {
