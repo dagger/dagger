@@ -148,11 +148,14 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 		}
 		merged, mergeErr := runWorkspacePullGit(ctx, ws.workDir, nil, "merge-tree", "--write-tree", "--merge-base="+base, "HEAD", dirtySHA)
 		if mergeErr != nil {
-			// merge-tree reports conflict paths following the result tree. Keep
-			// the public plan useful without exposing its scratch repository.
-			if merged == "" {
+			mergeErr = fmt.Errorf("merge uncommitted changes: %w\n%s", mergeErr, strings.TrimSpace(merged))
+			var exit *exec.ExitError
+			if !errors.As(mergeErr, &exit) || exit.ExitCode() != 1 || merged == "" {
 				return mergeErr
 			}
+			// Preserve per-commit diagnostics when the conflict can be
+			// attributed through overlapping paths.
+			attributed := false
 			for i := range picks {
 				if picks[i].Status != WorkspaceCommitPickable {
 					continue
@@ -163,7 +166,14 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 				}
 				if conflicts := pullOverlappingPaths(touched, dirtyPaths); len(conflicts) > 0 {
 					picks[i].Status, picks[i].Reason, picks[i].ConflictPaths = WorkspaceCommitConflict, WorkspaceCommitPickReasonDirty, conflicts
+					attributed = true
 				}
+			}
+			// Directory renames can conflict with additions at paths that no
+			// source commit touched. Fail planning too rather than report an
+			// entirely pickable plan after failing to restore pending edits.
+			if !attributed {
+				return fmt.Errorf("cannot pull commits: %w", mergeErr)
 			}
 		} else {
 			tree := strings.Fields(merged)[0]
@@ -177,6 +187,11 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 				if pick.Status == WorkspaceCommitConflict {
 					conflicts = append(conflicts, fmt.Errorf("commit %s: %s conflict on %s", pick.SHA, pick.Reason, strings.Join(pick.ConflictPaths, ", ")))
 				}
+			}
+			// A failed merge must never produce a workspace, independently of
+			// whether its conflicts were attributed to individual picks.
+			if mergeErr != nil {
+				conflicts = append(conflicts, mergeErr)
 			}
 			if len(conflicts) > 0 {
 				return fmt.Errorf("cannot pull commits: %w", errors.Join(conflicts...))

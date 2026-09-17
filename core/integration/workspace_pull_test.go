@@ -252,6 +252,63 @@ func (WorkspaceSuite) TestWorkspacePullConflictsAndRedundancy(ctx context.Contex
 	require.ErrorContains(t, err, "DIRTY conflict on empty")
 }
 
+func (WorkspaceSuite) TestWorkspacePullDirtyDirectoryRename(ctx context.Context, t *testctx.T) {
+	checkout, _ := workspaceExportCheckout(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).WithNewFile("old/a.txt", "committed file\n")
+	base = base.WithCommit(base.Git().Uncommitted(), "directory to rename", workspaceCommitDate)
+	source := base.WithoutDirectory("old").WithNewFile("new/a.txt", "committed file\n")
+	source = source.WithCommit(source.Git().Uncommitted(), "rename directory", workspaceCommitDate)
+
+	for _, diverged := range []bool{false, true} {
+		t.Run(fmt.Sprintf("diverged=%t", diverged), func(ctx context.Context, t *testctx.T) {
+			receiver := base
+			if diverged {
+				receiver = receiver.WithNewFile("local.txt", "local commit")
+				receiver = receiver.WithCommit(receiver.Git().Uncommitted(), "local", workspaceCommitDate)
+			}
+			receiver = receiver.WithNewFile("old/pending.txt", "pending new file").
+				WithNewFile("base.txt", "unrelated pending edit")
+			original, err := receiver.Git().Head().CommitSHA(ctx)
+			require.NoError(t, err)
+
+			_, err = applyWorkspacePull(ctx, c, receiver, source, nil, 100)
+			require.ErrorContains(t, err, "merge uncommitted changes")
+			require.ErrorContains(t, err, "CONFLICT (file location)")
+			require.ErrorContains(t, err, "old/pending.txt")
+			_, err = planWorkspacePull(ctx, c, receiver, source, nil, 100)
+			require.ErrorContains(t, err, "merge uncommitted changes")
+			require.ErrorContains(t, err, "old/pending.txt")
+
+			sha, err := receiver.Git().Head().CommitSHA(ctx)
+			require.NoError(t, err)
+			require.Equal(t, original, sha)
+			for path, want := range map[string]string{
+				"old/pending.txt": "pending new file",
+				"base.txt":        "unrelated pending edit",
+			} {
+				got, err := receiver.File(path).Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, want, got)
+			}
+
+			// Removing the conflicting addition permits the rename while keeping
+			// the unrelated pending edit out of the incoming commit.
+			pulled, err := applyWorkspacePull(ctx, c, receiver.WithoutFile("old/pending.txt"), source, nil, 100)
+			require.NoError(t, err)
+			got, err := pulled.File("new/a.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "committed file\n", got)
+			got, err = pulled.File("base.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "unrelated pending edit", got)
+			modified, err := pulled.Git().Uncommitted().ModifiedPaths(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"base.txt"}, modified)
+		})
+	}
+}
+
 func (WorkspaceSuite) TestWorkspacePullShortSHAs(ctx context.Context, t *testctx.T) {
 	checkout, _ := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
