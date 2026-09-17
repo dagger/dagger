@@ -149,7 +149,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 	if err != nil {
 		return err
 	}
-	demand := &PartDemandState{}
+	demand := &PartDemandState{target: clonePartAddress(address)}
 	ctx = context.WithValue(ctx, partDemandContextKey{}, demand)
 	for {
 		err := c.RunLazyTask(ctx, res, partTaskKey("acquire", address), LazyTaskSpec{Body: func(ctx context.Context) error {
