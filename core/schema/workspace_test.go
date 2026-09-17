@@ -610,7 +610,7 @@ func TestWorkspaceTargetSkipNames(t *testing.T) {
 }
 
 // TestGenerateCheckPatterns pins which patterns select a generate-derived
-// check: the is-empty name it is listed under, and every pattern that selected
+// check: the up-to-date name it is listed under, and every pattern that selected
 // it while it was still named after its generator.
 func TestGenerateCheckPatterns(t *testing.T) {
 	ctx := context.Background()
@@ -624,30 +624,30 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		included      bool
 		moduleSkipped bool
 	}{
-		{"check name", false, []string{"alpha-sdk:generate:is-empty"}, true, true},
+		{"check name", false, []string{"alpha-sdk:generate:up-to-date"}, true, true},
 		{"generator name", false, []string{"alpha-sdk:generate"}, true, true},
 		{"module name", false, []string{"alpha-sdk"}, true, true},
 		{"single segment wildcard on the generator", false, []string{"alpha-sdk:*"}, true, true},
-		{"wildcard on the check name", false, []string{"alpha-sdk:*:is-empty"}, true, true},
-		{"entrypoint check name", true, []string{"generate:is-empty"}, true, true},
+		{"wildcard on the check name", false, []string{"alpha-sdk:*:up-to-date"}, true, true},
+		{"entrypoint check name", true, []string{"generate:up-to-date"}, true, true},
 		{"entrypoint generator name", true, []string{"generate"}, true, true},
-		{"module-local check name", false, []string{"generate:is-empty"}, false, true},
+		{"module-local check name", false, []string{"generate:up-to-date"}, false, true},
 		{"module-local generator name", false, []string{"generate"}, false, true},
 		{"other leaf", false, []string{"alpha-sdk:generate:other"}, false, false},
-		{"other module", false, []string{"beta-sdk:generate:is-empty"}, false, false},
+		{"other module", false, []string{"beta-sdk:generate:up-to-date"}, false, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			node := modTreeNode("alpha-sdk", "generate")
 			node.Parent.WorkspaceEntrypoint = test.entrypoint
 			check := &core.Check{Node: node, IsGenerate: true}
 
-			wantName := "alpha-sdk:generate:is-empty"
+			wantName := "alpha-sdk:generate:up-to-date"
 			if test.entrypoint {
-				wantName = "generate:is-empty"
+				wantName = "generate:up-to-date"
 			}
 			require.Equal(t, wantName, check.Name())
 			// path is the qualified identity of the same check name reports.
-			require.Equal(t, []string{"alpha-sdk", "generate", "is-empty"}, check.Path())
+			require.Equal(t, []string{"alpha-sdk", "generate", "up-to-date"}, check.Path())
 
 			included, err := filterChecksByInclude(ctx, []*core.Check{check}, test.patterns)
 			require.NoError(t, err)
@@ -663,7 +663,7 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		})
 	}
 
-	t.Run("the is-empty name alone would lose single segment wildcards", func(t *testing.T) {
+	t.Run("the up-to-date name alone would lose single segment wildcards", func(t *testing.T) {
 		// Why a generate-derived check also answers to its generator node.
 		check := &core.Check{Node: modTreeNode("alpha-sdk", "generate"), IsGenerate: true}
 		match, err := matchWorkspaceInclude(ctx, check.NamingNode(), []string{"alpha-sdk:*"})
@@ -675,7 +675,7 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		// Module.check and Module.checks match against the module's own tree,
 		// whose functions sit directly under the root.
 		check := &core.Check{Node: modTreeNode("empty-generate"), IsGenerate: true}
-		require.Equal(t, "empty-generate:is-empty", check.Name())
+		require.Equal(t, "empty-generate:up-to-date", check.Name())
 		for _, pattern := range []string{check.Name(), "empty-generate", "empty-*"} {
 			included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{pattern})
 			require.NoError(t, err)
@@ -683,10 +683,10 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		}
 	})
 
-	t.Run("an ordinary check has no is-empty name", func(t *testing.T) {
+	t.Run("an ordinary check has no up-to-date name", func(t *testing.T) {
 		check := &core.Check{Node: modTreeNode("go", "lint")}
 		require.Equal(t, "go:lint", check.Name())
-		included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{"go:lint:is-empty"})
+		included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{"go:lint:up-to-date"})
 		require.NoError(t, err)
 		require.Empty(t, included)
 	})

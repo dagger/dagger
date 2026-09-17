@@ -2693,7 +2693,7 @@ func (s *moduleSchema) moduleChecks(
 		return nil, err
 	}
 	// Filter the finished checks, not the tree nodes: a generate-derived check
-	// has to be selectable by the is-empty name it reports.
+	// has to be selectable by the up-to-date name it reports.
 	checkGroup.Checks, err = filterChecksByInclude(ctx, checkGroup.Checks, include)
 	if err != nil {
 		return nil, err
