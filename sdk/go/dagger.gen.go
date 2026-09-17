@@ -1211,7 +1211,7 @@ func (r *AgentMiddlewareGroup) AsNode() Node {
 	}
 }
 
-// One workspace value with a complete query and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+// One workspace value with a complete path and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
 type Artifact struct {
 	query *querybuilder.Selection
 
@@ -1225,7 +1225,7 @@ func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
 	}
 }
 
-// One key per collection along the query. Unordered; empty for static artifacts.
+// One key per collection along the path. Unordered; empty for static artifacts.
 func (r *Artifact) CollectionKeys(ctx context.Context) ([]ArtifactCollectionKey, error) {
 	q := r.query.Select("collectionKeys")
 
@@ -1298,6 +1298,16 @@ func (r *Artifact) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+func (r *Artifact) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The full address, formatted for CLI input with consistent flag order.
 func (r *Artifact) Pretty(ctx context.Context) (string, error) {
 	if r.pretty != nil {
@@ -1306,16 +1316,6 @@ func (r *Artifact) Pretty(ctx context.Context) (string, error) {
 	q := r.query.Select("pretty")
 
 	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
-func (r *Artifact) Query(ctx context.Context) ([]string, error) {
-	q := r.query.Select("query")
-
-	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1489,9 +1489,9 @@ func (r *Artifacts) FilterCollections(collections []string) *Artifacts {
 }
 
 // Match one complete, ordered field sequence exactly.
-func (r *Artifacts) FilterQuery(query []string) *Artifacts {
-	q := r.query.Select("filterQuery")
-	q = q.Arg("query", query)
+func (r *Artifacts) FilterPath(path []string) *Artifacts {
+	q := r.query.Select("filterPath")
+	q = q.Arg("path", path)
 
 	return &Artifacts{
 		query: q,

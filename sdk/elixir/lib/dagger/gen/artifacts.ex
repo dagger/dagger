@@ -75,10 +75,10 @@ defmodule Dagger.Artifacts do
   @doc """
   Match one complete, ordered field sequence exactly.
   """
-  @spec filter_query(t(), [String.t()]) :: Dagger.Artifacts.t()
-  def filter_query(%__MODULE__{} = artifacts, query) do
+  @spec filter_path(t(), [String.t()]) :: Dagger.Artifacts.t()
+  def filter_path(%__MODULE__{} = artifacts, path) do
     query_builder =
-      artifacts.query_builder |> QB.select("filterQuery") |> QB.put_arg("query", query)
+      artifacts.query_builder |> QB.select("filterPath") |> QB.put_arg("path", path)
 
     %Dagger.Artifacts{
       query_builder: query_builder,

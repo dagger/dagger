@@ -23,8 +23,9 @@ func newArtifactsCommand() *cobra.Command {
 		Short: "List and filter workspace artifacts",
 		Long: `List artifact addresses without evaluating their values.
 
-A path selects that path and its children. Glob patterns work as with check
-and up. Quote them to keep the shell from expanding them.
+A path selects that path and its children. Use / between fields; : is also
+accepted. Glob patterns work as with check and up. Quote them to keep the
+shell from expanding them.
 
 Use --type to select a GraphQL type. Each collection adds a flag with its name,
 such as --go-module. Repeat a flag to match any of its values. Different filters
@@ -34,7 +35,7 @@ conflicts with an existing flag.
 Examples:
   dagger artifacts list
   dagger artifacts list engine-dev --type Container
-  dagger artifacts list 'go*:**' --type Container --type Directory
+  dagger artifacts list 'go*/**' --type Container --type Directory
   dagger artifacts types
   dagger artifacts collections
   dagger artifacts keys go-test --go-module=sdk/go`,

@@ -1213,7 +1213,7 @@ impl Loadable for Artifact {
     }
 }
 impl Artifact {
-    /// One key per collection along the query. Unordered; empty for static artifacts.
+    /// One key per collection along the path. Unordered; empty for static artifacts.
     pub async fn collection_keys(&self) -> Result<Vec<ArtifactCollectionKey>, DaggerError> {
         let query = self.selection.select("collectionKeys");
         let query = query.select("id");
@@ -1235,14 +1235,14 @@ impl Artifact {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The full address, formatted for CLI input with consistent flag order.
     pub async fn pretty(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("pretty");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
-    pub async fn query(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("query");
         query.execute(self.graphql_client.clone()).await
     }
     /// Evaluate the target in the workspace that supplied this artifact.
@@ -1394,14 +1394,11 @@ impl Artifacts {
         }
     }
     /// Match one complete, ordered field sequence exactly.
-    pub fn filter_query(&self, query_arg: Vec<impl Into<String>>) -> Artifacts {
-        let mut query = self.selection.select("filterQuery");
+    pub fn filter_path(&self, path: Vec<impl Into<String>>) -> Artifacts {
+        let mut query = self.selection.select("filterPath");
         query = query.arg(
-            "query",
-            query_arg
-                .into_iter()
-                .map(|i| i.into())
-                .collect::<Vec<String>>(),
+            "path",
+            path.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         Artifacts {
             proc: self.proc.clone(),

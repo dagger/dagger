@@ -4986,7 +4986,7 @@ export class AgentMiddlewareGroup extends BaseClient {
 }
 
 /**
- * One workspace value with a complete query and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+ * One workspace value with a complete path and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
  */
 export class Artifact extends BaseClient {
   private readonly _id?: ID = undefined
@@ -5018,7 +5018,7 @@ export class Artifact extends BaseClient {
   }
 
   /**
-   * One key per collection along the query. Unordered; empty for static artifacts.
+   * One key per collection along the path. Unordered; empty for static artifacts.
    */
   collectionKeys = async (): Promise<ArtifactCollectionKey[]> => {
     type collectionKeys = {
@@ -5038,6 +5038,17 @@ export class Artifact extends BaseClient {
   }
 
   /**
+   * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The full address, formatted for CLI input with consistent flag order.
    */
   pretty = async (): Promise<string> => {
@@ -5048,17 +5059,6 @@ export class Artifact extends BaseClient {
     const ctx = this._ctx.select("pretty")
 
     const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
-   */
-  query = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("query")
-
-    const response: Awaited<string[]> = await ctx.execute()
 
     return response
   }
@@ -5205,8 +5205,8 @@ export class Artifacts extends BaseClient {
   /**
    * Match one complete, ordered field sequence exactly.
    */
-  filterQuery = (query: string[]): Artifacts => {
-    const ctx = this._ctx.select("filterQuery", { query })
+  filterPath = (path: string[]): Artifacts => {
+    const ctx = this._ctx.select("filterPath", { path })
     return new Artifacts(ctx)
   }
 
