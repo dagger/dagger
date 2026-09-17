@@ -651,6 +651,32 @@ type gitBundleTarget struct {
 	exact    *gitutil.Ref
 }
 
+// GitBundleRefPins resolves refs the way CreateGitBundleFile will and returns
+// the exact object each one advertises right now. A bundle's cached result is
+// keyed by these pins as well as the names, so bundling a ref that has moved
+// since an earlier session is a new call rather than a hit on the old bundle.
+func GitBundleRefPins(ctx context.Context, repo *GitRepository, refs []string) ([]string, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	remote, err := repo.LoadRemote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pins := make([]string, 0, len(refs))
+	for _, name := range refs {
+		if name == "" || strings.HasPrefix(name, "-") {
+			return nil, fmt.Errorf("invalid git bundle ref %q", name)
+		}
+		ref, err := resolveGitBundleTarget(remote, name)
+		if err != nil {
+			return nil, fmt.Errorf("resolve git bundle ref %q: %w", name, err)
+		}
+		pins = append(pins, ref.exact.SHA)
+	}
+	return pins, nil
+}
+
 // resolveGitBundleTarget uses checkout-style lookup to choose the canonical
 // ref name, then preserves the exact advertised object for tags. Checkout
 // callers want an annotated tag peeled to its commit, but a bundle must carry

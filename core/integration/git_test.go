@@ -1749,31 +1749,7 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 	// serves the same repo, at the same URL, with the given tags added
 	serve := func(ctx context.Context, t *testctx.T, c *dagger.Client, tags ...string) {
 		t.Helper()
-
-		ctr := c.Container().
-			From(alpineImage).
-			WithExec([]string{"apk", "add", "git", "git-daemon"}).
-			With(gitUserConfig).
-			// pin the dates so both sessions serve the same commit SHA, whether
-			// or not the exec below is a cache hit
-			WithEnvVariable("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z").
-			WithEnvVariable("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z").
-			WithWorkdir("/src").
-			WithExec([]string{"sh", "-c", `
-				git init && echo content > README.md && git add -A && git commit -m init
-			`}).
-			WithExec([]string{"git", "clone", "--bare", "/src", "/root/srv/repo.git"})
-		for _, tag := range tags {
-			ctr = ctr.WithExec([]string{"git", "-C", "/root/srv/repo.git", "tag", tag, "main"})
-		}
-
-		_, err := ctr.
-			WithExposedPort(9418).
-			WithDefaultArgs([]string{"git", "daemon", "--verbose", "--export-all", "--base-path=/root/srv"}).
-			AsService().
-			WithHostname(hostname).
-			Start(ctx)
-		require.NoError(t, err)
+		serveGitDaemon(ctx, t, c, hostname, taggedRepoScript(tags...))
 	}
 
 	lookup := func(ctx context.Context, t *testctx.T, c *dagger.Client) (sha string, advertised []string, tag string) {
@@ -1807,6 +1783,108 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 	require.Equal(t, sha1, sha2, "both sessions must resolve the same commit")
 	require.Equal(t, []string{"v1.0.0", "v2.0.0"}, advertised2)
 	require.Equal(t, "refs/tags/v2.0.0", tag2)
+}
+
+// serveGitDaemon starts a git daemon at hostname serving /root/srv/repo.git,
+// built by running setup inside a fresh `git init` at /src. Dates are pinned
+// so serving the same script again yields the same commit SHAs, whether or not
+// the setup exec is a cache hit.
+func serveGitDaemon(ctx context.Context, t *testctx.T, c *dagger.Client, hostname, setup string) {
+	t.Helper()
+	_, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		With(gitUserConfig).
+		WithEnvVariable("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z").
+		WithEnvVariable("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z").
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-c", "git init && " + setup}).
+		WithExec([]string{"git", "clone", "--bare", "/src", "/root/srv/repo.git"}).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"git", "daemon", "--verbose", "--export-all", "--base-path=/root/srv"}).
+		AsService().
+		WithHostname(hostname).
+		Start(ctx)
+	require.NoError(t, err)
+}
+
+// taggedRepoScript makes one commit on main and tags it with each tag.
+func taggedRepoScript(tags ...string) string {
+	script := "echo content > README.md && git add -A && git commit -m init"
+	for _, tag := range tags {
+		script += " && git tag " + tag + " main"
+	}
+	return script
+}
+
+// The repository result behind Query.git is shared across sessions, and
+// results stay alive while any session holds them. A session that is still
+// open must not pin what a later session sees: tags and branches are listed
+// once per session, against that session's remote.
+func (GitSuite) TestGitTagsFreshnessWithOpenSession(ctx context.Context, t *testctx.T) {
+	const hostname = "git-tags-open-session"
+	repoURL := "git://" + hostname + "/repo.git"
+
+	c1 := connect(ctx, t)
+	serveGitDaemon(ctx, t, c1, hostname, taggedRepoScript("v1.0.0"))
+	tags1, err := c1.Git(repoURL).Tags(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"v1.0.0"}, tags1)
+	branches1, err := c1.Git(repoURL).Branches(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"main"}, branches1)
+
+	// c1 stays open, still holding its results, while a second session asks
+	// the same URL, which now advertises more refs.
+	c2 := connect(ctx, t)
+	serveGitDaemon(ctx, t, c2, hostname, taggedRepoScript("v1.0.0", "v2.0.0")+" && git branch feature")
+	tags2, err := c2.Git(repoURL).Tags(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"v1.0.0", "v2.0.0"}, tags2)
+	branches2, err := c2.Git(repoURL).Branches(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"feature", "main"}, branches2)
+
+	// The first session keeps the answer it already resolved.
+	tags1Again, err := c1.Git(repoURL).Tags(ctx)
+	require.NoError(t, err)
+	require.Equal(t, tags1, tags1Again)
+}
+
+// A bundle is persisted and its repository is shared across sessions, so a
+// bundle of a ref name must be keyed by where that ref points now, or a later
+// session would receive the bundle built when the ref pointed elsewhere.
+func (GitSuite) TestGitBundleRefFreshness(ctx context.Context, t *testctx.T) {
+	const hostname = "git-bundle-ref-freshness"
+	repoURL := "git://" + hostname + "/repo.git"
+	const first = "echo a > file && git add -A && git commit -m a"
+
+	bundleMain := func(ctx context.Context, t *testctx.T, c *dagger.Client) (sha string) {
+		t.Helper()
+		refs, err := c.Git(repoURL).Bundle([]string{"main"}).Refs(ctx)
+		require.NoError(t, err)
+		require.Len(t, refs, 1)
+		name, err := refs[0].Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/heads/main", name)
+		sha, err = refs[0].Sha(ctx)
+		require.NoError(t, err)
+		head, err := c.Git(repoURL).Branch("main").CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, head, sha, "bundle must carry the branch as this session resolves it")
+		return sha
+	}
+
+	c1 := connect(ctx, t)
+	serveGitDaemon(ctx, t, c1, hostname, first)
+	sha1 := bundleMain(ctx, t, c1)
+	require.NoError(t, c1.Close())
+
+	// same URL, but main has advanced
+	c2 := connect(ctx, t)
+	serveGitDaemon(ctx, t, c2, hostname, first+" && echo b > file && git commit -am b")
+	sha2 := bundleMain(ctx, t, c2)
+	require.NotEqual(t, sha1, sha2)
 }
 
 func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {

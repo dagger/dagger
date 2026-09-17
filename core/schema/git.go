@@ -151,18 +151,26 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					Internal(),
 			),
 
+		// The repository result is shared across sessions, but tags and
+		// branches move: answer each session from its own listing.
 		dagql.Func("tags", s.tags).
+			WithInput(dagql.PerSessionInput).
 			Doc(`tags that match any of the given glob patterns.`).
 			Args(
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
 		dagql.Func("branches", s.branches).
+			WithInput(dagql.PerSessionInput).
 			Doc(`branches that match any of the given glob patterns.`).
 			Args(
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
 
+		// bundle resolves its ref names against this session's remote listing
+		// and hands the pinned commits to __bundleFile, which does the shared,
+		// persisted work. It must not itself be answered from another session.
 		dagql.NodeFunc("bundle", s.bundle).
+			WithInput(dagql.PerSessionInput).
 			View(AfterVersion("v1.0.0-beta.10")).
 			IsPersistable().
 			Doc(`Pack the given refs and the objects needed to reconstruct them into a Git bundle.`).
@@ -1357,12 +1365,25 @@ type gitBundleArgs struct {
 	Base dagql.Optional[core.GitRefID]
 }
 
-func gitBundleNamedInputs(args gitBundleArgs) []dagql.NamedInput {
+// gitBundleFileArgs adds the commits the named refs resolved to when the
+// bundle was requested. The repository result is shared across sessions and
+// the bundle is persisted, so without the pins a later request for a ref that
+// has since moved would be answered with the earlier bundle.
+type gitBundleFileArgs struct {
+	Refs []string
+	Base dagql.Optional[core.GitRefID]
+	Pins []string `default:"[]"`
+}
+
+func gitBundleNamedInputs(args gitBundleArgs, pins []string) []dagql.NamedInput {
 	refs := make(dagql.ArrayInput[dagql.String], len(args.Refs))
 	for i, ref := range args.Refs {
 		refs[i] = dagql.NewString(ref)
 	}
-	inputs := []dagql.NamedInput{{Name: "refs", Value: refs}}
+	inputs := []dagql.NamedInput{
+		{Name: "refs", Value: refs},
+		{Name: "pins", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(pins...))},
+	}
 	if args.Base.Valid {
 		inputs = append(inputs, dagql.NamedInput{Name: "base", Value: args.Base})
 	}
@@ -1378,10 +1399,14 @@ func (s *gitSchema) bundle(
 	if err != nil {
 		return inst, err
 	}
+	pins, err := core.GitBundleRefPins(ctx, parent.Self(), args.Refs)
+	if err != nil {
+		return inst, err
+	}
 	var file dagql.ObjectResult[*core.File]
 	if err := srv.Select(ctx, parent, &file, dagql.Selector{
 		Field: "__bundleFile",
-		Args:  gitBundleNamedInputs(args),
+		Args:  gitBundleNamedInputs(args, pins),
 	}); err != nil {
 		return inst, err
 	}
@@ -1395,7 +1420,7 @@ func (s *gitSchema) bundle(
 func (s *gitSchema) bundleFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRepository],
-	args gitBundleArgs,
+	args gitBundleFileArgs,
 ) (inst dagql.ObjectResult[*core.File], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
