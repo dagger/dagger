@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -244,4 +245,83 @@ func TestSnapshotSharingEnqueueDoesNotWaitForTheWorker(t *testing.T) {
 	release()
 	require.Equal(t, 1, barrier.awaitPass(t))
 	require.True(t, shareTestHasLink(receiver, "fs-snap"))
+}
+
+// An export is a capture, and a capture never waits: a row with any task in
+// flight answers ErrPersistStateNotReady, the documented "not now" that the
+// checkpoint worker and OfferParts' dispositions already carry. A sharing
+// pass holding a prepared slot is one such task and an ordinary demand's is
+// another; the export fails the same way for both and succeeds as soon as the
+// task ends. Nothing is published, held or lost by the refused export.
+func TestExportDuringAnActiveTaskIsNotReady(t *testing.T) {
+	export := func(ctx context.Context, c *Cache, res AnyResult) error {
+		return c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{res}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { return nil })
+	}
+	t.Run("a sharing pass paused before Commit", func(t *testing.T) {
+		ctx, c, srv, _ := shareTestCache(t)
+		c.EnableTransferFixtureParts()
+		barrier := newSharePassBarrier(c)
+		donor, receiver := shareTestPair(t, ctx, c, srv,
+			map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+			map[string]sharePartState{"fs": {}},
+		)
+		armed, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "held", Point: FixtureBeforeCommit, Action: FixturePause})
+		require.NoError(t, err)
+		released := false
+		release := func() {
+			if !released {
+				released = true
+				require.NoError(t, c.ReleaseTransferFixtureBarrier(armed.Key, armed.Generation))
+			}
+		}
+		defer release()
+		shareTestUnite(t, ctx, c, "export-during-pass", donor, receiver)
+		wait, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		_, err = c.WaitTransferFixtureBarrier(wait, armed.Key, armed.Generation)
+		require.NoError(t, err)
+
+		holds := shareTestHolds(c, receiver)
+		require.ErrorIs(t, export(ctx, c, receiver), ErrPersistStateNotReady)
+		require.Equal(t, holds, shareTestHolds(c, receiver), "the refused export kept nothing")
+
+		release()
+		require.Equal(t, 1, barrier.awaitPass(t))
+		require.True(t, shareTestHasLink(receiver, "fs-snap"), "the pass was not disturbed")
+		require.NoError(t, export(ctx, c, receiver))
+	})
+	t.Run("an ordinary task of the same row", func(t *testing.T) {
+		ctx, c, srv := transferTestCache(t)
+		row := persistedListTestResult(t, ctx, c, srv, "busy-row", &transferTestValue{Text: "value"})
+		entered, leave := make(chan struct{}), make(chan struct{})
+		done := make(chan error, 1)
+		go func() {
+			done <- c.RunLazyTask(ctx, row, "obtain:busy", LazyTaskSpec{Body: func(context.Context) error {
+				close(entered)
+				<-leave
+				return nil
+			}})
+		}()
+		defer func() {
+			select {
+			case <-leave:
+			default:
+				close(leave)
+			}
+		}()
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the task never started")
+		}
+		require.ErrorIs(t, export(ctx, c, row), ErrPersistStateNotReady)
+		close(leave)
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("the task never ended")
+		}
+		require.NoError(t, export(ctx, c, row))
+	})
 }
