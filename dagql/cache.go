@@ -2065,6 +2065,11 @@ type Cache struct {
 	// structural ref's target can be collected out from under the
 	// publication.
 	testBeforePublicationIndex func(*ongoingCall)
+	// snapshot sharing hooks: after a cohort is taken and its slots are
+	// planned but before the first preparation, and after the pass has
+	// finished every Finish and released every member hold.
+	testBeforeSharePass func(*snapshotShareItem, int)
+	testAfterSharePass  func(*snapshotShareItem)
 
 	closeOnce sync.Once
 	closeErr  error

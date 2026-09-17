@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
+	"sync"
 	"time"
+
+	"github.com/dagger/dagger/engine"
 )
 
 // Early snapshot sharing gives an imported row R its own ownership of a
@@ -355,7 +359,10 @@ func (c *Cache) wakeSnapshotShareWorker() {
 // request-scoped operation lease. The per-slot recorded call and the
 // preparation marker are added inside the pass.
 func (c *Cache) snapshotShareWorkerBase() context.Context {
-	return ContextWithCache(context.Background(), c)
+	// The marker rides the base, so every slot, ancestor and detached
+	// cleanup context derived from it keeps the boundary; it never enters a
+	// decoded value or an unmarked foreground waiter's context.
+	return engine.WithSnapshotSharePreparation(ContextWithCache(context.Background(), c))
 }
 
 func (c *Cache) takeSnapshotShareItemLocked() *snapshotShareItem {
@@ -539,18 +546,6 @@ func (c *Cache) shareSlotContext(ctx context.Context, slot *shareSlot) (context.
 	return srvToContext(prepared, srv), nil
 }
 
-// runSnapshotSharePass probes the frozen cohort and installs what it can.
-func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareItem) {
-	for _, slot := range c.selectShareSlots(ctx, item) {
-		slotCtx, err := c.shareSlotContext(ctx, slot)
-		if err != nil {
-			c.traceShareSkip(ctx, slot.receiver.row, slot.address, err)
-			continue
-		}
-		_ = slotCtx
-	}
-}
-
 // PartPreparationContext builds the engine-root context and schema-only
 // server a typed sharing preparation needs to decode persisted services. The
 // cache never constructs one itself: a cache with no registered callback
@@ -680,8 +675,10 @@ func (c *Cache) shareReceiverEligibleLocked(row *sharedResult, now int64) bool {
 // role naming the same SnapshotID is proved under E by the sessionless
 // constructor.
 func shareDonorReady(p PartProbe) bool {
-	return p.LocalComplete && !p.Busy && !p.Descriptor.Absent &&
-		p.Descriptor.SnapshotID != "" && p.Descriptor.Value != nil
+	// A metadata part never carries a snapshot identity, so requiring one
+	// excludes it without consulting a core part name, and legal absence is
+	// already final.
+	return p.LocalComplete && !p.Busy && !p.Descriptor.Absent && p.Descriptor.SnapshotID != ""
 }
 
 // shareReceiverPending selects an eligible missing address. Legal absence is
@@ -834,4 +831,387 @@ func (c *Cache) preflightShareDecode(ctx context.Context, roots []uint64) error 
 		}
 	}
 	return nil
+}
+
+// errShareSlotStopped ends a slot that never installed anything. It keeps the
+// kernel from retaining bookkeeping for an attempt with no installed output,
+// and is an ordinary skip in diagnostics.
+var errShareSlotStopped = errors.New("snapshot share slot stopped without installing")
+
+type shareSlotPrepared struct {
+	ok         bool
+	record     PersistedRecord
+	published  *PersistedResultEnvelope
+	key        LazyGroupKey
+	generation uint64
+	err        error
+}
+
+type shareSlotCommitted struct {
+	receipt *ReadyPartReceipt
+	outcome PartInstallOutcome
+	err     error
+}
+
+// shareSlotState is worker-owned phase state for one selected slot. No wait
+// on any of its latches holds E, G, P or D.
+type shareSlotState struct {
+	slot       *shareSlot
+	ctx        context.Context
+	base       *readyPartPreparationBase
+	prepareNow chan struct{}
+	stopNow    chan struct{}
+	prepared   chan shareSlotPrepared
+	commit     chan bool
+	committed  chan shareSlotCommitted
+	ownerSync  chan struct{}
+	done       chan error
+	prepareOne sync.Once
+	commitOne  sync.Once
+	stopOne    sync.Once
+	// holds is set once a live preparation exists that must be committed or
+	// disposed; ready means its prefix is still intact; settled means its one
+	// terminal commit outcome has been consumed.
+	holds     bool
+	ready     bool
+	stopped   bool
+	settled   bool
+	installed bool
+}
+
+func (st *shareSlotState) stop() {
+	st.stopped = true
+	st.stopOne.Do(func() { close(st.stopNow) })
+}
+
+func (st *shareSlotState) reportPrepared(res shareSlotPrepared) {
+	st.prepareOne.Do(func() { st.prepared <- res })
+}
+
+func (st *shareSlotState) reportCommitted(res shareSlotCommitted) {
+	st.commitOne.Do(func() { st.committed <- res })
+}
+
+// runShareSlotBody is the synthetic obtain Body of one slot. It obtains its
+// task token and permit, creates the sessionless source lease under E,
+// releases E before preparing, reports its outcome and then parks until the
+// worker authorizes Commit or abort. It never calls Finish.
+func (c *Cache) runShareSlotBody(ctx context.Context, st *shareSlotState, membersReleased <-chan struct{}) error {
+	slot := st.slot
+	receiver := Result[Typed]{shared: slot.receiver.row}
+	token := PartTaskFromContext(ctx)
+	if token == nil {
+		st.reportPrepared(shareSlotPrepared{err: fmt.Errorf("snapshot share: body has no task token")})
+		return errShareSlotStopped
+	}
+	select {
+	case <-st.prepareNow:
+	case <-st.stopNow:
+		// A failed prefix aborts its dependent suffix before that suffix
+		// prepares anything.
+		st.reportPrepared(shareSlotPrepared{err: errShareSlotStopped})
+		return errShareSlotStopped
+	case <-ctx.Done():
+		st.reportPrepared(shareSlotPrepared{err: context.Cause(ctx)})
+		return errShareSlotStopped
+	}
+	permit, outcome, err := c.TryAcquire(ctx, receiver, slot.address, token)
+	if err != nil || outcome != GateGranted {
+		if permit != nil {
+			permit.Release()
+		}
+		st.reportPrepared(shareSlotPrepared{err: shareSkipCause(err, outcome)})
+		return errShareSlotStopped
+	}
+	source, err := c.newSessionlessPartSourceLease(ctx, slot.receiver.row, slot.donor.row, slot.address, slot.address, slot.probe)
+	if err != nil {
+		permit.Release()
+		st.reportPrepared(shareSlotPrepared{err: err})
+		return errShareSlotStopped
+	}
+	// Prepare consumes the source and the permit on every return.
+	prepared, err := c.prepareReadyPartFromBase(ctx, receiver, source, permit, st.base)
+	if err != nil {
+		st.reportPrepared(shareSlotPrepared{err: err})
+		return errShareSlotStopped
+	}
+	st.reportPrepared(shareSlotPrepared{
+		ok:         true,
+		record:     prepared.next,
+		published:  prepared.published,
+		key:        token.key,
+		generation: token.generation,
+	})
+	var commit bool
+	select {
+	case commit = <-st.commit:
+	case <-ctx.Done():
+		commit = false
+	}
+	if !commit {
+		st.reportCommitted(shareSlotCommitted{outcome: PartInstallRefused})
+		if err := prepared.Release(context.WithoutCancel(ctx)); err != nil {
+			return errors.Join(errShareSlotStopped, err)
+		}
+		return errShareSlotStopped
+	}
+	receipt, installOutcome, err := c.CommitReadyPart(ctx, prepared)
+	// A successful Body always delivers its receipt through its owning pass
+	// slot, including on a post-commit cleanup error or cancellation.
+	st.reportCommitted(shareSlotCommitted{receipt: receipt, outcome: installOutcome, err: err})
+	if installOutcome != PartInstalled {
+		return errors.Join(errShareSlotStopped, err)
+	}
+	// Every cohort member hold is released before this Body returns, so the
+	// receipt's and the task's own receiver holds are the only ones left.
+	select {
+	case <-membersReleased:
+	case <-ctx.Done():
+	}
+	return err
+}
+
+func shareSkipCause(err error, outcome GateOutcome) error {
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: gate outcome %d", ErrPartReselect, outcome)
+}
+
+// runSnapshotSharePass runs one finite pass over a frozen cohort: prepare
+// every selected slot, commit in a fixed order, release every cohort hold,
+// then externally finish every receipt exactly once.
+func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareItem) {
+	states := c.planSharePass(ctx, item)
+	if c.testBeforeSharePass != nil {
+		c.testBeforeSharePass(item, len(states))
+	}
+	if c.testAfterSharePass != nil {
+		defer func() { c.testAfterSharePass(item) }()
+	}
+	membersReleased := make(chan struct{})
+	membersOnce := sync.Once{}
+	releaseMembers := func() {
+		membersOnce.Do(func() {
+			c.releaseSnapshotShareMembers(ctx, item)
+			close(membersReleased)
+		})
+	}
+	defer releaseMembers()
+	if len(states) == 0 {
+		return
+	}
+	for _, st := range states {
+		go func(st *shareSlotState) {
+			// The slot context carries the preparation marker, the
+			// receiver's recorded call and, when the slot reconstructs
+			// services, the registered root and schema-only server.
+			err := c.RunLazyTask(st.ctx, Result[Typed]{shared: st.slot.receiver.row}, partTaskKey("obtain", st.slot.address), LazyTaskSpec{
+				NoJoin:         true,
+				OwnerSyncReady: st.ownerSync,
+				Body: func(bodyCtx context.Context) error {
+					return c.runShareSlotBody(bodyCtx, st, membersReleased)
+				},
+			})
+			// A NoJoin admission failure reports the slot's one terminal
+			// outcome even though Body never ran.
+			st.reportPrepared(shareSlotPrepared{err: err})
+			st.reportCommitted(shareSlotCommitted{outcome: PartInstallRefused, err: err})
+			st.done <- err
+		}(st)
+	}
+
+	// Prepare phase. At most one local Prepare at a time; a receiver's
+	// addresses are prepared in order, each from the previous slot's data-only
+	// next representation.
+	for i, st := range states {
+		if st.stopped {
+			<-st.prepared
+			continue
+		}
+		close(st.prepareNow)
+		res := <-st.prepared
+		if !res.ok {
+			c.traceShareSkip(ctx, st.slot.receiver.row, st.slot.address, res.err)
+			c.abortShareSuffix(states, i)
+			continue
+		}
+		st.holds, st.ready = true, true
+		c.extendSharePrefix(states, i, res)
+	}
+
+	// Commit phase.
+	var receipts []*ReadyPartReceipt
+	for i, st := range states {
+		if !st.ready || !st.holds {
+			continue
+		}
+		if ctx.Err() != nil {
+			// Cancellation stops issuing commits; the disposal below signals
+			// every remaining parked Body and drains its terminal outcome.
+			break
+		}
+		st.commit <- true
+		out := <-st.committed
+		st.settled = true
+		if out.receipt != nil {
+			receipts = append(receipts, out.receipt)
+		}
+		if out.outcome != PartInstalled {
+			c.traceShareSkip(ctx, st.slot.receiver.row, st.slot.address, out.err)
+			// A refused or stale prefix aborts its dependent suffix; other
+			// receivers continue.
+			c.abortShareSuffix(states, i)
+			continue
+		}
+		st.installed = true
+	}
+	// Dispose every uncommitted preparation and await its actual cleanup.
+	for _, st := range states {
+		if !st.holds || st.settled {
+			continue
+		}
+		st.commit <- false
+		<-st.committed
+		st.settled = true
+	}
+
+	// Member release phase, then the external Finish phase. Neither waits for
+	// the full RunLazyTask result: those two waits would deadlock the
+	// protocol.
+	releaseMembers()
+	for _, receipt := range receipts {
+		if err := c.FinishReadyPart(context.WithoutCancel(ctx), receipt); err != nil {
+			c.traceShareSkip(ctx, receipt.receiver, PersistedPartAddress{}, err)
+		}
+	}
+	for _, st := range states {
+		<-st.done
+	}
+}
+
+// abortShareSuffix stops the dependent suffix of the same receiver after a
+// failed or refused prefix. Other receivers are untouched, and a suffix slot
+// that already prepared is disposed by the pass's disposal loop.
+func (c *Cache) abortShareSuffix(states []*shareSlotState, from int) {
+	if from < 0 || from >= len(states) {
+		return
+	}
+	receiver := states[from].slot.receiver.row
+	for _, st := range states[from+1:] {
+		if st.slot.receiver.row != receiver {
+			continue
+		}
+		st.base = nil
+		st.ready = false
+		st.stop()
+	}
+}
+
+// extendSharePrefix gives the next slot of the same receiver the immutable
+// next representation, expected stamp and predecessor identities this slot
+// has just prepared.
+func (c *Cache) extendSharePrefix(states []*shareSlotState, i int, res shareSlotPrepared) {
+	st := states[i]
+	if i+1 >= len(states) {
+		return
+	}
+	next := states[i+1]
+	if next.slot.receiver.row != st.slot.receiver.row {
+		return
+	}
+	base := st.base
+	predecessors := []readyPartPredecessor{}
+	original := st.slot.receiver.version.payload
+	if base != nil {
+		predecessors = slices.Clone(base.predecessors)
+		original = base.original
+	}
+	predecessors = append(predecessors, readyPartPredecessor{
+		address:    clonePartAddress(st.slot.address),
+		receiver:   st.slot.receiver.row,
+		key:        res.key,
+		generation: res.generation,
+	})
+	next.base = &readyPartPreparationBase{
+		receiver: st.slot.receiver.row,
+		original: original,
+		expected: readyPartRepresentation{
+			receiver:        st.slot.receiver.row,
+			payloadRevision: original.payloadRevision + uint64(len(predecessors)),
+			envelope:        res.published,
+			hasValue:        original.hasValue,
+		},
+		predecessors: predecessors,
+		record:       res.record,
+	}
+}
+
+// planSharePass turns selected slots into ordered per-receiver sequences.
+// Receivers are visited by ID and their addresses in the frozen deterministic
+// order, and one receiver's sequence is never interleaved with another's.
+func (c *Cache) planSharePass(ctx context.Context, item *snapshotShareItem) []*shareSlotState {
+	slots := c.selectShareSlots(ctx, item)
+	slices.SortFunc(slots, func(a, b *shareSlot) int {
+		if a.receiver.row.id != b.receiver.row.id {
+			return int(a.receiver.row.id) - int(b.receiver.row.id)
+		}
+		return strings.Compare(a.addressKey, b.addressKey)
+	})
+	var states []*shareSlotState
+	typedReceivers := map[sharedResultID]bool{}
+	for _, slot := range slots {
+		if slot.receiver.version.payload.hasValue {
+			// A typed store computes its expected output revision from the
+			// live value at preparation, so an ordered second typed slot
+			// could not name the revision its prefix will publish. One typed
+			// slot per receiver per pass; a later trigger or an ordinary
+			// demand fills the rest.
+			if typedReceivers[slot.receiver.row.id] {
+				continue
+			}
+			typedReceivers[slot.receiver.row.id] = true
+		}
+		slotCtx, err := c.shareSlotContext(ctx, slot)
+		if err != nil {
+			c.traceShareSkip(ctx, slot.receiver.row, slot.address, err)
+			continue
+		}
+		states = append(states, &shareSlotState{
+			slot:       slot,
+			ctx:        slotCtx,
+			prepareNow: make(chan struct{}),
+			stopNow:    make(chan struct{}),
+			prepared:   make(chan shareSlotPrepared, 1),
+			commit:     make(chan bool, 1),
+			committed:  make(chan shareSlotCommitted, 1),
+			ownerSync:  make(chan struct{}),
+			done:       make(chan error, 1),
+		})
+	}
+	return states
+}
+
+// releaseSnapshotShareMembers drops every cohort member hold under E and runs
+// the resulting collection callbacks unlocked with an uncanceled cleanup
+// context. The item's counted operation ends later, with the item.
+func (c *Cache) releaseSnapshotShareMembers(ctx context.Context, item *snapshotShareItem) {
+	cleanupCtx := context.WithoutCancel(ctx)
+	c.egraphMu.Lock()
+	var queue collectionQueue
+	var err error
+	for _, row := range item.members {
+		q, decErr := c.decrementIncomingOwnershipLocked(cleanupCtx, row, queue)
+		queue = q
+		err = errors.Join(err, decErr)
+	}
+	item.members = nil
+	callbacks, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
+	duplicates := c.takeShareDuplicateHoldsLocked()
+	c.egraphMu.Unlock()
+	err = errors.Join(err, collectErr, runOnReleaseFuncs(cleanupCtx, callbacks))
+	c.releaseShareDuplicateHolds(cleanupCtx, duplicates)
+	if err != nil {
+		c.recordShareCleanupError(err)
+	}
 }
