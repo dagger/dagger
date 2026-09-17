@@ -976,7 +976,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 					break
 				}
 				if ctx.Err() != nil {
-					return nil
+					return nil //nolint:nilerr // Cancellation ends the background reconnect loop normally.
 				}
 				logger.Debug("OTLP stream reconnect failed", "cursor", cursor, "err", err)
 			}
