@@ -167,10 +167,20 @@ const (
 //
 // CallPayloadContentType is the dagger.io/content.type value identifying such
 // a record: its body is one deterministic protobuf encoding of callpbv1.Call.
-// The payload omits Call.Digest; consumers compute the canonical digest from
-// the body instead. Like every content type, it describes the body — records
-// carry it under the ordinary core instrumentation scope.
+// The payload carries its own Call.Digest, which consumers use verbatim. Like
+// every content type, it describes the body — records carry it under the
+// ordinary core instrumentation scope.
 const CallPayloadContentType = "application/vnd.dagger.call+proto"
+
+// CallPayloadDigestAttr repeats a call payload record's embedded Call.Digest
+// as a log attribute, so a log store can find a payload by digest without
+// decoding bodies. The body stays authoritative; consumers that decode it
+// need not read this.
+//
+// It is deliberately not dagger.io/dag.digest: on a log record that key
+// already means "render this beneath the call that created the digest"
+// (dagui's routeLog), which a payload record must never trigger.
+const CallPayloadDigestAttr = "dagger.io/dag.call.digest"
 
 // Agent directory (dagger.io/agent.*).
 //
