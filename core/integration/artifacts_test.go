@@ -249,7 +249,21 @@ func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.want, out)
 		})
 	}
-	out, err := base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "workspace", "dir")).Stdout(ctx)
+	for _, args := range [][]string{
+		{"workspace", "--help"},
+		{"ws", "--help"},
+		{"help", "ws"},
+	} {
+		out, err := base.WithWorkdir("/work/selected").With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
+		require.NoError(t, err)
+		for _, typeName := range []string{"Container", "Directory", "File", "Artifact", "Artifacts"} {
+			require.Contains(t, out, "List "+typeName+" artifacts")
+		}
+	}
+	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "ws", "containers", "--help")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "dagger workspace containers [flags]")
+	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "workspace", "dir")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "directories\tList Directory artifacts\n")
 }

@@ -3,9 +3,6 @@ package daggercmd
 import (
 	"context"
 	"fmt"
-	"maps"
-	"slices"
-	"strings"
 
 	"github.com/iancoleman/strcase"
 	"github.com/jinzhu/inflection"
@@ -33,22 +30,41 @@ func workspaceArtifactCommands(types []string) map[string]string {
 	return commands
 }
 
-func runWorkspaceArtifacts(cmd *cobra.Command, args []string) error {
-	if len(args) == 0 {
-		return cmd.Help()
+func prepareWorkspaceArtifactCommands(ctx context.Context, root *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "help", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+			args = args[1:]
+		}
 	}
-	return withEngine(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
-		artifacts := ec.Dagger().CurrentWorkspace().Artifacts()
-		types, err := artifacts.Types(ctx)
+	cmd, _ := resolveCommand(root, args)
+	if cmd != workspaceCmd {
+		return nil
+	}
+	return withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
+		types, err := ec.Dagger().CurrentWorkspace().Artifacts().Types(ctx)
 		if err != nil {
 			return err
 		}
-		commands := workspaceArtifactCommands(types)
-		typeName, ok := commands[args[0]]
-		if !ok {
-			return fmt.Errorf("unknown workspace command %q; available artifact listings: %s", args[0], strings.Join(slices.Sorted(maps.Keys(commands)), ", "))
+		for name, typeName := range workspaceArtifactCommands(types) {
+			cmd := &cobra.Command{
+				Use:   name,
+				Short: "List " + typeName + " artifacts",
+				Args:  cobra.NoArgs,
+				RunE: func(cmd *cobra.Command, _ []string) error {
+					return runWorkspaceArtifacts(cmd, typeName)
+				},
+			}
+			setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace)
+			workspaceCmd.AddCommand(cmd)
 		}
-		lines, err := artifacts.FilterTypes([]string{typeName}).Pretty(ctx)
+		return nil
+	})
+}
+
+func runWorkspaceArtifacts(cmd *cobra.Command, typeName string) error {
+	return withEngine(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
+		lines, err := ec.Dagger().CurrentWorkspace().Artifacts().FilterTypes([]string{typeName}).Pretty(ctx)
 		if err != nil {
 			return err
 		}
@@ -59,29 +75,4 @@ func runWorkspaceArtifacts(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	})
-}
-
-func completeWorkspaceArtifacts(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	var completions []string
-	err := withEngineSilent(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
-		types, err := ec.Dagger().CurrentWorkspace().Artifacts().Types(ctx)
-		if err != nil {
-			return err
-		}
-		commands := workspaceArtifactCommands(types)
-		for _, name := range slices.Sorted(maps.Keys(commands)) {
-			if strings.HasPrefix(name, toComplete) {
-				completions = append(completions, name+"\tList "+commands[name]+" artifacts")
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		cobra.CompErrorln(err.Error())
-		return nil, cobra.ShellCompDirectiveError
-	}
-	return completions, cobra.ShellCompDirectiveNoFileComp
 }
