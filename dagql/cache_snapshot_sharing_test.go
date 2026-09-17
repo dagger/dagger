@@ -53,7 +53,10 @@ type shareTestManager struct {
 	released  atomic.Int32
 	attaches  atomic.Int32
 	attachErr atomic.Pointer[error]
-	afterPin  func()
+	// attachFails, when set, decides per snapshot whether an attachment
+	// fails, which is how a partial attachment is produced.
+	attachFails func(snapshotID string) error
+	afterPin    func()
 	// beforeRelease runs inside a reference's Release, before it is counted.
 	beforeRelease func()
 }
@@ -77,6 +80,11 @@ func (m *shareTestManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	m.attaches.Add(1)
 	if m.attachErr.Load() != nil {
 		return *m.attachErr.Load()
+	}
+	if fails := m.attachFails; fails != nil {
+		if err := fails(snapshotID); err != nil {
+			return err
+		}
 	}
 	return m.fakeSnapshotManager.AttachLease(ctx, leaseID, snapshotID)
 }
@@ -1170,4 +1178,188 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	require.Equal(t, "fs-snap", receiverValue.Parts["fs"].Snapshot)
 	require.Equal(t, receiverHolds, shareTestHolds(c, receiver), "the receipt's and the task's receiver holds ended")
 	require.Equal(t, int32(1), manager.released.Load(), "the installed part's protection was released once")
+}
+
+// FailedFinishLastOwner: the receiver loses its ordinary owners while the
+// external Finish is paused, and that Finish's owner synchronization then
+// fails. Once the receipt's and the task's own holds end, nothing owns the
+// row: it is collected and its protection is released exactly once. The
+// retained bookkeeping owns no receipt and no hold of its own. The control
+// with an ordinary owner is TestSnapshotSharingFailedFinishAndRetry.
+func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	row := receiver.cacheSharedResult()
+	attachErr := errors.New("attach lease failed")
+	manager.attachErr.Store(&attachErr)
+	paused, resume := make(chan struct{}), make(chan struct{})
+	resumeFinish := sync.OnceFunc(func() { close(resume) })
+	defer resumeFinish()
+	c.testBeforeShareFinish = func(*ReadyPartReceipt) {
+		close(paused)
+		<-resume
+	}
+	released := make(chan struct{})
+	manager.beforeRelease = sync.OnceFunc(func() { close(released) })
+
+	shareTestUnite(t, ctx, c, "failed-finish-last-owner", donor, receiver)
+	select {
+	case <-paused:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the pass never reached its Finish phase")
+	}
+	// Remove the receiver's ordinary owners: the session and the saved edge.
+	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+	_, err := c.removePersistedEdge(ctx, row.id)
+	require.NoError(t, err)
+	c.egraphMu.RLock()
+	require.Same(t, row, c.resultsByID[row.id], "the receipt and the task still hold the installed receiver")
+	c.egraphMu.RUnlock()
+	require.Zero(t, manager.released.Load())
+
+	resumeFinish()
+	require.Equal(t, 1, barrier.awaitPass(t))
+	select {
+	case <-released:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the unowned receiver's protection was never released")
+	}
+	c.egraphMu.RLock()
+	_, registered := c.resultsByID[row.id]
+	holds := row.incomingOwnershipCount
+	c.egraphMu.RUnlock()
+	require.False(t, registered, "with no owner left the receiver is collected")
+	require.Zero(t, holds, "the failed Finish's retry state owns no receipt and no hold")
+	drain, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	require.NoError(t, c.waitForQuiescence(drain))
+	require.Equal(t, int32(1), manager.pins.Load())
+	require.Equal(t, int32(1), manager.released.Load(), "protection is released exactly once")
+}
+
+// EncodedInstallRetryAfterDecode: owner synchronization fails after an encoded
+// Commit, the receiver is then decoded, and a demand for the installed part
+// retries only the owning generation's bookkeeping: no second Prepare, pin or
+// open. The partial variant fails the attachment of one of two installed
+// snapshots. A canceled Finish has no sharing variant: the pass finishes on an
+// uncancelable context, and batch 4's TestReadyPartReceipt covers a canceled
+// external Finish.
+func TestSnapshotSharingEncodedInstallRetryAfterDecode(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		parts []string
+		fails func(snapshotID string) bool
+	}{
+		{"failed attachment", []string{"fs"}, func(string) bool { return true }},
+		{"partial attachment", []string{"fs", "mount"}, func(id string) bool { return id == "mount-snap" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, c, srv, manager := shareTestCache(t)
+			barrier := newSharePassBarrier(c)
+			donorParts, receiverParts := map[string]sharePartState{}, map[string]sharePartState{}
+			for _, part := range tc.parts {
+				donorParts[part] = sharePartState{Snapshot: part + "-snap"}
+				receiverParts[part] = sharePartState{}
+			}
+			donor, receiver := shareTestPair(t, ctx, c, srv, donorParts, receiverParts)
+			row := receiver.cacheSharedResult()
+			attachErr := errors.New("attach lease failed")
+			manager.attachFails = func(id string) error {
+				if tc.fails(id) {
+					return attachErr
+				}
+				return nil
+			}
+			shareTestUnite(t, ctx, c, "retry-after-decode-"+tc.name, donor, receiver)
+			require.Equal(t, len(tc.parts), barrier.awaitPass(t))
+
+			phases := func() map[string]PartOutputPhase {
+				out := map[string]PartOutputPhase{}
+				gate := row.partGate.gate.Load()
+				gate.mu.Lock()
+				defer gate.mu.Unlock()
+				for _, part := range tc.parts {
+					key, _ := partAddressKey(PersistedPartAddress{Part: PartKey(part)})
+					out[part] = gate.outputs[key].phase
+				}
+				return out
+			}
+			for part, phase := range phases() {
+				require.Equal(t, PartOutputInstalled, phase, "%s stays installed after the failed synchronization", part)
+			}
+
+			// Decode the receiver while its installed outputs await bookkeeping.
+			// The decode's own row lease synchronization may attach the
+			// installed roles, so the fault is lifted first; it must settle
+			// nothing and release no protection.
+			manager.attachFails = nil
+			loaded, err := c.LoadResultByResultID(ctx, "", srv, uint64(row.id))
+			require.NoError(t, err)
+			decoded, ok := loaded.Unwrap().(*shareTestValue)
+			require.True(t, ok)
+			for _, part := range tc.parts {
+				require.Equal(t, part+"-snap", decoded.Parts[part].Snapshot)
+			}
+			for part, phase := range phases() {
+				require.Equal(t, PartOutputInstalled, phase, "decoding settles nothing: %s", part)
+			}
+
+			// The retry: demand every installed part.
+			pins, opens, released := manager.pins.Load(), manager.opens.Load(), manager.released.Load()
+			require.Zero(t, released, "protection is retained for the bookkeeping retry")
+			for _, part := range tc.parts {
+				require.NoError(t, c.demandPart(ctx, loaded, PersistedPartAddress{Part: PartKey(part)}))
+			}
+			for part, phase := range phases() {
+				require.Equal(t, PartComplete, phase, "the retry completed %s's owning bookkeeping", part)
+			}
+			require.Equal(t, pins, manager.pins.Load(), "the retry never prepares or pins again")
+			require.Equal(t, opens, manager.opens.Load(), "and opens nothing")
+			require.Equal(t, int32(len(tc.parts)), manager.released.Load(), "each protection is released once, by its owning generation")
+		})
+	}
+}
+
+// Trigger sites of a live import: every imported row's final classes are
+// queued in the import's own E interval, and an import that publishes nothing
+// queues nothing.
+func TestSnapshotSharingImportTriggers(t *testing.T) {
+	ctx, a, srv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, a, srv, "import-root", String("value"))
+	bundle := exportTestBundle(t, ctx, a, root)
+
+	t.Run("live import queues the imported classes", func(t *testing.T) {
+		ctx, b, _, _ := shareTestCache(t)
+		barrier := newSharePassBarrier(b)
+		mapping, err := b.ImportValues(ctx, bundle)
+		require.NoError(t, err)
+		require.Len(t, mapping, 1)
+		require.Equal(t, 0, barrier.awaitPass(t), "the import queued a cohort; with no donor it plans nothing")
+	})
+	for name, arm := range map[string]func(*Cache, context.CancelFunc){
+		"a failed identity plan queues nothing": func(b *Cache, _ context.CancelFunc) {
+			b.testTransferPlanPrepared = func(int) error { return errors.New("identity plan refused") }
+		},
+		"a failed root validation queues nothing": func(b *Cache, cancel context.CancelFunc) {
+			b.testBeforeTransferCommit = cancel
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, b, _, _ := shareTestCache(t)
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			arm(b, cancel)
+			_, err := b.ImportValues(ctx, bundle)
+			require.Error(t, err)
+			b.egraphMu.RLock()
+			defer b.egraphMu.RUnlock()
+			require.Empty(t, b.sharePending)
+			require.False(t, b.shareWorkerStarted, "nothing was ever queued, so no worker was started")
+			require.Nil(t, b.shareNotify, "the failed import left no collector behind")
+		})
+	}
 }
