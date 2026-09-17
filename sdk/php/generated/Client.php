@@ -14,7 +14,7 @@ namespace Dagger;
 class Client extends Client\AbstractClient implements Client\IdAble, Node
 {
     /**
-     * initialize an address to load directories, containers, secrets or other object types.
+     * Resolve external references only.
      */
     public function address(string $value): Address
     {

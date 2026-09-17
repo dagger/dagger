@@ -38,6 +38,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Discover static object artifacts from workspace modules without evaluating their values.
+     */
+    public function artifacts(): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifacts');
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace's changes, with paths relative to its working directory.
      *
      * Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
@@ -368,6 +377,20 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('modules');
         return (array)$this->queryLeaf($leafQueryBuilder, 'modules');
+    }
+
+    /**
+     * Try workspace references before external resolution.
+     *
+     * Local errors stop resolution; only absence permits fallback.
+     *
+     * The Address retains this workspace across module calls and ID reloads.
+     */
+    public function resolve(string $value): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolve');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

@@ -71,8 +71,6 @@ func (s *workspaceSchema) workspacePrimaryModules(
 // from their own tree, even without an overlay.
 //
 // Known limitations of the live overlay path, deliberate for now:
-//   - an entry REMOVED from dagger.toml in the overlay still resolves through
-//     the served module: this only ever adds or replaces.
 //   - for live workspaces, legacy +defaultPath entries (entry.LegacyDefaultPath)
 //     are left to the served path, whose host-ref based context resolution has
 //     no overlay equivalent. Value workspaces load them here, with their own
@@ -112,15 +110,9 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	// suspect; otherwise only the entries whose source tree was edited are.
 	configTouched := ws.IsValueWorkspace() || ws.OverlayPathTouched(configFile)
 
-	cfg, err := readWorkspaceConfig(ctx, ws)
+	cfg, err := workspaceEffectiveConfig(ctx, ws)
 	if err != nil {
 		return nil, nil, err
-	}
-	if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
-		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
-		if err != nil {
-			return nil, nil, err
-		}
 	}
 	if len(cfg.Modules) == 0 {
 		return nil, nil, nil

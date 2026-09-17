@@ -203,6 +203,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&upSchema{},
 		&terminalsSchema{},
 		&agentsSchema{},
+		&artifactsSchema{},
 		&workspaceSchema{},
 	} {
 		schema.Install(dag)

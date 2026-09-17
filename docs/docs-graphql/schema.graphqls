@@ -441,6 +441,86 @@ enum AgentState {
   FAILED
 }
 
+"""
+One workspace value with a complete query and all required collection keys.
+Reading metadata does not evaluate the value. Different addresses remain
+distinct even if they return the same object.
+"""
+type Artifact implements Node {
+  """
+  One key per collection along the query. Unordered; empty for static artifacts.
+  """
+  collectionKeys: [ArtifactCollectionKey!]!
+
+  """A unique identifier for this Artifact."""
+  id: ID!
+
+  """The full address, formatted for CLI input with consistent flag order."""
+  pretty: String!
+
+  """
+  Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+  """
+  query: [String!]!
+
+  """Evaluate the target in the workspace that supplied this artifact."""
+  value: Node!
+}
+
+type ArtifactCollectionKey implements Node {
+  """The collection identifier, fixed across the workspace schema."""
+  collection: String!
+
+  """A unique identifier for this ArtifactCollectionKey."""
+  id: ID!
+
+  """The collection item's key."""
+  key: String!
+}
+
+"""
+An immutable selection of workspace artifacts. Listed types, collections, and
+keys use OR; chained filters use AND. Empty alternatives and unknown names match
+nothing. Filters never change addresses or collection identifiers.
+"""
+type Artifacts implements Node {
+  """
+  List keys represented in this selection for the given collection, sorted with no duplicates.
+  """
+  collectionKeys(collection: String!): [String!]!
+
+  """
+  List collection identifiers represented in this selection, sorted with no duplicates.
+  """
+  collections: [String!]!
+
+  """Keep artifacts with any listed key in this collection."""
+  filterCollectionKeys(collection: String!, keys: [String!]!): Artifacts!
+
+  """Keep artifacts selected through any listed collection."""
+  filterCollections(collections: [String!]!): Artifacts!
+
+  """Match one complete, ordered field sequence exactly."""
+  filterQuery(query: [String!]!): Artifacts!
+
+  """Keep artifacts of any listed concrete GraphQL type."""
+  filterTypes(types: [String!]!): Artifacts!
+
+  """A unique identifier for this Artifacts."""
+  id: ID!
+
+  """Enumerate complete artifacts without evaluating their values."""
+  items: [Artifact!]!
+
+  """
+  Require exactly one artifact; fail if there are zero or multiple matches.
+  """
+  one: Artifact!
+
+  """Display lines for this selection, with no trailing newlines."""
+  pretty: [String!]!
+}
+
 """Key value object that represents a build argument."""
 input BuildArg {
   """The build argument name."""
@@ -5342,9 +5422,7 @@ input PortForward {
 
 """The root of the DAG."""
 type Query implements Node {
-  """
-  initialize an address to load directories, containers, secrets or other object types.
-  """
+  """Resolve external references only."""
   address(value: String!): Address!
 
   """Creates a file from arbitrary binary contents."""
@@ -6379,6 +6457,11 @@ type Workspace implements Node {
   ): AgentMiddlewareGroup! @experimental(reason: "Agent APIs are likely to change.")
 
   """
+  Discover static object artifacts from workspace modules without evaluating their values.
+  """
+  artifacts: Artifacts!
+
+  """
   Return this workspace's changes, with paths relative to its working directory.
 
   Pass from to compare against an earlier workspace state. Omitting it preserves
@@ -6682,6 +6765,15 @@ type Workspace implements Node {
   Reflects the selected env's effective view.
   """
   modules: [WorkspaceModule!]!
+
+  """
+  Try workspace references before external resolution.
+
+  Local errors stop resolution; only absence permits fallback.
+
+  The Address retains this workspace across module calls and ID reloads.
+  """
+  resolve(value: String!): Address!
 
   """An installed SDK, by name."""
   sdk(

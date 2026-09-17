@@ -49,6 +49,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Discover static object artifacts from workspace modules without evaluating their values.
+  """
+  @spec artifacts(t()) :: Dagger.Artifacts.t()
+  def artifacts(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("artifacts")
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace's changes, with paths relative to its working directory.
 
   Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
@@ -464,6 +478,24 @@ defmodule Dagger.Workspace do
          }
        end}
     end
+  end
+
+  @doc """
+  Try workspace references before external resolution.
+
+  Local errors stop resolution; only absence permits fallback.
+
+  The Address retains this workspace across module calls and ID reloads.
+  """
+  @spec resolve(t(), String.t()) :: Dagger.Address.t()
+  def resolve(%__MODULE__{} = workspace, value) do
+    query_builder =
+      workspace.query_builder |> QB.select("resolve") |> QB.put_arg("value", value)
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: workspace.client
+    }
   end
 
   @doc """

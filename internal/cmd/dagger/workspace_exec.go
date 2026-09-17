@@ -112,7 +112,7 @@ func runWorkspaceExec(
 		Include: opts.include,
 		Exclude: opts.exclude,
 	})
-	base := dag.Address(opts.from).Container()
+	base := ws.Resolve(opts.from).Container()
 	executed := base.
 		WithMountedDirectory(workspaceExecMountPath, beforeMount).
 		WithWorkdir(containerWorkdir).

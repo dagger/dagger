@@ -1146,6 +1146,289 @@ impl Node for AgentMiddlewareGroup {
     }
 }
 #[derive(Clone)]
+pub struct Artifact {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Artifact {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Artifact {
+    fn graphql_type() -> &'static str {
+        "Artifact"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Artifact {
+    /// One key per collection along the query. Unordered; empty for static artifacts.
+    pub async fn collection_keys(&self) -> Result<Vec<ArtifactCollectionKey>, DaggerError> {
+        let query = self.selection.select("collectionKeys");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| ArtifactCollectionKey {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ArtifactCollectionKey"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// A unique identifier for this Artifact.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The full address, formatted for CLI input with consistent flag order.
+    pub async fn pretty(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("pretty");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+    pub async fn query(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("query");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Evaluate the target in the workspace that supplied this artifact.
+    pub fn value(&self) -> NodeClient {
+        let query = self.selection.select("value");
+        NodeClient {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for Artifact {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct ArtifactCollectionKey {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for ArtifactCollectionKey {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ArtifactCollectionKey {
+    fn graphql_type() -> &'static str {
+        "ArtifactCollectionKey"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ArtifactCollectionKey {
+    /// The collection identifier, fixed across the workspace schema.
+    pub async fn collection(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("collection");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this ArtifactCollectionKey.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The collection item's key.
+    pub async fn key(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("key");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ArtifactCollectionKey {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct Artifacts {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Artifacts {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Artifacts {
+    fn graphql_type() -> &'static str {
+        "Artifacts"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Artifacts {
+    /// List keys represented in this selection for the given collection, sorted with no duplicates.
+    pub async fn collection_keys(
+        &self,
+        collection: impl Into<String>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("collectionKeys");
+        query = query.arg("collection", collection.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// List collection identifiers represented in this selection, sorted with no duplicates.
+    pub async fn collections(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("collections");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Keep artifacts with any listed key in this collection.
+    pub fn filter_collection_keys(
+        &self,
+        collection: impl Into<String>,
+        keys: Vec<impl Into<String>>,
+    ) -> Artifacts {
+        let mut query = self.selection.select("filterCollectionKeys");
+        query = query.arg("collection", collection.into());
+        query = query.arg(
+            "keys",
+            keys.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts selected through any listed collection.
+    pub fn filter_collections(&self, collections: Vec<impl Into<String>>) -> Artifacts {
+        let mut query = self.selection.select("filterCollections");
+        query = query.arg(
+            "collections",
+            collections
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Match one complete, ordered field sequence exactly.
+    pub fn filter_query(&self, query_arg: Vec<impl Into<String>>) -> Artifacts {
+        let mut query = self.selection.select("filterQuery");
+        query = query.arg(
+            "query",
+            query_arg
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts of any listed concrete GraphQL type.
+    pub fn filter_types(&self, types: Vec<impl Into<String>>) -> Artifacts {
+        let mut query = self.selection.select("filterTypes");
+        query = query.arg(
+            "types",
+            types.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this Artifacts.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Enumerate complete artifacts without evaluating their values.
+    pub async fn items(&self) -> Result<Vec<Artifact>, DaggerError> {
+        let query = self.selection.select("items");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Artifact {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Artifact"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Require exactly one artifact; fail if there are zero or multiple matches.
+    pub fn one(&self) -> Artifact {
+        let query = self.selection.select("one");
+        Artifact {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Display lines for this selection, with no trailing newlines.
+    pub async fn pretty(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("pretty");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Artifacts {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct CacheVolume {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -13869,7 +14152,7 @@ impl Loadable for Query {
     }
 }
 impl Query {
-    /// initialize an address to load directories, containers, secrets or other object types.
+    /// Resolve external references only.
     pub fn address(&self, value: impl Into<String>) -> Address {
         let mut query = self.selection.select("address");
         query = query.arg("value", value.into());
@@ -16972,6 +17255,15 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Discover static object artifacts from workspace modules without evaluating their values.
+    pub fn artifacts(&self) -> Artifacts {
+        let query = self.selection.select("artifacts");
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace's changes, with paths relative to its working directory.
     /// Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
     ///
@@ -17525,6 +17817,18 @@ impl Workspace {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
+    }
+    /// Try workspace references before external resolution.
+    /// Local errors stop resolution; only absence permits fallback.
+    /// The Address retains this workspace across module calls and ID reloads.
+    pub fn resolve(&self, value: impl Into<String>) -> Address {
+        let mut query = self.selection.select("resolve");
+        query = query.arg("value", value.into());
+        Address {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// An installed SDK, by name.
     ///
