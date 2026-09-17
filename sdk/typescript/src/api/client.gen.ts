@@ -5248,6 +5248,17 @@ export class Artifacts extends BaseClient {
   }
 
   /**
+   * List concrete GraphQL types represented in this selection, sorted with no duplicates.
+   */
+  types = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("types")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Call the provided function with current Artifacts.
    *
    * This is useful for reusability and readability by not breaking the calling chain.

@@ -37,7 +37,7 @@ dagger [options] [subcommand | file...]
 * [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger update](#dagger-update)	 - Update installed module versions and lockfile state
 * [dagger version](#dagger-version)	 - Print dagger version
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger agent
 
@@ -2441,7 +2441,7 @@ dagger version
 
 ## dagger workspace
 
-Inspect or configure your workspace (cwd, remotes, config, etc.)
+Inspect workspace files, config, and artifacts
 
 ### Synopsis
 
@@ -2453,6 +2453,15 @@ settings. Most commands (install, check, generate, up, settings, ...)
 operate on the workspace reachable from the current directory. The -W
 flag selects a different workspace (local path or git ref); --env
 applies a named overlay; dagger.toml is the source of truth.
+
+List artifact addresses with a plural type name, such as containers,
+directories, files, or services. Use kebab case for multiword types,
+such as git-repositories. If plural names conflict, use the exact GraphQL
+type name. Tab completion lists the available types.
+
+```
+dagger workspace [TYPE]
+```
 
 ### Options inherited from parent commands
 
@@ -2509,7 +2518,7 @@ dagger workspace activity [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace cat
 
@@ -2540,7 +2549,7 @@ dagger workspace cat PATH [PATH...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace config
 
@@ -2585,7 +2594,7 @@ dagger workspace config [key] [value] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace config-file
 
@@ -2607,7 +2616,7 @@ dagger workspace config-file [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace cwd
 
@@ -2629,7 +2638,7 @@ dagger workspace cwd [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace entrypoint
 
@@ -2667,7 +2676,7 @@ dagger workspace entrypoint [NAME] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace exec
 
@@ -2724,7 +2733,7 @@ dagger workspace exec [OPTIONS] [--] COMMAND [ARGS...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace export
 
@@ -2773,7 +2782,7 @@ dagger workspace export [PATH] -o DEST [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace find
 
@@ -2814,7 +2823,7 @@ dagger workspace find [PATH...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace git
 
@@ -2839,7 +2848,7 @@ They do not load installed modules.
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 * [dagger workspace git dirty](#dagger-workspace-git-dirty)	 - Print whether the workspace has uncommitted changes
 * [dagger workspace git log](#dagger-workspace-git-log)	 - Print the workspace commit history
 * [dagger workspace git ref](#dagger-workspace-git-ref)	 - Print the resolved ref name, or commit hash if unnamed
@@ -3054,7 +3063,7 @@ dagger workspace grep PATTERN [PATH...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace ls
 
@@ -3087,7 +3096,7 @@ dagger workspace ls [PATH...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace migrate
 
@@ -3134,7 +3143,7 @@ dagger workspace migrate [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace remote
 
@@ -3153,7 +3162,7 @@ dagger workspace remote [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace remotes
 
@@ -3175,7 +3184,7 @@ dagger workspace remotes [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace root
 
@@ -3197,7 +3206,7 @@ dagger workspace root [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace update
 
@@ -3236,5 +3245,5 @@ dagger workspace update [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
