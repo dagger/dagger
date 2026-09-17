@@ -114,20 +114,40 @@ start at the host CWD, the workspace CWD, or the engine CWD. The engine reads
 the path from the module source context, so it resolves the same way for a
 local, Git, or directory module source.
 
-Any other value is an address. The engine resolves it with this operation:
+A value that is not a local path is a module reference or an address.
+
+A module reference names a directory in a Git repository. It uses the syntax
+that `runtime.source` and a dependency `source` use, such as
+`github.com/dagger/python-sdk/entrypoint@v1` or
+`https://github.com/dagger/python-sdk#v1:entrypoint`. The engine resolves it
+with the module source resolver, so it takes part in the workspace lock like
+any other module reference. The reference names the entrypoint directory
+itself. The engine does not search parent directories for a manifest, and the
+directory needs none.
+
+An address is resolved with this operation:
 
 ```graphql
 address(source).directory()
 ```
 
-Any address accepted by `Address.directory` is valid. This includes a remote
-Git directory or a module function that returns a `Directory`.
+Any address accepted by `Address.directory` is valid. This includes a module
+function that returns a `Directory`.
 
-The engine classifies the value the same way as a module ref. A value that
-starts with `.` or `/` is a local path. A value with a `:`, such as a URL or a
-`module:function` address, is an address. A value with no `.` is a local path.
-Any other value is a local path when it exists under the module directory, and
-an address otherwise.
+The engine classifies the value in this order:
+
+1. A value that starts with `.` or `/` is a local path.
+2. A value that contains `://` is a module reference.
+3. Any other value that contains `:`, such as a `module:function` address, is
+   an address.
+4. A value with no `.` is a local path.
+5. Any other value is a local path when it exists under the module directory,
+   and a module reference otherwise.
+
+Rule 5 depends on what exists on disk, and the module source resolver also
+checks the caller's filesystem for a value with no scheme. A value with a
+scheme, such as `https://`, is decided by rule 2 and never touches the
+filesystem. Use a scheme when the value must be unambiguous.
 
 The manifest name is the module name. The entrypoint cannot replace it.
 
@@ -307,7 +327,6 @@ value.
 ```graphql
 enum ModuleEntrypointKind {
   DANG
-  MODULE
 }
 
 type Query {
@@ -352,13 +371,12 @@ All new GraphQL fields and types use the v1 schema view gate.
 
 | Area | Required behavior |
 | --- | --- |
-| Manifest | Read and write the three fields. Select the format by the presence of the `entrypoint` table. Reject missing or invalid values. Reject a `manifestVersion` key in `dagger-module.toml` and an `entrypoint` value in `dagger.json`. |
-| Source | Resolve module-relative local paths, remote Git directories, and module-returned directories. Reject paths that leave the module directory. |
+| Manifest | Read and write the three fields. Select the format by the presence of the `entrypoint` table. Reject missing or invalid values. Reject a `manifestVersion` key in a version 2 manifest and an `entrypoint` value in `dagger.json`. |
+| Source | Resolve module-relative local paths, module references, and module-returned directories. Keep a module reference on the directory it names. Reject paths that leave the module directory. |
 | Dang driver | Load a directory without a manifest. Require one empty-constructible `ModuleEntrypoint`. Reject dependencies. |
 | Types | Bind name-only module and core type references. Reject invalid or duplicate definitions. |
 | Constructors | Support zero or one constructor. Use the module name for one constructor. Reject more than one constructor. |
 | Calls | Route constructors and functions. Pass arguments as an unordered JSON object. Preserve omitted arguments, null values, and `currentNode`. |
-| Module driver | Load one or more recursive drivers. Use the correct client schema. Reject cycles and show the chain. |
 | Runtime | Do not call an SDK module or exchange an introspection file during module loading or execution. |
 | Compatibility | Select the legacy loader when `dagger.json` exists. |
 
@@ -366,4 +384,3 @@ All new GraphQL fields and types use the v1 schema view gate.
 
 - Previous: [CLI 1.0: module-max SDK UX](../cli-1.0.md)
 - Example: [Go SDK](example-go-sdk.md)
-- Related: [Compatibility bridge](compat-bridge.md)

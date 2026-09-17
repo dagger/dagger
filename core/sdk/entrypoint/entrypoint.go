@@ -3,8 +3,8 @@
 // encoding the arguments of the ModuleEntrypoint interface, and turning the
 // type definitions an entrypoint returns into a module.
 //
-// The drivers themselves live next to it: dang evaluates the entrypoint source
-// as a Dang program, module loads it as a manifest version 2 module.
+// The one driver lives next to it: dang evaluates the entrypoint source as a
+// Dang program.
 package entrypoint
 
 import (
