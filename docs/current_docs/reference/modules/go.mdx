@@ -31,6 +31,37 @@ a Go module, and runs tests against all of them. Tests run through an
 OpenTelemetry-aware runner, so individual Go tests appear as spans in the Dagger
 TUI and Dagger Cloud.
 
+## Module discovery
+
+`test-all` and `generate-all` find Go modules by looking for `go.mod` files:
+
+- Every directory at or below the directory `dagger` runs from that holds a
+  `go.mod` is a Go module. Run `dagger` from the workspace root to cover the
+  whole repository.
+- When `dagger` runs from a directory inside a Go module, that enclosing module
+  is included as well.
+- Every `go.mod` counts, including those under `vendor/`, `testdata/`,
+  `examples/`, hidden directories, and directories listed in `.gitignore`.
+
+Exclude a Go module from `test-all` with the `test` setting, which selects
+module roots by path from the workspace root:
+
+| Pattern | Selects |
+| --- | --- |
+| `"**"` or `"*"` | Every module |
+| `"services/api"` or `"services/api/**"` | The module at `services/api` and any module below it |
+| `"."` | The root module only |
+| `"!vendor"` | Excludes the module at `vendor` and any module below it |
+
+Exclusions always win, whatever the order. A list with only exclusions starts
+from every module, so `["!vendor", "!testdata"]` tests everything except those
+two trees, and `["!**"]` turns the workflow off.
+
+`generate-all` is scoped by directory instead, with the `generate` setting. A
+literal path selects only that directory, `"internal/**"` selects `internal`
+and everything below it, and a `!` prefix excludes. `go generate` runs in a
+selected directory only when it contains a `//go:generate` directive.
+
 ## Generate code
 
 Run the generator when generated Go files are part of normal development, such
@@ -41,8 +72,10 @@ as mocks, embedded assets, protobuf output, or anything produced by
 dagger generate go:generate-all
 ```
 
-`generate-all` runs only in modules that contain a `//go:generate` directive, and
-returns the result as a changeset to review before applying.
+`generate-all` runs `go generate .` in each selected directory that contains a
+`//go:generate` command, and returns the result as a changeset to review before
+applying. Within a Go module, directories run in lexical path order and share a
+container, so a later command can use an earlier one's output.
 
 ## Configure it
 
@@ -53,18 +86,25 @@ List the current settings with `dagger module settings go`, then change one with
 - `version` (default `1.26`) is the Go toolchain version used to build the test
   and generate containers (`golang:<version>-alpine`). Set this so every module
   is tested and generated against the same Go version.
+- `base` is an optional container to use instead of that image, for tests and
+  generators that need system packages or bound services. It needs Go 1.26 or
+  newer and cannot be combined with `version`. Wire a function of your own into
+  it with [module wiring](../../config/module-wiring.mdx).
 - `includeExtraFiles` (default empty) are extra workspace-root path patterns
   mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`,
   and `testdata/` directories are already included automatically; use this for
   inputs those patterns miss, such as embedded non-Go assets, generator inputs,
   or fixtures kept outside `testdata/`.
-- `test` and `generate` (each defaults to `["**"]`) are module-root
-  selector arrays for `test-all` and `generate-all`.
-  A bare pattern includes modules, a `!`-prefixed pattern excludes them, and
-  exclusions always win. `"**"` and `"*"` match every module; `"path"` and
-  `"path/**"` match the module at `path` and any modules below it. With no
-  positive pattern, every module is included unless excluded, so `["!**"]`
-  disables that workflow everywhere.
+- `test` (default `["**"]`) selects the module roots `test-all` covers. See
+  [Module discovery](#module-discovery) for the pattern rules.
+- `generate` (default `["**"]`) selects the directories `generate-all` runs
+  `go generate` in, as paths and globs from the workspace root.
+- `goflags` sets the `GOFLAGS` environment variable in every Go container, which
+  is how build tags are passed, as in `-tags=extended`. Flags that take a value
+  use the `-flag=value` form.
+- `mountPath` is the absolute container path where the workspace is mounted. It
+  defaults to `/src/<workspace name>`, where the name is the last segment of
+  the workspace address, usually the repository name.
 
 ```bash
 # Pin the Go version for the whole workspace

@@ -36,6 +36,24 @@ Go and C/C++ sources, embedded assets, and local `go.mod` replacement
 dependencies within the workspace are included automatically. Go module,
 build, and golangci-lint caches are shared between runs.
 
+## Module discovery
+
+`lint-all` finds Go modules by looking for `go.mod` files:
+
+- Every directory at or below the directory `dagger` runs from that holds a
+  `go.mod` is a Go module. Run `dagger` from the workspace root to cover the
+  whole repository.
+- When `dagger` runs from a directory inside a Go module, that enclosing module
+  is included as well.
+- Every `go.mod` counts, including those under `vendor/`, `testdata/`,
+  `examples/`, hidden directories, and directories listed in `.gitignore`.
+
+Exclude a module with the `lint` setting, which selects module roots by path
+from the workspace root. `"!vendor"` excludes the module at `vendor` and any
+module below it, and exclusions always win. The pattern rules are the same as
+the Go module's `test` setting, listed under
+[Module discovery](../go.mdx#module-discovery).
+
 ## Configure it
 
 List the current settings with `dagger module settings golangci-lint`, then
@@ -43,8 +61,13 @@ change one with `dagger module settings golangci-lint <key> <value>`. Settings
 live in `dagger.toml` under `[modules.golangci-lint.settings]`:
 
 - `version` (default `2.11.4`) selects the golangci-lint version, without the
-  `v` prefix. The default Alpine image is pinned by digest and includes a C/C++
-  toolchain for cgo typechecking.
+  `v` prefix. It selects the `golangci/golangci-lint:v<version>-alpine` image.
+  The default is pinned by digest and includes a C/C++ toolchain for cgo
+  typechecking.
+- The Go toolchain is the one in that image. golangci-lint `2.11.4` ships Go
+  `1.26.1`. The Go module's `version` and `base` settings apply to tests and
+  generators, and this module has its own. To lint with a newer Go, set
+  `version` to a golangci-lint release built with it, or supply `base`.
 - `base` is an optional custom container with Go, golangci-lint, and any required
   system dependencies installed. It cannot be combined with `version`.
 - `includeExtraFiles` (default empty) adds workspace-root path patterns for

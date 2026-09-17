@@ -82,7 +82,7 @@ The settings that come up most often:
 - **`version`**: the Go toolchain used to test and generate every Go module in the workspace. It selects the tag of the default `golang:<version>-alpine` image.
 - **`base`**: a container to use instead of that image. `version` and `base` are mutually exclusive, and the `go` module fails to load when both are set. The second half of this guide sets `base`.
 - **`includeExtraFiles`**: files the `go` module does not mount on its own. By default each Go command sees the module's Go source files, its `go.mod`, `go.sum`, and `go.work`, the files named by `go:embed` directives, and local `replace` targets, and tests also see every `testdata/` directory. Anything else a test opens by relative path can be listed here as a pattern from the repository root. A file that only one package needs is better declared next to that package with a directive, covered in [Declare the files a test or generator reads](#declare-the-files-a-test-or-generator-reads).
-- **`test`**: which Go modules are tested, as module-root selectors. The `go` module covers every `go.mod` it finds, including ones under directories like `examples/` or `tools/`. To cover only the root module, set it to `["."]`. To cover everything except one module, keep `"**"` and add a `!`-prefixed path, as in `["**", "!legacy-service"]`.
+- **`test`**: which Go modules are tested, as module-root selectors. The `go` module covers every `go.mod` it finds, including ones under directories like `examples/` or `tools/`. To cover only the root module, set it to `["."]`. To cover everything except one module, keep `"**"` and add a `!`-prefixed path, as in `["**", "!legacy-service", "!test-fixtures"]`.
 - **`generate`**: which directories `go generate` runs in, as paths and globs from the repository root. A literal path selects only that directory, `internal/**` selects `internal` and everything below it, and a `!` prefix excludes.
 
 Settings are committed in `dagger.toml`:
@@ -91,7 +91,7 @@ Settings are committed in `dagger.toml`:
 [modules.go.settings]
 version = "1.26"
 includeExtraFiles = ["fixtures/**", "config.yaml"]
-test = ["**", "!legacy-service"]
+test = ["**", "!legacy-service", "!test-fixtures"]
 goflags = "-tags=extended"
 ```
 
@@ -140,7 +140,7 @@ golangci-lint  lint                      Module roots to lint. Bare patterns sel
 
 ```toml
 [modules.golangci-lint.settings]
-lint = ["**", "!legacy-service"]
+lint = ["**", "!legacy-service", "!test-fixtures"]
 ```
 
 ## Run generators
@@ -200,7 +200,7 @@ dagger module install dagger.io/sdk/dang
 dagger module init dang
 ```
 
-`dagger module init` creates the module at `.dagger/modules/<project>-dev` and records it in `dagger.toml`. Add the following function to your module:
+`dagger module init` creates the module at `.dagger/modules/<project>-dev` and records it in `dagger.toml`. Add the following function to your module, replacing the ProjectDev type name with the generated type name from your module:
 
 ```dang file=./snippets/go-runtime/main.dang
 ```
@@ -215,21 +215,18 @@ dagger module init dang
 Open a shell in the container the `go` module will receive, and run `protoc --version` to confirm the package is there:
 
 ```shell
-dagger shell <project>-dev:test-runtime
+dagger shell test-runtime
 ```
 
 ### Wire it into the `go` module
 
 A setting can hold a module reference instead of a literal value, which is called [module wiring](../../../config/module-wiring.mdx). `<project>-dev:test-runtime` names the `<project>-dev` module and its `test-runtime` function. Dagger calls the function when it loads the `go` module and passes the result in as the setting's value. The reusable module gets a project-specific container, and nobody writes a custom test Check.
 
-```shell
-dagger module settings go base <project>-dev:test-runtime
-```
-
 `version` and `base` are mutually exclusive. With both set, every Check fails with `version and base are mutually exclusive`. If the project set `version` earlier, remove it, since the Go version now comes from `base`:
 
 ```shell
 dagger module settings -u go version
+dagger module settings go base <project>-dev:test-runtime
 ```
 
 `dagger.toml` now connects the two modules. For a workspace with only the modules from this guide, the whole file reads as follows, including the SDK entry and the `[sdks.dang]` tables that `dagger module init` wrote:

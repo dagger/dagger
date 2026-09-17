@@ -195,6 +195,7 @@ Dang is small on purpose. The whole language fits in a short list:
 - **Non-null.** Mark it with `!`. Nullable is the default and has no marker.
 - **Directives.** They modify behavior: `@check`, `@generate`, `@up`, `@cache`.
 - **Descriptions.** Put a triple-quoted string (`""" ... """`) above the thing it describes.
+- **Strings.** Double quotes process escapes, triple double quotes are raw, and backticks interpolate `${...}`. See [Strings](#strings).
 - **Comments.** Start them with `#`.
 - **Module metadata.** A triple-quoted docstring at the top of the file, above the primary `type`.
 
@@ -236,6 +237,69 @@ container
 ```
 
 Every method returns a new immutable value. Nothing mutates in place. Dagger caches each step by its inputs, so a re-run skips unchanged work. It is the same model as Docker layer caching, applied to the entire API. See the [type reference](../api/index.mdx) for the underlying model.
+
+### Strings
+
+Dang has four ways to write a string. They differ in whether they span lines, process escapes, and interpolate:
+
+| Form | Spans lines | Escapes | Interpolates `${...}` |
+| --- | --- | --- | --- |
+| Double quotes | No | Yes | No |
+| Triple double quotes | Yes | None, the text is raw | No |
+| Backticks | No | Only `\${` | Yes |
+| Triple backticks | Yes | Only `\${` | Yes |
+
+**Double quotes** hold one line and process escapes:
+
+| Escape | Meaning |
+| --- | --- |
+| `\n` `\r` `\t` | Line feed, carriage return, tab |
+| `\"` `\\` | A double quote, a backslash |
+| `\a` `\b` `\f` `\v` | Bell, backspace, form feed, vertical tab |
+| `\ooo` `\xNN` | A byte in octal or hex |
+| `\uNNNN` `\UNNNNNNNN` | A Unicode code point |
+
+Any other backslash sequence is kept as written, so `"\d+"` is the three characters `\d+`. `${name}` inside double quotes is literal text. A line break inside double quotes is a parse error:
+
+```text
+no match found, expected: "\"", "\\" or [^\\"\n]
+```
+
+**Triple double quotes** hold many lines and are raw: no escapes and no interpolation, so `\n` and `${name}` come out exactly as typed. The indentation common to every line is removed, and so are the line break after the opening `"""` and the one before the closing `"""`. This is the form docstrings use, and it suits a script or config file full of `$` and backslashes.
+
+**Backticks** interpolate. `${...}` takes any Dang expression: an argument, a field, arithmetic, or a call that returns a value. Values that are not strings are converted to text, so `${1 + 2}` is `3` and a list reads `[a, b]`. The only escape is `\${`, which produces a literal `${`. Every other backslash is literal, and so is a `$` that is not followed by `{`, so a regular expression or `$HOME` needs no escaping.
+
+**Triple backticks** are the multi-line form of backticks, with the same interpolation and the same indentation handling as triple double quotes. A language tag after the opening fence, as in a Markdown code block, is for editor highlighting and is not part of the value. When the text itself contains triple backticks, open and close with a longer fence of four or more:
+
+````dang
+type MyCi {
+  """
+  A shell script that greets someone.
+  """
+  pub script(name: String! = "world"): String! {
+    ```sh
+    #!/bin/sh
+    echo "hello ${name}"
+    echo "home is \${HOME}, also $HOME"
+    ```
+  }
+}
+````
+
+```shell
+dagger api call script --name=dagger
+# #!/bin/sh
+# echo "hello dagger"
+# echo "home is ${HOME}, also $HOME"
+```
+
+In a backtick string, Dang reads a shell variable written as `${HOME}` as a Dang expression, and the module fails to load:
+
+```text
+Error: "HOME" not found
+```
+
+Write it as `\${HOME}` or `$HOME`. When the text needs no interpolation at all, use triple double quotes.
 
 ## Define objects and functions
 
@@ -900,6 +964,7 @@ They can then call its functions (`dagger api call ...`) and run its checks (`da
 - **Module not found.** Check `dagger module list`. A module created with `--path` needs a separate `dagger module install <path>`, or use `-m <path>` for one command.
 - **SDK not found.** Install `dagger.io/sdk/dang`, then check `dagger sdk list`.
 - **Parser and type errors.** Dang reports these straight from the module source. Check the non-null markers (`!`), that the last expression in a function body matches the declared return type, and that every custom type and enum name you reference exists.
+- **`"NAME" not found` in a string, or a string that fails to parse.** A `${...}` in a backtick string is a Dang expression, and double quotes hold one line. See [Strings](#strings).
 - **A `Void` function must end in `null`.** A `Void` function usually calls `.sync` on a container or service to force evaluation, then returns `null` as its final expression.
 - **Changeset not written.** `dagger module init`, module client commands, and `dagger generate` present a [changeset](../../using/generating.mdx). Review and apply it to write the files, or pass `-y` to apply it without the prompt. A headless run fails with `interactive prompts are unavailable in report mode` until it does.
 - **Stale generation expectations.** Dang has no client codegen, so there are no generated bindings to regenerate. If a tutorial tells you to commit generated SDK files, skip that step.

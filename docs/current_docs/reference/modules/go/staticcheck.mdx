@@ -38,6 +38,24 @@ assets, and local `go.mod` replacement dependencies within the workspace are
 included automatically. Go module, build, and Staticcheck caches are shared
 between runs.
 
+## Module discovery
+
+`lint-all` finds Go modules by looking for `go.mod` files:
+
+- Every directory at or below the directory `dagger` runs from that holds a
+  `go.mod` is a Go module. Run `dagger` from the workspace root to cover the
+  whole repository.
+- When `dagger` runs from a directory inside a Go module, that enclosing module
+  is included as well.
+- Every `go.mod` counts, including those under `vendor/`, `testdata/`,
+  `examples/`, hidden directories, and directories listed in `.gitignore`.
+
+Exclude a module with the `lint` setting, which selects module roots by path
+from the workspace root. `"!vendor"` excludes the module at `vendor` and any
+module below it, and exclusions always win. The pattern rules are the same as
+the Go module's `test` setting, listed under
+[Module discovery](../go.mdx#module-discovery).
+
 ## Configure it
 
 List the current settings with `dagger module settings staticcheck`, then
@@ -46,9 +64,12 @@ live in `dagger.toml` under `[modules.staticcheck.settings]`:
 
 - `version` (default `v0.8.1`) selects the Staticcheck release installed with
   `go install`.
-- `goVersion` (default `1.26`) selects the Go version for the default Alpine
-  container. Choose a toolchain supported by the Staticcheck release and new
-  enough for your project. The default container includes a C/C++ toolchain.
+- `goVersion` (default `1.26`) selects the Go version for the default
+  `golang:<goVersion>-alpine` container, which Staticcheck is built and run in.
+  Set it to at least the `go` version in the project's `go.mod`, and to a
+  toolchain the Staticcheck release supports. The Go module's `version` and
+  `base` settings apply to tests and generators, and this module has its own.
+  The default container includes a C/C++ toolchain.
 - `base` is an optional custom Go container with any required native
   dependencies. Staticcheck is built in this container. It cannot be combined
   with `goVersion`.
