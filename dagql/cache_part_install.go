@@ -449,8 +449,14 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if err := context.Cause(ctx); err != nil {
 		return nil, PartInstallRefused, err
 	}
-	if err := p.version.check(p.receiver); err != nil {
-		return nil, PartInstallRefused, partRefused("commit: receiver version")
+	// A preparation with a prepared prefix deliberately no longer matches the
+	// original observation: its prefix has published since. Its expected
+	// representation and every predecessor's installation identity are
+	// validated below, which is a stricter check than the original stamp.
+	if len(p.expectedPredecessors) == 0 {
+		if err := p.version.check(p.receiver); err != nil {
+			return nil, PartInstallRefused, partRefused("commit: receiver version")
+		}
 	}
 	source := p.source
 	if source.delegation != nil {

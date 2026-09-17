@@ -2068,8 +2068,10 @@ type Cache struct {
 	// snapshot sharing hooks: after a cohort is taken and its slots are
 	// planned but before the first preparation, and after the pass has
 	// finished every Finish and released every member hold.
-	testBeforeSharePass func(*snapshotShareItem, int)
-	testAfterSharePass  func(*snapshotShareItem)
+	testBeforeSharePass   func(*snapshotShareItem, int)
+	testAfterSharePass    func(*snapshotShareItem)
+	testShareSkipped      func(sharedResultID, PersistedPartAddress, error)
+	testBeforeShareFinish func(*ReadyPartReceipt)
 
 	closeOnce sync.Once
 	closeErr  error

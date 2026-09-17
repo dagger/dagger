@@ -36,12 +36,28 @@ func (srv *Server) initSnapshotSharing(ctx context.Context, opts *NewServerOpts)
 	if srv.engineCache == nil || !snapshotSharingReceivesImports(opts) {
 		return nil
 	}
+	prepare, err := srv.snapshotSharePreparation(ctx)
+	if err != nil {
+		return err
+	}
+	if err := srv.engineCache.SetPartPreparationContext(prepare); err != nil {
+		return fmt.Errorf("register snapshot share preparation: %w", err)
+	}
+	if err := srv.engineCache.EnableSnapshotSharing(); err != nil {
+		return fmt.Errorf("enable snapshot sharing: %w", err)
+	}
+	return nil
+}
+
+// snapshotSharePreparation builds the static core schema base and returns the
+// preparation callback over it.
+func (srv *Server) snapshotSharePreparation(ctx context.Context) (dagql.PartPreparationContext, error) {
 	// Building the base here rather than on the first client is the one
 	// startup change this engine pays: core schema installation moves to
 	// startup, and a base-construction failure fails NewServer.
 	base, err := srv.getCoreSchemaBase(ctx)
 	if err != nil {
-		return fmt.Errorf("initialize core schema base for snapshot sharing: %w", err)
+		return nil, fmt.Errorf("initialize core schema base for snapshot sharing: %w", err)
 	}
 	root := core.NewRoot(srv)
 	view := call.View(engine.BaseVersion(engine.NormalizeVersion(engine.Version)))
@@ -68,11 +84,5 @@ func (srv *Server) initSnapshotSharing(ctx context.Context, opts *NewServerOpts)
 		})
 		return ctx, forked, nil
 	}
-	if err := srv.engineCache.SetPartPreparationContext(prepare); err != nil {
-		return fmt.Errorf("register snapshot share preparation: %w", err)
-	}
-	if err := srv.engineCache.EnableSnapshotSharing(); err != nil {
-		return fmt.Errorf("enable snapshot sharing: %w", err)
-	}
-	return nil
+	return prepare, nil
 }
