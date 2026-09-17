@@ -138,21 +138,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	}
 	stop := func(t *testctx.T, e *running) {
 		t.Helper()
-		if e.client != nil {
-			require.NoError(t, e.client.Close())
-			e.client = nil
-		}
-		if e.upstream != nil {
-			e.unwatch()
-			_, err := e.upstream.Stop(ctx)
-			require.NoError(t, err)
-			e.upstream = nil
-		}
-		if e.tunnel != nil {
-			_, err := e.tunnel.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
-			e.tunnel = nil
-		}
+		require.NoError(t, stopNestedEngine(ctx, &e.client, e.unwatch, &e.upstream, &e.tunnel))
 	}
 	start := func(t *testctx.T, state string, volume *dagger.CacheVolume, checkout string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
@@ -407,7 +393,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			// result from a client with no installed module candidates.
 			writer, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
 			require.NoError(t, err)
-			defer writer.Close()
+			defer func() { require.NoError(t, closeClientBounded(ctx, writer)) }()
 			nativeModule := writer.ModuleSource(".").AsModule().WithDescription("native recorded control")
 			require.NoError(t, nativeModule.Serve(ctx))
 			nativeID := callReport(t, writer, "native recorded control")
@@ -444,7 +430,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.True(t, lowerEquivalent, "the eligible native recorded Module has a lower imported equivalent")
 			bare, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
 			require.NoError(t, err)
-			defer bare.Close()
+			defer func() { require.NoError(t, closeClientBounded(ctx, bare)) }()
 			text := transferContextTool(ctx, t, bare, nativeID)
 			require.Contains(t, text, "consumer directory notes after restart")
 			require.NotContains(t, text, "local module context belongs to another engine")
