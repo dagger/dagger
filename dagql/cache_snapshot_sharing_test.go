@@ -479,6 +479,10 @@ func TestSnapshotSharingNoJoinRefusal(t *testing.T) {
 		map[string]sharePartState{"fs": {}, "mount": {}},
 	)
 	blocked := make(chan struct{})
+	// Released on every exit, so a failed assertion cannot leave the
+	// preseeded Body parked.
+	unblock := sync.OnceFunc(func() { close(blocked) })
+	defer unblock()
 	entered := make(chan struct{})
 	taskDone := make(chan error, 1)
 	go func() {
@@ -501,8 +505,13 @@ func TestSnapshotSharingNoJoinRefusal(t *testing.T) {
 	require.False(t, shareTestHasLink(receiver, "fs-snap"), "the busy address is refused")
 	require.True(t, shareTestHasLink(receiver, "mount-snap"), "the other address still installs")
 	require.Equal(t, int32(1), manager.pins.Load(), "the refused slot took no pin")
-	close(blocked)
-	require.NoError(t, <-taskDone)
+	unblock()
+	select {
+	case err := <-taskDone:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the preseeded obtain task never finished")
+	}
 }
 
 // ReadinessAndExpiry: what makes a donor Ready and a receiver eligible.
@@ -728,6 +737,10 @@ func TestSnapshotSharingDecodeWhileFinishPaused(t *testing.T) {
 	row := receiver.cacheSharedResult()
 	paused := make(chan struct{})
 	resume := make(chan struct{})
+	// Released on every exit, so a failed assertion cannot leave the worker
+	// parked before its Finish.
+	resumeFinish := sync.OnceFunc(func() { close(resume) })
+	defer resumeFinish()
 	var receipt *ReadyPartReceipt
 	c.testBeforeShareFinish = func(r *ReadyPartReceipt) {
 		receipt = r
@@ -755,7 +768,7 @@ func TestSnapshotSharingDecodeWhileFinishPaused(t *testing.T) {
 	require.Equal(t, "fs-snap", decoded.Parts["fs"].Snapshot, "the decode reads the complete desired map")
 	require.False(t, receipt.task.settled.Load(), "decode never settles the output")
 
-	close(resume)
+	resumeFinish()
 	require.Equal(t, 1, barrier.awaitPass(t))
 	gate.mu.Lock()
 	require.Equal(t, PartComplete, gate.outputs[key].phase, "only the owning task settles")
