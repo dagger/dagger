@@ -70,8 +70,9 @@ func ResolveSource(
 // resolveSourceDirectory loads the directory named by entrypoint.source. A
 // local path is relative to the directory that contains dagger-module.toml and
 // is read from the module's own context directory, so it resolves the same way
-// for local, git and directory module sources. Any other value is an address
-// that resolves to a Directory.
+// for local, git and directory module sources. A module reference resolves the
+// way a dependency reference does. Any other value is an address that resolves
+// to a Directory.
 func resolveSourceDirectory(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -80,16 +81,19 @@ func resolveSourceDirectory(
 ) (dagql.ObjectResult[*core.Directory], error) {
 	var directory dagql.ObjectResult[*core.Directory]
 
-	local, err := isLocalSource(ctx, src, address)
+	kind, err := classifySource(ctx, src, address)
 	if err != nil {
 		return directory, err
 	}
-	if !local {
+	switch kind {
+	case sourceKindAddress:
 		err := dag.Select(ctx, dag.Root(), &directory,
 			dagql.Selector{Field: "address", Args: []dagql.NamedInput{{Name: "value", Value: dagql.String(address)}}},
 			dagql.Selector{Field: "directory"},
 		)
 		return directory, err
+	case sourceKindModuleRef:
+		return resolveModuleRefDirectory(ctx, dag, address)
 	}
 
 	subpath, err := sourceSubpath(src.Self(), address)
@@ -107,44 +111,104 @@ func resolveSourceDirectory(
 	return directory, err
 }
 
-// isLocalSource reports whether source is a path relative to the module
-// directory, as opposed to an address. It follows the same heuristic as module
-// refs: an explicit path prefix or a dot-free value is local, a value with a
-// ":" (a URL or a module:function address) is remote, and an ambiguous value
-// such as "example.com/repo" is local only when the path exists under the
-// module directory.
-func isLocalSource(
+// sourceKind is how entrypoint.source is resolved to a directory.
+type sourceKind int
+
+const (
+	// sourceKindLocal is a path under the module directory.
+	sourceKindLocal sourceKind = iota
+	// sourceKindAddress is resolved by Address.directory: a module:function
+	// address, or an scp-style git URL.
+	sourceKindAddress
+	// sourceKindModuleRef is a module reference such as
+	// github.com/org/repo/dir@v1 or git://host/repo.git#main:dir. It resolves
+	// the way a dependency reference resolves, so the same value names a
+	// directory here and a module in runtime.source.
+	sourceKindModuleRef
+)
+
+// classifySource decides how entrypoint.source resolves. An explicit path
+// prefix or a dot-free value is local. A URL with a scheme, or a value the
+// module reference parser recognizes as git, is a module reference. A value
+// with a ":" but no scheme is an address, which covers module:function and
+// scp-style git. An ambiguous value such as "example.com/repo" is local only
+// when the path exists under the module directory, and a module reference
+// otherwise.
+func classifySource(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
 	source string,
-) (bool, error) {
+) (sourceKind, error) {
 	if strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/") {
-		return true, nil
+		return sourceKindLocal, nil
+	}
+	if strings.Contains(source, "://") {
+		return sourceKindModuleRef, nil
 	}
 	if strings.Contains(source, ":") {
-		// URL, scp-like git URL, or a module:function address
-		return false, nil
+		return sourceKindAddress, nil
 	}
 	switch core.FastModuleSourceKindCheck(source, "") {
 	case core.ModuleSourceKindLocal:
-		return true, nil
+		return sourceKindLocal, nil
 	case core.ModuleSourceKindGit:
-		return false, nil
+		return sourceKindModuleRef, nil
 	}
 	if src.Self() == nil || src.Self().ContextDirectory.Self() == nil {
-		return false, nil
+		return sourceKindModuleRef, nil
 	}
 	subpath, err := sourceSubpath(src.Self(), source)
 	if err != nil {
-		// not a usable local path, so treat it as an address
-		return false, nil //nolint:nilerr
+		// not a usable local path, so it is a module reference
+		return sourceKindModuleRef, nil //nolint:nilerr
 	}
 	contextDir := src.Self().ContextDirectory
 	_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: contextDir}, subpath)
 	if err != nil {
-		return false, fmt.Errorf("stat %q in module directory: %w", source, err)
+		return sourceKindLocal, fmt.Errorf("stat %q in module directory: %w", source, err)
 	}
-	return exists, nil
+	if exists {
+		return sourceKindLocal, nil
+	}
+	return sourceKindModuleRef, nil
+}
+
+// resolveModuleRefDirectory loads the directory a module reference names. It
+// goes through the module source resolver so that the reference parses the
+// way runtime.source and dependency references parse, and allowNotExists
+// keeps it a plain directory: an entrypoint directory holds Dang files, not a
+// module manifest, so nothing is parsed, loaded, or resolved beyond the tree.
+func resolveModuleRefDirectory(
+	ctx context.Context,
+	dag *dagql.Server,
+	ref string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var directory dagql.ObjectResult[*core.Directory]
+
+	var modSrc dagql.ObjectResult[*core.ModuleSource]
+	if err := dag.Select(ctx, dag.Root(), &modSrc, dagql.Selector{
+		Field: "moduleSource",
+		Args: []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(ref)},
+			{Name: "allowNotExists", Value: dagql.Boolean(true)},
+		},
+	}); err != nil {
+		return directory, err
+	}
+
+	contextDir := modSrc.Self().ContextDirectory
+	if contextDir.Self() == nil {
+		return directory, fmt.Errorf("module reference %q resolved to no directory", ref)
+	}
+	subpath := modSrc.Self().SourceRootSubpath
+	if subpath == "" {
+		subpath = "."
+	}
+	err := dag.Select(ctx, contextDir, &directory, dagql.Selector{
+		Field: "directory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}},
+	})
+	return directory, err
 }
 
 // sourceSubpath converts a module-relative entrypoint path into a path
