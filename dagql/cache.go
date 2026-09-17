@@ -5060,14 +5060,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			oc.res.description = reqDig.String()
 		}
 	}
-	// TTL merge policy for shared results:
-	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
-	// - if any writer provides TTL, we keep the earliest non-zero expiry.
-	// - 0 only remains when all writers are 0.
-	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
-		oc.res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds),
-	)
 	if !resWasCacheBacked {
 		if resultCall := oc.res.loadResultCall(); resultCall != nil {
 			selfDigest, inputRefs, deriveErr := resultCall.selfDigestAndInputRefs(c)
@@ -5232,6 +5224,15 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 
 	c.egraphMu.Lock()
+	// A returned cache-backed result can already be visible to lookups.
+	// TTL merge policy for shared results:
+	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
+	// - if any writer provides TTL, we keep the earliest non-zero expiry.
+	// - 0 only remains when all writers are 0.
+	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
+		oc.res.expiresAtUnix,
+		candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds),
+	)
 	resultCall := oc.res.loadResultCall()
 	indexErr := c.indexWaitResultInEgraphLocked(
 		ctx,
@@ -5291,15 +5292,19 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	c.egraphMu.Unlock()
 
-	if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
-		c.egraphMu.Lock()
-		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		oc.handoffHoldActive = false
-		attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
-		finishAttachDeps(attachErr)
-		return attachErr
+	// Adoption reuses the existing dependency graph. Reattaching would mutate
+	// an object that other calls may already be reading.
+	if !resWasCacheBacked {
+		if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
+			c.egraphMu.Lock()
+			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
+			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+			c.egraphMu.Unlock()
+			oc.handoffHoldActive = false
+			attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+			finishAttachDeps(attachErr)
+			return attachErr
+		}
 	}
 	if err := c.syncResultSnapshotLeases(ctx, oc.res); err != nil {
 		c.egraphMu.Lock()
