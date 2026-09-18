@@ -94,6 +94,20 @@ func TestParse(t *testing.T) {
 			want:  Address{HasScheme: true, Query: []Pair{{Dimension: "go-module", Key: "sdk/go", HasKey: true}}},
 			str:   "dag://?go-module=sdk/go",
 		},
+		{
+			value: "tests?source=https://example.com/repo",
+			want: Address{Path: "tests", Query: []Pair{
+				{Dimension: "source", Key: "https://example.com/repo", HasKey: true},
+			}},
+			str: "dag://tests?source=https://example.com/repo",
+		},
+		{
+			value: "?source=dag://provider/image",
+			want: Address{Query: []Pair{
+				{Dimension: "source", Key: "dag://provider/image", HasKey: true},
+			}},
+			str: "dag://?source=dag://provider/image",
+		},
 	} {
 		t.Run(tc.value, func(t *testing.T) {
 			got, err := Parse(tc.value)
