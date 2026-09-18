@@ -55,6 +55,12 @@ type Services struct {
 	// are stopped, and capped at MaxExitedServicesPerSession.
 	exited map[string][]*ExitedService
 	l      sync.Mutex
+
+	// mcpSessions holds the MCP client sessions dialed against services in
+	// this session, so an LLM value rebuilt from its ID (which starts with no
+	// sessions) reuses the live one instead of dialing the same per-client
+	// service instance again. See mcpSessionRegistry.
+	mcpSessions *mcpSessionRegistry
 }
 
 type startingService struct {
@@ -166,10 +172,11 @@ type ServiceKey struct {
 // NewServices returns a new Services.
 func NewServices() *Services {
 	return &Services{
-		starting: map[ServiceKey]*startingService{},
-		running:  map[ServiceKey]*RunningService{},
-		bindings: map[ServiceKey]int{},
-		exited:   map[string][]*ExitedService{},
+		starting:    map[ServiceKey]*startingService{},
+		running:     map[ServiceKey]*RunningService{},
+		bindings:    map[ServiceKey]int{},
+		exited:      map[string][]*ExitedService{},
+		mcpSessions: newMCPSessionRegistry(),
 	}
 }
 

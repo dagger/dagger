@@ -145,15 +145,31 @@ type MCPServerConfig struct {
 	Service dagql.ObjectResult[*Service]
 }
 
-func (srv *MCPServerConfig) Dial(ctx context.Context) (_ *mcp.ClientSession, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+srv.Name, telemetry.Reveal())
-	defer telemetry.EndWithCause(span, &rerr)
-	return mcp.NewClient(&mcp.Implementation{
-		Title:   "Dagger",
-		Version: engine.Version,
-	}, nil).Connect(ctx, &ServiceMCPTransport{
-		Service: srv.Service,
-	}, nil)
+// Dial returns a session with the server, reusing the live one dialed earlier
+// in this Dagger session for the same service (see mcpSessionRegistry).
+func (srv *MCPServerConfig) Dial(ctx context.Context) (*mcp.ClientSession, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, err
+	}
+	key, err := mcpServiceKey(ctx, srv.Service)
+	if err != nil {
+		return nil, err
+	}
+	return svcs.mcpSessions.getOrDial(key, func() (_ *mcp.ClientSession, rerr error) {
+		ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+srv.Name, telemetry.Reveal())
+		defer telemetry.EndWithCause(span, &rerr)
+		return mcp.NewClient(&mcp.Implementation{
+			Title:   "Dagger",
+			Version: engine.Version,
+		}, nil).Connect(ctx, &ServiceMCPTransport{
+			Service: srv.Service,
+		}, nil)
+	})
 }
 
 func newMCP() *MCP {
