@@ -139,6 +139,11 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "span:     %s  %s\n", sp.ID, sp.Name)
+	if sp.CallDigest != "" {
+		// The bridge to recipe inspection (InspectCall / the console's /id):
+		// the digest of the dagql call this span reports on.
+		fmt.Fprintf(&b, "call:     %s\n", sp.CallDigest)
+	}
 	fmt.Fprintf(&b, "status:   %s\n", SpanStatus(sp))
 	if sp.IsFailed() && sp.Status.Description != "" {
 		fmt.Fprintf(&b, "error:    %s\n", strings.ReplaceAll(sp.Status.Description, "\n", "\n          "))

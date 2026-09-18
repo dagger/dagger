@@ -262,6 +262,11 @@ func ingestSpanScope(ctx context.Context, read *clientdb.DB, db *dagui.DB, scope
 	if err != nil {
 		return fmt.Errorf("select spans: %w", err)
 	}
+	return ingestSpanRows(ctx, db, rows)
+}
+
+// ingestSpanRows feeds span rows into db in the given order.
+func ingestSpanRows(ctx context.Context, db *dagui.DB, rows []clientdb.Span) error {
 	for start := 0; start < len(rows); start += traceReportBatchSize {
 		batch := rows[start:min(start+traceReportBatchSize, len(rows))]
 		spans := make([]sdktrace.ReadOnlySpan, len(batch))
