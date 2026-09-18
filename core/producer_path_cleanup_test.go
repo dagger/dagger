@@ -147,7 +147,6 @@ func TestProducerPathCleanup(t *testing.T) {
 		require.Equal(t, persistedRowID(t, cache, parent), persistedRowID(t, cache, alias))
 		require.Equal(t, before, ownership(), "alias attachment added another input owner")
 		require.Same(t, existing, dir.completedRecipe)
-
 	})
 }
 

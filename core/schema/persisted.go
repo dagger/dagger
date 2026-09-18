@@ -27,7 +27,7 @@ var (
 )
 
 func (label Label) EncodePersistedObject(context.Context, *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	raw, err := json.Marshal(persistedLabelPayload{Name: label.Name, Value: label.Value})
+	raw, err := json.Marshal(persistedLabelPayload(label))
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -39,7 +39,7 @@ func (Label) DecodePersistedObject(_ context.Context, _ *dagql.PersistDecodeCont
 	if err := dagql.UnmarshalLosslessJSON(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted label payload: %w", err)
 	}
-	return Label{Name: persisted.Name, Value: persisted.Value}, nil
+	return Label(persisted), nil
 }
 
 type persistedHealthcheckConfigPayload struct {

@@ -327,7 +327,6 @@ func TestEagerProducerRelocation(t *testing.T) {
 	require.Empty(t, visitor.childIDs())
 	require.Equal(t, persistedRowID(t, f.cache, stateB), out.Call.Receiver.ResultID)
 	require.JSONEq(t, string(rec.Envelope.ObjectJSON), string(out.Envelope.ObjectJSON))
-
 }
 
 func TestEagerProducerSaveReopen(t *testing.T) {
@@ -431,5 +430,4 @@ func TestEagerProducerSaveReopen(t *testing.T) {
 		_, err = f.cache.LoadResultByResultID(f.ctx, holder, f.srv, id.EngineResultID())
 		require.Error(t, err, "pruned producer retained an input")
 	}
-
 }

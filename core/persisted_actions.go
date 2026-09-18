@@ -202,12 +202,12 @@ func attachPersistedCheckResults(c *Check, attach func(dagql.AnyResult) (dagql.A
 
 // TerminalTarget.
 
-func (target *TerminalTarget) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	if target == nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted terminal target: nil target")
+func (t *TerminalTarget) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	if t == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted terminal t: nil t")
 	}
 	tree := newPersistedModTreeEncoder(enc)
-	leaf, err := encodePersistedActionLeaf(tree, target.Node, "terminal target")
+	leaf, err := encodePersistedActionLeaf(tree, t.Node, "terminal t")
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -230,11 +230,11 @@ func (*TerminalTarget) DecodePersistedObject(ctx context.Context, dec *dagql.Per
 	return &TerminalTarget{Node: node}, nil
 }
 
-func (target *TerminalTarget) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	if target == nil {
+func (t *TerminalTarget) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	if t == nil {
 		return nil, nil
 	}
-	return attachModTreeNodeDependencyResults(target.Node, attach)
+	return attachModTreeNodeDependencyResults(t.Node, attach)
 }
 
 // Check.
@@ -266,9 +266,9 @@ func (c *Check) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, at
 
 // Up.
 
-func (up *Up) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+func (u *Up) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	tree := newPersistedModTreeEncoder(enc)
-	payload, err := encodePersistedUp(tree, up)
+	payload, err := encodePersistedUp(tree, u)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -287,11 +287,11 @@ func (*Up) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeCo
 	return decodePersistedUp(nodes, persisted.Up)
 }
 
-func (up *Up) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	if up == nil {
+func (u *Up) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	if u == nil {
 		return nil, nil
 	}
-	return attachModTreeNodeDependencyResults(up.Node, attach)
+	return attachModTreeNodeDependencyResults(u.Node, attach)
 }
 
 // CheckGroup.

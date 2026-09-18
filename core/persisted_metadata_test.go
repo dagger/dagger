@@ -177,7 +177,7 @@ func TestPersistedMetadataFamiliesSurviveRestart(t *testing.T) {
 	ctx, cache, srv = env.restart(t, ctx, cache)
 	check(t, ctx, cache, srv, "first-restart")
 	// Untouched middle process: nothing is read before the next save.
-	ctx, cache, srv = env.restart(t, ctx, cache)
+	ctx, cache, _ = env.restart(t, ctx, cache)
 	ctx, cache, srv = env.restart(t, ctx, cache)
 	check(t, ctx, cache, srv, "after-untouched-save")
 }

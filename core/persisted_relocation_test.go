@@ -51,14 +51,6 @@ func (r *relocationVisitor) childIDs() map[string]uint64 {
 	return ids
 }
 
-func (r *relocationVisitor) kinds() map[string]dagql.PersistedRefKind {
-	kinds := map[string]dagql.PersistedRefKind{}
-	for _, ref := range r.seen {
-		kinds[ref.path] = ref.kind
-	}
-	return kinds
-}
-
 // coreRelocationRecord builds the stored record of an attached row exactly as
 // the visitor contract sees it: identity, generic envelope, recorded call and
 // declared storage links.

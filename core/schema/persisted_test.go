@@ -234,7 +234,7 @@ func TestCoreSchemaModuleReturnDispatchSurvivesRestart(t *testing.T) {
 
 	ctx, cache, dag = env.restart(t, ctx, cache)
 	check(t, ctx, cache, dag, "first-restart")
-	ctx, cache, dag = env.restart(t, ctx, cache)
+	ctx, cache, _ = env.restart(t, ctx, cache)
 	ctx, cache, dag = env.restart(t, ctx, cache)
 	check(t, ctx, cache, dag, "after-untouched-save")
 

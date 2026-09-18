@@ -45,7 +45,16 @@ func (s *producerExecutionServer) BuiltinOCIStore() content.Store               
 func (s *producerExecutionServer) Platform() Platform {
 	return Platform{OS: "linux", Architecture: "amd64"}
 }
-func executionFixture(t *testing.T) (context.Context, *testutil.Store, *dagql.Cache, *dagql.Server, *producerExecutionServer) {
+
+type executionFixtureValues struct {
+	ctx    context.Context
+	store  *testutil.Store
+	cache  *dagql.Cache
+	srv    *dagql.Server
+	server *producerExecutionServer
+}
+
+func newExecutionFixture(t *testing.T) executionFixtureValues {
 	t.Helper()
 	store := testutil.NewStore(t)
 	ctx, cache, srv := transferCache(t, store, "", "producer-execution")
@@ -54,13 +63,22 @@ func executionFixture(t *testing.T) (context.Context, *testutil.Store, *dagql.Ca
 	server := &producerExecutionServer{cacheVolumeTestQueryServer: &cacheVolumeTestQueryServer{mockServer: &mockServer{}, cacheManager: store.Manager}, srv: srv, store: store.Content}
 	server.locker = locker.New()
 	query.Server = server
-	return ctx, store, cache, srv, server
+	return executionFixtureValues{ctx: ctx, store: store, cache: cache, srv: srv, server: server}
+}
+
+func executionFixture(t *testing.T) (context.Context, *testutil.Store, *dagql.Cache, *dagql.Server, *producerExecutionServer) {
+	t.Helper()
+	f := newExecutionFixture(t)
+	return f.ctx, f.store, f.cache, f.srv, f.server
+}
+
+// executionContext is the fixture for tests that use only its context.
+func executionContext(t *testing.T) context.Context {
+	t.Helper()
+	return newExecutionFixture(t).ctx
 }
 func freshProducerFile() *File {
 	return &File{Platform: Platform{OS: "linux", Architecture: "arm64"}, File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
-}
-func freshProducerDirectory() *Directory {
-	return &Directory{Platform: Platform{OS: "linux", Architecture: "arm64"}, Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory])}
 }
 func decodedHTTPProducer(t *testing.T, ctx context.Context, lazy *FileHTTPResolveLazy) *FileHTTPResolveLazy {
 	t.Helper()
@@ -70,7 +88,7 @@ func decodedHTTPProducer(t *testing.T, ctx context.Context, lazy *FileHTTPResolv
 	require.NoError(t, err)
 	return decoded.(*FileHTTPResolveLazy)
 }
-func producedFileContents(t *testing.T, ctx context.Context, file *File) ([]byte, os.FileInfo) {
+func producedFileContents(t *testing.T, file *File) ([]byte, os.FileInfo) {
 	t.Helper()
 	name, snapshot, err := producedFileOutput(file)
 	require.NoError(t, err)
@@ -88,7 +106,7 @@ func producedFileContents(t *testing.T, ctx context.Context, file *File) ([]byte
 	return data, info
 }
 func TestHTTPCompletedProducerEvaluate(t *testing.T) {
-	ctx, _, _, _, _ := executionFixture(t)
+	ctx := executionContext(t)
 	for _, test := range []struct {
 		name, body, lastModified, checksum string
 		valid                              bool
@@ -125,7 +143,7 @@ func TestHTTPCompletedProducerEvaluate(t *testing.T) {
 				require.False(t, ready)
 			} else {
 				require.NoError(t, err)
-				data, _ := producedFileContents(t, ctx, file)
+				data, _ := producedFileContents(t, file)
 				require.Equal(t, "saved", string(data))
 				require.Equal(t, "arm64", file.Platform.Architecture)
 				require.NoError(t, file.OnRelease(ctx))
@@ -161,7 +179,7 @@ func TestHTTPCompletedProducerEvaluate(t *testing.T) {
 }
 
 func TestHTTPProducerWriter(t *testing.T) {
-	ctx, _, _, _, _ := executionFixture(t)
+	ctx := executionContext(t)
 	query, err := CurrentQuery(ctx)
 	require.NoError(t, err)
 	const modified = "Wed, 21 Oct 2015 07:28:00 GMT"
@@ -192,8 +210,8 @@ func TestHTTPProducerWriter(t *testing.T) {
 				}
 				require.NoError(t, eagerErr)
 				require.NoError(t, restoreErr)
-				a, ai := producedFileContents(t, ctx, eager.File)
-				b, bi := producedFileContents(t, ctx, output)
+				a, ai := producedFileContents(t, eager.File)
+				b, bi := producedFileContents(t, output)
 				require.Equal(t, a, b)
 				require.Equal(t, os.FileMode(mode), bi.Mode().Perm())
 				require.Equal(t, ai.Mode(), bi.Mode())
@@ -212,7 +230,7 @@ func TestHTTPProducerWriter(t *testing.T) {
 		producer := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: origin.URL, Filename: "data", Permissions: 0755, BodyDigest: digest.FromString("saved")}
 		require.NoError(t, producer.Evaluate(ctx, output))
 		defer output.OnRelease(ctx)
-		_, info := producedFileContents(t, ctx, output)
+		_, info := producedFileContents(t, output)
 		require.EqualValues(t, 0755, info.Mode().Perm())
 	})
 	t.Run("public eager layout", func(t *testing.T) {
@@ -237,7 +255,6 @@ func TestHTTPProducerWriter(t *testing.T) {
 			require.NoError(t, output.File.OnRelease(ctx))
 		}
 	})
-
 }
 
 type producerBodyTransport struct {
@@ -459,7 +476,7 @@ func TestHTTPProducerCleanup(t *testing.T) {
 }
 
 func TestHTTPStateConcurrentResolveCapture(t *testing.T) {
-	ctx, _, _, _, _ := executionFixture(t)
+	ctx := executionContext(t)
 	query, err := CurrentQuery(ctx)
 	require.NoError(t, err)
 	entered := make(chan struct{})
@@ -535,7 +552,7 @@ func TestStatelessHTTPProducerIsolation(t *testing.T) {
 	defer newer.File.OnRelease(ctx)
 	require.NoError(t, <-privateErr)
 	defer output.OnRelease(ctx)
-	body, _ := producedFileContents(t, ctx, output)
+	body, _ := producedFileContents(t, output)
 	require.Equal(t, "old", string(body))
 	require.Equal(t, digest.FromString("new"), state.ContentDigest)
 	require.Equal(t, "new", state.ETag)
@@ -582,7 +599,7 @@ func (m *producerStateReadGuard) GetBySnapshotID(context.Context, string, ...bkc
 }
 
 func TestCompletedProducerConcurrentDemand(t *testing.T) {
-	ctx, _, _, _, _ := executionFixture(t)
+	ctx := executionContext(t)
 	requests := atomic.Int64{}
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); fmt.Fprint(w, "body") }))
 	defer origin.Close()

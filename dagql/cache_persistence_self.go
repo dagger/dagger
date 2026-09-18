@@ -135,7 +135,6 @@ func persistedAbsentEnvelope(resultID uint64, handle SessionResourceHandle) Pers
 	}
 }
 
-//nolint:gocyclo // one classification per envelope kind; splitting hides the order of the checks
 func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContext, res AnyResult, root bool) (PersistedResultEncoding, error) {
 	if res == nil {
 		return PersistedResultEncoding{Envelope: PersistedResultEnvelope{
@@ -380,104 +379,133 @@ func decodePersistedResultEnvelope(ctx context.Context, dec *PersistDecodeContex
 		}
 		return dec.ResultRef(ctx, env.ResultID)
 	case persistedResultKindObject:
-		if dag == nil {
-			return nil, fmt.Errorf("decode object_id envelope: missing current dagql server in context")
-		}
-		if call == nil {
-			return nil, fmt.Errorf("decode object_id envelope: missing authoritative call")
-		}
-		family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
-		if !ok {
-			return nil, fmt.Errorf("decode object_id envelope: unknown object codec family %q for type %q", env.ObjectCodec, env.TypeName)
-		}
-		objType, ok := dag.ObjectType(env.TypeName)
-		if !ok {
-			return nil, fmt.Errorf("decode object_id envelope: unknown object type %q", env.TypeName)
-		}
-		decoder, ok := objType.Typed().(PersistedObjectDecoder)
-		if !ok {
-			return nil, fmt.Errorf("decode object_id envelope: object type %q does not implement persisted decode", env.TypeName)
-		}
-		if decoderFamily, ok := PersistedObjectFamilyFor(objType.Typed()); !ok || decoderFamily.Name != family.Name {
-			return nil, fmt.Errorf("decode object_id envelope: object type %q decodes family %q, envelope carries %q", env.TypeName, decoderFamily.Name, family.Name)
-		}
-		decodeCtx := ContextWithCall(ctx, call)
-		valSelf, err := decoder.DecodePersistedObject(decodeCtx, dec, env.ObjectJSON)
+		res, err := decodePersistedObjectEnvelope(ctx, dec, env, call, dag)
 		if err != nil {
-			return nil, fmt.Errorf("decode object_id envelope load: %w", err)
+			return nil, err
 		}
-		valRes, err := NewResultForCall(valSelf, call)
-		if err != nil {
-			return nil, fmt.Errorf("decode object_id envelope result: %w", err)
-		}
-		objRes, err := objType.New(valRes)
-		if err != nil {
-			return nil, fmt.Errorf("decode object_id envelope instantiate: %w", err)
-		}
-		return setHandle(persistedNullableView(objRes, call)), nil
+		return setHandle(res), nil
 	case persistedResultKindScalar:
-		if call == nil {
-			return nil, fmt.Errorf("decode scalar_json envelope: missing authoritative call")
-		}
-		raw, err := DecodeLosslessJSON(env.ScalarJSON)
-		if err != nil {
-			return nil, fmt.Errorf("decode scalar_json envelope payload: %w", err)
-		}
-		if dag != nil {
-			scalarType, ok := dag.ScalarType(env.TypeName)
-			if ok {
-				input, err := scalarType.DecodeInput(raw)
-				if err != nil {
-					return nil, fmt.Errorf("decode scalar_json envelope input: %w", err)
-				}
-				res, err := NewResultForCall(input, call)
-				if err != nil {
-					return nil, err
-				}
-				return setHandle(persistedNullableView(res, call)), nil
-			}
-		}
-		builtin, err := decodeBuiltinPersistedScalar(env.TypeName, raw)
-		if err != nil {
-			return nil, fmt.Errorf("decode scalar_json envelope builtin input: %w", err)
-		}
-		res, err := NewResultForCall(builtin, call)
+		res, err := decodePersistedScalarEnvelope(ctx, dec, env, call, dag)
 		if err != nil {
 			return nil, err
 		}
-		return setHandle(persistedNullableView(res, call)), nil
+		return setHandle(res), nil
 	case persistedResultKindList:
-		if call == nil {
-			return nil, fmt.Errorf("decode list envelope: missing authoritative call")
-		}
-		if call.Type == nil || call.Type.Elem == nil {
-			return nil, fmt.Errorf("decode list envelope: recorded call type %s does not declare a list", call.Type.toAST())
-		}
-		elem, err := persistedTypeDescriptor(call.Type.Elem)
-		if err != nil {
-			return nil, fmt.Errorf("decode list envelope element type: %w", err)
-		}
-		items := make([]AnyResult, 0, len(env.Items))
-		for i, itemEnv := range env.Items {
-			itemCall := persistedListItemCall(call, i+1)
-			itemCtx := ContextWithCall(ctx, itemCall)
-			itemRes, err := decodePersistedResultEnvelope(itemCtx, dec.item(itemCall), itemEnv, false)
-			if err != nil {
-				return nil, fmt.Errorf("decode list item %d: %w", i+1, err)
-			}
-			items = append(items, itemRes)
-		}
-		res, err := NewResultForCall(DynamicResultArrayOutput{
-			Elem:   elem,
-			Values: items,
-		}, call)
+		res, err := decodePersistedListEnvelope(ctx, dec, env, call, dag)
 		if err != nil {
 			return nil, err
 		}
-		return setHandle(persistedNullableView(res, call)), nil
+		return setHandle(res), nil
 	default:
 		return nil, fmt.Errorf("decode persisted result envelope: unsupported kind %q", env.Kind)
 	}
+}
+
+// decodePersistedObjectEnvelope decodes an object_id envelope through its
+// registered codec family; the caller applies the session resource handle.
+func decodePersistedObjectEnvelope(ctx context.Context, dec *PersistDecodeContext, env PersistedResultEnvelope, call *ResultCall, dag *Server) (AnyResult, error) {
+	if dag == nil {
+		return nil, fmt.Errorf("decode object_id envelope: missing current dagql server in context")
+	}
+	if call == nil {
+		return nil, fmt.Errorf("decode object_id envelope: missing authoritative call")
+	}
+	family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
+	if !ok {
+		return nil, fmt.Errorf("decode object_id envelope: unknown object codec family %q for type %q", env.ObjectCodec, env.TypeName)
+	}
+	objType, ok := dag.ObjectType(env.TypeName)
+	if !ok {
+		return nil, fmt.Errorf("decode object_id envelope: unknown object type %q", env.TypeName)
+	}
+	decoder, ok := objType.Typed().(PersistedObjectDecoder)
+	if !ok {
+		return nil, fmt.Errorf("decode object_id envelope: object type %q does not implement persisted decode", env.TypeName)
+	}
+	if decoderFamily, ok := PersistedObjectFamilyFor(objType.Typed()); !ok || decoderFamily.Name != family.Name {
+		return nil, fmt.Errorf("decode object_id envelope: object type %q decodes family %q, envelope carries %q", env.TypeName, decoderFamily.Name, family.Name)
+	}
+	decodeCtx := ContextWithCall(ctx, call)
+	valSelf, err := decoder.DecodePersistedObject(decodeCtx, dec, env.ObjectJSON)
+	if err != nil {
+		return nil, fmt.Errorf("decode object_id envelope load: %w", err)
+	}
+	valRes, err := NewResultForCall(valSelf, call)
+	if err != nil {
+		return nil, fmt.Errorf("decode object_id envelope result: %w", err)
+	}
+	objRes, err := objType.New(valRes)
+	if err != nil {
+		return nil, fmt.Errorf("decode object_id envelope instantiate: %w", err)
+	}
+	return persistedNullableView(objRes, call), nil
+}
+
+// decodePersistedScalarEnvelope decodes a scalar_json envelope through the
+// server's scalar type when it has one, else the builtin scalar decoder.
+func decodePersistedScalarEnvelope(ctx context.Context, dec *PersistDecodeContext, env PersistedResultEnvelope, call *ResultCall, dag *Server) (AnyResult, error) {
+	if call == nil {
+		return nil, fmt.Errorf("decode scalar_json envelope: missing authoritative call")
+	}
+	raw, err := DecodeLosslessJSON(env.ScalarJSON)
+	if err != nil {
+		return nil, fmt.Errorf("decode scalar_json envelope payload: %w", err)
+	}
+	if dag != nil {
+		scalarType, ok := dag.ScalarType(env.TypeName)
+		if ok {
+			input, err := scalarType.DecodeInput(raw)
+			if err != nil {
+				return nil, fmt.Errorf("decode scalar_json envelope input: %w", err)
+			}
+			res, err := NewResultForCall(input, call)
+			if err != nil {
+				return nil, err
+			}
+			return persistedNullableView(res, call), nil
+		}
+	}
+	builtin, err := decodeBuiltinPersistedScalar(env.TypeName, raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode scalar_json envelope builtin input: %w", err)
+	}
+	res, err := NewResultForCall(builtin, call)
+	if err != nil {
+		return nil, err
+	}
+	return persistedNullableView(res, call), nil
+}
+
+// decodePersistedListEnvelope decodes a list envelope item by item.
+func decodePersistedListEnvelope(ctx context.Context, dec *PersistDecodeContext, env PersistedResultEnvelope, call *ResultCall, dag *Server) (AnyResult, error) {
+	if call == nil {
+		return nil, fmt.Errorf("decode list envelope: missing authoritative call")
+	}
+	if call.Type == nil || call.Type.Elem == nil {
+		return nil, fmt.Errorf("decode list envelope: recorded call type %s does not declare a list", call.Type.toAST())
+	}
+	elem, err := persistedTypeDescriptor(call.Type.Elem)
+	if err != nil {
+		return nil, fmt.Errorf("decode list envelope element type: %w", err)
+	}
+	items := make([]AnyResult, 0, len(env.Items))
+	for i, itemEnv := range env.Items {
+		itemCall := persistedListItemCall(call, i+1)
+		itemCtx := ContextWithCall(ctx, itemCall)
+		itemRes, err := decodePersistedResultEnvelope(itemCtx, dec.item(itemCall), itemEnv, false)
+		if err != nil {
+			return nil, fmt.Errorf("decode list item %d: %w", i+1, err)
+		}
+		items = append(items, itemRes)
+	}
+	res, err := NewResultForCall(DynamicResultArrayOutput{
+		Elem:   elem,
+		Values: items,
+	}, call)
+	if err != nil {
+		return nil, err
+	}
+	return persistedNullableView(res, call), nil
 }
 
 // persistedNullableView presents a decoded present value the way a fresh

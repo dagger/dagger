@@ -20,7 +20,7 @@ type persistedEnvVariablePayload struct {
 }
 
 func (v EnvVariable) EncodePersistedObject(context.Context, *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	return encodePersistedObjectPayload(persistedEnvVariablePayload{Name: v.Name, Value: v.Value})
+	return encodePersistedObjectPayload(persistedEnvVariablePayload(v))
 }
 
 func (EnvVariable) DecodePersistedObject(_ context.Context, _ *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
@@ -28,7 +28,7 @@ func (EnvVariable) DecodePersistedObject(_ context.Context, _ *dagql.PersistDeco
 	if err := unmarshalPersistedPayload(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted env variable payload: %w", err)
 	}
-	return EnvVariable{Name: persisted.Name, Value: persisted.Value}, nil
+	return EnvVariable(persisted), nil
 }
 
 type persistedPortPayload struct {
@@ -39,12 +39,7 @@ type persistedPortPayload struct {
 }
 
 func (p Port) EncodePersistedObject(context.Context, *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	return encodePersistedObjectPayload(persistedPortPayload{
-		Port:                        p.Port,
-		Protocol:                    p.Protocol,
-		Description:                 p.Description,
-		ExperimentalSkipHealthcheck: p.ExperimentalSkipHealthcheck,
-	})
+	return encodePersistedObjectPayload(persistedPortPayload(p))
 }
 
 func (Port) DecodePersistedObject(_ context.Context, _ *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
@@ -52,12 +47,7 @@ func (Port) DecodePersistedObject(_ context.Context, _ *dagql.PersistDecodeConte
 	if err := unmarshalPersistedPayload(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted port payload: %w", err)
 	}
-	return Port{
-		Port:                        persisted.Port,
-		Protocol:                    persisted.Protocol,
-		Description:                 persisted.Description,
-		ExperimentalSkipHealthcheck: persisted.ExperimentalSkipHealthcheck,
-	}, nil
+	return Port(persisted), nil
 }
 
 type persistedSDKConfigPayload struct {

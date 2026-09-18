@@ -196,15 +196,15 @@ ref.(interface{ ObserveRecordingFault(dagql.Typed) }).ObserveRecordingFault(cont
 	}
 }
 
-func (ref *resolverOutputRef) ObserveRecordingFault(value dagql.Typed) {
-	ref.faultValue = value
+func (r *resolverOutputRef) ObserveRecordingFault(value dagql.Typed) {
+	r.faultValue = value
 	switch value := value.(type) {
 	case *core.Directory:
-		ref.faultLazy = value.Lazy
+		r.faultLazy = value.Lazy
 	case *core.File:
-		ref.faultLazy = value.Lazy
+		r.faultLazy = value.Lazy
 	case *core.Container:
-		ref.faultLazy = value.Lazy
+		r.faultLazy = value.Lazy
 	}
 }
 
