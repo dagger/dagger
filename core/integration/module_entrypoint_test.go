@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -193,4 +194,42 @@ source = "./entrypoint"
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, ".dagger/modules/tiny", strings.TrimPrefix(strings.TrimSpace(out), "/"))
+}
+
+// A module source loaded from a workspace carries that workspace, and its path
+// is relative to it. The entrypoint must be handed that workspace, scoped to
+// the module, even when the calling client's current workspace is a different
+// tree: here the test's own, which has no mods/tiny/marker.txt.
+func (ModuleSuite) TestModuleEntrypointWorkspaceIsModuleSourceWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	served := c.Directory().
+		WithNewFile("mods/tiny/dagger-module.toml", `name = "tiny"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+		WithNewFile("mods/tiny/marker.txt", "from-git-workspace").
+		WithDirectory(
+			"mods/tiny/entrypoint",
+			c.Host().Directory("./testdata/modules/dang/module-entrypoint-workspace"),
+		)
+	gitDaemon, repoURL := gitService(ctx, t, c, served)
+
+	err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		Branch("main").
+		AsWorkspace().
+		ModuleSource("mods/tiny").
+		AsModule().
+		Serve(ctx)
+	require.NoError(t, err)
+
+	res, err := testutil.QueryWithClient[struct {
+		Tiny struct {
+			Marker string
+		}
+	}](c, t, `{tiny{marker}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "/mods/tiny from-git-workspace", res.Tiny.Marker)
 }
