@@ -122,6 +122,9 @@ The engine shutdown path matters here.
 4. close the dagql cache, which persists current state
 5. only after successful persistence mark `clean_shutdown=1`
 
+`GracefulStop` returns the errors collected along the way, joined with the
+final database close result.
+
 The session removal part is critical. Before persistence, the engine tries to
 get rid of session-owned state first so the retained graph is in a steady state.
 

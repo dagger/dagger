@@ -865,11 +865,6 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 	}
 
-	// FIXME: Keep this join for now. It looks unused only because GracefulStop
-	// currently drops earlier shutdown errors and later returns only the async
-	// DB-close path. When GracefulStop is fixed, it should return those earlier
-	// errors instead of deleting this assignment.
-	//nolint:ineffassign,staticcheck // FIXME: see comment above
 	err = errors.Join(err, srv.engineUtilOpts.Close())
 
 	// Shutdown the global namespace worker pool
@@ -918,10 +913,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}()
 
 	select {
-	case err := <-doneClosingCh:
-		return err
+	case dbCloseErr := <-doneClosingCh:
+		return errors.Join(err, dbCloseErr)
 	case <-ctx.Done():
-		return ctx.Err()
+		return errors.Join(err, ctx.Err())
 	}
 }
 
