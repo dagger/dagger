@@ -2341,12 +2341,13 @@ func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModu
 	if err != nil {
 		return nil, fmt.Errorf("module provenance: implementation-scoped module %q: %w", self.Name(), err)
 	}
-	scopedID, err := scoped.ID()
+	// Installed fields and cached object classes can outlive the session that
+	// created this implementation-scoped result. Keep replayable provenance in
+	// the schema instead of its session-owned handle. Dagql resolves the recipe
+	// into the calling session before constructing a result-backed call frame.
+	scopedRef, err := dagql.ResultCallRefForSchema(ctx, scoped)
 	if err != nil {
-		return nil, fmt.Errorf("module provenance: module %q handle ID: %w", self.Name(), err)
-	}
-	if scopedID == nil || scopedID.EngineResultID() == 0 {
-		return nil, fmt.Errorf("module provenance: implementation-scoped module %q is not attached", self.Name())
+		return nil, fmt.Errorf("module provenance: module %q recipe ref: %w", self.Name(), err)
 	}
 
 	src := self.Source.Value.Self()
@@ -2369,7 +2370,7 @@ func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModu
 	}
 
 	return &dagql.ResultCallModule{
-		ResultRef: &dagql.ResultCallRef{ResultID: scopedID.EngineResultID()},
+		ResultRef: scopedRef,
 		Name:      self.Name(),
 		Ref:       ref,
 		Pin:       pin,
