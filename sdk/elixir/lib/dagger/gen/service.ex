@@ -59,10 +59,13 @@ defmodule Dagger.Service do
   @doc """
   Retrieves the list of ports provided by the service.
   """
-  @spec ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
-  def ports(%__MODULE__{} = service) do
+  @spec ports(t(), [{:declared, boolean() | nil}]) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
+  def ports(%__MODULE__{} = service, optional_args \\ []) do
     query_builder =
-      service.query_builder |> QB.select("ports") |> QB.select("id")
+      service.query_builder
+      |> QB.select("ports")
+      |> QB.maybe_put_arg("declared", optional_args[:declared])
+      |> QB.select("id")
 
     with {:ok, items} <- Client.execute(service.client, query_builder) do
       {:ok,

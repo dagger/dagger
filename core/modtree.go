@@ -53,8 +53,18 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 	if err != nil {
 		return nil, err
 	}
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defaults, err := q.DefaultDeps(ctx)
+	if err != nil {
+		return nil, err
+	}
 	types := map[string]dagql.ObjectResult[*TypeDef]{}
-	for _, dep := range main.Deps.Mods() {
+	// Discover core fields in the caller's view, including fields added after
+	// the module's authored version. Execution still uses the module's deps.
+	for _, dep := range slices.Concat(main.Deps.Mods(), defaults.Mods()) {
 		defs, err := dep.TypeDefs(ctx, srv)
 		if err != nil {
 			return nil, err
@@ -124,7 +134,7 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 // dagqlValue selects the node's value, passing leafArgs as arguments to the
 // final Select (the leaf function). Parent objects are always auto-constructed
 // with defaults (no leafArgs), so leafArgs only ever fill the leaf itself — e.g.
-// the @agent fold supplies `base` here (see RunAgent).
+// the @agent fold supplies `base` here.
 func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []dagql.NamedInput) error {
 	// We can't direct-select the dagql path, because Select() doesn't support traversing
 	// lists

@@ -800,12 +800,14 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 
 	// Use duck typing to detect supported functions.
 	var hasSync bool
+	var syncReturnsObject bool
 	var hasExport bool
 	var hasExportAllowParentDirPath bool
 	fns := obj.GetFunctions()
 	for _, fn := range fns {
 		if fn.Name == "sync" && len(fn.SupportedArgs()) == 0 {
 			hasSync = true
+			syncReturnsObject = fn.ReturnType.AsFunctionProvider() != nil
 		}
 		if fn.Name == "export" {
 			for _, a := range fn.SupportedArgs() {
@@ -832,6 +834,9 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 
 	// TODO: Replace with interface when possible.
 	if hasSync {
+		if syncReturnsObject {
+			return q.SelectWithAlias("id", "sync").Select("id")
+		}
 		return q.SelectWithAlias("id", "sync")
 	}
 
@@ -1182,11 +1187,11 @@ func printID(w io.Writer, response any, typeDef *modTypeDef) error {
 		case string:
 			return printEncodedID(w, v)
 		case map[string]any:
-			encodedID, ok := v["id"].(string)
+			id, ok := v["id"]
 			if !ok {
 				return fmt.Errorf("printID: no ID found in object: %+v", v)
 			}
-			return printEncodedID(w, encodedID)
+			return printID(w, id, typeDef)
 		default:
 			return fmt.Errorf("printID: unexpected type for object: %T", v)
 		}

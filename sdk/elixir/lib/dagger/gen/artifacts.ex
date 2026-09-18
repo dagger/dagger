@@ -71,6 +71,22 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
+  Keep artifacts with any listed directive.
+  """
+  @spec filter_directives(t(), [String.t()]) :: Dagger.Artifacts.t()
+  def filter_directives(%__MODULE__{} = artifacts, directives) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("filterDirectives")
+      |> QB.put_arg("directives", directives)
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
   Match one complete, ordered field sequence exactly.
   """
   @spec filter_path(t(), [String.t()]) :: Dagger.Artifacts.t()
@@ -182,6 +198,48 @@ defmodule Dagger.Artifacts do
       artifacts.query_builder |> QB.select("uri")
 
     Client.execute(artifacts.client, query_builder)
+  end
+
+  @doc """
+  Evaluate the selection in parallel, retaining each result and error.
+  """
+  @spec values(t(), [{:fail_fast, boolean() | nil}, {:arguments, Dagger.JSON.t() | nil}]) ::
+          {:ok, [Dagger.ArtifactResult.t()]} | {:error, term()}
+  def values(%__MODULE__{} = artifacts, optional_args \\ []) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("values")
+      |> QB.maybe_put_arg("failFast", optional_args[:fail_fast])
+      |> QB.maybe_put_arg("arguments", optional_args[:arguments])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.ArtifactResult{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ArtifactResult"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  Remove artifacts selected by a DAG address.
+  """
+  @spec without_uri(t(), String.t()) :: Dagger.Artifacts.t()
+  def without_uri(%__MODULE__{} = artifacts, uri) do
+    query_builder =
+      artifacts.query_builder |> QB.select("withoutUri") |> QB.put_arg("uri", uri)
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
   end
 end
 

@@ -298,6 +298,6 @@ func (s *workspaceSchema) sdkGenerate(ctx context.Context, sdk *core.WorkspaceSD
 		return dagql.ObjectResult[*core.Changeset]{}, err
 	}
 	var changes dagql.ObjectResult[*core.Changeset]
-	err = srv.Select(ctx, generated, &changes, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Workspace](id)}}})
+	err = srv.Select(ctx, generated, &changes, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.Opt(dagql.NewID[*core.Workspace](id))}}})
 	return changes, err
 }

@@ -56,11 +56,11 @@ source = "other"
 				args []string
 				want []string
 			}{
-				{want: []string{test.target, "other:" + test.target}},
-				{args: []string{test.target}, want: []string{test.target}},
-				{args: []string{"app:" + test.target}, want: []string{test.target}},
-				{args: []string{"other:" + test.target}, want: []string{"other:" + test.target}},
-				{args: []string{"*:" + test.target}, want: []string{test.target, "other:" + test.target}},
+				{want: []string{"dag://" + test.target, "dag://other/" + test.target}},
+				{args: []string{test.target}, want: []string{"dag://" + test.target}},
+				{args: []string{"app:" + test.target}, want: []string{"dag://" + test.target}},
+				{args: []string{"other:" + test.target}, want: []string{"dag://other/" + test.target}},
+				{args: []string{"*:" + test.target}, want: []string{"dag://" + test.target, "dag://other/" + test.target}},
 			} {
 				args := append([]string{test.command, "-l"}, selection.args...)
 				if test.command == "check" {
@@ -86,22 +86,22 @@ source = "other"
 			out, err = ordinary.With(daggerNonNestedExec("-m", "./app", test.command, "-l", test.target)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, test.target)
-			require.NotContains(t, out, "app:"+test.target)
-			require.NotContains(t, out, "other:"+test.target)
+			require.NotContains(t, out, "dag://app/"+test.target)
+			require.NotContains(t, out, "dag://other/"+test.target)
 		})
 	}
 
 	t.Run("caller skip only excludes the entrypoint", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("check", "-l", "--no-generate", "--skip=verify")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "other/verify", strings.TrimSpace(out))
+		require.Equal(t, "dag://other/verify", strings.TrimSpace(out))
 	})
 
 	t.Run("module settings keep local skip names", func(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("dagger.toml", config+"\ncheck.skip = [\"verify\"]\n").
 			With(daggerNonNestedExec("check", "-l", "--no-generate")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "verify", strings.TrimSpace(out))
+		require.Equal(t, "dag://verify", strings.TrimSpace(out))
 	})
 
 	t.Run("value workspace uses its own entrypoint", func(ctx context.Context, t *testctx.T) {

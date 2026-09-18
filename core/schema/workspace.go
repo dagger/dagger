@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/vektah/gqlparser/v2/ast"
 	"os"
 	"path"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/mod/semver"
 )
 
@@ -3975,13 +3975,20 @@ func (s *workspaceSchema) workspaceTargetModules(
 	if err != nil {
 		return nil, nil, err
 	}
-	failures = append(failures, overlayFailures...)
 	if removed == nil {
 		removed = map[string]bool{}
 	}
 	for _, failure := range overlayFailures {
 		removed[canonicalOverlayModuleName(failure.Name)] = true
 	}
+	// An overlay's load result replaces the original session's result.
+	failures = slices.DeleteFunc(failures, func(failure core.ModuleLoadFailure) bool {
+		name := canonicalOverlayModuleName(failure.Name)
+		return removed[name] || slices.ContainsFunc(overlayMods, func(mod overlayModule) bool {
+			return canonicalOverlayModuleName(mod.name) == name
+		})
+	})
+	failures = append(failures, overlayFailures...)
 	merged := mergeOverlayModules(mods, overlayMods)
 	return slices.DeleteFunc(merged, func(mod dagql.ObjectResult[*core.Module]) bool {
 		return removed[canonicalOverlayModuleName(mod.Self().Name())]

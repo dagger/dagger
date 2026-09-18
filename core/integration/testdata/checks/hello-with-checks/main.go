@@ -5,6 +5,8 @@ import (
 	"context"
 
 	"dagger/hello-with-checks/internal/dagger"
+
+	"dagger.io/dagger/dag"
 )
 
 type HelloWithChecks struct {

@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type artifactsSchema struct{}
@@ -104,7 +105,7 @@ func checkArtifactAddressWorkspace(entries []*core.Artifact, addr *dagaddress.Ad
 	if !addr.Absolute {
 		return nil
 	}
-	notSupported := fmt.Errorf("absolute addresses are not supported yet: %s", uri)
+	notSupported := fmt.Errorf("address selects another workspace; filters cannot change workspace: %s", uri)
 	if len(entries) == 0 {
 		return notSupported
 	}
@@ -165,7 +166,18 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 			if err != nil {
 				return nil, err
 			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Check{RemoteArtifact: artifact.Clone(), RemoteArguments: arguments})
+			values := make(map[string]any, len(inputs))
+			for _, input := range inputs {
+				values[input.Name], err = artifactCloudInput(ctx, srv, input.Value)
+				if err != nil {
+					return nil, fmt.Errorf("cloud argument %s: %w", input.Name, err)
+				}
+			}
+			remoteArguments, err := json.Marshal(values)
+			if err != nil {
+				return nil, fmt.Errorf("encode cloud arguments: %w", err)
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Check{RemoteArtifact: artifact.Clone(), RemoteArguments: core.JSON(remoteArguments)})
 		}
 	}
 	var result dagql.AnyObjectResult
@@ -173,6 +185,45 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 		return nil, err
 	}
 	return result, nil
+}
+
+// Object inputs need recipes on another engine. Scalar strings remain opaque.
+func artifactCloudInput(ctx context.Context, srv *dagql.Server, input dagql.Input) (any, error) {
+	switch input := input.(type) {
+	case dagql.IDable:
+		id, err := input.ID()
+		if err != nil {
+			return nil, err
+		}
+		if id.IsHandle() {
+			value, err := srv.Load(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			id, err = value.RecipeID(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return id.Encode()
+	case dagql.DynamicOptional:
+		if !input.Valid {
+			return nil, nil
+		}
+		return artifactCloudInput(ctx, srv, input.Value)
+	case dagql.DynamicArrayInput:
+		values := make([]any, len(input.Values))
+		for i, value := range input.Values {
+			var err error
+			values[i], err = artifactCloudInput(ctx, srv, value)
+			if err != nil {
+				return nil, fmt.Errorf("item %d: %w", i, err)
+			}
+		}
+		return values, nil
+	default:
+		return input, nil
+	}
 }
 
 // evaluateArtifact selects the artifact's value in its own workspace.
@@ -498,6 +549,9 @@ func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artif
 }
 
 func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ struct{}) (string, error) {
+	if parent.LoadFailure != nil {
+		return "this workspace module could not be loaded", nil
+	}
 	if parent.Node == nil {
 		return "", nil
 	}
@@ -508,6 +562,10 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 	FailFast  bool      `default:"false"`
 	Arguments core.JSON `default:"{}"`
 }) ([]*core.ArtifactResult, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	results := make([]*core.ArtifactResult, len(parent.Self().Entries))
 	evaluationErrors := make([]error, len(parent.Self().Entries))
 	jobs := parallel.New().WithContextualTracer(true).WithFailFast(args.FailFast).WithRollupLogs(true).WithRollupSpans(true)
@@ -519,6 +577,10 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		result := &core.ArtifactResult{Artifact: artifact.Clone()}
 		results[i] = result
 		var attrs []attribute.KeyValue
+		localCheck := artifact.TypeName == "Check" && (!md.EnableCloudScaleOut || artifact.LoadFailure != nil)
+		if localCheck {
+			attrs = append(attrs, attribute.String(telemetry.CheckNameAttr, uri))
+		}
 		if slices.Contains(artifact.Directives, "generate") {
 			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, uri))
 		}
@@ -530,15 +592,20 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 			}
 			if err == nil {
 				if sync, ok := result.Value.ObjectType().FieldSpec("sync", srv.View); ok && !sync.Args.HasRequired(srv.View) {
-					var completed dagql.AnyObjectResult
+					var completed dagql.AnyResult
 					err = srv.Select(ctx, result.Value, &completed, dagql.Selector{Field: "sync"})
 					if err == nil {
-						result.Value = completed
-						if check, ok := completed.Unwrap().(*core.Check); ok && check.Error.Valid {
-							err = check.Error.Value.Self()
+						if check, ok := completed.(dagql.ObjectResult[*core.Check]); ok {
+							result.Value = check
+							if check.Self().Error.Valid {
+								err = check.Self().Error.Value.Self()
+							}
 						}
 					}
 				}
+			}
+			if localCheck {
+				trace.SpanFromContext(ctx).SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, err == nil))
 			}
 			evaluationErrors[i] = err
 			return err

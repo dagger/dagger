@@ -8,37 +8,22 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * One deferred check. Reading pass, error, or sync runs it.
+ */
 class Check extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded
+     * The assertion that is false when this check fails.
      */
-    public function checkType(): string
+    public function assertion(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('checkType');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'checkType');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('assertion');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'assertion');
     }
 
     /**
-     * Whether the check completed
-     */
-    public function completed(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('completed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'completed');
-    }
-
-    /**
-     * The description of the check
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
-     * If the check failed, this is the error
+     * Run the check and return its failure, if any.
      */
     public function error(): ?Error
     {
@@ -61,56 +46,34 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return the command name of the check. Entrypoint targets omit the module prefix.
+     * Run the check and return whether it passes.
      */
-    public function name(): string
+    public function pass(): bool
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pass');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'pass');
     }
 
     /**
-     * The original module in which the check has been defined
+     * An optional report produced by the check.
      */
-    public function originalModule(): Module
+    public function report(): ?Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('report');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Directory::class, new \Dagger\Id((string)$id), 'Directory');
     }
 
     /**
-     * Whether the check passed
+     * Run the check and retain its result.
      */
-    public function passed(): bool
+    public function sync(): Check
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('passed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'passed');
-    }
-
-    /**
-     * The path of the check within its module
-     */
-    public function path(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
-    }
-
-    /**
-     * An emoji representing the result of the check
-     */
-    public function resultEmoji(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('resultEmoji');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'resultEmoji');
-    }
-
-    /**
-     * Execute the check
-     */
-    public function run(): Check
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

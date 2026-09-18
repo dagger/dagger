@@ -42,10 +42,10 @@ var checksCmd = &cobra.Command{
 	Long: `Verify your project — tests, linters, type checks, security scans, etc.
 
 Examples:
-  dagger check                    # Run all checks
-  dagger check -l                 # List all available checks
-  dagger check dag://go/lint            # Run the dag://go/lint check and any subchecks
-  dagger check --skip '**e2e'     # Run all checks except those matching '**e2e'
+  dagger check                                      # Run all checks
+  dagger check -l                                   # List all available checks
+  dagger check dag://go/lint                        # Run the dag://go/lint check and any subchecks
+  dagger check --skip '**e2e'                       # Run all checks except those matching '**e2e'
   dagger -W github.com/acme/ws check dag://go/lint  # Run check(s) against explicit workspace
 `,
 	Args: cobra.ArbitraryArgs,
@@ -55,7 +55,7 @@ Examples:
 func runChecksCommand(cmd *cobra.Command, args []string) error {
 	params := client.Params{
 		EnableCloudScaleOut:  checksScaleOut,
-		LoadWorkspaceModules: true,
+		SkipWorkspaceModules: true,
 	}
 	params, err := artifactClientParams(params, args)
 	if err != nil {
@@ -72,7 +72,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 				return err
 			}
 			checks := artifacts.FilterDirectives([]string{"check"})
-			cfg, err := artifactWorkspaceConfig(ctx, dag, ws)
+			cfg, err := artifactWorkspaceConfig(ctx, ws)
 			if err != nil {
 				return err
 			}
@@ -85,11 +85,10 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 				if err != nil {
 					return err
 				}
-				parentPaths := make([]string, len(parsed))
-				for i, address := range parsed {
-					parentPaths[i] = strings.TrimSuffix(address.Path, "/stale")
+				for _, address := range parsed {
+					address.Path = strings.TrimSuffix(address.Path, "/stale")
 				}
-				changesets, err := artifactURIs(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: parentPaths}).FilterTypes([]string{"Changeset"}))
+				changesets, err := artifactURIs(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}).FilterTypes([]string{"Changeset"}))
 				if err != nil {
 					return err
 				}
@@ -136,8 +135,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 	)
 }
 
-// 'dagger checks' (runs by default)
-func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Artifacts, _ *cobra.Command, include []string) error {
+func runChecks(ctx context.Context, dag *dagger.Client, checks *dagger.Artifacts, _ *cobra.Command, include []string) error {
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
@@ -145,7 +143,7 @@ func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Artif
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	results, err := evaluateArtifacts(ctx, dag, checkgroup, checksFailFast)
+	results, err := evaluateArtifacts(ctx, dag, checks, checksFailFast)
 	if err != nil {
 		return err
 	}

@@ -1131,7 +1131,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 			With(daggerExecFail("generate", "-l", "--require-load")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "require-load")
+		require.Contains(t, out, "workspace modules could not be loaded")
 	})
 
 	t.Run("--require-load also catches an explicitly-selected unloadable module", func(ctx context.Context, t *testctx.T) {
@@ -1142,7 +1142,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 			With(daggerExecFail("generate", "bad", "--require-load")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "require-load")
+		require.Contains(t, out, "workspace modules could not be loaded")
 		require.Contains(t, out, "modules/bad")
 	})
 }
@@ -1193,7 +1193,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Co
 			With(daggerExecFail("generate", "-l", "--require-load")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "require-load")
+		require.Contains(t, out, "workspace modules could not be loaded")
 	})
 }
 
@@ -1208,7 +1208,8 @@ func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Co
 //     internal module-load spans; the skipped-module report inlines it.
 //   - ungenerated: a dagger-module.toml Go module with no committed generated
 //     files. Its strict-load error says "run `dagger generate`" — generate
-//     itself reports it as skipped until generated.
+//     itself reports the missing file without that advice. The regen generator
+//     writes an unrelated file there, so this also covers an incomplete repair.
 //   - stale-build: does not compile either, and the regen generator writes
 //     into its directory this run — so generate loads it again with the
 //     changes applied. It still does not compile: the report shows the
@@ -1230,7 +1231,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateReportsLoadFailureDetail(ctx context
 		require.Contains(t, out, "undefined: intentionallyUndefinedSymbol")
 		// Missing generated files: skipped, without the misleading hint.
 		require.Contains(t, out, "modules/ungenerated")
-		require.Contains(t, out, `generated file ".dagger/modules/ungenerated/dagger.gen.go" is missing (skipped until it is generated)`)
+		require.Contains(t, out, `generated file ".dagger/modules/ungenerated/dagger.gen.go" is missing`)
 	}
 
 	t.Run("report", func(ctx context.Context, t *testctx.T) {
@@ -1289,7 +1290,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateReportsLoadFailureDetail(ctx context
 			With(daggerExecFail("generate", "-l", "--require-load", "--progress=plain")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "require-load")
+		require.Contains(t, out, "workspace modules could not be loaded")
 		require.Contains(t, out, "undefined: intentionallyUndefinedSymbol")
 	})
 

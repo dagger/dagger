@@ -234,7 +234,7 @@ extend type Artifacts {
   items: [Artifact!]!
   one: Artifact!
   uri: String!
-  values(failFast: Boolean = false): [ArtifactResult!]!
+  values(failFast: Boolean = false, arguments: JSON = "{}"): [ArtifactResult!]!
 }
 
 type ArtifactResult {
@@ -273,6 +273,8 @@ Alternatives in one filter use OR. Chained filters use AND. Unknown dimension na
 #### Discovery and evaluation
 
 Listing can construct collections and read their keys. To discover nested keys, it can call a parent's `get` and the field that returns a child collection. These parent objects can also be artifacts. Listing must not call leaf value functions, such as `GoTest.container`. It must not run checks, generators, or batch functions.
+
+For static object discovery, traverse module-defined fields that can be called without user input. Traverse engine-defined fields only when they carry `@check`, `@generate`, `@up`, or `@agent`. The rule applies to the field definition. A module field returning a Container is an artifact, but its unmarked `rootfs` field stops discovery. A Changeset exposes its marked `stale` check. Stop when an object type repeats on the current path.
 
 Store the discovery scope and filters in `Artifacts`. Expand collections when a result is requested. Apply path, type, and parent-key filters before expanding child collections. Keep the existing traversal limits for cycles, nullable values, raw lists, and required arguments.
 

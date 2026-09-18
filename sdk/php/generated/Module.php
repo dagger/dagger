@@ -14,31 +14,6 @@ namespace Dagger;
 class Module extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
-     * Return the check defined by the module with the given name. Must match to exactly one check.
-     */
-    public function check(string $name): Check
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('check');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all checks defined by the module
-     */
-    public function checks(?array $include = null, ?bool $noGenerate = null): CheckGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $noGenerate) {
-        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
-        }
-        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The dependencies of the module.
      */
     public function dependencies(): array
@@ -72,28 +47,6 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return the generator defined by the module with the given name. Must match to exactly one generator.
-     */
-    public function generator(string $name): Generator
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generator');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all generators defined by the module
-     */
-    public function generators(?array $include = null): GeneratorGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -188,18 +141,6 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
         $leafQueryBuilder->setArgument('entrypoint', $entrypoint);
         }
         $this->queryLeaf($leafQueryBuilder, 'serve');
-    }
-
-    /**
-     * Return all services defined by the module
-     */
-    public function services(?array $include = null): UpGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

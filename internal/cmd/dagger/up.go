@@ -3,20 +3,19 @@ package daggercmd
 import (
 	"context"
 	"fmt"
-	"github.com/dagger/dagger/engine/telemetryattrs"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 	"strconv"
 	"strings"
-
-	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 var upListMode bool
@@ -31,9 +30,9 @@ var upCmd = &cobra.Command{
 	Long: `Run your project's services for local development — databases, APIs, dev servers, etc.
 
 Examples:
-  dagger up                       # Start all services
-  dagger up -l                    # List all available services
-  dagger up dag://web                   # Start only the 'web' service
+  dagger up            # Start all services
+  dagger up -l         # List all available services
+  dagger up dag://web  # Start only the 'web' service
 `,
 	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
@@ -45,7 +44,7 @@ Examples:
 			opts.RootFilter = (*dagui.DB).ServiceDisplaySpans
 			defer func() { opts.RootFilter = previous }()
 		}
-		params, err := artifactClientParams(client.Params{LoadWorkspaceModules: true}, args)
+		params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, args)
 		if err != nil {
 			return err
 		}
@@ -85,7 +84,7 @@ func runServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.Artifa
 	if len(results) == 0 {
 		return fmt.Errorf("no services found")
 	}
-	cfg, err := artifactWorkspaceConfig(ctx, dag, dag.CurrentWorkspace())
+	cfg, err := artifactWorkspaceConfig(ctx, dag.CurrentWorkspace())
 	if err != nil {
 		return err
 	}
