@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/mod/semver"
 )
@@ -160,6 +161,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
+				dagql.Arg("snapshotMode").
+					View(AfterVersion("v1.0.0-beta.14")).
+					Doc(`Workspace snapshot transport: "auto" detects Git and otherwise falls back to filesync; "git-bundle" requires a Git bundle; "filesync" always uses traditional filesync.`),
 			),
 		dagql.NodeFunc("file", s.file).
 			WithInput(dagql.PerClientInput).
@@ -798,6 +802,26 @@ type workspaceDirectoryArgs struct {
 	core.CopyFilter
 
 	Gitignore bool `default:"false"`
+
+	SnapshotMode string `default:"auto"`
+}
+
+type workspaceSnapshotMode string
+
+const (
+	workspaceSnapshotAuto      workspaceSnapshotMode = "auto"
+	workspaceSnapshotGitBundle workspaceSnapshotMode = "git-bundle"
+	workspaceSnapshotFilesync  workspaceSnapshotMode = "filesync"
+)
+
+func parseWorkspaceSnapshotMode(value string) (workspaceSnapshotMode, error) {
+	mode := workspaceSnapshotMode(value)
+	switch mode {
+	case workspaceSnapshotAuto, workspaceSnapshotGitBundle, workspaceSnapshotFilesync:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid workspace snapshot mode %q (want auto, git-bundle, or filesync)", value)
+	}
 }
 
 // resolveReadRootfs resolves a workspace read (Workspace.directory/file) with
@@ -817,10 +841,11 @@ func (s *workspaceSchema) resolveReadRootfs(
 	resolvedPath string,
 	filter core.CopyFilter,
 	gitignore bool,
+	snapshotMode workspaceSnapshotMode,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	mounts, ok := ws.MountsDir()
 	if !ok {
-		return s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+		return s.resolveRootfsWithSnapshotMode(ctx, ws, resolvedPath, filter, gitignore, snapshotMode)
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -830,7 +855,7 @@ func (s *workspaceSchema) resolveReadRootfs(
 		return s.resolveRootfsFromDirectory(ctx, srv, ws, mounts, resolvedPath, filter, gitignore)
 	}
 	if !ws.HasMountsUnder(resolvedPath) {
-		return s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+		return s.resolveRootfsWithSnapshotMode(ctx, ws, resolvedPath, filter, gitignore, snapshotMode)
 	}
 	sub, err := s.resolveRootfsFromDirectory(ctx, srv, ws, mounts, resolvedPath, filter, gitignore)
 	if err != nil {
@@ -846,7 +871,7 @@ func (s *workspaceSchema) resolveReadRootfs(
 	if !exists {
 		return sub, nil
 	}
-	base, err := s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+	base, err := s.resolveRootfsWithSnapshotMode(ctx, ws, resolvedPath, filter, gitignore, snapshotMode)
 	if err != nil {
 		return inst, err
 	}
@@ -935,7 +960,18 @@ func (s *workspaceSchema) resolveRootfs(
 	filter core.CopyFilter,
 	gitignore bool,
 ) (dagql.ObjectResult[*core.Directory], error) {
-	inst, err := s.resolveRootfsInner(ctx, ws, resolvedPath, filter, gitignore)
+	return s.resolveRootfsWithSnapshotMode(ctx, ws, resolvedPath, filter, gitignore, workspaceSnapshotAuto)
+}
+
+func (s *workspaceSchema) resolveRootfsWithSnapshotMode(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+	snapshotMode workspaceSnapshotMode,
+) (dagql.ObjectResult[*core.Directory], error) {
+	inst, err := s.resolveRootfsInner(ctx, ws, resolvedPath, filter, gitignore, snapshotMode)
 	if err != nil {
 		return inst, err
 	}
@@ -959,6 +995,7 @@ func (s *workspaceSchema) resolveRootfsInner(
 	resolvedPath string,
 	filter core.CopyFilter,
 	gitignore bool,
+	snapshotMode workspaceSnapshotMode,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -987,6 +1024,49 @@ func (s *workspaceSchema) resolveRootfsInner(
 		if err != nil {
 			return inst, err
 		}
+		isRoot := resolvedPath == "." || resolvedPath == "/" || resolvedPath == ""
+		if snapshotMode != workspaceSnapshotFilesync && isRoot && len(filter.Include) == 0 && len(filter.Exclude) == 0 && !gitignore {
+			epoch, epochErr := core.WorkspaceReadEpoch(ctx)
+			if epochErr != nil {
+				return inst, epochErr
+			}
+			query, queryErr := core.CurrentQuery(ctx)
+			if queryErr != nil {
+				return inst, queryErr
+			}
+			bk, engineErr := query.Engine(ctx)
+			if engineErr != nil {
+				return inst, engineErr
+			}
+			state, stateErr := bk.WorkspaceSnapshotState(ctx, ws.HostPath())
+			if stateErr != nil {
+				if errors.Is(stateErr, engineutil.ErrWorkspaceSnapshotUnsupported) || errors.Is(stateErr, gitutil.ErrGitNoRepo) {
+					if snapshotMode == workspaceSnapshotAuto {
+						goto filesyncFallback
+					}
+				}
+				return inst, fmt.Errorf("workspace git snapshot state %q: %w", resolvedPath, stateErr)
+			}
+			snapshotErr := srv.Select(ctx, srv.Root(), &inst,
+				dagql.Selector{Field: "host"},
+				dagql.Selector{Field: "__workspaceSnapshot", Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(ws.HostPath())},
+					{Name: "cacheKey", Value: dagql.NewString(epoch + ":" + state)},
+					{Name: "useUploadPack", Value: dagql.NewBoolean(snapshotMode == workspaceSnapshotAuto)},
+				}},
+			)
+			if snapshotErr == nil {
+				return inst, nil
+			}
+			if !errors.Is(snapshotErr, engineutil.ErrWorkspaceSnapshotUnsupported) &&
+				!errors.Is(snapshotErr, gitutil.ErrGitNoRepo) {
+				return inst, fmt.Errorf("workspace git snapshot %q: %w", resolvedPath, snapshotErr)
+			}
+			if snapshotMode != workspaceSnapshotAuto {
+				return inst, fmt.Errorf("workspace git snapshot %q: %w", resolvedPath, snapshotErr)
+			}
+		}
+	filesyncFallback:
 		absPath, err := pathutil.ResolvePathWithinRoot(resolvedPath, ws.HostPath())
 		if err != nil {
 			return inst, err
@@ -1262,7 +1342,11 @@ func (s *workspaceSchema) directoryAt(
 	if err != nil {
 		return inst, err
 	}
-	return s.resolveReadRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
+	snapshotMode, err := parseWorkspaceSnapshotMode(args.SnapshotMode)
+	if err != nil {
+		return inst, err
+	}
+	return s.resolveReadRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore, snapshotMode)
 }
 
 type workspaceFileArgs struct {
@@ -1293,7 +1377,7 @@ func (s *workspaceSchema) fileAt(
 
 	dir, err := s.resolveReadRootfs(ctx, ws, parentDir, core.CopyFilter{
 		Include: []string{basename},
-	}, false)
+	}, false, workspaceSnapshotAuto)
 	if err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
 	}

@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workspace transfer benchmark</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111214;
+      --panel: #1a1c20;
+      --panel-strong: #202329;
+      --text: #f7f7f5;
+      --muted: #a8adb7;
+      --line: #353942;
+      --filesync: #8f96a3;
+      --clean: #69b7f0;
+      --bundle: #72e2a3;
+      --accent: #72e2a3;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .slide {
+      width: min(1280px, 100%);
+      aspect-ratio: 16 / 9;
+      min-height: 640px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 28px;
+      padding: 54px 62px 42px;
+      background:
+        radial-gradient(circle at 89% 5%, rgba(114, 226, 163, 0.12), transparent 28%),
+        var(--bg);
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 28px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(34px, 4vw, 58px);
+      line-height: 1.02;
+      letter-spacing: -0.045em;
+      font-weight: 650;
+    }
+
+    .fixture {
+      margin: 0 0 5px;
+      width: 420px;
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .fixture-title {
+      margin-bottom: 9px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 650;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .fixture-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px 14px;
+    }
+
+    .fixture-stat strong {
+      display: block;
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .fixture-stat span {
+      display: block;
+      margin-top: 1px;
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    .fixture-note {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      min-height: 0;
+    }
+
+    .panel {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 20px;
+      padding: 28px 30px 26px;
+      background: linear-gradient(145deg, var(--panel-strong), var(--panel));
+      border: 1px solid var(--line);
+      border-radius: 20px;
+    }
+
+    .panel-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 27px;
+      letter-spacing: -0.025em;
+      font-weight: 600;
+    }
+
+    .winner {
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(114, 226, 163, 0.13);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .headline {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .headline strong {
+      color: var(--accent);
+      font-size: 44px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .headline span {
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .metrics {
+      display: grid;
+      align-content: end;
+      gap: 18px;
+    }
+
+    .metric {
+      display: grid;
+      gap: 8px;
+    }
+
+    .metric-top {
+      display: grid;
+      grid-template-columns: 72px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      font-size: 15px;
+    }
+
+    .phase { color: var(--muted); }
+
+    .values {
+      display: flex;
+      justify-content: flex-end;
+      gap: 16px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .values span::before {
+      content: "";
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: 7px;
+      border-radius: 2px;
+      background: var(--filesync);
+    }
+
+    .values .bundle::before { background: var(--bundle); }
+    .values .clean::before { background: var(--clean); }
+
+    .bars {
+      display: grid;
+      gap: 7px;
+      padding-left: 84px;
+    }
+
+    .track {
+      height: 13px;
+      overflow: hidden;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.055);
+    }
+
+    .bar {
+      height: 100%;
+      min-width: 4px;
+      border-radius: inherit;
+      background: var(--filesync);
+    }
+
+    .bar.bundle { background: var(--bundle); }
+    .bar.clean { background: var(--clean); }
+
+    .panel.local .winner,
+    .panel.local .headline strong { color: var(--clean); }
+
+    .panel.local .winner { background: rgba(105, 183, 240, 0.13); }
+
+    footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 28px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .takeaway {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.35;
+      letter-spacing: -0.015em;
+    }
+
+    .takeaway strong { color: var(--accent); }
+
+    .legend {
+      display: flex;
+      flex: 0 0 auto;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 7px;
+      border-radius: 3px;
+      background: var(--filesync);
+    }
+
+    .legend .bundle::before { background: var(--bundle); }
+    .legend .clean::before { background: var(--clean); }
+
+    @media (max-width: 800px) {
+      body { padding: 0; }
+      .slide {
+        aspect-ratio: auto;
+        min-height: 100vh;
+        padding: 34px 24px;
+      }
+      header, footer { align-items: flex-start; flex-direction: column; }
+      .fixture { width: 100%; }
+      .comparison { grid-template-columns: 1fr; }
+      .panel { min-height: 390px; }
+    }
+
+    @media print {
+      @page { size: 16in 9in; margin: 0; }
+      body { padding: 0; }
+      .slide { width: 16in; height: 9in; }
+    }
+  </style>
+</head>
+<body>
+  <main class="slide" aria-labelledby="slide-title">
+    <header>
+      <h1 id="slide-title">Dropping <code>.git</code> helps.<br>Git wins remotely.</h1>
+      <aside class="fixture" aria-label="Measured local benchmark directory">
+        <div class="fixture-title">Measured <strong>dagger/dagger</strong> fixture</div>
+        <div class="fixture-grid">
+          <div class="fixture-stat"><strong>744 MiB</strong><span>whole checkout</span></div>
+          <div class="fixture-stat"><strong>468 MiB</strong><span><code>.git</code></span></div>
+          <div class="fixture-stat"><strong>276 MiB</strong><span>worktree</span></div>
+          <div class="fixture-stat"><strong>32 MiB</strong><span>injected delta</span></div>
+          <div class="fixture-stat"><strong>64</strong><span>modified files</span></div>
+          <div class="fixture-stat"><strong>129</strong><span>untracked files</span></div>
+        </div>
+        <div class="fixture-note">15,858 tracked files · 0 local commits · base <code>4056f4a8</code><br>delta = 16 MiB modified + 16 MiB untracked</div>
+      </aside>
+    </header>
+
+    <section class="comparison" aria-label="Local and cloud benchmark comparison">
+      <article class="panel local">
+        <div class="panel-heading">
+          <h2>Local Docker</h2>
+          <span class="winner">Clean filesync wins</span>
+        </div>
+        <div class="headline">
+          <strong>1.3×</strong>
+          <span>faster cold after excluding <code>.git</code></span>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-top">
+              <span class="phase">Cold</span>
+              <span></span>
+              <span class="values"><span>8.623 s</span><span class="clean">6.514 s</span><span class="bundle">48.674 s</span></span>
+            </div>
+            <div class="bars" aria-label="Cold: filesync with git 8.623 seconds; filesync without git 6.514 seconds; Git bundle 48.674 seconds">
+              <div class="track"><div class="bar" style="width:17.7%"></div></div>
+              <div class="track"><div class="bar clean" style="width:13.4%"></div></div>
+              <div class="track"><div class="bar bundle" style="width:100%"></div></div>
+            </div>
+          </div>
+          <div class="metric">
+            <div class="metric-top">
+              <span class="phase">Warm</span>
+              <span></span>
+              <span class="values"><span>1.000 s</span><span class="clean">0.948 s</span><span class="bundle">1.894 s</span></span>
+            </div>
+            <div class="bars" aria-label="Warm unchanged: filesync with git 1.000 seconds; filesync without git 0.948 seconds; Git bundle 1.894 seconds">
+              <div class="track"><div class="bar" style="width:52.8%"></div></div>
+              <div class="track"><div class="bar clean" style="width:50.1%"></div></div>
+              <div class="track"><div class="bar bundle" style="width:100%"></div></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h2>Dagger Cloud</h2>
+          <span class="winner">Git bundle wins</span>
+        </div>
+        <div class="headline">
+          <strong>5.2×</strong>
+          <span>faster cold than clean filesync</span>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-top">
+              <span class="phase">Cold</span>
+              <span></span>
+              <span class="values"><span>139.204 s</span><span class="clean">72.506 s</span><span class="bundle">14.012 s</span></span>
+            </div>
+            <div class="bars" aria-label="Cold: filesync with git 139.204 seconds; filesync without git 72.506 seconds; Git bundle 14.012 seconds">
+              <div class="track"><div class="bar" style="width:100%"></div></div>
+              <div class="track"><div class="bar clean" style="width:52.1%"></div></div>
+              <div class="track"><div class="bar bundle" style="width:10.1%"></div></div>
+            </div>
+          </div>
+          <div class="metric">
+            <div class="metric-top">
+              <span class="phase">Warm</span>
+              <span></span>
+              <span class="values"><span>4.401 s</span><span class="clean">4.532 s</span><span class="bundle">4.519 s</span></span>
+            </div>
+            <div class="bars" aria-label="Warm unchanged: filesync with git 4.401 seconds; filesync without git 4.532 seconds; Git bundle 4.519 seconds">
+              <div class="track"><div class="bar" style="width:97.1%"></div></div>
+              <div class="track"><div class="bar clean" style="width:100%"></div></div>
+              <div class="track"><div class="bar bundle" style="width:99.7%"></div></div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <footer>
+      <p class="takeaway"><strong>Hybrid strategy:</strong> clean filesync locally; remote base + Git delta in the cloud.</p>
+      <div class="legend" aria-label="Legend">
+        <span>Filesync + <code>.git</code></span>
+        <span class="clean">Filesync − <code>.git</code></span>
+        <span class="bundle">Git bundle</span>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
