@@ -3705,7 +3705,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	body := make([]string, 0, len(targets))
 	for _, sel := range targets {
-		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
+		body = append(body, fmt.Sprintf("dagger cloud traces %s %s", fe.traceID, sel))
 	}
 	return reportSectionLines(out, fe.agentStyle(), "MORE DETAILS", body)
 }

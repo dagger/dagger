@@ -67,16 +67,16 @@ func init() {
 	cloudCmd.AddCommand(cloudCheckCmd)
 }
 
+// cloudChecksRequiredFeatures are the org features enabling a Cloud check
+// needs: Cloud Checks itself, Cloud Modules (org-scoped source lookups are
+// gated on it), and Cloud Engines. Missing ones are offered together as one
+// trial at enforcement time. Other commands can declare their own
+// requirements the same way via requireCloudFeatures.
+var cloudChecksRequiredFeatures = []cloudFeature{featureCloudChecks, featureCloudModules, featureCloudEngines}
+
 // runCloudCheckSet returns a RunE that sets the workspace autocheck flag for
 // the selected remote. The optional name arg is accepted but not used —
 // today's underlying API only models a single autocheck per remote.
-// cloudChecksRequiredFeatures are the org features enabling a Cloud check
-// needs: Cloud Checks itself plus Cloud Modules (org-scoped source lookups are
-// gated on it). Missing ones are offered together as one trial at enforcement
-// time. Other commands can declare their own requirements the same way via
-// requireCloudFeatures.
-var cloudChecksRequiredFeatures = []cloudFeature{featureCloudChecks, featureCloudModules, featureCloudEngines}
-
 func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		// The feature requirements (and their trial gate) are declared as
