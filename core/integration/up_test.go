@@ -233,7 +233,7 @@ source = "../hello-with-services"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.app = "hello-with-services:web"
+settings.app = "dag://hello-with-services/web"
 `).
 			With(daggerExec("call", "service-ref-consumer", "has-service")).
 			Stdout(ctx)
@@ -249,7 +249,7 @@ source = "../container-provider"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "container-provider:image"
+settings.base = "dag://container-provider/image"
 `).
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Stdout(ctx)
@@ -267,7 +267,7 @@ entrypoint = true
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "container-provider:image"
+settings.base = "dag://container-provider/image"
 `).
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Stdout(ctx)
@@ -284,7 +284,7 @@ entrypoint = true
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.app = "hello-with-services:web"
+settings.app = "dag://hello-with-services/web"
 `).
 			With(daggerExec("check", "service-ref-consumer:check-service")).
 			CombinedOutput(ctx)
@@ -293,7 +293,7 @@ settings.app = "hello-with-services:web"
 	})
 
 	t.Run("short-form entrypoint ref via settings", func(ctx context.Context, t *testctx.T) {
-		// A bare "<function>" names a function of the entrypoint module.
+		// A "dag://<function>" address names a function of the entrypoint module.
 		ctr := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
@@ -302,7 +302,7 @@ entrypoint = true
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "image"
+settings.base = "dag://image"
 settings.file = "marker.txt"
 `)
 		out, err := ctr.
@@ -311,8 +311,8 @@ settings.file = "marker.txt"
 		require.NoError(t, err)
 		require.Contains(t, out, "container-provider")
 
-		// A bare value that names no entrypoint function keeps its address
-		// meaning, even though the entrypoint defines a "file" function.
+		// A value without the scheme keeps its address meaning, even though
+		// the entrypoint defines a "file" function.
 		out, err = ctr.
 			With(daggerExec("call", "service-ref-consumer", "file-provided-by")).
 			Stdout(ctx)
@@ -320,8 +320,8 @@ settings.file = "marker.txt"
 		require.Equal(t, "ambient", strings.TrimSpace(out))
 	})
 
-	t.Run("settings stores entrypoint refs in long form", func(ctx context.Context, t *testctx.T) {
-		// The short form is accepted but the long form is written; a string
+	t.Run("settings stores entrypoint refs as DAG addresses", func(ctx context.Context, t *testctx.T) {
+		// The short form is accepted but the full address is written; a string
 		// setting is never rewritten.
 		ctr := modGen.
 			WithWorkdir("app").
@@ -337,7 +337,7 @@ source = "../service-ref-consumer"
 
 		cfg, err := ctr.File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, cfg, `base = "container-provider:image"`)
+		require.Contains(t, cfg, `base = "dag://container-provider/image"`)
 		require.Contains(t, cfg, `label = "image"`)
 
 		out, err := ctr.
@@ -347,10 +347,10 @@ source = "../service-ref-consumer"
 		require.Contains(t, out, "container-provider")
 
 		cfg, err = ctr.
-			With(daggerExec("settings", "service-ref-consumer", "base", "container-provider:image")).
+			With(daggerExec("settings", "service-ref-consumer", "base", "dag://container-provider/image")).
 			File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, cfg, `base = "container-provider:image"`)
+		require.Contains(t, cfg, `base = "dag://container-provider/image"`)
 	})
 
 	t.Run("artifact refs via settings", func(ctx context.Context, t *testctx.T) {
@@ -361,9 +361,9 @@ source = "../container-provider"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.directory = "container-provider:directory"
-settings.file = "container-provider:file"
-settings.sourceWorkspace = "container-provider:workspace"
+settings.directory = "dag://container-provider/directory"
+settings.file = "dag://container-provider/file"
+settings.sourceWorkspace = "dag://container-provider/workspace"
 `)
 
 		out, err := ctr.
@@ -388,10 +388,10 @@ settings.sourceWorkspace = "container-provider:workspace"
 	t.Run("provider with required Workspace arg", func(ctx context.Context, t *testctx.T) {
 		// The referenced module declares a required Workspace! — on its
 		// constructor (image) and on the function itself (image-for). The
-		// engine builds the <module>:<function> call by hand, so it must
-		// supply that workspace before dagql's non-null check; the injection
-		// hook that fills optional Workspace args runs too late to help
-		// (see core/schema/address.go resolveModuleRef). Regression: after
+		// engine evaluates the artifact by hand, so it must supply that
+		// workspace before dagql's non-null check; the injection hook that
+		// fills optional Workspace args runs too late to help (see
+		// core/modtree.go boundWorkspaceArgs). Regression: after
 		// Workspace args stopped being published as nullable, this failed
 		// with `missing required argument: "ws"`.
 		//
@@ -408,7 +408,7 @@ source = "../workspace-container-provider"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "workspace-container-provider:`+fn+`"
+settings.base = "dag://workspace-container-provider/`+fn+`"
 `).
 					With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 					Stdout(ctx)
@@ -430,7 +430,7 @@ source = "../hello-with-services"
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
 `).
-			With(daggerExec("call", "service-ref-consumer", "--app=hello-with-services:web", "has-service")).
+			With(daggerExec("call", "service-ref-consumer", "--app=dag://hello-with-services/web", "has-service")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "true")
@@ -449,7 +449,7 @@ source = "../hello-with-services"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.app = "hello-with-services:web"
+settings.app = "dag://hello-with-services/web"
 `)
 
 		// Unfiltered: every workspace module loads before the check runs.
@@ -460,8 +460,8 @@ settings.app = "hello-with-services:web"
 		require.Contains(t, out, "check-service")
 
 		// Filtered: only the named module loads up front; the referenced
-		// module (hello-with-services) must be demand-loaded when the wiring
-		// resolves (see demandLoadInstalledModule in core/schema/address.go).
+		// module (hello-with-services) must be loaded when the wiring
+		// resolves (see resolveWorkspaceArtifact in core/schema/address.go).
 		out, err = ctr.
 			With(daggerExec("check", "service-ref-consumer:check-service")).
 			CombinedOutput(ctx)
@@ -469,11 +469,10 @@ settings.app = "hello-with-services:web"
 		require.Contains(t, out, "check-service")
 	})
 
-	t.Run("commit-on-match is a hard error", func(ctx context.Context, t *testctx.T) {
-		// Once the first segment names an installed module, the ref is committed:
-		// an unknown function is a hard error and must NOT fall back to pulling an
-		// image named "container-provider". See resolveModuleRef in
-		// core/schema/address.go.
+	t.Run("dag address is a hard error", func(ctx context.Context, t *testctx.T) {
+		// A dag:// address never falls back to external resolution: an unknown
+		// function is a hard error and must NOT pull an image named
+		// "container-provider". See resolveModuleRef in core/schema/address.go.
 		_, err := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
@@ -481,12 +480,11 @@ source = "../container-provider"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "container-provider:nonexistent"
+settings.base = "dag://container-provider/nonexistent"
 `).
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Sync(ctx)
-		requireErrOut(t, err, "module reference")
-		requireErrOut(t, err, "container-provider")
+		requireErrOut(t, err, `resolve "dag://container-provider/nonexistent": no artifact matches`)
 	})
 
 	t.Run("unknown nested field is a hard error", func(ctx context.Context, t *testctx.T) {
@@ -497,16 +495,16 @@ source = "../container-provider"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "container-provider:image:extra"
+settings.base = "dag://container-provider/image/extra"
 `).
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Sync(ctx)
-		requireErrOut(t, err, `Container has no field "extra"`)
+		requireErrOut(t, err, `resolve "dag://container-provider/image/extra": no artifact matches`)
 	})
 
 	t.Run("rejects reference cycle", func(ctx context.Context, t *testctx.T) {
 		// A self-referential module ref (container-provider's own base wired
-		// from container-provider:image) is now caught by the cycle guard in
+		// from dag://container-provider/image) is now caught by the cycle guard in
 		// core/schema/address.go (resolveModuleRef, moduleRefCycleKey) and
 		// fails fast with a "module reference cycle detected" error. Before the
 		// guard existed this recursed unboundedly and hung the engine, so a
@@ -517,17 +515,16 @@ settings.base = "container-provider:image:extra"
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
 source = "../container-provider"
-settings.base = "container-provider:image"
+settings.base = "dag://container-provider/image"
 `).
 			With(daggerExec("call", "container-provider", "image", "env-variable", "--name", "PROVIDED_BY")).
 			Sync(ctx)
 		requireErrOut(t, err, "module reference cycle detected")
 	})
 
-	t.Run("OCI fallback when no module matches", func(ctx context.Context, t *testctx.T) {
-		// "alpine:3.20" has no installed module named "alpine", so it falls
-		// through to image interpretation (precedence rule's fallback side). The
-		// image is a plain alpine with no PROVIDED_BY annotation, so
+	t.Run("value without scheme is an image", func(ctx context.Context, t *testctx.T) {
+		// "alpine:3.20" has no dag:// scheme, so it keeps its external meaning.
+		// The image is a plain alpine with no PROVIDED_BY annotation, so
 		// container-provided-by returns an empty value rather than
 		// "container-provider" — it must NOT be treated as a module ref.
 		out, err := modGen.
@@ -543,14 +540,12 @@ settings.base = "alpine:3.20"
 	})
 
 	t.Run("core field is not a module ref (container)", func(ctx context.Context, t *testctx.T) {
-		// With NO module installed, "git:2.40" happens to name a core Query field
-		// ("git"), which exists on the outer root too. It must NOT be committed as
-		// a module ref; it falls through to image resolution. There is no
-		// "git:2.40" image, so the failure must be an image-resolution error, NOT
-		// a committed "resolve module reference" error. See F1 in
-		// resolveModuleRef. (A near-miss F2 hint mentioning wiring in another
-		// module's output is acceptable — what must be absent is the
-		// committed-ref failure that would mean "git" was treated as a module.)
+		// "git:2.40" has no dag:// scheme, so it is an image reference even
+		// though "git" names a core Query field. There is no "git:2.40" image,
+		// so the failure must be an image-resolution error, never a workspace
+		// lookup. (A near-miss hint mentioning wiring in another module's output
+		// is acceptable — what must be absent is a workspace resolution failure
+		// that would mean "git" was treated as a module.)
 		_, err := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
@@ -567,15 +562,15 @@ settings.base = "git:2.40"
 		}
 		// Must NOT have been committed as a module ref (that path emits
 		// "resolve module reference %q (module %q)").
-		require.NotContains(t, combined, "resolve module reference")
+		require.NotContains(t, combined, "no artifact matches")
 		require.NotContains(t, combined, `module "git"`)
 	})
 
 	t.Run("core field is not a module ref (service, gives hint)", func(ctx context.Context, t *testctx.T) {
-		// "secret:foo" names the core "secret" field, so it is not a module
-		// ref. It falls through to service URL parsing, which fails. Because it is
-		// bare-ref-shaped, the F2 hint is appended rather than a raw "missing port
-		// in address".
+		// "secret:foo" has no dag:// scheme, so it is a service URL, which fails
+		// to parse. Because it is shaped like the old module reference form,
+		// the hint shows the dag:// spelling rather than a raw "missing port in
+		// address".
 		_, err := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
@@ -584,14 +579,13 @@ settings.app = "secret:foo"
 `).
 			With(daggerExec("call", "service-ref-consumer", "has-service")).
 			Sync(ctx)
-		requireErrOut(t, err, "no installed module matches")
-		requireErrOut(t, err, "dagger.toml")
+		requireErrOut(t, err, "write it as a DAG address: dag://secret/foo")
 	})
 
-	t.Run("typo'd module name gives near-miss hint", func(ctx context.Context, t *testctx.T) {
-		// "docusarus:serve" is bare-ref-shaped but names no installed module (and
-		// "docusarus" is not a core field), so it falls through. The fallback
-		// error is wrapped with the F2 hint pointing at dagger.toml.
+	t.Run("old module reference form gives hint", func(ctx context.Context, t *testctx.T) {
+		// "docusarus:serve" is shaped like the old module reference form but
+		// has no dag:// scheme, so it is a service URL. The fallback error is
+		// wrapped with a hint showing the dag:// spelling.
 		_, err := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
@@ -600,13 +594,12 @@ settings.app = "docusarus:serve"
 `).
 			With(daggerExec("call", "service-ref-consumer", "has-service")).
 			Sync(ctx)
-		requireErrOut(t, err, `no installed module matches "docusarus:serve"`)
-		requireErrOut(t, err, "check the [modules.X] keys in dagger.toml")
+		requireErrOut(t, err, "write it as a DAG address: dag://docusarus/serve")
 	})
 
 	t.Run("rejects two-module reference cycle", func(ctx context.Context, t *testctx.T) {
-		// A→B→A: container-provider's base is wired from service-ref-consumer:ctr,
-		// and service-ref-consumer's base is wired from container-provider:image.
+		// A→B→A: container-provider's base is wired from service-ref-consumer/ctr,
+		// and service-ref-consumer's base is wired from container-provider/image.
 		// The cycle guard must catch this and fail fast rather than hang. A context
 		// deadline is kept as a safety net against a regression wedging CI.
 		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
@@ -615,11 +608,11 @@ settings.app = "docusarus:serve"
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
 source = "../container-provider"
-settings.base = "service-ref-consumer:ctr"
+settings.base = "dag://service-ref-consumer/ctr"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "container-provider:image"
+settings.base = "dag://container-provider/image"
 `).
 			With(daggerExec("call", "container-provider", "image", "env-variable", "--name", "PROVIDED_BY")).
 			Sync(ctx)
@@ -627,10 +620,10 @@ settings.base = "container-provider:image"
 	})
 
 	t.Run("install alias names the leading segment", func(ctx context.Context, t *testctx.T) {
-		// The leading segment of a module ref is the install NAME (the
+		// The leading path segment of a DAG address is the install NAME (the
 		// [modules.X] key), which need not equal the module's own name. Here the
 		// container-provider module is installed under the key "cp", so
-		// "cp:image" must resolve. See F4.
+		// "dag://cp/image" must resolve.
 		out, err := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.cp]
@@ -638,7 +631,7 @@ source = "../container-provider"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "cp:image"
+settings.base = "dag://cp/image"
 `).
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Stdout(ctx)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ entrypoint = true
 settings.label = "configured"
 [modules.consumer]
 source = "./consumer"
-settings.input = "provider/marker"
+settings.input = "dag://provider/marker"
 `).
 		WithNewFile("marker.txt", "original").
 		WithNewFile("provider/dagger-module.toml", `name = "provider"
@@ -75,50 +76,228 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
-    types
-    containers: filterTypes(types: ["Container"]) { types items { path collectionKeys { collection key } pretty } }
-    nested: filterPath(path: ["docs", "source"]) { items { pretty } }
-    sibling: filterPath(path: ["other-docs", "source"]) { items { pretty } }
-    optional: filterPath(path: ["optional-docs", "source"]) { pretty }
-    list: filterPath(path: ["doc-list", "source"]) { pretty }
-    cycle: filterPath(path: ["docs", "again", "source"]) { pretty }
-    noType: filterTypes(types: []) { types pretty }
-    unknown: filterTypes(types: ["Unknown"]) { pretty }
-    noCollection: filterCollections(collections: ["missing"]) { pretty }
-    noKey: filterCollectionKeys(collection: "missing", keys: ["anything"]) { pretty }
-    exact: filterPath(path: ["b*"]) { pretty }
-    colon: filterPath(path: ["docs:source"]) { pretty }
-    slash: filterPath(path: ["docs/source"]) { pretty }
-    order: filterPath(path: ["source", "docs"]) { pretty }
-    prefix: filterPath(path: ["docs"]) { pretty }
-    first: filterTypes(types: ["Container", "Directory"]) { filterPath(path: ["base"]) { pretty } }
-    second: filterPath(path: ["base"]) { filterTypes(types: ["Container", "Directory"]) { pretty } }
-    contradiction: filterTypes(types: ["Container"]) { filterTypes(types: ["Directory"]) { pretty } }
-    collections
-    collectionKeys(collection: "missing")
+    types uri
+    containers: filterTypes(types: ["Container"]) { types uri items { path dimensionKeys { dimension key } uri } }
+    nested: filterPath(path: ["docs", "source"]) { uri items { uri } }
+    sibling: filterPath(path: ["other-docs", "source"]) { items { uri } }
+    optional: filterPath(path: ["optional-docs", "source"]) { items { uri } }
+    list: filterPath(path: ["doc-list", "source"]) { items { uri } }
+    cycle: filterPath(path: ["docs", "again", "source"]) { items { uri } }
+    noType: filterTypes(types: []) { types uri items { uri } }
+    unknown: filterTypes(types: ["Unknown"]) { items { uri } }
+    noDimension: filterDimensions(dimensions: ["missing"]) { uri items { uri } }
+    noKey: filterDimensionKeys(dimension: "missing", keys: ["anything"]) { uri items { uri } }
+    exact: filterPath(path: ["b*"]) { items { uri } }
+    colon: filterPath(path: ["docs:source"]) { items { uri } }
+    slash: filterPath(path: ["docs/source"]) { items { uri } }
+    order: filterPath(path: ["source", "docs"]) { items { uri } }
+    prefix: filterPath(path: ["docs"]) { items { uri } }
+    first: filterTypes(types: ["Container", "Directory"]) { filterPath(path: ["base"]) { uri items { uri } } }
+    second: filterPath(path: ["base"]) { filterTypes(types: ["Container", "Directory"]) { uri items { uri } } }
+    contradiction: filterTypes(types: ["Container"]) { filterTypes(types: ["Directory"]) { uri items { uri } } }
+    dimensions
+    dimensionKeys(dimension: "missing")
   } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{
   "types":["Artifact","Artifacts","Consumer","Container","Directory","File","Provider","ProviderDocs"],
-  "containers":{"types":["Container"],"items":[
-    {"path":["base"],"collectionKeys":[],"pretty":"base"},
-    {"path":["broken"],"collectionKeys":[],"pretty":"broken"},
-    {"path":["consumer","base"],"collectionKeys":[],"pretty":"consumer/base"}
+  "uri":"dag://",
+  "containers":{"types":["Container"],"uri":"dag+container://","items":[
+    {"path":["base"],"dimensionKeys":[],"uri":"dag://base"},
+    {"path":["broken"],"dimensionKeys":[],"uri":"dag://broken"},
+    {"path":["consumer","base"],"dimensionKeys":[],"uri":"dag://consumer/base"}
   ]},
-  "nested":{"items":[{"pretty":"docs/source"}]},
-  "sibling":{"items":[{"pretty":"other-docs/source"}]},
-  "optional":{"pretty":[]},"list":{"pretty":[]},"cycle":{"pretty":[]},
-  "noType":{"types":[],"pretty":[]},"unknown":{"pretty":[]},"noCollection":{"pretty":[]},"noKey":{"pretty":[]},
-  "exact":{"pretty":[]},"colon":{"pretty":[]},"slash":{"pretty":[]},"order":{"pretty":[]},"prefix":{"pretty":["docs"]},
-  "first":{"filterPath":{"pretty":["base"]}},"second":{"filterTypes":{"pretty":["base"]}},
-  "contradiction":{"filterTypes":{"pretty":[]}},"collections":[],"collectionKeys":[]
+  "nested":{"uri":"dag://docs/source","items":[{"uri":"dag://docs/source"}]},
+  "sibling":{"items":[{"uri":"dag://other-docs/source"}]},
+  "optional":{"items":[]},"list":{"items":[]},"cycle":{"items":[]},
+  "noType":{"types":[],"uri":"dag://{}","items":[]},"unknown":{"items":[]},
+  "noDimension":{"uri":"dag://?missing","items":[]},"noKey":{"uri":"dag://?missing=anything","items":[]},
+  "exact":{"items":[]},"colon":{"items":[]},"slash":{"items":[]},"order":{"items":[]},"prefix":{"items":[{"uri":"dag://docs"}]},
+  "first":{"filterPath":{"uri":"dag+container+directory://base","items":[{"uri":"dag://base"}]}},
+  "second":{"filterTypes":{"uri":"dag+container+directory://base","items":[{"uri":"dag://base"}]}},
+  "contradiction":{"filterTypes":{"uri":"dag://{}","items":[]}},"dimensions":[],"dimensionKeys":[]
 }}}`, string(*got))
-	for _, filter := range []string{`filterPath(path: ["absent"])`, `filterTypes(types: ["Container"])`} {
-		_, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
-  node(id: $ws) { ... on Workspace { artifacts { `+filter+` { one { pretty } } } } }
+	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterPath(path: ["absent"]) { one { uri } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
-		require.ErrorContains(t, err, "expected exactly one artifact")
+	require.ErrorContains(t, err, "no artifact matches dag://absent")
+	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterTypes(types: ["Container"]) { one { uri } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.ErrorContains(t, err, "dag+container:// matches 3 artifacts:\ndag://base\ndag://broken\ndag://consumer/base")
+}
+
+func (ArtifactsSuite) TestURI(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	wsID, err := artifactSource(c).AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts {
+    container: filterPath(path: ["base"]) { one {
+      uri
+      typed: uri(typeAssertion: true)
+      pathOnly: uri(dimensionKeys: false)
+    } }
+    docs: filterPath(path: ["docs", "again"]) { one { typed: uri(typeAssertion: true) } }
+  } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{
+  "container":{"one":{"uri":"dag://base","typed":"dag+container://base","pathOnly":"dag://base"}},
+  "docs":{"one":{"typed":"dag+provider-docs://docs/again"}}
+}}}`, string(*got))
+	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterPath(path: ["base"]) { one { uri(absolute: true) } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.ErrorContains(t, err, "no Git address")
+}
+
+func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ref := workspaceSelectionRemoteRef(ctx, t, c, artifactSource(c))
+	base := nativeWorkspaceBase(t, c)
+	out, err := base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
+  artifacts { filterPath(path: ["base"]) { one { uri(absolute: true) } } }
+} }`, "-W", ref, "-m", "core")).Stdout(ctx)
+	require.NoError(t, err)
+	var got struct {
+		CurrentWorkspace struct {
+			Artifacts struct {
+				FilterPath struct{ One struct{ URI string } }
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	uri := got.CurrentWorkspace.Artifacts.FilterPath.One.URI
+	// http://<host>/repo.git@main becomes <host>/repo at the resolved commit.
+	host := strings.TrimSuffix(strings.TrimPrefix(ref, "http://"), "/repo.git@main")
+	require.Regexp(t, regexp.MustCompile(`^dag://`+regexp.QuoteMeta(host)+`/repo@[0-9a-f]{40}:base$`), uri)
+
+	// The current workspace's own absolute address is accepted; any other is reserved.
+	out, err = base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace {
+  artifacts { filterUri(uri: %q) { items { uri } } }
+  resolve(value: %q) { container { file(path: "/marker") { contents } } }
+} }`, uri, uri), "-W", ref, "-m", "core")).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"currentWorkspace":{
+  "artifacts":{"filterUri":{"items":[{"uri":"dag://base"}]}},
+  "resolve":{"container":{"file":{"contents":"configured:original"}}}
+}}`, out)
+	_, err = base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
+  artifacts { filterUri(uri: "dag://github.com/dagger/dagger@main:base") { items { uri } } }
+} }`, "-W", ref, "-m", "core")).Stdout(ctx)
+	requireErrOut(t, err, "absolute addresses are not supported yet: dag://github.com/dagger/dagger@main:base")
+}
+
+func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	wsID, err := artifactSource(c).AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		uri  string
+		want []string
+	}{
+		{"base", []string{"dag://base"}},
+		{"dag://base", []string{"dag://base"}},
+		{"provider/base", []string{"dag://base"}},
+		{"provider:base", []string{"dag://base"}},
+		{"dag://provider:docs:source", []string{"dag://docs/source"}},
+		{"docs", []string{"dag://docs"}},
+		{"docs/**", []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
+		{"**/source", []string{"dag://docs/source", "dag://other-docs/source"}},
+		{"{base,consumer/base}", []string{"dag://base", "dag://consumer/base"}},
+		{"dag+container://", []string{"dag://base", "dag://broken", "dag://consumer/base"}},
+		{"dag+container+file://consumer/**", []string{"dag://consumer/base", "dag://consumer/input"}},
+		{"dag+directory://base", nil},
+		{"dag://base?missing=anything", nil},
+		{"dag://?missing", nil},
+		{"dag://", nil}, // all artifacts; checked by count below
+	} {
+		t.Run(tc.uri, func(ctx context.Context, t *testctx.T) {
+			res, err := testutil.QueryWithClient[struct {
+				Node struct {
+					Artifacts struct {
+						FilterURI struct{ Items []struct{ URI string } }
+					}
+				}
+			}](c, t, `query($ws: ID!, $uri: String!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: $uri) { items { uri } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "uri": tc.uri}})
+			require.NoError(t, err)
+			var got []string
+			for _, item := range res.Node.Artifacts.FilterURI.Items {
+				got = append(got, item.URI)
+			}
+			if tc.uri == "dag://" {
+				require.Len(t, got, 15)
+				return
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
+	for _, tc := range []struct{ uri, want string }{
+		{"dag://github.com/dagger/dagger@main:base", "absolute addresses are not supported yet: dag://github.com/dagger/dagger@main:base"},
+		{"https://github.com/dagger/dagger", "not a DAG address"},
+		{"dag://github.com/dagger/dagger@main", "tree addresses are not supported"},
+	} {
+		_, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $uri: String!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: $uri) { items { uri } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "uri": tc.uri}})
+		require.ErrorContains(t, err, tc.want)
+	}
+}
+
+func (ArtifactsSuite) TestSelectorRoundTrip(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	wsID, err := artifactSource(c).AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	const sel = "{ selector: uri items { uri } }"
+	for _, tc := range []struct {
+		selection string
+		uri       string
+	}{
+		{`artifacts ` + sel, "dag://"},
+		{`artifacts(include: ["docs"]) ` + sel, "dag://docs/**"},
+		{`artifacts(include: ["docs", "provider:base"]) ` + sel, "dag://{docs/**,provider/base/**}"},
+		{`artifacts(include: ["**/source"]) ` + sel, "dag://**/source"},
+		{`artifacts { filterTypes(types: ["Container", "Directory"]) ` + sel + ` }`, "dag+container+directory://"},
+		{`artifacts { filterPath(path: ["docs", "source"]) ` + sel + ` }`, "dag://docs/source"},
+		{`artifacts(include: ["docs"]) { filterPath(path: ["docs", "again"]) ` + sel + ` }`, "dag://docs/again"},
+		{`artifacts(include: ["docs"]) { filterTypes(types: ["Directory"]) ` + sel + ` }`, "dag+directory://docs/**"},
+		{`artifacts { filterUri(uri: "dag+container://consumer/**") ` + sel + ` }`, "dag+container://consumer/**"},
+		{`artifacts { filterPath(path: ["base"]) { filterTypes(types: ["Directory"]) ` + sel + ` } }`, "dag+directory://base"},
+		{`artifacts { filterTypes(types: []) ` + sel + ` }`, "dag://{}"},
+	} {
+		t.Run(tc.uri, func(ctx context.Context, t *testctx.T) {
+			got, err := testutil.QueryWithClient[json.RawMessage](c, t,
+				`query($ws: ID!) { node(id: $ws) { ... on Workspace { `+tc.selection+` } } }`,
+				&testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+			require.NoError(t, err)
+			selector := regexp.MustCompile(`"selector":"([^"]*)"`).FindStringSubmatch(string(*got))
+			require.NotNil(t, selector)
+			require.Equal(t, tc.uri, selector[1])
+			var items []string
+			for _, match := range regexp.MustCompile(`"uri":"([^"]*)"`).FindAllStringSubmatch(string(*got), -1) {
+				items = append(items, match[1])
+			}
+
+			again, err := testutil.QueryWithClient[struct {
+				Node struct {
+					Artifacts struct {
+						FilterURI struct{ Items []struct{ URI string } }
+					}
+				}
+			}](c, t, `query($ws: ID!, $uri: String!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: $uri) { items { uri } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "uri": selector[1]}})
+			require.NoError(t, err)
+			var roundTrip []string
+			for _, item := range again.Node.Artifacts.FilterURI.Items {
+				roundTrip = append(roundTrip, item.URI)
+			}
+			require.Equal(t, items, roundTrip)
+		})
 	}
 }
 
@@ -166,10 +345,10 @@ func (ArtifactsSuite) TestValueAfterDiscoveringSessionEnds(ctx context.Context, 
 
 	consumer := connect(ctx, t)
 	got, err := testutil.QueryWithClient[json.RawMessage](consumer, t, `query($id: ID!) {
-  node(id: $id) { ... on Artifact { pretty } }
+  node(id: $id) { ... on Artifact { uri } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"id": artifactID}})
 	require.NoError(t, err)
-	require.Contains(t, string(*got), `"pretty":"base"`)
+	require.Contains(t, string(*got), `"uri":"dag://base"`)
 	require.NoError(t, discoverer.Close())
 
 	got, err = testutil.QueryWithClient[json.RawMessage](consumer, t, `query($id: ID!) {
@@ -186,15 +365,21 @@ func (ArtifactsSuite) TestInclude(ctx context.Context, t *testctx.T) {
 		patterns []string
 		want     []string
 	}{
-		{[]string{"docs"}, []string{"docs", "docs/again", "docs/source"}},
-		{[]string{"provider/docs"}, []string{"docs", "docs/again", "docs/source"}},
-		{[]string{"provider:docs"}, []string{"docs", "docs/again", "docs/source"}},
-		{[]string{"**/source"}, []string{"docs/source", "other-docs/source"}},
-		{[]string{"**:source"}, []string{"docs/source", "other-docs/source"}},
-		{[]string{"base", "consumer/base"}, []string{"base", "consumer/base"}},
+		{[]string{"docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
+		{[]string{"provider/docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
+		{[]string{"provider:docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
+		{[]string{"**/source"}, []string{"dag://docs/source", "dag://other-docs/source"}},
+		{[]string{"**:source"}, []string{"dag://docs/source", "dag://other-docs/source"}},
+		{[]string{"base", "consumer/base"}, []string{"dag://base", "dag://consumer/base"}},
 	} {
-		got, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: tc.patterns}).Pretty(ctx)
+		items, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: tc.patterns}).Items(ctx)
 		require.NoError(t, err)
+		got := []string{}
+		for i := range items {
+			uri, err := items[i].URI(ctx)
+			require.NoError(t, err)
+			got = append(got, uri)
+		}
 		require.Equal(t, tc.want, got)
 	}
 }
@@ -241,10 +426,10 @@ func (ArtifactsSuite) TestWorkspaceBindingAndIDs(ctx context.Context, t *testctx
 func (ArtifactsSuite) TestModuleBoundary(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c))
-	out, err := base.With(daggerCall("consumer", "selected", "one", "pretty")).Stdout(ctx)
+	out, err := base.With(daggerCall("consumer", "selected", "one", "uri")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "base", strings.TrimSpace(out))
-	out, err = base.With(daggerCall("consumer", "resolve", "--address=provider/base", "container", "file", "--path=/marker", "contents")).Stdout(ctx)
+	require.Equal(t, "dag://base", strings.TrimSpace(out))
+	out, err = base.With(daggerCall("consumer", "resolve", "--address=dag://provider/base", "container", "file", "--path=/marker", "contents")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "configured:original")
 }
@@ -274,7 +459,7 @@ func (ArtifactsSuite) TestExplicitEntrypoint(ctx context.Context, t *testctx.T) 
   pub base: Container! { container.withNewFile("/marker", "extra") }
 }`)
 	out, err := base.With(daggerQueryAt("./extra", `{ currentWorkspace {
-  resolve(value: "base") { container { file(path: "/marker") { contents } } }
+  resolve(value: "dag://base") { container { file(path: "/marker") { contents } } }
 } }`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"currentWorkspace":{"resolve":{"container":{"file":{"contents":"extra"}}}}}`, out)
@@ -294,7 +479,7 @@ func (ArtifactsSuite) TestCoreSelection(ctx context.Context, t *testctx.T) {
 			}
 			out, err := base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
   artifacts { filterTypes(types: ["Container", "Directory"]) { items { path } } }
-  resolve(value: "consumer/base") { container { file(path: "/marker") { contents } } }
+  resolve(value: "dag://consumer/base") { container { file(path: "/marker") { contents } } }
 } }`, "-W", ref, "-m", "core")).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"currentWorkspace":{
@@ -315,12 +500,12 @@ func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		command string
 		want    string
 	}{
-		{"containers", "base\nbroken\nconsumer/base\n"},
-		{"directories", "docs/source\nother-docs/source\n"},
-		{"files", "consumer/input\nmarker\n"},
-		{"Artifact", "consumer/single\n"},
-		{"Artifacts", "consumer/selected\n"},
-		{"provider-docs", "docs\ndocs/again\nother-docs\nother-docs/again\n"},
+		{"containers", "dag://base\ndag://broken\ndag://consumer/base\n"},
+		{"directories", "dag://docs/source\ndag://other-docs/source\n"},
+		{"files", "dag://consumer/input\ndag://marker\n"},
+		{"Artifact", "dag://consumer/single\n"},
+		{"Artifacts", "dag://consumer/selected\n"},
+		{"provider-docs", "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
 	} {
 		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "workspace", tc.command)).Stdout(ctx)
@@ -354,18 +539,21 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"list", "--type", "Container"}, "base\nbroken\nconsumer/base\n"},
-		{[]string{"list", "consumer", "--type", "Container", "--type", "File"}, "consumer/base\nconsumer/input\n"},
-		{[]string{"list", "docs"}, "docs\ndocs/again\ndocs/source\n"},
-		{[]string{"list", "provider/docs"}, "docs\ndocs/again\ndocs/source\n"},
-		{[]string{"list", "provider:docs"}, "docs\ndocs/again\ndocs/source\n"},
-		{[]string{"list", "**/source"}, "docs/source\nother-docs/source\n"},
-		{[]string{"list", "base", "consumer/base"}, "base\nconsumer/base\n"},
+		{[]string{"list", "--type", "Container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
+		{[]string{"list", "consumer", "--type", "Container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
+		{[]string{"list", "docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "dag://docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "provider/docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "provider:docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "**/source"}, "dag://docs/source\ndag://other-docs/source\n"},
+		{[]string{"list", "base", "consumer/base"}, "dag://base\ndag://consumer/base\n"},
+		{[]string{"list", "dag+container://consumer"}, "dag://consumer/base\n"},
+		{[]string{"list", "dag://consumer?missing=anything"}, ""},
 		{[]string{"types"}, "Artifact\nArtifacts\nConsumer\nContainer\nDirectory\nFile\nProvider\nProviderDocs\n"},
 		{[]string{"types", "docs"}, "Directory\nProviderDocs\n"},
-		{[]string{"collections"}, ""},
+		{[]string{"dimensions"}, ""},
 		{[]string{"keys", "go-module"}, ""},
-		{[]string{"list", "--collection-key", "go-module=sdk/go"}, ""},
+		{[]string{"list", "--dimension-key", "go-module=sdk/go"}, ""},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
@@ -377,10 +565,14 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "--help")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "--type")
+	require.Contains(t, out, "--dimension-key")
 	require.Contains(t, out, "List types of matching artifacts")
+	require.Contains(t, out, "List dimensions of matching artifacts")
 	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "artifacts", "--type", "Pro")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "ProviderDocs\n")
+	_, err = base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "list", "dag://github.com/dagger/dagger@main:base")).Sync(ctx)
+	requireErrOut(t, err, "absolute addresses are not supported yet")
 	reserved := base.
 		WithNewFile("/work/selected/dagger.toml", `[modules.provider]
 source = "./provider"
@@ -391,41 +583,62 @@ entrypoint = true
 }`)
 	out, err = reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "list", "types")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "types\n", out)
+	require.Equal(t, "dag://types\n", out)
 }
 
 func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).AsWorkspace().ID(ctx)
 	require.NoError(t, err)
-	for _, address := range []string{"base", "provider/base", "consumer/base", "provider:base", "consumer:base"} {
+	for _, address := range []string{"dag://base", "dag://provider/base", "dag://consumer/base", "dag://provider:base", "dag://consumer:base", "dag+container://base"} {
 		got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $address: String!) {
   node(id: $ws) { ... on Workspace { resolve(value: $address) { container { file(path: "/marker") { contents } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "address": address}})
-		require.NoError(t, err)
+		require.NoError(t, err, address)
 		require.Contains(t, string(*got), "configured:original")
 	}
-	for _, address := range []string{"docs/source", "provider/docs/source", "docs:source", "provider:docs:source"} {
+	for _, address := range []string{"dag://docs/source", "dag://provider/docs/source", "dag://docs:source", "dag://provider:docs:source", "dag+directory://docs/source"} {
 		got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $address: String!) {
   node(id: $ws) { ... on Workspace { resolve(value: $address) { directory { file(path: "readme") { contents } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "address": address}})
-		require.NoError(t, err)
+		require.NoError(t, err, address)
 		require.Contains(t, string(*got), `"contents":"docs"`)
 	}
-	for _, address := range []string{"provider/", "provider/missing", "provider/docs/missing", "provider/marker", "provider/needs-argument", "provider:missing", "broken"} {
+	for _, tc := range []struct{ address, want string }{
+		{"dag://provider/", "no artifact matches"},
+		{"dag://provider/missing", "no artifact matches"},
+		{"dag://provider/docs/missing", "no artifact matches"},
+		{"dag://provider/marker", "artifact is a File, not a Container"},
+		{"dag://provider/needs-argument", "no artifact matches"},
+		{"dag://provider:missing", "no artifact matches"},
+		{"dag://broken", "artifact function was evaluated"},
+		{"dag+container://docs/source", "dag://docs/source is a Directory, not container"},
+		{"dag+directory://docs/source", "artifact is a Directory, not a Container"},
+		{"dag://**/source", "matches 2 artifacts:\ndag://docs/source\ndag://other-docs/source"},
+		{"dag://", "matches 15 artifacts:\n"},
+		{"dag://github.com/dagger/dagger@main:base", "absolute addresses are not supported yet"},
+	} {
 		_, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $address: String!) {
   node(id: $ws) { ... on Workspace { resolve(value: $address) { container { id } } } }
-}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "address": address}})
-		require.Error(t, err, address)
-		require.Contains(t, err.Error(), "resolve module reference", address)
-		require.NotContains(t, err.Error(), "docker.io", address)
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "address": tc.address}})
+		require.Error(t, err, tc.address)
+		require.Contains(t, err.Error(), tc.want, tc.address)
+		require.NotContains(t, err.Error(), "docker.io", tc.address)
 	}
+	// Without the scheme, a value keeps its external meaning.
 	for _, image := range []string{alpineImage, "docker.io/library/" + alpineImage} {
 		got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $image: String!) {
   node(id: $ws) { ... on Workspace { resolve(value: $image) { container { imageRef } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "image": image}})
 		require.NoError(t, err)
 		require.Contains(t, string(*got), "alpine")
+	}
+	for _, address := range []string{"base", "provider/base", "provider:base"} {
+		_, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $address: String!) {
+  node(id: $ws) { ... on Workspace { resolve(value: $address) { container { id } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "address": address}})
+		require.Error(t, err, address)
+		require.NotContains(t, err.Error(), "artifact", address)
 	}
 }
 
@@ -438,7 +651,7 @@ func (ArtifactsSuite) TestAddressIDs(ctx context.Context, t *testctx.T) {
 		got, err := testutil.QueryWithClient[struct {
 			Node struct{ Resolve struct{ ID dagger.ID } }
 		}](c, t, `query($ws: ID!) {
-  node(id: $ws) { ... on Workspace { resolve(value: "consumer/base") { id } } }
+  node(id: $ws) { ... on Workspace { resolve(value: "dag://consumer/base") { id } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 		require.NoError(t, err)
 		ids = append(ids, got.Node.Resolve.ID)
@@ -458,7 +671,7 @@ func (ArtifactsSuite) TestWorkspaceEdits(ctx context.Context, t *testctx.T) {
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c))
 	for _, query := range []string{
 		`{ currentWorkspace { withNewFile(path: "marker.txt", contents: "edited") { artifacts { filterPath(path: ["base"]) { one { value { ... on Container { file(path: "/marker") { contents } } } } } } } } }`,
-		`{ currentWorkspace { withNewFile(path: "marker.txt", contents: "edited") { resolve(value: "consumer/base") { container { file(path: "/marker") { contents } } } } } }`,
+		`{ currentWorkspace { withNewFile(path: "marker.txt", contents: "edited") { resolve(value: "dag://consumer/base") { container { file(path: "/marker") { contents } } } } } }`,
 	} {
 		out, err := base.With(daggerQuery(query)).Stdout(ctx)
 		require.NoError(t, err)
@@ -470,21 +683,23 @@ entrypoint = true
 settings.label = "changed"
 [modules.consumer]
 source = "./consumer"
-settings.input = "provider:marker"
+settings.input = "dag://provider:marker"
 `
 	out, err := base.With(daggerQuery(`{ currentWorkspace { withNewFile(path: "dagger.toml", contents: %q) {
-  resolve(value: "consumer/base") { container { file(path: "/marker") { contents } } }
+  resolve(value: "dag://consumer/base") { container { file(path: "/marker") { contents } } }
 } } }`, config)).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "changed:original")
 	out, err = base.With(daggerQuery(`{ currentWorkspace { withNewFile(path: "dagger.toml", contents: "[modules]\n") {
-  artifacts { pretty }
+  artifacts { items { uri } }
 } } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"currentWorkspace":{"withNewFile":{"artifacts":{"pretty":[]}}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"withNewFile":{"artifacts":{"items":[]}}}}`, out)
 	_, err = base.With(daggerQuery(`{ address(value: "provider/marker") { file { contents } } }`)).Stdout(ctx)
 	require.Error(t, err)
-	require.NotContains(t, err.Error(), "resolve module reference")
+	require.NotContains(t, err.Error(), "artifact")
+	_, err = base.With(daggerQuery(`{ address(value: "dag://provider/marker") { file { contents } } }`)).Stdout(ctx)
+	requireErrOut(t, err, "a DAG address needs a workspace; use Workspace.resolve")
 }
 
 func (ArtifactsSuite) TestAliasAndShorthandSetting(ctx context.Context, t *testctx.T) {
@@ -498,10 +713,10 @@ source = "./provider"
 settings.label = "aliased"
 [modules.consumer]
 source = "./consumer"
-settings.input = "marker"
+settings.input = "dag://marker"
 `).AsWorkspace().ID(ctx)
 	require.NoError(t, err)
-	for address, want := range map[string]string{"alias/base": "aliased:original", "consumer/base": "configured:original"} {
+	for address, want := range map[string]string{"dag://alias/base": "aliased:original", "dag://consumer/base": "configured:original"} {
 		got, err := testutil.QueryWithClient[json.RawMessage](c, t, fmt.Sprintf(`query($ws: ID!) {
   node(id: $ws) { ... on Workspace { resolve(value: %q) { container { file(path: "/marker") { contents } } } } }
 }`, address), &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
