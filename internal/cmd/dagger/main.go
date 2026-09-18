@@ -1090,7 +1090,7 @@ func Main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
-	if err := prepareArtifactCommands(ctx, rootCmd, commandArgs); err != nil {
+	if err := prepareArtifactCommands(ctx, rootCmd, commandArgs, os.Args[1:]); err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}

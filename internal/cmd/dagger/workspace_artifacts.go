@@ -2,12 +2,14 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"dagger.io/dagger"
 	"github.com/iancoleman/strcase"
 	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dagger/dagger/engine/client"
 )
@@ -31,10 +33,12 @@ func workspaceArtifactCommands(types []string) map[string]string {
 	return commands
 }
 
-func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []string) error {
+func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, rawArgs []string) error {
+	discover := false
 	if len(args) > 0 {
 		switch args[0] {
 		case "help", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+			discover = true
 			args = args[1:]
 		}
 	}
@@ -43,6 +47,17 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 		return nil
 	}
 	if cmd != workspaceCmd {
+		if !discover {
+			_, rawCommandArgs := resolveCommand(root, rawArgs)
+			var err error
+			discover, err = prepareArtifactDimensionFlags(cmd, rawCommandArgs)
+			if err != nil {
+				return err
+			}
+		}
+		if !discover {
+			return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
+		}
 		// parseGlobalFlags already removed flags and their values.
 		paths := commandArgs
 		if cmd.Name() == "keys" && len(paths) > 0 {
@@ -92,6 +107,31 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 		}
 		return nil
 	})
+}
+
+// Register supplied dimension flags without loading the workspace. runArtifacts
+// validates them against the schema inside the command's visible engine session.
+// Only help and completion need the full flag list before the command runs.
+func prepareArtifactDimensionFlags(cmd *cobra.Command, args []string) (bool, error) {
+	cmd.InitDefaultHelpFlag()
+	flags := copyCommandFlags(cmd, "artifact dimensions")
+	flags.ParseErrorsAllowlist.UnknownFlags = false
+	for {
+		var help bool
+		err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+			if flag.Name == "help" && value == "true" {
+				help = true
+			}
+			return nil
+		})
+		var unknown *pflag.NotExistError
+		if !errors.As(err, &unknown) || unknown.GetSpecifiedShortnames() != "" {
+			return help, err
+		}
+		name := unknown.GetSpecifiedName()
+		registerArtifactDimensionFlags(cmd, []string{name})
+		flags.AddFlag(cmd.PersistentFlags().Lookup(name))
+	}
 }
 
 func runWorkspaceArtifacts(cmd *cobra.Command, typeName string) error {
