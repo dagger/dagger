@@ -12,24 +12,24 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// ArtifactCollectionKey selects an item from a named collection.
-type ArtifactCollectionKey struct {
-	Collection string `field:"true" doc:"The collection identifier, fixed across the workspace schema."`
-	Key        string `field:"true" doc:"The collection item's key."`
+// ArtifactDimensionKey selects an item from a named dimension.
+type ArtifactDimensionKey struct {
+	Dimension string `field:"true" doc:"The dimension identifier, fixed across the workspace schema."`
+	Key       string `field:"true" doc:"The dimension item's key."`
 }
 
-func (*ArtifactCollectionKey) Type() *ast.Type {
-	return &ast.Type{NamedType: "ArtifactCollectionKey", NonNull: true}
+func (*ArtifactDimensionKey) Type() *ast.Type {
+	return &ast.Type{NamedType: "ArtifactDimensionKey", NonNull: true}
 }
 
 // Artifact holds a complete address and its deferred object value. The module
 // tree and workspace are retained so evaluation does not depend on the caller.
 type Artifact struct {
-	Path           []string                 `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
-	CollectionKeys []*ArtifactCollectionKey `field:"true" doc:"One key per collection along the path. Unordered; empty for static artifacts."`
-	TypeName       string
-	Node           *ModTreeNode
-	Workspace      dagql.ObjectResult[*Workspace]
+	Path          []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
+	DimensionKeys []*ArtifactDimensionKey `field:"true" doc:"One key per dimension along the path. Unordered; empty for static artifacts."`
+	TypeName      string
+	Node          *ModTreeNode
+	Workspace     dagql.ObjectResult[*Workspace]
 }
 
 // Clone gives each API result its own writable dependency wrappers. Attachment
@@ -47,7 +47,7 @@ func (a *Artifact) Clone() *Artifact {
 
 func (*Artifact) Type() *ast.Type { return &ast.Type{NamedType: "Artifact", NonNull: true} }
 func (*Artifact) TypeDescription() string {
-	return "One workspace value with a complete path and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object."
+	return "One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object."
 }
 
 // Artifacts is an immutable selection. Filtering changes only the entry list,
@@ -63,7 +63,7 @@ var _ dagql.HasDependencyResults = (*Artifacts)(nil)
 
 func (*Artifacts) Type() *ast.Type { return &ast.Type{NamedType: "Artifacts", NonNull: true} }
 func (*Artifacts) TypeDescription() string {
-	return "An immutable selection of workspace artifacts. Listed types, collections, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or collection identifiers."
+	return "An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers."
 }
 
 func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
@@ -88,40 +88,40 @@ func (a *Artifacts) Types() []string {
 func (a *Artifacts) FilterPath(path []string) *Artifacts {
 	return a.filter(func(artifact *Artifact) bool { return slices.Equal(path, artifact.Path) })
 }
-func (a *Artifacts) FilterCollections(collections []string) *Artifacts {
+func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
 	return a.filter(func(artifact *Artifact) bool {
-		for _, key := range artifact.CollectionKeys {
-			if slices.Contains(collections, key.Collection) {
+		for _, key := range artifact.DimensionKeys {
+			if slices.Contains(dimensions, key.Dimension) {
 				return true
 			}
 		}
 		return false
 	})
 }
-func (a *Artifacts) FilterCollectionKeys(collection string, keys []string) *Artifacts {
+func (a *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
 	return a.filter(func(artifact *Artifact) bool {
-		for _, key := range artifact.CollectionKeys {
-			if key.Collection == collection && slices.Contains(keys, key.Key) {
+		for _, key := range artifact.DimensionKeys {
+			if key.Dimension == dimension && slices.Contains(keys, key.Key) {
 				return true
 			}
 		}
 		return false
 	})
 }
-func (a *Artifacts) Collections() []string {
+func (a *Artifacts) Dimensions() []string {
 	names := map[string]struct{}{}
 	for _, artifact := range a.Entries {
-		for _, key := range artifact.CollectionKeys {
-			names[key.Collection] = struct{}{}
+		for _, key := range artifact.DimensionKeys {
+			names[key.Dimension] = struct{}{}
 		}
 	}
 	return slices.Sorted(maps.Keys(names))
 }
-func (a *Artifacts) CollectionKeys(collection string) []string {
+func (a *Artifacts) DimensionKeys(dimension string) []string {
 	keys := map[string]struct{}{}
 	for _, artifact := range a.Entries {
-		for _, key := range artifact.CollectionKeys {
-			if key.Collection == collection {
+		for _, key := range artifact.DimensionKeys {
+			if key.Dimension == dimension {
 				keys[key.Key] = struct{}{}
 			}
 		}
@@ -135,7 +135,7 @@ func (a *Artifacts) One() (*Artifact, error) {
 	return a.Entries[0].Clone(), nil
 }
 
-// Static artifacts have no collection flags. Their literal field names are
+// Static artifacts have no dimension flags. Their literal field names are
 // already in CLI case and can be joined without interpreting user input.
 func (a *Artifact) Pretty() string {
 	return strings.Join(a.Path, "/")
@@ -245,11 +245,11 @@ func ModuleArtifactNodes(ctx context.Context, mod dagql.ObjectResult[*Module]) (
 // Persist both individual artifacts and selections. One tree encoding shares
 // module and type references across all entries in a selection.
 type persistedArtifact struct {
-	Path           []string
-	CollectionKeys []*ArtifactCollectionKey
-	TypeName       string
-	Node           int
-	Workspace      uint64
+	Path          []string
+	DimensionKeys []*ArtifactDimensionKey
+	TypeName      string
+	Node          int
+	Workspace     uint64
 }
 type persistedArtifacts struct {
 	Tree    persistedModTree
@@ -260,7 +260,7 @@ func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact) (dag
 	tree := newPersistedModTreeEncoder(cache)
 	payload := persistedArtifacts{}
 	for _, a := range entries {
-		p := persistedArtifact{Path: a.Path, CollectionKeys: a.CollectionKeys, TypeName: a.TypeName}
+		p := persistedArtifact{Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName}
 		var err error
 		p.Node, err = tree.Add(a.Node)
 		if err != nil {
@@ -288,7 +288,7 @@ func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage
 	}
 	result := &Artifacts{}
 	for _, p := range payload.Entries {
-		a := &Artifact{Path: p.Path, CollectionKeys: p.CollectionKeys, TypeName: p.TypeName, Node: nodes[p.Node]}
+		a := &Artifact{Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Node: nodes[p.Node]}
 		if a.Node == nil {
 			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
 		}
