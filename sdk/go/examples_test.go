@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 func ExampleContainer() {
@@ -18,8 +19,9 @@ func ExampleContainer() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
-	alpine := client.Container().From("alpine:3.16.2")
+	alpine := q.Container().From("alpine:3.16.2")
 
 	out, err := alpine.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
 	if err != nil {
@@ -38,9 +40,10 @@ func ExampleContainer_With() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
-	alpine := client.Container().From("alpine:3.16.2").
-		With(func(c *dagger.Container) *dagger.Container {
+	alpine := q.Container().From("alpine:3.16.2").
+		With(func(c *core.Container) *core.Container {
 			return c.WithEnvVariable("FOO", "bar")
 		})
 
@@ -60,8 +63,9 @@ func ExampleGitRepository() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
-	readme, err := client.Git("https://github.com/dagger/dagger").
+	readme, err := q.Git("https://github.com/dagger/dagger").
 		Tag("v0.3.0").
 		Tree().File("README.md").Contents(ctx)
 	if err != nil {
@@ -81,8 +85,9 @@ func ExampleDirectory_DockerBuild() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
-	daggerImg := client.Git("https://github.com/dagger/dagger").
+	daggerImg := q.Git("https://github.com/dagger/dagger").
 		Tag("v0.3.0").
 		Tree().
 		DockerBuild()
@@ -105,8 +110,9 @@ func ExampleContainer_WithEnvVariable() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
-	out, err := client.
+	out, err := q.
 		Container().
 		From("alpine:3.16.2").
 		WithEnvVariable("FOO", "bar").
@@ -128,12 +134,13 @@ func ExampleContainer_WithMountedDirectory() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
-	dir := client.Directory().
+	dir := q.Directory().
 		WithNewFile("hello.txt", "Hello, world!").
 		WithNewFile("goodbye.txt", "Goodbye, world!")
 
-	out, err := client.
+	out, err := q.
 		Container().
 		From("alpine:3.16.2").
 		WithMountedDirectory("/mnt", dir).
@@ -155,12 +162,13 @@ func ExampleContainer_WithMountedCache() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
 	cacheKey := "example-cache-" + rand.Text()
 
-	cache := client.CacheVolume(cacheKey)
+	cache := q.CacheVolume(cacheKey)
 
-	container := client.Container().From("alpine:3.16.2")
+	container := q.Container().From("alpine:3.16.2")
 
 	container = container.WithMountedCache("/cache", cache)
 
@@ -189,8 +197,9 @@ func ExampleDirectory() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
-	dir := client.Directory().
+	dir := q.Directory().
 		WithNewFile("hello.txt", "Hello, world!").
 		WithNewFile("goodbye.txt", "Goodbye, world!")
 
@@ -211,8 +220,9 @@ func ExampleHost_Directory() {
 		panic(err)
 	}
 	defer client.Close()
+	q := core.NewQuery(client)
 
-	readme, err := client.Host().Directory(".").File("README.md").Contents(ctx)
+	readme, err := q.Host().Directory(".").File("README.md").Contents(ctx)
 	if err != nil {
 		panic(err)
 	}

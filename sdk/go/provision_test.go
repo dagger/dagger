@@ -110,7 +110,7 @@ func TestProvision(t *testing.T) {
 		}
 		defer c.Close()
 		// do a trivial query to ensure the engine is actually there
-		_, err = c.DefaultPlatform(ctx)
+		err = c.Do(ctx, &Request{Query: "{ defaultPlatform }"}, &Response{})
 		if err != nil {
 			return fmt.Errorf("failed to query: %w", err)
 		}
