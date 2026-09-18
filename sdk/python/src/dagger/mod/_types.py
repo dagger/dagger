@@ -14,6 +14,7 @@ class FieldDefinition:
     name: APIName | None
     optional: bool = False
     deprecated: str | None = None
+    collection_role: str | None = None
 
 
 @dataclasses.dataclass(slots=True, frozen=True)

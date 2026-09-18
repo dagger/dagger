@@ -23,6 +23,8 @@ import (
 type artifactsSchema struct{}
 
 func (s *artifactsSchema) Install(srv *dagql.Server) {
+	srv.InstallObject(dagql.NewClass[*core.ArtifactDimension](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.ArtifactDimension]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.ArtifactDimensionKey](srv).View(AfterVersion("v1.0.0-0")))
 	artifactClass := dagql.NewClass[*core.Artifact](srv).View(AfterVersion("v1.0.0-0"))
 	srv.InstallObject(artifactClass)
@@ -38,6 +40,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
 		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
+		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).DoNotCache("Evaluate each value with its own cache policy.").Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
 		dagql.Func("filterCheckCommand", s.filterCheckCommand).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
@@ -84,6 +87,10 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 }
 
 func (*artifactsSchema) types(ctx context.Context, parent *core.Artifacts, _ struct{}) (dagql.ObjectResultArray[*core.TypeDef], error) {
+	parent, err := expandArtifacts(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
 	byName := map[string]dagql.ObjectResult[*core.TypeDef]{}
 	for _, artifact := range parent.Entries {
 		if artifact.Node != nil && artifact.Node.Type.Self() != nil {
@@ -196,21 +203,49 @@ func checkArtifactAddressWorkspace(entries []*core.Artifact, addr *dagaddress.Ad
 	return nil
 }
 
-func (*artifactsSchema) dimensions(_ context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
-	return parent.Dimensions(), nil
+func (*artifactsSchema) dimensionDefinitions(_ context.Context, parent *core.Artifacts, _ struct{}) ([]*core.ArtifactDimension, error) {
+	return parent.DimensionDefinitions(), nil
 }
-func (*artifactsSchema) dimensionKeys(_ context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
-	return parent.DimensionKeys(args.Dimension), nil
+func (*artifactsSchema) dimensions(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
+	expanded, err := expandArtifacts(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	return expanded.Dimensions(), nil
 }
-func (*artifactsSchema) items(_ context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
+func (*artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
+	dimension, err := parent.ResolveDimension(args.Dimension)
+	if err != nil {
+		return nil, err
+	}
+	filtered, err := parent.FilterDimensions([]string{args.Dimension}).BindDimensions()
+	if err != nil {
+		return nil, err
+	}
+	expanded, err := expandArtifacts(ctx, filtered.ForDimensionKeys(dimension))
+	if err != nil {
+		return nil, err
+	}
+	return expanded.DimensionKeys(dimension), nil
+}
+func (*artifactsSchema) items(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
+	expanded, err := expandArtifacts(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	parent = expanded
 	items := make([]*core.Artifact, 0, len(parent.Entries))
 	for _, artifact := range parent.Entries {
 		items = append(items, artifact.Clone())
 	}
 	return items, nil
 }
-func (*artifactsSchema) one(_ context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifact, error) {
-	return parent.One()
+func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifact, error) {
+	expanded, err := expandArtifacts(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	return expanded.One()
 }
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
 	var workspaceID uint64
@@ -224,7 +259,30 @@ func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{
 		}
 		workspaceID = id.EngineResultID()
 	}
-	return parent.URI(), nil
+	bound, err := parent.BindDimensions()
+	if err != nil {
+		return "", err
+	}
+	for _, group := range bound.Selector.DimensionAlternatives {
+		if len(group) == 0 {
+			return "dag://{}", nil
+		}
+		return "", fmt.Errorf("one DAG address cannot express alternatives across dimensions %q", group)
+	}
+	return bound.URI(), nil
+}
+
+func expandArtifacts(ctx context.Context, parent *core.Artifacts) (*core.Artifacts, error) {
+	if len(parent.Entries) > 0 && parent.Entries[0].Workspace.Self() != nil {
+		ws := parent.Entries[0].Workspace
+		var err error
+		ctx, err = withWorkspaceClientContext(ctx, ws.Self())
+		if err != nil {
+			return nil, err
+		}
+		ctx = core.WorkspaceToContext(ctx, ws)
+	}
+	return parent.Expand(ctx)
 }
 func (*artifactsSchema) artifactURI(_ context.Context, parent *core.Artifact, args struct {
 	Absolute      bool `default:"false"`
@@ -517,7 +575,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	}
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	for i := 1; i < len(result.Entries); i++ {
-		if slices.Equal(result.Entries[i-1].Path, result.Entries[i].Path) {
+		if slices.Equal(result.Entries[i-1].Path, result.Entries[i].Path) && len(result.Entries[i-1].DimensionDefinitions()) == len(result.Entries[i].DimensionDefinitions()) {
 			return nil, fmt.Errorf("ambiguous artifact path %q", strings.Join(result.Entries[i].Path, "/"))
 		}
 	}
@@ -739,10 +797,14 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return nil, err
 	}
-	results := make([]*core.ArtifactResult, len(parent.Self().Entries))
-	evaluationErrors := make([]error, len(parent.Self().Entries))
+	selection, err := expandArtifacts(ctx, parent.Self())
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*core.ArtifactResult, len(selection.Entries))
+	evaluationErrors := make([]error, len(selection.Entries))
 	jobs := parallel.New().WithContextualTracer(true).WithFailFast(args.FailFast).WithRollupLogs(true).WithRollupSpans(true)
-	for i, artifact := range parent.Self().Entries {
+	for i, artifact := range selection.Entries {
 		uri, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
 		if err != nil {
 			return nil, err

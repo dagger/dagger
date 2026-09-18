@@ -1203,12 +1203,19 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 }
 
 func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
-	_ = ctx
-	_ = dag
 	typeDefs := make(dagql.ObjectResultArray[*TypeDef], 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
 	typeDefs = append(typeDefs, mod.ObjectDefs...)
 	typeDefs = append(typeDefs, mod.InterfaceDefs...)
 	typeDefs = append(typeDefs, mod.EnumDefs...)
+	for _, def := range mod.ObjectDefs {
+		batch, err := CollectionBatchType(ctx, dag, def.Self().AsObject.Value)
+		if err != nil {
+			return nil, err
+		}
+		if batch.Valid {
+			typeDefs = append(typeDefs, batch.Value)
+		}
+	}
 	return typeDefs, nil
 }
 
@@ -1345,7 +1352,8 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 			return err
 		}
 	}
-	return nil
+	_, err = obj.CollectionMembers()
+	return err
 }
 
 func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, field *FieldTypeDef, state *moduleValidationState) error {

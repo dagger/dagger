@@ -542,6 +542,16 @@ class PortForward(Input):
     """Transport layer protocol to use for traffic."""
 
 
+@typecheck
+@dataclass(slots=True)
+class TerminalCopy(Input):
+    path: str
+    """Location of the copied directory. A relative path is relative to the container's working directory."""
+
+    source: "Directory"
+    """The directory to copy."""
+
+
 @runtime_checkable
 class Exportable(Protocol):
     """An object that can be exported to the host.  Calling export writes
@@ -1414,108 +1424,6 @@ class AgentMessage(Type):
 
 
 @typecheck
-class AgentMiddleware(Type):
-    """An agent function that can modify a conversation."""
-
-    async def description(self) -> str:
-        """The agent function's description.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(str)
-
-    async def id(self) -> str:
-        """A unique identifier for this AgentMiddleware.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def name(self) -> str:
-        """The agent function's name.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    def original_module(self) -> "Module":
-        """The module that defines the agent function."""
-        _args: list[Arg] = []
-        _ctx = self._select("originalModule", _args)
-        return Module(_ctx)
-
-    async def path(self) -> list[str]:
-        """The agent function's path within its module.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(list[str])
-
-
-@typecheck
 class Artifact(Type):
     """One workspace value with a complete path and all required dimension
     keys. Reading metadata does not evaluate the value. Different
@@ -1707,6 +1615,100 @@ class Artifact(Type):
 
 
 @typecheck
+class ArtifactDimension(Type):
+    async def id(self) -> str:
+        """A unique identifier for this ArtifactDimension.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def identifier(self) -> str:
+        """Exact GraphQL ParentType.field identifier.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("identifier", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """Short name derived from the author item type.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def qualified_name(self) -> str:
+        """Author parent type and field name, in CLI case.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("qualifiedName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class ArtifactDimensionKey(Type):
     async def dimension(self) -> str:
         """The dimension identifier, fixed across the workspace schema.
@@ -1835,37 +1837,13 @@ class Artifacts(Type):
     alternatives and unknown names match nothing. Filters never change
     addresses or dimension identifiers."""
 
-    async def as_agent_middlewares(self) -> list[AgentMiddleware]:
-        """Convert the selection to agent middleware without running the
-        functions. Fail if any artifact is not an agent middleware.
+    async def dimension_definitions(self) -> list[ArtifactDimension]:
+        """List dimensions on the selected schema paths, including empty
+        collections. Does not read runtime values.
         """
         _args: list[Arg] = []
-        _ctx = self._select("asAgentMiddlewares", _args)
-        return await _ctx.execute_object_list(AgentMiddleware)
-
-    async def as_changesets(self) -> list["Changeset"]:
-        """Convert the selection to Changesets. Fail if any artifact is not a
-        Changeset. Does not apply command filters.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("asChangesets", _args)
-        return await _ctx.execute_object_list(Changeset)
-
-    async def as_checks(self) -> list["Check"]:
-        """Convert the selection to Checks. Fail if any artifact is not a Check.
-        Does not apply command filters or run the checks.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("asChecks", _args)
-        return await _ctx.execute_object_list(Check)
-
-    async def as_services(self) -> list["Service"]:
-        """Convert the selection to Services. Fail if any artifact is not a
-        Service. Does not apply command filters or start the services.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("asServices", _args)
-        return await _ctx.execute_object_list(Service)
+        _ctx = self._select("dimensionDefinitions", _args)
+        return await _ctx.execute_object_list(ArtifactDimension)
 
     async def dimension_keys(self, dimension: str) -> list[str]:
         """List keys represented in this selection for the given dimension,
@@ -2709,11 +2687,9 @@ class Cloud(Type):
 
 
 @typecheck
-class Command(Type):
-    """A command's arguments and execution settings."""
-
-    async def args(self) -> list[str]:
-        """The command arguments.
+class CollectionDelta(Type):
+    async def added_keys(self) -> list[str]:
+        """Current keys absent from the original collection, in current order.
 
         Returns
         -------
@@ -2730,19 +2706,11 @@ class Command(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("args", _args)
+        _ctx = self._select("addedKeys", _args)
         return await _ctx.execute(list[str])
 
-    async def env(self) -> list["EnvVariable"]:
-        """Environment variable overrides. Other variables come from the
-        container.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("env", _args)
-        return await _ctx.execute_object_list(EnvVariable)
-
     async def id(self) -> str:
-        """A unique identifier for this Command.
+        """A unique identifier for this CollectionDelta.
 
         Note
         ----
@@ -2769,51 +2737,12 @@ class Command(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def insecure_root_capabilities(self) -> bool:
-        """Whether the command has all root capabilities.
+    async def removed_keys(self) -> list[str]:
+        """Original keys absent from the current collection, in original order.
 
         Returns
         -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("insecureRootCapabilities", _args)
-        return await _ctx.execute(bool)
-
-    async def privileged_nesting(self) -> bool:
-        """Whether the command has access to Dagger.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("privilegedNesting", _args)
-        return await _ctx.execute(bool)
-
-    async def workdir(self) -> str | None:
-        """Working directory override. If unset, use the container's working
-        directory.
-
-        Returns
-        -------
-        str | None
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2826,8 +2755,57 @@ class Command(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("workdir", _args)
-        return await _ctx.execute(str | None)
+        _ctx = self._select("removedKeys", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
+class CollectionTypeDef(Type):
+    async def batch_type(self) -> "TypeDef | None":
+        """The type of batch operations, or null when there are none."""
+        _args: list[Arg] = []
+        _ctx = self._select("batchType", _args)
+        return await _ctx.execute_object(TypeDef)
+
+    async def id(self) -> str:
+        """A unique identifier for this CollectionTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def key_type(self) -> "TypeDef":
+        """The type of collection keys."""
+        _args: list[Arg] = []
+        _ctx = self._select("keyType", _args)
+        return TypeDef(_ctx)
+
+    def value_type(self) -> "TypeDef":
+        """The object type returned by get."""
+        _args: list[Arg] = []
+        _ctx = self._select("valueType", _args)
+        return TypeDef(_ctx)
 
 
 @typecheck
@@ -3671,20 +3649,6 @@ class Container(Type):
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
 
-    def shell(self, *, batch: bool | None = False) -> Command:
-        """Return the configured shell command. Defaults to ["sh"].
-
-        Parameters
-        ----------
-        batch:
-            Return the batch command instead of the interactive command.
-        """
-        _args = [
-            Arg("batch", batch, False),
-        ]
-        _ctx = self._select("shell", _args)
-        return Command(_ctx)
-
     async def stat(
         self,
         path: str,
@@ -3776,8 +3740,8 @@ class Container(Type):
         *,
         cmd: list[str] | None = None,
         disable_dagger_in_dagger: bool | None = False,
-        experimental_privileged_nesting: bool | None = None,
-        insecure_root_capabilities: bool | None = None,
+        experimental_privileged_nesting: bool | None = False,
+        insecure_root_capabilities: bool | None = False,
     ) -> Self:
         """Opens an interactive terminal for this container using its configured
         default terminal command if not overridden by args (or sh as a
@@ -3804,8 +3768,10 @@ class Container(Type):
         _args = [
             Arg("cmd", [] if cmd is None else cmd, []),
             Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
-            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
+            Arg(
+                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
+            ),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
         return Container(_ctx)
@@ -3957,9 +3923,6 @@ class Container(Type):
     ) -> Self:
         """Set the default command to invoke for the container's terminal API.
 
-        .. deprecated::
-            Use withShell.
-
         Parameters
         ----------
         args:
@@ -3977,11 +3940,6 @@ class Container(Type):
             guarantees when using this option. It should only be used when
             absolutely necessary and only with trusted commands.
         """
-        warnings.warn(
-            'Method "with_default_terminal_cmd" is deprecated: Use withShell.',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("args", args),
             Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
@@ -4735,43 +4693,6 @@ class Container(Type):
         _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
 
-    def with_run(
-        self,
-        command: str,
-        *,
-        shell: list[str] | None = None,
-        disable_dagger_in_dagger: bool | None = None,
-        experimental_privileged_nesting: bool | None = None,
-        insecure_root_capabilities: bool | None = None,
-    ) -> Self:
-        """Execute a script with the configured batch shell and return the
-        modified container.
-
-        Parameters
-        ----------
-        command:
-            Script to append to the shell command as one argument.
-        shell:
-            Override the batch shell arguments. Example: ["bash", "-c"].
-        disable_dagger_in_dagger:
-            Override whether the shell is denied Dagger API access. Omit to
-            use the configured shell setting.
-        experimental_privileged_nesting:
-            .. deprecated:: Commands can access Dagger by default. Use
-            "disableDaggerInDagger" to opt out.
-        insecure_root_capabilities:
-            Override whether the shell has all root capabilities.
-        """
-        _args = [
-            Arg("command", command),
-            Arg("shell", shell, None),
-            Arg("disableDaggerInDagger", disable_dagger_in_dagger, None),
-            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
-        ]
-        _ctx = self._select("withRun", _args)
-        return Container(_ctx)
-
     def with_secret_variable(self, name: str, secret: "Secret") -> Self:
         """Set a new environment variable, using a secret value
 
@@ -4815,46 +4736,6 @@ class Container(Type):
             Arg("service", service),
         ]
         _ctx = self._select("withServiceBinding", _args)
-        return Container(_ctx)
-
-    def with_shell(
-        self,
-        interactive: list[str],
-        *,
-        batch: list[str] | None = None,
-        disable_dagger_in_dagger: bool | None = False,
-        experimental_privileged_nesting: bool | None = False,
-        insecure_root_capabilities: bool | None = False,
-    ) -> Self:
-        """Set the shell used by terminal() and withRun().
-
-        Parameters
-        ----------
-        interactive:
-            Command arguments for interactive use. Example: ["sh"].
-        batch:
-            Command arguments for batch use. The script is appended as one
-            argument. Defaults to interactive followed by "-c".
-        disable_dagger_in_dagger:
-            Disable Dagger API access for the executed command. By default,
-            commands can connect to the current Dagger engine.
-        experimental_privileged_nesting:
-            .. deprecated:: Commands can access Dagger by default. Use
-            "disableDaggerInDagger" to opt out.
-        insecure_root_capabilities:
-            Give the shell all root capabilities. Use only with trusted
-            commands.
-        """
-        _args = [
-            Arg("interactive", interactive),
-            Arg("batch", batch, None),
-            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
-        ]
-        _ctx = self._select("withShell", _args)
         return Container(_ctx)
 
     def with_symlink(
@@ -6139,8 +6020,8 @@ class Directory(Type):
         container: Container | None = None,
         cmd: list[str] | None = None,
         disable_dagger_in_dagger: bool | None = False,
-        experimental_privileged_nesting: bool | None = None,
-        insecure_root_capabilities: bool | None = None,
+        experimental_privileged_nesting: bool | None = False,
+        insecure_root_capabilities: bool | None = False,
     ) -> Self:
         """Opens an interactive terminal in new container with this directory
         mounted inside.
@@ -6169,8 +6050,10 @@ class Directory(Type):
             Arg("container", container, None),
             Arg("cmd", [] if cmd is None else cmd, []),
             Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
-            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
+            Arg(
+                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
+            ),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
@@ -11312,22 +11195,6 @@ class LLM(Type):
         _ctx = self._select("agent", _args)
         return Agent(_ctx)
 
-    def compose(self, agents: list[AgentMiddleware]) -> Self:
-        """Run agent middleware in list order, passing this conversation through
-        each function. Retain existing contributions.
-
-        Parameters
-        ----------
-        agents:
-            The agent middleware to run. Each reference retains its source
-            workspace.
-        """
-        _args = [
-            Arg("agents", agents),
-        ]
-        _ctx = self._select("compose", _args)
-        return LLM(_ctx)
-
     async def context_tokens(self) -> int:
         """estimated number of tokens currently occupying the context window;
         unlike tokenUsage this is not cumulative over the session
@@ -11600,29 +11467,6 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("reasoningEffort", _args)
         return await _ctx.execute(str)
-
-    def recompose(self, agents: list[AgentMiddleware]) -> Self:
-        """Run agent middleware in list order, replacing their modules'
-        contributions and preserving compatible tool state.
-
-        Clear each selected module's contributions once before execution.
-        Retain unowned contributions and contributions from other modules.
-        Keep this LLM's workspace.
-
-        A change to a tool binding's version resets its state. Removed
-        bindings, changed identities, and incompatible state are errors.
-
-        Parameters
-        ----------
-        agents:
-            The agent middleware to run. Each reference retains its source
-            workspace.
-        """
-        _args = [
-            Arg("agents", agents),
-        ]
-        _ctx = self._select("recompose", _args)
-        return LLM(_ctx)
 
     async def skills(self) -> list["LLMSkill"]:
         """The skills visible to the model, exactly as the ListSkills tool serves
@@ -16328,6 +16172,12 @@ class Terminal(Type):
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
+    async def as_collection(self) -> CollectionTypeDef | None:
+        """Collection metadata, or null if this object is not a collection."""
+        _args: list[Arg] = []
+        _ctx = self._select("asCollection", _args)
+        return await _ctx.execute_object(CollectionTypeDef)
+
     async def as_enum(self) -> EnumTypeDef | None:
         """If kind is ENUM, the enum-specific type definition. If kind is not
         ENUM, this will be null.
@@ -16462,6 +16312,36 @@ class TypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("optional", _args)
         return await _ctx.execute(bool)
+
+    def with_collection(self) -> Self:
+        """Mark this object as a collection."""
+        _args: list[Arg] = []
+        _ctx = self._select("withCollection", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_delta(self, name: str) -> Self:
+        """Select the field that receives changes from the original collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionDelta", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_get(self, name: str) -> Self:
+        """Select the item lookup function for this collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionGet", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_keys(self, name: str) -> Self:
+        """Select the stored keys field for this collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionKeys", _args)
+        return TypeDef(_ctx)
 
     def with_constructor(self, function: Function) -> Self:
         """Adds a function for constructing a new instance of an Object TypeDef,
@@ -19141,9 +19021,9 @@ __all__ = [
     "Agent",
     "AgentMessage",
     "AgentMessageDelivery",
-    "AgentMiddleware",
     "AgentState",
     "Artifact",
+    "ArtifactDimension",
     "ArtifactDimensionKey",
     "ArtifactResult",
     "Artifacts",
@@ -19158,7 +19038,8 @@ __all__ = [
     "Client",
     "ClientFilesyncMirror",
     "Cloud",
-    "Command",
+    "CollectionDelta",
+    "CollectionTypeDef",
     "Container",
     "CurrentModule",
     "DiffStat",

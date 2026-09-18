@@ -84,6 +84,25 @@ func TestArtifactAddressArguments(t *testing.T) {
 	require.ErrorContains(t, err, "not a DAG address")
 }
 
+func TestArtifactDimensionAliases(t *testing.T) {
+	defs := []artifactDimensionDefinition{
+		{Identifier: "Golang.modules", Name: "go-module", QualifiedName: "golang-modules"},
+		{Identifier: "App.dependencies", Name: "go-module", QualifiedName: "app-dependencies"},
+	}
+	_, err := resolveArtifactDimensionName(defs, "go-module")
+	require.ErrorContains(t, err, "ambiguous dimension")
+	name, err := resolveArtifactDimensionName(defs[:1], "go-module")
+	require.NoError(t, err)
+	require.Equal(t, "Golang.modules", name)
+	sel, err := parseArtifactAddresses([]string{"modules?go-module=a&golang-modules=b"})
+	require.NoError(t, err)
+	require.NoError(t, bindArtifactDimensions(sel[0].Query, defs[:1]))
+	require.Equal(t, "Golang.modules", sel[0].Query[0].Dimension)
+	require.Equal(t, "Golang.modules", sel[0].Query[1].Dimension)
+	require.Equal(t, "a", sel[0].Query[0].Key)
+	require.Equal(t, "b", sel[0].Query[1].Key)
+}
+
 var errArtifactQueryCaptured = errors.New("artifact query captured")
 
 type artifactQueryRecorder struct{ query string }

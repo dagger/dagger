@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
+	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -22,8 +24,8 @@ var listCmd = newListCommand()
 func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list [TYPE | DIMENSION]",
-		Short: "List artifacts or collection items",
-		Long:  "List artifacts by type or collection. Use -a to list all artifacts.",
+		Short: "List artifacts or collection values",
+		Long:  "List artifacts by type, or values for a collection dimension. Use -a to list all artifacts.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			all, _ := cmd.Flags().GetBool("all")
@@ -118,6 +120,14 @@ func artifactPaths(addresses []*dagaddress.Address) []string {
 }
 
 func selectArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifacts *dagger.Artifacts) (*dagger.Artifacts, error) {
+	flags, err := artifactKeyFlags(cmd)
+	if err != nil {
+		return nil, err
+	}
+	return applyArtifactFilters(cmd, addr, flags, artifacts), nil
+}
+
+func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, flags []dagaddress.Pair, artifacts *dagger.Artifacts) *dagger.Artifacts {
 	types, _ := cmd.Flags().GetStringArray("type")
 	if cmd.Flags().Changed("type") {
 		names := make([]string, 0, len(types))
@@ -138,15 +148,29 @@ func selectArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifac
 	filter.Path = ""
 	filter.Absolute = false
 	filter.Query = slices.Clone(addr.Query)
+	filter.Query = append(filter.Query, flags...)
+	return artifacts.FilterURI(filter.String())
+}
+
+func artifactKeyFlags(cmd *cobra.Command) ([]dagaddress.Pair, error) {
+	var pairs []dagaddress.Pair
+	keys, _ := cmd.Flags().GetStringArray("dimension-key")
+	for _, key := range keys {
+		dimension, value, ok := strings.Cut(key, "=")
+		if !ok || dimension == "" {
+			return nil, fmt.Errorf("invalid dimension key %q: expected DIMENSION=KEY", key)
+		}
+		pairs = append(pairs, dagaddress.Pair{Dimension: dimension, Key: value, HasKey: true})
+	}
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		if dimension := flag.Annotations[artifactDimensionFlag]; len(dimension) > 0 {
 			values, _ := cmd.Flags().GetStringArray(flag.Name)
 			for _, value := range values {
-				filter.Query = append(filter.Query, dagaddress.Pair{Dimension: dimension[0], Key: value, HasKey: true})
+				pairs = append(pairs, dagaddress.Pair{Dimension: dimension[0], Key: value, HasKey: true})
 			}
 		}
 	})
-	return artifacts.FilterURI(filter.String()), nil
+	return pairs, nil
 }
 
 func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
@@ -172,10 +196,6 @@ func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]strin
 
 func runArtifacts(cmd *cobra.Command, addresses []string) error {
 	dimension := cmd.Annotations[artifactListDimension]
-	format, _ := cmd.Flags().GetString("format")
-	if err := validateArtifactListFormat(format); err != nil {
-		return err
-	}
 	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
 		return err
@@ -185,28 +205,134 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		return err
 	}
 	return withEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
-		var rows []listedArtifact
+		// Flags bind in the combined path scope; address queries bind in their own scope.
+		defs, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}))
+		if err != nil {
+			return err
+		}
+		flags, err := artifactKeyFlags(cmd)
+		if err != nil {
+			return err
+		}
+		if err := bindArtifactDimensions(flags, defs); err != nil {
+			return err
+		}
+		if dimension != "" {
+			dimension, err = resolveArtifactDimensionName(defs, dimension)
+			if err != nil {
+				return err
+			}
+		}
+		var lines []commandListItem
 		for _, addr := range parsed {
 			artifacts := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})
+			pathDefs, err := artifactDimensions(ctx, ec.Dagger(), artifacts)
+			if err != nil {
+				return err
+			}
+			if err := bindArtifactDimensions(addr.Query, pathDefs); err != nil {
+				return err
+			}
 			if typeName := cmd.Annotations[artifactListType]; typeName != "" {
 				artifacts = artifacts.FilterTypes([]string{typeName})
 			}
-			artifacts, err := selectArtifactFilters(cmd, addr, artifacts)
-			if err != nil {
-				return err
-			}
+			artifacts = applyArtifactFilters(cmd, addr, flags, artifacts)
+			var selected []string
 			if dimension != "" {
-				artifacts = artifacts.FilterDimensions([]string{dimension})
+				selected, err = artifacts.DimensionKeys(ctx, dimension)
+			} else {
+				absolute, _ := cmd.Flags().GetBool("absolute")
+				var items []listedArtifact
+				items, err = readListedArtifacts(ctx, ec.Dagger(), artifacts, absolute)
+				for _, item := range items {
+					lines = append(lines, commandListItem{Name: item.URI, Comment: firstDescriptionLine(item.Description)})
+				}
 			}
-			absolute, _ := cmd.Flags().GetBool("absolute")
-			items, err := readListedArtifacts(ctx, ec.Dagger(), artifacts, absolute, true)
 			if err != nil {
 				return err
 			}
-			rows = append(rows, items...)
+			for _, name := range selected {
+				lines = append(lines, commandListItem{Name: name})
+			}
 		}
-		return writeArtifactList(cmd, rows, nil)
+		slices.SortFunc(lines, func(a, b commandListItem) int { return strings.Compare(a.Name, b.Name) })
+		lines = slices.CompactFunc(lines, func(a, b commandListItem) bool { return a.Name == b.Name })
+		return writeCommandList(cmd.OutOrStdout(), lines)
 	})
+}
+
+type artifactDimensionDefinition struct {
+	Identifier, Name, QualifiedName string
+}
+
+func artifactDimensions(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]artifactDimensionDefinition, error) {
+	id, err := artifacts.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var res struct {
+		Node struct{ DimensionDefinitions []artifactDimensionDefinition }
+	}
+	err = dag.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { identifier name qualifiedName } } } }`,
+		Variables: map[string]any{"id": id},
+	}, &dagger.Response{Data: &res})
+	return res.Node.DimensionDefinitions, err
+}
+
+func resolveArtifactDimensionName(defs []artifactDimensionDefinition, name string) (string, error) {
+	for _, def := range defs {
+		if def.Identifier == name {
+			return name, nil
+		}
+	}
+	var matches []string
+	for _, def := range defs {
+		if def.Name == name || def.QualifiedName == name {
+			matches = append(matches, def.Identifier)
+		}
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("ambiguous dimension %q: use %s", name, strings.Join(matches, " or "))
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return name, nil
+}
+
+func bindArtifactDimensions(pairs []dagaddress.Pair, defs []artifactDimensionDefinition) error {
+	for i := range pairs {
+		id, err := resolveArtifactDimensionName(defs, pairs[i].Dimension)
+		if err != nil {
+			return err
+		}
+		pairs[i].Dimension = id
+	}
+	return nil
+}
+
+func printArtifactDimensions(cmd *cobra.Command, defs []artifactDimensionDefinition) error {
+	if len(defs) == 0 {
+		return nil
+	}
+	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(writer, "NAME\tIDENTIFIER"); err != nil {
+		return err
+	}
+	for _, def := range defs {
+		name := def.Identifier
+		for _, alias := range []string{def.Name, def.QualifiedName} {
+			if id, err := resolveArtifactDimensionName(defs, alias); err == nil && id == def.Identifier {
+				name = alias
+				break
+			}
+		}
+		if _, err := fmt.Fprintf(writer, "%s\t%s\n", name, def.Identifier); err != nil {
+			return err
+		}
+	}
+	return writer.Flush()
 }
 
 func readArtifactTypes(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]commandListItem, error) {
@@ -245,7 +371,7 @@ func artifactTypeNames(types []commandListItem) []string {
 
 // artifactURIs prints one address per artifact, in the form filterUri accepts.
 func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, absolute bool) ([]string, error) {
-	items, err := readListedArtifacts(ctx, dag, artifacts, absolute, false)
+	items, err := readListedArtifacts(ctx, dag, artifacts, absolute)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +388,7 @@ type listedArtifact struct {
 	DimensionKeys    []struct{ Dimension, Key string }
 }
 
-func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
+func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, absolute bool) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -270,8 +396,8 @@ func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *dag
 	var response struct {
 		Node struct{ Items []listedArtifact }
 	}
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!, $typeAssertion: Boolean!) {
-  node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute, typeAssertion: $typeAssertion) description dimensionKeys { dimension key } } } }
- }`, Variables: map[string]any{"id": id, "absolute": absolute, "typeAssertion": typed}}, &dagger.Response{Data: &response})
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
+  node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute) description dimensionKeys { dimension key } } } }
+ }`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
 	return response.Node.Items, err
 }

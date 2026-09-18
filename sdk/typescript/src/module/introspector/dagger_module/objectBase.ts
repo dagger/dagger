@@ -11,6 +11,8 @@ export interface DaggerObjectPropertyBase extends Locatable {
   deprecated?: string
   alias?: string
   isExposed: boolean
+  isCollectionKeys?: boolean
+  isCollectionDelta?: boolean
   type?: TypeDef<TypeDefKind>
 
   propagateReferences(references: References): void
@@ -21,6 +23,7 @@ export type DaggerObjectPropertiesBase = {
 }
 
 export interface DaggerObjectBase extends Locatable {
+  isCollection?: boolean
   name: string
   description: string
   deprecated?: string

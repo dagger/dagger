@@ -236,6 +236,14 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
+type TerminalCopy struct {
+	// Location of the copied directory. A relative path is relative to the container's working directory.
+	Path string `json:"path"`
+
+	// The directory to copy.
+	Source *Directory `json:"source"`
+}
+
 // A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
 type Address struct {
 	query *querybuilder.Selection
@@ -945,114 +953,6 @@ func (r *AgentMessage) AsNode() Node {
 	}
 }
 
-// An agent function that can modify a conversation.
-type AgentMiddleware struct {
-	query *querybuilder.Selection
-
-	description *string
-	id          *ID
-	name        *string
-}
-
-func (r *AgentMiddleware) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddleware {
-	return &AgentMiddleware{
-		query: q,
-	}
-}
-
-// The agent function's description.
-func (r *AgentMiddleware) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this AgentMiddleware.
-func (r *AgentMiddleware) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *AgentMiddleware) XXX_GraphQLType() string {
-	return "AgentMiddleware"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *AgentMiddleware) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *AgentMiddleware) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *AgentMiddleware) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The agent function's name.
-func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The module that defines the agent function.
-func (r *AgentMiddleware) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// The agent function's path within its module.
-func (r *AgentMiddleware) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this AgentMiddleware as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *AgentMiddleware) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
 // One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
 type Artifact struct {
 	query *querybuilder.Selection
@@ -1290,6 +1190,108 @@ func (r *Artifact) AsNode() Node {
 	}
 }
 
+type ArtifactDimension struct {
+	query *querybuilder.Selection
+
+	id            *ID
+	identifier    *string
+	name          *string
+	qualifiedName *string
+}
+
+func (r *ArtifactDimension) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimension {
+	return &ArtifactDimension{
+		query: q,
+	}
+}
+
+// A unique identifier for this ArtifactDimension.
+func (r *ArtifactDimension) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactDimension) XXX_GraphQLType() string {
+	return "ArtifactDimension"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactDimension) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactDimension) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactDimension) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Exact GraphQL ParentType.field identifier.
+func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
+	if r.identifier != nil {
+		return *r.identifier, nil
+	}
+	q := r.query.Select("identifier")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Short name derived from the author item type.
+func (r *ArtifactDimension) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Author parent type and field name, in CLI case.
+func (r *ArtifactDimension) QualifiedName(ctx context.Context) (string, error) {
+	if r.qualifiedName != nil {
+		return *r.qualifiedName, nil
+	}
+	q := r.query.Select("qualifiedName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactDimension as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactDimension) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ArtifactDimensionKey struct {
 	query *querybuilder.Selection
 
@@ -1503,127 +1505,28 @@ func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
 	}
 }
 
-// Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
-func (r *Artifacts) AsAgentMiddlewares(ctx context.Context) ([]AgentMiddleware, error) {
-	q := r.query.Select("asAgentMiddlewares")
+// List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+func (r *Artifacts) DimensionDefinitions(ctx context.Context) ([]ArtifactDimension, error) {
+	q := r.query.Select("dimensionDefinitions")
 
 	q = q.Select("id")
 
-	type asAgentMiddlewares struct {
+	type dimensionDefinitions struct {
 		Id ID
 	}
 
-	convert := func(fields []asAgentMiddlewares) []AgentMiddleware {
-		out := []AgentMiddleware{}
+	convert := func(fields []dimensionDefinitions) []ArtifactDimension {
+		out := []ArtifactDimension{}
 
 		for i := range fields {
-			val := AgentMiddleware{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "AgentMiddleware")
+			val := ArtifactDimension{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactDimension")
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []asAgentMiddlewares
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
-func (r *Artifacts) AsChangesets(ctx context.Context) ([]Changeset, error) {
-	q := r.query.Select("asChangesets")
-
-	q = q.Select("id")
-
-	type asChangesets struct {
-		Id ID
-	}
-
-	convert := func(fields []asChangesets) []Changeset {
-		out := []Changeset{}
-
-		for i := range fields {
-			val := Changeset{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Changeset")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []asChangesets
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
-func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
-	q := r.query.Select("asChecks")
-
-	q = q.Select("id")
-
-	type asChecks struct {
-		Id ID
-	}
-
-	convert := func(fields []asChecks) []Check {
-		out := []Check{}
-
-		for i := range fields {
-			val := Check{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Check")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []asChecks
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
-func (r *Artifacts) AsServices(ctx context.Context) ([]Service, error) {
-	q := r.query.Select("asServices")
-
-	q = q.Select("id")
-
-	type asServices struct {
-		Id ID
-	}
-
-	convert := func(fields []asServices) []Service {
-		out := []Service{}
-
-		for i := range fields {
-			val := Service{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Service")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []asServices
+	var response []dimensionDefinitions
 
 	q = q.Bind(&response)
 
@@ -2702,25 +2605,21 @@ func (r *Cloud) AsNode() Node {
 	}
 }
 
-// A command's arguments and execution settings.
-type Command struct {
+type CollectionDelta struct {
 	query *querybuilder.Selection
 
-	id                       *ID
-	insecureRootCapabilities *bool
-	privilegedNesting        *bool
-	workdir                  *string
+	id *ID
 }
 
-func (r *Command) WithGraphQLQuery(q *querybuilder.Selection) *Command {
-	return &Command{
+func (r *CollectionDelta) WithGraphQLQuery(q *querybuilder.Selection) *CollectionDelta {
+	return &CollectionDelta{
 		query: q,
 	}
 }
 
-// The command arguments.
-func (r *Command) Args(ctx context.Context) ([]string, error) {
-	q := r.query.Select("args")
+// Current keys absent from the original collection, in current order.
+func (r *CollectionDelta) AddedKeys(ctx context.Context) ([]string, error) {
+	q := r.query.Select("addedKeys")
 
 	var response []string
 
@@ -2728,41 +2627,8 @@ func (r *Command) Args(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Environment variable overrides. Other variables come from the container.
-func (r *Command) Env(ctx context.Context) ([]EnvVariable, error) {
-	q := r.query.Select("env")
-
-	q = q.Select("id")
-
-	type env struct {
-		Id ID
-	}
-
-	convert := func(fields []env) []EnvVariable {
-		out := []EnvVariable{}
-
-		for i := range fields {
-			val := EnvVariable{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "EnvVariable")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []env
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this Command.
-func (r *Command) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this CollectionDelta.
+func (r *CollectionDelta) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -2775,17 +2641,17 @@ func (r *Command) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Command) XXX_GraphQLType() string {
-	return "Command"
+func (r *CollectionDelta) XXX_GraphQLType() string {
+	return "CollectionDelta"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Command) XXX_GraphQLIDType() string {
+func (r *CollectionDelta) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Command) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *CollectionDelta) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -2793,7 +2659,7 @@ func (r *Command) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *Command) MarshalJSON() ([]byte, error) {
+func (r *CollectionDelta) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -2801,48 +2667,114 @@ func (r *Command) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Whether the command has all root capabilities.
-func (r *Command) InsecureRootCapabilities(ctx context.Context) (bool, error) {
-	if r.insecureRootCapabilities != nil {
-		return *r.insecureRootCapabilities, nil
-	}
-	q := r.query.Select("insecureRootCapabilities")
+// Original keys absent from the current collection, in original order.
+func (r *CollectionDelta) RemovedKeys(ctx context.Context) ([]string, error) {
+	q := r.query.Select("removedKeys")
 
-	var response bool
+	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
 
-// Whether the command has access to Dagger.
-func (r *Command) PrivilegedNesting(ctx context.Context) (bool, error) {
-	if r.privilegedNesting != nil {
-		return *r.privilegedNesting, nil
-	}
-	q := r.query.Select("privilegedNesting")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Working directory override. If unset, use the container's working directory.
-func (r *Command) Workdir(ctx context.Context) (string, error) {
-	if r.workdir != nil {
-		return *r.workdir, nil
-	}
-	q := r.query.Select("workdir")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this Command as a Node.
+// AsNode returns this CollectionDelta as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *Command) AsNode() Node {
+func (r *CollectionDelta) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type CollectionTypeDef struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *CollectionTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *CollectionTypeDef {
+	return &CollectionTypeDef{
+		query: q,
+	}
+}
+
+// The type of batch operations, or null when there are none.
+func (r *CollectionTypeDef) BatchType(ctx context.Context) (*TypeDef, error) {
+	q := r.query.Select("batchType")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &TypeDef{
+		query: selectNode(q.Root(), *objectID, "TypeDef"),
+	}, nil
+}
+
+// A unique identifier for this CollectionTypeDef.
+func (r *CollectionTypeDef) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CollectionTypeDef) XXX_GraphQLType() string {
+	return "CollectionTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CollectionTypeDef) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CollectionTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CollectionTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The type of collection keys.
+func (r *CollectionTypeDef) KeyType() *TypeDef {
+	q := r.query.Select("keyType")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// The object type returned by get.
+func (r *CollectionTypeDef) ValueType() *TypeDef {
+	q := r.query.Select("valueType")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// AsNode returns this CollectionTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CollectionTypeDef) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -3681,27 +3613,6 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
-// ContainerShellOpts contains options for Container.Shell
-type ContainerShellOpts struct {
-	// Return the batch command instead of the interactive command.
-	Batch bool
-}
-
-// Return the configured shell command. Defaults to ["sh"].
-func (r *Container) Shell(opts ...ContainerShellOpts) *Command {
-	q := r.query.Select("shell")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `batch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Batch) {
-			q = q.Arg("batch", opts[i].Batch)
-		}
-	}
-
-	return &Command{
-		query: q,
-	}
-}
-
 // ContainerStatOpts contains options for Container.Stat
 type ContainerStatOpts struct {
 	// If specified, do not follow symlinks.
@@ -3942,8 +3853,6 @@ type ContainerWithDefaultTerminalCmdOpts struct {
 }
 
 // Set the default command to invoke for the container's terminal API.
-//
-// Deprecated: Use withShell.
 func (r *Container) WithDefaultTerminalCmd(args []string, opts ...ContainerWithDefaultTerminalCmdOpts) *Container {
 	q := r.query.Select("withDefaultTerminalCmd")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -4703,47 +4612,6 @@ func (r *Container) WithRootfs(directory *Directory) *Container {
 	}
 }
 
-// ContainerWithRunOpts contains options for Container.WithRun
-type ContainerWithRunOpts struct {
-	// Override the batch shell arguments. Example: ["bash", "-c"].
-	Shell []string
-	// Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
-	DisableDaggerInDagger bool
-
-	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
-	ExperimentalPrivilegedNesting bool
-	// Override whether the shell has all root capabilities.
-	InsecureRootCapabilities bool
-}
-
-// Execute a script with the configured batch shell and return the modified container.
-func (r *Container) WithRun(command string, opts ...ContainerWithRunOpts) *Container {
-	q := r.query.Select("withRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `shell` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Shell) {
-			q = q.Arg("shell", opts[i].Shell)
-		}
-		// `disableDaggerInDagger` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
-			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
-		}
-		// `experimentalPrivilegedNesting` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
-			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
-		}
-		// `insecureRootCapabilities` optional argument
-		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
-			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
-		}
-	}
-	q = q.Arg("command", command)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // Set a new environment variable, using a secret value
 func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	assertNotNil("secret", secret)
@@ -4768,47 +4636,6 @@ func (r *Container) WithServiceBinding(alias string, service *Service) *Containe
 	q := r.query.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// ContainerWithShellOpts contains options for Container.WithShell
-type ContainerWithShellOpts struct {
-	// Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
-	Batch []string
-	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
-	DisableDaggerInDagger bool
-
-	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
-	ExperimentalPrivilegedNesting bool
-	// Give the shell all root capabilities. Use only with trusted commands.
-	InsecureRootCapabilities bool
-}
-
-// Set the shell used by terminal() and withRun().
-func (r *Container) WithShell(interactive []string, opts ...ContainerWithShellOpts) *Container {
-	q := r.query.Select("withShell")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `batch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Batch) {
-			q = q.Arg("batch", opts[i].Batch)
-		}
-		// `disableDaggerInDagger` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
-			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
-		}
-		// `experimentalPrivilegedNesting` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
-			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
-		}
-		// `insecureRootCapabilities` optional argument
-		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
-			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
-		}
-	}
-	q = q.Arg("interactive", interactive)
 
 	return &Container{
 		query: q,
@@ -11727,16 +11554,6 @@ func (r *LLM) Agent(handle string, name string) *Agent {
 	}
 }
 
-// Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
-func (r *LLM) Compose(agents []*AgentMiddleware) *LLM {
-	q := r.query.Select("compose")
-	q = q.Arg("agents", agents)
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
 func (r *LLM) ContextTokens(ctx context.Context) (int, error) {
 	if r.contextTokens != nil {
@@ -11962,20 +11779,6 @@ func (r *LLM) ReasoningEffort(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
-//
-// Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
-//
-// A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
-func (r *LLM) Recompose(agents []*AgentMiddleware) *LLM {
-	q := r.query.Select("recompose")
-	q = q.Arg("agents", agents)
-
-	return &LLM{
-		query: q,
-	}
 }
 
 // The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
@@ -17107,6 +16910,23 @@ func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	}
 }
 
+// Collection metadata, or null if this object is not a collection.
+func (r *TypeDef) AsCollection(ctx context.Context) (*CollectionTypeDef, error) {
+	q := r.query.Select("asCollection")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &CollectionTypeDef{
+		query: selectNode(q.Root(), *objectID, "CollectionTypeDef"),
+	}, nil
+}
+
 // If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
 func (r *TypeDef) AsEnum(ctx context.Context) (*EnumTypeDef, error) {
 	q := r.query.Select("asEnum")
@@ -17286,6 +17106,45 @@ func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Mark this object as a collection.
+func (r *TypeDef) WithCollection() *TypeDef {
+	q := r.query.Select("withCollection")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Select the field that receives changes from the original collection.
+func (r *TypeDef) WithCollectionDelta(name string) *TypeDef {
+	q := r.query.Select("withCollectionDelta")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Select the item lookup function for this collection.
+func (r *TypeDef) WithCollectionGet(name string) *TypeDef {
+	q := r.query.Select("withCollectionGet")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Select the stored keys field for this collection.
+func (r *TypeDef) WithCollectionKeys(name string) *TypeDef {
+	q := r.query.Select("withCollectionKeys")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
 }
 
 // Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.

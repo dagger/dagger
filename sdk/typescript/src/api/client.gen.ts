@@ -743,13 +743,6 @@ export type ContainerPublishOpts = {
   insecureSkipTLSVerify?: boolean
 }
 
-export type ContainerShellOpts = {
-  /**
-   * Return the batch command instead of the interactive command.
-   */
-  batch?: boolean
-}
-
 export type ContainerStatOpts = {
   /**
    * If specified, do not follow symlinks.
@@ -1218,50 +1211,6 @@ export type ContainerWithNewFileOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
-}
-
-export type ContainerWithRunOpts = {
-  /**
-   * Override the batch shell arguments. Example: ["bash", "-c"].
-   */
-  shell?: string[]
-
-  /**
-   * Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
-   */
-  disableDaggerInDagger?: boolean
-
-  /**
-   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
-   */
-  experimentalPrivilegedNesting?: boolean
-
-  /**
-   * Override whether the shell has all root capabilities.
-   */
-  insecureRootCapabilities?: boolean
-}
-
-export type ContainerWithShellOpts = {
-  /**
-   * Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
-   */
-  batch?: string[]
-
-  /**
-   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
-   */
-  disableDaggerInDagger?: boolean
-
-  /**
-   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
-   */
-  experimentalPrivilegedNesting?: boolean
-
-  /**
-   * Give the shell all root capabilities. Use only with trusted commands.
-   */
-  insecureRootCapabilities?: boolean
 }
 
 export type ContainerWithSymlinkOpts = {
@@ -3463,6 +3412,52 @@ export type ServiceUpOpts = {
   random?: boolean
 }
 
+export type TerminalCopy = {
+  /**
+   * Location of the copied directory. A relative path is relative to the container's working directory.
+   */
+  path: string
+
+  /**
+   * The directory to copy.
+   */
+  source: Directory
+}
+
+export type TerminalGroupExecOpts = {
+  /**
+   * Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+   */
+  args?: string[]
+
+  /**
+   * Content to write to the command's standard input.
+   */
+  stdin?: string
+
+  /**
+   * Directories to copy into the container, in order.
+   */
+  copy?: TerminalCopy[]
+
+  /**
+   * Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+   */
+  init?: string[]
+}
+
+export type TerminalGroupRunOpts = {
+  /**
+   * Directories to copy into the container, in order.
+   */
+  copy?: TerminalCopy[]
+
+  /**
+   * Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+   */
+  init?: string[]
+}
+
 export type TypeDefWithEnumOpts = {
   /**
    * A doc string for the enum, if any
@@ -4771,90 +4766,6 @@ export class AgentMessage extends BaseClient {
 }
 
 /**
- * An agent function that can modify a conversation.
- */
-export class AgentMiddleware extends BaseClient {
-  private readonly _id?: ID = undefined
-  private readonly _description?: string = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
-    super(ctx)
-
-    this._id = _id
-    this._description = _description
-    this._name = _name
-  }
-
-  /**
-   * A unique identifier for this AgentMiddleware.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The agent function's description.
-   */
-  description = async (): Promise<string> => {
-    if (this._description) {
-      return this._description
-    }
-
-    const ctx = this._ctx.select("description")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The agent function's name.
-   */
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The module that defines the agent function.
-   */
-  originalModule = (): Module_ => {
-    const ctx = this._ctx.select("originalModule")
-    return new Module_(ctx)
-  }
-
-  /**
-   * The agent function's path within its module.
-   */
-  path = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("path")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
-  }
-}
-
-/**
  * One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
  */
 export class Artifact extends BaseClient {
@@ -5010,6 +4921,91 @@ export class Artifact extends BaseClient {
   value = (opts?: ArtifactValueOpts): Node => {
     const ctx = this._ctx.select("value", { ...opts })
     return new _NodeClient(ctx)
+  }
+}
+
+export class ArtifactDimension extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _identifier?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _qualifiedName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _identifier?: string,
+    _name?: string,
+    _qualifiedName?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._identifier = _identifier
+    this._name = _name
+    this._qualifiedName = _qualifiedName
+  }
+
+  /**
+   * A unique identifier for this ArtifactDimension.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Exact GraphQL ParentType.field identifier.
+   */
+  identifier = async (): Promise<string> => {
+    if (this._identifier) {
+      return this._identifier
+    }
+
+    const ctx = this._ctx.select("identifier")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Short name derived from the author item type.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Author parent type and field name, in CLI case.
+   */
+  qualifiedName = async (): Promise<string> => {
+    if (this._qualifiedName) {
+      return this._qualifiedName
+    }
+
+    const ctx = this._ctx.select("qualifiedName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -5172,69 +5168,20 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
+   * List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
    */
-  asAgentMiddlewares = async (): Promise<AgentMiddleware[]> => {
-    type asAgentMiddlewares = {
+  dimensionDefinitions = async (): Promise<ArtifactDimension[]> => {
+    type dimensionDefinitions = {
       id: ID
     }
 
-    const ctx = this._ctx.select("asAgentMiddlewares").select("id")
+    const ctx = this._ctx.select("dimensionDefinitions").select("id")
 
-    const response: Awaited<asAgentMiddlewares[]> = await ctx.execute()
+    const response: Awaited<dimensionDefinitions[]> = await ctx.execute()
 
     return response.map(
       (r) =>
-        new AgentMiddleware(ctx.copy().selectNode(r.id, "AgentMiddleware")),
-    )
-  }
-
-  /**
-   * Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
-   */
-  asChangesets = async (): Promise<Changeset[]> => {
-    type asChangesets = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("asChangesets").select("id")
-
-    const response: Awaited<asChangesets[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new Changeset(ctx.copy().selectNode(r.id, "Changeset")),
-    )
-  }
-
-  /**
-   * Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
-   */
-  asChecks = async (): Promise<Check[]> => {
-    type asChecks = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("asChecks").select("id")
-
-    const response: Awaited<asChecks[]> = await ctx.execute()
-
-    return response.map((r) => new Check(ctx.copy().selectNode(r.id, "Check")))
-  }
-
-  /**
-   * Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
-   */
-  asServices = async (): Promise<Service[]> => {
-    type asServices = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("asServices").select("id")
-
-    const response: Awaited<asServices[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new Service(ctx.copy().selectNode(r.id, "Service")),
+        new ArtifactDimension(ctx.copy().selectNode(r.id, "ArtifactDimension")),
     )
   }
 
@@ -5951,35 +5898,20 @@ export class Cloud extends BaseClient {
   }
 }
 
-/**
- * A command's arguments and execution settings.
- */
-export class Command extends BaseClient {
+export class CollectionDelta extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _insecureRootCapabilities?: boolean = undefined
-  private readonly _privilegedNesting?: boolean = undefined
-  private readonly _workdir?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: ID,
-    _insecureRootCapabilities?: boolean,
-    _privilegedNesting?: boolean,
-    _workdir?: string,
-  ) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
-    this._insecureRootCapabilities = _insecureRootCapabilities
-    this._privilegedNesting = _privilegedNesting
-    this._workdir = _workdir
   }
 
   /**
-   * A unique identifier for this Command.
+   * A unique identifier for this CollectionDelta.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -5994,10 +5926,10 @@ export class Command extends BaseClient {
   }
 
   /**
-   * The command arguments.
+   * Current keys absent from the original collection, in current order.
    */
-  args = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("args")
+  addedKeys = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("addedKeys")
 
     const response: Awaited<string[]> = await ctx.execute()
 
@@ -6005,65 +5937,72 @@ export class Command extends BaseClient {
   }
 
   /**
-   * Environment variable overrides. Other variables come from the container.
+   * Original keys absent from the current collection, in original order.
    */
-  env = async (): Promise<EnvVariable[]> => {
-    type env = {
-      id: ID
-    }
+  removedKeys = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("removedKeys")
 
-    const ctx = this._ctx.select("env").select("id")
+    const response: Awaited<string[]> = await ctx.execute()
 
-    const response: Awaited<env[]> = await ctx.execute()
+    return response
+  }
+}
 
-    return response.map(
-      (r) => new EnvVariable(ctx.copy().selectNode(r.id, "EnvVariable")),
-    )
+export class CollectionTypeDef extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
   }
 
   /**
-   * Whether the command has all root capabilities.
+   * A unique identifier for this CollectionTypeDef.
    */
-  insecureRootCapabilities = async (): Promise<boolean> => {
-    if (this._insecureRootCapabilities) {
-      return this._insecureRootCapabilities
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
     }
 
-    const ctx = this._ctx.select("insecureRootCapabilities")
+    const ctx = this._ctx.select("id")
 
-    const response: Awaited<boolean> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
 
   /**
-   * Whether the command has access to Dagger.
+   * The type of batch operations, or null when there are none.
    */
-  privilegedNesting = async (): Promise<boolean> => {
-    if (this._privilegedNesting) {
-      return this._privilegedNesting
+  batchType = async (): Promise<TypeDef | null> => {
+    const ctx = this._ctx.select("batchType").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
     }
-
-    const ctx = this._ctx.select("privilegedNesting")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
+    return new TypeDef(ctx.copy().selectNode(response, "TypeDef"))
   }
 
   /**
-   * Working directory override. If unset, use the container's working directory.
+   * The type of collection keys.
    */
-  workdir = async (): Promise<string> => {
-    if (this._workdir) {
-      return this._workdir
-    }
+  keyType = (): TypeDef => {
+    const ctx = this._ctx.select("keyType")
+    return new TypeDef(ctx)
+  }
 
-    const ctx = this._ctx.select("workdir")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+  /**
+   * The object type returned by get.
+   */
+  valueType = (): TypeDef => {
+    const ctx = this._ctx.select("valueType")
+    return new TypeDef(ctx)
   }
 }
 
@@ -6688,15 +6627,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return the configured shell command. Defaults to ["sh"].
-   * @param opts.batch Return the batch command instead of the interactive command.
-   */
-  shell = (opts?: ContainerShellOpts): Command => {
-    const ctx = this._ctx.select("shell", { ...opts })
-    return new Command(ctx)
-  }
-
-  /**
    * Return file status
    * @param path Path to check (e.g., "/file.txt").
    * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
@@ -6841,7 +6771,6 @@ export class Container extends BaseClient {
    * @param args The args of the command.
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   * @deprecated Use withShell.
    */
   withDefaultTerminalCmd = (
     args: string[],
@@ -7243,18 +7172,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Execute a script with the configured batch shell and return the modified container.
-   * @param command Script to append to the shell command as one argument.
-   * @param opts.shell Override the batch shell arguments. Example: ["bash", "-c"].
-   * @param opts.disableDaggerInDagger Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
-   * @param opts.insecureRootCapabilities Override whether the shell has all root capabilities.
-   */
-  withRun = (command: string, opts?: ContainerWithRunOpts): Container => {
-    const ctx = this._ctx.select("withRun", { command, ...opts })
-    return new Container(ctx)
-  }
-
-  /**
    * Set a new environment variable, using a secret value
    * @param name Name of the secret variable (e.g., "API_SECRET").
    * @param secret Identifier of the secret value.
@@ -7277,21 +7194,6 @@ export class Container extends BaseClient {
    */
   withServiceBinding = (alias: string, service: Service): Container => {
     const ctx = this._ctx.select("withServiceBinding", { alias, service })
-    return new Container(ctx)
-  }
-
-  /**
-   * Set the shell used by terminal() and withRun().
-   * @param interactive Command arguments for interactive use. Example: ["sh"].
-   * @param opts.batch Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
-   * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
-   * @param opts.insecureRootCapabilities Give the shell all root capabilities. Use only with trusted commands.
-   */
-  withShell = (
-    interactive: string[],
-    opts?: ContainerWithShellOpts,
-  ): Container => {
-    const ctx = this._ctx.select("withShell", { interactive, ...opts })
     return new Container(ctx)
   }
 
@@ -12415,15 +12317,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
-   * @param agents The agent middleware to run. Each reference retains its source workspace.
-   */
-  compose = (agents: AgentMiddleware[]): LLM => {
-    const ctx = this._ctx.select("compose", { agents })
-    return new LLM(ctx)
-  }
-
-  /**
    * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
    */
   contextTokens = async (): Promise<number> => {
@@ -12588,19 +12481,6 @@ export class LLM extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
-   *
-   * Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
-   *
-   * A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
-   * @param agents The agent middleware to run. Each reference retains its source workspace.
-   */
-  recompose = (agents: AgentMiddleware[]): LLM => {
-    const ctx = this._ctx.select("recompose", { agents })
-    return new LLM(ctx)
   }
 
   /**
@@ -16614,6 +16494,22 @@ export class TypeDef extends BaseClient {
   }
 
   /**
+   * Collection metadata, or null if this object is not a collection.
+   */
+  asCollection = async (): Promise<CollectionTypeDef | null> => {
+    const ctx = this._ctx.select("asCollection").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new CollectionTypeDef(
+      ctx.copy().selectNode(response, "CollectionTypeDef"),
+    )
+  }
+
+  /**
    * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
    */
   asEnum = async (): Promise<EnumTypeDef | null> => {
@@ -16742,6 +16638,38 @@ export class TypeDef extends BaseClient {
     const response: Awaited<boolean> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Mark this object as a collection.
+   */
+  withCollection = (): TypeDef => {
+    const ctx = this._ctx.select("withCollection")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Select the field that receives changes from the original collection.
+   */
+  withCollectionDelta = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionDelta", { name })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Select the item lookup function for this collection.
+   */
+  withCollectionGet = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionGet", { name })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Select the stored keys field for this collection.
+   */
+  withCollectionKeys = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionKeys", { name })
+    return new TypeDef(ctx)
   }
 
   /**

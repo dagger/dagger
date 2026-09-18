@@ -79,6 +79,10 @@ export type FunctionOptions = {
  * RegistryClass.
  */
 export class Registry {
+  collection = (): (<T extends Class>(constructor: T) => T) => this.object()
+  keys = (): PropertyDecorator => () => {}
+  delta = (): PropertyDecorator => () => {}
+  get = (): MethodDecorator => () => {}
   /**
    * The definition of the @object decorator that should be on top of any
    * class module that must be exposed to the Dagger API.
