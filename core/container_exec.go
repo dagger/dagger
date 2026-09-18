@@ -2280,7 +2280,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 		// NB: no explicit wcprof wait is recorded for the exec itself: the
 		// executor's exec.run op is a child of the current op (ctx flows into
 		// the goroutine), which both subtracts it from self-time and gives
-		// the replay an exact join. Ident-based waits were tried first and
+		// the simulation an exact join. Ident-based waits were tried first and
 		// can mis-resolve when call digests are shared across execs.
 		var execErr error
 		select {

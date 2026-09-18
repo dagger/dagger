@@ -26,8 +26,8 @@ type Builder struct {
 
 	// Resolved VCS info stamped into the built engine, threaded in from
 	// engine-dev as scalars. Storing the source Workspace here instead would
-	// taint the cache key of every build method and break disk-cache reuse
-	// across engine restarts.
+	// make every build method's cache key session-specific and prevent
+	// disk-cache reuse across engine restarts.
 	vcsCommit string
 	vcsDirty  bool
 

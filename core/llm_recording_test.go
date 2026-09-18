@@ -1,10 +1,10 @@
 package core
 
-// The replay provider must build the same per-block display spans a streaming
-// provider builds. Without them every replayed tool call ran under the shared
-// evaluation-loop context, so every replay-driven test exercised a telemetry
-// shape production never has (the tool-call Boundary span) -- a blind spot real
-// bugs shipped through.
+// The recorded-response provider must build the same per-block display spans a
+// streaming provider builds. Without them every recording-backed tool call ran
+// under the shared evaluation-loop context, so every recording-driven test
+// exercised a telemetry shape production never has (the tool-call Boundary
+// span) -- a blind spot real bugs shipped through.
 
 import (
 	"context"
@@ -24,7 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-func replayTestRecorder(t *testing.T) (*tracetest.SpanRecorder, context.Context) {
+func recordingTestRecorder(t *testing.T) (*tracetest.SpanRecorder, context.Context) {
 	t.Helper()
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(
@@ -32,7 +32,7 @@ func replayTestRecorder(t *testing.T) (*tracetest.SpanRecorder, context.Context)
 		sdktrace.WithSpanProcessor(sr),
 	)
 	// core.Tracer resolves the provider off the span in ctx.
-	ctx, _ := tp.Tracer("llm-replay-test").Start(context.Background(), "root")
+	ctx, _ := tp.Tracer("llm-recording-test").Start(context.Background(), "root")
 	return sr, ctx
 }
 
@@ -46,7 +46,7 @@ func spanAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 }
 
 func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
-	sr, ctx := replayTestRecorder(t)
+	sr, ctx := recordingTestRecorder(t)
 	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")
 
 	emitMessageSpan(ctx, &LLMMessage{
@@ -79,7 +79,7 @@ func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
 func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
 	for _, args := range []string{"{}", "{}\n"} {
 		t.Run(fmt.Sprintf("trailing-newline-%t", strings.HasSuffix(args, "\n")), func(t *testing.T) {
-			_, ctx := replayTestRecorder(t)
+			_, ctx := recordingTestRecorder(t)
 			recorder := &stateRecorder{}
 			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
 			ctx = telemetry.WithLoggerProvider(ctx, provider)
@@ -99,7 +99,7 @@ func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
 }
 
 func TestReplayPreservesHeaderArgsAndTerminatesJSON(t *testing.T) {
-	sr, ctx := replayTestRecorder(t)
+	sr, ctx := recordingTestRecorder(t)
 	recorder := &stateRecorder{}
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
 	ctx = telemetry.WithLoggerProvider(ctx, provider)
@@ -135,7 +135,7 @@ func TestReplayPreservesHeaderArgsAndTerminatesJSON(t *testing.T) {
 }
 
 func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {
-	_, ctx := replayTestRecorder(t)
+	_, ctx := recordingTestRecorder(t)
 	recorder := &stateRecorder{}
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
 	ctx = telemetry.WithLoggerProvider(ctx, provider)
@@ -160,7 +160,7 @@ func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {
 			}},
 		},
 	}}
-	llm.Replay(ctx)
+	llm.EmitHistory(ctx)
 
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
@@ -173,11 +173,11 @@ func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {
 	t.Fatal("replayed patch result was not emitted")
 }
 
-func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
-	sr, ctx := replayTestRecorder(t)
+func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
+	sr, ctx := recordingTestRecorder(t)
 	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")
 
-	replayer := newHistoryReplay([]*LLMMessage{
+	provider := newRecordedResponseProvider([]*LLMMessage{
 		{
 			Role: LLMMessageRoleAssistant,
 			Content: []*LLMContentBlock{
@@ -188,7 +188,7 @@ func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
 		},
 	})
 
-	res, err := replayer.SendQuery(ctx, nil, nil, &LLMCallOpts{CallDigest: "sha256:deadbeef"})
+	res, err := provider.SendQuery(ctx, nil, nil, &LLMCallOpts{CallDigest: "sha256:deadbeef"})
 	require.NoError(t, err)
 
 	// One display span per tool call, keyed by call ID -- so CallBatch parents

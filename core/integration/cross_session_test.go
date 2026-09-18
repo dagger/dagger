@@ -239,7 +239,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 // the handle must keep the referenced result retained for as long as the
 // parent result lives. Previously private-field handles were invisible to
 // dagql dependency tracking: once the referenced result's owning session
-// closed, a later session's function call replayed the dangling handle from
+// closed, a later session's function call loaded the dangling handle from
 // cached state and failed with "missing shared result". The referenced
 // credential result here is produced and read only by never-cached functions,
 // so nothing else retains it across sessions.
@@ -366,7 +366,7 @@ func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Conte
 // persists the provider's host-backed Workspace.directory result. The second
 // session resolves a different provider function through settings and passes
 // a fresh, content-equivalent directory through the Dockerfile converter.
-// Loading that converted Container ID must not replay the first session's
+// Loading that converted Container ID must not reuse the first session's
 // Host.directory call in the provider module's client context, which has no
 // host filesync attachable.
 func (ModuleSuite) TestCrossSessionWorkspaceDockerfileRecipe(ctx context.Context, t *testctx.T) {
@@ -396,7 +396,7 @@ settings.base = "workspace-container-provider:dockerfile-image"
 	require.Equal(t, "workspace-container-provider:dockerfile", strings.TrimSpace(string(out)))
 }
 
-func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T) {
+func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testctx.T) {
 	t.Run("core git", func(ctx context.Context, t *testctx.T) {
 		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 		require.NotEmpty(t, authTokenTestCase.encodedToken)

@@ -9,10 +9,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// replayMessage mirrors the JSON shape of a conversation exported with the
+// recordedMessage mirrors the JSON shape of a conversation exported with the
 // v1 `messages` field (GraphQL's lowerCamel key spelling), which is the
-// recording format consumed by replay/ models.
-type replayMessage struct {
+// recording format consumed by recording/ models.
+type recordedMessage struct {
 	Role    string `json:"role"`
 	Content []struct {
 		Kind      string `json:"kind"`
@@ -32,9 +32,9 @@ type replayMessage struct {
 	} `json:"tokenUsage"`
 }
 
-// decodeReplayMessages parses a replay recording into message history.
-func decodeReplayMessages(data []byte) ([]*LLMMessage, error) {
-	var wire []replayMessage
+// decodeRecordedMessages parses a conversation recording into message history.
+func decodeRecordedMessages(data []byte) ([]*LLMMessage, error) {
+	var wire []recordedMessage
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return nil, err
 	}
@@ -66,19 +66,19 @@ func decodeReplayMessages(data []byte) ([]*LLMMessage, error) {
 	return messages, nil
 }
 
-type LLMReplayer struct {
+type RecordedResponseProvider struct {
 	messages []*LLMMessage
 }
 
-func newHistoryReplay(messages []*LLMMessage) *LLMReplayer {
-	return &LLMReplayer{messages: messages}
+func newRecordedResponseProvider(messages []*LLMMessage) *RecordedResponseProvider {
+	return &RecordedResponseProvider{messages: messages}
 }
 
-func (*LLMReplayer) IsRetryable(err error) bool {
+func (*RecordedResponseProvider) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
+func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	if len(history) > 0 && history[0].Role == LLMMessageRoleSystem {
 		// HACK: drop the synthesized default system prompt, which recordings
 		// never contain (they hold only the history exported via messages) —
@@ -108,15 +108,15 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	msg := c.messages[len(history)]
 
 	// Build the same per-block display spans a streaming provider builds, so a
-	// replayed turn produces telemetry identical to a live one: thinking, text
-	// response, and one span per tool call (carrying the Boundary/roll-up
-	// attributes the evaluation loop needs to nest the tool's execution beneath
-	// its own call). Without these, every replayed tool call would run under the
-	// shared loop context and every replay-driven test would exercise a shape
-	// production never has.
+	// recording-backed turn produces telemetry identical to a live one:
+	// thinking, text response, and one span per tool call carrying the
+	// Boundary/roll-up attributes the evaluation loop needs to nest the tool's
+	// execution beneath its own call. Without these, every recording-backed
+	// tool call would run under the shared loop context and every
+	// recording-driven test would exercise a shape production never has.
 	//
-	// Note this is the *live loop* path (model `replay/…`), which is distinct
-	// from LLM.Replay: that one re-emits spans for an already-recorded
+	// Note this is the *live loop* path (model `recording/…`), which is distinct
+	// from LLM.EmitHistory: that one re-emits spans for an already-recorded
 	// conversation for display only, and never runs tools. The two never both
 	// emit spans for the same tool call.
 	var callDigest string

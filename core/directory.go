@@ -2003,7 +2003,7 @@ func convertRejectToMarkers(targetPath, rejPath string) error {
 }
 
 func (dir *Directory) Search(ctx context.Context, self dagql.ObjectResult[*Directory], opts SearchOpts, verbose bool, paths []string, globs []string) ([]*SearchResult, error) {
-	// Validate and normalize paths to prevent directory traversal attacks
+	// Validate and normalize paths so they cannot resolve outside the directory.
 	for i, p := range paths {
 		// If absolute, make it relative to the directory
 		if filepath.IsAbs(p) {

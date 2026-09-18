@@ -90,8 +90,8 @@ go run ./cmd/wcprof-analyze /tmp/wcprof.dump
 The analyzer reconstructs the op graph (parents, waits, nested-client
 stitching) and reports:
 
-- **what-if rankings** (the headline): a replay-based discrete-event
-  simulation re-executes the recorded schedule under "class X self-time × f"
+- **what-if rankings** (the headline): a discrete-event simulation re-executes
+  the recorded schedule under "class X self-time × f"
   hypotheses (f ∈ {0, 0.5, 0.9} by default) and ranks classes by how much
   end-to-end makespan each would actually save. This accounts for critical-
   path shifts, dedup (singleflighted/lazy work counted once), and dependency

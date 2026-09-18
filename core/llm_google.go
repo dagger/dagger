@@ -161,7 +161,7 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 					text = " "
 				}
 				// A text-answer part may carry a thought signature (when the turn
-				// ends in text rather than a tool call); replay it so Gemini can
+				// ends in text rather than a tool call); resubmit it so Gemini can
 				// resume the reasoning chain.
 				content.Parts = append(content.Parts, &genai.Part{
 					Text:             text,
@@ -176,7 +176,7 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 				}
 				part := &genai.Part{
 					FunctionCall: &genai.FunctionCall{
-						// Replay the CallID as the function-call ID so its result
+						// Reuse the CallID as the function-call ID so its result
 						// (which echoes the same ID) can be matched back to it
 						// unambiguously, even for parallel calls to the same tool.
 						ID:   block.CallID,
@@ -185,14 +185,14 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 					},
 				}
 				// Gemini attaches a thought signature to the function-call part
-				// when reasoning; it must be replayed so the model can continue
+				// when reasoning; it must be resubmitted so the model can continue
 				// the reasoning chain across tool calls.
 				if sig := decodeThoughtSignature(block.Signature); sig != nil {
 					part.ThoughtSignature = sig
 				}
 				content.Parts = append(content.Parts, part)
 			case LLMContentThinking:
-				// Round-trip thinking: replay the thought summary and its opaque
+				// Round-trip thinking: resubmit the thought summary and its opaque
 				// signature so Gemini can resume the reasoning it started.
 				content.Parts = append(content.Parts, &genai.Part{
 					Text:             block.Text,

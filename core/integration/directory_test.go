@@ -1655,7 +1655,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 	t.Run("onConflict LEAVE_CONFLICT_MARKERS", func(ctx context.Context, t *testctx.T) {
 		// The patch expects "Hello, World!" in hello.txt, but the content has
 		// drifted; other.txt still matches. This is the session-resume shape:
-		// a recorded patch replayed against files that moved on.
+		// a recorded patch reapplied against files that moved on.
 		dir := c.Directory().
 			WithNewFile("hello.txt", "Hello, Drifted!\n").
 			WithNewFile("other.txt", "unchanged\n")

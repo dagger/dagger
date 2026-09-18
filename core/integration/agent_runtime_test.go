@@ -7,8 +7,8 @@ package core
 // and retry semantics, and runtime dedupe by agent value digest.
 //
 // Like llm_test.go, every conversation is canned: recordings are constructed
-// through the LLM API itself and replayed via a replay/ model (see
-// cannedReplayModel), so no LLM API keys are needed and the replayer runs the
+// through the LLM API itself and replayed via a recording/ model (see
+// cannedRecordingModel), so no LLM API keys are needed and the replayer runs the
 // REAL tools for recorded tool calls. The mid-turn tests exploit that: a
 // recorded tool call to a slow container exec makes the turn genuinely dwell
 // in a step, and a shared cache volume gives the test a deterministic signal
@@ -71,7 +71,7 @@ func TestAgentRuntime(t *testing.T) {
 // emptyReplayModel is a replay/ model with an empty recording: any model call
 // fails immediately ("no more messages"), so it seeds agents that must never
 // call the model at all.
-var emptyReplayModel = "replay/" + base64.StdEncoding.EncodeToString([]byte("[]"))
+var emptyReplayModel = "recording/" + base64.StdEncoding.EncodeToString([]byte("[]"))
 
 // agentHandle drives one spawned agent instance through raw GraphQL queries.
 // Raw queries are used (rather than the typed SDK) because the interesting
@@ -565,7 +565,7 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 		secondPrompt = "second prompt for the agent"
 		secondReply  = "the second recorded reply"
 	)
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(firstPrompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: firstReply},
@@ -618,7 +618,7 @@ func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 	vol := c.CacheVolume("agent-spawn-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
-	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
+	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
 	// Two spawns of the exact same composition: same model, same tool
 	// binding, same display name. Under the old identity model these
@@ -702,7 +702,7 @@ func (AgentRuntimeSuite) TestSpawnAfterStop(ctx context.Context, t *testctx.T) {
 		restartPrompt = "prompt after the phoenix restarts"
 		restartReply  = "the restarted phoenix reply"
 	)
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(prompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: reply},
@@ -777,7 +777,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 			nextPrompt = "prompt sent after the reseed"
 			nextReply  = "the post-reseed reply"
 		)
-		oldModel := cannedReplayModel(ctx, t, c, c.LLM().
+		oldModel := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt(oldPrompt).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: oldReply},
@@ -791,7 +791,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 
 		// The replacement conversation: a different recording whose history
 		// already holds one exchange, with the follow-up turn recorded.
-		newModel := cannedReplayModel(ctx, t, c, c.LLM().
+		newModel := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt(newPrompt).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
@@ -851,7 +851,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "QUEUED", out.Get("delivery").String())
 
-		newModel := cannedReplayModel(ctx, t, c, c.LLM().
+		newModel := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt(newPrompt).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
@@ -890,7 +890,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 			nextPrompt = "prompt after the recovery"
 			nextReply  = "the recovered reply"
 		)
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("the recorded prompt").
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: "the recorded reply"},
@@ -908,7 +908,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		// Reseed swaps the conversation and nothing else: the tombstone
 		// keeps its error, so the projection still says FAILED — reseed and
 		// resume compose instead of overlapping.
-		newModel := cannedReplayModel(ctx, t, c, c.LLM().
+		newModel := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt(newPrompt).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
@@ -964,10 +964,10 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 				Kind: dagger.LLMContentBlockKindText,
 				Text: editedReply,
 			}})
-		model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
+		model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 		h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "busy", toolIDs: []dagger.ID{ctrID}})
 		convo, err := c.LLM(dagger.LLMOpts{
-			Model: cannedReplayModel(ctx, t, c, rewoundConversation),
+			Model: cannedRecordingModel(ctx, t, c, rewoundConversation),
 		}).ID(ctx)
 		require.NoError(t, err)
 
@@ -1046,7 +1046,7 @@ func (AgentRuntimeSuite) TestPauseQueueResume(ctx context.Context, t *testctx.T)
 		reply  = "the resumed reply"
 	)
 	newModel := func() string {
-		return cannedReplayModel(ctx, t, c, c.LLM().
+		return cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt(prompt).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: reply},
@@ -1125,7 +1125,7 @@ func (AgentRuntimeSuite) TestFailedAndRetry(ctx context.Context, t *testctx.T) {
 	// The recording only knows this exchange; the test sends something
 	// else, so the replayer reports a history divergence and the loop
 	// fails.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("the recorded prompt").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "the recorded reply"},
@@ -1194,7 +1194,7 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 	vol := c.CacheVolume("agent-steer-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
-	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, true))
+	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, true))
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "steerable", toolIDs: []dagger.ID{ctrID}})
 
@@ -1241,7 +1241,7 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 	vol := c.CacheVolume("agent-interrupt-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
-	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
+	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "interruptible", toolIDs: []dagger.ID{ctrID}})
 
@@ -1349,7 +1349,7 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 		"bust":   identity.NewID(),
 	})
 	require.NoError(t, err)
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(blockPrompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Dispatching the module tool."},
@@ -1440,7 +1440,7 @@ func (AgentRuntimeSuite) TestResponseIdempotency(ctx context.Context, t *testctx
 	vol := c.CacheVolume("agent-response-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 3).ID(ctx)
 	require.NoError(t, err)
-	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
+	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "sharedawait", toolIDs: []dagger.ID{ctrID}})
 
@@ -1466,7 +1466,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	vol := c.CacheVolume("agent-msgid-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
-	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
+	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "readdressable", toolIDs: []dagger.ID{ctrID}})
 
@@ -1945,7 +1945,7 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 	// replayer drops one leading SYSTEM message from the live history
 	// before matching (core/llm_replay.go), and with no synthesized default
 	// prompt in play the dropped message is hire's WithSystemPrompt itself.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(task).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: firstReply},
@@ -2062,7 +2062,7 @@ func (AgentRuntimeSuite) TestAgentArgumentAfterSpawnerReleased(ctx context.Conte
 	)
 	task := "hire task " + identity.NewID()
 
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(task).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: firstReply},

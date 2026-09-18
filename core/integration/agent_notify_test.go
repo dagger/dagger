@@ -32,7 +32,7 @@ func (AgentRuntimeSuite) TestNotifyDeliversLifecycleEvents(ctx context.Context, 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	workerModel := cannedReplayModel(ctx, t, c, c.LLM().
+	workerModel := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("do the thing").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
@@ -41,7 +41,7 @@ func (AgentRuntimeSuite) TestNotifyDeliversLifecycleEvents(ctx context.Context, 
 	// turn (the chief is idle until then), which is the wake-on-event
 	// contract. The recording must hold the rendered wire text — header
 	// plus the engine's event body — exactly as the model receives it.
-	chiefModel := cannedReplayModel(ctx, t, c, c.LLM().
+	chiefModel := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(agentIdleEventText("w", "done")).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "noted"},
@@ -134,7 +134,7 @@ func (AgentRuntimeSuite) TestResumeRetryEmitsNoStaleIdle(ctx context.Context, t 
 
 	// One recorded exchange: the worker's second turn exhausts the
 	// recording and FAILS, and every resume-retry fails the same way.
-	workerModel := cannedReplayModel(ctx, t, c, c.LLM().
+	workerModel := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("do the thing").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
@@ -142,7 +142,7 @@ func (AgentRuntimeSuite) TestResumeRetryEmitsNoStaleIdle(ctx context.Context, t 
 	// The chief's recording holds exactly ONE exchange: the real
 	// completion. A stale idle event would open a second chief turn this
 	// recording cannot serve, failing the chief — loudly visible below.
-	chiefModel := cannedReplayModel(ctx, t, c, c.LLM().
+	chiefModel := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(agentIdleEventText("w", "done")).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "noted"},

@@ -179,7 +179,7 @@ are still in the history; the work below builds on them.
 > Note: a fourth worker produced ~15 client-side tests (including two
 > real-subprocess cross-process ones) that asserted the intended behavior and
 > therefore failed against today's code. Its sandbox snapshot became
-> unreplayable (overlay mount options too long) and the tests were lost.
+> unrestorable (overlay mount options too long) and the tests were lost.
 > They were rewritten alongside the fixes they should pass, which is better
 > anyway. The defect inventory above records exactly what they covered.
 
@@ -277,8 +277,8 @@ decision recorded above. The on-demand hook remains the fallback.
 - Plain API keys and CI must be **exactly** unaffected:
   `newCredentialTransport` returns the base transport unchanged when there is
   no source. There is a test for this; keep it.
-- Nothing credential-related may enter a dagql ID or content digest. Replay
-  (`routeReplayModel`) has no credential and must stay that way.
+- Nothing credential-related may enter a dagql ID or content digest. The
+  recorded-response route (`routeRecordingModel`) has no credential and must stay that way.
 - `loadLLMRouter` seeds from the main client first so a nested `dagger agent`
   never holds credentials — the reloader must resolve against **the same**
   client that supplied the value, via `bindClient` in `LoadClientConfig`; do

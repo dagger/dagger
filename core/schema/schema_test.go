@@ -42,7 +42,7 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 	sdl.Format(&got, decodeSchemaResponse(t, gotBytes).Schema)
 
 	golden.Assert(t, got.String(), "base_schema.graphqls",
-		"base schema allowlist mismatch. New public APIs must be gated with "+
+		"base schema allowlist mismatch. New public APIs must specify version visibility with "+
 			"View(AfterVersion(<next release version from internal/version/VERSION>)). "+
 			"For intentional changes to the base view, regenerate with "+
 			"`go test ./core/schema -run TestBaseSchemaAllowlist -update`.")

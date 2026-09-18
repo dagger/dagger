@@ -409,7 +409,7 @@ Container exec SSH mounts and git SSH operations eventually call
 
 That again depends on resolving the handle to a concrete session-bound socket.
 
-So the handle is not just an identity trick. It is also the gate that connects
+So the handle is not just an identity trick. It is also the check that connects
 cacheable graph state back to the right live resource.
 
 ## Why This Enables Safe Equivalent Hits
@@ -431,7 +431,7 @@ With the current system:
 So we get the desired behavior:
 
 - semantic equivalence enables reuse
-- per-session binding prevents cross-session resource theft
+- per-session binding prevents a session from using a resource it never loaded
 
 The same general pattern applies to SSH sockets by fingerprint identity.
 
@@ -456,8 +456,8 @@ For HTTP auth:
 - the remote metadata cache key includes the secret handles for token/header
 - this intentionally scopes remote metadata caching by auth configuration
 
-The code comment is explicit about the reason: it is safer to scope by auth
-configuration than risk cache poisoning across different auth methods.
+The code comment is explicit about the reason: scoping by authentication
+configuration prevents sharing entries across different authentication methods.
 
 ### Content digests vs session-resource conditions
 
@@ -465,7 +465,7 @@ Git also mixes these resources into some content digest calculations or cache
 scope strings.
 
 That is related to cache identity, but it is not the whole story. The
-session-resource gating is still separately important because equivalence alone
+session-resource validation is still separately important because equivalence alone
 does not authorize a hit.
 
 ## Containers And Transitive Requirements

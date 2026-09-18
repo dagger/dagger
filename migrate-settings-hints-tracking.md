@@ -93,7 +93,7 @@ Existing unit tests in `core/workspace/config_test.go` verify that `UpdateConfig
 1. The migrated main module can fail constructor introspection, for example because its legacy `engineVersion` is incompatible with the current engine. These failures are logged with `slog.Warn`, but are not surfaced in the default `dagger migrate` UX.
 2. The prepared in-memory migrated directory used for `.dagger/modules/...` sources may not match the real repo shape closely enough for the migrated main module to load.
 3. Relative source resolution may behave differently for the real repo than in the fixture tests, especially around sources written relative to `.dagger/config.toml` such as `../toolchains/go`.
-4. One failing module or SDK dependency may be poisoning the hint introspection context, even though the current code appears to continue per module.
+4. One failing module or SDK dependency may be causing subsequent hint introspection to fail, even though the current code appears to continue per module.
 5. The integration tests verify small happy paths but do not exercise the real `dagger/dagger` legacy config, the large toolchain set, or remote SDK/Dang modules.
 
 ## Trace Observation: Duplicate `Workspace.migrate` Spans
@@ -105,8 +105,8 @@ This is explainable from the current CLI/API shape:
 - `cmd/dagger/migrate.go` first calls `dag.CurrentWorkspace().Migrate().ID(ctx)`.
 - It then reloads the migration with `dag.LoadWorkspaceMigrationFromID(migrationID)`.
 - Later calls such as `migration.Changes().ID(ctx)`, `changes.IsEmpty(ctx)`, `migration.Steps(ctx)`, patch preview, and export can load IDs whose receiver chain includes the original `Workspace.migrate` call.
-- Loading an object by ID replays the ID's call chain through `dagql.Server.Load`.
-- `Workspace.migrate` is marked `DoNotCache("Plans workspace migration against live host filesystem")`, so each replay can produce another real execution/span instead of a quiet cache hit.
+- Loading an object by ID re-evaluates the ID's call chain through `dagql.Server.Load`.
+- `Workspace.migrate` is marked `DoNotCache("Plans workspace migration against live host filesystem")`, so each load can produce another real execution/span instead of a quiet cache hit.
 
 So duplicate sibling spans are probably normal for the current implementation and not necessarily a TUI bug. They are still worth tracking because migration planning reads live host state and duplicate executions can hide which exact plan produced the final changeset. This could matter if one execution collects hints and another does not.
 
@@ -120,7 +120,7 @@ So duplicate sibling spans are probably normal for the current implementation an
 4. Check whether `constructorHintsFromModule` sees a valid main object constructor for `toolchains/go`.
 5. Add a regression test based on the real `dagger/dagger` legacy config shape, preferably minimized to the smallest module set that reproduces no hints.
 6. Decide whether hint introspection failures during migration should surface as migration warnings, debug output, or test-only diagnostics instead of disappearing into `slog.Warn`.
-7. Decide whether `dagger migrate` should avoid repeated `Workspace.migrate` planning by fetching the needed migration fields in one request, returning a changeset directly, caching the migration plan for the command, or otherwise avoiding ID reloads that replay the non-cacheable call.
+7. Decide whether `dagger migrate` should avoid repeated `Workspace.migrate` planning by fetching the needed migration fields in one request, returning a changeset directly, caching the migration plan for the command, or otherwise avoiding ID reloads that re-evaluate the non-cacheable call.
 
 ## Open Questions
 
