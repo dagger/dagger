@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -568,6 +569,9 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			require.Equal(t, "CI", res.EnvVar.Name)
 			require.Equal(t, "true", res.EnvVar.Value)
 			require.Len(t, res.Ports, 2)
+			// Container.exposedPorts iterates a Go map and returns the ports in
+			// no defined order; compare them sorted by port number.
+			sort.Slice(res.Ports, func(i, j int) bool { return res.Ports[i].Port < res.Ports[j].Port })
 			require.Equal(t, 8080, res.Ports[0].Port)
 			require.NotNil(t, res.Ports[0].Description)
 			require.Equal(t, "web", *res.Ports[0].Description)
