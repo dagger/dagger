@@ -420,6 +420,7 @@ Manage Dagger Cloud
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
 * [dagger cloud rerun](#dagger-cloud-rerun)	 - Re-run checks on Dagger Cloud for the current commit
 * [dagger cloud signup](#dagger-cloud-signup)	 - Create or select a Dagger Cloud account and organization
+* [dagger cloud usage](#dagger-cloud-usage)	 - Show Dagger Cloud usage
 
 ## dagger cloud billing
 
@@ -928,6 +929,39 @@ dagger cloud signup [options] [org]
 
 ```
       --switch-account   Choose a different Dagger Cloud account
+```
+
+### Options inherited from parent commands
+
+```
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
+```
+
+### SEE ALSO
+
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+
+## dagger cloud usage
+
+Show Dagger Cloud usage
+
+### Synopsis
+
+Show Dagger Cloud usage for a UTC calendar month.
+
+Reports Cloud Engine compute usage (core minutes and cost) and telemetry usage
+(spans and log lines ingested) for the current month by default, or the month
+given with --month.
+
+```
+dagger cloud usage [options] [org] [flags]
+```
+
+### Options
+
+```
+      --json           Print JSON output
+      --month string   UTC month to report, as YYYY-MM (defaults to the current month)
 ```
 
 ### Options inherited from parent commands
