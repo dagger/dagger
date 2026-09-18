@@ -499,6 +499,14 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 	parentModEnv := dang.NewObject(parentModType)
 
 	for name, value := range parentState {
+		if name == "__daggerCollectionBase" {
+			base, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid collection base %T", value)
+			}
+			parentModEnv.Bind(name, dang.StringValue{Val: base}, dang.PrivateVisibility)
+			continue
+		}
 		scheme, found := parentModType.SchemeOf(name)
 		if !found {
 			return nil, fmt.Errorf("unknown field: %s", name)
@@ -1486,6 +1494,14 @@ func (c dangConverter) convertObject(ctx context.Context, vals map[string]any, f
 
 	modVal := dang.NewObject(mod)
 	for name, val := range vals {
+		if name == "__daggerCollectionBase" {
+			base, ok := val.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid collection base %T", val)
+			}
+			modVal.Bind(name, dang.StringValue{Val: base}, dang.PrivateVisibility)
+			continue
+		}
 		expectedT, found := mod.SchemeOf(name)
 		if !found {
 			return nil, fmt.Errorf("module %q does not have a scheme for %q", mod.Name(), name)

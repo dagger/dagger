@@ -1,3 +1,6 @@
+from copy import copy, deepcopy
+from dataclasses import replace
+
 import pytest
 
 import dagger
@@ -39,3 +42,35 @@ def test_collection_markers_preserve_fields_and_functions(collection_first, get_
     assert obj.functions["lookup"].wrapped.__dagger_get__
     assert items_type().names == []
     assert items_type().selection is None
+
+
+@pytest.mark.parametrize("clone", [copy, deepcopy, replace])
+@pytest.mark.parametrize("custom_init", [False, True])
+def test_base_survives_copies_without_delta(clone, custom_init):
+    mod = Module()
+
+    @mod.collection
+    @mod.object_type
+    class Items:
+        names: list[str] = mod.keys(default=list)
+
+        if custom_init:
+
+            def __init__(self, names: list[str]):
+                self.names = names
+
+    original = mod._converter.structure(
+        {"names": ["a", "b"], "__daggerCollectionBase": "original"}, Items
+    )
+    changed = clone(original)
+    changed.names = ["b", "c"]
+    assert mod._converter.unstructure(changed) == {
+        "names": ["b", "c"],
+        "__daggerCollectionBase": "original",
+    }
+    assert mod._converter.unstructure(Items(names=["c"])) == {"names": ["c"]}
+    assert "_dagger_collection_base" not in mod.get_object("Items").fields
+    assert (
+        "_dagger_collection_base"
+        not in mod.get_object("Items").get_constructor().parameters
+    )

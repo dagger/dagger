@@ -133,7 +133,11 @@ type GoModules @collection {
 }
 ```
 
-The base is the collection first returned by the module. Further selections retain that base. The delta lists the differences between the current and base keys:
+Every collection has an internal `base` reference. It is not a schema field or an author field. When the engine first stores a collection result with no base, it sets the base to that result. The base is then fixed.
+
+Normal state copies preserve the base, including across module calls and loading by ID. A new collection starts a new base. This rule applies even when the author declares no delta field. Clearing or copying the delta field does not change the base.
+
+Any function can change keys. No function writes to the base. `subset` has no special role in delta tracking. The engine compares current keys with base keys when it fills the delta field:
 
 - `addedKeys` contains current keys absent from the base, in current order.
 - `removedKeys` contains base keys absent from the current collection, in base order.
@@ -142,17 +146,18 @@ The base is the collection first returned by the module. Further selections reta
 
 For example, with original keys `["TestA", "TestB", "TestC"]`:
 
-| Selection | `addedKeys` | `removedKeys` |
+| Operation | `addedKeys` | `removedKeys` |
 | -- | -- | -- |
 | Original collection | `[]` | `[]` |
 | Select `TestA` and `TestC` | `[]` | `["TestB"]` |
 | Then select `TestC` | `[]` | `["TestA", "TestB"]` |
+| Then module code sets keys to `TestB`, `TestC`, `TestD` | `["TestD"]` | `["TestA"]` |
 
 All collections use the same `CollectionDelta` type. Delta keys use the same string form as artifact keys. Conversion must preserve key identity and allow conversion back using the declared key type. For example, integer keys `[1, 2]` become `["1", "2"]`.
 
-The engine retains the base and current keys across module calls and loading by ID. It computes the delta without evaluating items. A change to an item's contents does not affect the delta. The delta belongs to the collection value. Its dimension name does not affect it.
+The engine computes the delta without evaluating items. Key order and item contents do not affect key membership. The delta belongs to the collection value. Its dimension name does not affect it.
 
-The first engine operation that changes keys is `subset`. It does not add keys. Future operations that add or restore keys must compare the result with the same base.
+The delta shows the net difference, not a history of operations. Restoring a removed key cancels its removal. The injected delta is a snapshot for one module call. Local key changes become visible to the engine when the module returns the collection. The engine fills a new delta before the next module call.
 
 When both lists are empty, a batch function can use an operation for the full original collection. For example, its original collection can contain all tests in a directory. It can then run `go test` without a test filter.
 
@@ -298,7 +303,7 @@ Parent dimensions still select the containing objects. A complete address has on
 
 For each dimension, `Artifact.uri()` tries its short name, then its qualified name, then its exact identifier. It uses the first name that is unambiguous on the path. Order pairs from parent to child. `Artifacts.uri` uses exact identifiers for selectors over several paths.
 
-When `uri` returns an address, `artifacts.filterUri(a.uri)` must select the same set as `a`. One address cannot express OR across different dimensions. Reject `uri` for that selection; keep the filter valid for listing and execution.
+When `uri` returns an address, `artifacts.filterUri(a.uri)` must select the same set as `a`. One address cannot express OR across different dimensions or collection key exclusions. Reject `uri` for those selections; keep the filters valid for listing and execution.
 
 ### 5. Use the existing CLI and resolver
 
@@ -378,6 +383,6 @@ Verify:
 - Adding unrelated fields does not change complete addresses. Equal objects at different keys retain distinct addresses.
 - Discovery does not evaluate leaf values or excluded parent items.
 - Collection and item addresses at the same path, flag and query equivalence, and dimension filters preserved by `uri` and `filterUri`.
-- Artifacts, subsets, base keys, and delta survive module calls and loading by ID. Evaluation uses the source workspace, including its edits.
+- Artifacts, subsets, and base references survive module calls and loading by ID. Normal state copies preserve the base without a declared delta field. New collections start a new base. Evaluation uses the source workspace, including its edits.
 - Batch replacement runs once per selected collection value, receives the selected keys and delta, and skips empty selections.
 - Item functions replaced by a batch do not run. Other item functions still run once per selected item.

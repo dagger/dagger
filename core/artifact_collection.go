@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -154,7 +155,7 @@ func (a *Artifacts) matchesDimensionFilters(dims []*ArtifactDimension) bool {
 // already supplies every key they could contribute. Keep descendants when
 // their dimensions are needed to satisfy a filter.
 func (a *Artifacts) ForDimensionKeys(dimension string) *Artifacts {
-	if !a.hasCollections() {
+	if !a.hasCollections() || len(a.Selector.ExcludedURIs) > 0 {
 		return a
 	}
 	return a.filter(func(candidate *Artifact) bool {
@@ -180,6 +181,37 @@ func (a *Artifacts) ForDimensionKeys(dimension string) *Artifacts {
 // Expand evaluates only the collection receivers needed to enumerate selected
 // keys. A leaf artifact's value remains deferred.
 func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
+	if len(a.Selector.ExcludedURIs) > 0 {
+		included := a.filter(func(*Artifact) bool { return true })
+		included.Selector.ExcludedURIs = nil
+		result, err := included.Expand(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, uri := range a.Selector.ExcludedURIs {
+			address, err := dagaddress.Parse(uri)
+			if err != nil {
+				return nil, err
+			}
+			// Match the exclusion separately. Combining its keys with the
+			// inclusion selector would turn them into alternatives.
+			excluded, err := (&Artifacts{Entries: result.Entries}).FilterURI(address)
+			if err != nil {
+				return nil, err
+			}
+			excluded, err = excluded.Expand(ctx)
+			if err != nil {
+				return nil, err
+			}
+			identities := map[string]bool{}
+			for _, artifact := range excluded.Entries {
+				identities[artifactIdentity(artifact)] = true
+			}
+			result = result.filter(func(artifact *Artifact) bool { return !identities[artifactIdentity(artifact)] })
+		}
+		result.Selector.ExcludedURIs = slices.Clone(a.Selector.ExcludedURIs)
+		return result, nil
+	}
 	bound, err := a.BindDimensions()
 	if err != nil {
 		return nil, err
@@ -237,6 +269,15 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 		}
 	}
 	return result, nil
+}
+
+func artifactIdentity(artifact *Artifact) string {
+	// Identity uses exact dimension identifiers, independent of display aliases.
+	encoded, _ := json.Marshal(struct {
+		Path []string
+		Keys []*ArtifactDimensionKey
+	}{artifact.Path, artifact.DimensionKeys})
+	return string(encoded)
 }
 
 func (a *Artifacts) hasExactPath(path []string) bool {

@@ -114,6 +114,6 @@ func (s *moduleSchema) collectionBatchType(ctx context.Context, def *core.Collec
 	return core.CollectionBatchType(ctx, dag, def.Object)
 }
 
-func (s *moduleSchema) collectionDelta(_ context.Context, _ *core.Query, args struct{ AddedKeys, RemovedKeys, BaseKeys []string }) (*core.CollectionDelta, error) {
-	return &core.CollectionDelta{AddedKeys: args.AddedKeys, RemovedKeys: args.RemovedKeys, BaseKeys: args.BaseKeys}, nil
+func (s *moduleSchema) collectionDelta(_ context.Context, _ *core.Query, args struct{ AddedKeys, RemovedKeys []string }) (*core.CollectionDelta, error) {
+	return &core.CollectionDelta{AddedKeys: args.AddedKeys, RemovedKeys: args.RemovedKeys}, nil
 }

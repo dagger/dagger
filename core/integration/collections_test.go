@@ -32,6 +32,14 @@ func (*Collections) Empty() *Items { return &Items{Names: []string{}} }
 func (m *Collections) SelfSubset(ctx context.Context) ([]string, error) {
   return dag.Collections().Items().Subset([]string{"c"}).Batch().Removed(ctx)
 }
+func (m *Collections) ArgumentDelta(ctx context.Context) ([]string, error) {
+  return dag.Collections().Forward(dag.Collections().Items()).Batch().Added(ctx)
+}
+func (m *Collections) Forward(items *Items) *Items {
+  items.Names = []string{"d"}
+  items.Selection = nil
+  return items
+}
 // +collection
 type Items struct {
   // +keys
@@ -45,6 +53,9 @@ func (items *Items) Lookup(name string) *Item { return &Item{Name: items.Prefix 
 func (items *Items) Selected() []string { return items.Names }
 func (items *Items) Removed(ctx context.Context) ([]string, error) { return items.Selection.RemovedKeys(ctx) }
 func (items *Items) Copy() *Items { return items }
+func (items Items) Change(names []string) Items { items.Names = names; items.Selection = nil; return items }
+func (items *Items) Fresh() *Items { return &Items{Names: []string{"z"}, Selection: items.Selection} }
+func (items *Items) Added(ctx context.Context) ([]string, error) { return items.Selection.AddedKeys(ctx) }
 type Item struct { Name string }
 func (item *Item) File() *dagger.File { return dag.Directory().WithNewFile("value", item.Name).File("value") }
 func (*Item) Broken() *dagger.Container { panic("leaf must stay deferred") }
@@ -93,10 +104,37 @@ func (CollectionsSuite) TestGoAPI(ctx context.Context, t *testctx.T) {
     "empty":{"keys":[],"list":[],"batch":{"selected":[],"removed":["b","a","c"]}}
   }
 }}`, out)
-	out, err = ctr.With(daggerQueryAt("./collections", `{ selfSubset }`)).Stdout(ctx)
+	out, err = ctr.With(daggerQueryAt("./collections", `{ selfSubset argumentDelta }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"selfSubset":["b","a"]}`, out)
+	require.JSONEq(t, `{"selfSubset":["b","a"],"argumentDelta":["d"]}`, out)
+	out, err = ctr.With(daggerQueryAt("./collections", collectionDeltaQuery)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, collectionDeltaExpected, out)
 }
+
+const collectionDeltaQuery = `{ items {
+  batch { change(names: ["c", "d"]) {
+    keys
+    batch { added removed change(names: ["c", "b", "a"]) { batch { added removed } } }
+    subset(keys: ["d"]) { batch { added removed } }
+  } }
+  subset(keys: ["c"]) { batch {
+    change(names: ["b", "c", "d"]) { batch { added removed } }
+    fresh { keys batch { added removed } }
+  } }
+} }`
+
+const collectionDeltaExpected = `{"items":{
+  "batch":{"change":{
+    "keys":["c","d"],
+    "batch":{"added":["d"],"removed":["b","a"],"change":{"batch":{"added":[],"removed":[]}}},
+    "subset":{"batch":{"added":["d"],"removed":["b","a","c"]}}
+  }},
+  "subset":{"batch":{
+    "change":{"batch":{"added":["d"],"removed":["a"]}},
+    "fresh":{"keys":["z"],"batch":{"added":[],"removed":[]}}
+  }}
+}}`
 
 func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
@@ -132,6 +170,8 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
     collection: filterUri(uri: "items") { items { uri dimensionKeys { dimension key } } }
     selected: filterUri(uri: "items?item=a") { items { uri dimensionKeys { dimension key } } }
     files: filterUri(uri: "items/file?item=a") { items { uri value { ... on File { contents } } } }
+    evaluated: filterUri(uri: "items/file?item=a") { values { artifact { uri } value { ... on File { contents } } error { message } } }
+    excluded: filterUri(uri: "items/file?item=a&item=b") { withoutUri(uri: "items/file?item=a") { items { uri } } }
     lazy: filterUri(uri: "items/broken?item=b") { items { uri } }
     nested: filterUri(uri: "items/parts?item=a&part=x") { items { uri dimensionKeys { dimension key } } }
     emptyKey: filterUri(uri: "items/parts?item=a&part=") { items { uri } }
@@ -155,6 +195,8 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
   "collection":{"items":[{"uri":"dag://items","dimensionKeys":[]}]},
   "selected":{"items":[{"uri":"dag://items?item=a","dimensionKeys":[{"dimension":"Collections.items","key":"a"}]}]},
   "files":{"items":[{"uri":"dag://items/file?item=a","value":{"contents":"item:a"}}]},
+  "evaluated":{"values":[{"artifact":{"uri":"dag://items/file?item=a"},"value":{"contents":"item:a"},"error":null}]},
+  "excluded":{"withoutUri":{"items":[{"uri":"dag://items/file?item=b"}]}},
   "lazy":{"items":[{"uri":"dag://items/broken?item=b"}]},
   "nested":{"items":[{"uri":"dag://items/parts?item=a&part=x","dimensionKeys":[{"dimension":"Collections.items","key":"a"},{"dimension":"CollectionsItem.parts","key":"x"}]}]},
   "emptyKey":{"items":[{"uri":"dag://items/parts?item=a&part="}]},
@@ -237,11 +279,15 @@ func (CollectionsSuite) TestSDKs(ctx context.Context, t *testctx.T) {
   "subset":{"keys":["b","c"],"batch":{"selected":["b","c"],"removed":["a"],
     "copy":{"subset":{"batch":{"removed":["b","a"]}}}}}
 }}`, out)
+			out, err = ctr.With(daggerQuery(collectionDeltaQuery)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, collectionDeltaExpected, out)
 		})
 	}
 }
 
 const collectionPythonSource = `from typing import Self
+from dataclasses import replace
 from dagger import CollectionDelta, collection, delta, field, function, get, keys, object_type
 
 @object_type
@@ -273,6 +319,19 @@ class Items:
     def copy(self) -> Self:
         return self
 
+    @function
+    def change(self, names: list[str]) -> Self:
+        return replace(self, names=names)
+
+    @function
+    def fresh(self) -> Self:
+        return Items(names=["z"])
+
+    @function
+    async def added(self) -> list[str]:
+        assert self.selection is not None
+        return await self.selection.added_keys()
+
 @object_type
 class Test:
     @function
@@ -295,6 +354,9 @@ export class Items {
   @func() selected(): string[] { return this.names }
   @func() async removed(): Promise<string[]> { return await this.selection!.removedKeys() }
   @func() copy(): Items { return this }
+  @func() change(names: string[]): Items { return Object.assign(new Items(), this, {names, selection: undefined}) }
+  @func() fresh(): Items { const items = new Items(); items.names = ["z"]; items.selection = this.selection; return items }
+  @func() async added(): Promise<string[]> { return await this.selection!.addedKeys() }
 }
 @object()
 export class Test {
@@ -313,6 +375,13 @@ type Items @collection {
   selected: [String!]! { names }
   removed: [String!]! { selection!.removedKeys }
   copy: Items! { self }
+  change(names: [String!]!): Items! {
+    self.names = names
+    self.selection = null
+    self
+  }
+  fresh: Items! { Items(names: ["z"], prefix: prefix) }
+  added: [String!]! { selection!.addedKeys }
 }
 type Item { pub name: String! }
 `
