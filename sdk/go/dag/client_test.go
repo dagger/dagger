@@ -26,7 +26,7 @@ func TestDirectory(t *testing.T) {
 
 	ctx := context.Background()
 
-	dir := Directory()
+	dir := NewDirectory()
 
 	contents, err := dir.
 		WithNewFile("/hello.txt", "world").

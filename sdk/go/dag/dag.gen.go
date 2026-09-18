@@ -4,284 +4,291 @@ package dag
 
 import (
 	"context"
-	"os"
-	"sync"
 
-	dagger "dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
-var client *dagger.Client
-var clientMu sync.Mutex
-
-func initClient() *dagger.Client {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-
-	if client == nil {
-		opts := []dagger.ClientOpt{
-			dagger.WithLogOutput(os.Stdout),
-		}
-
-		ctx := context.Background()
-
-		var err error
-		client, err = dagger.Connect(ctx, opts...)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return client
-}
-
 // Close the engine connection
+//
+// Deprecated: use dagger.io/dagger/core.Close instead.
 func Close() error {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-
-	var err error
-	if client != nil {
-		err = client.Close()
-		client = nil
-	}
-	return err
+	return core.Close()
 }
 
 // initialize an address to load directories, containers, secrets or other object types.
-func Address(value string) *dagger.Address {
-	client := initClient()
-	return client.Address(value)
+//
+// Deprecated: use dagger.io/dagger/core.NewAddress instead.
+func NewAddress(value string) *core.Address {
+	return core.NewAddress(value)
 }
 
 // Creates a file from arbitrary binary contents.
-func Blob(name string, contents dagger.Bytes, opts ...dagger.BlobOpts) *dagger.File {
-	client := initClient()
-	return client.Blob(name, contents, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.Blob instead.
+func Blob(name string, contents core.Bytes, opts ...core.BlobOpts) *core.File {
+	return core.Blob(name, contents, opts...)
 }
 
 // Constructs a cache volume for a given cache key.
-func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
-	client := initClient()
-	return client.CacheVolume(key, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.NewCacheVolume instead.
+func NewCacheVolume(key string, opts ...core.CacheVolumeOpts) *core.CacheVolume {
+	return core.NewCacheVolume(key, opts...)
 }
 
 // Creates an empty changeset
-func Changeset() *dagger.Changeset {
-	client := initClient()
-	return client.Changeset()
+//
+// Deprecated: use dagger.io/dagger/core.NewChangeset instead.
+func NewChangeset() *core.Changeset {
+	return core.NewChangeset()
 }
 
 // Dagger Cloud configuration and state
-func Cloud() *dagger.Cloud {
-	client := initClient()
-	return client.Cloud()
+//
+// Deprecated: use dagger.io/dagger/core.NewCloud instead.
+func NewCloud() *core.Cloud {
+	return core.NewCloud()
 }
 
 // Creates a scratch container, with no image or metadata.
 //
 // To pull an image, follow up with the "from" function.
-func Container(opts ...dagger.ContainerOpts) *dagger.Container {
-	client := initClient()
-	return client.Container(opts...)
+//
+// Deprecated: use dagger.io/dagger/core.NewContainer instead.
+func NewContainer(opts ...core.ContainerOpts) *core.Container {
+	return core.NewContainer(opts...)
 }
 
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
-func CurrentFunctionCall() *dagger.FunctionCall {
-	client := initClient()
-	return client.CurrentFunctionCall()
+//
+// Deprecated: use dagger.io/dagger/core.CurrentFunctionCall instead.
+func CurrentFunctionCall() *core.FunctionCall {
+	return core.CurrentFunctionCall()
 }
 
 // The module currently being served in the session, if any.
-func CurrentModule() *dagger.CurrentModule {
-	client := initClient()
-	return client.CurrentModule()
+//
+// Deprecated: use dagger.io/dagger/core.NewCurrentModule instead.
+func NewCurrentModule() *core.CurrentModule {
+	return core.NewCurrentModule()
 }
 
 // The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
-func CurrentNode() dagger.Node {
-	client := initClient()
-	return client.CurrentNode()
+//
+// Deprecated: use dagger.io/dagger/core.CurrentNode instead.
+func CurrentNode() core.Node {
+	return core.CurrentNode()
 }
 
 // The current UTC time in RFC3339 format. Never cached.
+//
+// Deprecated: use dagger.io/dagger/core.CurrentTimestamp instead.
 func CurrentTimestamp(ctx context.Context) (string, error) {
-	client := initClient()
-	return client.CurrentTimestamp(ctx)
+	return core.CurrentTimestamp(ctx)
 }
 
 // The TypeDef representations of the objects currently being served in the session.
-func CurrentTypeDefs(ctx context.Context, opts ...dagger.CurrentTypeDefsOpts) ([]dagger.TypeDef, error) {
-	client := initClient()
-	return client.CurrentTypeDefs(ctx, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.CurrentTypeDefs instead.
+func CurrentTypeDefs(ctx context.Context, opts ...core.CurrentTypeDefsOpts) ([]core.TypeDef, error) {
+	return core.CurrentTypeDefs(ctx, opts...)
 }
 
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func CurrentWorkspace() *dagger.Workspace {
-	client := initClient()
-	return client.CurrentWorkspace()
+//
+// Deprecated: use dagger.io/dagger/core.CurrentWorkspace instead.
+func CurrentWorkspace() *core.Workspace {
+	return core.CurrentWorkspace()
 }
 
 // The default platform of the engine.
-func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
-	client := initClient()
-	return client.DefaultPlatform(ctx)
+//
+// Deprecated: use dagger.io/dagger/core.DefaultPlatform instead.
+func DefaultPlatform(ctx context.Context) (core.Platform, error) {
+	return core.DefaultPlatform(ctx)
 }
 
 // Creates an empty directory.
-func Directory() *dagger.Directory {
-	client := initClient()
-	return client.Directory()
+//
+// Deprecated: use dagger.io/dagger/core.NewDirectory instead.
+func NewDirectory() *core.Directory {
+	return core.NewDirectory()
 }
 
 // The Dagger engine container configuration and state
-func Engine() *dagger.Engine {
-	client := initClient()
-	return client.Engine()
+//
+// Deprecated: use dagger.io/dagger/core.NewEngine instead.
+func NewEngine() *core.Engine {
+	return core.NewEngine()
 }
 
 // Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
-func EngineVolume(name string, opts ...dagger.EngineVolumeOpts) *dagger.Volume {
-	client := initClient()
-	return client.EngineVolume(name, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.EngineVolume instead.
+func EngineVolume(name string, opts ...core.EngineVolumeOpts) *core.Volume {
+	return core.EngineVolume(name, opts...)
 }
 
 // Initialize an environment file
-func EnvFile(opts ...dagger.EnvFileOpts) *dagger.EnvFile {
-	client := initClient()
-	return client.EnvFile(opts...)
+//
+// Deprecated: use dagger.io/dagger/core.NewEnvFile instead.
+func NewEnvFile(opts ...core.EnvFileOpts) *core.EnvFile {
+	return core.NewEnvFile(opts...)
 }
 
 // Create a new error.
-func Error(message string) *dagger.Error {
-	client := initClient()
-	return client.Error(message)
+//
+// Deprecated: use dagger.io/dagger/core.NewError instead.
+func NewError(message string) *core.Error {
+	return core.NewError(message)
 }
 
 // Creates a file with the specified contents.
-func File(name string, contents string, opts ...dagger.FileOpts) *dagger.File {
-	client := initClient()
-	return client.File(name, contents, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.NewFile instead.
+func NewFile(name string, contents string, opts ...core.FileOpts) *core.File {
+	return core.NewFile(name, contents, opts...)
 }
 
 // Creates a function.
-func Function(name string, returnType *dagger.TypeDef) *dagger.Function {
-	client := initClient()
-	return client.Function(name, returnType)
+//
+// Deprecated: use dagger.io/dagger/core.NewFunction instead.
+func NewFunction(name string, returnType *core.TypeDef) *core.Function {
+	return core.NewFunction(name, returnType)
 }
 
 // Create a code generation result, given a directory containing the generated code.
-func GeneratedCode(code *dagger.Directory) *dagger.GeneratedCode {
-	client := initClient()
-	return client.GeneratedCode(code)
+//
+// Deprecated: use dagger.io/dagger/core.NewGeneratedCode instead.
+func NewGeneratedCode(code *core.Directory) *core.GeneratedCode {
+	return core.NewGeneratedCode(code)
 }
 
 // Queries a Git repository.
-func Git(url string, opts ...dagger.GitOpts) *dagger.GitRepository {
-	client := initClient()
-	return client.Git(url, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.Git instead.
+func Git(url string, opts ...core.GitOpts) *core.GitRepository {
+	return core.Git(url, opts...)
 }
 
 // Queries the host environment.
-func Host() *dagger.Host {
-	client := initClient()
-	return client.Host()
+//
+// Deprecated: use dagger.io/dagger/core.NewHost instead.
+func NewHost() *core.Host {
+	return core.NewHost()
 }
 
 // Returns a file containing an http remote url content.
-func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
-	client := initClient()
-	return client.HTTP(url, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.HTTP instead.
+func HTTP(url string, opts ...core.HTTPOpts) *core.File {
+	return core.HTTP(url, opts...)
 }
 
 // A unique identifier for this Query.
-func ID(ctx context.Context) (dagger.ID, error) {
-	client := initClient()
-	return client.ID(ctx)
+//
+// Deprecated: use dagger.io/dagger/core.NewID instead.
+func NewID(ctx context.Context) (core.ID, error) {
+	return core.NewID(ctx)
 }
 
 // Initialize a JSON value
-func JSON() *dagger.JSONValue {
-	client := initClient()
-	return client.JSON()
+//
+// Deprecated: use dagger.io/dagger/core.NewJSON instead.
+func NewJSON() *core.JSONValue {
+	return core.NewJSON()
 }
 
 // Initialize a new LLM conversation.
 //
 // Experimental: LLM support is not yet stabilized
-func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
-	client := initClient()
-	return client.LLM(opts...)
+//
+// Deprecated: use dagger.io/dagger/core.NewLLM instead.
+func NewLLM(opts ...core.LLMOpts) *core.LLM {
+	return core.NewLLM(opts...)
 }
 
 // Create a new module.
-func Module() *dagger.Module {
-	client := initClient()
-	return client.Module()
+//
+// Deprecated: use dagger.io/dagger/core.NewModule instead.
+func NewModule() *core.Module {
+	return core.NewModule()
 }
 
 // Create a new module source instance from a source ref string
-func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
-	client := initClient()
-	return client.ModuleSource(refString, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.NewModuleSource instead.
+func NewModuleSource(refString string, opts ...core.ModuleSourceOpts) *core.ModuleSource {
+	return core.NewModuleSource(refString, opts...)
 }
 
 // Load any object by its ID.
-func Node(ctx context.Context, id dagger.ID) (dagger.Node, error) {
-	client := initClient()
-	return client.Node(ctx, id)
+//
+// Deprecated: use dagger.io/dagger/core.NewNode instead.
+func NewNode(ctx context.Context, id core.ID) (core.Node, error) {
+	return core.NewNode(ctx, id)
 }
 
 // Load a GraphQL introspection schema for merging.
-func Schema(json dagger.JSON) *dagger.Schema {
-	client := initClient()
-	return client.Schema(json)
+//
+// Deprecated: use dagger.io/dagger/core.NewSchema instead.
+func NewSchema(json core.JSON) *core.Schema {
+	return core.NewSchema(json)
 }
 
 // Creates a new secret.
-func Secret(uri string, opts ...dagger.SecretOpts) *dagger.Secret {
-	client := initClient()
-	return client.Secret(uri, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.NewSecret instead.
+func NewSecret(uri string, opts ...core.SecretOpts) *core.Secret {
+	return core.NewSecret(uri, opts...)
 }
 
 // Load the module at the given address and serve its API in the current session.
 //
 // A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
-func ServeModule(ctx context.Context, address string, opts ...dagger.ServeModuleOpts) error {
-	client := initClient()
-	return client.ServeModule(ctx, address, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.ServeModule instead.
+func ServeModule(ctx context.Context, address string, opts ...core.ServeModuleOpts) error {
+	return core.ServeModule(ctx, address, opts...)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.
 //
 // The plaintext value is limited to a size of 128000 bytes.
-func SetSecret(name string, plaintext string) *dagger.Secret {
-	client := initClient()
-	return client.SetSecret(name, plaintext)
+//
+// Deprecated: use dagger.io/dagger/core.SetSecret instead.
+func SetSecret(name string, plaintext string) *core.Secret {
+	return core.SetSecret(name, plaintext)
 }
 
 // Creates source map metadata.
-func SourceMap(filename string, line int, column int) *dagger.SourceMap {
-	client := initClient()
-	return client.SourceMap(filename, line, column)
+//
+// Deprecated: use dagger.io/dagger/core.NewSourceMap instead.
+func NewSourceMap(filename string, line int, column int) *core.SourceMap {
+	return core.NewSourceMap(filename, line, column)
 }
 
 // Constructs an SSHFS volume.
-func SshfsVolume(endpoint string, privateKey *dagger.Secret, opts ...dagger.SshfsVolumeOpts) *dagger.Volume {
-	client := initClient()
-	return client.SshfsVolume(endpoint, privateKey, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.SshfsVolume instead.
+func SshfsVolume(endpoint string, privateKey *core.Secret, opts ...core.SshfsVolumeOpts) *core.Volume {
+	return core.SshfsVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.
-func TypeDef() *dagger.TypeDef {
-	client := initClient()
-	return client.TypeDef()
+//
+// Deprecated: use dagger.io/dagger/core.NewTypeDef instead.
+func NewTypeDef() *core.TypeDef {
+	return core.NewTypeDef()
 }
 
 // Get the current Dagger Engine version.
+//
+// Deprecated: use dagger.io/dagger/core.Version instead.
 func Version(ctx context.Context) (string, error) {
-	client := initClient()
-	return client.Version(ctx)
+	return core.Version(ctx)
 }
