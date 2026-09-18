@@ -308,12 +308,12 @@ func TestMayCallEngineCommands(t *testing.T) {
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayCallEngine))
 
 	for name, cmd := range map[string]*cobra.Command{
-		"root":             rootCmd,
-		"activity":         activityCmd,
-		"cloud rerun":      cloudRerunCmd,
-		"sdk":              sdkCmd,
-		"trace":            traceCmd,
-		"workspace remote": workspaceRemoteCmd,
+		"root":               rootCmd,
+		"activity":           activityCmd,
+		"cloud checks rerun": cloudRerunCmd,
+		"sdk":                sdkCmd,
+		"trace":              traceCmd,
+		"workspace remote":   workspaceRemoteCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
 	}
@@ -344,7 +344,6 @@ func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
 func TestMaySelectWorkspaceCommands(t *testing.T) {
 	expected := append(commandsDeclaringCapability(rootCmd, mayCallEngine),
 		"dagger cloud checks",
-		"dagger cloud rerun",
 		"dagger workspace activity",
 		"dagger workspace remote",
 	)
@@ -365,7 +364,7 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 		"activity":            activityCmd,
 		"cloud checks list":   cloudCheckListCmd,
 		"cloud checks status": cloudCheckStatusCmd,
-		"cloud rerun":         cloudRerunCmd,
+		"cloud checks rerun":  cloudRerunCmd,
 		"workspace remote":    workspaceRemoteCmd,
 	} {
 		require.True(t, commandHasCapability(cmd, maySelectWorkspace), name)

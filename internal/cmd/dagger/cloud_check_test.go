@@ -23,7 +23,7 @@ func TestCloudChecksCommandAndHiddenAlias(t *testing.T) {
 		require.Same(t, cloudCheckCmd, cmd)
 		require.Equal(t, "checks", cmd.Name())
 		require.Empty(t, helpAliases(cmd))
-		for _, subcommand := range []string{"on", "off", "status", "list"} {
+		for _, subcommand := range []string{"on", "off", "status", "list", "rerun"} {
 			cmd, args, err := root.Find([]string{"cloud", name, subcommand})
 			require.NoError(t, err)
 			require.Empty(t, args)

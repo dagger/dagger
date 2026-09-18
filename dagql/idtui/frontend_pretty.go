@@ -1195,7 +1195,7 @@ func (fe *frontendPretty) SetTraceID(traceID string) {
 // drives the report's re-run suggestions.
 type ciContext struct {
 	commit     string // git ref / commit SHA the trace ran on
-	isNativeCI bool   // ran in Dagger Cloud native CI (so 'dagger cloud rerun' applies)
+	isNativeCI bool   // ran in Dagger Cloud native CI (so 'dagger cloud checks rerun' applies)
 }
 
 // SetCIContext records the trace's source commit / CI change so the report can
@@ -3629,7 +3629,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // renderRerunSection prints copy-paste commands to re-run the failed checks,
 // split by intent so the two very different actions read distinctly. For a Cloud
 // trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
-// cloud rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
+// cloud checks rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
 // check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
 // be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
 // a CLI to run. Only outermost
@@ -3680,7 +3680,7 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.ciMeta != nil && fe.ciMeta.isNativeCI && fe.ciMeta.commit != "" {
 		body := make([]string, 0, len(names))
 		for _, name := range names {
-			body = append(body, fmt.Sprintf("dagger cloud rerun --commit %s --check %q", fe.ciMeta.commit, name))
+			body = append(body, fmt.Sprintf("dagger cloud checks rerun --commit %s --check %q", fe.ciMeta.commit, name))
 		}
 		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "RE-RUN IN CI", body)...)
 	}
@@ -3713,7 +3713,7 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 
 // outermostSurfacedCheck returns the top-level surfaced check whose subtree
 // contains checkName (itself included), or nil. It maps a (possibly nested)
-// check to the outermost unit that 'dagger cloud rerun'/'dagger check' can target.
+// check to the outermost unit that 'dagger cloud checks rerun'/'dagger check' can target.
 func outermostSurfacedCheck(roots []*dagui.CheckNode, checkName string) *dagui.CheckNode {
 	var contains func(n *dagui.CheckNode) bool
 	contains = func(n *dagui.CheckNode) bool {

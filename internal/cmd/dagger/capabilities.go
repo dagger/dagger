@@ -352,7 +352,6 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		activityCmd,
 		cloudCheckCmd,
-		cloudRerunCmd,
 		workspaceRemoteCmd,
 	} {
 		setCommandCapabilities(cmd, maySelectWorkspace)

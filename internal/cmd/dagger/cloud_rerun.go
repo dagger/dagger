@@ -73,7 +73,7 @@ func init() {
 	cloudRerunCmd.MarkFlagsMutuallyExclusive("check", "all")
 	cloudRerunCmd.MarkFlagsMutuallyExclusive("failed", "all")
 	cloudRerunCmd.MarkFlagsMutuallyExclusive("commit", "pr")
-	cloudCmd.AddCommand(cloudRerunCmd)
+	cloudCheckCmd.AddCommand(cloudRerunCmd)
 }
 
 func (cli *CloudCLI) Rerun(cmd *cobra.Command, _ []string) error {
