@@ -2260,31 +2260,79 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Render the trace report for a span, check, or test: the span tree, plus the CHECKS and TESTS sections, exactly as they appear at the end of a run." + "\n" +
-			"Tool results are abridged; this is how you see the full detail behind one - pass the span ID from a report's footer, or the name of a check or test you saw run." + "\n" +
-			"Prefer ReadTrace when you want the shape of what ran (which steps, which checks/tests, where it failed); use ReadLogs when you want the raw log lines of a span." + "\n" +
-			"When a name matches several spans, the most recent one is rendered.",
+		Description: "Read the trace of this session at a span, check, or test, in one of three views." + "\n" +
+			"- report (default): the trace report -- the span tree plus the CHECKS and TESTS sections, exactly as they appear at the end of a run. Tool results are abridged; this is how you see the full detail behind one." + "\n" +
+			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
+			"- timings: the span's subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included. Use it to see where the time went." + "\n" +
+			"Pass the span ID from a report's footer or a FindSpans result, or the name of a check or test you saw run; when a name matches several spans, the most recent one is used." + "\n" +
+			"Use ReadLogs when you want the raw log lines beneath a span.",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"span": map[string]any{
 					"type":        "string",
-					"description": "Span ID (hex) to render the report for, scoped to that span's subtree.",
+					"description": "Span ID (hex) to read, scoped to that span's subtree.",
 				},
 				"check": map[string]any{
 					"type":        "string",
-					"description": "Check name to render the report for, e.g. \"shellcheck:check\".",
+					"description": "Check name to read, e.g. \"shellcheck:check\".",
 				},
 				"test": map[string]any{
 					"type":        "string",
-					"description": "Test case or suite name to render the report for.",
+					"description": "Test case or suite name to read.",
+				},
+				"view": map[string]any{
+					"type":        "string",
+					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings},
+					"description": "Which view to render.",
+					"default":     traceViewReport,
+				},
+				"minDuration": map[string]any{
+					"type":        "string",
+					"description": "timings view only: hide spans shorter than this Go duration, e.g. \"10ms\" or \"1s\". Spans with unknown timing are kept.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "timings view only: maximum number of rows (0 = unlimited).",
+					"minimum":     0,
+					"default":     200,
 				},
 			},
 			"required":             []string{},
 			"additionalProperties": false,
 		},
 		Call: m.readTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "FindSpans",
+		Description: "Find spans in this session's trace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest first, with running services tagged by hostname." + "\n" +
+			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
+			"Matching is a substring test on the span name (and a service's hostname); an empty query lists everything in scope. Only the newest `limit` matches are returned.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Substring of the span name (or service hostname) to match. Empty matches every span.",
+					"default":     "",
+				},
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Restrict the search to this span's subtree (hex span ID). Empty searches the whole session.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Maximum matches to return; the newest are kept.",
+					"minimum":     1,
+					"default":     findSpansDefaultLimit,
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Call: m.findSpansTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "ListServices",
@@ -2598,33 +2646,78 @@ func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern
 	return strings.Join(logs, "\n"), nil
 }
 
-// readTraceTool renders the pretty trace report for a span, check or test --
-// in the same shape a tool call's own result is rendered as (the target's own
-// output, then the report), so what the reader gets back is in the vocabulary
-// it already sees, just scoped to the target it asked about.
+// readTraceTool reads the trace at a span, check or test, in the requested
+// view. The report view renders the pretty trace report in the same shape a
+// tool call's own result is rendered as (the target's own output, then the
+// report), so what the reader gets back is in the vocabulary it already
+// sees, just scoped to the target it asked about. The inspect and timings
+// views are the TUI console's span views, answered from the engine.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span  string `default:""`
-		Check string `default:""`
-		Test  string `default:""`
+		Span        string `default:""`
+		Check       string `default:""`
+		Test        string `default:""`
+		View        string `default:"report"`
+		MinDuration string `default:""`
+		Limit       int    `default:"200"`
 	}) (any, error) {
 		target := traceTarget{
-			Span:  args.Span,
+			Span:  normalizeSpanArg(args.Span),
 			Check: args.Check,
 			Test:  args.Test,
+		}
+		var minDuration time.Duration
+		if args.MinDuration != "" {
+			var err error
+			minDuration, err = time.ParseDuration(args.MinDuration)
+			if err != nil || minDuration < 0 {
+				return nil, fmt.Errorf("invalid minDuration %q: want a non-negative Go duration such as \"10ms\"", args.MinDuration)
+			}
+		}
+		switch args.View {
+		case traceViewReport, traceViewInspect, traceViewTimings:
+		default:
+			return nil, fmt.Errorf("unknown view %q: want %s, %s or %s", args.View, traceViewReport, traceViewInspect, traceViewTimings)
 		}
 		spanID, err := resolveTraceTarget(ctx, target)
 		if err != nil {
 			return nil, err
+		}
+		switch args.View {
+		case traceViewInspect:
+			return inspectSpan(ctx, spanID)
+		case traceViewTimings:
+			return spanTimings(ctx, spanID, minDuration, args.Limit)
 		}
 		if result := m.spanResult(ctx, spanID, readTraceReportOpts(target)); result != "" {
 			return result, nil
 		}
 		// A subtree can legitimately render to nothing (dagui hides internal,
 		// passthrough and encapsulated spans); say so rather than returning an
-		// empty result, and point at the path that does show raw output.
-		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs)",
-			spanID, spanID), nil
+		// empty result, and point at the paths that do show something.
+		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs, or ReadTrace(span: %s, view: \"inspect\") to see the span itself)",
+			spanID, spanID, spanID), nil
+	})
+}
+
+// findSpansTool searches the session's trace by span name; see findSpans.
+func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Query string `default:""`
+		Span  string `default:""`
+		Limit int    `default:"100"`
+	}) (any, error) {
+		root := ""
+		if strings.TrimSpace(args.Span) != "" {
+			root = normalizeSpanArg(args.Span)
+			if !isHexID(root, 16) {
+				return nil, fmt.Errorf("invalid span ID %q: want a hex span ID", args.Span)
+			}
+		}
+		if args.Limit <= 0 {
+			args.Limit = findSpansDefaultLimit
+		}
+		return findSpans(ctx, args.Query, root, args.Limit)
 	})
 }
 

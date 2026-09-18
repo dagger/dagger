@@ -540,6 +540,56 @@ func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, `no check named "nope:check"`)
 }
 
+// TestToolFindSpans exercises the FindSpans builtin end to end: it is
+// registered, dispatchable, and searches the session's real trace -- a query
+// nothing matches comes back as a counted "no match" rather than an empty
+// result, and a query that does match lists the span with its ID.
+func (LLMSuite) TestToolFindSpans(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/report-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that writes a report.\n"+
+			"Use the report tool to do the work and write the report.\n"+
+			"\n"+
+			"Assignment: do the work and write the report\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
+				Arguments: dagger.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Looking for spans."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "FindSpans",
+				Arguments: dagger.JSON(`{"query":"no such span anywhere"}`)},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "FindSpans",
+				Arguments: dagger.JSON(`{"query":"ReportAgent.report"}`)},
+		}).
+		WithToolResult("call_3", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "do the work and write the report" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	require.Contains(t, out, `(no spans matching "no such span anywhere" among the`)
+	// The module function the first tool call ran is a span in the session's
+	// trace, listed with its ID and status.
+	require.Regexp(t, `[0-9a-f]{16}  ok     [^\n]*ReportAgent\.report`, out)
+}
+
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
