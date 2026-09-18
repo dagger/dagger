@@ -455,7 +455,7 @@ func (r *partHTTPReader) ReadAt(p []byte, off int64) (int, error) {
 // address that did not come from renewal uses the demand's one episode.
 func (r *partHTTPReader) open(off int64) error {
 	for {
-		stream, resp, err := r.request(off)
+		stream, resp, err := r.request(off) //nolint:bodyclose // The body is handed to the stream wrapper, which closes it in stream.close and its context AfterFunc.
 		if err != nil {
 			return partContentError(r.parent, r.desc, "provider", err)
 		}
@@ -499,7 +499,7 @@ func (r *partHTTPReader) request(off int64) (*partHTTPStream, *http.Response, er
 	var resp *http.Response
 	_, err = stream.wait(func() (int, error) {
 		var err error
-		resp, err = r.provider.client.Do(req)
+		resp, err = r.provider.client.Do(req) //nolint:bodyclose // The body is handed to the stream wrapper, which closes it in stream.close and its context AfterFunc.
 		return 0, err
 	})
 	if err != nil {

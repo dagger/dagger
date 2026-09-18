@@ -96,16 +96,17 @@ type offerRowCapture struct {
 	gateRevision uint64
 }
 
+//nolint:gocyclo // Offer admission validates and publishes under the graph and gate locks in one sequence; splitting it would cut across lock scopes.
 func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input PersistedPartOffer) (out OfferDisposition) {
 	out.Address = clonePartAddress(input.Address)
 	if _, err := partAddressKey(input.Address); err != nil {
 		out.Outcome, out.Err = OfferInvalid, err
-		return
+		return out
 	}
 	copied, err := clonePartOffers([]PersistedPartOffer{input})
 	if err != nil {
 		out.Outcome, out.Err = OfferInvalid, err
-		return
+		return out
 	}
 	offer := copied[0]
 	slices.Sort(offer.Owner.DependencyIDs)
@@ -146,15 +147,15 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 		return capture.record, captureErr == nil
 	})
 	if out.Outcome == OfferAlreadyComplete || out.Outcome == OfferExecutionStarted {
-		return
+		return out
 	}
 	if captureErr != nil {
 		out.Outcome, out.Err = OfferUnavailable, captureErr
-		return
+		return out
 	}
 	if err != nil {
 		out.Outcome, out.Err = OfferInvalid, err
-		return
+		return out
 	}
 	offer.Address = address
 	capture := captures[id]
@@ -162,7 +163,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 	probes, err := describePartRecord(capture.record)
 	if err != nil {
 		out.Outcome, out.Err = OfferUnavailable, err
-		return
+		return out
 	}
 	var probe *PartProbe
 	for i := range probes {
@@ -173,12 +174,12 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 	}
 	if probe == nil {
 		out.Outcome, out.Err = OfferInvalid, errors.New("offer: undeclared output")
-		return
+		return out
 	}
 	outputs, err := mapTransferredOutputs(capture.record)
 	if err != nil {
 		out.Outcome, out.Err = OfferUnavailable, err
-		return
+		return out
 	}
 	var described *CapturedCodecOutput
 	for i := range outputs {
@@ -189,11 +190,11 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 	}
 	if described == nil {
 		out.Outcome, out.Err = OfferInvalid, errors.New("offer: output has no descriptor")
-		return
+		return out
 	}
 	if err := validateTransferOffer(offer, *described); err != nil {
 		out.Outcome, out.Err = OfferInvalid, err
-		return
+		return out
 	}
 	key, _ := partAddressKey(address)
 	// A preparation hold protects references across the two E sections.
@@ -209,7 +210,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 	c.egraphMu.Unlock()
 	if err != nil {
 		out.Outcome, out.Err = OfferInvalid, err
-		return
+		return out
 	}
 	offer.Owner.DependencyIDs = slices.Clone(owner.record.DependencyIDs)
 	transferred := false
@@ -227,12 +228,12 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 	for _, captured := range captures {
 		if err := captured.version.check(captured.row); err != nil {
 			out.Outcome, out.Err = OfferUnavailable, err
-			return
+			return out
 		}
 	}
 	if err := context.Cause(ctx); err != nil {
 		out.Outcome, out.Err = OfferUnavailable, err
-		return
+		return out
 	}
 	c.egraphMu.Lock()
 	gate := row.partGate.loadOrCreate()
@@ -283,7 +284,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 	callbacks, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
 	c.egraphMu.Unlock()
 	out.Err = errors.Join(out.Err, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), callbacks))
-	return
+	return out
 }
 
 func sameOfferMeaning(a, b PersistedPartOffer) bool {
