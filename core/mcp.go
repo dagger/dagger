@@ -2777,6 +2777,79 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call: m.findSpansTool(srv),
 	})
 	allTools.Add(LLMTool{
+		Name: "InspectCall",
+		Description: "Inspect the recipe (dagql call ID) behind a call in this session: the whole chain of API calls that produced a value, rebuilt from telemetry." + "\n" +
+			"Pass the call digest (xxh3:...) named by an engine error, a FindCalls line, or ReadTrace's inspect view -- or the span ID of the call. Views:" + "\n" +
+			"- chain (default): every selector on the receiver chain, as the TUI renders it." + "\n" +
+			"- tree: the chain with ID-valued arguments expanded inline (each withDirectory/withTools/... argument hangs a whole other chain), numbered, with digests." + "\n" +
+			"- stats: distinct calls, chain depth, module provenance, and per-call expansion counts -- how many times a loader that walks the recipe without deduplicating would re-execute each call. The view for \"why did this run that call N times?\"." + "\n" +
+			"- find: every call in the recipe whose Type.field name matches `find` (a regexp), with its path, arguments and referrers." + "\n" +
+			"`diff` structurally compares this recipe against another digest's instead: size, where the chains diverge, calls only on either side. Use it for \"why did this miss the cache / how do these two differ\"." + "\n" +
+			"A frame the client never received is reported with the frame that referenced it.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"digest": map[string]any{
+					"type":        "string",
+					"description": "Call digest to inspect, e.g. \"xxh3:9d2f...\".",
+				},
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Alternatively, the span ID (hex) of the call to inspect.",
+				},
+				"view": map[string]any{
+					"type":        "string",
+					"enum":        []string{callViewChain, callViewTree, callViewStats, callViewFind},
+					"description": "Which view to render.",
+					"default":     callViewChain,
+				},
+				"find": map[string]any{
+					"type":        "string",
+					"description": "find view only: regexp matched against each call's Type.field name (e.g. \"withExec\" or \"Container\\\\.from\").",
+				},
+				"depth": map[string]any{
+					"type":        "integer",
+					"description": "tree view only: recurse at most this many levels into ID arguments (0 = unlimited).",
+					"minimum":     0,
+					"default":     0,
+				},
+				"diff": map[string]any{
+					"type":        "string",
+					"description": "Digest of another call to structurally diff this one against (ignores `view`).",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Call: m.inspectCallTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "FindCalls",
+		Description: "Content-search every dagql call made in this session: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- with argument literals untruncated, sorted." + "\n" +
+			"This is how you find which call references a path, image, module or value, and how you walk a chain: grep for the digest another line names as its receiver or argument, then InspectCall it." + "\n" +
+			"`query` is a regexp over the rendered line.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Regexp matched against each rendered call line.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Maximum matches to return.",
+					"minimum":     1,
+					"default":     findCallsDefaultLimit,
+				},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		},
+		Call: m.findCallsTool(srv),
+	})
+	allTools.Add(LLMTool{
 		Name: "ListServices",
 		Description: "List the services in this session: hostname, exposed ports, state (running or exited), and span IDs." + "\n" +
 			"Read a service's logs with ReadLogs(span: <spanID>) — useful for tailing a server or engine that runs as a service." + "\n" +
@@ -3165,6 +3238,89 @@ func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 			args.Limit = findSpansDefaultLimit
 		}
 		return findSpans(ctx, args.Query, root, args.Limit)
+	})
+}
+
+// inspectCallTool rebuilds and renders the recipe behind a call digest or a
+// call's span; see inspectCall.
+func (m *MCP) inspectCallTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Digest string `default:""`
+		Span   string `default:""`
+		View   string `default:"chain"`
+		Find   string `default:""`
+		Depth  int    `default:"0"`
+		Diff   string `default:""`
+	}) (any, error) {
+		opts := callInspectOpts{View: args.View, Depth: args.Depth, Diff: normalizeDigestArg(args.Diff)}
+		switch args.View {
+		case callViewChain, callViewTree, callViewStats, callViewFind:
+		default:
+			return nil, fmt.Errorf("unknown view %q: want %s, %s, %s or %s", args.View, callViewChain, callViewTree, callViewStats, callViewFind)
+		}
+		if args.Find != "" {
+			re, err := regexp.Compile(args.Find)
+			if err != nil {
+				return nil, fmt.Errorf("invalid find pattern %q: %w", args.Find, err)
+			}
+			opts.Find = re
+			if args.View == callViewChain {
+				// A pattern implies the view that uses it.
+				opts.View = callViewFind
+			}
+		}
+		digest := normalizeDigestArg(args.Digest)
+		span := strings.TrimSpace(args.Span)
+		switch {
+		case digest != "" && span != "":
+			return nil, fmt.Errorf("pass either digest or span, not both")
+		case digest == "" && span == "":
+			return nil, fmt.Errorf("pass a call digest (xxh3:...) or the span ID of a call")
+		case span != "":
+			span = normalizeSpanArg(span)
+			if !isHexID(span, 16) {
+				return nil, fmt.Errorf("invalid span ID %q: want a hex span ID", args.Span)
+			}
+			clientDB, err := traceReportClientDB(ctx)
+			if err != nil {
+				return nil, err
+			}
+			defer clientDB.Close()
+			digest, err = spanCallDigest(ctx, clientDB.Read(), span)
+			if err != nil {
+				return nil, err
+			}
+			return inspectCallIn(ctx, clientDB.Read(), digest, opts)
+		}
+		return inspectCall(ctx, digest, opts)
+	})
+}
+
+// normalizeDigestArg accepts the forms a call digest gets pasted in: bare,
+// or with the "digest=" / "load " prefixes engine errors and tool output
+// wrap it in.
+func normalizeDigestArg(arg string) string {
+	arg = strings.TrimSpace(arg)
+	for _, prefix := range []string{"digest=", "digest:", "load "} {
+		arg = strings.TrimPrefix(arg, prefix)
+	}
+	return strings.TrimSpace(arg)
+}
+
+// findCallsTool content-searches the session's calls; see findCalls.
+func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Query string
+		Limit int `default:"200"`
+	}) (any, error) {
+		re, err := regexp.Compile(args.Query)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query %q: %w", args.Query, err)
+		}
+		if args.Limit <= 0 {
+			args.Limit = findCallsDefaultLimit
+		}
+		return findCalls(ctx, re, args.Limit)
 	})
 }
 
