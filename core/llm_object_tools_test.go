@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
@@ -666,6 +667,92 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestBoundToolsOutliveModuleSession keeps the composition-time class after its
+// module-producing session closes. Module provenance in that class must be a
+// portable recipe, not a reference to a result owned by the expired session.
+func TestBoundToolsOutliveModuleSession(t *testing.T) {
+	for _, lazy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "eager", true: "lazy"}[lazy], func(t *testing.T) {
+			cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cache.Close(t.Context())) })
+			sessionContext := func(id string) context.Context {
+				return dagql.ContextWithCache(engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+					ClientID: id, SessionID: id,
+				}), cache)
+			}
+			producerCtx := sessionContext("module-producer")
+			consumerCtx := sessionContext("tool-consumer")
+			srv := newCoreDagqlServerForTest(t, &Query{})
+			srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*liftTestRunner]{Typed: &liftTestRunner{}}))
+			var moduleCalls, constructorCalls, methodCalls int
+			dagql.Fields[*Query]{
+				// A scalar stands in for a module: provenance needs its recipe
+				// and cache ownership, not the real module's runtime setup.
+				dagql.Func("toolModule", func(context.Context, *Query, struct{}) (dagql.Int, error) {
+					moduleCalls++
+					return dagql.Int(1), nil
+				}),
+				dagql.Func("runner", func(context.Context, *Query, struct{}) (*liftTestRunner, error) {
+					constructorCalls++
+					return &liftTestRunner{}, nil
+				}),
+			}.Install(srv)
+			moduleID := call.New().Append(dagql.Int(0).Type(), "toolModule")
+			_, err = srv.LoadType(producerCtx, moduleID)
+			require.NoError(t, err)
+			require.Equal(t, 1, moduleCalls)
+			moduleRef, err := dagql.ResultCallRefFromRecipeID(producerCtx, moduleID)
+			require.NoError(t, err)
+			method := dagql.Func("check", func(context.Context, *liftTestRunner, struct{}) (dagql.String, error) {
+				methodCalls++
+				return "still active", nil
+			})
+			method.Spec.Module = &dagql.ResultCallModule{ResultRef: moduleRef, Name: "tools"}
+			dagql.Fields[*liftTestRunner]{method}.Install(srv)
+			objType, ok := srv.ObjectType("LiftTestRunner")
+			require.True(t, ok)
+			runnerID := call.New().Append((&liftTestRunner{}).Type(), "runner")
+			var mcp *MCP
+			if lazy {
+				mcp = newMCP().WithLazyTools(runnerID, objType, srv.Schema(), nil)
+			} else {
+				runner, err := srv.Load(consumerCtx, runnerID)
+				require.NoError(t, err)
+				mcp = newMCP().WithTools(runner, srv.Schema(), nil)
+			}
+			toolsets, err := mcp.boundToolsets(srv)
+			require.NoError(t, err)
+			require.Len(t, toolsets, 1)
+			require.Len(t, toolsets[0].tools, 1)
+			require.Equal(t, "check", toolsets[0].tools[0].Name)
+			if lazy {
+				require.Zero(t, constructorCalls, "binding and listing tools must not evaluate the receiver")
+			} else {
+				require.Equal(t, 1, constructorCalls)
+			}
+			require.Zero(t, methodCalls)
+			require.NoError(t, cache.ReleaseSession(producerCtx, "module-producer"))
+			if lazy {
+				require.Zero(t, cache.Size(), "the binding must not retain the producing session's module")
+			} else {
+				require.Equal(t, 1, cache.Size(), "only the consumer's receiver should remain")
+			}
+
+			out, err := toolsets[0].tools[0].Call(consumerCtx, map[string]any{})
+			require.NoError(t, err)
+			require.Equal(t, "still active", out)
+			require.Equal(t, 1, constructorCalls)
+			require.Equal(t, 1, methodCalls)
+			require.Equal(t, 2, moduleCalls, "dispatch must reload the released module recipe")
+			require.Zero(t, method.Spec.Module.ResultRef.ResultID, "dispatch must not overwrite portable schema provenance")
+			require.NotNil(t, method.Spec.Module.ResultRef.Call)
+			require.NoError(t, cache.ReleaseSession(consumerCtx, "tool-consumer"))
+			require.Zero(t, cache.Size(), "module dependencies must be released with the final session")
+		})
+	}
 }
 
 // TestBuildObjectMethodSelector covers argument dispatch against a
