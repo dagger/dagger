@@ -106,7 +106,14 @@ func TestGitResolvedFrames(t *testing.T) {
 			require.Equal(t, "lazy", payload.Form)
 			var inputs struct{ RefResultID uint64 }
 			require.NoError(t, json.Unmarshal(payload.LazyJSON, &inputs))
-			require.Equal(t, record.ResultID, inputs.RefResultID)
+			wantRef := record.ResultID
+			if test.wantName != wantSHA {
+				// Main pins a tree without .git to a SHA-named ref: tree selects
+				// ref(name: <sha>) on the repository first, so the lazy tree's
+				// input is that pinned ref, published right after the resolved one.
+				wantRef++
+			}
+			require.Equal(t, wantRef, inputs.RefResultID)
 			require.Empty(t, server.manager.outputs, "tree handle construction must not check out files")
 		})
 	}
