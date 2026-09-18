@@ -145,6 +145,40 @@ func (ArtifactsSuite) TestModuleObjects(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ArtifactsSuite) TestValueAfterDiscoveringSessionEnds(ctx context.Context, t *testctx.T) {
+	// Discovery caches the module tree with the server that discovered it.
+	// Another session that adopts the cached artifact must still evaluate it
+	// after the discovering session released its results.
+	discoverer := connect(ctx, t)
+	wsID, err := artifactSource(discoverer).AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	discovered, err := testutil.QueryWithClient[struct {
+		Node struct {
+			Artifacts struct {
+				FilterPath struct{ One struct{ ID dagger.ID } }
+			}
+		}
+	}](discoverer, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterPath(path: ["base"]) { one { id } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.NoError(t, err)
+	artifactID := discovered.Node.Artifacts.FilterPath.One.ID
+
+	consumer := connect(ctx, t)
+	got, err := testutil.QueryWithClient[json.RawMessage](consumer, t, `query($id: ID!) {
+  node(id: $id) { ... on Artifact { pretty } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"id": artifactID}})
+	require.NoError(t, err)
+	require.Contains(t, string(*got), `"pretty":"base"`)
+	require.NoError(t, discoverer.Close())
+
+	got, err = testutil.QueryWithClient[json.RawMessage](consumer, t, `query($id: ID!) {
+  node(id: $id) { ... on Artifact { value { ... on Container { file(path: "/marker") { contents } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"id": artifactID}})
+	require.NoError(t, err)
+	require.Contains(t, string(*got), "configured:original")
+}
+
 func (ArtifactsSuite) TestInclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ws := artifactSource(c).AsWorkspace()
