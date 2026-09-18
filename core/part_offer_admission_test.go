@@ -57,6 +57,7 @@ func waitWithin[T any](t *testing.T, ch <-chan T) T {
 // the body; an offer arriving after the body starts is refused and the body
 // finishes.
 func TestOfferPartsNativeAdmission(t *testing.T) {
+	testutil.RequireNativeMount(t)
 	platform := Platform{OS: "linux", Architecture: "amd64"}
 	setup := func(t *testing.T, pause bool) (context.Context, *dagql.Cache, dagql.ObjectResult[*File], *pausedBodyManager, func(), dagql.PersistedPartOffer, *testutil.Provider) {
 		t.Helper()
