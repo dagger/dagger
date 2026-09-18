@@ -1669,7 +1669,9 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	if err != nil {
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
-	runningSvc, err := running.Get(ctx, serviceDigest, false)
+	// ServiceMCPTransport starts the server as a per-client instance, so it's
+	// registered under a client-specific key; look it up the same way.
+	runningSvc, err := running.Get(ctx, serviceDigest, true)
 	if err != nil {
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
