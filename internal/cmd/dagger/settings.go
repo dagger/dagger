@@ -97,7 +97,7 @@ func newSettingsCmd(hidden bool) *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&workspaceSettingsUnset, "unset", "u", false, "Remove the setting from workspace config")
 	cmd.Flags().BoolVarP(&workspaceSettingsGlobal, "global", "g", false, "Store the setting in user-level config instead of the repository, keyed by the workspace's git remote")
-	cmd.Flags().BoolVar(&workspaceSettingsWide, "wide", false, "List settings with full values and descriptions instead of fitting the terminal width")
+	cmd.Flags().BoolVar(&workspaceSettingsWide, "wide", false, "List settings with full values and descriptions, wrapped to the terminal width instead of truncated")
 	return cmd
 }
 
@@ -431,17 +431,11 @@ func workspaceEnvSettingConfigKey(envName, moduleName, settingName string) strin
 }
 
 // writeWorkspaceSettingsTable lists settings as a table fitted to the terminal
-// width, or, when wide, with every cell shown whole.
+// width. Cells that don't fit are truncated, or, when wide, wrapped within
+// their column so values and descriptions are shown whole.
 func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting, wide bool) error {
-	if wide {
-		return writeWorkspaceSettingsTableAtWidth(out, settings, workspaceSettingsUnlimitedWidth)
-	}
-	return writeWorkspaceSettingsTableAtWidth(out, settings, getViewWidth())
+	return writeWorkspaceSettingsTableAtWidth(out, settings, getViewWidth(), wide)
 }
-
-// workspaceSettingsUnlimitedWidth is the view width of a table that is never
-// truncated: columns take their full width and descriptions are shown whole.
-const workspaceSettingsUnlimitedWidth = -1
 
 const (
 	workspaceSettingsColumnPadding = 2
@@ -454,18 +448,17 @@ const (
 
 var workspaceSettingsHeaders = []string{"MODULE", "KEY", "VALUE", "DESCRIPTION"}
 
-func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetting, viewWidth int) error {
+func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetting, viewWidth int, wrap bool) error {
 	if len(settings) == 0 {
 		_, err := fmt.Fprintln(out, "(no settings)")
 		return err
 	}
 
-	unlimited := viewWidth == workspaceSettingsUnlimitedWidth
 	rows := make([][]string, 0, len(settings)+1)
 	rows = append(rows, workspaceSettingsHeaders)
 	for _, setting := range settings {
 		description := workspaceSettingShortDescription(setting.Description)
-		if unlimited {
+		if wrap {
 			description = strings.Join(strings.Fields(setting.Description), " ")
 		}
 		rows = append(rows, []string{
@@ -477,26 +470,56 @@ func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetti
 	}
 
 	var widths []int
-	if unlimited {
-		widths = workspaceSettingsFullColumnWidths(rows)
+	if wrap {
+		widths = workspaceSettingsWrappedColumnWidths(rows, viewWidth)
 	} else {
 		widths = workspaceSettingsColumnWidths(rows, viewWidth)
 	}
 	for _, row := range rows {
-		var line strings.Builder
+		cells := make([][]string, len(row))
+		height := 1
 		for column, cell := range row {
-			cell = ansi.Truncate(cell, widths[column], "…")
-			line.WriteString(cell)
-			if column < len(row)-1 {
-				padding := widths[column] - ansi.StringWidth(cell) + workspaceSettingsColumnPadding
-				line.WriteString(strings.Repeat(" ", padding))
+			if wrap {
+				cells[column] = strings.Split(ansi.Wrap(cell, widths[column], ""), "\n")
+			} else {
+				cells[column] = []string{ansi.Truncate(cell, widths[column], "…")}
 			}
+			height = max(height, len(cells[column]))
 		}
-		if _, err := fmt.Fprintln(out, line.String()); err != nil {
-			return err
+		for i := range height {
+			var line strings.Builder
+			for column := range row {
+				var cell string
+				if i < len(cells[column]) {
+					cell = strings.TrimRight(cells[column][i], " ")
+				}
+				line.WriteString(cell)
+				if column < len(row)-1 {
+					padding := widths[column] - ansi.StringWidth(cell) + workspaceSettingsColumnPadding
+					line.WriteString(strings.Repeat(" ", padding))
+				}
+			}
+			if _, err := fmt.Fprintln(out, strings.TrimRight(line.String(), " ")); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// workspaceSettingsWrappedColumnWidths gives the module and key columns their
+// full width and splits what remains of the view between the value and
+// description columns, which wrap within it.
+func workspaceSettingsWrappedColumnWidths(rows [][]string, viewWidth int) []int {
+	full := workspaceSettingsFullColumnWidths(rows)
+	paddingWidth := workspaceSettingsColumnPadding * (len(workspaceSettingsHeaders) - 1)
+	valueMinimum := min(full[2], max(ansi.StringWidth(workspaceSettingsHeaders[2]), workspaceSettingsValueReserve))
+	descriptionMinimum := min(full[3], max(ansi.StringWidth(workspaceSettingsHeaders[3]), workspaceSettingsDescReserve))
+	available := max(viewWidth-paddingWidth-full[0]-full[1], valueMinimum+descriptionMinimum)
+	valueWidth, descriptionWidth := workspaceSettingsFitColumns(
+		full[2], full[3], valueMinimum, descriptionMinimum, available,
+	)
+	return []int{full[0], full[1], valueWidth, descriptionWidth}
 }
 
 // workspaceSettingsFullColumnWidths sizes every column to its widest cell.

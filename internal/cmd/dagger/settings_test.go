@@ -132,7 +132,7 @@ func TestWriteWorkspaceSettingsTableFitsViewWidth(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, writeWorkspaceSettingsTableAtWidth(&out, settings, 60))
+	require.NoError(t, writeWorkspaceSettingsTableAtWidth(&out, settings, 60, false))
 
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
 	require.Len(t, lines, len(settings)+1)
@@ -149,8 +149,8 @@ func TestWriteWorkspaceSettingsTableFitsViewWidth(t *testing.T) {
 func TestWriteWorkspaceSettingsTableWide(t *testing.T) {
 	settings := []workspaceSetting{
 		{
-			Module:      "module-with-a-name-that-is-too-long",
-			Key:         "setting-with-a-key-that-is-too-long",
+			Module:      "module-with-a-long-name",
+			Key:         "setting-with-a-long-key",
 			Value:       strings.Repeat("value", 20),
 			Description: strings.Repeat("A long description. ", 10),
 		},
@@ -163,21 +163,37 @@ func TestWriteWorkspaceSettingsTableWide(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, writeWorkspaceSettingsTable(&out, settings, true))
+	require.NoError(t, writeWorkspaceSettingsTableAtWidth(&out, settings, 100, true))
 
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
-	require.Len(t, lines, len(settings)+1)
+	// Rows wrap within the view instead of overflowing it, so a terminal
+	// never soft-wraps them across columns.
+	require.Greater(t, len(lines), len(settings)+1)
+	for _, line := range lines {
+		require.LessOrEqual(t, ansi.StringWidth(line), 100, line)
+	}
 	require.NotContains(t, out.String(), "…")
-	require.Contains(t, lines[1], settings[0].Module)
-	require.Contains(t, lines[1], settings[0].Key)
-	require.Contains(t, lines[1], settings[0].Value)
-	require.Contains(t, lines[1], strings.TrimSpace(settings[0].Description))
-	require.Contains(t, lines[2], "First description line. Second description line.")
 
-	// Columns stay aligned on the widest cell.
+	// Every cell is shown whole: rejoining the wrapped column restores it.
+	valueColumn := strings.Index(lines[0], "VALUE")
 	descriptionColumn := strings.Index(lines[0], "DESCRIPTION")
-	require.Equal(t, descriptionColumn, strings.Index(lines[1], "A long description."))
-	require.Equal(t, descriptionColumn, strings.Index(lines[2], "First description line."))
+	var value, description strings.Builder
+	for _, line := range lines[1:] {
+		if strings.HasPrefix(line, "short") {
+			break
+		}
+		value.WriteString(strings.TrimSpace(line[valueColumn:min(descriptionColumn, len(line))]))
+		if len(line) > descriptionColumn {
+			description.WriteString(line[descriptionColumn:] + " ")
+		}
+	}
+	require.Equal(t, settings[0].Value, value.String())
+	require.Equal(t, strings.TrimSpace(settings[0].Description), strings.Join(strings.Fields(description.String()), " "))
+
+	require.True(t, strings.HasPrefix(lines[1], settings[0].Module))
+	require.Contains(t, lines[1], settings[0].Key)
+	require.Contains(t, out.String(), "First description line.")
+	require.Contains(t, out.String(), "Second description line.")
 }
 
 func TestWorkspaceSettingsWideOnlyLists(t *testing.T) {
@@ -200,7 +216,7 @@ func TestWriteWorkspaceSettingsTableMeasuresUnicodeWidth(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, writeWorkspaceSettingsTableAtWidth(&out, settings, 48))
+	require.NoError(t, writeWorkspaceSettingsTableAtWidth(&out, settings, 48, false))
 
 	for _, line := range strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n") {
 		require.LessOrEqual(t, ansi.StringWidth(line), 48, line)

@@ -609,36 +609,88 @@ func renderConfigArray(value reflect.Value, old []byte) (string, error) {
 		}
 	}
 	out := old
-	if value.Len() > len(elements) {
+	switch {
+	case value.Len() > len(elements):
 		out, err = appendConfigArray(value, old, tokens, elements)
 		if err != nil {
 			return "", err
 		}
+	case value.Len() < len(elements):
+		out = shrinkConfigArray(old, tokens, elements, value.Len())
 	}
 
-	for i := len(elements) - 1; i >= 0; i-- {
+	// Edits above end before the first removed element, so kept elements
+	// keep their offsets.
+	for i := min(value.Len(), len(elements)) - 1; i >= 0; i-- {
 		element := elements[i]
-		if i < value.Len() {
-			text, err := renderConfigEdit(value.Index(i).Interface(), old[element.start:element.end])
-			if err != nil {
-				return "", err
-			}
-			out = replaceConfigText(out, element.start, element.end, text)
-		} else {
-			for _, tok := range tokens {
-				if tok.start < element.end || tok.kind == scanner.Comment || tok.kind == scanner.Newline {
-					continue
-				}
-				if tok.kind == scanner.Comma {
-					// A comment can separate a value from its comma.
-					out = replaceConfigText(out, tok.start, tok.end, "")
-				}
-				break
-			}
-			out = replaceConfigText(out, element.start, element.end, "")
+		text, err := renderConfigEdit(value.Index(i).Interface(), old[element.start:element.end])
+		if err != nil {
+			return "", err
 		}
+		out = replaceConfigText(out, element.start, element.end, text)
 	}
 	return string(out), nil
+}
+
+// shrinkConfigArray drops every element from index kept on, with the commas
+// that separated them. Comments stay. Lines left blank by the removal go, and
+// a multiline array keeps its trailing comma style.
+func shrinkConfigArray(old []byte, tokens, elements []configToken, kept int) []byte {
+	closing := tokens[len(tokens)-1].start
+	keptEnd := tokens[0].end
+	if kept > 0 {
+		keptEnd = elements[kept-1].end
+	}
+
+	var removed []configToken
+	trailingComma := false
+	for _, tok := range tokens {
+		if tok.start >= keptEnd && tok.start < closing && tok.kind == scanner.Comma {
+			removed = append(removed, tok)
+			// A comment can separate a value from its comma.
+			trailingComma = tok.start >= elements[len(elements)-1].end
+		}
+	}
+	removed = append(removed, elements[kept:]...)
+	sort.Slice(removed, func(i, j int) bool { return removed[i].start < removed[j].start })
+
+	var tail strings.Builder
+	at := keptEnd
+	for _, span := range removed {
+		tail.Write(old[at:span.start])
+		at = span.end
+	}
+	tail.Write(old[at:closing])
+
+	oldLines := strings.Split(string(old[keptEnd:closing]), "\n")
+	newLines := strings.Split(tail.String(), "\n")
+	if len(newLines) == 1 {
+		return replaceConfigText(old, keptEnd, closing, strings.TrimRight(newLines[0], " \t"))
+	}
+	lines := make([]string, 0, len(newLines))
+	for i, line := range newLines {
+		if line == oldLines[i] {
+			lines = append(lines, line)
+			continue
+		}
+		cr := strings.HasSuffix(line, "\r")
+		line = strings.TrimRight(line, " \t\r")
+		if i > 0 && i < len(newLines)-1 {
+			if line = strings.TrimLeft(line, " \t"); line == "" {
+				continue
+			}
+			// A comment keeps the indentation of the line it was on.
+			line = oldLines[i][:len(oldLines[i])-len(strings.TrimLeft(oldLines[i], " \t"))] + line
+		}
+		if cr {
+			line += "\r"
+		}
+		lines = append(lines, line)
+	}
+	if kept > 0 && trailingComma {
+		lines[0] = "," + lines[0]
+	}
+	return replaceConfigText(old, keptEnd, closing, strings.Join(lines, "\n"))
 }
 
 // appendConfigArray retains the existing layout, elements, and comments.

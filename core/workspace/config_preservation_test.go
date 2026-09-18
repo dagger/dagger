@@ -284,6 +284,29 @@ func TestConfigPreservationArrays(t *testing.T) {
 	}
 }
 
+func TestConfigPreservationArrayShrink(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, array, want string
+	}{
+		{"last element", `['one', 'two']`, `['one']`},
+		{"several elements", `['one', 'two', 'three']`, `['one']`},
+		{"trailing comma", `['one', 'two', ]`, `['one']`},
+		{"multiline trailing comma", "[\n  'one',\n  'two',\n]", "[\n  'one',\n]"},
+		{"multiline without trailing comma", "[\n  'one',\n  'two'\n]", "[\n  'one'\n]"},
+		{"multiline shared line", "[\n  'one', 'two',\n  'three',\n]", "[\n  'one',\n]"},
+		{"multiline closing on last line", "[\n  'one',\n  'two']", "[\n  'one'\n]"},
+		{"comments stay", "[\n  'one', # one\n  'two', # two\n]", "[\n  'one', # one\n  # two\n]"},
+		{"blank lines stay", "[\n  'one',\n\n  # two\n  'two',\n]", "[\n  'one',\n\n  # two\n]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := WriteConfigValues([]byte("ignore = "+tc.array+"\n"), "ignore", []string{"one"})
+			require.NoError(t, err)
+			require.Equal(t, "ignore = "+tc.want+"\n", string(out))
+		})
+	}
+}
+
 func TestConfigPreservationUnknownSibling(t *testing.T) {
 	input := "[modules.foo]\nsource = './foo'\n[modules.foo.check]\nskip = ['slow']\nfuture = 'keep'\n"
 	cfg, err := ParseConfig([]byte(input))

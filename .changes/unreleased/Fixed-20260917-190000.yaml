@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  `dagger module init <sdk>` and `dagger module client add/rm/update` no longer
+  do all their work and then fail at the apply prompt when run by a coding
+  agent. Like `dagger generate` and `dagger workspace migrate`, they now fail
+  up front and ask for `-y`/`--auto-apply` (or `--no-apply` for `module init`).
+time: 2026-09-17T19:00:00Z
+custom:
+  Author: kpenfound
