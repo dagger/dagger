@@ -263,6 +263,43 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, detail)
 	})
+	mux.HandleFunc("/id", func(w http.ResponseWriter, r *http.Request) {
+		dig := r.URL.Query().Get("dig")
+		if dig == "" {
+			http.Error(w, "want ?dig=<call digest, e.g. xxh3:...>", http.StatusBadRequest)
+			return
+		}
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
+		encoded, err := encodedIDForCallDigest(fe.db, dig)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		io.WriteString(w, encoded)
+	})
+	mux.HandleFunc("/calls", func(w http.ResponseWriter, r *http.Request) {
+		pattern := r.URL.Query().Get("grep")
+		if pattern == "" {
+			http.Error(w, "want ?grep=<regexp over rendered calls>", http.StatusBadRequest)
+			return
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("bad pattern %q: %v", pattern, err), http.StatusBadRequest)
+			return
+		}
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
+		lines := fe.db.GrepCalls(re, 200)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if len(lines) == 0 {
+			io.WriteString(w, "no calls match\n")
+			return
+		}
+		io.WriteString(w, strings.Join(lines, "\n")+"\n")
+	})
 	inspector := &consoleTraceInspector{frontend: fe}
 	mux.HandleFunc("/agents", inspector.agents)
 	mux.HandleFunc("/transcript", inspector.transcript)
@@ -497,6 +534,8 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
 		"  GET  /span?id=<hex>  span detail: status, error, timing, flags, parent chain, direct children\n"+
 		"  GET  /timings?root=<hex>[&minDuration=10ms&limit=200]  loaded subtree wall timings (0 limit = unlimited)\n"+
+		"  GET  /id?dig=<dig>   encoded dagql ID rebuilt for a call digest\n"+
+		"  GET  /calls?grep=<re> content-search ingested call payloads (args untruncated)\n"+
 		"  GET  /toolset        the interactive LLM session's tool docs, when one is live\n"+
 		"  GET  /agents         trace-derived roster (handles, names, state, parent, spans)\n"+
 		"  GET  /transcript?agent=<handle|name>[&role=user&tool=...&grep=...&offset=0&limit=20]\n"+
