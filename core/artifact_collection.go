@@ -193,8 +193,8 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 			if err != nil {
 				return nil, err
 			}
-			// Match the exclusion separately. Combining its keys with the
-			// inclusion selector would turn them into alternatives.
+			// Match the exclusion with its own selector. The entries already
+			// satisfy the inclusion filters.
 			excluded, err := (&Artifacts{Entries: result.Entries}).FilterURI(address)
 			if err != nil {
 				return nil, err
