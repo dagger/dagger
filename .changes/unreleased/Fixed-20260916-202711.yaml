@@ -1,0 +1,6 @@
+kind: Fixed
+body: The engine no longer empties its whole dagql cache on every session when the host disk is under the free-space threshold for reasons unrelated to Dagger; reclaiming now stops at the configured reserved space, as buildkit's collector already does.
+time: 2026-09-16T20:27:11-07:00
+custom:
+    Author: grouville
+    PR: "14181"
