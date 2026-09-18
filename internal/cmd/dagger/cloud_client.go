@@ -24,19 +24,52 @@ func (cli *CloudCLI) cloudClient(ctx context.Context) (*cloudapi.Client, *clouda
 }
 
 func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*cloudapi.Client, *cloudauth.Cloud, error) {
+	cloudAuth, err := cli.cloudAuthWithLogin(ctx, login)
+	if err != nil {
+		return nil, nil, err
+	}
+	client, err := cloudapi.NewClient(ctx, cloudAuth)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cloud client: %w", err)
+	}
+	return client, cloudAuth, nil
+}
+
+// cloudOTLPClient is the client for Cloud's binary OTLP stream endpoints,
+// which are addressed by trace ID and token alone: a Cloud credential is
+// needed (with the same interactive login fallback the GraphQL client gets),
+// an org is not.
+func (cli *CloudCLI) cloudOTLPClient(ctx context.Context) (*cloudapi.OTLPClient, error) {
+	if cli.otlpClient != nil {
+		return cli.otlpClient, nil
+	}
+	cloudAuth, err := cli.cloudAuthWithLogin(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	client, err := cloudapi.NewOTLPClient(ctx, cloudAuth)
+	if err != nil {
+		return nil, fmt.Errorf("cloud client: %w", err)
+	}
+	return client, nil
+}
+
+// cloudAuthWithLogin resolves the Cloud credential, logging in interactively
+// when there is none and login is set (and a terminal is at hand).
+func (cli *CloudCLI) cloudAuthWithLogin(ctx context.Context, login bool) (*cloudauth.Cloud, error) {
 	cloudAuth, err := cloudauth.GetCloudAuth(ctx)
 	if err != nil {
 		cloudAuth, err = cloudAuthFromLocalTokenWithoutOrg(ctx, err)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 	if cloudAuth == nil || cloudAuth.Token == nil {
 		if !login {
-			return nil, nil, errCloudNotAuthenticated
+			return nil, errCloudNotAuthenticated
 		}
 		if cloudJSON {
-			return nil, nil, errCloudNotAuthenticated
+			return nil, errCloudNotAuthenticated
 		}
 		// Browser-based OAuth login can't complete without a terminal to
 		// echo the device code / open the URL. Without this guard the call
@@ -44,28 +77,23 @@ func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*clo
 		// same not-authenticated error the JSON path uses; callers already
 		// handle it.
 		if !isatty.IsTerminal(os.Stdin.Fd()) || !isatty.IsTerminal(os.Stderr.Fd()) {
-			return nil, nil, errCloudNotAuthenticated
+			return nil, errCloudNotAuthenticated
 		}
 		if err := cloudauth.Login(ctx, os.Stderr, cloudauth.WithAuthGate()); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		cloudAuth, err = cloudauth.GetCloudAuth(ctx)
 		if err != nil {
 			cloudAuth, err = cloudAuthFromLocalTokenWithoutOrg(ctx, err)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 		}
 		if cloudAuth == nil || cloudAuth.Token == nil {
-			return nil, nil, errCloudNotAuthenticated
+			return nil, errCloudNotAuthenticated
 		}
 	}
-
-	client, err := cloudapi.NewClient(ctx, cloudAuth)
-	if err != nil {
-		return nil, nil, fmt.Errorf("cloud client: %w", err)
-	}
-	return client, cloudAuth, nil
+	return cloudAuth, nil
 }
 
 func cloudAuthFromLocalTokenWithoutOrg(ctx context.Context, err error) (*cloudauth.Cloud, error) {

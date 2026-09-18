@@ -1922,9 +1922,9 @@ func (fe *frontendPretty) ResolveSpanTarget(check, test string) (dagui.SpanID, b
 				found = true
 				return
 			}
-			id, found = fe.rawSpanTarget(func(span *dagui.Span) bool {
-				return span.CheckName == check
-			})
+			if span := fe.db.FindCheckSpan(check); span != nil {
+				id, found = span.ID, true
+			}
 		case test != "":
 			tv := fe.db.TestView()
 			if tv != nil {
@@ -1949,37 +1949,13 @@ func (fe *frontendPretty) ResolveSpanTarget(check, test string) (dagui.SpanID, b
 					return
 				}
 			}
-			// The OTel test case name, an optional "<suite> <case>"
-			// qualification, or the span name.
-			id, found = fe.rawSpanTarget(func(span *dagui.Span) bool {
-				return span.TestCaseName != "" &&
-					(span.TestCaseName == test ||
-						span.TestSuiteName+" "+span.TestCaseName == test ||
-						span.Name == test)
-			})
+			if span := fe.db.FindTestSpan(test); span != nil {
+				id, found = span.ID, true
+			}
 		}
 	})
 	<-done
 	return id, found
-}
-
-// rawSpanTarget scans every loaded span for one matching pred, preferring a
-// failed one -- the same rule the report's own selection applies, so a
-// name shared by a failure and a passing retry resolves to the failure.
-func (fe *frontendPretty) rawSpanTarget(pred func(*dagui.Span) bool) (dagui.SpanID, bool) {
-	var fallback dagui.SpanID
-	for _, span := range fe.db.Spans.Order {
-		if !pred(span) {
-			continue
-		}
-		if span.IsFailed() {
-			return span.ID, true
-		}
-		if !fallback.IsValid() {
-			fallback = span.ID
-		}
-	}
-	return fallback, fallback.IsValid()
 }
 
 // setupFinalRenderLocked puts the frontend into final-render state: mark the

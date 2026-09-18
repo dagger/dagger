@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dagger/dagger/dagql/dagui"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
-	telemetry "github.com/dagger/otel-go"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 )
 
 // spanSelector addresses a single span within a trace by exactly one of a raw
@@ -45,87 +45,47 @@ func (s spanSelector) validate() error {
 // priority spans, so they're present without fetching the whole trace -- and
 // roll up their subtree. The empty selector resolves to the root span with
 // descendants, i.e. the entire trace. ('dagger trace' loads the whole trace and
-// resolves the same names against its frontend instead: zoomTraceView.)
-func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.Client, orgID, traceID string) (spanID string, descendants bool, err error) {
+// resolves the same names against its frontend instead: resolveTraceTarget.)
+func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.OTLPClient, traceID string) (spanID string, descendants bool, err error) {
 	if s.span != "" {
 		return s.span, false, nil
 	}
 
-	spans, err := fetchPrioritySpans(ctx, client, orgID, traceID)
+	db, err := fetchPrioritySpans(ctx, client, traceID)
 	if err != nil {
 		return "", false, err
 	}
 
 	switch {
 	case s.check != "":
-		for _, sp := range spans {
-			if attrString(sp, telemetry.CheckNameAttr) == s.check {
-				return sp.ID, true, nil
-			}
+		if span := db.FindCheckSpan(s.check); span != nil {
+			return span.ID.String(), true, nil
 		}
 		return "", false, fmt.Errorf("no check named %q in trace %s", s.check, traceID)
 	case s.test != "":
-		if id := matchTestSpan(spans, s.test); id != "" {
-			return id, true, nil
+		if span := db.FindTestSpan(s.test); span != nil {
+			return span.ID.String(), true, nil
 		}
 		return "", false, fmt.Errorf("no test named %q in trace %s", s.test, traceID)
 	default:
-		for _, sp := range spans {
-			if sp.ParentID == nil {
-				return sp.ID, true, nil
-			}
+		if db.RootSpan != nil {
+			return db.RootSpan.ID.String(), true, nil
 		}
 		return "", false, fmt.Errorf("no root span found in trace %s (no data yet?)", traceID)
 	}
 }
 
-// fetchPrioritySpans collects a trace's priority (root) spans via the
-// incremental subscription. For a completed trace the stream delivers the
-// priority set and returns.
-func fetchPrioritySpans(ctx context.Context, client *cloudapi.Client, orgID, traceID string) ([]cloudapi.SpanData, error) {
-	var all []cloudapi.SpanData
-	err := client.StreamSpansWith(ctx, orgID, traceID, cloudapi.SpanStreamOpts{
-		Root:        true,
+// fetchPrioritySpans loads a trace's priority (root) spans into a private DB
+// via the incremental selection. For a completed trace the stream delivers
+// the priority set and returns.
+func fetchPrioritySpans(ctx context.Context, client *cloudapi.OTLPClient, traceID string) (*dagui.DB, error) {
+	db := dagui.NewDB()
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db})
+	importer.KeepRoots = true
+	if err := client.FetchSpans(ctx, traceID, cloudapi.SpanSelection{
 		Incremental: true,
-	}, func(spans []cloudapi.SpanData) {
-		all = append(all, spans...)
-	})
-	if err != nil {
+	}, importer.ImportSpans); err != nil {
 		return nil, fmt.Errorf("fetch trace spans: %w", err)
 	}
-	return all, nil
-}
-
-// matchTestSpan finds a span ID for a test by name, matching the OTel test case
-// name, an optional "<suite> <case>" qualification, or the span name. When
-// several cases share a name it prefers a failed one, so the hint a failing
-// report prints resolves to the failure the user is chasing.
-func matchTestSpan(spans []cloudapi.SpanData, name string) string {
-	var fallback string
-	for _, sp := range spans {
-		caseName := attrString(sp, string(semconv.TestCaseNameKey))
-		if caseName == "" {
-			continue
-		}
-		suite := attrString(sp, string(semconv.TestSuiteNameKey))
-		if caseName != name &&
-			suite+" "+caseName != name &&
-			sp.Name != name {
-			continue
-		}
-		if sp.Status.Code == "STATUS_CODE_ERROR" {
-			return sp.ID
-		}
-		if fallback == "" {
-			fallback = sp.ID
-		}
-	}
-	return fallback
-}
-
-func attrString(sp cloudapi.SpanData, key string) string {
-	if v, ok := sp.Attributes[key].(string); ok {
-		return v
-	}
-	return ""
+	return db, nil
 }
