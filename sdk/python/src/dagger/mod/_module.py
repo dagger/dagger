@@ -7,6 +7,7 @@ import os
 import textwrap
 import typing
 from collections.abc import Awaitable, Callable, Mapping
+from functools import wraps
 from typing import Any, TypeVar, cast
 
 import anyio
@@ -39,7 +40,14 @@ from dagger.mod._resolver import (
     P,
     R,
 )
-from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, PythonName
+from dagger.mod._types import (
+    COLLECTION_BASE_ATTR,
+    COLLECTION_BASE_FIELD,
+    APIName,
+    FieldDefinition,
+    FunctionDefinition,
+    PythonName,
+)
 from dagger.mod._utils import (
     asyncify,
     extract_enum_member_doc,
@@ -949,6 +957,25 @@ class Module:
                     )
                     raise BadUsageError(msg)
 
+            # Both decorator orders are supported: @collection can run after
+            # @object_type. Keep opaque engine state as an ordinary private field
+            # so copy.copy, deepcopy, and dataclasses.replace all preserve it.
+            cls.__annotations__ = dict(getattr(cls, "__annotations__", {}))
+            cls.__annotations__[COLLECTION_BASE_ATTR] = str | None
+            setattr(
+                cls,
+                COLLECTION_BASE_ATTR,
+                dataclasses.field(default=None, repr=False, compare=False),
+            )
+            if init := cls.__dict__.get("__init__"):
+
+                @wraps(init)
+                def init_with_state(instance, *args, **kwargs):
+                    base = kwargs.pop(COLLECTION_BASE_ATTR, None)
+                    init(instance, *args, **kwargs)
+                    setattr(instance, COLLECTION_BASE_ATTR, base)
+
+                cls.__init__ = init_with_state
             wrapped = dataclasses.dataclass(kw_only=True)(cls)
             return self._process_type(wrapped, deprecated=deprecated)
 
@@ -993,7 +1020,11 @@ class Module:
             return cls
 
         # Register hooks for renaming field names in `mod.field()`.
-        attr_overrides = {}
+        attr_overrides = {
+            COLLECTION_BASE_ATTR: cattrs.gen.override(
+                rename=COLLECTION_BASE_FIELD, omit_if_default=True
+            )
+        }
 
         # Find all fields exposed with `mod.field()`.
         for field in dataclasses.fields(cls):

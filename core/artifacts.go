@@ -151,6 +151,8 @@ type ArtifactSelector struct {
 	// Explicit collection endpoints select the collection unless its own
 	// dimension is requested. Keep this distinct from normalized path patterns.
 	CollectionPaths []string
+	// Apply keyed exclusions after collection expansion.
+	ExcludedURIs []string
 }
 
 // Artifacts is an immutable selection. Filtering changes only the entry list
@@ -188,6 +190,7 @@ func (sel ArtifactSelector) clone() ArtifactSelector {
 		Paths:           slices.Clone(sel.Paths),
 		Types:           slices.Clone(sel.Types),
 		CollectionPaths: slices.Clone(sel.CollectionPaths),
+		ExcludedURIs:    slices.Clone(sel.ExcludedURIs),
 	}
 	for _, dim := range sel.Dimensions {
 		cloned.Dimensions = append(cloned.Dimensions, ArtifactDimensionFilter{Dimension: dim.Dimension, Keys: slices.Clone(dim.Keys)})
@@ -693,6 +696,11 @@ func (a *Artifacts) AttachDependencyResults(ctx context.Context, _ dagql.AnyResu
 }
 
 func (a *Artifacts) WithoutURI(address *dagaddress.Address) (*Artifacts, error) {
+	if a.hasCollections() {
+		selected := a.filter(func(*Artifact) bool { return true })
+		selected.Selector.ExcludedURIs = append(selected.Selector.ExcludedURIs, address.String())
+		return selected, nil
+	}
 	excluded, err := a.FilterURI(address)
 	if err != nil {
 		return nil, err

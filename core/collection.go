@@ -174,8 +174,6 @@ func (*CollectionTypeDef) DecodePersistedObject(ctx context.Context, srv *dagql.
 type CollectionDelta struct {
 	AddedKeys   []string `field:"true" doc:"Current keys absent from the original collection, in current order."`
 	RemovedKeys []string `field:"true" doc:"Original keys absent from the current collection, in original order."`
-	// Keep the base behind the delta ID when module code returns the author object.
-	BaseKeys []string
 }
 
 func (*CollectionDelta) Type() *ast.Type {
@@ -183,7 +181,7 @@ func (*CollectionDelta) Type() *ast.Type {
 }
 
 func (delta *CollectionDelta) Clone() *CollectionDelta {
-	return &CollectionDelta{AddedKeys: slices.Clone(delta.AddedKeys), RemovedKeys: slices.Clone(delta.RemovedKeys), BaseKeys: slices.Clone(delta.BaseKeys)}
+	return &CollectionDelta{AddedKeys: slices.Clone(delta.AddedKeys), RemovedKeys: slices.Clone(delta.RemovedKeys)}
 }
 
 func (delta *CollectionDelta) EncodePersistedObject(_ context.Context, _ dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {

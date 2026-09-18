@@ -168,6 +168,9 @@ func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struc
 	return expanded.One()
 }
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
+	if len(parent.Selector.ExcludedURIs) > 0 {
+		return "", fmt.Errorf("one DAG address cannot express collection key exclusions")
+	}
 	bound, err := parent.BindDimensions()
 	if err != nil {
 		return "", err
