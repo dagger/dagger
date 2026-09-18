@@ -550,6 +550,10 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 		workloadCalls         = 64
 		minimumGrowthBytes    = 64 * 1024
 		sessionGCWaitTimeout  = 75 * time.Second
+		// The workload script sleeps 30s after its queries, and this wait only
+		// starts after the active observation, the 7s pressure-monitor sleep and
+		// the protection check. Leave room for that sleep and session teardown.
+		workloadCloseTimeout = 60 * time.Second
 	)
 
 	engine := devEngineContainer(c,
@@ -719,7 +723,7 @@ sleep 30`,
 	select {
 	case err := <-workloadDone:
 		require.NoError(t, err)
-	case <-time.After(30 * time.Second):
+	case <-time.After(workloadCloseTimeout):
 		t.Fatal("timed out waiting for metadata workload session to close")
 	}
 
