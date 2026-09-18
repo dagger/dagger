@@ -418,7 +418,6 @@ Manage Dagger Cloud
 * [dagger cloud logout](#dagger-cloud-logout)	 - Log out from Dagger Cloud
 * [dagger cloud logs](#dagger-cloud-logs)	 - Print the full logs for a Dagger Cloud trace, or a check/test/span within it
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
-* [dagger cloud rerun](#dagger-cloud-rerun)	 - Re-run checks on Dagger Cloud for the current commit
 * [dagger cloud signup](#dagger-cloud-signup)	 - Create or select a Dagger Cloud account and organization
 * [dagger cloud usage](#dagger-cloud-usage)	 - Show Dagger Cloud usage
 
@@ -513,6 +512,7 @@ dagger cloud checks
 * [dagger cloud checks list](#dagger-cloud-checks-list)	 - List Cloud-side checks for this workspace
 * [dagger cloud checks off](#dagger-cloud-checks-off)	 - Disable a Cloud-side check (by name; defaults to the workspace remote's default check)
 * [dagger cloud checks on](#dagger-cloud-checks-on)	 - Enable a Cloud-side check (by name; defaults to the workspace remote's default check)
+* [dagger cloud checks rerun](#dagger-cloud-checks-rerun)	 - Re-run checks on Dagger Cloud for the current commit
 * [dagger cloud checks status](#dagger-cloud-checks-status)	 - Show the status of a Cloud-side check (by name; defaults to the workspace remote's default check)
 
 ## dagger cloud checks list
@@ -565,6 +565,54 @@ Enable a Cloud-side check (by name; defaults to the workspace remote's default c
 
 ```
 dagger cloud checks on [name]
+```
+
+### Options inherited from parent commands
+
+```
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
+
+## dagger cloud checks rerun
+
+Re-run checks on Dagger Cloud for the current commit
+
+### Synopsis
+
+Re-run checks on Dagger Cloud, against the commit CI already ran on.
+
+By default this targets the commit at the current HEAD (matched by SHA, falling
+back to the branch or PR it belongs to) and re-runs the checks that failed. Pass
+--check to pick specific checks by name, --all to re-run everything, or
+--commit/--pr to target a different commit.
+
+Only outermost checks can be re-run; sub-checks run as part of their parent
+check, so name the parent (e.g. "ci:bootstrap", not "ci:bootstrap:lint").
+
+This re-runs a check that already exists in Cloud for the commit. If CI hasn't
+run on the commit yet there's nothing to re-run -- use 'dagger check' to run
+checks locally against your working tree.
+
+```
+dagger cloud checks rerun [--check NAME ...] [--failed | --all]
+```
+
+### Options
+
+```
+      --all                 Re-run every check, including ones that passed
+      --check stringArray   Re-run a specific check by name (repeatable; outermost checks only)
+      --clean-slate         Re-run without reusing cache (experimental; requires an org feature)
+      --commit string       Target a specific commit SHA instead of the current HEAD
+      --dry-run             Show which checks would be re-run without triggering anything
+      --failed              Re-run the failed checks (the default when no --check is given)
+      --json                Print JSON output
+      --pr string           Target a specific pull request number
 ```
 
 ### Options inherited from parent commands
@@ -860,54 +908,6 @@ dagger cloud org use <org> [flags]
 ### SEE ALSO
 
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
-
-## dagger cloud rerun
-
-Re-run checks on Dagger Cloud for the current commit
-
-### Synopsis
-
-Re-run checks on Dagger Cloud, against the commit CI already ran on.
-
-By default this targets the commit at the current HEAD (matched by SHA, falling
-back to the branch or PR it belongs to) and re-runs the checks that failed. Pass
---check to pick specific checks by name, --all to re-run everything, or
---commit/--pr to target a different commit.
-
-Only outermost checks can be re-run; sub-checks run as part of their parent
-check, so name the parent (e.g. "ci:bootstrap", not "ci:bootstrap:lint").
-
-This re-runs a check that already exists in Cloud for the commit. If CI hasn't
-run on the commit yet there's nothing to re-run -- use 'dagger check' to run
-checks locally against your working tree.
-
-```
-dagger cloud rerun [--check NAME ...] [--failed | --all]
-```
-
-### Options
-
-```
-      --all                 Re-run every check, including ones that passed
-      --check stringArray   Re-run a specific check by name (repeatable; outermost checks only)
-      --clean-slate         Re-run without reusing cache (experimental; requires an org feature)
-      --commit string       Target a specific commit SHA instead of the current HEAD
-      --dry-run             Show which checks would be re-run without triggering anything
-      --failed              Re-run the failed checks (the default when no --check is given)
-      --json                Print JSON output
-      --pr string           Target a specific pull request number
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
-```
-
-### SEE ALSO
-
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
 
 ## dagger cloud signup
 

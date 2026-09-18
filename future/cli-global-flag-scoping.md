@@ -42,7 +42,7 @@ The capabilities are independent. A command can declare more than one.
 - `dagger trace` declares `MayRenderPipeline` but does not call the engine.
 - A configuration command can call the engine without rendering its internal
   trace to the user.
-- `dagger activity`, `dagger cloud rerun`, and `dagger workspace remote`
+- `dagger activity`, `dagger cloud checks rerun`, and `dagger workspace remote`
   declare `MaySelectWorkspace` without declaring `MayCallEngine`.
 - `dagger check` renders pass or failure status, but does not produce an
   output. `dagger generate` and `dagger api call` can produce outputs.

@@ -15,17 +15,17 @@ import (
 )
 
 // This file holds the Cloud check query, selection, and listing helpers that
-// 'dagger cloud rerun' depends on. They used to live in cloud_checks.go and back
+// 'dagger cloud checks rerun' depends on. They used to live in cloud_checks.go and back
 // the old 'dagger check' Cloud-replay path; that path was removed (see
 // future/done/simplify-dagger-check.md), which slimmed loadCloudCheckRowsForWorkspace
-// down to a rows-only query for the workspace commands. 'dagger cloud rerun' needs
+// down to a rows-only query for the workspace commands. 'dagger cloud checks rerun' needs
 // more than rows — it needs the owning org and Cloud client to trigger the re-run,
 // plus the selectors to disambiguate which commit the rows belong to — so the
 // fuller query path lives here, scoped to its remaining caller.
 
 // cloudCheckQueryResult bundles the Cloud client and owning org with the resolved
 // check rows. The rows-only loadCloudCheckRowsForWorkspace used by the workspace
-// commands drops the client/org; 'dagger cloud rerun' needs them to trigger reruns.
+// commands drops the client/org; 'dagger cloud checks rerun' needs them to trigger reruns.
 type cloudCheckQueryResult struct {
 	OrgName string
 	OrgID   string
