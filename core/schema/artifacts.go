@@ -586,7 +586,8 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 			ctx = core.WithCheckName(ctx, uri)
 			srv, err := core.CurrentDagqlServer(ctx)
 			if err == nil {
-				err = srv.Select(ctx, parent, &result.Value, dagql.Selector{Field: "items", Nth: i + 1}, dagql.Selector{Field: "value", Args: []dagql.NamedInput{{Name: "arguments", Value: args.Arguments}}})
+				// Keep the value's subtree visible, including deferred execution logs.
+				err = srv.Select(dagql.WithNonInternalTelemetry(ctx), parent, &result.Value, dagql.Selector{Field: "items", Nth: i + 1}, dagql.Selector{Field: "value", Args: []dagql.NamedInput{{Name: "arguments", Value: args.Arguments}}})
 			}
 			if err == nil {
 				if sync, ok := result.Value.ObjectType().FieldSpec("sync", srv.View); ok && !sync.Args.HasRequired(srv.View) {
