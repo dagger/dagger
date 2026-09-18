@@ -42,6 +42,12 @@ func (fe *frontendPretty) cacheReport(zoomed bool) []string {
 		if impact.HasNetwork && impact.NetworkBytes > 0 {
 			lines = append(lines, fmt.Sprintf("Network transfer avoided: ~%s", humanize.Bytes(uint64(impact.NetworkBytes))))
 		}
+		if impact.HasMemory && impact.MemoryBytes > 0 {
+			lines = append(lines, fmt.Sprintf(
+				"Memory occupancy avoided: equivalent to ~%s held for %s",
+				humanize.Bytes(uint64(impact.MemoryBytes)), humanDuration(impact.MemoryPeriod),
+			))
+		}
 	}
 
 	var details []string

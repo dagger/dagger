@@ -7,10 +7,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/gofrs/flock"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -18,7 +21,7 @@ import (
 )
 
 const (
-	cacheImpactStoreVersion = 3
+	cacheImpactStoreVersion = 4
 	maxCacheImpactProfiles  = 100
 )
 
@@ -40,8 +43,10 @@ type cacheRunProfile struct {
 	Elapsed          time.Duration `json:"elapsed"`
 	CPU              time.Duration `json:"cpu,omitempty"`
 	NetworkBytes     int64         `json:"networkBytes,omitempty"`
+	MemoryByteSecs   float64       `json:"memoryByteSeconds,omitempty"`
 	CPUAvailable     bool          `json:"cpuAvailable,omitempty"`
 	NetworkAvailable bool          `json:"networkAvailable,omitempty"`
+	MemoryAvailable  bool          `json:"memoryAvailable,omitempty"`
 	Hits             int           `json:"hits"`
 	Lookups          int           `json:"lookups"`
 	RecordedAt       time.Time     `json:"recordedAt"`
@@ -57,8 +62,11 @@ type cacheImpact struct {
 	Percent      float64
 	CPU          time.Duration
 	NetworkBytes int64
+	MemoryBytes  float64
+	MemoryPeriod time.Duration
 	HasCPU       bool
 	HasNetwork   bool
+	HasMemory    bool
 	BaselineRate float64
 }
 
@@ -95,7 +103,13 @@ func (fe *frontendPretty) prepareCacheImpact() {
 			impact.HasNetwork = true
 			impact.NetworkBytes = max(0, baseline.NetworkBytes-current.NetworkBytes)
 		}
-		if impact.Elapsed > 0 || impact.CPU > 0 || impact.NetworkBytes > 0 {
+		if baseline.MemoryAvailable && current.MemoryAvailable && baseline.Elapsed > 0 {
+			memoryByteSecs := max(0, baseline.MemoryByteSecs-current.MemoryByteSecs)
+			impact.HasMemory = true
+			impact.MemoryPeriod = baseline.Elapsed
+			impact.MemoryBytes = memoryByteSecs / baseline.Elapsed.Seconds()
+		}
+		if impact.Elapsed > 0 || impact.CPU > 0 || impact.NetworkBytes > 0 || impact.MemoryBytes > 0 {
 			fe.cacheImpact = &impact
 		}
 	}
@@ -175,7 +189,94 @@ func cacheProfile(db *dagui.DB) (cacheRunProfile, bool) {
 			profile.NetworkBytes += callNetwork
 		}
 	}
+	profile.MemoryByteSecs, profile.MemoryAvailable = memoryByteSeconds(db)
 	return profile, true
+}
+
+// memoryByteSeconds integrates each container's sampled memory.current gauge
+// over its execution span, then adds the series. Adding the integrals makes
+// parallel containers compose naturally without pretending their peaks occur
+// together. Samples represent the interval since the preceding sample; this
+// is an estimate at the engine's cgroup sampling resolution.
+func memoryByteSeconds(db *dagui.DB) (float64, bool) {
+	series := map[string][]metricdata.DataPoint[int64]{}
+	for _, metrics := range db.MetricsByCall {
+		for _, point := range metrics[telemetry.MemoryCurrentBytes] {
+			key := point.Attributes.Encoded(attribute.DefaultEncoder())
+			series[key] = append(series[key], point)
+		}
+	}
+	if len(series) == 0 {
+		// No series means this run executed no measured containers. Treat that as
+		// a real zero so a fully cached warm run can receive the entire colder
+		// run's memory occupancy as its estimated saving.
+		return 0, true
+	}
+
+	var total float64
+	for _, points := range series {
+		spanIDValue, ok := points[0].Attributes.Value(telemetry.MetricsSpanIDAttr)
+		if !ok {
+			return 0, false
+		}
+		spanID, err := trace.SpanIDFromHex(spanIDValue.AsString())
+		if err != nil {
+			return 0, false
+		}
+		span := db.Spans.Map[dagui.SpanID{SpanID: spanID}]
+		if span == nil || span.StartTime.IsZero() || !span.EndTime.After(span.StartTime) {
+			return 0, false
+		}
+		area, ok := integrateMemorySeries(points, span.StartTime, span.EndTime)
+		if !ok {
+			return 0, false
+		}
+		total += area
+	}
+	return total, true
+}
+
+func integrateMemorySeries(points []metricdata.DataPoint[int64], start, end time.Time) (float64, bool) {
+	if len(points) == 0 || !end.After(start) {
+		return 0, false
+	}
+	points = append([]metricdata.DataPoint[int64](nil), points...)
+	sort.SliceStable(points, func(i, j int) bool {
+		return points[i].Time.Before(points[j].Time)
+	})
+
+	previous := start
+	var (
+		area      float64
+		lastValue int64
+		hasSample bool
+	)
+	for _, point := range points {
+		if point.Time.IsZero() || point.Time.Before(start) {
+			continue
+		}
+		at := point.Time
+		if at.After(end) {
+			at = end
+		}
+		value := max(int64(0), point.Value)
+		if at.After(previous) {
+			area += float64(value) * at.Sub(previous).Seconds()
+			previous = at
+		}
+		lastValue = value
+		hasSample = true
+		if !previous.Before(end) {
+			break
+		}
+	}
+	if !hasSample {
+		return 0, false
+	}
+	if end.After(previous) {
+		area += float64(lastValue) * end.Sub(previous).Seconds()
+	}
+	return area, true
 }
 
 func lastMetric(points []metricdata.DataPoint[int64]) (int64, bool) {

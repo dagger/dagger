@@ -7,7 +7,8 @@
 - After Dagger has seen a comparable colder run, a warmer run can also show:
   - wall-clock time saved;
   - CPU work avoided;
-  - network transfer avoided.
+  - network transfer avoided;
+  - memory occupancy avoided.
 - Wall-clock savings compare whole-workflow makespans. Parallel branches are
   not added together: if 10-second and 8-second branches run together, their
   combined benefit is at most 10 seconds.
@@ -15,8 +16,9 @@
   cached 10-second branch, the workflow finishes about 2 seconds faster.
 - These are estimates based on an earlier, colder local run. Missing or
   incompatible measurements are omitted instead of guessed.
-- Peak memory is intentionally not reported because independent memory peaks
-  may occur at different times and cannot safely be added together.
+- Memory occupancy integrates sampled memory over time and reports an
+  equivalent amount held for the colder run's duration. It is not a peak-memory
+  or OOM-prevention claim.
 
 ## Before the demo
 
@@ -64,6 +66,7 @@ Keep this terminal open so all commands retain the same environment.
    Finished ~... faster (...%)
    Compute avoided: ~... of CPU work
    Network transfer avoided: ~...
+   Memory occupancy avoided: equivalent to ~... held for ...
    ```
 
 5. Emphasize that CPU work can exceed elapsed time because work runs in
@@ -76,6 +79,8 @@ Keep this terminal open so all commands retain the same environment.
 - Start again with a new `CACHE_DEMO_ENGINE` and a new `XDG_CACHE_HOME`.
 - CPU or network lines can be absent when that workflow emitted no matching
   resource measurements; this is expected.
+- Memory is estimated from cgroup samples taken every five seconds, plus a
+  final sample. Short-lived or incomplete series may therefore be coarse.
 
 The local comparison history is stored in
 `$XDG_CACHE_HOME/dagger/cache-impact.json`.
