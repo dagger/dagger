@@ -4,8 +4,7 @@ use genco::quote;
 
 use crate::functions::{CommonFunctions, TypeRefExt};
 use crate::rust::functions::{
-    format_name, format_parameter_name, format_struct_comment, format_struct_name,
-    id_handle_struct, render_required_args,
+    format_name, format_struct_comment, format_struct_name, id_handle_struct, render_required_args,
 };
 use crate::utility::OptionExt;
 
@@ -145,7 +144,7 @@ fn render_trait_method_args(
             if a.input_value.type_.is_optional() {
                 return None;
             }
-            let n = format_parameter_name(&a.input_value.name);
+            let n = format_struct_name(&a.input_value.name);
             let t = funcs.format_input_type(&a.input_value.type_);
 
             if a.input_value.type_.is_id() {
@@ -315,7 +314,7 @@ fn render_trait_impl_arg_parts(
             if a.input_value.type_.is_optional() {
                 return None;
             }
-            let n = format_parameter_name(&a.input_value.name);
+            let n = format_struct_name(&a.input_value.name);
             let t = funcs.format_input_type(&a.input_value.type_);
 
             let sig = if a.input_value.type_.is_id() {

@@ -3,7 +3,6 @@ package daggercmd
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -34,19 +33,13 @@ func TestArtifactDimensionFlags(t *testing.T) {
 	artifacts := (&dagger.Artifacts{}).WithGraphQLQuery(querybuilder.Query().Client(recorder).Select("artifacts"))
 	sel, err := parseArtifactAddresses(nil)
 	require.NoError(t, err)
-	selected, err := selectArtifactFilters(child, sel, artifacts)
+	selected, err := selectArtifactFilters(child, sel[0], artifacts)
 	require.NoError(t, err)
 	_, err = selected.Types(t.Context())
 	require.ErrorIs(t, err, errArtifactQueryCaptured)
 	require.Contains(t, recorder.query, `filterTypes(types:["Container","Directory"])`)
-	require.Contains(t, recorder.query, `dimension:"go-module"`)
-	require.Contains(t, recorder.query, `keys:["lib,a=b","sdk/go","cmd/codegen"]`)
-	require.Contains(t, recorder.query, `dimension:"go-test"`)
-	require.Contains(t, recorder.query, `keys:["TestConnect"]`)
-	require.Contains(t, recorder.query, `dimension:"type"`)
-	require.Contains(t, recorder.query, `keys:["app"]`)
-	require.Equal(t, 3, strings.Count(recorder.query, "filterDimensionKeys("))
-	require.NotContains(t, recorder.query, `dimension:"env"`)
+	require.Contains(t, recorder.query, `filterUri(uri:"dag://?go-module=lib,a%3Db&type=app&go-module=sdk/go&go-module=cmd/codegen&go-test=TestConnect")`)
+	require.NotContains(t, recorder.query, "env=")
 }
 
 func TestArtifactAddressArguments(t *testing.T) {
@@ -62,20 +55,27 @@ func TestArtifactAddressArguments(t *testing.T) {
 		"dag://?go-module",
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"golang/modules/tests/container", "provider/docs"}, sel.include)
-	require.Equal(t, []string{"container"}, sel.types)
+	require.Equal(t, []string{"golang/modules/tests/container"}, artifactPaths(sel[:1]))
+	require.Nil(t, artifactPaths(sel)) // The third address selects every path.
+	require.Equal(t, []string{"container"}, sel[0].Types)
+	require.Empty(t, sel[1].Types)
+	require.Empty(t, sel[1].Query)
 
-	recorder := &artifactQueryRecorder{}
-	artifacts := (&dagger.Artifacts{}).WithGraphQLQuery(querybuilder.Query().Client(recorder).Select("artifacts"))
-	selected, err := selectArtifactFilters(child, sel, artifacts)
-	require.NoError(t, err)
-	_, err = artifactURIs(t.Context(), nil, selected)
-	require.ErrorIs(t, err, errArtifactQueryCaptured)
-	require.Contains(t, recorder.query, `filterUri(uri:"dag+container://")`)
-	require.Contains(t, recorder.query, `filterDimensions(dimensions:["go-module"])`)
-	require.Contains(t, recorder.query, `dimension:"go-test"`)
-	require.Contains(t, recorder.query, `keys:["TestConnect","TestQuery"]`)
-	require.NotContains(t, recorder.query, "filterTypes(")
+	for i, want := range []string{
+		`dag+container://?go-module=sdk/go&go-test=TestConnect&go-test=TestQuery`,
+		`dag://?go-test=TestQuery`,
+		`dag://?go-module&go-test=TestQuery`,
+	} {
+		recorder := &artifactQueryRecorder{}
+		artifacts := (&dagger.Artifacts{}).WithGraphQLQuery(querybuilder.Query().Client(recorder).Select("artifacts"))
+		selected, err := selectArtifactFilters(child, sel[i], artifacts)
+		require.NoError(t, err)
+		_, err = selected.Types(t.Context())
+		require.ErrorIs(t, err, errArtifactQueryCaptured)
+		require.Contains(t, recorder.query, `filterUri(uri:"`+want+`")`)
+		require.NotContains(t, recorder.query, "filterTypes(")
+	}
+	require.Len(t, sel[0].Query, 2) // Flags do not mutate the input address.
 
 	_, err = parseArtifactAddresses([]string{"dag://github.com/dagger/dagger@main:base"})
 	require.ErrorContains(t, err, "absolute addresses are not supported yet")

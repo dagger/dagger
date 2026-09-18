@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"dagger.io/dagger"
 	"github.com/iancoleman/strcase"
 	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
@@ -37,22 +38,36 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 			args = args[1:]
 		}
 	}
-	cmd, _ := resolveCommand(root, args)
+	cmd, commandArgs := resolveCommand(root, args)
 	if cmd != workspaceCmd && cmd != artifactsCmd && cmd.Parent() != artifactsCmd {
 		return nil
+	}
+	if cmd != workspaceCmd {
+		// parseGlobalFlags already removed flags and their values.
+		paths := commandArgs
+		if cmd.Name() == "keys" && len(paths) > 0 {
+			paths = paths[1:]
+		}
+		addresses, err := parseArtifactAddresses(paths)
+		if err != nil {
+			return err
+		}
+		if err := withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
+			dimensions, err := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}).Dimensions(ctx)
+			if err != nil {
+				return err
+			}
+			registerArtifactDimensionFlags(artifactsCmd, dimensions)
+			return nil
+		}); err != nil {
+			return err
+		}
+		return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
 	}
 	return withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
 		types, err := ec.Dagger().CurrentWorkspace().Artifacts().Types(ctx)
 		if err != nil {
 			return err
-		}
-		if cmd != workspaceCmd {
-			dimensions, err := ec.Dagger().CurrentWorkspace().Artifacts().Dimensions(ctx)
-			if err != nil {
-				return err
-			}
-			registerArtifactDimensionFlags(artifactsCmd, dimensions)
-			return artifactsCmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(types, cobra.ShellCompDirectiveNoFileComp))
 		}
 		for name, typeName := range workspaceArtifactCommands(types) {
 			cmd := &cobra.Command{
