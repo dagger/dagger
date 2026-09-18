@@ -79,11 +79,45 @@ func (e *fixtureEngine) start() {
 	e.upstream = devEngineContainerAsService(ctr)
 	e.unwatch = watchNestedEngine(e.t, e.outer, e.upstream, e.t.Name()+" "+e.name)
 	tunnel, err := e.outer.Host().Tunnel(e.upstream).Start(e.ctx)
-	require.NoError(e.t, err)
+	if err != nil {
+		e.t.Fatalf("start fixture engine %s: %v\n%s", e.name, err, nestedEngineEarlyExit(e.ctx, ctr))
+	}
 	e.tunnel = tunnel
 	e.endpoint, err = e.tunnel.Endpoint(e.ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(e.t, err)
 	e.client = e.connect()
+}
+
+// nestedEngineEarlyExit diagnoses a nested engine whose service exited before
+// it served: a service's output is not in its start error. It runs the same
+// container once more as a plain exec on the same state, bounded, and returns
+// what the engine wrote and how it ended. An engine that is still up after the
+// bound is reported as such: its first exit was not repeatable.
+func nestedEngineEarlyExit(ctx context.Context, ctr *dagger.Container) string {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 90*time.Second)
+	defer cancel()
+	entrypoint, err := ctr.Entrypoint(ctx)
+	if err != nil {
+		return "nested engine early exit: entrypoint: " + err.Error()
+	}
+	args, err := ctr.DefaultArgs(ctx)
+	if err != nil {
+		return "nested engine early exit: default args: " + err.Error()
+	}
+	cmd := append([]string{"sh", "-c", `timeout 30 "$@" 2>&1; echo "nested engine ended with exit $? (124 means it was still running after 30 s)"`, "sh"}, entrypoint...)
+	cmd = append(cmd, args...)
+	out, err := ctr.
+		WithEnvVariable("_DAGGER_TEST_EARLY_EXIT_PROBE", identity.NewID()).
+		WithExec(cmd, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true, Expect: dagger.ReturnTypeAny}).
+		Stdout(ctx)
+	if err != nil {
+		return "nested engine early exit: probe: " + err.Error()
+	}
+	const keep = 16 << 10
+	if len(out) > keep {
+		out = "…" + out[len(out)-keep:]
+	}
+	return "nested engine output on a second start on the same state:\n" + out
 }
 
 // connect opens one more client session on the running engine.
