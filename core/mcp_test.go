@@ -57,6 +57,59 @@ func TestToolResultContentType(t *testing.T) {
 	require.Empty(t, toolResultContentType("prefix\n"+patch))
 }
 
+func TestChangesetPathCount(t *testing.T) {
+	// The gate counts collapsed removals (Removed), not every file under a
+	// removed directory (AllRemoved), so dropping one big tree stays cheap.
+	paths := &ChangesetPaths{
+		Added:      []string{"a.txt", "dir/"},
+		Modified:   []string{"b.txt"},
+		Removed:    []string{"gone/"},
+		AllRemoved: []string{"gone/", "gone/x.txt", "gone/y.txt"},
+	}
+	require.Equal(t, 4, changesetPathCount(paths))
+}
+
+func TestSummarizeChangesetPaths(t *testing.T) {
+	paths := &ChangesetPaths{
+		Added: []string{
+			"sdk/", // directories are not files; not counted
+			"sdk/go/a.go", "sdk/go/b.go", "sdk/python/c.py",
+			"core/new.go",
+			"moved.go", // renamed: counted once, as a rename
+		},
+		Modified: []string{"core/mcp.go", "README.md"},
+		Removed:  []string{"old/", "orig.go"},
+		AllRemoved: []string{
+			"old/", "old/x.go", "old/y.go",
+			"orig.go", // the rename's old name; not a removal
+		},
+		Renamed: map[string]string{"moved.go": "orig.go"},
+	}
+
+	out := summarizeChangesetPaths(paths)
+	lines := strings.Split(out, "\n")
+	require.Equal(t, "9 files changed (4 added, 2 modified, 2 removed, 1 renamed).", lines[0])
+	require.Contains(t, lines[1], "too large to show in full")
+	// Buckets sort by count descending, then by name; root files land in "./".
+	require.Equal(t, []string{
+		"  sdk/  3 files",
+		"  ./    2 files",
+		"  core/ 2 files",
+		"  old/  2 files",
+	}, lines[2:])
+	require.Empty(t, toolResultContentType(out))
+}
+
+func TestSummarizeChangesetPathsCapsBuckets(t *testing.T) {
+	paths := &ChangesetPaths{}
+	for i := range patchSummaryMaxBuckets + 5 {
+		paths.Modified = append(paths.Modified, fmt.Sprintf("dir%02d/file.txt", i))
+	}
+	out := summarizeChangesetPaths(paths)
+	require.Contains(t, out, "… and 5 more directories")
+	require.Equal(t, patchSummaryMaxBuckets, strings.Count(out, " 1 files"), out)
+}
+
 func TestCallMarksPatchResult(t *testing.T) {
 	recorder, ctx := stateRecorderCtx(t)
 	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"

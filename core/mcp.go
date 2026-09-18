@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/patchpreview"
@@ -432,18 +433,75 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 	return nil
 }
 
+const (
+	// patchSummaryMaxPaths is the changed-path count above which a changeset
+	// is described structurally (counts and top-level directory buckets)
+	// instead of by materializing its patch or per-file diff stats. Both of
+	// those walk file content; a regenerated SDK or a workspace swap to a
+	// distant branch touches thousands of files and would spend tens of
+	// seconds producing output the model can't use anyway.
+	patchSummaryMaxPaths = 200
+	// patchSummaryMaxBytes bounds the patch summarizePatch will read into
+	// memory to show verbatim. Larger patches fall back to diff stats without
+	// ever loading their contents (cf. llmToolLogsMaxBytes for tool logs).
+	patchSummaryMaxBytes = 64 * 1024
+	// patchSummaryMaxLines is the longest patch shown verbatim to the model;
+	// anything longer becomes a diff-stat summary.
+	patchSummaryMaxLines = 100
+	// patchSummaryMaxBuckets caps the directory rows in a structural summary.
+	patchSummaryMaxBuckets = 20
+)
+
+// changesetTooLarge reports whether a changeset touches more than
+// patchSummaryMaxPaths paths. It only computes the changeset's paths — a
+// memoized metadata-delta walk, no content diff — so it is cheap enough to
+// gate the expensive patch materialization behind. The computed paths are
+// returned for callers that want to summarize them.
+func changesetTooLarge(ctx context.Context, changes dagql.ObjectResult[*Changeset]) (bool, *ChangesetPaths, error) {
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	return changesetPathCount(paths) > patchSummaryMaxPaths, paths, nil
+}
+
+func changesetPathCount(paths *ChangesetPaths) int {
+	return len(paths.Added) + len(paths.Modified) + len(paths.Removed)
+}
+
 func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
-	// Try to return the raw patch so the LLM can see the actual diff.
+	// Gate before materializing anything: a huge changeset is summarized from
+	// its paths alone, without ever rendering a patch or diff stats.
+	tooLarge, paths, err := changesetTooLarge(ctx, changes)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to compute changed paths: %s", err)
+	}
+	if tooLarge {
+		return summarizeChangesetPaths(paths)
+	}
+
+	// Try to return the raw patch so the LLM can see the actual diff, but
+	// check its size before reading it: File.contents refuses oversized files
+	// and even an accepted one would be more than the model should see.
 	// Fall back to a structured summary for large changesets.
-	var rawPatch string
-	if err := srv.Select(ctx, changes, &rawPatch, dagql.Selector{
+	var patch dagql.ObjectResult[*File]
+	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
 		View:  srv.View,
 		Field: "asPatch",
-	}, dagql.Selector{
-		View:  srv.View,
-		Field: "contents",
-	}); err == nil && rawPatch != "" && strings.Count(rawPatch, "\n") <= 100 {
-		return rawPatch
+	}); err == nil {
+		var size int
+		if err := srv.Select(ctx, patch, &size, dagql.Selector{
+			View:  srv.View,
+			Field: "size",
+		}); err == nil && size > 0 && size <= patchSummaryMaxBytes {
+			var rawPatch string
+			if err := srv.Select(ctx, patch, &rawPatch, dagql.Selector{
+				View:  srv.View,
+				Field: "contents",
+			}); err == nil && rawPatch != "" && strings.Count(rawPatch, "\n") <= patchSummaryMaxLines {
+				return rawPatch
+			}
+		}
 	}
 
 	const summaryWidth = 80
@@ -464,6 +522,98 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		}
 	}
 	return patchpreview.SummarizeString(entries, summaryWidth)
+}
+
+// summarizeChangesetPaths renders a changeset from its paths alone: file
+// counts per kind, then the top-level directories carrying the most changes
+// (git --dirstat, roughly), capped at patchSummaryMaxBuckets. It costs
+// nothing beyond the paths themselves, which is the point: it's what the
+// model sees when the change is too large to render a patch for.
+func summarizeChangesetPaths(paths *ChangesetPaths) string {
+	isFile := func(p string) bool { return !strings.HasSuffix(p, "/") }
+	var added, modified, removed, renamed int
+	buckets := map[string]int{}
+	bucket := func(p string) {
+		dir, _, ok := strings.Cut(p, "/")
+		if !ok {
+			dir = "."
+		}
+		buckets[dir+"/"]++
+	}
+	for _, p := range paths.Added {
+		if !isFile(p) {
+			continue
+		}
+		if _, ok := paths.Renamed[p]; ok {
+			renamed++
+		} else {
+			added++
+		}
+		bucket(p)
+	}
+	for _, p := range paths.Modified {
+		modified++
+		bucket(p)
+	}
+	renamedOld := make(map[string]bool, len(paths.Renamed))
+	for _, oldPath := range paths.Renamed {
+		renamedOld[oldPath] = true
+	}
+	for _, p := range paths.AllRemoved {
+		if !isFile(p) || renamedOld[p] {
+			continue
+		}
+		removed++
+		bucket(p)
+	}
+
+	var kinds []string
+	for _, kind := range []struct {
+		n    int
+		name string
+	}{{added, "added"}, {modified, "modified"}, {removed, "removed"}, {renamed, "renamed"}} {
+		if kind.n > 0 {
+			kinds = append(kinds, fmt.Sprintf("%d %s", kind.n, kind.name))
+		}
+	}
+	total := added + modified + removed + renamed
+	fileWord := "files"
+	if total == 1 {
+		fileWord = "file"
+	}
+	var out strings.Builder
+	fmt.Fprintf(&out, "%d %s changed (%s).\n", total, fileWord, strings.Join(kinds, ", "))
+	out.WriteString("The change is too large to show in full; per-directory file counts:\n")
+
+	type dirCount struct {
+		dir string
+		n   int
+	}
+	dirs := make([]dirCount, 0, len(buckets))
+	for dir, n := range buckets {
+		dirs = append(dirs, dirCount{dir, n})
+	}
+	slices.SortFunc(dirs, func(a, b dirCount) int {
+		if c := b.n - a.n; c != 0 {
+			return c
+		}
+		return strings.Compare(a.dir, b.dir)
+	})
+	shown := dirs
+	if len(shown) > patchSummaryMaxBuckets {
+		shown = shown[:patchSummaryMaxBuckets]
+	}
+	width := 0
+	for _, d := range shown {
+		width = max(width, len(d.dir))
+	}
+	for _, d := range shown {
+		fmt.Fprintf(&out, "  %-*s %d files\n", width, d.dir, d.n)
+	}
+	if hidden := len(dirs) - len(shown); hidden > 0 {
+		fmt.Fprintf(&out, "  … and %d more directories\n", hidden)
+	}
+	return strings.TrimRight(out.String(), "\n")
 }
 
 const gitDiffContentType = "text/x-diff"
@@ -886,16 +1036,51 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // known — makes the recorded overlay pure data, and its restoration a tolerant
 // application: hunks that fit apply, hunks that don't leave conflict markers
 // for the agent to resolve.
+//
+// Changesets above patchSummaryMaxPaths are left as-is: rendering and
+// re-applying a patch for thousands of files takes long enough to stall the
+// turn, and normalization is only a durability upgrade — the caller falls
+// back to the raw changeset on any failure anyway.
 func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	var patchText string
-	if err := srv.Select(ctx, changes, &patchText, dagql.Selector{
+	tooLarge, paths, err := changesetTooLarge(ctx, changes)
+	if err != nil {
+		return changes, fmt.Errorf("compute changeset paths: %w", err)
+	}
+	if tooLarge {
+		slog.Debug("changeset too large to normalize to patch form; keeping raw changeset",
+			"paths", changesetPathCount(paths),
+			"max", patchSummaryMaxPaths)
+		return changes, nil
+	}
+	var patch dagql.ObjectResult[*File]
+	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
 		View:  srv.View,
 		Field: "asPatch",
-	}, dagql.Selector{
+	}); err != nil {
+		return changes, fmt.Errorf("render changeset as patch: %w", err)
+	}
+	// Stat before reading: File.contents refuses files over
+	// MaxFileContentsSize only after reading up to it, and a patch that size
+	// is too big to ship back through withPatch as a string argument anyway.
+	var size int
+	if err := srv.Select(ctx, patch, &size, dagql.Selector{
+		View:  srv.View,
+		Field: "size",
+	}); err != nil {
+		return changes, fmt.Errorf("stat changeset patch: %w", err)
+	}
+	if size > engineutil.MaxFileContentsSize {
+		slog.Debug("changeset patch too large to normalize to patch form; keeping raw changeset",
+			"bytes", size,
+			"max", engineutil.MaxFileContentsSize)
+		return changes, nil
+	}
+	var patchText string
+	if err := srv.Select(ctx, patch, &patchText, dagql.Selector{
 		View:  srv.View,
 		Field: "contents",
 	}); err != nil {
-		return changes, fmt.Errorf("render changeset as patch: %w", err)
+		return changes, fmt.Errorf("read changeset patch: %w", err)
 	}
 	if patchText == "" {
 		return changes, nil
