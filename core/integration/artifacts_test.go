@@ -268,6 +268,9 @@ func (ArtifactsSuite) TestSelectorRoundTrip(ctx context.Context, t *testctx.T) {
 		{`artifacts { filterUri(uri: "dag+container://consumer/**") ` + sel + ` }`, "dag+container://consumer/**"},
 		{`artifacts { filterPath(path: ["base"]) { filterTypes(types: ["Directory"]) ` + sel + ` } }`, "dag+directory://base"},
 		{`artifacts { filterTypes(types: []) ` + sel + ` }`, "dag://{}"},
+		{`artifacts { filterPath(path: []) ` + sel + ` }`, "dag://{}"},
+		{`artifacts { filterPath(path: ["docs", "Source"]) ` + sel + ` }`, "dag://{}"},
+		{`artifacts { filterPath(path: ["docs", "*"]) ` + sel + ` }`, "dag://{}"},
 	} {
 		t.Run(tc.uri, func(ctx context.Context, t *testctx.T) {
 			got, err := testutil.QueryWithClient[json.RawMessage](c, t,
