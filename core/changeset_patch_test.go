@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,6 +70,17 @@ func TestFixDiffGitHeader(t *testing.T) {
 	}
 }
 
+func TestWriteGitDiffPatchBinaryDiagnostics(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, "a"), 0o755))
+	require.NoError(t, os.Mkdir(filepath.Join(root, "b"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "b", "binary"), []byte("\x00binary payload"), 0o644))
+	var patch, diagnostics bytes.Buffer
+	require.NoError(t, writeGitDiffPatch(t.Context(), root, nil, &patch, &diagnostics, &diagnostics))
+	require.Contains(t, patch.String(), "GIT binary patch")
+	require.Equal(t, "running git diff (0 pathspecs)\n", diagnostics.String())
+}
+
 func TestDiffGitHeaderRewriter(t *testing.T) {
 	in := "diff --git b/add.txt b/add.txt\nnew file mode 100644\n--- /dev/null\n+++ b/add.txt\n@@ -0,0 +1 @@\n+hi\ntrailing-no-newline"
 	var out bytes.Buffer
@@ -117,8 +127,9 @@ func TestWriteGitDiffPatch_Integration(t *testing.T) {
 	writeFile(after, "add.txt", "newly added\n")
 	writeFile(after, "new-name.txt", "same content across the rename\n")
 
-	var patch bytes.Buffer
-	require.NoError(t, writeGitDiffPatch(ctx, root, nil, &patch, io.Discard, io.Discard))
+	var patch, diagnostics bytes.Buffer
+	require.NoError(t, writeGitDiffPatch(ctx, root, nil, &patch, &diagnostics, &diagnostics))
+	require.Equal(t, "running git diff (0 pathspecs)\n", diagnostics.String())
 
 	patchText := patch.String()
 	require.NotEmpty(t, patchText)

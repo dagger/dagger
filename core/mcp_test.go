@@ -50,6 +50,61 @@ func TestCallPreservesHeaderArgs(t *testing.T) {
 	require.Equal(t, []string{"main.go", "20", "10", "foo bar"}, values.AsStringSlice())
 }
 
+func TestPatchPreviewBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		patch string
+		ok    bool
+	}{
+		{"small", "diff --git a/x b/x\n+hello\n", true},
+		{"empty", "", false},
+		{"byte boundary", strings.Repeat("x", patchPreviewMaxBytes), true},
+		{"long line", strings.Repeat("x", patchPreviewMaxBytes+1), false},
+		{"line boundary", strings.Repeat("+x\n", patchPreviewMaxLines), true},
+		{"too many lines", strings.Repeat("+x\n", patchPreviewMaxLines+1), false},
+		{"binary", "diff --git a/x b/x\nGIT binary patch\nliteral 1\nencoded\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			preview, ok := readPatchPreview(strings.NewReader(tc.patch))
+			require.Equal(t, tc.ok, ok)
+			if ok {
+				require.Equal(t, tc.patch, preview)
+			} else {
+				require.Empty(t, preview)
+			}
+		})
+	}
+	// An unbounded reader is stopped after the lookahead byte, not drained.
+	r := strings.NewReader(strings.Repeat("x", patchPreviewMaxBytes*10))
+	_, ok := readPatchPreview(r)
+	require.False(t, ok)
+	require.Equal(t, patchPreviewMaxBytes*9-1, r.Len())
+}
+
+func TestSmallTextChangeset(t *testing.T) {
+	small := &DiffStat{Kind: DiffStatKindModified, AddedLines: 1, RemovedLines: 1}
+	require.True(t, smallTextChangeset([]*DiffStat{small}))
+	require.True(t, smallTextChangeset([]*DiffStat{{Path: "new-dir/", Kind: DiffStatKindAdded}, small}))
+	require.False(t, smallTextChangeset([]*DiffStat{{Kind: DiffStatKindModified}})) // binary/path-only
+	require.False(t, smallTextChangeset([]*DiffStat{{Kind: DiffStatKindRenamed, AddedLines: 1}}))
+	require.False(t, smallTextChangeset([]*DiffStat{{AddedLines: patchPreviewMaxLines + 1}}))
+	many := make([]*DiffStat, 11)
+	for i := range many {
+		many[i] = small
+	}
+	require.False(t, smallTextChangeset(many))
+}
+
+func TestBoundPatchSummary(t *testing.T) {
+	small := "a +1\n\n1 file changed, +1 lines"
+	require.Equal(t, small, boundPatchSummary(small))
+	summary := strings.Repeat("path +1\n", 1000) + "\n1000 files changed, +1000 lines"
+	bounded := boundPatchSummary(summary)
+	require.Contains(t, bounded, "900 summary lines omitted")
+	require.True(t, strings.HasSuffix(bounded, "1000 files changed, +1000 lines"))
+	require.Less(t, len(bounded), patchPreviewMaxBytes)
+}
+
 func TestToolResultContentType(t *testing.T) {
 	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"
 	require.Equal(t, gitDiffContentType, toolResultContentType(patch))
@@ -1012,4 +1067,79 @@ func TestRenderReadLogs(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
+}
+
+// TestSummarizeMountChanges covers the compact mount-topology notice rendered
+// by summarizeWorkspaceChange in place of itemizing mounted content: one line
+// per mount point that appeared or disappeared.
+func TestSummarizeMountChanges(t *testing.T) {
+	ws := func(mountPoints []string) *Workspace {
+		return &Workspace{mountPoints: mountPoints}
+	}
+	for _, tc := range []struct {
+		name string
+		prev *Workspace
+		next *Workspace
+		want string
+	}{
+		{
+			name: "no mounts",
+			prev: ws(nil),
+			next: ws(nil),
+			want: "",
+		},
+		{
+			name: "unchanged mounts are not reported",
+			prev: ws([]string{"mnt/deps"}),
+			next: ws([]string{"mnt/deps"}),
+			want: "",
+		},
+		{
+			name: "new read-only mount",
+			prev: ws(nil),
+			next: ws([]string{"mnt/pi-mono"}),
+			want: "Mounted (read-only): mnt/pi-mono",
+		},
+		{
+			name: "removed mount",
+			prev: ws([]string{"mnt/other"}),
+			next: ws(nil),
+			want: "Unmounted: mnt/other",
+		},
+		{
+			name: "mixed add and remove, one line each",
+			prev: ws([]string{"mnt/old"}),
+			next: ws([]string{"mnt/new"}),
+			want: "Mounted (read-only): mnt/new\nUnmounted: mnt/old",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := summarizeMountChanges(tc.prev, tc.next); got != tc.want {
+				t.Errorf("summarizeMountChanges() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUnionMountPoints covers the exclusion set used when diffing two
+// workspaces: every mount point of either side, deduplicated, so neither the
+// old nor the new mount content gets itemized in the diff.
+func TestUnionMountPoints(t *testing.T) {
+	prev := &Workspace{mountPoints: []string{"mnt/a", "mnt/shared"}}
+	next := &Workspace{mountPoints: []string{"mnt/b", "mnt/shared"}}
+	got := unionMountPoints(prev, next)
+	want := []string{"mnt/a", "mnt/b", "mnt/shared"}
+	if len(got) != len(want) {
+		t.Fatalf("unionMountPoints() = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("unionMountPoints()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// A nil workspace on either side is tolerated (accessors are nil-safe).
+	if got := unionMountPoints(&Workspace{}, next); len(got) != 2 {
+		t.Errorf("unionMountPoints(empty, next) = %v, want next's mounts", got)
+	}
 }
