@@ -27,10 +27,10 @@ dagger module install dagger.io/js/deno
 
 ```bash
 dagger check                       # run every check in the workspace
-dagger check deno:test-all         # deno test across every project
-dagger check deno:lint-all         # deno lint across every project
-dagger check deno:type-check-all   # deno check across every project
-dagger check deno:format-check-all # deno fmt --check across every project
+dagger check dag://deno/test-all         # deno test across every project
+dagger check dag://deno/lint-all         # deno lint across every project
+dagger check dag://deno/type-check-all   # deno check across every project
+dagger check dag://deno/format-check-all # deno fmt --check across every project
 ```
 
 The `-all` checks discover every `deno.json`/`deno.jsonc` in the workspace,

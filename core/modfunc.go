@@ -50,7 +50,11 @@ func NewModFunction(
 	metadata *Function,
 ) (*ModuleFunction, error) {
 	modInst := NewUserMod(mod)
-	returnType, ok, err := modInst.ModTypeFor(ctx, metadata.ReturnType.Self(), true)
+	authoredReturnType := metadata.ReturnType
+	if metadata.CheckReturnType.Self() != nil {
+		authoredReturnType = metadata.CheckReturnType
+	}
+	returnType, ok, err := modInst.ModTypeFor(ctx, authoredReturnType.Self(), true)
 	if err != nil {
 		return nil, fmt.Errorf("get mod type for function %q return type: %w", metadata.Name, err)
 	}

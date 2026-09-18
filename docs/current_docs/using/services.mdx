@@ -53,7 +53,7 @@ source = "github.com/example/playwright@v1.0"
 app = "dag://docusaurus/serve"
 ```
 
-The setting is a `dag://<module>/<function>` DAG address. The leading path segment is a module's install name, the `[modules.X]` key in the same `dagger.toml`. The rest names a zero-arg function on it. Any function returning a matching type works, and Dagger injects the value it returns. `dagger artifacts list --type Service` is a convenient place to find and copy a service's address, but the address is valid because it resolves to a `Service`, not because the function is listed there. When Dagger constructs `playwright`, it resolves the reference and passes the service as the `app` argument.
+The setting is a `dag://<module>/<function>` DAG address. The leading path segment is a module's install name, the `[modules.X]` key in the same `dagger.toml`. The rest names a zero-arg function on it. Any function returning a matching type works, and Dagger injects the value it returns. `dagger artifact list --type Service` is a convenient place to find and copy a service's address, but the address is valid because it resolves to a `Service`, not because the function is listed there. When Dagger constructs `playwright`, it resolves the reference and passes the service as the `app` argument.
 
 This also works for `Container` constructor arguments. Point the setting at any module function that returns a `Container`, for example to share a common base image across modules.
 

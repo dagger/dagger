@@ -108,7 +108,9 @@ type Editor {
 			Text: "done",
 		}}))
 	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
-	transcript, err := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
+	require.NoError(t, err)
+	transcript, err := composed.
 		WithPrompt("track it").
 		Loop().
 		Transcript(ctx)
@@ -144,7 +146,9 @@ type Editor {
 `)
 	// Recover the real constructor's provenance from a portable composition,
 	// then give it a new argument so this receiver cannot already be cached.
-	portable, err := source.AsWorkspace().Agents().Compose().PortableID(ctx)
+	composed, err := composeArtifactAgents(ctx, c, source.AsWorkspace(), nil)
+	require.NoError(t, err)
+	portable, err := composed.PortableID(ctx)
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(string(portable)))

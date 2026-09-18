@@ -7,6 +7,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,7 @@ func TestArtifactAddressArguments(t *testing.T) {
 	require.Len(t, sel[0].Query, 2) // Flags do not mutate the input address.
 
 	_, err = parseArtifactAddresses([]string{"dag://github.com/dagger/dagger@main:base"})
-	require.ErrorContains(t, err, "absolute addresses are not supported yet")
+	require.NoError(t, err)
 	_, err = parseArtifactAddresses([]string{"https://example.com"})
 	require.ErrorContains(t, err, "not a DAG address")
 }
@@ -90,4 +91,14 @@ type artifactQueryRecorder struct{ query string }
 func (r *artifactQueryRecorder) MakeRequest(_ context.Context, req *graphql.Request, _ *graphql.Response) error {
 	r.query = req.Query
 	return errArtifactQueryCaptured
+}
+
+func TestAbsoluteArtifactWorkspace(t *testing.T) {
+	for _, address := range []string{"github.com/dagger/dagger@main:golang", "dag://github.com/dagger/dagger@main:golang"} {
+		params, err := artifactClientParams(client.Params{}, []string{address})
+		require.NoError(t, err)
+		require.Equal(t, "github.com/dagger/dagger@main", *params.Workspace)
+	}
+	_, err := artifactClientParams(client.Params{}, []string{"repo@main:one", "repo@other:two"})
+	require.ErrorContains(t, err, "different workspaces")
 }

@@ -9,114 +9,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
-
-const syntheticSDKScopesGenerator = "scopes"
-
-func (s *workspaceSchema) syntheticSDKGenerators(
-	ctx context.Context,
-	staged *stagedWorkspaceConfig,
-	include []string,
-	entrypoints map[string]bool,
-) ([]*core.Generator, error) {
-	names := make([]string, 0, len(staged.Config.SDKs))
-	for name := range staged.Config.SDKs {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	var generators []*core.Generator
-	for _, sdkName := range names {
-		selected, err := selectSDKModule(staged.Config, sdkName)
-		if err != nil {
-			return nil, err
-		}
-
-		providerName := selected.entry.Module
-		leafName := "generate"
-		root := &core.ModTreeNode{Parent: &core.ModTreeNode{}, Name: providerName, WorkspaceEntrypoint: entrypoints[providerName]}
-		node := &core.ModTreeNode{
-			Parent:      root,
-			Name:        leafName,
-			Description: "Generate SDK-managed scopes",
-			IsGenerator: true,
-		}
-		generator := &core.Generator{
-			Node: node,
-			Synthetic: &core.SyntheticGeneratorSpec{
-				Name:        node.CommandName(),
-				Path:        []string{providerName, leafName},
-				Description: node.Description,
-				Provider:    sdkName,
-				Kind:        syntheticSDKScopesGenerator,
-			},
-		}
-		filtered, err := filterGeneratorsByInclude(ctx, []*core.Generator{generator}, include)
-		if err != nil {
-			return nil, err
-		}
-		generators = append(generators, filtered...)
-	}
-	return generators, nil
-}
-
-// runSyntheticSDKGenerator executes one persisted engine-owned SDK generator.
-// GeneratorGroup binds the Workspace that produced the generator into ctx.
-func runSyntheticSDKGenerator(
-	ctx context.Context,
-	spec *core.SyntheticGeneratorSpec,
-) (base, generated dagql.ObjectResult[*core.Workspace], err error) {
-	return runSyntheticSDKGeneratorGraph(ctx, spec, true)
-}
-
-// runSyntheticSDKGeneratorAsCheck is runSyntheticSDKGenerator without the
-// per-provider generator span. A check already opened its own span for this
-// work, and a nested span carrying GeneratorNameAttr would also surface the
-// run as a generator in the TUI. The module-declared generate-as-check path
-// avoids the same duplication by calling runGeneratorLocally directly.
-func runSyntheticSDKGeneratorAsCheck(
-	ctx context.Context,
-	spec *core.SyntheticGeneratorSpec,
-) (base, generated dagql.ObjectResult[*core.Workspace], err error) {
-	return runSyntheticSDKGeneratorGraph(ctx, spec, false)
-}
-
-func runSyntheticSDKGeneratorGraph(
-	ctx context.Context,
-	spec *core.SyntheticGeneratorSpec,
-	generatorSpans bool,
-) (base, generated dagql.ObjectResult[*core.Workspace], err error) {
-	base, err = syntheticGeneratorWorkspace(ctx, dagql.ObjectResult[*core.Workspace]{})
-	if err != nil {
-		return base, generated, err
-	}
-	generated, err = runSDKModuleGeneratorGraph(ctx, base, []*core.SyntheticGeneratorSpec{spec}, generatorSpans)
-	return base, generated, err
-}
-
-func syntheticGeneratorWorkspace(
-	ctx context.Context,
-	bound dagql.ObjectResult[*core.Workspace],
-) (dagql.ObjectResult[*core.Workspace], error) {
-	if bound.Self() != nil {
-		return bound, nil
-	}
-	if base, ok := core.WorkspaceFromContext(ctx); ok {
-		return base, nil
-	}
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	var base dagql.ObjectResult[*core.Workspace]
-	if err := dag.Select(ctx, dag.Root(), &base, dagql.Selector{Field: "currentWorkspace"}); err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("load synthetic generator workspace: %w", err)
-	}
-	return base, nil
-}
 
 type sdkModuleGraphScope struct {
 	key          string
@@ -143,27 +36,13 @@ func validateSDKModuleGenerationGraph(cfg *workspace.Config, configDir string) e
 	return err
 }
 
-// runSDKModuleGeneratorGraph runs selected synthetic generators as one
+// runSDKModuleGeneratorGraph runs SDK scopes as one
 // threaded workspace graph. A scope that generates a client for a local module
 // depends on that target module's generation. The graph is validated before an
 // SDK call, then folded in stable leaf-first order.
 type sdkModuleGeneratorPlan struct {
 	invocationCWD string
 	ordered       []*sdkModuleGraphScope
-}
-
-func selectSDKModuleGeneratorProviders(specs []*core.SyntheticGeneratorSpec) (map[string]bool, error) {
-	selected := map[string]bool{}
-	for _, spec := range specs {
-		if spec == nil {
-			continue
-		}
-		if spec.Kind != syntheticSDKScopesGenerator {
-			return nil, fmt.Errorf("unknown synthetic SDK generator kind %q", spec.Kind)
-		}
-		selected[spec.Provider] = true
-	}
-	return selected, nil
 }
 
 func loadSDKModuleGraphScopes(
@@ -312,23 +191,6 @@ func orderSDKModuleGraph(
 	return ordered, nil
 }
 
-func planSDKModuleGeneratorGraph(
-	base dagql.ObjectResult[*core.Workspace],
-	staged *stagedWorkspaceConfig,
-	specs []*core.SyntheticGeneratorSpec,
-) (*sdkModuleGeneratorPlan, error) {
-	selectedProviders, err := selectSDKModuleGeneratorProviders(specs)
-	if err != nil {
-		return nil, err
-	}
-	return planSDKModuleScopes(
-		cleanWorkspaceRelPath(base.Self().Cwd),
-		staged.Config,
-		staged.ConfigDir,
-		selectedProviders,
-	)
-}
-
 func planSDKModuleScopes(
 	invocationCWD string,
 	cfg *workspace.Config,
@@ -378,8 +240,7 @@ func planSDKModuleScopes(
 func runSDKModuleGeneratorGraph(
 	ctx context.Context,
 	base dagql.ObjectResult[*core.Workspace],
-	specs []*core.SyntheticGeneratorSpec,
-	generatorSpans bool,
+	sdkName string,
 ) (_ dagql.ObjectResult[*core.Workspace], rerr error) {
 	s := &workspaceSchema{}
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, base.Self(), workspaceConfigMustExist, false)
@@ -387,57 +248,48 @@ func runSDKModuleGeneratorGraph(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	plan, err := planSDKModuleGeneratorGraph(base, staged, specs)
+	plan, err := planSDKModuleScopes(cleanWorkspaceRelPath(base.Self().Cwd), staged.Config, staged.ConfigDir, map[string]bool{sdkName: true})
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	// Each selected SDK is a distinct generator in the CLI, even though their
-	// scopes are evaluated together as one dependency-ordered graph. Keep the
-	// spans open for the whole graph so their duration and result describe the
-	// aggregate operation, while parenting each provider's scope work to the
-	// matching span so its rolled-up detail remains useful.
-	providerCtx := make(map[string]context.Context, len(specs))
-	var spans []trace.Span
-	if generatorSpans {
-		for _, spec := range specs {
-			if spec == nil {
-				continue
-			}
-			generatorCtx, span := core.Tracer(ctx).Start(ctx, spec.Name,
-				trace.WithAttributes(
-					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-					attribute.String(telemetry.GeneratorNameAttr, spec.Name),
-				),
-			)
-			providerCtx[spec.Provider] = generatorCtx
-			spans = append(spans, span)
-		}
-	}
-	defer func() {
-		for _, span := range spans {
-			telemetry.EndWithCause(span, &rerr)
-		}
-	}()
-
 	current := base
+	output := base
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return output, err
+	}
 	for _, node := range plan.ordered {
 		selected, err := selectSDKModule(staged.Config, node.sdkName)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
-		generatorCtx := ctx
-		if selectedCtx, ok := providerCtx[node.sdkName]; ok {
-			generatorCtx = selectedCtx
-		}
-		current, err = s.generateSDKModuleScope(generatorCtx, current, staged, selected, node.configScope, node.path, node.scope)
+
+		before := current
+		current, err = s.generateSDKModuleScope(ctx, current, staged, selected, node.configScope, node.path, node.scope)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("generate SDK scope %q: %w", node.path, err)
 		}
+		// Dependencies prepare client inputs. Only this provider's changes are
+		// returned, so selecting several providers does not repeat their changes.
+		if node.sdkName == sdkName {
+			changes, err := s.workspaceChangesBetween(ctx, before, current)
+			if err != nil {
+				return output, err
+			}
+			id, err := changes.ID()
+			if err != nil {
+				return output, err
+			}
+			if err := dag.Select(ctx, output, &output, dagql.Selector{
+				Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](id)}},
+			}); err != nil {
+				return output, err
+			}
+		}
 	}
 
-	return current, nil
+	return output, nil
 }
 
 func (s *workspaceSchema) resolveSDKModuleScopeClients(

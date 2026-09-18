@@ -23,7 +23,7 @@ dagger module install dagger.io/go
 
 ```bash
 dagger check             # run every check in the workspace
-dagger check go:test-all # run Go tests across every module
+dagger check dag://go/test-all # run Go tests across every module
 ```
 
 `test-all` discovers every `go.mod` in the workspace, treats each as
@@ -71,7 +71,7 @@ as mocks, embedded assets, protobuf output, or anything produced by
 `go generate`:
 
 ```bash
-dagger generate go:generate-all
+dagger generate dag://go/generate-all
 ```
 
 `generate-all` runs `go generate .` in each selected directory that contains a

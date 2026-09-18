@@ -23,8 +23,8 @@ dagger generate -l
 ## Filter generators
 
 ```shell
-dagger generate protobuf:*         # all generators from a module
-dagger generate changelog:generate  # a single generator
+dagger generate 'dag://protobuf/*'         # all generators from a module
+dagger generate dag://changelog/generate  # a single generator
 ```
 
 ## Apply without prompting

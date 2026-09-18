@@ -2,7 +2,6 @@ package daggercmd
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"io"
 	"sync"
@@ -16,9 +15,6 @@ import (
 
 var terminalListMode bool
 
-//go:embed terminals.graphql
-var loadTerminalsQuery string
-
 func init() {
 	shellCmd.Flags().BoolVarP(&terminalListMode, "list", "l", false, "List available shells")
 	shellCmd.Flags().StringP("command", "c", "", "Use 'dagger -c' to run Dagger scripts")
@@ -29,7 +25,7 @@ func init() {
 }
 
 var shellCmd = &cobra.Command{
-	Use:     "shell [options] [pattern]",
+	Use:     "shell [options] [address]",
 	Aliases: []string{"sh"},
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "sh",
@@ -39,8 +35,8 @@ var shellCmd = &cobra.Command{
 
 Examples:
   dagger shell -l                   # List all available shells
-  dagger shell go:dev               # Open the go:dev shell
-  dagger sh go:dev                  # Use the short command alias
+  dagger shell dag://go/dev               # Open the dag://go/dev shell
+  dagger sh dag://go/dev                  # Use the short command alias
 `,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("command") {
@@ -61,41 +57,33 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return withEngine(
-		cmd.Context(),
-		client.Params{LoadWorkspaceModules: true},
-		func(ctx context.Context, engineClient *client.Client) error {
-			dag := engineClient.Dagger()
-			terminals := dag.CurrentWorkspace().Terminals(dagger.WorkspaceTerminalsOpts{Include: args})
-			if terminalListMode {
-				return listTerminalTargets(ctx, dag, terminals, cmd)
-			}
-			_, err := terminals.Run().ID(ctx)
-			return err
-		},
-	)
-}
-
-func listTerminalTargets(ctx context.Context, dag *dagger.Client, terminals *dagger.TerminalGroup, cmd *cobra.Command) error {
-	list, err := loadGroupListDetails(ctx, dag, "fetch terminal information",
-		func(ctx context.Context) (any, error) { return terminals.ID(ctx) },
-		loadTerminalsQuery, "TerminalGroupListDetails",
-	)
+	params, err := artifactClientParams(client.Params{LoadWorkspaceModules: true}, args)
 	if err != nil {
 		return err
 	}
-	items := make([]commandListItem, 0, len(list))
-	for _, terminal := range list {
-		items = append(items, commandListItem{
-			Name:    cliName(terminal.Name),
-			Comment: firstDescriptionLine(terminal.Description),
-		})
-	}
-	out := cmd.OutOrStdout()
-	if _, err := fmt.Fprintln(out, "# select with 'dagger shell <NAME>'"); err != nil {
-		return err
-	}
-	return writeCommandList(out, items)
+	return withEngine(
+		cmd.Context(),
+		params,
+		func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+			all, err := commandArtifacts(ctx, dag, dag.CurrentWorkspace(), args, true)
+			if err != nil {
+				return err
+			}
+			terminals := all.FilterTypes([]string{"Container", "Directory"})
+			if terminalListMode {
+				return listArtifactSelection(ctx, dag, terminals, cmd.OutOrStdout())
+			}
+			id, err := terminals.ID(ctx)
+			if err != nil {
+				return err
+			}
+			return dag.Do(ctx, &dagger.Request{
+				Query:     `query OpenArtifactTerminal($id: ID!) { node(id: $id) { ... on Artifacts { one { value { ... on Container { terminal { id } } ... on Directory { terminal { id } } } } } } }`,
+				Variables: map[string]any{"id": id},
+			}, &dagger.Response{})
+		},
+	)
 }
 
 var terminalMu sync.Mutex

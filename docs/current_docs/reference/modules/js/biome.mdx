@@ -18,7 +18,7 @@ dagger module install dagger.io/js/biome
 
 ```bash
 dagger check              # run every check in the workspace
-dagger check biomejs:lint # run Biome against the workspace source
+dagger check dag://biomejs/lint # run Biome against the workspace source
 ```
 
 `biomejs:lint` installs dependencies and runs `biome check` over the whole workspace using the project's own `biome.json`. Biome's `check` covers both linting and formatting, which is why this single check replaces a separate ESLint and Prettier pair.

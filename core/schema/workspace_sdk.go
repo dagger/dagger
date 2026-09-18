@@ -141,7 +141,7 @@ func workspaceSDKResults(
 
 func (s *workspaceSchema) workspaceSDK(
 	_ context.Context,
-	_ *core.Workspace,
+	parent dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Name          string
 		Ref           string
@@ -159,8 +159,9 @@ func (s *workspaceSchema) workspaceSDK(
 	}
 
 	sdk := &core.WorkspaceSDK{
-		Name: args.Name,
-		Ref:  args.Ref,
+		Workspace: parent,
+		Name:      args.Name,
+		Ref:       args.Ref,
 	}
 	for i, name := range args.ModuleNames {
 		sdk.Modules = append(sdk.Modules, &core.WorkspaceModule{
@@ -275,4 +276,28 @@ func sourceWithPin(source, pin string) string {
 		return source
 	}
 	return source + "@" + pin
+}
+
+func (s *workspaceSchema) sdkGenerate(ctx context.Context, sdk *core.WorkspaceSDK, _ struct{}) (dagql.ObjectResult[*core.Changeset], error) {
+	base := sdk.Workspace
+	ctx, err := withWorkspaceClientContext(ctx, base.Self())
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	ctx = core.WorkspaceToContext(ctx, base)
+	generated, err := runSDKModuleGeneratorGraph(ctx, base, sdk.Name)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	id, err := base.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	var changes dagql.ObjectResult[*core.Changeset]
+	err = srv.Select(ctx, generated, &changes, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Workspace](id)}}})
+	return changes, err
 }

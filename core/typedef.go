@@ -39,6 +39,9 @@ type Function struct {
 	// IsCheck indicates whether this function is a check
 	IsCheck bool
 
+	// CheckReturnType retains the author contract when ReturnType is projected to Check.
+	CheckReturnType dagql.ObjectResult[*TypeDef]
+
 	// IsGenerator indicates whether this function is a generator
 	IsGenerator bool
 
@@ -129,6 +132,14 @@ func (fn *Function) AttachDependencyResults(
 		fn.ReturnType = typed
 		owned = append(owned, typed)
 	}
+	if fn.CheckReturnType.Self() != nil {
+		attached, err := attach(fn.CheckReturnType)
+		if err != nil {
+			return nil, fmt.Errorf("attach check return type: %w", err)
+		}
+		fn.CheckReturnType = attached.(dagql.ObjectResult[*TypeDef])
+		owned = append(owned, attached)
+	}
 	if fn.SourceMap.Valid && fn.SourceMap.Value.Self() != nil {
 		attached, err := attach(fn.SourceMap.Value)
 		if err != nil {
@@ -173,6 +184,9 @@ func (fn *Function) Directives() []*ast.Directive {
 		directives = append(directives, &ast.Directive{
 			Name: "check",
 		})
+	}
+	if fn.IsGenerator {
+		directives = append(directives, &ast.Directive{Name: "generate"})
 	}
 	if fn.IsUp {
 		directives = append(directives, &ast.Directive{
@@ -400,6 +414,9 @@ func (fn *Function) WithArg(arg dagql.ObjectResult[*FunctionArg]) *Function {
 
 func (fn *Function) WithReturnType(returnType dagql.ObjectResult[*TypeDef]) *Function {
 	fn = fn.Clone()
+	if fn.IsCheck && fn.CheckReturnType.Self() == nil && returnType.Self().ToType().Name() == "Check" {
+		fn.CheckReturnType = fn.ReturnType
+	}
 	fn.ReturnType = returnType
 	return fn
 }
@@ -2723,21 +2740,22 @@ type persistedFunctionArg struct {
 }
 
 type persistedFunction struct {
-	Name               string              `json:"name,omitempty"`
-	Description        string              `json:"description,omitempty"`
-	ArgResultIDs       []uint64            `json:"argResultIDs,omitempty"`
-	ReturnTypeResultID uint64              `json:"returnTypeResultID,omitempty"`
-	Deprecated         *string             `json:"deprecated,omitempty"`
-	SourceMapResultID  uint64              `json:"sourceMapResultID,omitempty"`
-	SourceModuleName   string              `json:"sourceModuleName,omitempty"`
-	CachePolicy        FunctionCachePolicy `json:"cachePolicy,omitempty"`
-	CacheTTLSeconds    *int64              `json:"cacheTTLSeconds,omitempty"`
-	IsCheck            bool                `json:"isCheck,omitempty"`
-	IsGenerator        bool                `json:"isGenerator,omitempty"`
-	IsUp               bool                `json:"isUp,omitempty"`
-	IsAgent            bool                `json:"isAgent,omitempty"`
-	ParentOriginalName string              `json:"parentOriginalName,omitempty"`
-	OriginalName       string              `json:"originalName,omitempty"`
+	CheckReturnTypeResultID uint64              `json:"checkReturnTypeResultID,omitempty"`
+	Name                    string              `json:"name,omitempty"`
+	Description             string              `json:"description,omitempty"`
+	ArgResultIDs            []uint64            `json:"argResultIDs,omitempty"`
+	ReturnTypeResultID      uint64              `json:"returnTypeResultID,omitempty"`
+	Deprecated              *string             `json:"deprecated,omitempty"`
+	SourceMapResultID       uint64              `json:"sourceMapResultID,omitempty"`
+	SourceModuleName        string              `json:"sourceModuleName,omitempty"`
+	CachePolicy             FunctionCachePolicy `json:"cachePolicy,omitempty"`
+	CacheTTLSeconds         *int64              `json:"cacheTTLSeconds,omitempty"`
+	IsCheck                 bool                `json:"isCheck,omitempty"`
+	IsGenerator             bool                `json:"isGenerator,omitempty"`
+	IsUp                    bool                `json:"isUp,omitempty"`
+	IsAgent                 bool                `json:"isAgent,omitempty"`
+	ParentOriginalName      string              `json:"parentOriginalName,omitempty"`
+	OriginalName            string              `json:"originalName,omitempty"`
 }
 
 type persistedTypeDef struct {
@@ -2921,6 +2939,12 @@ func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*p
 		return nil, err
 	}
 	payload.ReturnTypeResultID = returnTypeID
+	if fn.CheckReturnType.Self() != nil {
+		payload.CheckReturnTypeResultID, err = encodePersistedObjectRef(cache, fn.CheckReturnType, "check return type")
+		if err != nil {
+			return nil, err
+		}
+	}
 	if fn.SourceMap.Valid && fn.SourceMap.Value.Self() != nil {
 		sourceMapID, err := encodePersistedObjectRef(cache, fn.SourceMap.Value, "function source map")
 		if err != nil {
@@ -2964,6 +2988,12 @@ func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persist
 		IsAgent:            fn.IsAgent,
 		ParentOriginalName: fn.ParentOriginalName,
 		OriginalName:       fn.OriginalName,
+	}
+	if fn.CheckReturnTypeResultID != 0 {
+		decoded.CheckReturnType, err = loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, fn.CheckReturnTypeResultID, "check return type")
+		if err != nil {
+			return nil, err
+		}
 	}
 	if fn.SourceMapResultID != 0 {
 		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, fn.SourceMapResultID, "function source map")

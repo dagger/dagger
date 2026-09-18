@@ -108,7 +108,8 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("ports", s.ports).
 			WithInput(dagql.PerCallInput).
-			Doc(`Retrieves the list of ports provided by the service.`),
+			Doc(`Retrieves the list of ports provided by the service.`).
+			Args(dagql.Arg("declared").Doc("Return only container ports declared before startup. Other service types return an empty list.").View(AfterVersion("v1.0.0-0"))),
 
 		dagql.NodeFunc("endpoint", s.endpoint).
 			DoNotCache("A tunnel service's endpoint can change if tunnel service is restarted.").
@@ -409,7 +410,16 @@ func (s *serviceSchema) withHostname(ctx context.Context, parent *core.Service, 
 	return parent.WithHostname(args.Hostname), nil
 }
 
-func (s *serviceSchema) ports(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.Result[dagql.Array[core.Port]], _ error) {
+func (s *serviceSchema) ports(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct {
+	Declared bool `default:"false"`
+}) (res dagql.Result[dagql.Array[core.Port]], _ error) {
+	if args.Declared {
+		ports := dagql.Array[core.Port]{}
+		if parent.Self().Container.Self() != nil {
+			ports = append(ports, parent.Self().Container.Self().Ports...)
+		}
+		return dagql.NewResultForCurrentCall(ctx, ports)
+	}
 	parentDig, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, fmt.Errorf("service digest: %w", err)

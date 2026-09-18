@@ -23,7 +23,7 @@ in the workspace.
 
 ```bash
 dagger check                      # run every check in the workspace
-dagger check staticcheck:lint-all # analyze the selected Go modules
+dagger check dag://staticcheck/lint-all # analyze the selected Go modules
 ```
 
 `lint-all` discovers Go modules at or below the working directory, including
