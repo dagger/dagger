@@ -1189,6 +1189,18 @@ pub struct Artifact {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactUriOpts {
+    /// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+    #[builder(setter(into, strip_option), default)]
+    pub absolute: Option<bool>,
+    /// Include the dimension keys as a query. Without them, the address is a path selector.
+    #[builder(setter(into, strip_option), default)]
+    pub dimension_keys: Option<bool>,
+    /// Include the artifact type in the scheme: dag+container://.
+    #[builder(setter(into, strip_option), default)]
+    pub type_assertion: Option<bool>,
+}
 impl IntoID<Id> for Artifact {
     fn into_id(
         self,
@@ -1213,19 +1225,19 @@ impl Loadable for Artifact {
     }
 }
 impl Artifact {
-    /// One key per collection along the path. Unordered; empty for static artifacts.
-    pub async fn collection_keys(&self) -> Result<Vec<ArtifactCollectionKey>, DaggerError> {
-        let query = self.selection.select("collectionKeys");
+    /// One key per dimension along the path. Unordered; empty for static artifacts.
+    pub async fn dimension_keys(&self) -> Result<Vec<ArtifactDimensionKey>, DaggerError> {
+        let query = self.selection.select("dimensionKeys");
         let query = query.select("id");
         let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| ArtifactCollectionKey {
+            .map(|id| ArtifactDimensionKey {
                 proc: self.proc.clone(),
                 selection: crate::querybuilder::query()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("ArtifactCollectionKey"),
+                    .inline_fragment("ArtifactDimensionKey"),
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
@@ -1240,9 +1252,31 @@ impl Artifact {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The full address, formatted for CLI input with consistent flag order.
-    pub async fn pretty(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("pretty");
+    /// The artifact's DAG address, such as dag://engine-dev/playground.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn uri(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("uri");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The artifact's DAG address, such as dag://engine-dev/playground.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn uri_opts(&self, opts: ArtifactUriOpts) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("uri");
+        if let Some(absolute) = opts.absolute {
+            query = query.arg("absolute", absolute);
+        }
+        if let Some(dimension_keys) = opts.dimension_keys {
+            query = query.arg("dimensionKeys", dimension_keys);
+        }
+        if let Some(type_assertion) = opts.type_assertion {
+            query = query.arg("typeAssertion", type_assertion);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Evaluate the target in the workspace that supplied this artifact.
@@ -1263,21 +1297,21 @@ impl Node for Artifact {
     }
 }
 #[derive(Clone)]
-pub struct ArtifactCollectionKey {
+pub struct ArtifactDimensionKey {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-impl IntoID<Id> for ArtifactCollectionKey {
+impl IntoID<Id> for ArtifactDimensionKey {
     fn into_id(
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ArtifactCollectionKey {
+impl Loadable for ArtifactDimensionKey {
     fn graphql_type() -> &'static str {
-        "ArtifactCollectionKey"
+        "ArtifactDimensionKey"
     }
     fn from_query(
         proc: Option<Arc<DaggerSessionProc>>,
@@ -1291,24 +1325,24 @@ impl Loadable for ArtifactCollectionKey {
         }
     }
 }
-impl ArtifactCollectionKey {
-    /// The collection identifier, fixed across the workspace schema.
-    pub async fn collection(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("collection");
+impl ArtifactDimensionKey {
+    /// The dimension identifier, fixed across the workspace schema.
+    pub async fn dimension(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("dimension");
         query.execute(self.graphql_client.clone()).await
     }
-    /// A unique identifier for this ArtifactCollectionKey.
+    /// A unique identifier for this ArtifactDimensionKey.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The collection item's key.
+    /// The dimension item's key.
     pub async fn key(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("key");
         query.execute(self.graphql_client.clone()).await
     }
 }
-impl Node for ArtifactCollectionKey {
+impl Node for ArtifactDimensionKey {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -1345,28 +1379,28 @@ impl Loadable for Artifacts {
     }
 }
 impl Artifacts {
-    /// List keys represented in this selection for the given collection, sorted with no duplicates.
-    pub async fn collection_keys(
+    /// List keys represented in this selection for the given dimension, sorted with no duplicates.
+    pub async fn dimension_keys(
         &self,
-        collection: impl Into<String>,
+        dimension: impl Into<String>,
     ) -> Result<Vec<String>, DaggerError> {
-        let mut query = self.selection.select("collectionKeys");
-        query = query.arg("collection", collection.into());
+        let mut query = self.selection.select("dimensionKeys");
+        query = query.arg("dimension", dimension.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// List collection identifiers represented in this selection, sorted with no duplicates.
-    pub async fn collections(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("collections");
+    /// List dimension identifiers represented in this selection, sorted with no duplicates.
+    pub async fn dimensions(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("dimensions");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Keep artifacts with any listed key in this collection.
-    pub fn filter_collection_keys(
+    /// Keep artifacts with any listed key in this dimension.
+    pub fn filter_dimension_keys(
         &self,
-        collection: impl Into<String>,
+        dimension: impl Into<String>,
         keys: Vec<impl Into<String>>,
     ) -> Artifacts {
-        let mut query = self.selection.select("filterCollectionKeys");
-        query = query.arg("collection", collection.into());
+        let mut query = self.selection.select("filterDimensionKeys");
+        query = query.arg("dimension", dimension.into());
         query = query.arg(
             "keys",
             keys.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -1377,12 +1411,12 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Keep artifacts selected through any listed collection.
-    pub fn filter_collections(&self, collections: Vec<impl Into<String>>) -> Artifacts {
-        let mut query = self.selection.select("filterCollections");
+    /// Keep artifacts selected through any listed dimension.
+    pub fn filter_dimensions(&self, dimensions: Vec<impl Into<String>>) -> Artifacts {
+        let mut query = self.selection.select("filterDimensions");
         query = query.arg(
-            "collections",
-            collections
+            "dimensions",
+            dimensions
                 .into_iter()
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
@@ -1419,6 +1453,21 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
+    /// The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
+    pub fn filter_uri(&self, uri: impl Into<String>) -> Artifacts {
+        let mut query = self.selection.select("filterUri");
+        query = query.arg("uri", uri.into());
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this Artifacts.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
@@ -1441,7 +1490,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Require exactly one artifact; fail if there are zero or multiple matches.
+    /// Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
     pub fn one(&self) -> Artifact {
         let query = self.selection.select("one");
         Artifact {
@@ -1450,14 +1499,14 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Display lines for this selection, with no trailing newlines.
-    pub async fn pretty(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("pretty");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// List concrete GraphQL types represented in this selection, sorted with no duplicates.
     pub async fn types(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("types");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+    pub async fn uri(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("uri");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -17195,7 +17244,7 @@ pub struct WorkspaceAgentsOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceArtifactsOpts<'a> {
-    /// Only include artifacts matching these path patterns, as with checks and services.
+    /// Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
@@ -18139,9 +18188,14 @@ impl Workspace {
             })
             .collect())
     }
-    /// Try workspace references before external resolution.
-    /// Local errors stop resolution; only absence permits fallback.
+    /// Resolve an address in this workspace.
+    /// A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+    /// A value without the dag:// scheme keeps its external meaning, such as a container image reference.
     /// The Address retains this workspace across module calls and ID reloads.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A DAG address, or an external reference.
     pub fn resolve(&self, value: impl Into<String>) -> Address {
         let mut query = self.selection.select("resolve");
         query = query.arg("value", value.into());

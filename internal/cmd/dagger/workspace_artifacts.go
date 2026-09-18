@@ -47,11 +47,11 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 			return err
 		}
 		if cmd != workspaceCmd {
-			collections, err := ec.Dagger().CurrentWorkspace().Artifacts().Collections(ctx)
+			dimensions, err := ec.Dagger().CurrentWorkspace().Artifacts().Dimensions(ctx)
 			if err != nil {
 				return err
 			}
-			registerArtifactCollectionFlags(artifactsCmd, collections)
+			registerArtifactDimensionFlags(artifactsCmd, dimensions)
 			return artifactsCmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(types, cobra.ShellCompDirectiveNoFileComp))
 		}
 		for name, typeName := range workspaceArtifactCommands(types) {
@@ -72,7 +72,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 
 func runWorkspaceArtifacts(cmd *cobra.Command, typeName string) error {
 	return withEngine(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
-		lines, err := ec.Dagger().CurrentWorkspace().Artifacts().FilterTypes([]string{typeName}).Pretty(ctx)
+		lines, err := artifactURIs(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts().FilterTypes([]string{typeName}))
 		if err != nil {
 			return err
 		}

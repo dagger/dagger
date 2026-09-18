@@ -211,6 +211,23 @@ export function AgentStateNameToValue(name: string): AgentState {
       return name as AgentState
   }
 }
+export type ArtifactUriOpts = {
+  /**
+   * Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+   */
+  absolute?: boolean
+
+  /**
+   * Include the dimension keys as a query. Without them, the address is a path selector.
+   */
+  dimensionKeys?: boolean
+
+  /**
+   * Include the artifact type in the scheme: dag+container://.
+   */
+  typeAssertion?: boolean
+}
+
 export type BuildArg = {
   /**
    * The build argument name.
@@ -3745,7 +3762,7 @@ export type WorkspaceAgentsOpts = {
 
 export type WorkspaceArtifactsOpts = {
   /**
-   * Only include artifacts matching these path patterns, as with checks and services.
+   * Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.
    */
   include?: string[]
 }
@@ -4986,20 +5003,20 @@ export class AgentMiddlewareGroup extends BaseClient {
 }
 
 /**
- * One workspace value with a complete path and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+ * One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
  */
 export class Artifact extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _pretty?: string = undefined
+  private readonly _uri?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID, _pretty?: string) {
+  constructor(ctx?: Context, _id?: ID, _uri?: string) {
     super(ctx)
 
     this._id = _id
-    this._pretty = _pretty
+    this._uri = _uri
   }
 
   /**
@@ -5018,21 +5035,21 @@ export class Artifact extends BaseClient {
   }
 
   /**
-   * One key per collection along the path. Unordered; empty for static artifacts.
+   * One key per dimension along the path. Unordered; empty for static artifacts.
    */
-  collectionKeys = async (): Promise<ArtifactCollectionKey[]> => {
-    type collectionKeys = {
+  dimensionKeys = async (): Promise<ArtifactDimensionKey[]> => {
+    type dimensionKeys = {
       id: ID
     }
 
-    const ctx = this._ctx.select("collectionKeys").select("id")
+    const ctx = this._ctx.select("dimensionKeys").select("id")
 
-    const response: Awaited<collectionKeys[]> = await ctx.execute()
+    const response: Awaited<dimensionKeys[]> = await ctx.execute()
 
     return response.map(
       (r) =>
-        new ArtifactCollectionKey(
-          ctx.copy().selectNode(r.id, "ArtifactCollectionKey"),
+        new ArtifactDimensionKey(
+          ctx.copy().selectNode(r.id, "ArtifactDimensionKey"),
         ),
     )
   }
@@ -5049,14 +5066,17 @@ export class Artifact extends BaseClient {
   }
 
   /**
-   * The full address, formatted for CLI input with consistent flag order.
+   * The artifact's DAG address, such as dag://engine-dev/playground.
+   * @param opts.absolute Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+   * @param opts.dimensionKeys Include the dimension keys as a query. Without them, the address is a path selector.
+   * @param opts.typeAssertion Include the artifact type in the scheme: dag+container://.
    */
-  pretty = async (): Promise<string> => {
-    if (this._pretty) {
-      return this._pretty
+  uri = async (opts?: ArtifactUriOpts): Promise<string> => {
+    if (this._uri) {
+      return this._uri
     }
 
-    const ctx = this._ctx.select("pretty")
+    const ctx = this._ctx.select("uri", { ...opts })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5072,24 +5092,24 @@ export class Artifact extends BaseClient {
   }
 }
 
-export class ArtifactCollectionKey extends BaseClient {
+export class ArtifactDimensionKey extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _collection?: string = undefined
+  private readonly _dimension?: string = undefined
   private readonly _key?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID, _collection?: string, _key?: string) {
+  constructor(ctx?: Context, _id?: ID, _dimension?: string, _key?: string) {
     super(ctx)
 
     this._id = _id
-    this._collection = _collection
+    this._dimension = _dimension
     this._key = _key
   }
 
   /**
-   * A unique identifier for this ArtifactCollectionKey.
+   * A unique identifier for this ArtifactDimensionKey.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -5104,14 +5124,14 @@ export class ArtifactCollectionKey extends BaseClient {
   }
 
   /**
-   * The collection identifier, fixed across the workspace schema.
+   * The dimension identifier, fixed across the workspace schema.
    */
-  collection = async (): Promise<string> => {
-    if (this._collection) {
-      return this._collection
+  dimension = async (): Promise<string> => {
+    if (this._dimension) {
+      return this._dimension
     }
 
-    const ctx = this._ctx.select("collection")
+    const ctx = this._ctx.select("dimension")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5119,7 +5139,7 @@ export class ArtifactCollectionKey extends BaseClient {
   }
 
   /**
-   * The collection item's key.
+   * The dimension item's key.
    */
   key = async (): Promise<string> => {
     if (this._key) {
@@ -5135,18 +5155,20 @@ export class ArtifactCollectionKey extends BaseClient {
 }
 
 /**
- * An immutable selection of workspace artifacts. Listed types, collections, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or collection identifiers.
+ * An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
  */
 export class Artifacts extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _uri?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID) {
+  constructor(ctx?: Context, _id?: ID, _uri?: string) {
     super(ctx)
 
     this._id = _id
+    this._uri = _uri
   }
 
   /**
@@ -5165,10 +5187,10 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List keys represented in this selection for the given collection, sorted with no duplicates.
+   * List keys represented in this selection for the given dimension, sorted with no duplicates.
    */
-  collectionKeys = async (collection: string): Promise<string[]> => {
-    const ctx = this._ctx.select("collectionKeys", { collection })
+  dimensionKeys = async (dimension: string): Promise<string[]> => {
+    const ctx = this._ctx.select("dimensionKeys", { dimension })
 
     const response: Awaited<string[]> = await ctx.execute()
 
@@ -5176,10 +5198,10 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List collection identifiers represented in this selection, sorted with no duplicates.
+   * List dimension identifiers represented in this selection, sorted with no duplicates.
    */
-  collections = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("collections")
+  dimensions = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("dimensions")
 
     const response: Awaited<string[]> = await ctx.execute()
 
@@ -5187,18 +5209,18 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Keep artifacts with any listed key in this collection.
+   * Keep artifacts with any listed key in this dimension.
    */
-  filterCollectionKeys = (collection: string, keys: string[]): Artifacts => {
-    const ctx = this._ctx.select("filterCollectionKeys", { collection, keys })
+  filterDimensionKeys = (dimension: string, keys: string[]): Artifacts => {
+    const ctx = this._ctx.select("filterDimensionKeys", { dimension, keys })
     return new Artifacts(ctx)
   }
 
   /**
-   * Keep artifacts selected through any listed collection.
+   * Keep artifacts selected through any listed dimension.
    */
-  filterCollections = (collections: string[]): Artifacts => {
-    const ctx = this._ctx.select("filterCollections", { collections })
+  filterDimensions = (dimensions: string[]): Artifacts => {
+    const ctx = this._ctx.select("filterDimensions", { dimensions })
     return new Artifacts(ctx)
   }
 
@@ -5215,6 +5237,17 @@ export class Artifacts extends BaseClient {
    */
   filterTypes = (types: string[]): Artifacts => {
     const ctx = this._ctx.select("filterTypes", { types })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
+   *
+   * The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+   * @param uri A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
+   */
+  filterUri = (uri: string): Artifacts => {
+    const ctx = this._ctx.select("filterUri", { uri })
     return new Artifacts(ctx)
   }
 
@@ -5236,22 +5269,11 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Require exactly one artifact; fail if there are zero or multiple matches.
+   * Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
    */
   one = (): Artifact => {
     const ctx = this._ctx.select("one")
     return new Artifact(ctx)
-  }
-
-  /**
-   * Display lines for this selection, with no trailing newlines.
-   */
-  pretty = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("pretty")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
   }
 
   /**
@@ -5261,6 +5283,21 @@ export class Artifacts extends BaseClient {
     const ctx = this._ctx.select("types")
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+   */
+  uri = async (): Promise<string> => {
+    if (this._uri) {
+      return this._uri
+    }
+
+    const ctx = this._ctx.select("uri")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -17418,7 +17455,7 @@ export class Workspace extends BaseClient {
 
   /**
    * Discover static object artifacts from workspace modules without evaluating their values.
-   * @param opts.include Only include artifacts matching these path patterns, as with checks and services.
+   * @param opts.include Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.
    */
   artifacts = (opts?: WorkspaceArtifactsOpts): Artifacts => {
     const ctx = this._ctx.select("artifacts", { ...opts })
@@ -17770,11 +17807,14 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Try workspace references before external resolution.
+   * Resolve an address in this workspace.
    *
-   * Local errors stop resolution; only absence permits fallback.
+   * A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+   *
+   * A value without the dag:// scheme keeps its external meaning, such as a container image reference.
    *
    * The Address retains this workspace across module calls and ID reloads.
+   * @param value A DAG address, or an external reference.
    */
   resolve = (value: string): Address => {
     const ctx = this._ctx.select("resolve", { value })

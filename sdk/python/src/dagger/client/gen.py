@@ -1647,18 +1647,17 @@ class AgentMiddlewareGroup(Type):
 
 @typecheck
 class Artifact(Type):
-    """One workspace value with a complete path and all required
-    collection keys. Reading metadata does not evaluate the value.
-    Different addresses remain distinct even if they return the same
-    object."""
+    """One workspace value with a complete path and all required dimension
+    keys. Reading metadata does not evaluate the value. Different
+    addresses remain distinct even if they return the same object."""
 
-    async def collection_keys(self) -> list["ArtifactCollectionKey"]:
-        """One key per collection along the path. Unordered; empty for static
+    async def dimension_keys(self) -> list["ArtifactDimensionKey"]:
+        """One key per dimension along the path. Unordered; empty for static
         artifacts.
         """
         _args: list[Arg] = []
-        _ctx = self._select("collectionKeys", _args)
-        return await _ctx.execute_object_list(ArtifactCollectionKey)
+        _ctx = self._select("dimensionKeys", _args)
+        return await _ctx.execute_object_list(ArtifactDimensionKey)
 
     async def id(self) -> str:
         """A unique identifier for this Artifact.
@@ -1710,8 +1709,26 @@ class Artifact(Type):
         _ctx = self._select("path", _args)
         return await _ctx.execute(list[str])
 
-    async def pretty(self) -> str:
-        """The full address, formatted for CLI input with consistent flag order.
+    async def uri(
+        self,
+        *,
+        absolute: bool | None = False,
+        dimension_keys: bool | None = True,
+        type_assertion: bool | None = False,
+    ) -> str:
+        """The artifact's DAG address, such as dag://engine-dev/playground.
+
+        Parameters
+        ----------
+        absolute:
+            Prefix the workspace's Git address and commit:
+            dag://<workspace>@<commit>:<path>. Fails if the workspace has no
+            Git address.
+        dimension_keys:
+            Include the dimension keys as a query. Without them, the address
+            is a path selector.
+        type_assertion:
+            Include the artifact type in the scheme: dag+container://.
 
         Returns
         -------
@@ -1727,8 +1744,12 @@ class Artifact(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("pretty", _args)
+        _args = [
+            Arg("absolute", absolute, False),
+            Arg("dimensionKeys", dimension_keys, True),
+            Arg("typeAssertion", type_assertion, False),
+        ]
+        _ctx = self._select("uri", _args)
         return await _ctx.execute(str)
 
     def value(self) -> Node:
@@ -1739,9 +1760,9 @@ class Artifact(Type):
 
 
 @typecheck
-class ArtifactCollectionKey(Type):
-    async def collection(self) -> str:
-        """The collection identifier, fixed across the workspace schema.
+class ArtifactDimensionKey(Type):
+    async def dimension(self) -> str:
+        """The dimension identifier, fixed across the workspace schema.
 
         Returns
         -------
@@ -1758,11 +1779,11 @@ class ArtifactCollectionKey(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("collection", _args)
+        _ctx = self._select("dimension", _args)
         return await _ctx.execute(str)
 
     async def id(self) -> str:
-        """A unique identifier for this ArtifactCollectionKey.
+        """A unique identifier for this ArtifactDimensionKey.
 
         Note
         ----
@@ -1790,7 +1811,7 @@ class ArtifactCollectionKey(Type):
         return await _ctx.execute(str)
 
     async def key(self) -> str:
-        """The collection item's key.
+        """The dimension item's key.
 
         Returns
         -------
@@ -1814,12 +1835,12 @@ class ArtifactCollectionKey(Type):
 @typecheck
 class Artifacts(Type):
     """An immutable selection of workspace artifacts. Listed types,
-    collections, and keys use OR; chained filters use AND. Empty
+    dimensions, and keys use OR; chained filters use AND. Empty
     alternatives and unknown names match nothing. Filters never change
-    addresses or collection identifiers."""
+    addresses or dimension identifiers."""
 
-    async def collection_keys(self, collection: str) -> list[str]:
-        """List keys represented in this selection for the given collection,
+    async def dimension_keys(self, dimension: str) -> list[str]:
+        """List keys represented in this selection for the given dimension,
         sorted with no duplicates.
 
         Returns
@@ -1837,13 +1858,13 @@ class Artifacts(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("collection", collection),
+            Arg("dimension", dimension),
         ]
-        _ctx = self._select("collectionKeys", _args)
+        _ctx = self._select("dimensionKeys", _args)
         return await _ctx.execute(list[str])
 
-    async def collections(self) -> list[str]:
-        """List collection identifiers represented in this selection, sorted with
+    async def dimensions(self) -> list[str]:
+        """List dimension identifiers represented in this selection, sorted with
         no duplicates.
 
         Returns
@@ -1861,24 +1882,24 @@ class Artifacts(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("collections", _args)
+        _ctx = self._select("dimensions", _args)
         return await _ctx.execute(list[str])
 
-    def filter_collection_keys(self, collection: str, keys: list[str]) -> Self:
-        """Keep artifacts with any listed key in this collection."""
+    def filter_dimension_keys(self, dimension: str, keys: list[str]) -> Self:
+        """Keep artifacts with any listed key in this dimension."""
         _args = [
-            Arg("collection", collection),
+            Arg("dimension", dimension),
             Arg("keys", keys),
         ]
-        _ctx = self._select("filterCollectionKeys", _args)
+        _ctx = self._select("filterDimensionKeys", _args)
         return Artifacts(_ctx)
 
-    def filter_collections(self, collections: list[str]) -> Self:
-        """Keep artifacts selected through any listed collection."""
+    def filter_dimensions(self, dimensions: list[str]) -> Self:
+        """Keep artifacts selected through any listed dimension."""
         _args = [
-            Arg("collections", collections),
+            Arg("dimensions", dimensions),
         ]
-        _ctx = self._select("filterCollections", _args)
+        _ctx = self._select("filterDimensions", _args)
         return Artifacts(_ctx)
 
     def filter_path(self, path: list[str]) -> Self:
@@ -1895,6 +1916,24 @@ class Artifacts(Type):
             Arg("types", types),
         ]
         _ctx = self._select("filterTypes", _args)
+        return Artifacts(_ctx)
+
+    def filter_uri(self, uri: str) -> Self:
+        """Apply a DAG address as one filter: the chain of path, type, and
+        dimension-key filters it encodes.
+
+        The scheme is optional. The path may be a pattern; an empty path
+        selects all artifacts.
+
+        Parameters
+        ----------
+        uri:
+            A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
+        """
+        _args = [
+            Arg("uri", uri),
+        ]
+        _ctx = self._select("filterUri", _args)
         return Artifacts(_ctx)
 
     async def id(self) -> str:
@@ -1933,32 +1972,11 @@ class Artifacts(Type):
 
     def one(self) -> Artifact:
         """Require exactly one artifact; fail if there are zero or multiple
-        matches.
+        matches. Several matches are listed, one address per line.
         """
         _args: list[Arg] = []
         _ctx = self._select("one", _args)
         return Artifact(_ctx)
-
-    async def pretty(self) -> list[str]:
-        """Display lines for this selection, with no trailing newlines.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("pretty", _args)
-        return await _ctx.execute(list[str])
 
     async def types(self) -> list[str]:
         """List concrete GraphQL types represented in this selection, sorted with
@@ -1981,6 +1999,28 @@ class Artifacts(Type):
         _args: list[Arg] = []
         _ctx = self._select("types", _args)
         return await _ctx.execute(list[str])
+
+    async def uri(self) -> str:
+        """The DAG address that selects this whole selection: filterUri(uri)
+        selects the same set.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uri", _args)
+        return await _ctx.execute(str)
 
     def with_(self, cb: Callable[["Artifacts"], "Artifacts"]) -> "Artifacts":
         """Call the provided callable with current Artifacts.
@@ -17292,7 +17332,7 @@ class Workspace(Type):
         ----------
         include:
             Only include artifacts matching these path patterns, as with
-            checks and services.
+            checks and services. A path selects that path and its children.
         """
         _args = [
             Arg("include", include, None),
@@ -17934,11 +17974,21 @@ class Workspace(Type):
         return await _ctx.execute_object_list(WorkspaceModule)
 
     def resolve(self, value: str) -> Address:
-        """Try workspace references before external resolution.
+        """Resolve an address in this workspace.
 
-        Local errors stop resolution; only absence permits fallback.
+        A DAG address (dag://<path>) selects exactly one workspace artifact:
+        artifacts.filterUri(value).one(). Its typed loaders use that artifact
+        and never fall back to external resolution.
+
+        A value without the dag:// scheme keeps its external meaning, such as
+        a container image reference.
 
         The Address retains this workspace across module calls and ID reloads.
+
+        Parameters
+        ----------
+        value:
+            A DAG address, or an external reference.
         """
         _args = [
             Arg("value", value),
@@ -19717,7 +19767,7 @@ __all__ = [
     "AgentMiddlewareGroup",
     "AgentState",
     "Artifact",
-    "ArtifactCollectionKey",
+    "ArtifactDimensionKey",
     "Artifacts",
     "BuildArg",
     "Bytes",

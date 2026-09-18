@@ -9,47 +9,47 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * An immutable selection of workspace artifacts. Listed types, collections, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or collection identifiers.
+ * An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
  */
 class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * List keys represented in this selection for the given collection, sorted with no duplicates.
+     * List keys represented in this selection for the given dimension, sorted with no duplicates.
      */
-    public function collectionKeys(string $collection): array
+    public function dimensionKeys(string $dimension): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('collectionKeys');
-        $leafQueryBuilder->setArgument('collection', $collection);
-        return (array)$this->queryLeaf($leafQueryBuilder, 'collectionKeys');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
+        $leafQueryBuilder->setArgument('dimension', $dimension);
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
     }
 
     /**
-     * List collection identifiers represented in this selection, sorted with no duplicates.
+     * List dimension identifiers represented in this selection, sorted with no duplicates.
      */
-    public function collections(): array
+    public function dimensions(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('collections');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'collections');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensions');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensions');
     }
 
     /**
-     * Keep artifacts with any listed key in this collection.
+     * Keep artifacts with any listed key in this dimension.
      */
-    public function filterCollectionKeys(string $collection, array $keys): Artifacts
+    public function filterDimensionKeys(string $dimension, array $keys): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterCollectionKeys');
-        $innerQueryBuilder->setArgument('collection', $collection);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDimensionKeys');
+        $innerQueryBuilder->setArgument('dimension', $dimension);
         $innerQueryBuilder->setArgument('keys', $keys);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Keep artifacts selected through any listed collection.
+     * Keep artifacts selected through any listed dimension.
      */
-    public function filterCollections(array $collections): Artifacts
+    public function filterDimensions(array $dimensions): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterCollections');
-        $innerQueryBuilder->setArgument('collections', $collections);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDimensions');
+        $innerQueryBuilder->setArgument('dimensions', $dimensions);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -74,6 +74,18 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
+     *
+     * The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+     */
+    public function filterUri(string $uri): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUri');
+        $innerQueryBuilder->setArgument('uri', $uri);
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Artifacts.
      */
     public function id(): Id
@@ -92,21 +104,12 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Require exactly one artifact; fail if there are zero or multiple matches.
+     * Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
      */
     public function one(): Artifact
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('one');
         return new \Dagger\Artifact($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Display lines for this selection, with no trailing newlines.
-     */
-    public function pretty(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pretty');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'pretty');
     }
 
     /**
@@ -116,5 +119,14 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('types');
         return (array)$this->queryLeaf($leafQueryBuilder, 'types');
+    }
+
+    /**
+     * The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+     */
+    public function uri(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uri');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'uri');
     }
 }
