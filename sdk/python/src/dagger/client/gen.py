@@ -14552,6 +14552,50 @@ class Query(Root):
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
+    async def serve_module(
+        self,
+        address: str,
+        *,
+        ref_pin: str | None = "",
+    ) -> Void | None:
+        """Load the module at the given address and serve its API in the current
+        session.
+
+        A local address resolves against the caller's workspace, so a
+        generated client can serve the module it is bound to without reaching
+        for the workspace itself.
+
+        Parameters
+        ----------
+        address:
+            A module address, or an explicit path into the caller's workspace.
+            Absolute paths (e.g. "/.dagger/modules/hello") resolve from the
+            workspace root, relative ones (e.g. "./hello") from the workspace
+            cwd.
+            Installed module names are not accepted.
+        ref_pin:
+            The pinned version of a remote module address.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("address", address),
+            Arg("refPin", ref_pin, ""),
+        ]
+        _ctx = self._select("serveModule", _args)
+        await _ctx.execute()
+
     def set_secret(self, name: str, plaintext: str) -> "Secret":
         """Sets a secret given a user defined name to its plaintext and returns
         the secret.

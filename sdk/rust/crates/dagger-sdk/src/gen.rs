@@ -13825,6 +13825,12 @@ pub struct QuerySecretOpts<'a> {
     pub cache_key: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryServeModuleOpts<'a> {
+    /// The pinned version of a remote module address.
+    #[builder(setter(into, strip_option), default)]
+    pub ref_pin: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QuerySshfsVolumeOpts<'a> {
     /// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
     #[builder(setter(into, strip_option), default)]
@@ -14563,6 +14569,45 @@ impl Query {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Load the module at the given address and serve its API in the current session.
+    /// A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - A module address, or an explicit path into the caller's workspace.
+    ///
+    /// Absolute paths (e.g. "/.dagger/modules/hello") resolve from the workspace root, relative ones (e.g. "./hello") from the workspace cwd.
+    ///
+    /// Installed module names are not accepted.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn serve_module(&self, address: impl Into<String>) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("serveModule");
+        query = query.arg("address", address.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Load the module at the given address and serve its API in the current session.
+    /// A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - A module address, or an explicit path into the caller's workspace.
+    ///
+    /// Absolute paths (e.g. "/.dagger/modules/hello") resolve from the workspace root, relative ones (e.g. "./hello") from the workspace cwd.
+    ///
+    /// Installed module names are not accepted.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn serve_module_opts<'a>(
+        &self,
+        address: impl Into<String>,
+        opts: QueryServeModuleOpts<'a>,
+    ) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("serveModule");
+        query = query.arg("address", address.into());
+        if let Some(ref_pin) = opts.ref_pin {
+            query = query.arg("refPin", ref_pin);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// Sets a secret given a user defined name to its plaintext and returns the secret.
     /// The plaintext value is limited to a size of 128000 bytes.

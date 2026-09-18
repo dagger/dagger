@@ -68,18 +68,28 @@ func (s *workspaceSchema) resolveClientTargetModule(
 	return src, nil
 }
 
-// clientModuleRefKind accepts explicit paths and module addresses. Installed
-// names and unmarked paths are not client references. This check does not use
-// the filesystem or contact a remote endpoint.
-func clientModuleRefKind(ref string) (core.ModuleSourceKind, error) {
+// moduleAddressKind classifies an explicit path or module address. Installed
+// names and unmarked paths belong to neither and report ok=false. This check
+// does not use the filesystem or contact a remote endpoint.
+func moduleAddressKind(ref string) (core.ModuleSourceKind, bool) {
 	path := strings.ReplaceAll(ref, `\`, "/")
 	if path == "." || path == ".." || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") || filepath.IsAbs(path) {
-		return core.ModuleSourceKindLocal, nil
+		return core.ModuleSourceKindLocal, true
 	}
 	if ref != "" && !workspace.IsLocalRef(ref, "") {
-		return core.ModuleSourceKindGit, nil
+		return core.ModuleSourceKindGit, true
 	}
-	return "", fmt.Errorf("invalid client target %q: use an explicit local path such as %q or a module address; installed module names are not supported", ref, "./"+ref)
+	return "", false
+}
+
+// clientModuleRefKind accepts explicit paths and module addresses. Installed
+// names and unmarked paths are not client references.
+func clientModuleRefKind(ref string) (core.ModuleSourceKind, error) {
+	kind, ok := moduleAddressKind(ref)
+	if !ok {
+		return "", fmt.Errorf("invalid client target %q: use an explicit local path such as %q or a module address; installed module names are not supported", ref, "./"+ref)
+	}
+	return kind, nil
 }
 
 // explicitClientPath keeps normalized local references distinct from module
