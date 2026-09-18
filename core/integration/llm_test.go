@@ -1241,8 +1241,14 @@ func (LLMSuite) TestNestedClientInheritsSessionConfig(ctx context.Context, t *te
 // as ServiceMCPTransport speaks) with one tool, install, that writes into its
 // working directory the way a package manager would: a lockfile worth keeping,
 // a node_modules tree the workspace's .gitignore ignores, and git metadata.
+// It writes by absolute path, as real servers do (they resolve their root once
+// at startup): the workspace is bind-mounted over the working directory after
+// the process starts, so relative paths would still resolve to the covered
+// directory the process's cwd points at.
 const mcpFixtureServer = `
 import json, os, sys
+
+ROOT = "/work"
 
 def reply(id, result=None, error=None):
     msg = {"jsonrpc": "2.0", "id": id}
@@ -1254,6 +1260,7 @@ def reply(id, result=None, error=None):
     sys.stdout.flush()
 
 def write(path, content):
+    path = os.path.join(ROOT, path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(content)
@@ -1345,5 +1352,5 @@ func (LLMSuite) TestMCPServerSnapshotHonorsGitignore(ctx context.Context, t *tes
 	// ...while ignored additions and VCS metadata do not.
 	entries, err := after.Directory(".").Entries(ctx)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{".gitignore", "package-lock.json", "src"}, entries)
+	require.ElementsMatch(t, []string{".gitignore", "package-lock.json", "src/"}, entries)
 }
