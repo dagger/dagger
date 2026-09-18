@@ -131,7 +131,10 @@ func TestProducerResolverCleanup(t *testing.T) {
 				if kind == "ref digest" {
 					ctx = dagql.ContextWithCall(ctx, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "tree", Type: dagql.NewResultCallType(dir.Type())})
 				}
-				_, err = (&gitSchema{}).tree(ctx, parent, treeArgs{})
+				// Depth 1 keeps the call on the branch that builds the tree here:
+				// main serves default-argument trees from its shared full checkout,
+				// which records no producer.
+				_, err = (&gitSchema{}).tree(ctx, parent, treeArgs{Depth: 1})
 			}
 			require.Error(t, err)
 			if strings.HasSuffix(kind, "recording") {
@@ -293,7 +296,8 @@ func TestProducerResolverCapture(t *testing.T) {
 				ctx = producerResolverCall(ctx, "tree", dir)
 				if kind == "gitTree" {
 					input := resolverAttach(t, ctx, srv, cache, "ref", &core.GitRef{Repo: parent, Ref: ref, Backend: backend})
-					result, err = (&gitSchema{}).tree(ctx, input, treeArgs{})
+					// Depth 1: see TestProducerResolverCleanup.
+					result, err = (&gitSchema{}).tree(ctx, input, treeArgs{Depth: 1})
 				} else {
 					input := resolverAttach(t, ctx, srv, cache, "commit", &core.GitCommit{Repo: parent, Ref: ref, Backend: backend})
 					result, err = (&gitSchema{}).commitTree(ctx, input, commitTreeArgs{})
