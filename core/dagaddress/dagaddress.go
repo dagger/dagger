@@ -60,8 +60,10 @@ func IsAddress(value string) bool {
 // error: it is an external reference, not an artifact address.
 func Parse(value string) (*Address, error) {
 	addr := &Address{}
-	rest := value
-	if scheme, after, ok := strings.Cut(value, "://"); ok {
+	// Query keys can contain URLs. Split the query before looking for a
+	// scheme, so a key's "://" cannot change a relative address's meaning.
+	rest, query, hasQuery := strings.Cut(value, "?")
+	if scheme, after, ok := strings.Cut(rest, "://"); ok {
 		if scheme != Scheme && !strings.HasPrefix(scheme, Scheme+"+") {
 			return nil, fmt.Errorf("not a DAG address: %q", value)
 		}
@@ -75,9 +77,6 @@ func Parse(value string) (*Address, error) {
 		rest = after
 	}
 
-	var query string
-	var hasQuery bool
-	rest, query, hasQuery = strings.Cut(rest, "?")
 	if hasQuery {
 		pairs, err := parseQuery(query)
 		if err != nil {
