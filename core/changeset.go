@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -37,9 +38,9 @@ import (
 
 func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, error) {
 	return &Changeset{
-		Before:    before,
-		After:     after,
-		pathsOnce: &sync.Once{},
+		Before: before,
+		After:  after,
+		paths:  &changesetPathsMemo{},
 	}, nil
 }
 
@@ -160,23 +161,95 @@ func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uin
 // ComputePaths computes the added, modified, and removed paths using file
 // metadata and git diffs.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
-	ch.pathsOnce.Do(func() {
+	memo := ch.paths
+	memo.once.Do(func() {
+		defer memo.done.Store(true)
 		_ = enginetel.Task(ctx, "computing paths", func(ctx context.Context) error {
-			ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
-			if ch.pathsErr != nil {
-				// nothing to report; cachedPaths is nil on error
-				return ch.pathsErr
+			memo.paths, memo.err = ch.computePathsOnce(ctx)
+			if memo.err != nil {
+				// nothing to report; paths is nil on error
+				return memo.err
 			}
 			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 			defer stdio.Close()
-			fmt.Fprintln(stdio.Stdout, "added:", ch.cachedPaths.Added)
-			fmt.Fprintln(stdio.Stdout, "removed:", ch.cachedPaths.Removed)
-			fmt.Fprintln(stdio.Stdout, "modified:", ch.cachedPaths.Modified)
-			fmt.Fprintln(stdio.Stdout, "renamed:", ch.cachedPaths.Renamed)
+			fmt.Fprintln(stdio.Stdout, "added:", memo.paths.Added)
+			fmt.Fprintln(stdio.Stdout, "removed:", memo.paths.Removed)
+			fmt.Fprintln(stdio.Stdout, "modified:", memo.paths.Modified)
+			fmt.Fprintln(stdio.Stdout, "renamed:", memo.paths.Renamed)
 			return nil
 		})
 	})
-	return ch.cachedPaths, ch.pathsErr
+	return memo.paths, memo.err
+}
+
+// changesetPathCount is the number of entries ComputePaths reports: every
+// added, modified and removed path, directories included. A rename counts
+// twice, since it appears in both Added and AllRemoved.
+func changesetPathCount(paths *ChangesetPaths) int {
+	return len(paths.Added) + len(paths.Modified) + len(paths.AllRemoved)
+}
+
+// PathCountExceeds reports whether the changeset touches more than limit
+// paths, counted the way ComputePaths reports them (see changesetPathCount).
+// It exists for callers deciding whether a changeset is too large to present
+// in full, who shouldn't have to walk a 100k-file tree to completion to learn
+// that it is.
+//
+// This is an upper-bound check. When ComputePaths has already run, the answer
+// comes straight from its memoized result and is exact. Otherwise the metadata
+// delta is walked and abandoned as soon as more than limit entries are seen,
+// without the rename detection or content verification ComputePaths performs:
+// a file whose metadata differs but whose content doesn't still counts. So
+// true means the changeset definitely has more than limit changed or
+// metadata-differing paths, while false is exact: at most limit paths changed.
+//
+// The partial walk never populates the ComputePaths memo; a later ComputePaths
+// still computes the full result.
+func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, error) {
+	if ch.paths.done.Load() {
+		paths, err := ch.ComputePaths(ctx)
+		if err != nil {
+			return false, err
+		}
+		return changesetPathCount(paths) > limit, nil
+	}
+
+	beforeDigest, err := ch.Before.ContentPreferredDigest(ctx)
+	if err != nil {
+		return false, fmt.Errorf("before content-preferred digest: %w", err)
+	}
+	afterDigest, err := ch.After.ContentPreferredDigest(ctx)
+	if err != nil {
+		return false, fmt.Errorf("after content-preferred digest: %w", err)
+	}
+	if beforeDigest == afterDigest {
+		// Nothing changed; only a negative limit is exceeded by zero paths.
+		return limit < 0, nil
+	}
+
+	var exceeds bool
+	var deltaErr error
+	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+		exceeds, deltaErr = changesetDeltaExceeds(ctx, beforeDir, afterDir, limit)
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if deltaErr != nil {
+		if ctx.Err() != nil {
+			return false, context.Cause(ctx)
+		}
+		// Same fallback as computePathsOnce, which ComputePaths already
+		// implements; the full result is memoized for whoever asks next.
+		slog.Warn("changeset delta diff failed; falling back to full path computation", "error", deltaErr)
+		paths, err := ch.ComputePaths(ctx)
+		if err != nil {
+			return false, err
+		}
+		return changesetPathCount(paths) > limit, nil
+	}
+	return exceeds, nil
 }
 
 func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, error) {
@@ -355,9 +428,17 @@ type Changeset struct {
 	// objects in UnmarshalJSON
 	decoded *changesetJSONEnvelope
 
-	pathsOnce   *sync.Once
-	cachedPaths *ChangesetPaths
-	pathsErr    error
+	paths *changesetPathsMemo
+}
+
+// changesetPathsMemo memoizes ComputePaths. Held by pointer so that copies of
+// a Changeset share one computation, and so a partial answer from
+// PathCountExceeds can tell whether the full one already exists.
+type changesetPathsMemo struct {
+	once  sync.Once
+	done  atomic.Bool // set once paths/err are final
+	paths *ChangesetPaths
+	err   error
 }
 
 type changesetJSONEnvelope struct {
@@ -393,7 +474,7 @@ func (ch *Changeset) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	ch.decoded = &env
-	ch.pathsOnce = &sync.Once{}
+	ch.paths = &changesetPathsMemo{}
 	return nil
 }
 
