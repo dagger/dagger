@@ -24,20 +24,13 @@ func (stats CacheStats) Lookups() int {
 }
 
 // CacheStats returns cache decisions belonging to scope. A nil scope selects
-// the current trace root. Root scope includes every received span in the same
-// trace, including causally-related spans whose UI parentage is disconnected;
-// narrower scopes follow the ordinary parent tree.
+// every received span in the workflow DB: remote and imported work can belong
+// to the same workflow even when there is no canonical root span. A non-nil
+// scope follows the ordinary parent tree.
 func (db *DB) CacheStats(scope *Span) CacheStats {
-	if scope == nil {
-		scope = db.RootSpan
-	}
-	if scope == nil {
-		return CacheStats{}
-	}
-
 	var stats CacheStats
 	for _, span := range db.Spans.Order {
-		if !span.Received || !cacheSpanInScope(span, scope, db.RootSpan) {
+		if !span.Received || !cacheSpanInScope(span, scope) {
 			continue
 		}
 		if span.CacheContract == "" {
@@ -77,9 +70,9 @@ func (db *DB) HasCacheReport() bool {
 	return stats.Lookups() > 0 || stats.Uncached > 0 || stats.Unsupported > 0
 }
 
-func cacheSpanInScope(span, scope, root *Span) bool {
-	if scope == root {
-		return span.TraceID == scope.TraceID
+func cacheSpanInScope(span, scope *Span) bool {
+	if scope == nil {
+		return true
 	}
 	for current := span; current != nil; current = current.ParentSpan {
 		if current == scope {

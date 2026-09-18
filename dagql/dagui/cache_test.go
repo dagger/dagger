@@ -41,15 +41,42 @@ func TestCacheStatsScopesAndCountsDecisions(t *testing.T) {
 	db.SetPrimarySpan(rootID)
 
 	got := db.CacheStats(nil)
-	if got.Hits != 1 || got.Executed != 1 || got.Joined != 1 || got.Uncached != 1 || got.Unsupported != 1 || got.StructuralHits != 1 {
+	if got.Hits != 2 || got.Executed != 1 || got.Joined != 1 || got.Uncached != 1 || got.Unsupported != 1 || got.StructuralHits != 1 || got.RecipeHits != 1 {
 		t.Fatalf("root stats = %+v", got)
 	}
-	if got.Lookups() != 3 {
-		t.Fatalf("root lookups = %d, want 3", got.Lookups())
+	if got.Lookups() != 4 {
+		t.Fatalf("root lookups = %d, want 4", got.Lookups())
 	}
 
 	got = db.CacheStats(db.Spans.Map[checkID])
 	if got.Hits != 1 || got.Joined != 1 || got.Executed != 0 || got.Uncached != 0 || got.Unsupported != 0 {
 		t.Fatalf("check stats = %+v", got)
+	}
+}
+
+func TestCacheStatsWholeWorkflowWithoutCanonicalRoot(t *testing.T) {
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:            SpanID{SpanID: trace.SpanID{1}},
+			TraceID:       TraceID{TraceID: trace.TraceID{1}},
+			Final:         true,
+			CacheContract: telemetryattrs.CacheContractV1,
+			CacheOutcome:  telemetryattrs.CacheOutcomeExecuted,
+		},
+		{
+			ID:            SpanID{SpanID: trace.SpanID{2}},
+			TraceID:       TraceID{TraceID: trace.TraceID{2}},
+			Final:         true,
+			CacheContract: telemetryattrs.CacheContractV1,
+			CacheOutcome:  telemetryattrs.CacheOutcomeHit,
+			CacheHitRoute: telemetryattrs.CacheHitRouteRecipe,
+		},
+	})
+	db.RootSpan = nil
+
+	got := db.CacheStats(nil)
+	if got.Hits != 1 || got.Executed != 1 || got.RecipeHits != 1 || got.Lookups() != 2 {
+		t.Fatalf("whole-workflow stats without root = %+v", got)
 	}
 }
