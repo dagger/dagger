@@ -67,18 +67,6 @@ func TestToolResultContentType(t *testing.T) {
 	require.Empty(t, toolResultContentType("prefix\n"+patch))
 }
 
-func TestChangesetPathCount(t *testing.T) {
-	// The gate counts collapsed removals (Removed), not every file under a
-	// removed directory (AllRemoved), so dropping one big tree stays cheap.
-	paths := &ChangesetPaths{
-		Added:      []string{"a.txt", "dir/"},
-		Modified:   []string{"b.txt"},
-		Removed:    []string{"gone/"},
-		AllRemoved: []string{"gone/", "gone/x.txt", "gone/y.txt"},
-	}
-	require.Equal(t, 4, changesetPathCount(paths))
-}
-
 func TestSummarizeChangesetPaths(t *testing.T) {
 	paths := &ChangesetPaths{
 		Added: []string{

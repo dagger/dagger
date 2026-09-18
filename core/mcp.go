@@ -465,10 +465,6 @@ func changesetTooLarge(ctx context.Context, changes dagql.ObjectResult[*Changese
 	return changesetPathCount(paths) > patchSummaryMaxPaths, paths, nil
 }
 
-func changesetPathCount(paths *ChangesetPaths) int {
-	return len(paths.Added) + len(paths.Modified) + len(paths.Removed)
-}
-
 func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
 	// Gate before materializing anything: a huge changeset is summarized from
 	// its paths alone, without ever rendering a patch or diff stats.
