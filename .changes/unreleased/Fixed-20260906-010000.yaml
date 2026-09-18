@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Strip the final LF or CRLF from cmd:// secrets only when command output is
+  a single line, so commands such as gh auth token work without an extra newline.
+  Spaces and multiline output (including final newlines) are preserved;
+  other secret providers are unchanged.
+time: 2026-09-06T01:00:00Z
+custom:
+  Author: vito
+  PR: ""
