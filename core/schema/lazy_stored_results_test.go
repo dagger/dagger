@@ -14,6 +14,7 @@ import (
 )
 
 func TestLazyStoredResultsWithoutBacking(t *testing.T) {
+	testutil.RequireNativeMount(t)
 	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 	actx, a, asrv := scratchTestCache(t, aStore, "", "stored-a")
 	bctx, b, bsrv := scratchTestCache(t, bStore, "", "stored-b")

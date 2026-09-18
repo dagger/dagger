@@ -51,6 +51,7 @@ func builtinLazyFixture(t *testing.T, missing, fallback bool) (context.Context, 
 }
 
 func TestBuiltinMetadataSelectors(t *testing.T) {
+	testutil.RequireNativeMount(t)
 	for _, test := range []struct {
 		name, path               string
 		file, relative, fallback bool

@@ -34,6 +34,7 @@ func (m *transferObservedSnapshots) GetBySnapshotID(ctx context.Context, id stri
 }
 
 func TestValueTransferPartsSelectedChain(t *testing.T) {
+	testutil.RequireNativeMount(t)
 	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
 	prefix, _ := producer.Build(t, nil, "private.txt", "whole parent bytes")
 	tree, _ := producer.Build(t, prefix, "visible/value.txt", "selected bytes")

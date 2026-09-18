@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -131,6 +132,7 @@ func TestLazyWholeContainerRetainsOperation(t *testing.T) {
 }
 
 func TestLazyEvaluatedFilesystemClones(t *testing.T) {
+	testutil.RequireNativeMount(t)
 	ctx, store, cache, srv, _ := executionFixture(t)
 	ref, _ := store.Build(t, nil, "nested/file", "saved bytes")
 	source := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory])}
