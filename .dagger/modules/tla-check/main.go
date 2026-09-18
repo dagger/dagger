@@ -65,6 +65,17 @@ var expectedOutcome = map[string]string{
 	// mutation: the last canceling waiter must release a completed fn's leases
 	"orphaned_lease": "SharedLeaseReleasedWhenRetired",
 
+	// green: per-part evaluation (stage 2). Attempts are per
+	// (result, group); parts map to groups; the metadata-first ordering is
+	// enforced before a group's attempt exists; delegation bodies demand
+	// dependency parts from inside a running body. See the config headers
+	// for the recorded probe and re-break evidence.
+	"lazy_parts":          "",
+	"lazy_parts_prereq":   "",
+	"lazy_parts_liveness": "",
+	"lazy_parts_delegate": "",
+	"lazy_parts_release":  "",
+
 	// green: reader cancellation inside the persisted-decode singleflight.
 	// A joiner that wakes on a departed leader's cancellation retries
 	// instead of failing (persistDecodeRetry), and a post-install failure
@@ -163,6 +174,8 @@ var quickConfigs = []string{
 	"flush_inflight",
 	"flush_roundtrip",
 	"lazy_liveness",
+	"lazy_parts_liveness",
+	"lazy_parts_release",
 	"lazy_release",
 	"lazy_stale_cancel",
 	"liveness",
