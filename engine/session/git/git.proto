@@ -14,6 +14,12 @@ service Git {
   rpc PackUncommitted(PackUncommittedRequest) returns (stream PackUncommittedResponse);
   rpc CaptureGit(CaptureGitRequest) returns (stream CaptureGitResponse);
   rpc ApplyBundle(stream ApplyBundleRequest) returns (ApplyBundleResponse);
+  rpc SnapshotState(SnapshotRequest) returns (CheckoutStateResponse);
+  rpc Snapshot(SnapshotRequest) returns (stream SnapshotResponse);
+  // Serve a synthetic workspace commit through Git's native upload-pack
+  // protocol. The engine sends protocol bytes after the opening request and
+  // receives the snapshot metadata followed by upload-pack protocol bytes.
+  rpc SnapshotUploadPack(stream SnapshotUploadPackRequest) returns (stream SnapshotUploadPackResponse);
 }
 
 // Import a workspace's committed HEAD and fast-forward the destination under
@@ -176,6 +182,49 @@ message PackUncommittedMetadata {
   ErrorInfo error = 3;
 }
 
+// SnapshotRequest asks the client to encode the checkout's current working
+// tree as a git bundle. The bundle contains a synthetic commit whose tree is
+// built from the checkout root, including ignored and untracked files, without
+// changing the checkout's index, refs, or worktree.
+message SnapshotRequest {
+  string checkout_path = 1;
+}
+
+// SnapshotResponse streams one metadata message first, then bundle bytes.
+message SnapshotResponse {
+  oneof msg {
+    SnapshotMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message SnapshotMetadata {
+  string commit_sha = 1;
+  string object_format = 2;
+  ErrorInfo error = 3;
+  // remote_url and base_sha identify the exact prerequisite the engine must
+  // fetch before importing this thin bundle. Empty values identify the
+  // self-contained fallback used when the checkout has no usable upstream.
+  string remote_url = 4;
+  string base_sha = 5;
+  // base_ref is a fetch hint for servers which reject direct SHA fetches.
+  string base_ref = 6;
+}
+
+message SnapshotUploadPackRequest {
+  oneof msg {
+    SnapshotRequest open = 1;
+    bytes chunk = 2;
+  }
+}
+
+message SnapshotUploadPackResponse {
+  oneof msg {
+    SnapshotMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
 message ErrorInfo {
   enum ErrorType {
     UNKNOWN = 0;
@@ -193,6 +242,7 @@ message ErrorInfo {
     CAPTURE_FAILED = 12;
     // The checkout is usable, but capture has no committed baseline.
     CAPTURE_UNSUPPORTED = 13;
+    SNAPSHOT_UNSUPPORTED = 14;
   }
   ErrorType type = 1;
   string message = 2;
