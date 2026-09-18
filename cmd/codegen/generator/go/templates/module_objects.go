@@ -73,6 +73,10 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	}
 	if doc := docForAstSpec(astSpec); doc != nil {
 		docPragmas, docComment := parsePragmaComment(doc.Text())
+		spec.isCollection, err = collectionPragma(docPragmas, "collection")
+		if err != nil {
+			return nil, err
+		}
 		comment := strings.TrimSpace(docComment)
 		if raw, ok := docPragmas["deprecated"]; ok {
 			reason := ""
@@ -134,6 +138,14 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		pragmas := make(map[string]any)
 		maps.Copy(pragmas, docPragmas)
 		maps.Copy(pragmas, linePragmas)
+		fieldSpec.isCollectionKeys, err = collectionPragma(pragmas, "keys")
+		if err != nil {
+			return nil, err
+		}
+		fieldSpec.isCollectionDelta, err = collectionPragma(pragmas, "delta")
+		if err != nil {
+			return nil, err
+		}
 		if v, ok := pragmas["private"]; ok {
 			if v == nil {
 				fieldSpec.isPrivate = true
@@ -167,11 +179,12 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 }
 
 type parsedObjectType struct {
-	name       string
-	moduleName string
-	doc        string
-	sourceMap  *sourceMap
-	deprecated *string
+	isCollection bool
+	name         string
+	moduleName   string
+	doc          string
+	sourceMap    *sourceMap
+	deprecated   *string
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -201,6 +214,9 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	}
 
 	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgsCode...)
+	if spec.isCollection {
+		typeDefCode = dotLine(typeDefCode, "WithCollection").Call()
+	}
 
 	for _, method := range spec.methods {
 		fnTypeDefCode, err := method.TypeDefCode()
@@ -208,10 +224,16 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 			return nil, fmt.Errorf("failed to convert method %s to function def: %w", method.name, err)
 		}
 		typeDefCode = dotLine(typeDefCode, "WithFunction").Call(Add(Line(), fnTypeDefCode))
+		if method.isCollectionGet {
+			typeDefCode = dotLine(typeDefCode, "WithCollectionGet").Call(Lit(method.name))
+		}
 	}
 
 	for _, field := range spec.fields {
 		if field.isPrivate {
+			if field.isCollectionKeys || field.isCollectionDelta {
+				return nil, fmt.Errorf("collection member %s must be exposed", field.name)
+			}
 			continue
 		}
 
@@ -239,6 +261,12 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 			)
 		}
 		typeDefCode = dotLine(typeDefCode, "WithField").Call(withFieldArgsCode...)
+		if field.isCollectionKeys {
+			typeDefCode = dotLine(typeDefCode, "WithCollectionKeys").Call(Lit(field.name))
+		}
+		if field.isCollectionDelta {
+			typeDefCode = dotLine(typeDefCode, "WithCollectionDelta").Call(Lit(field.name))
+		}
 	}
 
 	if spec.constructor != nil {
@@ -557,11 +585,13 @@ func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) *St
 }
 
 type fieldSpec struct {
-	name       string
-	doc        string
-	deprecated *string
-	sourceMap  *sourceMap
-	typeSpec   ParsedType
+	isCollectionKeys  bool
+	isCollectionDelta bool
+	name              string
+	doc               string
+	deprecated        *string
+	sourceMap         *sourceMap
+	typeSpec          ParsedType
 
 	// isPrivate is true if the field is marked with the +private pragma
 	isPrivate bool

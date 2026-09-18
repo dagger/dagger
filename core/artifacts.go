@@ -31,13 +31,14 @@ func (*ArtifactDimensionKey) Type() *ast.Type {
 // Artifact holds a complete address and its deferred object value. The module
 // tree and workspace are retained so evaluation does not depend on the caller.
 type Artifact struct {
-	Path          []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
-	DimensionKeys []*ArtifactDimensionKey `field:"true" doc:"One key per dimension along the path. Unordered; empty for static artifacts."`
-	TypeName      string
-	Directives    []string `field:"true" doc:"The directives carried by this artifact."`
-	LoadFailure   *ModuleLoadFailure
-	Node          *ModTreeNode
-	Workspace     dagql.ObjectResult[*Workspace]
+	DimensionNames map[string]string
+	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
+	DimensionKeys  []*ArtifactDimensionKey `field:"true" doc:"One key per dimension along the path. Unordered; empty for static artifacts."`
+	TypeName       string
+	Directives     []string `field:"true" doc:"The directives carried by this artifact."`
+	LoadFailure    *ModuleLoadFailure
+	Node           *ModTreeNode
+	Workspace      dagql.ObjectResult[*Workspace]
 }
 
 // Clone gives each API result its own writable dependency wrappers. Attachment
@@ -74,7 +75,7 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	}
 	if opts.DimensionKeys {
 		for _, key := range a.DimensionKeys {
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: key.Dimension, Key: key.Key, HasKey: true})
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
 		}
 	}
 	if opts.Absolute {
@@ -145,6 +146,11 @@ type ArtifactSelector struct {
 	Types []string
 	// Dimensions are combined with AND.
 	Dimensions []ArtifactDimensionFilter
+	// Each group requires any one dimension; separate groups use AND.
+	DimensionAlternatives [][]string
+	// Explicit collection endpoints select the collection unless its own
+	// dimension is requested. Keep this distinct from normalized path patterns.
+	CollectionPaths []string
 }
 
 // Artifacts is an immutable selection. Filtering changes only the entry list
@@ -179,11 +185,15 @@ func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
 
 func (sel ArtifactSelector) clone() ArtifactSelector {
 	cloned := ArtifactSelector{
-		Paths: slices.Clone(sel.Paths),
-		Types: slices.Clone(sel.Types),
+		Paths:           slices.Clone(sel.Paths),
+		Types:           slices.Clone(sel.Types),
+		CollectionPaths: slices.Clone(sel.CollectionPaths),
 	}
 	for _, dim := range sel.Dimensions {
 		cloned.Dimensions = append(cloned.Dimensions, ArtifactDimensionFilter{Dimension: dim.Dimension, Keys: slices.Clone(dim.Keys)})
+	}
+	for _, group := range sel.DimensionAlternatives {
+		cloned.DimensionAlternatives = append(cloned.DimensionAlternatives, slices.Clone(group))
 	}
 	return cloned
 }
@@ -257,6 +267,7 @@ func (a *Artifacts) FilterPath(path []string) *Artifacts {
 	// A literal path is not a pattern. Record only the matching paths so an
 	// empty path, glob character, or different case cannot broaden URI().
 	selected.Selector.Paths = selected.exactPaths()
+	selected.Selector.CollectionPaths = append(selected.Selector.CollectionPaths, strings.Join(path, "/"))
 	return selected
 }
 
@@ -276,6 +287,9 @@ func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
 	}, []string{pattern})
 	if matchErr != nil {
 		return nil, matchErr
+	}
+	if !strings.ContainsAny(pattern, "*?[{") {
+		selected.Selector.CollectionPaths = append(selected.Selector.CollectionPaths, selected.exactPaths()...)
 	}
 	return selected, nil
 }
@@ -308,6 +322,15 @@ func (a *Artifact) matchesPattern(pattern string) (bool, error) {
 }
 
 func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
+	if a.hasCollections() {
+		selected := a.filter(func(*Artifact) bool { return true })
+		if len(dimensions) == 1 {
+			selected.Selector.addDimension(ArtifactDimensionFilter{Dimension: dimensions[0]})
+		} else {
+			selected.Selector.DimensionAlternatives = append(selected.Selector.DimensionAlternatives, slices.Clone(dimensions))
+		}
+		return selected
+	}
 	selected := a.filter(func(artifact *Artifact) bool {
 		for _, key := range artifact.DimensionKeys {
 			if slices.Contains(dimensions, key.Dimension) {
@@ -326,6 +349,14 @@ func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
 }
 
 func (a *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
+	if a.hasCollections() {
+		selected := a.filter(func(*Artifact) bool { return true })
+		if keys == nil {
+			keys = []string{}
+		}
+		selected.Selector.addDimension(ArtifactDimensionFilter{Dimension: dimension, Keys: slices.Clone(keys)})
+		return selected
+	}
 	selected := a.filter(func(artifact *Artifact) bool {
 		for _, key := range artifact.DimensionKeys {
 			if key.Dimension == dimension && slices.Contains(keys, key.Key) {
@@ -344,6 +375,7 @@ func (a *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifa
 // addDimension combines a dimension filter with the selector: the same
 // dimension intersects its keys, and a new dimension is another AND term.
 func (sel *ArtifactSelector) addDimension(filter ArtifactDimensionFilter) {
+	filter.Keys = slices.Clone(filter.Keys)
 	for i, existing := range sel.Dimensions {
 		if existing.Dimension != filter.Dimension {
 			continue
@@ -431,6 +463,11 @@ func (a *Artifacts) URI() string {
 	case 0:
 	case 1:
 		addr.Path = sel.Paths[0]
+		// A normalized wildcard can leave one collection endpoint. Preserve
+		// its pattern form so a URI round trip still includes the items.
+		if !strings.ContainsAny(addr.Path, "*?[{") && !slices.Contains(sel.CollectionPaths, addr.Path) && a.hasCollections() {
+			addr.Path = "{" + addr.Path + "}"
+		}
 	default:
 		addr.Path = "{" + strings.Join(sel.Paths, ",") + "}"
 	}
@@ -530,34 +567,25 @@ func ModuleArtifactNodes(ctx context.Context, mod dagql.ObjectResult[*Module]) (
 }
 
 func ArtifactNodes(ctx context.Context, root *ModTreeNode) ([]*ModTreeNode, error) {
-	return root.RollupNodes(ctx, func(node *ModTreeNode) (bool, bool) {
-		typ := node.Type.Self()
-		if typ == nil || typ.Optional || typ.Kind != TypeDefKindObject {
-			return false, false
-		}
-		if node == root {
-			if obj := node.ObjectType(); obj.Constructor.Valid && functionRequiresCallerArgs(obj.Constructor.Value.Self()) {
-				return false, false
-			}
-			return true, true
-		}
-		parent := node.Parent.ObjectType()
-		moduleField := parent != nil && parent.SourceModuleName != ""
-		eligible := moduleField || slices.ContainsFunc(node.Directives, isArtifactDirective)
-		return eligible, eligible
-	}, nil, nil)
+	if obj := root.ObjectType(); obj != nil && obj.Constructor.Valid && functionRequiresCallerArgs(obj.Constructor.Value.Self()) {
+		return nil, nil
+	}
+	var nodes []*ModTreeNode
+	err := walkArtifactNodes(ctx, root, func(node *ModTreeNode) { nodes = append(nodes, node) }, map[string]bool{})
+	return nodes, err
 }
 
 // Persist both individual artifacts and selections. One tree encoding shares
 // module and type references across all entries in a selection.
 type persistedArtifact struct {
-	LoadFailure   *ModuleLoadFailure
-	Path          []string
-	DimensionKeys []*ArtifactDimensionKey
-	TypeName      string
-	Directives    []string
-	Node          int
-	Workspace     uint64
+	DimensionNames map[string]string
+	LoadFailure    *ModuleLoadFailure
+	Path           []string
+	DimensionKeys  []*ArtifactDimensionKey
+	TypeName       string
+	Directives     []string
+	Node           int
+	Workspace      uint64
 }
 type persistedArtifacts struct {
 	Tree     persistedModTree
@@ -570,6 +598,7 @@ func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact, sele
 	payload := persistedArtifacts{Selector: selector}
 	for _, a := range entries {
 		p := persistedArtifact{LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, Directives: a.Directives}
+		p.DimensionNames = a.DimensionNames
 		var err error
 		p.Node, err = tree.Add(a.Node)
 		if err != nil {
@@ -598,6 +627,7 @@ func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage
 	result := &Artifacts{Selector: payload.Selector}
 	for _, p := range payload.Entries {
 		a := &Artifact{LoadFailure: p.LoadFailure, Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Directives: p.Directives, Node: nodes[p.Node]}
+		a.DimensionNames = p.DimensionNames
 		if a.DimensionKeys == nil {
 			a.DimensionKeys = []*ArtifactDimensionKey{}
 		}

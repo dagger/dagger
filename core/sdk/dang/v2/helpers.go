@@ -145,7 +145,7 @@ func evalDangSource(
 			if err != nil {
 				return fmt.Errorf("run dir: %w", err)
 			}
-			return nil
+			return retainDangObjectDirectives(ctx, env, modSrcDir)
 		})
 		if err != nil {
 			return nil, fmt.Errorf("mount source: %w", err)
@@ -153,6 +153,42 @@ func evalDangSource(
 
 		return withEnv(ctx, env)
 	})
+}
+
+// Dang validates object directives but does not retain them on its runtime
+// Type. Keep these declarations alongside the field directives for registration.
+func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".dang" {
+			continue
+		}
+		root, err := dang.ParseFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return err
+		}
+		file, ok := root.(*dang.FileBlock)
+		if !ok {
+			continue
+		}
+		for _, form := range file.Forms {
+			decl, ok := form.(*dang.ObjectDecl)
+			if !ok || len(decl.Directives) == 0 {
+				continue
+			}
+			value, found, err := env.Lookup(ctx, decl.Name.Name)
+			if err != nil {
+				return err
+			}
+			if constructor, ok := value.(*dang.ConstructorFunction); found && ok {
+				constructor.ObjectType.SetDirectives("", decl.Directives)
+			}
+		}
+	}
+	return nil
 }
 
 // ensureModuleSelfTypes makes each of the module's own declared object,
@@ -860,6 +896,11 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 			Args:  withObjectArgs,
 		},
 	}
+	for _, directive := range classMod.GetDirectives("") {
+		if directive.Name == "collection" {
+			sels = append(sels, dagql.Selector{Field: "withCollection"})
+		}
+	}
 
 	for _, form := range module.ObjectBodyForms {
 		slot, ok := form.(*dang.FieldDecl)
@@ -915,6 +956,29 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 				Field: "withField",
 				Args:  fieldArgs,
 			})
+		}
+		for _, directive := range classMod.GetDirectives(bindingName) {
+			var field string
+			switch directive.Name {
+			case "keys":
+				if _, isFunction := slotType.(*hm.FunctionType); isFunction {
+					return res, fmt.Errorf("collection keys must be a stored field")
+				}
+				field = "withCollectionKeys"
+			case "get":
+				if _, isFunction := slotType.(*hm.FunctionType); !isFunction {
+					return res, fmt.Errorf("collection get must be a function")
+				}
+				field = "withCollectionGet"
+			case "delta":
+				if _, isFunction := slotType.(*hm.FunctionType); isFunction {
+					return res, fmt.Errorf("collection delta must be a stored field")
+				}
+				field = "withCollectionDelta"
+			default:
+				continue
+			}
+			sels = append(sels, dagql.Selector{Field: field, Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(bindingName)}}})
 		}
 	}
 

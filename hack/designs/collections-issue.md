@@ -2,9 +2,9 @@
 
 ## Context
 
-Builds on [Workspace artifacts (#14178)](https://github.com/dagger/dagger/pull/14178), using its [design at `8b2da1b1`](https://github.com/dagger/dagger/blob/8b2da1b1cd4b8b18d940df990a5982a71e320e69/hack/designs/collections-issue.md).
+Builds on [Workspace artifacts (#14178)](https://github.com/dagger/dagger/pull/14178).
 
-Artifacts defines DAG addresses, discovery, selection, evaluation, and the `Check` projection. It also replaces the group APIs. This issue adds dynamic keyed collections to that design.
+Artifacts defines DAG addresses, discovery, selection, evaluation, and the `Check` projection. It also owns `Changeset.stale` and the move from group APIs to Artifacts. This issue adds dynamic keyed collections to that design.
 
 ## Problem
 
@@ -35,7 +35,7 @@ func (tests *GoTests) Get(name string) *GoTest {
 }
 ```
 
-A collection has one exposed keys field and one exposed item lookup function. The default names are `keys` and `get`. The markers `+keys` / `@keys` and `+get` / `@get` select other members. TypeScript uses `@keys()` and `@get()`. A marker overrides the default name. The collection marker is required even with the default names.
+A collection has one exposed keys field and one exposed item lookup function. The default names are `keys` and `get`. The markers `+keys` / `@keys` and `+get` / `@get` select other members. TypeScript uses `@keys()` and `@get()`. Python uses `keys()` for a stored field and `@get` on a `@function`. A marker overrides the default name. The collection marker is required even with the default names.
 
 For example, this author schema uses paths as keys:
 
@@ -106,7 +106,7 @@ Generated clients see the standard collection API. Collection projection does no
 
 #### Collection delta
 
-A collection type may define a field named `delta` of type `CollectionDelta`. The marker `@delta`, or `+delta` in Go, selects a field with another name. TypeScript uses `@delta()`. The marker overrides the default name. Allow one delta field and require its type to be `CollectionDelta`.
+A collection type may define a field named `delta` of type `CollectionDelta`. The marker `@delta`, or `+delta` in Go, selects a field with another name. TypeScript uses `@delta()`. Python uses the field helper `delta()`. The marker overrides the default name. Allow one delta field and require its type to be `CollectionDelta`.
 
 The engine fills this field before passing the collection to module code, including batch functions. Authors can leave it unset when constructing the collection. It always contains the changes from the original collection.
 
@@ -152,7 +152,7 @@ All collections use the same `CollectionDelta` type. Delta keys use the same str
 
 The engine retains the base and current keys across module calls and loading by ID. It computes the delta without evaluating items. A change to an item's contents does not affect the delta. The delta belongs to the collection value. Its dimension name does not affect it.
 
-The first implementation only selects subsets, so `addedKeys` is always empty. Future operations that add or restore keys must compare the result with the same base.
+The first engine operation that changes keys is `subset`. It does not add keys. Future operations that add or restore keys must compare the result with the same base.
 
 When both lists are empty, a batch function can use an operation for the full original collection. For example, its original collection can contain all tests in a directory. It can then run `go test` without a test filter.
 
@@ -211,12 +211,22 @@ type ArtifactDimensionKey implements Node {
 }
 
 extend type Artifacts {
+  dimensionDefinitions: [ArtifactDimension!]!
   filterDimensions(dimensions: [String!]!): Artifacts!
   filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
   dimensions: [String!]!
   dimensionKeys(dimension: String!): [String!]!
 }
+
+type ArtifactDimension implements Node {
+  id: ID!
+  identifier: String!
+  name: String!
+  qualifiedName: String!
+}
 ```
+
+`dimensionDefinitions` lists dimensions on the selected schema paths. It does not read collection values. Empty collections still appear here. The CLI uses this metadata to register dimension flags.
 
 The container for one test has this address:
 
@@ -250,13 +260,15 @@ Listing can construct collections and read their keys. To discover nested keys, 
 
 For static object discovery, traverse module-defined fields that can be called without user input. Traverse engine-defined fields only when they carry `@check`, `@generate`, `@up`, or `@agent`. The rule applies to the field definition. A module field returning a Container is an artifact, but its unmarked `rootfs` field stops discovery. A Changeset exposes its marked `stale` check. Stop when an object type repeats on the current path.
 
+Batch results are leaf artifacts. Discovery lists their addresses but does not traverse them.
+
 Store the discovery scope and filters in `Artifacts`. Expand collections when a result is requested. Apply path, type, and parent-key filters before expanding child collections. Keep the existing traversal limits for cycles, nullable values, raw lists, and required arguments.
 
 Reading metadata from an existing `Artifact` does not evaluate its value. `value()` follows the complete address in the source workspace, including after a module call or loading by ID.
 
 #### Key text
 
-Artifact and delta keys use the same string form. Strings, string scalars, and enums use their value. Numbers and booleans use their JSON form. Conversion back uses the declared key type and must preserve key identity. Keep the typed key for `get` and `subset`. Do not infer its type from the text.
+Artifact and delta keys use the same string form. Strings and string scalars use their value. Enums use the GraphQL value name, such as `RED`. Numbers and booleans use their JSON form. Conversion back uses the declared key type and must preserve key identity. Keep the typed key for `get` and `subset`. Do not infer its type from the text.
 
 ### 4. Select items by dimension
 
@@ -286,7 +298,7 @@ Parent dimensions still select the containing objects. A complete address has on
 
 For each dimension, `Artifact.uri()` tries its short name, then its qualified name, then its exact identifier. It uses the first name that is unambiguous on the path. Order pairs from parent to child. `Artifacts.uri` uses exact identifiers for selectors over several paths.
 
-Dimension filters must survive an address round trip: `artifacts.filterUri(a.uri)` selects the same set as `a`.
+When `uri` returns an address, `artifacts.filterUri(a.uri)` must select the same set as `a`. One address cannot express OR across different dimensions. Reject `uri` for that selection; keep the filter valid for listing and execution.
 
 ### 5. Use the existing CLI and resolver
 

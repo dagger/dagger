@@ -55,10 +55,16 @@ export class Register {
 
       // Register the class Typedef object in Dagger
       let typeDef = dag.typeDef().withObject(object.name, objectOpts)
+      if (object.isCollection) {
+        typeDef = typeDef.withCollection()
+      }
 
       // Register all functions (methods) to this object
       Object.values(object.methods).forEach((method) => {
         typeDef = typeDef.withFunction(this.addFunction(method))
+        if (method.isCollectionGet) {
+          typeDef = typeDef.withCollectionGet(method.alias ?? method.name)
+        }
       })
 
       // Register all fields that belong to this object
@@ -75,6 +81,12 @@ export class Register {
             addTypeDef(field.type!),
             fieldOpts,
           )
+          if (field.isCollectionKeys) {
+            typeDef = typeDef.withCollectionKeys(field.alias ?? field.name)
+          }
+          if (field.isCollectionDelta) {
+            typeDef = typeDef.withCollectionDelta(field.alias ?? field.name)
+          }
         }
       })
 

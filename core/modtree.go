@@ -31,11 +31,16 @@ type ModTreeNode struct {
 	// WorkspaceEntrypoint is set on the module root when its targets are
 	// exposed without a module prefix. Path retains the qualified identity.
 	WorkspaceEntrypoint bool
+	CollectionDimension *ArtifactDimension
+	CollectionKey       *string
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
 	if node.Parent == nil {
 		return nil
+	}
+	if node.CollectionDimension != nil {
+		return node.Parent.Path()
 	}
 	var path ModTreePath
 	path = append(path, node.Parent.Path()...)
@@ -175,6 +180,20 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 		args, err := boundWorkspaceArgs(ctx, srv, fn)
 		if err != nil {
 			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
+		}
+		if node.CollectionDimension != nil {
+			if node.CollectionKey == nil {
+				return fmt.Errorf("collection item %q has no key", node.CollectionDimension.Identifier)
+			}
+			members, err := parentObjType.CollectionMembers()
+			if err != nil {
+				return err
+			}
+			key, err := collectionInputFromText(members.Get.Args[0].Self().TypeDef.Self(), *node.CollectionKey)
+			if err != nil {
+				return err
+			}
+			args = append(args, dagql.NamedInput{Name: "key", Value: key})
 		}
 		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{
 			Field: node.Name,
@@ -501,15 +520,17 @@ type persistedModTree struct {
 }
 
 type persistedModTreeNode struct {
-	RootValueResultID      uint64   `json:"rootValueResultID,omitempty"`
-	ID                     int      `json:"id"`
-	ParentID               int      `json:"parentID,omitempty"`
-	Name                   string   `json:"name,omitempty"`
-	Description            string   `json:"description,omitempty"`
-	ModuleResultID         uint64   `json:"moduleResultID,omitempty"`
-	OriginalModuleResultID uint64   `json:"originalModuleResultID,omitempty"`
-	TypeResultID           uint64   `json:"typeResultID,omitempty"`
-	Directives             []string `json:"directives,omitempty"`
+	CollectionDimension    *ArtifactDimension `json:"collectionDimension,omitempty"`
+	CollectionKey          *string            `json:"collectionKey,omitempty"`
+	RootValueResultID      uint64             `json:"rootValueResultID,omitempty"`
+	ID                     int                `json:"id"`
+	ParentID               int                `json:"parentID,omitempty"`
+	Name                   string             `json:"name,omitempty"`
+	Description            string             `json:"description,omitempty"`
+	ModuleResultID         uint64             `json:"moduleResultID,omitempty"`
+	OriginalModuleResultID uint64             `json:"originalModuleResultID,omitempty"`
+	TypeResultID           uint64             `json:"typeResultID,omitempty"`
+	Directives             []string           `json:"directives,omitempty"`
 }
 
 type persistedModTreeEncoder struct {
@@ -548,11 +569,13 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 	id := len(enc.tree.Nodes) + 1
 	enc.ids[node] = id
 	persisted := persistedModTreeNode{
-		ID:          id,
-		ParentID:    parentID,
-		Name:        node.Name,
-		Description: node.Description,
-		Directives:  node.Directives,
+		CollectionDimension: node.CollectionDimension,
+		CollectionKey:       node.CollectionKey,
+		ID:                  id,
+		ParentID:            parentID,
+		Name:                node.Name,
+		Description:         node.Description,
+		Directives:          node.Directives,
 	}
 	if node.RootValue != nil {
 		persisted.RootValueResultID, err = encodePersistedObjectRef(enc.cache, node.RootValue, "artifact root value")
@@ -598,9 +621,11 @@ func decodePersistedModTree(ctx context.Context, dag *dagql.Server, tree persist
 		}
 
 		node := &ModTreeNode{
-			Name:        persisted.Name,
-			Description: persisted.Description,
-			Directives:  persisted.Directives,
+			CollectionDimension: persisted.CollectionDimension,
+			CollectionKey:       persisted.CollectionKey,
+			Name:                persisted.Name,
+			Description:         persisted.Description,
+			Directives:          persisted.Directives,
 		}
 		if persisted.RootValueResultID != 0 {
 			value, err := loadPersistedResultByResultID(ctx, dag, persisted.RootValueResultID, "artifact root value")

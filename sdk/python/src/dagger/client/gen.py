@@ -1577,6 +1577,100 @@ class Artifact(Type):
 
 
 @typecheck
+class ArtifactDimension(Type):
+    async def id(self) -> str:
+        """A unique identifier for this ArtifactDimension.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def identifier(self) -> str:
+        """Exact GraphQL ParentType.field identifier.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("identifier", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """Short name derived from the author item type.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def qualified_name(self) -> str:
+        """Author parent type and field name, in CLI case.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("qualifiedName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class ArtifactDimensionKey(Type):
     async def dimension(self) -> str:
         """The dimension identifier, fixed across the workspace schema.
@@ -1704,6 +1798,14 @@ class Artifacts(Type):
     dimensions, and keys use OR; chained filters use AND. Empty
     alternatives and unknown names match nothing. Filters never change
     addresses or dimension identifiers."""
+
+    async def dimension_definitions(self) -> list[ArtifactDimension]:
+        """List dimensions on the selected schema paths, including empty
+        collections. Does not read runtime values.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dimensionDefinitions", _args)
+        return await _ctx.execute_object_list(ArtifactDimension)
 
     async def dimension_keys(self, dimension: str) -> list[str]:
         """List keys represented in this selection for the given dimension,
@@ -2438,6 +2540,128 @@ class Cloud(Type):
         _args: list[Arg] = []
         _ctx = self._select("traceURL", _args)
         return await _ctx.execute(str)
+
+
+@typecheck
+class CollectionDelta(Type):
+    async def added_keys(self) -> list[str]:
+        """Current keys absent from the original collection, in current order.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedKeys", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this CollectionDelta.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def removed_keys(self) -> list[str]:
+        """Original keys absent from the current collection, in original order.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedKeys", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
+class CollectionTypeDef(Type):
+    async def batch_type(self) -> "TypeDef | None":
+        """The type of batch operations, or null when there are none."""
+        _args: list[Arg] = []
+        _ctx = self._select("batchType", _args)
+        return await _ctx.execute_object(TypeDef)
+
+    async def id(self) -> str:
+        """A unique identifier for this CollectionTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def key_type(self) -> "TypeDef":
+        """The type of collection keys."""
+        _args: list[Arg] = []
+        _ctx = self._select("keyType", _args)
+        return TypeDef(_ctx)
+
+    def value_type(self) -> "TypeDef":
+        """The object type returned by get."""
+        _args: list[Arg] = []
+        _ctx = self._select("valueType", _args)
+        return TypeDef(_ctx)
 
 
 @typecheck
@@ -15658,6 +15882,12 @@ class Terminal(Type):
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
+    async def as_collection(self) -> CollectionTypeDef | None:
+        """Collection metadata, or null if this object is not a collection."""
+        _args: list[Arg] = []
+        _ctx = self._select("asCollection", _args)
+        return await _ctx.execute_object(CollectionTypeDef)
+
     async def as_enum(self) -> EnumTypeDef | None:
         """If kind is ENUM, the enum-specific type definition. If kind is not
         ENUM, this will be null.
@@ -15792,6 +16022,36 @@ class TypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("optional", _args)
         return await _ctx.execute(bool)
+
+    def with_collection(self) -> Self:
+        """Mark this object as a collection."""
+        _args: list[Arg] = []
+        _ctx = self._select("withCollection", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_delta(self, name: str) -> Self:
+        """Select the field that receives changes from the original collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionDelta", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_get(self, name: str) -> Self:
+        """Select the item lookup function for this collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionGet", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_keys(self, name: str) -> Self:
+        """Select the stored keys field for this collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionKeys", _args)
+        return TypeDef(_ctx)
 
     def with_constructor(self, function: Function) -> Self:
         """Adds a function for constructing a new instance of an Object TypeDef,
@@ -18466,6 +18726,7 @@ __all__ = [
     "AgentMessageDelivery",
     "AgentState",
     "Artifact",
+    "ArtifactDimension",
     "ArtifactDimensionKey",
     "ArtifactResult",
     "Artifacts",
@@ -18480,6 +18741,8 @@ __all__ = [
     "Client",
     "ClientFilesyncMirror",
     "Cloud",
+    "CollectionDelta",
+    "CollectionTypeDef",
     "Container",
     "CurrentModule",
     "DiffStat",
