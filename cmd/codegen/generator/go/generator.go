@@ -27,11 +27,19 @@ const (
 	// ClientGenFile is the path to write the codegen for the dagger API
 	ClientGenFile = "dagger.gen.go"
 
+	// CoreGenFile is the generated API bindings file inside internalDaggerCoreDir.
+	CoreGenFile = "core.gen.go"
+
 	// StarterTemplateFile is the path to write the default module code
 	StarterTemplateFile = "main.go"
 
 	// internalDaggerDir is the directory where internal dagger generated files are written.
 	internalDaggerDir = "internal/dagger"
+
+	// internalDaggerCoreDir is where the generated API bindings (and,
+	// for modules, dependency-contributed extensions to those bindings)
+	// live, alongside the module's own internal/dagger/core/core.gen.go.
+	internalDaggerCoreDir = "internal/dagger/core"
 )
 
 var goVersion = strings.TrimPrefix(runtime.Version(), "go")
@@ -184,7 +192,11 @@ func generateDependencyFiles(
 
 		// Convert dep name to kebab-case for the filename, e.g. "myDep" -> "my-dep.gen.go"
 		depFileName := strcase.ToKebab(depName) + ".gen.go"
-		depFilePath := filepath.Join(internalDaggerDir, depFileName)
+		// Dependency-contributed files extend the generated API bindings
+		// (e.g. adding methods to Container), so they must live alongside
+		// those bindings' real definitions: internal/dagger/core for
+		// modules, or the client's own package for standalone clients.
+		depFilePath := filepath.Join(internalDaggerCoreDir, depFileName)
 
 		// Special case for client generation, we want to write the file in the specified client directory.
 		if cfg.ClientConfig != nil && cfg.ClientConfig.ClientDir != "" {
@@ -193,6 +205,27 @@ func generateDependencyFiles(
 
 		if err := mfs.WriteFile(depFilePath, dt, 0600); err != nil {
 			return fmt.Errorf("write dependency file %q: %w", depFilePath, err)
+		}
+
+		// For modules (not standalone clients, which never split their
+		// bindings out of package dagger), also re-export any brand new
+		// types the dependency contributes back into package dagger, since
+		// importing module code references them directly (e.g. dagger.Dep).
+		if cfg.ClientConfig == nil {
+			aliasTmpl, err := templates.DepAliasTemplate(funcs)
+			if err != nil {
+				return fmt.Errorf("get dependency alias template: %w", err)
+			}
+			aliasSrc, err := renderFile(importResolutionDir, depSchema, schemaVersion, pkgInfo, aliasTmpl)
+			if err != nil {
+				return fmt.Errorf("render dependency alias file for %q: %w", depName, err)
+			}
+			if aliasSrc != nil {
+				aliasFilePath := filepath.Join(internalDaggerDir, depFileName)
+				if err := mfs.WriteFile(aliasFilePath, aliasSrc, 0600); err != nil {
+					return fmt.Errorf("write dependency alias file %q: %w", aliasFilePath, err)
+				}
+			}
 		}
 	}
 
