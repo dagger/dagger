@@ -18,9 +18,7 @@
   ./bin/dagger api call engine-dev network-cidr
   ```
 
-- Explain:
-  - **Cache hit rate**: work restored from cache.
-  - **Mutualized jobs**: duplicate concurrent work shared by callers.
+- Point out the cache hit rate: work restored from cache.
 
 - Run the same workflow again:
 
@@ -28,24 +26,14 @@
   ./bin/dagger api call engine-dev network-cidr
   ```
 
-- Explain the estimated savings:
-  - **Finished faster**: whole-workflow wall-clock savings. Parallel durations
-    are not added together.
-  - **Compute avoided**: cumulative CPU time across all cores.
-  - **Network transfer avoided**: bytes not transferred.
-  - **Memory occupancy avoided**: memory integrated over time, not peak memory.
+- Point out the estimated savings:
+  - **wall**: whole-workflow time saved; parallel durations are not added.
+  - **CPU**: CPU time saved across all cores.
+  - **memory**: average memory saved for the shown duration, not peak memory.
+  - **net rx / net tx**: received and transmitted bytes saved.
 
 ## Expected output
 
 ```text
-== CACHE ==
-Cache hit rate: ...
-Mutualized jobs: ...
-
-== ESTIMATED CACHE SAVINGS ==
-Compared with a colder run (... cache hit rate)
-Finished ~... faster (...%)
-Compute avoided: ~... of CPU work
-Network transfer avoided: ~...
-Memory occupancy avoided: equivalent to ~... held for ...
+Cache hits 108/266 (41%) · Saved ~23s wall | ~2m42s CPU | ~335 MB memory for 46s | ~120 MB net rx | ~31 MB net tx
 ```
