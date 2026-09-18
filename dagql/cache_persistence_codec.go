@@ -631,51 +631,7 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 		}
 		return env, nil
 	case persistedResultKindObject:
-		family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
-		if !ok {
-			return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unknown object codec family %q for type %q", path, env.ObjectCodec, env.TypeName)
-		}
-		payloadLinks := links
-		if !root {
-			payloadLinks = nil
-		}
-		// Every storage role the owner declares must be classified by its
-		// family exactly once: an unreported role would keep an unrelocated
-		// key silently, and a duplicate report could hide an omitted one.
-		roleReports := make(map[string]int, len(payloadLinks))
-		countingVisit := func(ref *PersistedRef) error {
-			switch ref.Kind {
-			case PersistedRefOutputRole, PersistedRefLocalBacking:
-				if _, declared := roleReports[ref.Role]; !declared {
-					return fmt.Errorf("storage role %q is not declared by the owner's snapshot links", ref.Role)
-				}
-				roleReports[ref.Role]++
-			}
-			return visit(ref)
-		}
-		for _, link := range payloadLinks {
-			if _, dup := roleReports[link.Role]; dup {
-				return PersistedResultEnvelope{}, fmt.Errorf("visit persisted %s payload at %q: storage role %q declared twice", family.Name, path, link.Role)
-			}
-			roleReports[link.Role] = 0
-		}
-		rewritten, err := family.Visitor.VisitPersistedReferences(PersistedPayloadVisit{
-			Version:       env.Version,
-			Call:          ownerCall,
-			Path:          path.Field("objectJSON"),
-			Payload:       env.ObjectJSON,
-			SnapshotLinks: payloadLinks,
-		}, countingVisit)
-		if err != nil {
-			return PersistedResultEnvelope{}, fmt.Errorf("visit persisted %s payload at %q: %w", family.Name, path, err)
-		}
-		for _, link := range payloadLinks {
-			if n := roleReports[link.Role]; n != 1 {
-				return PersistedResultEnvelope{}, fmt.Errorf("visit persisted %s payload at %q: storage role %q classified %d times, expected exactly once", family.Name, path, link.Role, n)
-			}
-		}
-		env.ObjectJSON = rewritten
-		return env, nil
+		return visitPersistedObjectEnvelope(env, ownerCall, links, path, root, visit)
 	case persistedResultKindList:
 		items := make([]PersistedResultEnvelope, len(env.Items))
 		for i, item := range env.Items {
@@ -694,6 +650,56 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 	default:
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unsupported kind %q", path, env.Kind)
 	}
+}
+
+// visitPersistedObjectEnvelope is visitPersistedEnvelope's object case: every
+// storage role the owner declares is classified by its family exactly once.
+func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, links []PersistedSnapshotRefLink, path PersistedRefPath, root bool, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
+	family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
+	if !ok {
+		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unknown object codec family %q for type %q", path, env.ObjectCodec, env.TypeName)
+	}
+	payloadLinks := links
+	if !root {
+		payloadLinks = nil
+	}
+	// Every storage role the owner declares must be classified by its
+	// family exactly once: an unreported role would keep an unrelocated
+	// key silently, and a duplicate report could hide an omitted one.
+	roleReports := make(map[string]int, len(payloadLinks))
+	countingVisit := func(ref *PersistedRef) error {
+		switch ref.Kind {
+		case PersistedRefOutputRole, PersistedRefLocalBacking:
+			if _, declared := roleReports[ref.Role]; !declared {
+				return fmt.Errorf("storage role %q is not declared by the owner's snapshot links", ref.Role)
+			}
+			roleReports[ref.Role]++
+		}
+		return visit(ref)
+	}
+	for _, link := range payloadLinks {
+		if _, dup := roleReports[link.Role]; dup {
+			return PersistedResultEnvelope{}, fmt.Errorf("visit persisted %s payload at %q: storage role %q declared twice", family.Name, path, link.Role)
+		}
+		roleReports[link.Role] = 0
+	}
+	rewritten, err := family.Visitor.VisitPersistedReferences(PersistedPayloadVisit{
+		Version:       env.Version,
+		Call:          ownerCall,
+		Path:          path.Field("objectJSON"),
+		Payload:       env.ObjectJSON,
+		SnapshotLinks: payloadLinks,
+	}, countingVisit)
+	if err != nil {
+		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted %s payload at %q: %w", family.Name, path, err)
+	}
+	for _, link := range payloadLinks {
+		if n := roleReports[link.Role]; n != 1 {
+			return PersistedResultEnvelope{}, fmt.Errorf("visit persisted %s payload at %q: storage role %q classified %d times, expected exactly once", family.Name, path, link.Role, n)
+		}
+	}
+	env.ObjectJSON = rewritten
+	return env, nil
 }
 
 // visitResultCallReferences walks the descriptive references of a recorded

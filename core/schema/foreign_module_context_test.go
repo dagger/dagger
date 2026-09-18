@@ -2,13 +2,14 @@ package schema
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
-	"os"
-	"path/filepath"
-	"testing"
 )
 
 func TestForeignModuleContextReaders(t *testing.T) {
@@ -82,7 +83,9 @@ func TestForeignWithSourceSubpathWorkspace(t *testing.T) {
 	}.Install(srv)
 	dagql.Fields[*core.File]{dagql.Func("asEnvFile", func(context.Context, *core.File, struct {
 		Expand bool `default:"false"`
-	}) (*core.EnvFile, error) { return nil, os.ErrNotExist })}.Install(srv)
+	}) (*core.EnvFile, error) {
+		return nil, os.ErrNotExist
+	})}.Install(srv)
 	dagql.Fields[*core.Query]{dagql.Func("host", func(context.Context, *core.Query, struct{}) (*core.Host, error) { return &core.Host{}, nil })}.Install(srv)
 	dagql.Fields[*core.Host]{dagql.Func("findUp", func(context.Context, *core.Host, struct{ Name string }) (string, error) { return "", nil })}.Install(srv)
 	ws, err := dagql.NewObjectResultForCall(&core.Workspace{}, srv, &dagql.ResultCall{Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "workspace", Type: dagql.NewResultCallType((&core.Workspace{}).Type())})

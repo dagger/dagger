@@ -247,6 +247,12 @@ func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, 
 	if !root && env.SessionResourceHandle != "" {
 		return fmt.Errorf("inline resource handle has no owner row")
 	}
+	return validateTransferEnvelopeKind(env, typ, root)
+}
+
+// validateTransferEnvelopeKind is validateTransferEnvelope's per-kind check,
+// one case per envelope kind.
+func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallType, root bool) error {
 	switch env.Kind {
 	case persistedResultKindNull:
 		if typ.NonNull {

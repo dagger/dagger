@@ -142,7 +142,6 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 // Both ordinary loads and schema selection retain the same decode, resource
 // generation and session-release checks after acquiring session ownership.
 func (c *Cache) loadSelectedResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64, lookup sharedResultLookup) (AnyResult, error) {
-
 	wrapped := Result[Typed]{
 		shared:   lookup.res,
 		hitCache: true,

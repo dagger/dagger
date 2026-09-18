@@ -1151,15 +1151,15 @@ func (src *ModuleSource) NestedLegacyWorkspaceLoadError() error {
 	)
 }
 
-func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, error) {
+func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, error) {
 	// We only allow loading an env file from local modules, for safety
 	if src.Kind != ModuleSourceKindLocal {
-		return nil, "", nil
+		return nil, nil
 	}
 
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if src.Workspace.Self() != nil {
 		envFilePath := path.Join("/", src.SourceRootSubpath, ".env")
@@ -1176,16 +1176,16 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 				},
 			},
 		); status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
-			return nil, "", nil
+			return nil, nil
 		} else if err != nil {
-			return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", envFilePath, err)
+			return nil, fmt.Errorf("failed to load inner env file in %s: %w", envFilePath, err)
 		}
-		return envFile, envFilePath, nil
+		return envFile, nil
 	}
 
 	localPath, err := src.LocalContextDirectoryPath()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	// FIXME: .env must be at the root of the module directory
@@ -1218,13 +1218,13 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 		// It's possible that the module directory *doesn't exist yet*
 		// (ie. we are called from `dagger init ./FOO` and `FOO` will be populated after we return)
 		// Therefore: if parent directory doesn't exist, just return "no result" without error
-		return nil, "", nil
+		return nil, nil
 	} else if err != nil {
-		return nil, "", fmt.Errorf("failed to check for inner env file in %s: %w",
+		return nil, fmt.Errorf("failed to check for inner env file in %s: %w",
 			moduleDirPath, err)
 	}
 	if !envFileExists {
-		return nil, "", nil
+		return nil, nil
 	}
 	envFilePath := path.Join(moduleDirPath, ".env")
 	var envFile *EnvFile
@@ -1243,9 +1243,9 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 			},
 		},
 	); err != nil {
-		return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", moduleDirPath, err)
+		return nil, fmt.Errorf("failed to load inner env file in %s: %w", moduleDirPath, err)
 	}
-	return envFile, envFilePath, nil
+	return envFile, nil
 }
 
 // runningInsideModule reports whether the caller is module code rather than a
@@ -1384,7 +1384,7 @@ func (src *ModuleSource) LoadUserDefaults(ctx context.Context) (rerr error) {
 		}
 		ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
 	}
-	innerEnvFile, _, err := src.innerEnvFile(ctx)
+	innerEnvFile, err := src.innerEnvFile(ctx)
 	if err != nil {
 		return err
 	}

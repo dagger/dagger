@@ -217,6 +217,8 @@ func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 	})
 	return out, nil
 }
+
+//nolint:gocyclo // one phase per fixture scenario kind; splitting hides the order of the phases
 func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args remoteCacheFixtureArgs) (core.JSON, error) {
 	switch args.Operation {
 	case "export":

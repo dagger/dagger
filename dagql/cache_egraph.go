@@ -1440,7 +1440,6 @@ func (c *Cache) associateResultWithTermLocked(
 	c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) teachResultIdentityLocked(
 	ctx context.Context,
 	res *sharedResult,
@@ -1582,8 +1581,6 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 			extras[extra] = struct{}{}
 		}
 	}
-
-	return
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity

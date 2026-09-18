@@ -153,6 +153,8 @@ func validateTransferProducer(state, kind string, raw json.RawMessage) error {
 	}
 	return nil
 }
+
+//nolint:gocyclo // one check per foreign family and reference kind; splitting hides the order of the checks
 func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) error {
 	if len(v.SnapshotLinks) != 0 {
 		return fmt.Errorf("foreign %s carries local storage links", family)

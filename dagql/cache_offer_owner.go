@@ -276,11 +276,11 @@ func clonePartOffers(offers []PersistedPartOffer) ([]PersistedPartOffer, error) 
 	// including layer annotations, before reference relocation can mutate them.
 	data, err := json.Marshal(offers)
 	if err != nil {
-		return nil, fmt.Errorf("%w: copy pending offers: %v", ErrPersistStateNotReady, err)
+		return nil, fmt.Errorf("%w: copy pending offers: %w", ErrPersistStateNotReady, err)
 	}
 	var cloned []PersistedPartOffer
 	if err := json.Unmarshal(data, &cloned); err != nil {
-		return nil, fmt.Errorf("%w: copy pending offers: %v", ErrPersistStateNotReady, err)
+		return nil, fmt.Errorf("%w: copy pending offers: %w", ErrPersistStateNotReady, err)
 	}
 	return cloned, nil
 }
@@ -316,10 +316,8 @@ func (c *Cache) ownedResultIDsLocked(res *sharedResult) iter.Seq[sharedResultID]
 						return
 					}
 				}
-			} else {
-				if !yield(child.resultID) {
-					return
-				}
+			} else if !yield(child.resultID) {
+				return
 			}
 		}
 	}

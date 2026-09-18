@@ -10,6 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+//nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
 func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 	if bundle.Version != valueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
@@ -107,7 +108,7 @@ func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 		if slots[composite] {
 			return nil, fmt.Errorf("duplicate offer description %s", composite)
 		}
-		if output.State != part.State && !(part.State == "pending" && output.State == "completed") {
+		if output.State != part.State && (part.State != "pending" || output.State != "completed") {
 			return nil, fmt.Errorf("output state differs from recorded part %s", composite)
 		}
 		if output.Value != nil {
@@ -194,6 +195,7 @@ type transferIdentityPlan struct {
 	provenance   []egraphInputProvenanceKind
 }
 
+//nolint:gocyclo // one step per imported record kind under one transaction; splitting hides the order of the steps
 func (c *Cache) ImportValues(ctx context.Context, input ValueBundle) ([]ImportedValue, error) {
 	op, err := c.beginCacheOperation()
 	if err != nil {

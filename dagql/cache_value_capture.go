@@ -64,6 +64,8 @@ func (capture *HeldCapturedClosure) Release(ctx context.Context) error {
 	})
 	return capture.releaseErr
 }
+
+//nolint:gocyclo // one classification per held result kind; splitting hides the order of the checks
 func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelection) (*HeldCapturedClosure, error) {
 	capture := &HeldCapturedClosure{cache: c, rows: map[sharedResultID]*capturedTransferRow{}, owners: map[offerOwnerID]*offerOwner{}}
 	c.egraphMu.Lock()
@@ -336,6 +338,7 @@ type ExportedValues struct {
 	Sources []ImportedValue
 }
 
+//nolint:gocyclo // one step per export phase over the held closure; splitting hides the order of the steps
 func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
 	op, err := c.beginCacheOperation()
 	if err != nil {

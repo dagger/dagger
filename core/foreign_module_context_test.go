@@ -15,7 +15,7 @@ func TestForeignModuleContextReaders(t *testing.T) {
 		"directory":  func() error { _, err := src.LoadContextDir(ctx, srv, ".", CopyFilter{}); return err },
 		"file":       func() error { _, err := src.LoadContextFile(ctx, srv, "notes.md"); return err },
 		"git":        func() error { _, err := src.LoadContextGit(ctx, srv); return err },
-		"env":        func() error { _, _, err := src.innerEnvFile(ctx); return err },
+		"env":        func() error { _, err := src.innerEnvFile(ctx); return err },
 		"dependency": func() error { _, err := ResolveDepToSource(ctx, nil, srv, src, "./dep", "", ""); return err },
 		"stat":       func() error { _, _, err := NewModuleSourceFS(nil, src).Stat(ctx, "notes.md"); return err },
 		"exists": func() error {

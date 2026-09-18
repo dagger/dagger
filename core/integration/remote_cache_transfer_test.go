@@ -106,6 +106,7 @@ func (RemoteCacheTransferSuite) TestSchemaRecoveryCold(ctx context.Context, t *t
 	runTransferSchemaRecovery(ctx, t, true, false)
 }
 
+//nolint:gocyclo // one assertion block per recovery scenario; splitting hides the order of the scenarios
 func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultGC bool) {
 	outer := connect(ctx, t)
 	newCheckout := func(t *testctx.T) string {

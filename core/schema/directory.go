@@ -1042,7 +1042,6 @@ type withoutDirectoryArgs struct {
 	Path string
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withoutFile; sharing hides the directory vs file semantic
 func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1070,7 +1069,6 @@ type withoutFileArgs struct {
 	Path string
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withoutDirectory; sharing hides the file vs directory semantic
 func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

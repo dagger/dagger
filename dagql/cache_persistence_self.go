@@ -140,6 +140,7 @@ func persistedAbsentEnvelope(resultID uint64, handle SessionResourceHandle) Pers
 	}
 }
 
+//nolint:gocyclo // one classification per envelope kind; splitting hides the order of the checks
 func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContext, res AnyResult, root bool) (PersistedResultEncoding, error) {
 	if res == nil {
 		return PersistedResultEncoding{Envelope: PersistedResultEnvelope{
