@@ -60,11 +60,15 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 			return err
 		}
 		if err := withEngineSilent(ctx, params, func(ctx context.Context, ec *client.Client) error {
-			dimensions, err := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}).Dimensions(ctx)
+			definitions, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}))
 			if err != nil {
 				return err
 			}
-			registerArtifactDimensionFlags(artifactsCmd, dimensions)
+			var names []string
+			for _, def := range definitions {
+				names = append(names, def.Name, def.QualifiedName, def.Identifier)
+			}
+			registerArtifactDimensionFlags(artifactsCmd, names)
 			return nil
 		}); err != nil {
 			return err

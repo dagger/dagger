@@ -17,6 +17,7 @@ type TypedefModule struct {
 }
 
 type TypedefObject struct {
+	IsCollection    bool                        `json:"isCollection"`
 	Name            string                      `json:"name"`
 	Kind            string                      `json:"kind"` // "class" | "object"
 	IsExported      bool                        `json:"isExported"`
@@ -35,18 +36,19 @@ type TypedefConstructor struct {
 }
 
 type TypedefFunction struct {
-	Name        string             `json:"name"`
-	Alias       string             `json:"alias,omitempty"`
-	Cache       string             `json:"cache,omitempty"`
-	Description string             `json:"description"`
-	Deprecated  string             `json:"deprecated,omitempty"`
-	IsCheck     bool               `json:"isCheck"`
-	IsGenerator bool               `json:"isGenerator"`
-	IsUp        bool               `json:"isUp"`
-	IsAgent     bool               `json:"isAgent"`
-	Location    *TypedefLocation   `json:"location,omitempty"`
-	ReturnType  *TypedefType       `json:"returnType,omitempty"`
-	Arguments   []*TypedefArgument `json:"arguments"`
+	IsCollectionGet bool               `json:"isCollectionGet"`
+	Name            string             `json:"name"`
+	Alias           string             `json:"alias,omitempty"`
+	Cache           string             `json:"cache,omitempty"`
+	Description     string             `json:"description"`
+	Deprecated      string             `json:"deprecated,omitempty"`
+	IsCheck         bool               `json:"isCheck"`
+	IsGenerator     bool               `json:"isGenerator"`
+	IsUp            bool               `json:"isUp"`
+	IsAgent         bool               `json:"isAgent"`
+	Location        *TypedefLocation   `json:"location,omitempty"`
+	ReturnType      *TypedefType       `json:"returnType,omitempty"`
+	Arguments       []*TypedefArgument `json:"arguments"`
 }
 
 type TypedefArgument struct {
@@ -65,13 +67,15 @@ type TypedefArgument struct {
 }
 
 type TypedefProperty struct {
-	Name        string           `json:"name"`
-	Alias       string           `json:"alias,omitempty"`
-	Description string           `json:"description,omitempty"`
-	Deprecated  string           `json:"deprecated,omitempty"`
-	IsExposed   bool             `json:"isExposed"`
-	Type        *TypedefType     `json:"type,omitempty"`
-	Location    *TypedefLocation `json:"location,omitempty"`
+	IsCollectionKeys  bool             `json:"isCollectionKeys"`
+	IsCollectionDelta bool             `json:"isCollectionDelta"`
+	Name              string           `json:"name"`
+	Alias             string           `json:"alias,omitempty"`
+	Description       string           `json:"description,omitempty"`
+	Deprecated        string           `json:"deprecated,omitempty"`
+	IsExposed         bool             `json:"isExposed"`
+	Type              *TypedefType     `json:"type,omitempty"`
+	Location          *TypedefLocation `json:"location,omitempty"`
 }
 
 type TypedefEnum struct {

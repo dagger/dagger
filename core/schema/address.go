@@ -108,6 +108,10 @@ func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.W
 	if len(selected.Entries) > 1 && len(parsed.Types) > 0 {
 		selected = selected.FilterTypeNames(parsed.Types)
 	}
+	selected, err = expandArtifacts(ctx, selected)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", uri, err)
+	}
 	if len(selected.Entries) == 0 {
 		return nil, fmt.Errorf("resolve %q: no artifact matches", uri)
 	}

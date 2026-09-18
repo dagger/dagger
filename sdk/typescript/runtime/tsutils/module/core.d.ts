@@ -25,6 +25,10 @@ export function up(): MethodDecorator
 export function agent(): MethodDecorator
 export function argument(opts?: ArgumentOptions): ParameterDecorator
 export function object(): ClassDecorator
+export function collection(): ClassDecorator
+export function keys(): PropertyDecorator
+export function get(): MethodDecorator
+export function delta(): PropertyDecorator
 export function field(alias?: string): PropertyDecorator
 export function enumType(): ClassDecorator
 export function entrypoint(files: string[]): Promise<void>

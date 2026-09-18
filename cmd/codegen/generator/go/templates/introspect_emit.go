@@ -465,7 +465,18 @@ func (funcs goTemplateFuncs) ModuleIntrospectionJSON(moduleName string) ([]byte,
 	err := funcs.visitTypes(false, &visitorFuncs{
 		RootVisitor: func(_ string) error { return nil },
 		StructVisitor: func(_ *parseState, _ *types.Named, _ *types.TypeName, spec *parsedObjectType, _ *types.Struct) error {
-			moduleTypes = append(moduleTypes, introspectObject(spec))
+			if spec.isCollection {
+				collection, batch, err := introspectCollection(spec)
+				if err != nil {
+					return err
+				}
+				moduleTypes = append(moduleTypes, collection)
+				if batch != nil {
+					moduleTypes = append(moduleTypes, batch)
+				}
+			} else {
+				moduleTypes = append(moduleTypes, introspectObject(spec))
+			}
 			if strcase.ToCamel(spec.name) == mainObjCamel {
 				mainObject = spec
 			}
