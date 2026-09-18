@@ -1568,7 +1568,32 @@ func (svc *Service) runAndSnapshotChanges(
 	snapshot.Dir.setValue(sourceDirPath)
 	snapshot.Snapshot.setValue(immutableRef)
 
-	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
+	// The current call is whatever drove the tool batch (an LLM step), not a
+	// Directory-returning field, so the result needs a Directory-typed call of
+	// its own; mirroring newChangesetFromMerge, a synthetic one keyed on the
+	// snapshot. Minting it for the current call would make everything derived
+	// from it (its changes, the changeset's after) try to reconstruct an LLM.
+	inst, err := dagql.NewObjectResultForCall(snapshot, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		Type:        dagql.NewResultCallType(snapshot.Type()),
+		SyntheticOp: "mcp_workspace_snapshot",
+		ImplicitInputs: []*dagql.ResultCallArg{
+			{
+				Name: "snapshotID",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: immutableRef.SnapshotID(),
+				},
+			},
+			{
+				Name: "dir",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: sourceDirPath,
+				},
+			},
+		},
+	})
 	if err != nil {
 		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
 		return res, false, err
