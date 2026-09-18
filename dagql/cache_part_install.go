@@ -417,7 +417,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 				}
 			}
 			if !found {
-				return nil, PartInstallRefused, partRefused("commit: donated facts changed")
+				return nil, PartInstallRefused, partRefused("commit: dependency not held")
 			}
 		}
 	}
