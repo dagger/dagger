@@ -1,9 +1,7 @@
-package main
+package dagui
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -12,13 +10,13 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 )
 
-// buildTestID constructs a small recipe with a diamond in it:
+// buildRecipeTestID constructs a small recipe with a diamond in it:
 //
 //	container.from(address: "alpine").withDirectory(directory: <ID git.tree>)
 //
 // where the git chain also hangs off the root, so its calls are reachable
 // both as receivers and as a nested ID argument.
-func buildTestID(t *testing.T) *call.ID {
+func buildRecipeTestID(t *testing.T) *call.ID {
 	t.Helper()
 
 	dirType := &ast.Type{NamedType: "Directory", NonNull: true}
@@ -40,73 +38,38 @@ func buildTestID(t *testing.T) *call.ID {
 			))
 }
 
-func writeTestID(t *testing.T, id *call.ID) string {
+func recipeSourceOf(t *testing.T, label string, id *call.ID) RecipeSource {
 	t.Helper()
-	enc, err := id.Encode()
+	dag, err := id.ToProto()
 	if err != nil {
-		t.Fatalf("encode: %v", err)
+		t.Fatalf("to proto: %v", err)
 	}
-	path := filepath.Join(t.TempDir(), "id.txt")
-	if err := os.WriteFile(path, []byte(enc+"\n"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	return path
+	return RecipeSource{Label: label, Graph: NewRecipeGraph(dag.GetRecipe())}
 }
 
-func TestLoad(t *testing.T) {
-	src, err := load(writeTestID(t, buildTestID(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if src.graph == nil {
-		t.Fatal("no graph")
-	}
+var recipeTestFormat = RecipeFormat{MaxLiteral: 72, Spine: 12}
+
+func TestRecipeGraph(t *testing.T) {
+	g := recipeSourceOf(t, "id", buildRecipeTestID(t)).Graph
 	// container, from, withDirectory, git, tree
-	if got := len(src.graph.calls); got != 5 {
+	if got := len(g.Calls()); got != 5 {
 		t.Errorf("distinct calls = %d, want 5", got)
 	}
-	if got := src.graph.qualName(src.graph.root); got != "Container.withDirectory" {
+	if got := g.qualName(g.Root()); got != "Container.withDirectory" {
 		t.Errorf("root qualName = %q, want %q", got, "Container.withDirectory")
 	}
-	if got := len(src.graph.spine(src.graph.root)); got != 3 {
+	if got := len(g.spine(g.Root())); got != 3 {
 		t.Errorf("root spine depth = %d, want 3", got)
 	}
 }
 
-// TestLoadStdin covers the no-argument compatibility path: a base64 ID piped
-// on stdin, as the pre-flags dump-id consumed it.
-func TestLoadStdin(t *testing.T) {
-	path := writeTestID(t, buildTestID(t))
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	orig := os.Stdin
-	os.Stdin = f
-	defer func() { os.Stdin = orig }()
-
-	src, err := load("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if src.label != "<stdin>" {
-		t.Errorf("label = %q, want %q", src.label, "<stdin>")
-	}
-	if got := len(src.graph.calls); got != 5 {
-		t.Errorf("distinct calls = %d, want 5", got)
-	}
-}
-
-func TestStats(t *testing.T) {
-	src, err := load(writeTestID(t, buildTestID(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestRecipeStats(t *testing.T) {
+	src := recipeSourceOf(t, "id", buildRecipeTestID(t))
 	var buf bytes.Buffer
-	src.graph.printStats(&buf, src, formatOpts{maxLit: 72, spine: 12})
+	src.Graph.WriteStats(&buf, src, recipeTestFormat)
 	out := buf.String()
 	for _, want := range []string{
+		"== id ==",
 		"distinct calls: 5",
 		"root:          Container.withDirectory Container!",
 		"Query.git",
@@ -118,13 +81,10 @@ func TestStats(t *testing.T) {
 	}
 }
 
-func TestTree(t *testing.T) {
-	src, err := load(writeTestID(t, buildTestID(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestRecipeTree(t *testing.T) {
+	src := recipeSourceOf(t, "id", buildRecipeTestID(t))
 	var buf bytes.Buffer
-	src.graph.printTree(&buf, formatOpts{maxLit: 72, spine: 12}, 0)
+	src.Graph.WriteTree(&buf, recipeTestFormat, 0)
 	out := buf.String()
 	for _, want := range []string{
 		`from(address: "alpine")`,
@@ -137,13 +97,10 @@ func TestTree(t *testing.T) {
 	}
 }
 
-func TestFind(t *testing.T) {
-	src, err := load(writeTestID(t, buildTestID(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestRecipeFind(t *testing.T) {
+	src := recipeSourceOf(t, "id", buildRecipeTestID(t))
 	var buf bytes.Buffer
-	src.graph.printFind(&buf, regexp.MustCompile(`GitRepository\.tree`), formatOpts{maxLit: 72, spine: 12})
+	src.Graph.WriteFind(&buf, regexp.MustCompile(`GitRepository\.tree`), recipeTestFormat)
 	out := buf.String()
 	for _, want := range []string{
 		"== 1 call(s) matching",
@@ -156,23 +113,18 @@ func TestFind(t *testing.T) {
 	}
 }
 
-func TestDiff(t *testing.T) {
-	base := buildTestID(t)
+func TestRecipeDiff(t *testing.T) {
+	base := buildRecipeTestID(t)
 	extended := base.Append(&ast.Type{NamedType: "Container", NonNull: true}, "withExec",
 		call.WithArgs(call.NewArgument("args", call.NewLiteralList(call.NewLiteralString("true")), false)))
 
-	a, err := load(writeTestID(t, base))
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := load(writeTestID(t, extended))
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := recipeSourceOf(t, "a", base)
+	b := recipeSourceOf(t, "b", extended)
 	var buf bytes.Buffer
-	printDiff(&buf, a, b, formatOpts{maxLit: 72, spine: 12})
+	WriteRecipeDiff(&buf, a, b, recipeTestFormat)
 	out := buf.String()
 	for _, want := range []string{
+		"== diff a -> b ==",
 		"calls:    5 -> 6 (+1)",
 		"root spine: 3 -> 4 selectors, identical prefix of 3",
 		`withExec(args: ["true"])`,
@@ -184,9 +136,9 @@ func TestDiff(t *testing.T) {
 	}
 }
 
-// TestPaths verifies the expansion count: a call referenced from two places
-// counts one root→call path per reference chain.
-func TestPaths(t *testing.T) {
+// TestRecipePaths verifies the expansion count: a call referenced from two
+// places counts one root→call path per reference chain.
+func TestRecipePaths(t *testing.T) {
 	// the same tree ID is used as an argument twice
 	dirType := &ast.Type{NamedType: "Directory", NonNull: true}
 	ctrType := &ast.Type{NamedType: "Container", NonNull: true}
@@ -201,13 +153,9 @@ func TestPaths(t *testing.T) {
 		Append(ctrType, "withDirectory",
 			call.WithArgs(call.NewArgument("directory", call.NewLiteralID(tree), false)))
 
-	src, err := load(writeTestID(t, id))
-	if err != nil {
-		t.Fatal(err)
-	}
-	g := src.graph
+	g := recipeSourceOf(t, "id", id).Graph
 	var treeDgst string
-	for dgst := range g.calls {
+	for dgst := range g.Calls() {
 		if g.qualName(dgst) == "GitRepository.tree" {
 			treeDgst = dgst
 		}
