@@ -62,7 +62,10 @@ func TestWorkspaceGitCheckoutReuse(t *testing.T) {
 				cache, err := dagql.NewCache(ctx, "", nil, nil)
 				require.NoError(t, err)
 				ctx = dagql.ContextWithCache(ctx, cache)
-				srv, err := dagql.NewServer(ctx, &core.Query{})
+				// Main's shallow tree path reads the platform from the current query.
+				query := core.NewRoot(&currentTypeDefsTestServer{platform: core.Platform{OS: "linux", Architecture: "arm64"}})
+				ctx = core.ContextWithQuery(ctx, query)
+				srv, err := dagql.NewServer(ctx, query)
 				require.NoError(t, err)
 				srv.InstallObject(dagql.NewClass[*core.Directory](srv))
 				srv.InstallObject(dagql.NewClass[*core.GitRepository](srv))
