@@ -380,7 +380,12 @@ func TestHTTPProducerCleanup(t *testing.T) {
 		t.Run(exit, func(t *testing.T) {
 			if exit == "timestamp" && os.Getenv("DAGGER_TEST_HTTP_TIMESTAMP_FAULT") != "1" {
 				tracer, err := exec.LookPath("strace")
-				require.NoError(t, err)
+				if err != nil {
+					// The timestamp fault is injected by tracing the re-executed
+					// test binary's utimensat; without strace there is no way to
+					// inject it, so the case is unexecuted rather than failed.
+					t.Skipf("the timestamp fault needs strace to inject it: %v", err)
+				}
 				binary, err := os.Executable()
 				require.NoError(t, err)
 				cmd := exec.Command(tracer, "-f", "-qq", "-o", filepath.Join(t.TempDir(), "syscalls.log"), "-e", "trace=utimensat", "-e", "inject=utimensat:error=EIO:when=1", binary, "-test.run", "^TestHTTPProducerCleanup/timestamp$", "-test.count=1", "-test.v")
