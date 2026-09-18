@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -87,6 +88,84 @@ func TestDiffGitHeaderRewriter(t *testing.T) {
 		"diff --git a/add.txt b/add.txt\nnew file mode 100644\n--- /dev/null\n+++ b/add.txt\n@@ -0,0 +1 @@\n+hi\ntrailing-no-newline",
 		out.String())
 }
+
+func TestTruncatingWriter(t *testing.T) {
+	t.Run("under limit passes everything through", func(t *testing.T) {
+		var out bytes.Buffer
+		tw := &truncatingWriter{w: &out, limit: 100}
+		n, err := tw.Write([]byte("hello\n"))
+		require.NoError(t, err)
+		require.Equal(t, 6, n)
+		require.Equal(t, "hello\n", out.String())
+		require.Zero(t, tw.Dropped())
+		require.True(t, tw.atLineStart())
+	})
+
+	t.Run("cuts mid-write and counts the rest", func(t *testing.T) {
+		var out bytes.Buffer
+		tw := &truncatingWriter{w: &out, limit: 8}
+		// Writes always claim full success so a MultiWriter sibling
+		// (the patch file) keeps receiving the whole stream.
+		n, err := tw.Write([]byte("0123456789"))
+		require.NoError(t, err)
+		require.Equal(t, 10, n)
+		require.Equal(t, "01234567", out.String())
+		require.EqualValues(t, 2, tw.Dropped())
+		require.False(t, tw.atLineStart())
+
+		n, err = tw.Write([]byte("abcdef\n"))
+		require.NoError(t, err)
+		require.Equal(t, 7, n)
+		require.Equal(t, "01234567", out.String(), "nothing more forwarded once the budget is spent")
+		require.EqualValues(t, 9, tw.Dropped())
+	})
+
+	t.Run("cut exactly at limit across chunks", func(t *testing.T) {
+		var out bytes.Buffer
+		tw := &truncatingWriter{w: &out, limit: 6}
+		for _, chunk := range []string{"ab", "cd", "ef", "gh"} {
+			n, err := tw.Write([]byte(chunk))
+			require.NoError(t, err)
+			require.Equal(t, 2, n)
+		}
+		require.Equal(t, "abcdef", out.String())
+		require.EqualValues(t, 2, tw.Dropped())
+	})
+
+	t.Run("nothing written is at line start", func(t *testing.T) {
+		tw := &truncatingWriter{w: io.Discard, limit: 0}
+		n, err := tw.Write([]byte("dropped"))
+		require.NoError(t, err)
+		require.Equal(t, 7, n)
+		require.EqualValues(t, 7, tw.Dropped())
+		require.True(t, tw.atLineStart())
+	})
+
+	t.Run("propagates underlying errors", func(t *testing.T) {
+		tw := &truncatingWriter{w: failingWriter{}, limit: 100}
+		_, err := tw.Write([]byte("x"))
+		require.ErrorIs(t, err, errFailingWriter)
+	})
+
+	t.Run("sits inside a MultiWriter without starving siblings", func(t *testing.T) {
+		var full, capped bytes.Buffer
+		tw := &truncatingWriter{w: &capped, limit: 4}
+		w := io.MultiWriter(&full, tw)
+		_, err := io.WriteString(w, "line one\n")
+		require.NoError(t, err)
+		_, err = io.WriteString(w, "line two\n")
+		require.NoError(t, err)
+		require.Equal(t, "line one\nline two\n", full.String())
+		require.Equal(t, "line", capped.String())
+		require.EqualValues(t, len("line one\nline two\n")-4, tw.Dropped())
+	})
+}
+
+var errFailingWriter = errors.New("failing writer")
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errFailingWriter }
 
 // TestWriteGitDiffPatch_Integration generates a real patch the way AsPatch
 // does, asserts the `diff --git` header of every change kind (added, deleted,

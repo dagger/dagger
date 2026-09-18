@@ -759,8 +759,20 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				return enginetel.Task(ctx, "git diff", func(ctx context.Context) error {
 					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 					defer stdio.Close()
-					return writeGitDiffPatch(ctx, root, pathSpecs,
-						io.MultiWriter(patchFile, stdio.Stdout), stdio.Stdout, stdio.Stderr)
+					// The patch file gets everything; the span's logs only
+					// get a bounded prefix, since the whole patch would
+					// otherwise stream to the client as log records before
+					// the caller has even asked for the file.
+					logged := &truncatingWriter{w: stdio.Stdout, limit: maxPatchTelemetryBytes}
+					err := writeGitDiffPatch(ctx, root, pathSpecs,
+						io.MultiWriter(patchFile, logged), stdio.Stdout, stdio.Stderr)
+					if dropped := logged.Dropped(); dropped > 0 {
+						if !logged.atLineStart() {
+							fmt.Fprintln(stdio.Stdout)
+						}
+						fmt.Fprintf(stdio.Stdout, "[... %d bytes truncated; read Changeset.asPatch for the full patch]\n", dropped)
+					}
+					return err
 				})
 			})
 		}, mountRefAsReadOnly)
@@ -866,6 +878,58 @@ func (r *diffGitHeaderRewriter) Flush() error {
 	r.buf = nil
 	_, err := io.WriteString(r.w, fixDiffGitHeader(line))
 	return err
+}
+
+// maxPatchTelemetryBytes bounds how much of a patch AsPatch copies into its
+// span's logs. The copy exists so the patch can be read in the trace, not to
+// carry it: diffing two unrelated trees produces patches in the hundreds of
+// megabytes, every byte of which would otherwise stream to the client as log
+// records before the caller has even read the file.
+const maxPatchTelemetryBytes = 256 << 10
+
+// truncatingWriter forwards at most limit bytes to w and discards the rest,
+// counting what it dropped so the caller can say so afterwards. Every write
+// reports full success (short of w erroring), so the writer can sit inside an
+// io.MultiWriter without cutting off its siblings once the budget is spent.
+type truncatingWriter struct {
+	w       io.Writer
+	limit   int64
+	written int64
+	dropped int64
+	last    byte
+}
+
+func (t *truncatingWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	remaining := t.limit - t.written
+	if remaining <= 0 {
+		t.dropped += int64(n)
+		return n, nil
+	}
+	if int64(n) > remaining {
+		t.dropped += int64(n) - remaining
+		p = p[:remaining]
+	}
+	if len(p) == 0 {
+		return n, nil
+	}
+	if _, err := t.w.Write(p); err != nil {
+		return 0, err
+	}
+	t.written += int64(len(p))
+	t.last = p[len(p)-1]
+	return n, nil
+}
+
+// Dropped returns how many bytes were discarded beyond the limit.
+func (t *truncatingWriter) Dropped() int64 {
+	return t.dropped
+}
+
+// atLineStart reports whether the next forwarded byte would begin a new line,
+// i.e. nothing has been forwarded yet or the last forwarded byte was a newline.
+func (t *truncatingWriter) atLineStart() bool {
+	return t.written == 0 || t.last == '\n'
 }
 
 // fixDiffGitHeader normalizes the path prefixes on a `diff --git` header line.
