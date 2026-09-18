@@ -77,6 +77,12 @@ Set a single value with the same command:
 dagger module settings go version 1.26
 ```
 
+A value that starts with a dash, such as build tags in `goflags`, needs `--` in front of it. Without it, the CLI reads the value as flags of its own and fails with `invalid argument "extended" for "-s, --silent" flag`. Quoting the value does not help, since the shell removes the quotes before the CLI sees them:
+
+```shell
+dagger module settings go goflags -- -tags=extended
+```
+
 The settings that come up most often:
 
 - **`version`**: one Go toolchain for every Go module in the workspace. Without it, each module is tested and generated with the toolchain its own `go.mod` asks for, in a `golang:<version>-alpine` image.

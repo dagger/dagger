@@ -107,7 +107,8 @@ List the current settings with `dagger module settings go`, then change one with
   `go generate` in, as paths and globs from the workspace root.
 - `goflags` sets the `GOFLAGS` environment variable in every Go container, which
   is how build tags are passed, as in `-tags=extended`. Flags that take a value
-  use the `-flag=value` form.
+  use the `-flag=value` form. On the command line, put `--` before the value so
+  the CLI does not read its leading dash as flags of its own.
 - `mountPath` is the absolute container path where the workspace is mounted. It
   defaults to `/src/<workspace name>`, where the name is the last segment of
   the workspace address, usually the repository name.
@@ -115,6 +116,10 @@ List the current settings with `dagger module settings go`, then change one with
 ```bash
 # Use one Go version for the whole workspace, whatever each go.mod says
 dagger module settings go version 1.26
+
+# Pass build tags to every Go command. The value starts with a dash, so it
+# goes after "--"; quoting it is not enough.
+dagger module settings go goflags -- -tags=extended
 ```
 
 List-valued settings are edited directly in `dagger.toml`:
