@@ -67,6 +67,7 @@ Examples:
   dagger agent -r                 # Resume a saved session (interactive picker)
   dagger agent -r=&lt;session&gt;       # Resume a specific saved session
   dagger agent --trace &lt;id&gt;       # Restore a past session from its Dagger Cloud trace
+  dagger agent --app-server       # Serve the composed agents to a Codex app-server client over stdio
 
 
 ```
@@ -77,6 +78,7 @@ dagger agent [options] [name...]
 
 ```
       --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
+      --app-server                Serve the Codex app-server protocol (JSON-RPC over stdio) instead of opening the interactive prompt (experimental)
   -l, --list                      List available agents
       --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
   -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)

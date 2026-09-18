@@ -46,8 +46,15 @@ Examples:
   dagger agent -r                 # Resume a saved session (interactive picker)
   dagger agent -r=<session>       # Resume a specific saved session
   dagger agent --trace <id>       # Restore a past session from its Dagger Cloud trace
+  dagger agent --app-server       # Serve the composed agents to a Codex app-server client over stdio
 `,
 	Args: cobra.ArbitraryArgs,
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if agentAppServer {
+			return prepareAppServerFrontend(cmd)
+		}
+		return nil
+	},
 	Annotations: map[string]string{
 		// Drop into the same interactive prompt mode as `dagger shell`, so keep
 		// completed conversation items in scrollback rather than GC'ing them
@@ -60,6 +67,14 @@ Examples:
 		// happens (hack/designs/resume-from-trace.md §5.4).
 		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
 			return err
+		}
+		if agentAppServer {
+			// The protocol server owns stdio and runs until the client hangs
+			// up; there is no prompt to resume or list into.
+			if agentListMode || resume || agentTrace != "" {
+				return fmt.Errorf("--app-server cannot be combined with --list, --resume or --trace")
+			}
+			return runAgentAppServer(cmd.Context(), args)
 		}
 		return withEngine(
 			cmd.Context(),
@@ -157,6 +172,8 @@ func init() {
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
 		"With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not")
+	agentCmd.Flags().BoolVar(&agentAppServer, "app-server", false,
+		"Serve the Codex app-server protocol (JSON-RPC over stdio) instead of opening the interactive prompt (experimental)")
 }
 
 // agentIncludeVars maps the positional agent names to the `include` variable of
