@@ -855,7 +855,17 @@ func (c *Client) Close() (rerr error) {
 		// once it has sent everything. Drain them now, before internalCancel
 		// closes the connections from our side, or the final spans (including
 		// the error that ended the run) never reach the frontend.
-		if err := c.telemetry.Wait(); err != nil {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), clientShutdownTimeout())
+		drained := make(chan error, 1)
+		go func() { drained <- c.telemetry.Wait() }()
+		var err error
+		select {
+		case err = <-drained:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+		cancel()
+		if err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
 		}
 	}
@@ -926,6 +936,8 @@ type otlpConsumer struct {
 
 const telemetryReconnectDelay = time.Second
 
+var errPermanentTelemetryConnection = errors.New("permanent telemetry connection failure")
+
 type liveTelemetryEncoding uint8
 
 const (
@@ -967,23 +979,18 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			}
 			logger.Debug("reconnecting to OTLP stream", "cursor", cursor, "err", err)
 
-			for {
-				timer := time.NewTimer(telemetryReconnectDelay)
-				select {
-				case <-timer.C:
-				case <-ctx.Done():
-					timer.Stop()
-					return nil
+			if err := waitForTelemetryReconnect(ctx); err != nil {
+				return nil //nolint:nilerr // Cancellation ends the background consumer normally.
+			}
+			resp, err = c.connect(ctx, cursor) //nolint:bodyclose // The outer loop closes every response after consumeResponse.
+			if ctx.Err() != nil {
+				if resp != nil {
+					resp.Body.Close()
 				}
-
-				resp, err = c.connect(ctx, cursor) //nolint:bodyclose // The outer loop closes every response after consumeResponse.
-				if err == nil {
-					break
-				}
-				if ctx.Err() != nil {
-					return nil //nolint:nilerr // Cancellation ends the background reconnect loop normally.
-				}
-				logger.Debug("OTLP stream reconnect failed", "cursor", cursor, "err", err)
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("reconnect to OTLP stream: %w", err)
 			}
 		}
 	})
@@ -992,6 +999,29 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 }
 
 func (c *otlpConsumer) connect(ctx context.Context, cursor int64) (*http.Response, error) {
+	for {
+		resp, err := c.connectOnce(ctx, cursor)
+		if err == nil || errors.Is(err, errPermanentTelemetryConnection) {
+			return resp, err
+		}
+		if err := waitForTelemetryReconnect(ctx); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func waitForTelemetryReconnect(ctx context.Context) error {
+	timer := time.NewTimer(telemetryReconnectDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *otlpConsumer) connectOnce(ctx context.Context, cursor int64) (*http.Response, error) {
 	req := (&http.Request{
 		Method: http.MethodGet,
 		URL: &url.URL{
@@ -1016,11 +1046,17 @@ func (c *otlpConsumer) connect(ctx context.Context, cursor int64) (*http.Respons
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
+		err := fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
+		switch resp.StatusCode {
+		case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return nil, err
+		default:
+			return nil, fmt.Errorf("%w: %w", errPermanentTelemetryConnection, err)
+		}
 	}
 	if _, err := liveTelemetryResponseEncoding(resp); err != nil {
 		resp.Body.Close()
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errPermanentTelemetryConnection, err)
 	}
 	return resp, nil
 }
@@ -1228,11 +1264,7 @@ func (c *Client) init(ctx context.Context) error {
 	return resp.Body.Close()
 }
 
-func (c *Client) shutdownServer() error {
-	// don't immediately cancel shutdown if we're shutting down because we were
-	// canceled
-	ctx := context.WithoutCancel(c.internalCtx)
-
+func clientShutdownTimeout() time.Duration {
 	timeout := 10 * time.Second
 	if timeoutStr, ok := os.LookupEnv(shutdownTimeoutEnvName); ok {
 		if interval, err := time.ParseDuration(timeoutStr); err == nil {
@@ -1241,7 +1273,13 @@ func (c *Client) shutdownServer() error {
 			slog.Warn("invalid "+shutdownTimeoutEnvName+" value, using default 10 seconds", "error", err)
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	return timeout
+}
+
+func (c *Client) shutdownServer() error {
+	// don't immediately cancel shutdown if we're shutting down because we were
+	// canceled
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), clientShutdownTimeout())
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.ShutdownEndpoint, nil)
