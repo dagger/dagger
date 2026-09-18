@@ -701,10 +701,10 @@ func TestBoundToolsOutliveModuleSession(t *testing.T) {
 				}),
 			}.Install(srv)
 			moduleID := call.New().Append(dagql.Int(0).Type(), "toolModule")
-			_, err = srv.LoadType(producerCtx, moduleID)
+			module, err := srv.LoadType(producerCtx, moduleID)
 			require.NoError(t, err)
 			require.Equal(t, 1, moduleCalls)
-			moduleRef, err := dagql.ResultCallRefFromRecipeID(producerCtx, moduleID)
+			moduleRef, err := dagql.ResultCallRefForSchema(producerCtx, module)
 			require.NoError(t, err)
 			method := dagql.Func("check", func(context.Context, *liftTestRunner, struct{}) (dagql.String, error) {
 				methodCalls++
@@ -749,6 +749,25 @@ func TestBoundToolsOutliveModuleSession(t *testing.T) {
 			require.Equal(t, 2, moduleCalls, "dispatch must reload the released module recipe")
 			require.Zero(t, method.Spec.Module.ResultRef.ResultID, "dispatch must not overwrite portable schema provenance")
 			require.NotNil(t, method.Spec.Module.ResultRef.Call)
+
+			// Warm dispatch must reuse both the module and the tool result,
+			// with the same portable identity as the original schema recipe.
+			out, err = toolsets[0].tools[0].Call(consumerCtx, map[string]any{})
+			require.NoError(t, err)
+			require.Equal(t, "still active", out)
+			runner, ok, err := mcp.boundToolObject(consumerCtx, srv, "LiftTestRunner")
+			require.NoError(t, err)
+			require.True(t, ok)
+			result, err := runner.Select(consumerCtx, srv, dagql.Selector{Field: "check"})
+			require.NoError(t, err)
+			resultID, err := result.RecipeID(consumerCtx)
+			require.NoError(t, err)
+			expectedID := runnerID.Append(dagql.String("").Type(), "check",
+				call.WithModule(call.NewModule(moduleID, "tools", "", "")))
+			require.Equal(t, expectedID.Digest(), resultID.Digest())
+			require.Equal(t, 1, constructorCalls)
+			require.Equal(t, 1, methodCalls, "warm dispatch must not replay the tool")
+			require.Equal(t, 2, moduleCalls, "warm dispatch must not replay the module")
 			require.NoError(t, cache.ReleaseSession(consumerCtx, "tool-consumer"))
 			require.Zero(t, cache.Size(), "module dependencies must be released with the final session")
 		})
