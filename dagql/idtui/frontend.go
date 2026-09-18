@@ -157,17 +157,16 @@ type ViewHandle interface {
 }
 
 // TraceFrontend is the optional interface 'dagger trace' drives for
-// incremental loading and report zooming: snapshot import, lazy span/log
-// providers, surfaced-failure prefetch, and name-based zoom targets. Only the
-// pretty frontend implements it; other frontends receive a plain OTLP
-// span/log stream instead.
+// incremental loading and report zooming: lazy span/log providers,
+// surfaced-failure prefetch, and name-based zoom targets. Spans arrive through
+// the ordinary OTLP exporters, carrying the dagger.io/ui.* attributes Cloud's
+// dagui view stamps on them (child count, has-logs) that the lazy-expand
+// affordance needs. Only the pretty frontend implements it; other frontends
+// receive the whole trace as a plain OTLP span/log stream instead.
 type TraceFrontend interface {
 	// SetTraceID lets the frontend point surfaced failure logs at
 	// 'dagger cloud logs <trace> <span>' for the full output.
 	SetTraceID(string)
-	// ImportSnapshots folds Cloud span snapshots (carrying ChildCount and
-	// Partial, which OTLP drops) into the frontend's DB.
-	ImportSnapshots([]dagui.SpanSnapshot)
 	// SetLogProvider/SetSpanProvider register the lazy fetchers fired when a
 	// span is expanded or a failure is surfaced.
 	SetLogProvider(func(id dagui.SpanID, descendants bool))

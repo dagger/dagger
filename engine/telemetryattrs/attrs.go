@@ -13,6 +13,27 @@ const (
 
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
+	// Dagger Cloud's /v1/traces stream stamps these on every span it emits
+	// when asked for view=dagui (api/otlp/stream.go in dagger.io). They are
+	// egress-only: nothing publishes them, and a live session never sees
+	// them. They carry what an incremental, lazily-expanding view of a
+	// stored trace needs and the OTLP span form otherwise lacks.
+	//
+	// UIChildCountAttr is the span's total child count in Cloud, so a span
+	// whose children have not been fetched still shows as expandable. (int)
+	UIChildCountAttr = "dagger.io/ui.child_count"
+	// UIHasLogsAttr reports whether Cloud holds logs for the span, so a span
+	// whose logs have not been fetched still shows as having them. (bool)
+	UIHasLogsAttr = "dagger.io/ui.has_logs"
+	// UIPartialAttr marks a span served from an incremental (priority-only)
+	// selection: the trace holds more beneath it than the stream carried,
+	// and a client must fetch children on demand. (bool)
+	UIPartialAttr = "dagger.io/ui.partial"
+	// UIUpdateTimeUnixNanoAttr is the Cloud-side time the span row was last
+	// updated, which a client passes back as the `before` bound of a later
+	// backfill so that fetch is bounded rather than live. (int)
+	UIUpdateTimeUnixNanoAttr = "dagger.io/ui.update_time_unix_nano"
+
 	// LogRoleAttr describes a semantic role for an OTLP log record whose body
 	// carries data rather than ordinary log output. LogRoleSpanName means the
 	// body is the latest display name for the span the record is attributed to;
