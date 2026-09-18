@@ -3450,120 +3450,14 @@ func gitRefWorkspaceChanges(
 	if err != nil || !honorGitignore {
 		return inst, err
 	}
-	after, changed, err := withoutGitIgnoredAdditions(ctx, srv, root, inst)
+	after, removed, err := core.WithoutGitIgnoredAdditions(ctx, srv, root, inst)
 	if err != nil {
 		return inst, err
 	}
-	if !changed {
+	if removed == 0 {
 		return inst, nil
 	}
 	return changesFrom(after)
-}
-
-// withoutGitIgnoredAdditions removes from after every path that changes reports
-// as added and the after tree's .gitignore rules ignore, mirroring git: ignore
-// rules only ever hide untracked files, so modifications and deletions of
-// tracked paths are kept even when those paths match a rule. Directories left
-// empty by the removals, and that only exist because of them, are removed too,
-// since git never reports an empty directory. Reports whether anything was
-// removed.
-func withoutGitIgnoredAdditions(
-	ctx context.Context,
-	srv *dagql.Server,
-	after dagql.ObjectResult[*core.Directory],
-	changes dagql.ObjectResult[*core.Changeset],
-) (dagql.ObjectResult[*core.Directory], bool, error) {
-	paths, err := changes.Self().ComputePaths(ctx)
-	if err != nil {
-		return after, false, err
-	}
-	ignored, err := after.Self().GitIgnoredPaths(ctx, after, paths.Added)
-	if err != nil {
-		return after, false, err
-	}
-	if len(ignored) == 0 {
-		return after, false, nil
-	}
-	added := make(map[string]struct{}, len(paths.Added))
-	for _, p := range paths.Added {
-		added[p] = struct{}{}
-	}
-	// Ignored directories are added wholesale (a directory in Added does not
-	// exist in the baseline), so dropping the outermost ones covers their
-	// contents. Everything else is dropped file by file.
-	var dirs, files []string
-	for _, p := range ignored {
-		if strings.HasSuffix(p, "/") {
-			dirs = append(dirs, p)
-		}
-	}
-	slices.Sort(dirs)
-	var outermost []string
-	for _, d := range dirs {
-		if !underAnyDir(d, outermost) {
-			outermost = append(outermost, d)
-		}
-	}
-	for _, p := range ignored {
-		if !strings.HasSuffix(p, "/") && !underAnyDir(p, outermost) {
-			files = append(files, p)
-		}
-	}
-	for _, d := range outermost {
-		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutDirectory", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(strings.TrimSuffix(d, "/"))},
-		}}); err != nil {
-			return after, false, err
-		}
-	}
-	if len(files) > 0 {
-		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutFiles", Args: []dagql.NamedInput{
-			{Name: "paths", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(files...))},
-		}}); err != nil {
-			return after, false, err
-		}
-	}
-	// Prune newly added directories that held nothing but ignored files,
-	// deepest first so a chain of them collapses.
-	var parents []string
-	seen := map[string]struct{}{}
-	for _, f := range files {
-		for dir := path.Dir(f); dir != "." && dir != "/"; dir = path.Dir(dir) {
-			if _, ok := seen[dir]; ok {
-				break
-			}
-			seen[dir] = struct{}{}
-			if _, ok := added[dir+"/"]; ok {
-				parents = append(parents, dir)
-			}
-		}
-	}
-	slices.SortFunc(parents, func(a, b string) int { return strings.Count(b, "/") - strings.Count(a, "/") })
-	for _, dir := range parents {
-		entries, err := after.Self().Entries(ctx, after, dir)
-		if err != nil {
-			return after, false, err
-		}
-		if len(entries) > 0 {
-			continue
-		}
-		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutDirectory", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(dir)},
-		}}); err != nil {
-			return after, false, err
-		}
-	}
-	return after, true, nil
-}
-
-// underAnyDir reports whether p lies beneath one of dirs (each ending in "/").
-func underAnyDir(p string, dirs []string) bool {
-	for _, d := range dirs {
-		if p != d && strings.HasPrefix(p, d) {
-			return true
-		}
-	}
-	return false
 }
 
 // workspaceExportChanges returns every pending overlay edit of a Git-backed
