@@ -507,19 +507,30 @@ func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetti
 	return nil
 }
 
-// workspaceSettingsWrappedColumnWidths gives the module and key columns their
-// full width and splits what remains of the view between the value and
-// description columns, which wrap within it.
+// workspaceSettingsWrappedColumnWidths fits every column to the view, for
+// cells that wrap within their column. The module and key columns keep their
+// full width when the value and description columns still get a readable
+// share of the view; otherwise they narrow too. Only a view narrower than the
+// headers themselves overflows.
 func workspaceSettingsWrappedColumnWidths(rows [][]string, viewWidth int) []int {
 	full := workspaceSettingsFullColumnWidths(rows)
-	paddingWidth := workspaceSettingsColumnPadding * (len(workspaceSettingsHeaders) - 1)
-	valueMinimum := min(full[2], max(ansi.StringWidth(workspaceSettingsHeaders[2]), workspaceSettingsValueReserve))
-	descriptionMinimum := min(full[3], max(ansi.StringWidth(workspaceSettingsHeaders[3]), workspaceSettingsDescReserve))
-	available := max(viewWidth-paddingWidth-full[0]-full[1], valueMinimum+descriptionMinimum)
-	valueWidth, descriptionWidth := workspaceSettingsFitColumns(
-		full[2], full[3], valueMinimum, descriptionMinimum, available,
+	minimums := make([]int, len(workspaceSettingsHeaders))
+	for column, header := range workspaceSettingsHeaders {
+		minimums[column] = ansi.StringWidth(header)
+	}
+	valueMinimum := min(full[2], max(minimums[2], workspaceSettingsValueReserve))
+	descriptionMinimum := min(full[3], max(minimums[3], workspaceSettingsDescReserve))
+	contentWidth := viewWidth - workspaceSettingsColumnPadding*(len(workspaceSettingsHeaders)-1)
+
+	moduleWidth, keyWidth := workspaceSettingsFitColumns(
+		full[0], full[1], minimums[0], minimums[1],
+		max(contentWidth-valueMinimum-descriptionMinimum, minimums[0]+minimums[1]),
 	)
-	return []int{full[0], full[1], valueWidth, descriptionWidth}
+	valueWidth, descriptionWidth := workspaceSettingsFitColumns(
+		full[2], full[3], minimums[2], minimums[3],
+		max(contentWidth-moduleWidth-keyWidth, minimums[2]+minimums[3]),
+	)
+	return []int{moduleWidth, keyWidth, valueWidth, descriptionWidth}
 }
 
 // workspaceSettingsFullColumnWidths sizes every column to its widest cell.

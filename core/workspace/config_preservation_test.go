@@ -307,6 +307,27 @@ func TestConfigPreservationArrayShrink(t *testing.T) {
 	}
 }
 
+func TestConfigPreservationNestedArrayShrink(t *testing.T) {
+	t.Parallel()
+	pair := []any{int64(1), int64(2)}
+	table := map[string]any{"a": int64(1), "b": int64(2)}
+	for _, tc := range []struct {
+		name, old, want string
+		value           any
+	}{
+		{"arrays", "[[1, 2], [3, 4]]", "[[1, 2]]", []any{pair}},
+		{"inline tables", "[{a = 1, b = 2}, {a = 3, b = 4}]", "[{a = 1, b = 2}]", []any{table}},
+		{"multiline arrays", "[\n  [1, 2],\n  [3, 4]\n]", "[\n  [1, 2]\n]", []any{pair}},
+		{"multiline trailing comma", "[\n  [1, 2],\n  [3, 4],\n]", "[\n  [1, 2],\n]", []any{pair}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := renderConfigEdit(tc.value, []byte(tc.old))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, out)
+		})
+	}
+}
+
 func TestConfigPreservationUnknownSibling(t *testing.T) {
 	input := "[modules.foo]\nsource = './foo'\n[modules.foo.check]\nskip = ['slow']\nfuture = 'keep'\n"
 	cfg, err := ParseConfig([]byte(input))

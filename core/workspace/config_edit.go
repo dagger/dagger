@@ -619,8 +619,8 @@ func renderConfigArray(value reflect.Value, old []byte) (string, error) {
 		out = shrinkConfigArray(old, tokens, elements, value.Len())
 	}
 
-	// Edits above end before the first removed element, so kept elements
-	// keep their offsets.
+	// Edits above start after the last kept element, so kept elements keep
+	// their offsets.
 	for i := min(value.Len(), len(elements)) - 1; i >= 0; i-- {
 		element := elements[i]
 		text, err := renderConfigEdit(value.Index(i).Interface(), old[element.start:element.end])
@@ -642,13 +642,23 @@ func shrinkConfigArray(old []byte, tokens, elements []configToken, kept int) []b
 		keptEnd = elements[kept-1].end
 	}
 
+	// Only this array's own commas separate elements; nested arrays and
+	// inline tables go whole with the element that holds them.
 	var removed []configToken
 	trailingComma := false
-	for _, tok := range tokens {
-		if tok.start >= keptEnd && tok.start < closing && tok.kind == scanner.Comma {
-			removed = append(removed, tok)
-			// A comment can separate a value from its comma.
-			trailingComma = tok.start >= elements[len(elements)-1].end
+	depth := 0
+	for _, tok := range tokens[1 : len(tokens)-1] {
+		switch tok.kind {
+		case scanner.LBracket, scanner.LInline:
+			depth++
+		case scanner.RBracket, scanner.RInline:
+			depth--
+		case scanner.Comma:
+			if depth == 0 && tok.start >= keptEnd {
+				removed = append(removed, tok)
+				// A comment can separate a value from its comma.
+				trailingComma = tok.start >= elements[len(elements)-1].end
+			}
 		}
 	}
 	removed = append(removed, elements[kept:]...)
