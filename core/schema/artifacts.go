@@ -13,19 +13,19 @@ import (
 type artifactsSchema struct{}
 
 func (s *artifactsSchema) Install(srv *dagql.Server) {
-	srv.InstallObject(dagql.NewClass[*core.ArtifactCollectionKey](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.ArtifactDimensionKey](srv).View(AfterVersion("v1.0.0-0")))
 	artifactClass := dagql.NewClass[*core.Artifact](srv).View(AfterVersion("v1.0.0-0"))
 	srv.InstallObject(artifactClass)
 	srv.InstallObject(dagql.NewClass[*core.Artifacts](srv).View(AfterVersion("v1.0.0-0")))
-	dagql.Fields[*core.ArtifactCollectionKey]{}.Install(srv)
+	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
 		dagql.Func("types", s.types).Doc("List concrete GraphQL types represented in this selection, sorted with no duplicates."),
 		dagql.Func("filterTypes", s.filterTypes).Doc("Keep artifacts of any listed concrete GraphQL type."),
 		dagql.Func("filterPath", s.filterPath).Doc("Match one complete, ordered field sequence exactly."),
-		dagql.Func("filterCollections", s.filterCollections).Doc("Keep artifacts selected through any listed collection."),
-		dagql.Func("filterCollectionKeys", s.filterCollectionKeys).Doc("Keep artifacts with any listed key in this collection."),
-		dagql.Func("collections", s.collections).Doc("List collection identifiers represented in this selection, sorted with no duplicates."),
-		dagql.Func("collectionKeys", s.collectionKeys).Doc("List keys represented in this selection for the given collection, sorted with no duplicates."),
+		dagql.Func("filterDimensions", s.filterDimensions).Doc("Keep artifacts selected through any listed dimension."),
+		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension."),
+		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
+		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
 		dagql.Func("items", s.items).Doc("Enumerate complete artifacts without evaluating their values."),
 		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches."),
 		dagql.Func("pretty", s.pretty).Doc("Display lines for this selection, with no trailing newlines."),
@@ -49,20 +49,20 @@ func (*artifactsSchema) filterTypes(_ context.Context, parent *core.Artifacts, a
 func (*artifactsSchema) filterPath(_ context.Context, parent *core.Artifacts, args struct{ Path []string }) (*core.Artifacts, error) {
 	return parent.FilterPath(args.Path), nil
 }
-func (*artifactsSchema) filterCollections(_ context.Context, parent *core.Artifacts, args struct{ Collections []string }) (*core.Artifacts, error) {
-	return parent.FilterCollections(args.Collections), nil
+func (*artifactsSchema) filterDimensions(_ context.Context, parent *core.Artifacts, args struct{ Dimensions []string }) (*core.Artifacts, error) {
+	return parent.FilterDimensions(args.Dimensions), nil
 }
-func (*artifactsSchema) filterCollectionKeys(_ context.Context, parent *core.Artifacts, args struct {
-	Collection string
-	Keys       []string
+func (*artifactsSchema) filterDimensionKeys(_ context.Context, parent *core.Artifacts, args struct {
+	Dimension string
+	Keys      []string
 }) (*core.Artifacts, error) {
-	return parent.FilterCollectionKeys(args.Collection, args.Keys), nil
+	return parent.FilterDimensionKeys(args.Dimension, args.Keys), nil
 }
-func (*artifactsSchema) collections(_ context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
-	return parent.Collections(), nil
+func (*artifactsSchema) dimensions(_ context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
+	return parent.Dimensions(), nil
 }
-func (*artifactsSchema) collectionKeys(_ context.Context, parent *core.Artifacts, args struct{ Collection string }) ([]string, error) {
-	return parent.CollectionKeys(args.Collection), nil
+func (*artifactsSchema) dimensionKeys(_ context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
+	return parent.DimensionKeys(args.Dimension), nil
 }
 func (*artifactsSchema) items(_ context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
 	items := make([]*core.Artifact, 0, len(parent.Entries))
@@ -115,7 +115,7 @@ func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResu
 			path = node.Path().CliCase()
 		}
 		result.Entries = append(result.Entries, &core.Artifact{
-			Path: path, CollectionKeys: []*core.ArtifactCollectionKey{},
+			Path: path, DimensionKeys: []*core.ArtifactDimensionKey{},
 			TypeName: node.ObjectType().Name, Node: node, Workspace: parent,
 		})
 	}
