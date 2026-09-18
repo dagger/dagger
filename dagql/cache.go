@@ -2025,6 +2025,10 @@ type Cache struct {
 	testAfterSessionOperationEnter  func(string)
 	testBeforeSessionOperationExit  func(string)
 	testAfterCacheClosing           func()
+	// testAfterLazyAttemptReleased runs on the attempt's goroutine after its
+	// row hold is released and before its operation ends: the point after
+	// which a caller returned by attempt.done can count ownership.
+	testAfterLazyAttemptReleased func(*lazyEvalAttempt)
 	// persisted-decode singleflight hooks (ensurePersistedHitValueLoaded):
 	// before acquiring persistDecodeMu in the join-or-lead region, after a
 	// joiner captured the published channel, and after a leader published
@@ -4423,6 +4427,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				defer func() {
 					if err := c.releasePartRow(context.WithoutCancel(attemptCtx), shared); err != nil {
 						c.recordReleaseCleanupError(attemptOp.sessionID, true, err)
+					}
+					if c.testAfterLazyAttemptReleased != nil {
+						c.testAfterLazyAttemptReleased(attempt)
 					}
 				}()
 			}

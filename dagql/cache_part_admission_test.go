@@ -101,6 +101,7 @@ func TestPartSessionlessOwnSubset(t *testing.T) {
 			session, err := partSession(ctx)
 			require.NoError(t, err)
 			require.NoError(t, c.BindSessionResource(ctx, session, "client", "socket", new(int)))
+			released := armLazyAttemptReleased(c)
 			require.NoError(t, c.RunLazyTask(ctx, receiver, "obtain:subset", LazyTaskSpec{Body: func(ctx context.Context) error {
 				permit, _, err := c.TryAcquire(ctx, receiver, address, PartTaskFromContext(ctx))
 				require.NoError(t, err)
@@ -123,7 +124,7 @@ func TestPartSessionlessOwnSubset(t *testing.T) {
 				require.Equal(t, PartInstalled, outcome)
 				return c.finishReadyPartInline(ctx, receipt)
 			}}))
-			waitCacheQuiescent(t, c)
+			waitLazyAttemptReleased(t, released)
 			require.Equal(t, before, ownershipCounts(c, donor.cacheSharedResult())[0])
 		})
 	}
@@ -146,6 +147,7 @@ func TestPartReadyRevalidationAndCanceledFinish(t *testing.T) {
 			row.payloadRevision++
 			row.payloadMu.Unlock()
 			before := ownershipCounts(c, row)[0]
+			released := armLazyAttemptReleased(c)
 			externalCtx := ctx
 			require.NoError(t, c.RunLazyTask(ctx, receiver, "obtain:boundary", LazyTaskSpec{Body: func(ctx context.Context) error {
 				address := PersistedPartAddress{Part: "snapshot"}
@@ -181,7 +183,7 @@ func TestPartReadyRevalidationAndCanceledFinish(t *testing.T) {
 				require.ErrorIs(t, c.FinishReadyPart(canceled, receipt), context.Canceled)
 				return nil
 			}}))
-			waitCacheQuiescent(t, c)
+			waitLazyAttemptReleased(t, released)
 			require.Equal(t, before, ownershipCounts(c, row)[0])
 		})
 	}

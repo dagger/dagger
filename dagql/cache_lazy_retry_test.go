@@ -8,8 +8,6 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 func newLazyRetryTestResult(
@@ -719,15 +717,30 @@ func TestCacheHitRegistrationDoesNotRaceLazyCallback(t *testing.T) {
 	}
 }
 
-// waitCacheQuiescent waits until no counted operation is active. A lazy
-// attempt closes its done channel, which returns its caller, before its
-// deferred row release and operation exit run on the attempt's goroutine, so
-// a caller that reads ownership counts straight after RunLazyTask can see the
-// attempt's own hold. Operation quiescence orders after that release: the
-// release is deferred after the operation's finish and so runs first.
-func waitCacheQuiescent(t *testing.T, c *Cache) {
+// armLazyAttemptReleased observes every lazy attempt's row release from here
+// on. A lazy attempt closes its done channel, which returns its caller,
+// before its deferred row release runs on the attempt's goroutine, so a
+// caller that reads ownership counts straight after RunLazyTask can see the
+// attempt's own hold. The hook runs after that release; the test waits for
+// it with waitLazyAttemptReleased, once per attempt it started.
+func armLazyAttemptReleased(c *Cache) <-chan struct{} {
+	released := make(chan struct{}, 64)
+	c.testAfterLazyAttemptReleased = func(*lazyEvalAttempt) {
+		select {
+		case released <- struct{}{}:
+		default:
+		}
+	}
+	return released
+}
+
+func waitLazyAttemptReleased(t *testing.T, released <-chan struct{}) {
 	t.Helper()
-	require.Eventually(t, c.operationsQuiescent, 5*time.Second, time.Millisecond, "counted operations never ended")
+	select {
+	case <-released:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the lazy attempt never released its row hold")
+	}
 }
 
 // ownershipCounts copies the rows' incoming ownership counts under the graph

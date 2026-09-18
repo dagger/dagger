@@ -3,6 +3,8 @@ package dagql
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -99,13 +101,22 @@ func TestPartReadyPreparationBoundaries(t *testing.T) {
 			partTestEquivalent(t, c, receiver, donor)
 			partEncodedReceiver(t, ctx, c, receiver)
 			before := ownershipCounts(c, receiver.cacheSharedResult(), donor.cacheSharedResult())
+			released := armLazyAttemptReleased(c)
+			// The Body runs off the test goroutine, so it reports through its
+			// error rather than failing the test itself.
 			require.NoError(t, c.RunLazyTask(ctx, receiver, "obtain:prepare-boundary", LazyTaskSpec{Body: func(ctx context.Context) error {
 				address := PersistedPartAddress{Part: "snapshot"}
 				source, err := c.AcquireEquivalentPartSource(ctx, receiver, address)
-				require.NoError(t, err)
-				require.Equal(t, PartReady, source.Readiness(), "pure ranking cannot open storage")
+				if err != nil {
+					return fmt.Errorf("acquire source: %w", err)
+				}
+				if source.Readiness() != PartReady {
+					return fmt.Errorf("pure ranking cannot open storage: readiness %v", source.Readiness())
+				}
 				permit, _, err := c.TryAcquire(ctx, receiver, address, PartTaskFromContext(ctx))
-				require.NoError(t, err)
+				if err != nil {
+					return fmt.Errorf("acquire permit: %w", err)
+				}
 				prepareCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				if mode == "cancel-during-pin" {
@@ -113,23 +124,32 @@ func TestPartReadyPreparationBoundaries(t *testing.T) {
 				}
 				prepared, err := c.PrepareReadyPart(prepareCtx, receiver, source, permit)
 				if mode == "missing-local-descriptor" {
-					require.ErrorContains(t, err, "missing-ready-snapshot")
-					require.Nil(t, prepared)
+					if err == nil || !strings.Contains(err.Error(), "missing-ready-snapshot") {
+						return fmt.Errorf("prepare with a missing descriptor: want the descriptor named, got %v", err)
+					}
+					if prepared != nil {
+						return fmt.Errorf("prepare with a missing descriptor returned a preparation")
+					}
 					return nil
 				}
 				if err != nil {
-					require.ErrorIs(t, err, context.Canceled)
-				} else {
-					receipt, outcome, err := c.CommitReadyPart(prepareCtx, prepared)
-					require.ErrorIs(t, err, context.Canceled)
-					require.Equal(t, PartInstallRefused, outcome)
-					require.Nil(t, receipt)
+					if !errors.Is(err, context.Canceled) {
+						return fmt.Errorf("prepare: want cancellation, got %w", err)
+					}
+					return nil
+				}
+				receipt, outcome, err := c.CommitReadyPart(prepareCtx, prepared)
+				if !errors.Is(err, context.Canceled) {
+					return fmt.Errorf("commit: want cancellation, got %w", err)
+				}
+				if outcome != PartInstallRefused || receipt != nil {
+					return fmt.Errorf("commit after cancellation: outcome %v, receipt %v", outcome, receipt)
 				}
 				return nil
 			}}))
 			require.Empty(t, receiver.cacheSharedResult().loadSnapshotOwnerLinks())
 			require.Equal(t, manager.pins.Load(), manager.releases.Load())
-			waitCacheQuiescent(t, c)
+			waitLazyAttemptReleased(t, released)
 			require.Equal(t, before, ownershipCounts(c, receiver.cacheSharedResult(), donor.cacheSharedResult()))
 		})
 	}
