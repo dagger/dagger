@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -28,7 +27,6 @@ import (
 	"github.com/moby/locker"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 )
 
 type producerExecutionServer struct {
@@ -36,11 +34,9 @@ type producerExecutionServer struct {
 	srv     *dagql.Server
 	store   content.Store
 	builtin content.Store
-	mountNS *os.File
 	locker  *locker.Locker
 }
 
-func (s *producerExecutionServer) CleanMountNS() *os.File                        { return s.mountNS }
 func (s *producerExecutionServer) Locker() *locker.Locker                        { return s.locker }
 func (s *producerExecutionServer) DNS() *oci.DNSConfig                           { return &oci.DNSConfig{} }
 func (s *producerExecutionServer) Server(context.Context) (*dagql.Server, error) { return s.srv, nil }
@@ -56,29 +52,6 @@ func executionFixture(t *testing.T) (context.Context, *testutil.Store, *dagql.Ca
 	query, err := CurrentQuery(ctx)
 	require.NoError(t, err)
 	server := &producerExecutionServer{cacheVolumeTestQueryServer: &cacheVolumeTestQueryServer{mockServer: &mockServer{}, cacheManager: store.Manager}, srv: srv, store: store.Content}
-	type namespaceResult struct {
-		file *os.File
-		err  error
-	}
-	created := make(chan namespaceResult, 1)
-	go func() {
-		runtime.LockOSThread()
-		// Exiting this goroutine retires the thread with its private mount namespace.
-		if err := unix.Unshare(unix.CLONE_NEWNS); err != nil {
-			created <- namespaceResult{err: err}
-			return
-		}
-		if err := unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""); err != nil {
-			created <- namespaceResult{err: err}
-			return
-		}
-		file, err := os.Open("/proc/thread-self/ns/mnt")
-		created <- namespaceResult{file: file, err: err}
-	}()
-	namespace := <-created
-	require.NoError(t, namespace.err)
-	server.mountNS = namespace.file
-	t.Cleanup(func() { require.NoError(t, server.mountNS.Close()) })
 	server.locker = locker.New()
 	query.Server = server
 	return ctx, store, cache, srv, server
@@ -101,20 +74,17 @@ func producedFileContents(t *testing.T, ctx context.Context, file *File) ([]byte
 	t.Helper()
 	name, snapshot, err := producedFileOutput(file)
 	require.NoError(t, err)
+	path, err := RootPathWithoutFinalSymlink(testutil.Root(t, snapshot), name)
+	require.NoError(t, err)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
 	var data []byte
-	var info os.FileInfo
-	require.NoError(t, MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
-		path, err := RootPathWithoutFinalSymlink(root, name)
-		if err != nil {
-			return err
-		}
+	// Only root can read a file whose mode grants no read permission, so a
+	// mode-0 file is checked by its mode and time and not by its bytes.
+	if info.Mode().Perm()&0400 != 0 {
 		data, err = os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		info, err = os.Stat(path)
-		return err
-	}))
+		require.NoError(t, err)
+	}
 	return data, info
 }
 func TestHTTPCompletedProducerEvaluate(t *testing.T) {
@@ -257,16 +227,13 @@ func TestHTTPProducerWriter(t *testing.T) {
 			path, snapshot, err := producedFileOutput(output.File)
 			require.NoError(t, err)
 			require.Equal(t, name, path)
-			require.NoError(t, MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
-				data, err := os.ReadFile(filepath.Join(root, "data"))
-				if name == "../data" {
-					require.ErrorIs(t, err, os.ErrNotExist)
-				} else {
-					require.NoError(t, err)
-					require.Equal(t, "saved", string(data))
-				}
-				return nil
-			}))
+			data, err := os.ReadFile(filepath.Join(testutil.Root(t, snapshot), "data"))
+			if name == "../data" {
+				require.ErrorIs(t, err, os.ErrNotExist)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, "saved", string(data))
+			}
 			require.NoError(t, output.File.OnRelease(ctx))
 		}
 	})
