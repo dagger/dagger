@@ -4166,11 +4166,9 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// The lazy op span and re-pointed callback context were minted under
 			// lazyMu before this attempt was published. A span created on one
 			// goroutine and ended on another is safe.
-			callbackCtx := lazyCallbackCtx
-
 			partial := false
 			abandoned := false
-			callbackCtx, bodyDone, err := c.runLazyEvalBody(callbackCtx, shared, lazyEval)
+			bodyDone, err := c.runLazyEvalBody(lazyCallbackCtx, shared, lazyEval)
 			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 			shared.lazyMu.Lock()
@@ -4232,17 +4230,15 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 }
 
 // runLazyEvalBody runs one lazy attempt's callback body under an operation
-// lease and then syncs the result's snapshot leases. It returns the context
-// the body ran under (the leased context, or the input when no lease could be
-// acquired), whether the body succeeded and consumed its object-side state
-// (bodyDone: any later error in the attempt is cache-side bookkeeping, which
-// stays retryable), and the first error.
-func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResult, lazyEval func(context.Context) error) (context.Context, bool, error) {
-	leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+// lease and then syncs the result's snapshot leases. It returns whether the
+// body succeeded and consumed its object-side state (bodyDone: any later
+// error in the attempt is cache-side bookkeeping, which stays retryable), and
+// the first error.
+func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResult, lazyEval func(context.Context) error) (bool, error) {
+	callbackCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
 	if leaseErr != nil {
-		return callbackCtx, false, fmt.Errorf("acquire operation lease: %w", leaseErr)
+		return false, fmt.Errorf("acquire operation lease: %w", leaseErr)
 	}
-	callbackCtx = leaseCtx
 
 	var err error
 	bodyDone := false
@@ -4256,7 +4252,7 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
 		err = releaseErr
 	}
-	return callbackCtx, bodyDone, err
+	return bodyDone, err
 }
 
 func (c *Cache) Close(ctx context.Context) error {
