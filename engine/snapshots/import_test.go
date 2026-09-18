@@ -861,3 +861,16 @@ func TestChainContentClassification(t *testing.T) {
 		})
 	}
 }
+
+// The test store's in-place differ writes its blobs through the same observed
+// content store as the manager, so a test that counts or faults content
+// writes sees a diff's writes too. Without that, a zero-write assertion over
+// an export or a fallback diff would pass without observing anything.
+func TestStoreObservesDifferWrites(t *testing.T) {
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "producer prefix")
+	var writes atomic.Int64
+	store.BeforeWrite = func([]byte) error { writes.Add(1); return nil }
+	exportChain(t, a)
+	require.Positive(t, writes.Load(), "the differ's blob writes reach BeforeWrite")
+}

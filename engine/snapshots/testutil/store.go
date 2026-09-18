@@ -71,11 +71,15 @@ func NewStore(t testing.TB) *Store {
 func (s *Store) openManager(t testing.TB) {
 	t.Helper()
 	var err error
+	// The in-place applier and differ read and write through the same
+	// observed wrapper the manager uses, so BeforeWrite sees a fallback
+	// diff's blob writes as it sees the manager's own.
+	observed := observedContent{Store: s.Content, owner: s}
 	s.Manager, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
-		Snapshotter: s.Snapshots, ContentStore: observedContent{Store: s.Content, owner: s},
+		Snapshotter: s.Snapshots, ContentStore: observed,
 		LeaseManager:  &observedLeases{Manager: s.Leases, store: s},
-		Applier:       &observedApplier{Applier: inPlaceApplier{store: s.Content}, store: s},
-		Differ:        &observedDiffer{Comparer: inPlaceDiffer{store: s.Content}, store: s},
+		Applier:       &observedApplier{Applier: inPlaceApplier{store: observed}, store: s},
+		Differ:        &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
 		MountPoolRoot: filepath.Join(s.root, "mounts"),
 	})
 	require.NoError(t, err)
