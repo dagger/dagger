@@ -620,6 +620,13 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 		return nil, err
 	}
 
+	return buildDiffStats(paths, statsByPath), nil
+}
+
+// buildDiffStats turns computed changeset paths and their line counts into the
+// reported diff stat entries, deciding which directory entries are worth
+// reporting on their own.
+func buildDiffStats(paths *ChangesetPaths, statsByPath map[string]lineChanges) []*DiffStat {
 	addEntry := func(path string, kind DiffStatKind) *DiffStat {
 		entry := &DiffStat{Path: path, Kind: kind}
 		if stat, ok := statsByPath[path]; ok {
@@ -649,10 +656,17 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	for _, path := range paths.Modified {
 		entries = append(entries, addEntry(path, DiffStatKindModified))
 	}
-	// Use AllRemoved (uncollapsed) so that patchpreview.foldRemovedDirs can
-	// fold child files into their parent directory with summed line counts.
+	// Use AllRemoved (uncollapsed) so every removed file gets its own entry.
 	for _, path := range paths.AllRemoved {
 		if renamedOld[path] {
+			continue
+		}
+		// A removed directory whose removal is implied by the paths removed
+		// beneath it carries no information: every consumer can infer it, git
+		// doesn't track directories, and a unified diff (Changeset.asPatch)
+		// cannot express it. Report only removals that nothing else records,
+		// i.e. directories that held no files at all.
+		if strings.HasSuffix(path, "/") && removalImpliedByChildren(path, paths.AllRemoved) {
 			continue
 		}
 		entries = append(entries, addEntry(path, DiffStatKindRemoved))
@@ -661,7 +675,26 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	slices.SortFunc(entries, func(a, b *DiffStat) int {
 		return strings.Compare(a.Path, b.Path)
 	})
-	return entries, nil
+	return entries
+}
+
+// removalImpliedByChildren reports whether a removed directory path (carrying
+// a trailing "/") holds any removed file beneath it, i.e. whether its removal
+// is already implied by per-file removal entries. Directories whose removal is
+// implied are omitted from diff stats, matching git — which does not track
+// directories — and the unified diff, which cannot represent one. A directory
+// holding no files (empty, or holding only empty directories) is not implied
+// by anything, so it stays reported.
+func removalImpliedByChildren(dir string, allRemoved []string) bool {
+	for _, p := range allRemoved {
+		if p == dir || strings.HasSuffix(p, "/") {
+			continue
+		}
+		if strings.HasPrefix(p, dir) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
