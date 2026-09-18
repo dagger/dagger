@@ -1894,8 +1894,9 @@ func (fe *frontendPretty) RequestZoomLogs(id dagui.SpanID, descendants bool) {
 // failed representative for a check, the (failing-preferred) case for a test
 // -- so the drill-in commands the report suggests land on the span it
 // described, rather than an arbitrary same-named span (a passing retry, a
-// boundary-contained fixture). Returns false when the name isn't in the
-// loaded view, letting the caller fall back to a raw span lookup.
+// boundary-contained fixture). Names the surfaced view hides (e.g. a
+// boundary-contained fixture's check) fall back to a raw scan of every loaded
+// span. Returns false when the name isn't in the trace at all.
 func (fe *frontendPretty) ResolveSpanTarget(check, test string) (dagui.SpanID, bool) {
 	var id dagui.SpanID
 	var found bool
@@ -1919,35 +1920,66 @@ func (fe *frontendPretty) ResolveSpanTarget(check, test string) (dagui.SpanID, b
 			if node := find(fe.db.SurfacedChecks()); node != nil && node.Span != nil {
 				id = node.Span.ID
 				found = true
-			}
-		case test != "":
-			tv := fe.db.TestView()
-			if tv == nil {
 				return
 			}
-			var candidate *dagui.TestNode
-			for _, node := range tv.CasesByName[test] {
-				if node == nil || node.Span == nil {
-					continue
+			id, found = fe.rawSpanTarget(func(span *dagui.Span) bool {
+				return span.CheckName == check
+			})
+		case test != "":
+			tv := fe.db.TestView()
+			if tv != nil {
+				var candidate *dagui.TestNode
+				for _, node := range tv.CasesByName[test] {
+					if node == nil || node.Span == nil {
+						continue
+					}
+					// Prefer a failing case, so the hint a failing report prints
+					// resolves to the failure the user is chasing.
+					if node.Category == dagui.TestCategoryFailing {
+						candidate = node
+						break
+					}
+					if candidate == nil {
+						candidate = node
+					}
 				}
-				// Prefer a failing case, so the hint a failing report prints
-				// resolves to the failure the user is chasing.
-				if node.Category == dagui.TestCategoryFailing {
-					candidate = node
-					break
-				}
-				if candidate == nil {
-					candidate = node
+				if candidate != nil {
+					id = candidate.Span.ID
+					found = true
+					return
 				}
 			}
-			if candidate != nil {
-				id = candidate.Span.ID
-				found = true
-			}
+			// The OTel test case name, an optional "<suite> <case>"
+			// qualification, or the span name.
+			id, found = fe.rawSpanTarget(func(span *dagui.Span) bool {
+				return span.TestCaseName != "" &&
+					(span.TestCaseName == test ||
+						span.TestSuiteName+" "+span.TestCaseName == test ||
+						span.Name == test)
+			})
 		}
 	})
 	<-done
 	return id, found
+}
+
+// rawSpanTarget scans every loaded span for one matching pred, preferring a
+// failed one -- the same rule the report's own selection applies, so a
+// name shared by a failure and a passing retry resolves to the failure.
+func (fe *frontendPretty) rawSpanTarget(pred func(*dagui.Span) bool) (dagui.SpanID, bool) {
+	var fallback dagui.SpanID
+	for _, span := range fe.db.Spans.Order {
+		if !pred(span) {
+			continue
+		}
+		if span.IsFailed() {
+			return span.ID, true
+		}
+		if !fallback.IsValid() {
+			fallback = span.ID
+		}
+	}
+	return fallback, fallback.IsValid()
 }
 
 // setupFinalRenderLocked puts the frontend into final-render state: mark the

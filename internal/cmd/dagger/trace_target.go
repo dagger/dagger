@@ -39,12 +39,13 @@ func (s spanSelector) validate() error {
 }
 
 // resolveSpan turns the selector into a concrete span ID plus whether to roll up
-// descendant logs. A raw --span needs no lookup and stands alone (just that
-// span); --check/--test and the empty "whole trace" selector resolve against the
-// trace's priority spans -- the same set 'dagger trace --full' loads first, so
-// checks and tests (priority spans) are present without fetching the whole
-// trace -- and roll up their subtree. The empty selector resolves to the root
-// span with descendants, i.e. the entire trace.
+// descendant logs, for 'dagger cloud logs'. A raw --span needs no lookup and
+// stands alone (just that span); --check/--test and the empty "whole trace"
+// selector resolve against the trace's priority spans -- checks and tests are
+// priority spans, so they're present without fetching the whole trace -- and
+// roll up their subtree. The empty selector resolves to the root span with
+// descendants, i.e. the entire trace. ('dagger trace' loads the whole trace and
+// resolves the same names against its frontend instead: zoomTraceView.)
 func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.Client, orgID, traceID string) (spanID string, descendants bool, err error) {
 	if s.span != "" {
 		return s.span, false, nil
@@ -78,13 +79,9 @@ func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.Client, 
 	}
 }
 
-// fetchPrioritySpans collects a trace's priority (root) spans via the same
-// incremental subscription the --full loader uses. For a completed trace the
-// stream delivers the priority set and returns.
-//
-// NOTE: 'dagger trace --full' already loads these spans through its frontend
-// loader; resolving a --check/--test there re-fetches them. Cheap (~one batch),
-// but worth deduping if the loader ever exposes its spans.
+// fetchPrioritySpans collects a trace's priority (root) spans via the
+// incremental subscription. For a completed trace the stream delivers the
+// priority set and returns.
 func fetchPrioritySpans(ctx context.Context, client *cloudapi.Client, orgID, traceID string) ([]cloudapi.SpanData, error) {
 	var all []cloudapi.SpanData
 	err := client.StreamSpansWith(ctx, orgID, traceID, cloudapi.SpanStreamOpts{

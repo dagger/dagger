@@ -185,7 +185,8 @@ type TraceFrontend interface {
 	// suggest commit-scoped re-run commands.
 	SetCIContext(commit string, isNativeCI bool)
 	// ResolveSpanTarget resolves a --check/--test name against the loaded
-	// view, matching the selection rules the report rendered with.
+	// trace, matching the selection rules the report rendered with and
+	// falling back to a raw span scan for names the surfaced view hides.
 	ResolveSpanTarget(check, test string) (dagui.SpanID, bool)
 	// ZoomToSpan scopes the view to a span; RequestZoomLogs fetches the
 	// logs the zoomed report will render.
