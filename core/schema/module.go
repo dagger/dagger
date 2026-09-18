@@ -2688,7 +2688,17 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return core.NewCheckGroup(ctx, mod, include, args.NoGenerate.GetOr(false).Bool(), false)
+	checkGroup, err := core.NewCheckGroup(ctx, mod, args.NoGenerate.GetOr(false).Bool(), false)
+	if err != nil {
+		return nil, err
+	}
+	// Filter the finished checks, not the tree nodes: a generate-derived check
+	// has to be selectable by the up-to-date name it reports.
+	checkGroup.Checks, err = filterChecksByInclude(ctx, checkGroup.Checks, include)
+	if err != nil {
+		return nil, err
+	}
+	return checkGroup, nil
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -2698,14 +2708,18 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name}, false, false)
+	checkGroup, err := core.NewCheckGroup(ctx, mod, false, false)
+	if err != nil {
+		return nil, err
+	}
+	checks, err := filterChecksByInclude(ctx, checkGroup.Checks, []string{args.Name})
 	if err != nil {
 		return nil, err
 	}
 
-	switch len(checkGroup.Checks) {
+	switch len(checks) {
 	case 1:
-		return checkGroup.Checks[0].Clone(), nil
+		return checks[0].Clone(), nil
 	case 0:
 		return nil, fmt.Errorf("check %q not found in module %q", args.Name, mod.Self().Name())
 	default:

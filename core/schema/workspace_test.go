@@ -601,12 +601,95 @@ func TestWorkspaceTargetSkipNames(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			filtered, err := filterNodesByExclude(ctx, []*core.ModTreeNode{app, other}, test.exclude, test.moduleLocal,
-				func(node *core.ModTreeNode) *core.ModTreeNode { return node },
+				singleNode(func(node *core.ModTreeNode) *core.ModTreeNode { return node }),
 				func(node *core.ModTreeNode) string { return node.CommandName() }, "test")
 			require.NoError(t, err)
 			require.ElementsMatch(t, test.want, filtered)
 		})
 	}
+}
+
+// TestGenerateCheckPatterns pins which patterns select a generate-derived
+// check: the up-to-date name it is listed under, and every pattern that selected
+// it while it was still named after its generator.
+func TestGenerateCheckPatterns(t *testing.T) {
+	ctx := context.Background()
+	for _, test := range []struct {
+		name       string
+		entrypoint bool
+		patterns   []string
+		// included is whether the patterns select the check as `dagger check`
+		// arguments or --skip values. moduleSkipped is whether they do as a
+		// module's configured skips, which also accept module-local names.
+		included      bool
+		moduleSkipped bool
+	}{
+		{"check name", false, []string{"alpha-sdk:generate:up-to-date"}, true, true},
+		{"generator name", false, []string{"alpha-sdk:generate"}, true, true},
+		{"module name", false, []string{"alpha-sdk"}, true, true},
+		{"single segment wildcard on the generator", false, []string{"alpha-sdk:*"}, true, true},
+		{"wildcard on the check name", false, []string{"alpha-sdk:*:up-to-date"}, true, true},
+		{"entrypoint check name", true, []string{"generate:up-to-date"}, true, true},
+		{"entrypoint generator name", true, []string{"generate"}, true, true},
+		{"module-local check name", false, []string{"generate:up-to-date"}, false, true},
+		{"module-local generator name", false, []string{"generate"}, false, true},
+		{"other leaf", false, []string{"alpha-sdk:generate:other"}, false, false},
+		{"other module", false, []string{"beta-sdk:generate:up-to-date"}, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := modTreeNode("alpha-sdk", "generate")
+			node.Parent.WorkspaceEntrypoint = test.entrypoint
+			check := &core.Check{Node: node, IsGenerate: true}
+
+			wantName := "alpha-sdk:generate:up-to-date"
+			if test.entrypoint {
+				wantName = "generate:up-to-date"
+			}
+			require.Equal(t, wantName, check.Name())
+			// path is the qualified identity of the same check name reports.
+			require.Equal(t, []string{"alpha-sdk", "generate", "up-to-date"}, check.Path())
+
+			included, err := filterChecksByInclude(ctx, []*core.Check{check}, test.patterns)
+			require.NoError(t, err)
+			require.Equal(t, test.included, len(included) == 1)
+
+			remaining, err := filterChecksByExclude(ctx, []*core.Check{check}, test.patterns, false)
+			require.NoError(t, err)
+			require.Equal(t, test.included, len(remaining) == 0)
+
+			remaining, err = filterChecksByExclude(ctx, []*core.Check{check}, test.patterns, true)
+			require.NoError(t, err)
+			require.Equal(t, test.moduleSkipped, len(remaining) == 0)
+		})
+	}
+
+	t.Run("the up-to-date name alone would lose single segment wildcards", func(t *testing.T) {
+		// Why a generate-derived check also answers to its generator node.
+		check := &core.Check{Node: modTreeNode("alpha-sdk", "generate"), IsGenerate: true}
+		match, err := matchWorkspaceInclude(ctx, check.NamingNode(), []string{"alpha-sdk:*"})
+		require.NoError(t, err)
+		require.False(t, match)
+	})
+
+	t.Run("a module's own check is selected by the name it reports", func(t *testing.T) {
+		// Module.check and Module.checks match against the module's own tree,
+		// whose functions sit directly under the root.
+		check := &core.Check{Node: modTreeNode("empty-generate"), IsGenerate: true}
+		require.Equal(t, "empty-generate:up-to-date", check.Name())
+		for _, pattern := range []string{check.Name(), "empty-generate", "empty-*"} {
+			included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{pattern})
+			require.NoError(t, err)
+			require.Len(t, included, 1, pattern)
+		}
+	})
+
+	t.Run("an ordinary check has no up-to-date name", func(t *testing.T) {
+		check := &core.Check{Node: modTreeNode("go", "lint")}
+		require.Equal(t, "go:lint", check.Name())
+		included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{"go:lint:up-to-date"})
+		require.NoError(t, err)
+		require.Empty(t, included)
+	})
 }
 
 func TestSelectVisibleGeneratorModules(t *testing.T) {
