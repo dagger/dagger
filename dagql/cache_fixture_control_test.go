@@ -139,6 +139,16 @@ func TestFixtureBarrierCloseReleasesPausedOperation(t *testing.T) {
 // delegate, claiming no attachment, or after its real side effects. Either
 // way the installed output is kept and a later demand retries only the
 // bookkeeping.
+//
+// The schedule is pinned. The pass's external Finish opens the slot's owner
+// sync and then runs the task; the slot's attempt wakes, meets the fault and
+// retires with its bookkeeping pending. If Finish's RunLazyTask enters after
+// that retirement it leads the retry itself, as the kernel says the next
+// attempt does, and the delegate runs once more before the pass ends; if it
+// enters before, it joins the failing attempt and returns its error. Both
+// are correct, and a bare count of the delegate's calls after the pass would
+// tell them apart, so the attempt is held at ownerSyncDone until Finish has
+// joined it. The retry by a later demand is then the one asserted below.
 func TestFixtureBarrierOwnerAttachFaults(t *testing.T) {
 	for _, tc := range []struct {
 		action   FixtureBarrierAction
@@ -160,12 +170,31 @@ func TestFixtureBarrierOwnerAttachFaults(t *testing.T) {
 			attachesBefore := manager.attaches.Load()
 			armed, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "attach", Point: tc.point, Selector: FixtureBarrierSelector{ResultID: uint64(row.id)}, Action: tc.action})
 			require.NoError(t, err)
+			// Hold the failing attempt after the fault and before it retires.
+			held, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "synced", Point: FixtureOwnerSyncDone, Selector: FixtureBarrierSelector{ResultID: uint64(row.id)}, Action: FixturePause})
+			require.NoError(t, err)
+			joined := make(chan struct{}, 4)
+			c.testAfterLazyEvalJoin = func(attempt *lazyEvalAttempt) {
+				if attempt.token.row == row {
+					joined <- struct{}{}
+				}
+			}
 			shareTestUnite(t, ctx, c, "fixture-attach-"+string(tc.action), donor, receiver)
-			require.Equal(t, 1, barrier.awaitPass(t))
 			reached, err := c.WaitTransferFixtureBarrier(ctx, "attach", armed.Generation)
 			require.NoError(t, err)
 			require.Contains(t, reached.Event.Detail, "fs-snap")
+			synced, err := c.WaitTransferFixtureBarrier(ctx, "synced", held.Generation)
+			require.NoError(t, err)
+			require.Contains(t, synced.Event.Detail, "fixture local storage fault", "the fault is the sync's outcome")
+			select {
+			case <-joined:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the pass's Finish never joined the held attempt")
+			}
 			require.Equal(t, tc.attaches, manager.attaches.Load()-attachesBefore, "the delegate ran only if the fault follows it")
+			require.NoError(t, c.ReleaseTransferFixtureBarrier("synced", held.Generation))
+			require.Equal(t, 1, barrier.awaitPass(t))
+			require.Equal(t, tc.attaches, manager.attaches.Load()-attachesBefore, "Finish joined the failing attempt and led no retry")
 
 			key, _ := partAddressKey(PersistedPartAddress{Part: "fs"})
 			gate := row.partGate.gate.Load()
