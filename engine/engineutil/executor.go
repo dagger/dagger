@@ -488,10 +488,41 @@ func (s *forwardIO) Close() error {
 	return nil
 }
 
+// Set wires the process's stdio onto the runc command. Stdin is handed over
+// as an *os.File fed by our own goroutine rather than as the reader itself:
+// for any other reader, os/exec copies it through a pipe and Wait does not
+// return until that copy reaches EOF. A stream like the MCP transport's
+// io.Pipe is only closed once the service is seen to exit, which is after
+// Wait — so a process exiting while its client sat idle (nothing left to
+// copy) was never reaped, and every call still waiting on it hung forever.
 func (s *forwardIO) Set(cmd *exec.Cmd) {
-	cmd.Stdin = s.stdin
+	cmd.Stdin = s.stdinFile()
 	cmd.Stdout = s.stdout
 	cmd.Stderr = s.stderr
+}
+
+// stdinFile returns s.stdin as something os/exec passes straight to the child.
+func (s *forwardIO) stdinFile() io.Reader {
+	if s.stdin == nil {
+		return nil
+	}
+	if f, ok := s.stdin.(*os.File); ok {
+		return f
+	}
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		bklog.L.Warnf("stdin pipe: %s; passing reader directly", err)
+		return s.stdin
+	}
+	go func() {
+		// The child reads EOF once pw is closed; pr stays open on our side
+		// until then only so the descriptor is not reused underneath the
+		// child during startup.
+		_, _ = io.Copy(pw, s.stdin)
+		pw.Close()
+		pr.Close()
+	}()
+	return pr
 }
 
 func (s *forwardIO) Stdin() io.WriteCloser {
