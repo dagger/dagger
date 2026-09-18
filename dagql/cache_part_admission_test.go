@@ -76,21 +76,16 @@ func TestPartSessionlessOwnSubset(t *testing.T) {
 			address := PersistedPartAddress{Part: "snapshot"}
 			_, _, probe, err := c.probePart(ctx, donor.cacheSharedResult(), address)
 			require.NoError(t, err)
-			c.egraphMu.Lock()
-			before := donor.cacheSharedResult().incomingOwnershipCount
-			c.egraphMu.Unlock()
+			before := ownershipCounts(c, donor.cacheSharedResult())[0]
 			source, err := c.newSessionlessPartSourceLease(ctx, receiver.cacheSharedResult(), donor.cacheSharedResult(), address, address, *probe)
-			c.egraphMu.Lock()
 			if mode == "offer-only" || mode == "native-receiver" {
 				require.Error(t, err)
 				require.Nil(t, source)
-				require.Equal(t, before, donor.cacheSharedResult().incomingOwnershipCount)
-				c.egraphMu.Unlock()
+				require.Equal(t, before, ownershipCounts(c, donor.cacheSharedResult())[0])
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, before+1, donor.cacheSharedResult().incomingOwnershipCount)
-			c.egraphMu.Unlock()
+			require.Equal(t, before+1, ownershipCounts(c, donor.cacheSharedResult())[0])
 			require.True(t, source.sessionlessShare)
 			require.Empty(t, source.sessionID)
 			// Encoded receiver keeps the test independent of a test-only typed store.
@@ -128,9 +123,8 @@ func TestPartSessionlessOwnSubset(t *testing.T) {
 				require.Equal(t, PartInstalled, outcome)
 				return c.finishReadyPartInline(ctx, receipt)
 			}}))
-			c.egraphMu.RLock()
-			require.Equal(t, before, donor.cacheSharedResult().incomingOwnershipCount)
-			c.egraphMu.RUnlock()
+			waitCacheQuiescent(t, c)
+			require.Equal(t, before, ownershipCounts(c, donor.cacheSharedResult())[0])
 		})
 	}
 }
@@ -151,7 +145,7 @@ func TestPartReadyRevalidationAndCanceledFinish(t *testing.T) {
 			row.persistedEnvelope = &record.Envelope
 			row.payloadRevision++
 			row.payloadMu.Unlock()
-			before := row.incomingOwnershipCount
+			before := ownershipCounts(c, row)[0]
 			externalCtx := ctx
 			require.NoError(t, c.RunLazyTask(ctx, receiver, "obtain:boundary", LazyTaskSpec{Body: func(ctx context.Context) error {
 				address := PersistedPartAddress{Part: "snapshot"}
@@ -187,9 +181,8 @@ func TestPartReadyRevalidationAndCanceledFinish(t *testing.T) {
 				require.ErrorIs(t, c.FinishReadyPart(canceled, receipt), context.Canceled)
 				return nil
 			}}))
-			c.egraphMu.RLock()
-			require.Equal(t, before, row.incomingOwnershipCount)
-			c.egraphMu.RUnlock()
+			waitCacheQuiescent(t, c)
+			require.Equal(t, before, ownershipCounts(c, row)[0])
 		})
 	}
 }

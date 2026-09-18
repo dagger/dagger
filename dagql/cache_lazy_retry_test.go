@@ -8,6 +8,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func newLazyRetryTestResult(
@@ -715,4 +717,27 @@ func TestCacheHitRegistrationDoesNotRaceLazyCallback(t *testing.T) {
 	for range 10 {
 		hit()
 	}
+}
+
+// waitCacheQuiescent waits until no counted operation is active. A lazy
+// attempt closes its done channel, which returns its caller, before its
+// deferred row release and operation exit run on the attempt's goroutine, so
+// a caller that reads ownership counts straight after RunLazyTask can see the
+// attempt's own hold. Operation quiescence orders after that release: the
+// release is deferred after the operation's finish and so runs first.
+func waitCacheQuiescent(t *testing.T, c *Cache) {
+	t.Helper()
+	require.Eventually(t, c.operationsQuiescent, 5*time.Second, time.Millisecond, "counted operations never ended")
+}
+
+// ownershipCounts copies the rows' incoming ownership counts under the graph
+// lock, so an assertion that fails cannot leave the lock held.
+func ownershipCounts(c *Cache, rows ...*sharedResult) []int64 {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	counts := make([]int64, len(rows))
+	for i, row := range rows {
+		counts[i] = row.incomingOwnershipCount
+	}
+	return counts
 }

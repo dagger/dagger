@@ -98,8 +98,7 @@ func TestPartReadyPreparationBoundaries(t *testing.T) {
 			receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 			partTestEquivalent(t, c, receiver, donor)
 			partEncodedReceiver(t, ctx, c, receiver)
-			before := receiver.cacheSharedResult().incomingOwnershipCount
-			donorBefore := donor.cacheSharedResult().incomingOwnershipCount
+			before := ownershipCounts(c, receiver.cacheSharedResult(), donor.cacheSharedResult())
 			require.NoError(t, c.RunLazyTask(ctx, receiver, "obtain:prepare-boundary", LazyTaskSpec{Body: func(ctx context.Context) error {
 				address := PersistedPartAddress{Part: "snapshot"}
 				source, err := c.AcquireEquivalentPartSource(ctx, receiver, address)
@@ -130,10 +129,8 @@ func TestPartReadyPreparationBoundaries(t *testing.T) {
 			}}))
 			require.Empty(t, receiver.cacheSharedResult().loadSnapshotOwnerLinks())
 			require.Equal(t, manager.pins.Load(), manager.releases.Load())
-			c.egraphMu.RLock()
-			require.Equal(t, before, receiver.cacheSharedResult().incomingOwnershipCount)
-			require.Equal(t, donorBefore, donor.cacheSharedResult().incomingOwnershipCount)
-			c.egraphMu.RUnlock()
+			waitCacheQuiescent(t, c)
+			require.Equal(t, before, ownershipCounts(c, receiver.cacheSharedResult(), donor.cacheSharedResult()))
 		})
 	}
 }
