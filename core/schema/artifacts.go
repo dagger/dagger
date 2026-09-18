@@ -27,11 +27,17 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
 		dagql.Func("items", s.items).Doc("Enumerate complete artifacts without evaluating their values."),
-		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches."),
-		dagql.Func("pretty", s.pretty).Doc("Display lines for this selection, with no trailing newlines."),
+		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),
+		dagql.Func("uri", s.uri).Doc("The DAG address that selects this whole selection: filterUri(uri) selects the same set."),
 	}.Install(srv)
 	dagql.Fields[*core.Artifact]{
-		dagql.Func("pretty", s.artifactPretty).Doc("The full address, formatted for CLI input with consistent flag order."),
+		dagql.Func("uri", s.artifactURI).
+			Doc("The artifact's DAG address, such as dag://engine-dev/playground.").
+			Args(
+				dagql.Arg("absolute").Doc("Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address."),
+				dagql.Arg("dimensionKeys").Doc("Include the dimension keys as a query. Without them, the address is a path selector."),
+				dagql.Arg("typeAssertion").Doc("Include the artifact type in the scheme: dag+container://."),
+			),
 	}.Install(srv)
 	artifactClass.Extend(dagql.FieldSpec{
 		Name: "value", Type: nodeInterfaceType{}, Args: dagql.NewInputSpecs(),
@@ -74,33 +80,58 @@ func (*artifactsSchema) items(_ context.Context, parent *core.Artifacts, _ struc
 func (*artifactsSchema) one(_ context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifact, error) {
 	return parent.One()
 }
-func (*artifactsSchema) pretty(_ context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
-	return parent.Pretty(), nil
+func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
+	return parent.URI(), nil
 }
-func (*artifactsSchema) artifactPretty(_ context.Context, parent *core.Artifact, _ struct{}) (string, error) {
-	return parent.Pretty(), nil
+func (*artifactsSchema) artifactURI(_ context.Context, parent *core.Artifact, args struct {
+	Absolute      bool `default:"false"`
+	DimensionKeys bool `default:"true"`
+	TypeAssertion bool `default:"false"`
+}) (string, error) {
+	return parent.URI(core.ArtifactURIOpts{
+		Absolute:      args.Absolute,
+		DimensionKeys: args.DimensionKeys,
+		TypeAssertion: args.TypeAssertion,
+	})
 }
 func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
 	artifact, ok := dagql.UnwrapAs[*core.Artifact](parent)
 	if !ok {
 		return nil, fmt.Errorf("expected Artifact, got %T", parent.Unwrap())
 	}
-	ctx, err := withWorkspaceClientContext(ctx, artifact.Workspace.Self())
-	if err != nil {
-		return nil, err
-	}
-	ctx = core.WorkspaceToContext(ctx, artifact.Workspace)
 	var result dagql.AnyObjectResult
-	if err := artifact.Evaluate(ctx, &result); err != nil {
+	if err := evaluateArtifact(ctx, artifact, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
+// evaluateArtifact selects the artifact's value in its own workspace.
+func evaluateArtifact(ctx context.Context, artifact *core.Artifact, dest any) error {
+	ctx, err := withWorkspaceClientContext(ctx, artifact.Workspace.Self())
+	if err != nil {
+		return err
+	}
+	ctx = core.WorkspaceToContext(ctx, artifact.Workspace)
+	return artifact.Evaluate(ctx, dest)
+}
+
 func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct {
 	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 }) (*core.Artifacts, error) {
-	include := workspaceIncludePatterns(args.Include)
+	return s.collectArtifacts(ctx, parent, workspaceIncludePatterns(args.Include))
+}
+
+// collectArtifacts discovers the workspace's static artifacts. Include
+// patterns narrow module loading and select each path and its children.
+func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], include []string) (*core.Artifacts, error) {
+	result := &core.Artifacts{Entries: []*core.Artifact{}}
+	if include != nil {
+		result.Selector.Paths = make([]string, 0, len(include))
+		for _, pattern := range include {
+			result.Selector.Paths = append(result.Selector.Paths, core.IncludePattern(pattern))
+		}
+	}
 	for i := range include {
 		include[i] = strings.ReplaceAll(include[i], "/", ":")
 	}
@@ -108,7 +139,6 @@ func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return nil, err
 	}
-	result := &core.Artifacts{Entries: make([]*core.Artifact, 0, len(nodes))}
 	for _, node := range nodes {
 		path := node.CommandPath().CliCase()
 		if len(path) == 0 {
@@ -122,7 +152,7 @@ func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResu
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	for i := 1; i < len(result.Entries); i++ {
 		if slices.Equal(result.Entries[i-1].Path, result.Entries[i].Path) {
-			return nil, fmt.Errorf("ambiguous artifact path %q", result.Entries[i].Pretty())
+			return nil, fmt.Errorf("ambiguous artifact path %q", strings.Join(result.Entries[i].Path, "/"))
 		}
 	}
 	return result, nil

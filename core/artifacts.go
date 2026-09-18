@@ -8,8 +8,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dagger/dagger/dagql"
+	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/core/dagaddress"
+	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 // ArtifactDimensionKey selects an item from a named dimension.
@@ -50,9 +55,98 @@ func (*Artifact) TypeDescription() string {
 	return "One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object."
 }
 
-// Artifacts is an immutable selection. Filtering changes only the entry list,
-// preserving each artifact's address, module tree, and workspace.
-type Artifacts struct{ Entries []*Artifact }
+// ArtifactURIOpts selects the parts of an artifact's DAG address.
+type ArtifactURIOpts struct {
+	Absolute      bool
+	DimensionKeys bool
+	TypeAssertion bool
+}
+
+// URI is the artifact's DAG address. See hack/designs/collections-issue.md,
+// section 4.
+func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
+	addr := &dagaddress.Address{HasScheme: true, Path: strings.Join(a.Path, "/")}
+	if opts.TypeAssertion {
+		addr.Types = []string{ArtifactTypeName(a.TypeName)}
+	}
+	if opts.DimensionKeys {
+		for _, key := range a.DimensionKeys {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: key.Dimension, Key: key.Key, HasKey: true})
+		}
+	}
+	if opts.Absolute {
+		workspace, commit, err := a.Workspace.Self().GitAddress()
+		if err != nil {
+			return "", err
+		}
+		addr.Absolute = true
+		addr.Workspace = workspace
+		addr.Version = commit
+	}
+	return addr.String(), nil
+}
+
+// ArtifactTypeName is the CLI-case form of a GraphQL type name, as used in a
+// DAG address scheme: Container gives "container", ProviderDocs gives
+// "provider-docs".
+func ArtifactTypeName(typeName string) string {
+	return strcase.ToKebab(typeName)
+}
+
+// GitAddress is the workspace's Git address as a Go import path, and the commit
+// it is pinned to. Only workspaces loaded from a Git ref have one.
+func (ws *Workspace) GitAddress() (address, commit string, err error) {
+	if ws == nil {
+		return "", "", fmt.Errorf("workspace has no Git address")
+	}
+	ref, ok := ws.SourceGitRef()
+	if !ok || ref.Self() == nil {
+		return "", "", fmt.Errorf("workspace %s has no Git address", ws.Address)
+	}
+	// The address is <cloneRef>[/<subdir>]@<version>; the version is what the
+	// user requested, and the ref carries the commit it resolved to.
+	location, version, _ := strings.Cut(ws.Address, "@")
+	address = workspace.NormalizeGitRemote(location)
+	if address == "" {
+		return "", "", fmt.Errorf("workspace %s has no Git address", ws.Address)
+	}
+	if gitRef := ref.Self().Ref; gitRef != nil && gitutil.IsCommitSHA(gitRef.SHA) {
+		commit = gitRef.SHA
+	} else if gitutil.IsCommitSHA(version) {
+		commit = version
+	} else {
+		return "", "", fmt.Errorf("workspace %s is not pinned to a commit", ws.Address)
+	}
+	return address, commit, nil
+}
+
+// ArtifactDimensionFilter keeps artifacts with any listed key in one
+// dimension. Nil keys keep any key in the dimension.
+type ArtifactDimensionFilter struct {
+	Dimension string
+	Keys      []string
+}
+
+// ArtifactSelector records the filters applied to a selection, so the
+// selection can be printed as one DAG address. Nil slices are unfiltered.
+type ArtifactSelector struct {
+	// Paths lists path patterns; an artifact matches any of them. An empty
+	// non-nil list matches nothing.
+	Paths []string
+	// Types lists GraphQL type names; an artifact matches any of them. An
+	// empty non-nil list matches nothing.
+	Types []string
+	// Dimensions are combined with AND.
+	Dimensions []ArtifactDimensionFilter
+}
+
+// Artifacts is an immutable selection. Filtering changes only the entry list
+// and the recorded selector, preserving each artifact's address, module tree,
+// and workspace.
+type Artifacts struct {
+	Entries  []*Artifact
+	Selector ArtifactSelector
+}
 
 var _ dagql.PersistedObject = (*Artifact)(nil)
 var _ dagql.PersistedObjectDecoder = (*Artifact)(nil)
@@ -67,7 +161,7 @@ func (*Artifacts) TypeDescription() string {
 }
 
 func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
-	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries))}
+	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries)), Selector: a.Selector.clone()}
 	for _, artifact := range a.Entries {
 		if matches(artifact) {
 			selected.Entries = append(selected.Entries, artifact.Clone())
@@ -75,9 +169,39 @@ func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
 	}
 	return selected
 }
-func (a *Artifacts) FilterTypes(types []string) *Artifacts {
-	return a.filter(func(artifact *Artifact) bool { return slices.Contains(types, artifact.TypeName) })
+
+func (sel ArtifactSelector) clone() ArtifactSelector {
+	cloned := ArtifactSelector{
+		Paths: slices.Clone(sel.Paths),
+		Types: slices.Clone(sel.Types),
+	}
+	for _, dim := range sel.Dimensions {
+		cloned.Dimensions = append(cloned.Dimensions, ArtifactDimensionFilter{Dimension: dim.Dimension, Keys: slices.Clone(dim.Keys)})
+	}
+	return cloned
 }
+
+// exactPaths lists the entries' own paths, as patterns that match only them.
+// It is the normal form of chained path filters, whose intersection has no
+// general pattern form.
+func (a *Artifacts) exactPaths() []string {
+	paths := make([]string, 0, len(a.Entries))
+	for _, artifact := range a.Entries {
+		paths = append(paths, strings.Join(artifact.Path, "/"))
+	}
+	return slices.Compact(slices.Sorted(slices.Values(paths)))
+}
+
+func (a *Artifacts) FilterTypes(types []string) *Artifacts {
+	selected := a.filter(func(artifact *Artifact) bool { return slices.Contains(types, artifact.TypeName) })
+	if a.Selector.Types == nil {
+		selected.Selector.Types = slices.Clone(types)
+	} else {
+		selected.Selector.Types = slices.DeleteFunc(selected.Selector.Types, func(typ string) bool { return !slices.Contains(types, typ) })
+	}
+	return selected
+}
+
 func (a *Artifacts) Types() []string {
 	types := map[string]struct{}{}
 	for _, artifact := range a.Entries {
@@ -85,11 +209,43 @@ func (a *Artifacts) Types() []string {
 	}
 	return slices.Sorted(maps.Keys(types))
 }
-func (a *Artifacts) FilterPath(path []string) *Artifacts {
-	return a.filter(func(artifact *Artifact) bool { return slices.Equal(path, artifact.Path) })
+
+func (a *Artifacts) withPathFilter(matches func(*Artifact) bool, patterns []string) *Artifacts {
+	selected := a.filter(matches)
+	if a.Selector.Paths == nil {
+		selected.Selector.Paths = patterns
+	} else {
+		selected.Selector.Paths = selected.exactPaths()
+	}
+	return selected
 }
+
+func (a *Artifacts) FilterPath(path []string) *Artifacts {
+	return a.withPathFilter(func(artifact *Artifact) bool { return slices.Equal(path, artifact.Path) }, []string{strings.Join(path, "/")})
+}
+
+// artifactPattern normalizes a path pattern to CLI case, as artifact paths are.
+func artifactPattern(pattern string) string {
+	segments := strings.Split(pattern, "/")
+	for i, segment := range segments {
+		segments[i] = strcase.ToKebab(segment)
+	}
+	return strings.Join(segments, "/")
+}
+
+// IncludePattern is the DAG address pattern with the same meaning as a
+// Workspace.artifacts include pattern: a literal path also selects its
+// children.
+func IncludePattern(include string) string {
+	pattern := artifactPattern(strings.ReplaceAll(include, ":", "/"))
+	if strings.ContainsAny(pattern, "*?[{") {
+		return pattern
+	}
+	return pattern + "/**"
+}
+
 func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
-	return a.filter(func(artifact *Artifact) bool {
+	selected := a.filter(func(artifact *Artifact) bool {
 		for _, key := range artifact.DimensionKeys {
 			if slices.Contains(dimensions, key.Dimension) {
 				return true
@@ -97,9 +253,17 @@ func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
 		}
 		return false
 	})
+	if len(dimensions) == 1 {
+		selected.Selector.addDimension(ArtifactDimensionFilter{Dimension: dimensions[0]})
+	} else {
+		// Alternatives across dimensions have no query form; keep the paths.
+		selected.Selector.Paths = selected.exactPaths()
+	}
+	return selected
 }
+
 func (a *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
-	return a.filter(func(artifact *Artifact) bool {
+	selected := a.filter(func(artifact *Artifact) bool {
 		for _, key := range artifact.DimensionKeys {
 			if key.Dimension == dimension && slices.Contains(keys, key.Key) {
 				return true
@@ -107,7 +271,32 @@ func (a *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifa
 		}
 		return false
 	})
+	if keys == nil {
+		keys = []string{}
+	}
+	selected.Selector.addDimension(ArtifactDimensionFilter{Dimension: dimension, Keys: slices.Clone(keys)})
+	return selected
 }
+
+// addDimension combines a dimension filter with the selector: the same
+// dimension intersects its keys, and a new dimension is another AND term.
+func (sel *ArtifactSelector) addDimension(filter ArtifactDimensionFilter) {
+	for i, existing := range sel.Dimensions {
+		if existing.Dimension != filter.Dimension {
+			continue
+		}
+		switch {
+		case existing.Keys == nil:
+			sel.Dimensions[i].Keys = filter.Keys
+		case filter.Keys == nil:
+		default:
+			sel.Dimensions[i].Keys = slices.DeleteFunc(existing.Keys, func(key string) bool { return !slices.Contains(filter.Keys, key) })
+		}
+		return
+	}
+	sel.Dimensions = append(sel.Dimensions, filter)
+}
+
 func (a *Artifacts) Dimensions() []string {
 	names := map[string]struct{}{}
 	for _, artifact := range a.Entries {
@@ -117,6 +306,7 @@ func (a *Artifacts) Dimensions() []string {
 	}
 	return slices.Sorted(maps.Keys(names))
 }
+
 func (a *Artifacts) DimensionKeys(dimension string) []string {
 	keys := map[string]struct{}{}
 	for _, artifact := range a.Entries {
@@ -128,24 +318,66 @@ func (a *Artifacts) DimensionKeys(dimension string) []string {
 	}
 	return slices.Sorted(maps.Keys(keys))
 }
-func (a *Artifacts) One() (*Artifact, error) {
-	if len(a.Entries) != 1 {
-		return nil, fmt.Errorf("expected exactly one artifact, found %d", len(a.Entries))
+
+// URI is the selector for the whole selection: filterUri(uri) selects the
+// same set. Include patterns and chained filters are normalized; an empty
+// selection prints as the empty alternation "{}".
+func (a *Artifacts) URI() string {
+	sel := a.Selector
+	addr := &dagaddress.Address{HasScheme: true}
+	empty := sel.Paths != nil && len(sel.Paths) == 0 || sel.Types != nil && len(sel.Types) == 0
+	for _, dim := range sel.Dimensions {
+		if dim.Keys != nil && len(dim.Keys) == 0 {
+			empty = true
+		}
 	}
-	return a.Entries[0].Clone(), nil
+	if empty {
+		addr.Path = "{}"
+		return addr.String()
+	}
+	for _, typ := range slices.Sorted(slices.Values(sel.Types)) {
+		if name := ArtifactTypeName(typ); !slices.Contains(addr.Types, name) {
+			addr.Types = append(addr.Types, name)
+		}
+	}
+	switch len(sel.Paths) {
+	case 0:
+	case 1:
+		addr.Path = sel.Paths[0]
+	default:
+		addr.Path = "{" + strings.Join(sel.Paths, ",") + "}"
+	}
+	for _, dim := range sel.Dimensions {
+		if dim.Keys == nil {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: dim.Dimension})
+			continue
+		}
+		for _, key := range dim.Keys {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: dim.Dimension, Key: key, HasKey: true})
+		}
+	}
+	return addr.String()
 }
 
-// Static artifacts have no dimension flags. Their literal field names are
-// already in CLI case and can be joined without interpreting user input.
-func (a *Artifact) Pretty() string {
-	return strings.Join(a.Path, "/")
-}
-func (a *Artifacts) Pretty() []string {
-	lines := make([]string, 0, len(a.Entries))
-	for _, artifact := range a.Entries {
-		lines = append(lines, artifact.Pretty())
+// One requires exactly one artifact. Several matches are listed, one address
+// per line, so the caller can copy the correct one.
+func (a *Artifacts) One() (*Artifact, error) {
+	switch len(a.Entries) {
+	case 1:
+		return a.Entries[0].Clone(), nil
+	case 0:
+		return nil, fmt.Errorf("no artifact matches %s", a.URI())
+	default:
+		lines := make([]string, 0, len(a.Entries))
+		for _, artifact := range a.Entries {
+			uri, err := artifact.URI(ArtifactURIOpts{DimensionKeys: true})
+			if err != nil {
+				return nil, err
+			}
+			lines = append(lines, uri)
+		}
+		return nil, fmt.Errorf("%s matches %d artifacts:\n%s", a.URI(), len(a.Entries), strings.Join(lines, "\n"))
 	}
-	return lines
 }
 
 // Evaluate selects the artifact's value in the caller's session. The cached
@@ -252,13 +484,14 @@ type persistedArtifact struct {
 	Workspace     uint64
 }
 type persistedArtifacts struct {
-	Tree    persistedModTree
-	Entries []persistedArtifact
+	Tree     persistedModTree
+	Entries  []persistedArtifact
+	Selector ArtifactSelector
 }
 
-func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact) (dagql.PersistedObjectEncoding, error) {
+func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact, selector ArtifactSelector) (dagql.PersistedObjectEncoding, error) {
 	tree := newPersistedModTreeEncoder(cache)
-	payload := persistedArtifacts{}
+	payload := persistedArtifacts{Selector: selector}
 	for _, a := range entries {
 		p := persistedArtifact{Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName}
 		var err error
@@ -286,9 +519,12 @@ func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage
 	if err != nil {
 		return nil, err
 	}
-	result := &Artifacts{}
+	result := &Artifacts{Selector: payload.Selector}
 	for _, p := range payload.Entries {
 		a := &Artifact{Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Node: nodes[p.Node]}
+		if a.DimensionKeys == nil {
+			a.DimensionKeys = []*ArtifactDimensionKey{}
+		}
 		if a.Node == nil {
 			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
 		}
@@ -301,7 +537,7 @@ func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage
 	return result, nil
 }
 func (a *Artifact) EncodePersistedObject(_ context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(cache, []*Artifact{a})
+	return encodeArtifacts(cache, []*Artifact{a}, ArtifactSelector{})
 }
 func (*Artifact) DecodePersistedObject(ctx context.Context, srv *dagql.Server, _ uint64, _ *dagql.ResultCall, raw json.RawMessage) (dagql.Typed, error) {
 	result, err := decodeArtifacts(ctx, srv, raw)
@@ -314,7 +550,7 @@ func (*Artifact) DecodePersistedObject(ctx context.Context, srv *dagql.Server, _
 	return result.Entries[0], nil
 }
 func (a *Artifacts) EncodePersistedObject(_ context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(cache, a.Entries)
+	return encodeArtifacts(cache, a.Entries, a.Selector)
 }
 func (*Artifacts) DecodePersistedObject(ctx context.Context, srv *dagql.Server, _ uint64, _ *dagql.ResultCall, raw json.RawMessage) (dagql.Typed, error) {
 	return decodeArtifacts(ctx, srv, raw)
