@@ -59,6 +59,41 @@ func (funcs goTemplateFuncs) coreConstructorName(f introspection.Field) string {
 	return name
 }
 
+// isCoreType reports whether name belongs to the core (non-dependency)
+// schema — the base engine API, plus this module's own types. Used when
+// generating dependency-contributed bindings: a dependency's schema slice
+// can incidentally include core types it merely references (e.g. as a
+// return type), which are already aliased by dagger.gen.go and must not be
+// aliased again.
+func (funcs goTemplateFuncs) isCoreType(name string) bool {
+	depNames := funcs.fullSchema.DependencyNames()
+	coreSchema := funcs.fullSchema.Exclude(depNames...)
+	return coreSchema.Types.Get(name) != nil
+}
+
+// hasNonCoreTypes reports whether a dependency alias file would have
+// anything to alias: either a brand new type of its own, or (via Query,
+// always a core type) an options struct for one of the top-level functions
+// it contributes. Used to skip generating an empty file, which would
+// otherwise leave an unused "core" import, for dependencies that only add
+// methods to existing core types without contributing anything callers
+// reference by name.
+func (funcs goTemplateFuncs) hasNonCoreTypes(types []*introspection.Type) bool {
+	for _, t := range types {
+		if !funcs.isCoreType(t.Name) {
+			return true
+		}
+		if t.Name == "Query" {
+			for _, f := range t.Fields {
+				if funcs.hasOptionals(f.Args) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependency {
 	return funcs.cfg.ClientConfig.ModuleDependencies
 }
@@ -458,7 +493,11 @@ func (ps *parseState) renderNameOrStruct(t types.Type) string {
 	if named, ok := t.(*types.Named); ok {
 		if _, ok := named.Underlying().(*types.Interface); ok {
 			if ps.isDaggerGenerated(named.Obj()) {
-				return "*" + named.Obj().Pkg().Name() + "." + named.Obj().Name() + "Client"
+				// Generated types are always referenced through the
+				// internal/dagger package alias ("dagger"), regardless of
+				// which file (dagger.gen.go or, for the real bindings,
+				// internal/dagger/core/core.gen.go) actually declares them.
+				return "*dagger." + named.Obj().Name() + "Client"
 			}
 			return "*" + formatIfaceImplName(named.Obj().Name())
 		}
@@ -472,7 +511,7 @@ func (ps *parseState) renderNameOrStruct(t types.Type) string {
 		// representation.
 		base := named.Obj().Name()
 		if ps.isDaggerGenerated(named.Obj()) {
-			base = named.Obj().Pkg().Name() + "." + base
+			base = "dagger." + base
 		}
 		if typeArgs := named.TypeArgs(); typeArgs.Len() > 0 {
 			base += "["
@@ -1065,9 +1104,12 @@ func (ps *parseState) isDaggerGenerated(obj types.Object) bool {
 	filename := tokenFile.Name()
 
 	// Match any *.gen.go file inside internal/dagger/ — dependency types are
-	// now split into per-dep files (e.g. dep.gen.go) alongside dagger.gen.go.
-	if filepath.Base(filepath.Dir(filename)) == "dagger" &&
-		strings.HasSuffix(filename, ".gen.go") {
+	// split into per-dep files (e.g. dep.gen.go) alongside dagger.gen.go, and
+	// the core bindings live one level deeper in internal/dagger/core/.
+	dir := filepath.Dir(filename)
+	if strings.HasSuffix(filename, ".gen.go") &&
+		(filepath.Base(dir) == "dagger" ||
+			(filepath.Base(dir) == "core" && filepath.Base(filepath.Dir(dir)) == "dagger")) {
 		return true
 	}
 
@@ -1108,9 +1150,10 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 	case *types.Named:
 		if _, ok := t.Underlying().(*types.Interface); ok {
 			if ps.isDaggerGenerated(t.Obj()) {
-				pkgName := t.Obj().Pkg().Name()
-				clientType := Op("*").Id(pkgName).Dot(t.Obj().Name() + "Client")
-				ifaceType := Id(pkgName).Dot(t.Obj().Name())
+				// See renderNameOrStruct: generated types are always
+				// referenced through the internal/dagger package alias.
+				clientType := Op("*").Id("dagger").Dot(t.Obj().Name() + "Client")
+				ifaceType := Id("dagger").Dot(t.Obj().Name())
 				return t, Func().Params(Id("v").Add(clientType)).Params(ifaceType).Block(
 					If(Id("v").Op("==").Nil()).Block(Return(Nil())),
 					Return(Id("v")),
@@ -1140,9 +1183,8 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 				convertSlice(access, (*ifaceImpl).toIface)
 		*/
 		if ps.isDaggerGenerated(elemNamed.Obj()) {
-			pkgName := elemNamed.Obj().Pkg().Name()
-			clientType := Op("*").Id(pkgName).Dot(elemNamed.Obj().Name() + "Client")
-			ifaceType := Id(pkgName).Dot(elemNamed.Obj().Name())
+			clientType := Op("*").Id("dagger").Dot(elemNamed.Obj().Name() + "Client")
+			ifaceType := Id("dagger").Dot(elemNamed.Obj().Name())
 			return t, Id("convertSlice").Call(
 				access,
 				Func().Params(Id("v").Add(clientType)).Params(ifaceType).Block(

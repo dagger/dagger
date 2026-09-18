@@ -97,7 +97,20 @@ func Templates(funcs template.FuncMap) map[string]*template.Template {
 // returned by Templates() because the output file name is dynamic (derived
 // from the dependency name).
 func DepTemplate(funcs template.FuncMap) (*template.Template, error) {
-	const name = "internal/dagger/_dep.gen.go.tmpl"
+	return lookupTemplate(funcs, "internal/dagger/_dep.gen.go.tmpl")
+}
+
+// DepAliasTemplate returns the template used to re-export, back into
+// package dagger, any brand new types a dependency contributes (as opposed
+// to methods it adds to existing core types, which stay in
+// internal/dagger/core alongside their real declarations — see
+// _dep.gen.go.tmpl). Like DepTemplate, its output file name is dynamic and
+// so it is excluded from Templates().
+func DepAliasTemplate(funcs template.FuncMap) (*template.Template, error) {
+	return lookupTemplate(funcs, "internal/dagger/_dep-alias.gen.go.tmpl")
+}
+
+func lookupTemplate(funcs template.FuncMap, name string) (*template.Template, error) {
 	tree, err := buildTemplateTree(funcs)
 	if err != nil {
 		return nil, fmt.Errorf("build template tree: %w", err)
