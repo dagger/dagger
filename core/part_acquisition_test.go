@@ -190,8 +190,7 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 				t.Logf("route=%s latency=%s pins=%d owner-sync-attempts=%d private-bodies=%d", mode, time.Since(started), observed.pins.Load(), observed.ownerAttempts.Load(), observed.bodies.Load())
 				require.Same(t, oldPath, result.Self().File)
 				require.Same(t, oldSnapshot, result.Self().Snapshot)
-				got, err := result.Self().Contents(bctx, result, nil, nil)
-				require.NoError(t, err)
+				got := demandedFileContents(t, bctx, result)
 				if mode == "ready" {
 					require.Equal(t, "ready bytes", string(got))
 					require.Equal(t, "/donor/selected.txt", mustTransferPath(t, bctx, result))
