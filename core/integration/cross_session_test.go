@@ -385,7 +385,7 @@ source = "../workspace-container-provider"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "workspace-container-provider:dockerfile-image"
+settings.base = "dag://workspace-container-provider/dockerfile-image"
 `), 0o644))
 
 	prime, err := hostDaggerExecRaw(ctx, t, app, "--silent", "call", "workspace-container-provider", "context-directory", "entries")
