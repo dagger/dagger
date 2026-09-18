@@ -3,12 +3,19 @@ package daggercmd
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/internal/cloud"
+	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cloud/otlpstream"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -20,6 +27,8 @@ import (
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"golang.org/x/oauth2"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestTraceUsesGlobalFrontendOpts(t *testing.T) {
@@ -211,6 +220,78 @@ func TestRekeyLogRecords(t *testing.T) {
 	for _, record := range req.ResourceLogs[0].ScopeLogs[0].LogRecords {
 		require.Equal(t, id.SpanID[:], record.SpanId)
 	}
+}
+
+// fetchLogs against a fake Cloud: a span's own logs are one request for
+// every record; a roll-up is two -- the subtree's text output, re-keyed to
+// the span so it renders though the descendants aren't loaded, then the
+// subtree's call payloads, which land as-is. Each span is fetched once.
+func TestTraceLoaderFetchLogs(t *testing.T) {
+	var mu sync.Mutex
+	var requests []url.Values
+	descendant := []byte{9, 9, 9, 9, 9, 9, 9, 9}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests = append(requests, r.URL.Query())
+		mu.Unlock()
+		w.Header().Set("Content-Type", otlpstream.ContentType)
+		fw := otlpstream.NewFrameWriter(w)
+		if r.URL.Query().Get("records") != cloud.LogRecordsCallPayloads {
+			payload, err := proto.Marshal(&collogspb.ExportLogsServiceRequest{
+				ResourceLogs: []*logspb.ResourceLogs{{
+					ScopeLogs: []*logspb.ScopeLogs{{
+						LogRecords: []*logspb.LogRecord{{
+							SpanId: descendant,
+							Body:   &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "hello\n"}},
+						}},
+					}},
+				}},
+			})
+			require.NoError(t, err)
+			_ = fw.WriteData(payload)
+		}
+		_ = fw.WriteTerminal()
+	}))
+	t.Cleanup(srv.Close)
+
+	client, err := cloud.NewOTLPClient(context.Background(), &auth.Cloud{
+		Token: &oauth2.Token{AccessToken: "token", TokenType: "Bearer"},
+	})
+	require.NoError(t, err)
+	client, err = client.WithBaseURL(srv.URL)
+	require.NoError(t, err)
+
+	loader, db, _ := testTraceLoader(t)
+	loader.client = client
+
+	target := dagui.SpanID{}
+	target.SpanID[0] = 4
+	var fg fetchGroup
+	loader.fetchLogs(&fg, target, true)
+	loader.fetchLogs(&fg, target, true) // deduped
+	require.NoError(t, fg.Wait())
+
+	mu.Lock()
+	require.Equal(t, []url.Values{
+		{"span_id": {target.String()}, "descendants": {"true"}, "records": {"logs"}},
+		{"span_id": {target.String()}, "descendants": {"true"}, "records": {"call_payloads"}},
+	}, requests)
+	requests = nil
+	mu.Unlock()
+
+	// The descendant's output was attributed to the target.
+	require.True(t, db.Spans.Map[target].HasLogs, "the rolled-up output must land on the span it was fetched for")
+	var orphan dagui.SpanID
+	copy(orphan.SpanID[:], descendant)
+	require.Nil(t, db.Spans.Map[orphan], "the unloaded descendant must not be conjured by its logs")
+
+	own := dagui.SpanID{}
+	own.SpanID[0] = 5
+	loader.fetchLogs(&fg, own, false)
+	require.NoError(t, fg.Wait())
+	mu.Lock()
+	require.Equal(t, []url.Values{{"span_id": {own.String()}}}, requests, "own logs are every record, one request")
+	mu.Unlock()
 }
 
 // resolvingFrontend is the slice of TraceFrontend resolveTraceTarget drives.

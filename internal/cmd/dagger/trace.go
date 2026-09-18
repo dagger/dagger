@@ -604,6 +604,21 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 			slog.Warn("error streaming span logs", "span", spanHex, "err", err)
 			return fmt.Errorf("stream span %s logs: %w", spanHex, err)
 		}
+		if !descendants {
+			return nil
+		}
+		// The text-only class above left out the subtree's call payloads,
+		// which the loaded spans beneath the roll-up (its listened children)
+		// need to render their calls. Payloads are keyed by digest, not
+		// span, so they land as-is: no re-keying, no orphaning.
+		if err := l.client.FetchLogs(l.ctx, l.traceID, cloud.LogSelection{
+			SpanID:      spanHex,
+			Descendants: true,
+			Records:     cloud.LogRecordsCallPayloads,
+		}, l.importer.ImportLogs); err != nil {
+			slog.Warn("error streaming span call payloads", "span", spanHex, "err", err)
+			return fmt.Errorf("stream span %s call payloads: %w", spanHex, err)
+		}
 		return nil
 	})
 }
