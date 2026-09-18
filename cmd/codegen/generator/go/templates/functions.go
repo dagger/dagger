@@ -147,6 +147,8 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsStandaloneClient":      funcs.isStandaloneClient,
 		"IsCoreLibrary":           funcs.isCoreLibrary,
 		"CoreConstructorName":     funcs.coreConstructorName,
+		"IsCoreType":              funcs.isCoreType,
+		"HasNonCoreTypes":         funcs.hasNonCoreTypes,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 		"ModuleRelPath":           funcs.moduleRelPath,
 		"Dependencies":            funcs.Dependencies,
