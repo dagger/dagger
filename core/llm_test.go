@@ -47,6 +47,130 @@ func llmTestContext() context.Context {
 	})
 }
 
+func TestLLMTranscript(t *testing.T) {
+	text := func(s string) *LLMContentBlock {
+		return &LLMContentBlock{Kind: LLMContentText, Text: s}
+	}
+	llm := &LLM{Messages: []*LLMMessage{
+		{Role: LLMMessageRoleSystem, Content: []*LLMContentBlock{text("instructions")}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{text("question"), text("details")}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{
+			{Kind: LLMContentThinking, Text: "consider"}, text("first"), text("second"),
+			{Kind: LLMContentThinking, Text: "again"},
+			{Kind: LLMContentToolCall, ToolName: "lookup", Arguments: JSON(`{"key":1}`)},
+			{Kind: LLMContentToolCall, ToolName: "list", Arguments: JSON(`{}`)},
+		}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{
+			{Kind: LLMContentToolResult, Text: "found"},
+			{Kind: LLMContentToolResult, Text: "failed", Errored: true},
+		}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{text("answer")}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{
+			{Kind: LLMContentToolCall, ToolName: "finish", Arguments: JSON(`{}`)},
+		}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{text("")}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentThinking}}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult}}},
+		{Role: LLMMessageRoleUser},
+		{Role: LLMMessageRoleSystem, Content: []*LLMContentBlock{text("more instructions")}},
+	}}
+	user := "[User]: question\n\n[User]: details"
+	assistant := "[Assistant thinking]: consider\nagain\n\n[Assistant]: first\nsecond\n\n[Assistant tool calls]: lookup({\"key\":1}); list({})"
+	results := "[Tool result]: found\n\n[Tool result ERROR]: failed"
+	answer := "[Assistant]: answer"
+	tool := "[Assistant tool calls]: finish({})"
+	join := func(parts ...string) string { return strings.Join(parts, "\n\n") }
+	count := func(n int) dagql.Optional[dagql.Int] { return dagql.Opt(dagql.Int(n)) }
+	roles := func(rs ...LLMMessageRole) dagql.Optional[dagql.ArrayInput[LLMMessageRole]] {
+		return dagql.Opt(dagql.ArrayInput[LLMMessageRole](rs))
+	}
+	kinds := func(ks ...LLMContentBlockKind) dagql.Optional[dagql.ArrayInput[LLMContentBlockKind]] {
+		return dagql.Opt(dagql.ArrayInput[LLMContentBlockKind](ks))
+	}
+	for _, tc := range []struct {
+		name string
+		args LLMTranscriptArgs
+		want string
+	}{
+		{"default compatibility", LLMTranscriptArgs{}, join(user, assistant, results, answer, tool)},
+		{"head message grouping", LLMTranscriptArgs{Limit: count(2)}, join(user, assistant)},
+		{"head offset", LLMTranscriptArgs{Limit: count(2), Offset: 1}, join(assistant, results)},
+		{"offset without count", LLMTranscriptArgs{Offset: 3}, join(answer, tool)},
+		{"tail chronological", LLMTranscriptArgs{Last: count(2)}, join(answer, tool)},
+		{"tail older page", LLMTranscriptArgs{Last: count(2), Offset: 2}, join(assistant, results)},
+		{"tail oldest partial page", LLMTranscriptArgs{Last: count(2), Offset: 4}, user},
+		{"text head", LLMTranscriptArgs{Limit: count(2), ContentKinds: kinds(LLMContentText)}, join(user, "[Assistant]: first\nsecond")},
+		{"text tail skips tools and empties", LLMTranscriptArgs{Last: count(2), ContentKinds: kinds(LLMContentText)}, join("[Assistant]: first\nsecond", answer)},
+		{"text tail offset counts messages", LLMTranscriptArgs{Last: count(1), Offset: 1, ContentKinds: kinds(LLMContentText)}, "[Assistant]: first\nsecond"},
+		{"text head offset counts messages", LLMTranscriptArgs{Limit: count(1), Offset: 1, ContentKinds: kinds(LLMContentText)}, "[Assistant]: first\nsecond"},
+		{"roles before pagination", LLMTranscriptArgs{Limit: count(1), Roles: roles(LLMMessageRoleAssistant)}, assistant},
+		{"roles and kinds", LLMTranscriptArgs{Last: count(1), Offset: 1, Roles: roles(LLMMessageRoleAssistant), ContentKinds: kinds(LLMContentText)}, "[Assistant]: first\nsecond"},
+		{"explicit system", LLMTranscriptArgs{Roles: roles(LLMMessageRoleSystem)}, join("[System]: instructions", "[System]: more instructions")},
+		{"system with user", LLMTranscriptArgs{Limit: count(2), Roles: roles(LLMMessageRoleSystem, LLMMessageRoleUser)}, join("[System]: instructions", user)},
+		{"tool results only", LLMTranscriptArgs{Limit: count(1), ContentKinds: kinds(LLMContentToolResult)}, results},
+		{"thinking only", LLMTranscriptArgs{ContentKinds: kinds(LLMContentThinking)}, "[Assistant thinking]: consider\nagain"},
+		{"multiple kinds", LLMTranscriptArgs{Limit: count(1), Roles: roles(LLMMessageRoleAssistant), ContentKinds: kinds(LLMContentText, LLMContentThinking)}, "[Assistant thinking]: consider\nagain\n\n[Assistant]: first\nsecond"},
+		{"empty roles", LLMTranscriptArgs{Roles: roles()}, join(user, assistant, results, answer, tool)},
+		{"empty kinds", LLMTranscriptArgs{ContentKinds: kinds()}, join(user, assistant, results, answer, tool)},
+		{"empty filters with tail offset", LLMTranscriptArgs{Roles: roles(), ContentKinds: kinds(), Last: count(2), Offset: 1}, join(results, answer)},
+		{"empty roles with text filter", LLMTranscriptArgs{Roles: roles(), ContentKinds: kinds(LLMContentText), Limit: count(1)}, user},
+		{"empty kinds with system role", LLMTranscriptArgs{Roles: roles(LLMMessageRoleSystem), ContentKinds: kinds()}, join("[System]: instructions", "[System]: more instructions")},
+		{"no matching content", LLMTranscriptArgs{Roles: roles(LLMMessageRoleSystem), ContentKinds: kinds(LLMContentToolCall)}, ""},
+		{"zero limit", LLMTranscriptArgs{Limit: count(0)}, join(user, assistant, results, answer, tool)},
+		{"zero last", LLMTranscriptArgs{Last: count(0)}, join(user, assistant, results, answer, tool)},
+		{"both zero limits", LLMTranscriptArgs{Limit: count(0), Last: count(0)}, join(user, assistant, results, answer, tool)},
+		{"zero limit with tail", LLMTranscriptArgs{Limit: count(0), Last: count(2), Offset: 1}, join(results, answer)},
+		{"zero last with head", LLMTranscriptArgs{Limit: count(2), Last: count(0), Offset: 1}, join(assistant, results)},
+		{"zero limit with offset", LLMTranscriptArgs{Limit: count(0), Offset: 3}, join(answer, tool)},
+		{"zero last with offset skips from start", LLMTranscriptArgs{Last: count(0), Offset: 3}, join(answer, tool)},
+		{"both zero with filtered offset", LLMTranscriptArgs{Limit: count(0), Last: count(0), Offset: 1, ContentKinds: kinds(LLMContentText)}, join("[Assistant]: first\nsecond", answer)},
+		{"head beyond end", LLMTranscriptArgs{Offset: 5}, ""},
+		{"tail beyond end", LLMTranscriptArgs{Last: count(2), Offset: 5}, ""},
+		{"large head bounds", LLMTranscriptArgs{Limit: count(int(^uint(0) >> 1)), Offset: 4}, tool},
+		{"large tail bounds", LLMTranscriptArgs{Last: count(int(^uint(0) >> 1)), Offset: 4}, user},
+		{"large offset", LLMTranscriptArgs{Last: count(2), Offset: int(^uint(0) >> 1)}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := llm.Transcript(tc.args)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	for _, tc := range []struct {
+		name string
+		args LLMTranscriptArgs
+		err  string
+	}{
+		{"both limits", LLMTranscriptArgs{Limit: count(1), Last: count(1)}, "positive limit and last values are mutually exclusive"},
+		{"negative limit with zero last", LLMTranscriptArgs{Limit: count(-1), Last: count(0)}, "limit must be non-negative"},
+		{"negative last with zero limit", LLMTranscriptArgs{Limit: count(0), Last: count(-1)}, "last must be non-negative"},
+		{"negative limit", LLMTranscriptArgs{Limit: count(-1)}, "limit must be non-negative"},
+		{"negative last", LLMTranscriptArgs{Last: count(-1)}, "last must be non-negative"},
+		{"negative offset", LLMTranscriptArgs{Offset: -1}, "offset must be non-negative"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Invalid arguments must fail even for an empty conversation.
+			got, err := (&LLM{}).Transcript(tc.args)
+			require.EqualError(t, err, tc.err)
+			require.Empty(t, got)
+		})
+	}
+
+	t.Run("empty conversation", func(t *testing.T) {
+		got, err := (&LLM{}).Transcript(LLMTranscriptArgs{Last: count(10), Offset: 2})
+		require.NoError(t, err)
+		require.Empty(t, got)
+	})
+	t.Run("unrenderable and nil content", func(t *testing.T) {
+		got, err := (&LLM{Messages: []*LLMMessage{nil, {
+			Role: LLMMessageRoleUser, Content: []*LLMContentBlock{nil, {Kind: LLMContentThinking, Text: "not rendered"}},
+		}}}).Transcript(LLMTranscriptArgs{})
+		require.NoError(t, err)
+		require.Empty(t, got)
+	})
+}
+
 func TestLlmConfig(t *testing.T) {
 	q := LLMTestQuery{}
 

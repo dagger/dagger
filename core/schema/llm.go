@@ -44,7 +44,15 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("The full message history, as structured messages."),
 		dagql.Func("transcript", s.transcript).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization)."),
+			Doc("The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).",
+				"Filters are applied before pagination. Only messages with renderable content count; content blocks within a message stay grouped. Selected messages are always returned in chronological order.").
+			Args(
+				dagql.Arg("limit").Doc("Maximum number of matching messages from the start, after offset. Must be non-negative. Zero is equivalent to omitting this argument. Positive limit and last values are mutually exclusive. If neither is positive, return all matching messages after offset."),
+				dagql.Arg("last").Doc("Maximum number of matching messages from the end, after offset. Must be non-negative. Zero is equivalent to omitting this argument. Positive limit and last values are mutually exclusive."),
+				dagql.Arg("offset").Doc("Number of matching messages to skip. Skips from the end when last is positive, otherwise from the start. Must be non-negative."),
+				dagql.Arg("roles").Doc("Only include these message roles. Omitted or empty includes USER and ASSISTANT; explicitly include SYSTEM to request system prompts."),
+				dagql.Arg("contentKinds").Doc("Only render these content block kinds. Omitted or empty includes all renderable kinds. Messages without matching renderable content do not consume pagination slots."),
+			),
 		dagql.Func("withoutMessageHistory", s.withoutMessageHistory).
 			Doc("Clear the message history, keeping only the system prompts."),
 		dagql.Func("withoutSystemPrompts", s.withoutSystemPrompts).
@@ -777,8 +785,8 @@ func (s *llmSchema) messages(_ context.Context, llm *core.LLM, _ struct{}) ([]*c
 	return msgs, nil
 }
 
-func (s *llmSchema) transcript(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
-	return llm.Transcript(), nil
+func (s *llmSchema) transcript(_ context.Context, llm *core.LLM, args core.LLMTranscriptArgs) (string, error) {
+	return llm.Transcript(args)
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {

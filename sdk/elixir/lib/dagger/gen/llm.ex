@@ -341,11 +341,25 @@ defmodule Dagger.LLM do
 
   @doc """
   The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+
+  Filters are applied before pagination. Only messages with renderable content count; content blocks within a message stay grouped. Selected messages are always returned in chronological order.
   """
-  @spec transcript(t()) :: {:ok, String.t()} | {:error, term()}
-  def transcript(%__MODULE__{} = llm) do
+  @spec transcript(t(), [
+          {:limit, integer() | nil},
+          {:last, integer() | nil},
+          {:offset, integer() | nil},
+          {:roles, [Dagger.LLMMessageRole.t()]},
+          {:content_kinds, [Dagger.LLMContentBlockKind.t()]}
+        ]) :: {:ok, String.t()} | {:error, term()}
+  def transcript(%__MODULE__{} = llm, optional_args \\ []) do
     query_builder =
-      llm.query_builder |> QB.select("transcript")
+      llm.query_builder
+      |> QB.select("transcript")
+      |> QB.maybe_put_arg("limit", optional_args[:limit])
+      |> QB.maybe_put_arg("last", optional_args[:last])
+      |> QB.maybe_put_arg("offset", optional_args[:offset])
+      |> QB.maybe_put_arg("roles", optional_args[:roles])
+      |> QB.maybe_put_arg("contentKinds", optional_args[:content_kinds])
 
     Client.execute(llm.client, query_builder)
   end
