@@ -102,30 +102,7 @@ func (file *File) AttachDependencyResultsKinds(
 	if file == nil {
 		return nil, nil
 	}
-	serviceDeps, err := file.Services.AttachDependencyResults("file", attach)
-	if err != nil {
-		return nil, err
-	}
-	lazy := file.Lazy
-	if lazy == nil {
-		// A live recipe belongs to exactly one value. Concurrent publication of
-		// one shared value is out of scope; attachment updates the recipe's inputs.
-		lazy = file.completedRecipe
-	}
-	if lazy == nil {
-		return serviceDeps, nil
-	}
-	lazyDeps, err := lazy.AttachDependencies(ctx, attach)
-	if err != nil {
-		return nil, err
-	}
-	deps := make([]dagql.DependencyResult, 0, len(serviceDeps)+len(lazyDeps))
-	deps = append(deps, serviceDeps...)
-	for _, dep := range lazyDeps {
-		// Liveness-only — see Directory.AttachDependencyResultsKinds.
-		deps = append(deps, dagql.DependencyResult{Result: dep, Owned: false})
-	}
-	return deps, nil
+	return attachFilesystemDependencyResultsKinds(ctx, "file", file.Services, file.Lazy, file.completedRecipe, attach)
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {

@@ -1505,20 +1505,29 @@ func (p *persistedDirectoryGitTreeLazy) validate() error {
 	return nil
 }
 func (lazy *DirectoryGitTreeLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	var unmoved *Directory
-	err := lazy.LazyState.Evaluate(ctx, "GitRef.tree", func(ctx context.Context) error {
-		if err := validateProducedDirectoryReceiver(dir); err != nil {
-			return err
-		}
+	return evaluateGitTreeInto(ctx, &lazy.LazyState, "GitRef.tree", dir, func(ctx context.Context, srv *dagql.Server) (*Directory, error) {
 		input := lazy.Ref.Self()
 		if input == nil || input.Ref == nil || input.Ref.SHA == "" {
-			return fmt.Errorf("DirectoryGitTreeLazy: missing Ref SHA")
+			return nil, fmt.Errorf("DirectoryGitTreeLazy: missing Ref SHA")
+		}
+		return gitRefTreeInto(ctx, dir, input, srv, lazy.DiscardGitDir, lazy.Depth, lazy.IncludeTags)
+	})
+}
+
+// evaluateGitTreeInto is the shared evaluation of the two git tree recipes:
+// validate the receiver, resolve the server, produce the tree into dir, and
+// release whatever the producer left unmoved.
+func evaluateGitTreeInto(ctx context.Context, state *LazyState, op string, dir *Directory, produce func(context.Context, *dagql.Server) (*Directory, error)) error {
+	var unmoved *Directory
+	err := state.Evaluate(ctx, op, func(ctx context.Context) error {
+		if err := validateProducedDirectoryReceiver(dir); err != nil {
+			return err
 		}
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return err
 		}
-		unmoved, err = gitRefTreeInto(ctx, dir, input, srv, lazy.DiscardGitDir, lazy.Depth, lazy.IncludeTags)
+		unmoved, err = produce(ctx, srv)
 		return err
 	})
 	if unmoved != nil {
@@ -1594,26 +1603,13 @@ func (p *persistedDirectoryGitCommitTreeLazy) validate() error {
 	return nil
 }
 func (lazy *DirectoryGitCommitTreeLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	var unmoved *Directory
-	err := lazy.LazyState.Evaluate(ctx, "GitCommit.tree", func(ctx context.Context) error {
-		if err := validateProducedDirectoryReceiver(dir); err != nil {
-			return err
-		}
+	return evaluateGitTreeInto(ctx, &lazy.LazyState, "GitCommit.tree", dir, func(ctx context.Context, srv *dagql.Server) (*Directory, error) {
 		input := lazy.Commit.Self()
 		if input == nil || input.Ref == nil || input.Ref.SHA == "" {
-			return fmt.Errorf("DirectoryGitCommitTreeLazy: missing Commit SHA")
+			return nil, fmt.Errorf("DirectoryGitCommitTreeLazy: missing Commit SHA")
 		}
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return err
-		}
-		unmoved, err = gitCommitTreeInto(ctx, dir, input, srv, lazy.DiscardGitDir, lazy.Depth, lazy.IncludeTags)
-		return err
+		return gitCommitTreeInto(ctx, dir, input, srv, lazy.DiscardGitDir, lazy.Depth, lazy.IncludeTags)
 	})
-	if unmoved != nil {
-		err = errors.Join(err, unmoved.OnRelease(context.WithoutCancel(ctx)))
-	}
-	return err
 }
 
 func gitCommitTreeInto(ctx context.Context, dst *Directory, input *GitCommit, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {

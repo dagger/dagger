@@ -111,32 +111,7 @@ func (dir *Directory) AttachDependencyResultsKinds(
 	if dir == nil {
 		return nil, nil
 	}
-	serviceDeps, err := dir.Services.AttachDependencyResults("directory", attach)
-	if err != nil {
-		return nil, err
-	}
-	lazy := dir.Lazy
-	if lazy == nil {
-		// A live recipe belongs to exactly one value. Concurrent publication of
-		// one shared value is out of scope; attachment updates the recipe's inputs.
-		lazy = dir.completedRecipe
-	}
-	if lazy == nil {
-		return serviceDeps, nil
-	}
-	lazyDeps, err := lazy.AttachDependencies(ctx, attach)
-	if err != nil {
-		return nil, err
-	}
-	deps := make([]dagql.DependencyResult, 0, len(serviceDeps)+len(lazyDeps))
-	deps = append(deps, serviceDeps...)
-	for _, dep := range lazyDeps {
-		// Liveness-only: receiver/prerequisite chain. Failures attribute to
-		// the parent's own install span via direct lookup, not transitively
-		// onto downstream chained calls.
-		deps = append(deps, dagql.DependencyResult{Result: dep, Owned: false})
-	}
-	return deps, nil
+	return attachFilesystemDependencyResultsKinds(ctx, "directory", dir.Services, dir.Lazy, dir.completedRecipe, attach)
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {

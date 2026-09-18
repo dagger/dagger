@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -157,4 +158,43 @@ func attachCompletedProducerInput[T dagql.Typed](attach func(dagql.AnyResult) (d
 		return dagql.ObjectResult[T]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
 	}
 	return typed, nil
+}
+
+// attachFilesystemDependencyResultsKinds is the shared body of the Directory
+// and File AttachDependencyResultsKinds methods: the service bindings' results
+// first, then the live recipe's (or, once published, the completed recipe's)
+// dependencies as liveness-only receiver/prerequisite links.
+func attachFilesystemDependencyResultsKinds[T dagql.Typed](
+	ctx context.Context,
+	label string,
+	services ServiceBindings,
+	lazy Lazy[T],
+	completedRecipe Lazy[T],
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
+	serviceDeps, err := services.AttachDependencyResults(label, attach)
+	if err != nil {
+		return nil, err
+	}
+	if lazy == nil {
+		// A live recipe belongs to exactly one value. Concurrent publication of
+		// one shared value is out of scope; attachment updates the recipe's inputs.
+		lazy = completedRecipe
+	}
+	if lazy == nil {
+		return serviceDeps, nil
+	}
+	lazyDeps, err := lazy.AttachDependencies(ctx, attach)
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]dagql.DependencyResult, 0, len(serviceDeps)+len(lazyDeps))
+	deps = append(deps, serviceDeps...)
+	for _, dep := range lazyDeps {
+		// Liveness-only: receiver/prerequisite chain. Failures attribute to
+		// the parent's own install span via direct lookup, not transitively
+		// onto downstream chained calls.
+		deps = append(deps, dagql.DependencyResult{Result: dep, Owned: false})
+	}
+	return deps, nil
 }
