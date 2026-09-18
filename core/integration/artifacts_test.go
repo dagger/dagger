@@ -471,6 +471,28 @@ func (ArtifactsSuite) TestLegacyAddress(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "legacy", strings.TrimSpace(out))
 }
 
+// A legacy caller's generated SDK must retain a check's authored return type.
+func (ArtifactsSuite) TestLegacyCheckDependency(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).
+		WithNewFile("dep/dagger.json", `{"name":"dep","sdk":"dang","engineVersion":"v0.21.5"}`).
+		WithNewFile("dep/main.dang", `type Dep {
+  pub verify: Container! @check { container.from("alpine:3.22").withExec(["echo", "legacy check"]) }
+}`).
+		With(withLegacyGoModule(t, c, "legacy", "legacy", "v0.21.5")).
+		WithNewFile("legacy/dagger.json", `{"name":"legacy","sdk":"go","source":".","engineVersion":"v0.21.5",
+"dependencies":[{"name":"dep","source":"../dep"}]}`).
+		WithNewFile("legacy/main.go", `package main
+import "context"
+type Legacy struct{}
+func (*Legacy) Output(ctx context.Context) (string, error) {
+ return dag.Dep().Verify().Stdout(ctx)
+}`)
+	out, err := base.With(daggerCallAt("./legacy", "output")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "legacy check", strings.TrimSpace(out))
+}
+
 func (ArtifactsSuite) TestExplicitEntrypoint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c)).
@@ -868,7 +890,6 @@ source = "dang"
  {"artifact":{"uri":"dag://failing"},"value":null,"error":{"message":"check failed"}},
  {"artifact":{"uri":"dag://passing"},"value":{"pass":true},"error":null}
  ]}}}}`, string(*values))
-
 }
 
 func artifactValue[T dagger.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *dagger.Artifact) T {
@@ -1065,23 +1086,23 @@ entrypoint = true
 		WithNewFile("good/main.dang", `type Good {
  pub expected: String! = "default"
  pub verify(ws: Workspace!): Void @check {
-  if ws.file("marker").contents != expected { raise "workspace binding lost" }
+  if (ws.file("marker").contents != expected) { raise "workspace binding lost" }
   null
  }
  pub verifyOverlay(ws: Workspace!, expectedMarker: String! = "default"): Void @check {
-  if expectedMarker != "overlay" { raise "explicit argument lost" }
-  if ws.file("marker").contents != expectedMarker { raise "workspace overlay lost" }
+  if (expectedMarker != "overlay") { raise "explicit argument lost" }
+  if (ws.file("marker").contents != expectedMarker) { raise "workspace overlay lost" }
   null
  }
- pub verifyObjects(source: Directory, files: [File!]! = [], absent: File, text: String! = ""): Void @check {
-  if source == null { raise "directory argument lost" }
-  if source.file("marker").contents != "objects" { raise "wrong directory" }
-  if files.length != 1 { raise "file list lost" }
+ pub verifyObjects(source: Directory = null, files: [File!]! = [], absent: File = null, text: String! = ""): Void @check {
+  if (source == null) { raise "directory argument lost" }
+  if (source.file("marker").contents != "objects") { raise "wrong directory" }
+  if (files.length != 1) { raise "file list lost" }
   let file = files[0]
-  if file == null { raise "file argument lost" }
-  if file.contents != "objects" { raise "wrong file" }
-  if absent != null { raise "null argument changed" }
-  if source.file("id-text").contents != text { raise "string argument changed" }
+  if (file == null) { raise "file argument lost" }
+  if (file.contents != "objects") { raise "wrong file" }
+  if (absent != null) { raise "null argument changed" }
+  if (source.file("id-text").contents != text) { raise "string argument changed" }
   null
  }
  pub fail: Void @check { raise "remote assertion" }
@@ -1156,4 +1177,22 @@ print(json.dumps(query('query($args: JSON!) { currentWorkspace { artifacts(inclu
 		}
 		require.Equal(t, 5, connections)
 	})
+}
+
+// Artifact discovery validates the environment even without automatic module loading.
+func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).
+		WithDirectory(".", artifactSource(c))
+	for _, command := range [][]string{
+		{"artifact", "list"}, {"check", "-l"}, {"generate", "-l"},
+		{"up", "-l"}, {"shell", "-l"}, {"agent", "-l"},
+	} {
+		t.Run(strings.Join(command, " "), func(ctx context.Context, t *testctx.T) {
+			args := append([]string{"--env", "missing"}, command...)
+			out, err := base.With(daggerExecFail(args...)).CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			require.Contains(t, out, `env "missing" is not defined`)
+		})
+	}
 }

@@ -289,15 +289,6 @@ func (s *workspaceSchema) sdkGenerate(ctx context.Context, sdk *core.WorkspaceSD
 	if err != nil {
 		return dagql.ObjectResult[*core.Changeset]{}, err
 	}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
-	}
-	id, err := base.ID()
-	if err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
-	}
-	var changes dagql.ObjectResult[*core.Changeset]
-	err = srv.Select(ctx, generated, &changes, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.Opt(dagql.NewID[*core.Workspace](id))}}})
-	return changes, err
+	// SDK scopes can write outside the invocation directory.
+	return s.workspaceChangesBetween(ctx, base, generated)
 }

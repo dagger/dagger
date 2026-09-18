@@ -329,15 +329,15 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return nil, err
 	}
+	cfg, err := workspaceEffectiveConfig(ctx, parent.Self())
+	if err != nil {
+		return nil, err
+	}
 	mods, failures, err := s.workspaceTargetModules(ctx, parent, include, core.ModuleLoadRepairing)
 	if err != nil {
 		return nil, err
 	}
 	entrypoints, err := workspaceEntrypointNames(ctx, parent.Self())
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := workspaceConfigWithCompatFallback(ctx, parent.Self())
 	if err != nil {
 		return nil, err
 	}
@@ -354,18 +354,10 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		reparentWorkspaceTreeRoot(root, mod.Self().Name(), entrypoints[mod.Self().Name()])
 		for _, node := range targets {
 			// Installed SDKs supply their engine-managed generator below.
-			replaced := false
-			if sdkProviders[mod.Self().Name()] {
-				for parent := node; parent != nil; parent = parent.Parent {
-					if slices.Contains(parent.Directives, "generate") {
-						replaced = true
-						break
-					}
-				}
+			if sdkProviders[mod.Self().Name()] && artifactGeneratorNode(node) != nil {
+				continue
 			}
-			if !replaced {
-				nodes = append(nodes, node)
-			}
+			nodes = append(nodes, node)
 		}
 	}
 	if parent.Self().ConfigFile != "" && len(cfg.SDKs) > 0 {
@@ -426,6 +418,15 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		}
 	}
 	return result, nil
+}
+
+func artifactGeneratorNode(node *core.ModTreeNode) *core.ModTreeNode {
+	for ; node != nil; node = node.Parent {
+		if slices.Contains(node.Directives, "generate") {
+			return node
+		}
+	}
+	return nil
 }
 
 // Generator wrappers replace a raw toolchain's generator namespace. Its skip
@@ -500,11 +501,8 @@ func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artif
 		name := artifact.Node.Path()[0]
 		entry := cfg.Modules[name]
 		nodes := []*core.ModTreeNode{artifact.Node}
-		for node := artifact.Node; node != nil; node = node.Parent {
-			if slices.Contains(node.Directives, "generate") {
-				nodes = append(nodes, node)
-				break
-			}
+		if generator := artifactGeneratorNode(artifact.Node); generator != nil {
+			nodes = append(nodes, generator)
 		}
 		enabled := false
 		for _, directive := range args.Directives {

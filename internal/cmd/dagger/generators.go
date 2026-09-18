@@ -143,7 +143,25 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 	}
 	cwd = strings.Trim(cwd, "/")
 	if cwd != "" && cwd != "." {
+		cfg, err := artifactWorkspaceConfig(ctx, dag.CurrentWorkspace())
+		if err != nil {
+			return err
+		}
+		// Installed SDK generators produce workspace-root changesets. Module
+		// generators produce changesets relative to the invocation directory.
+		sdkGenerators := map[string]bool{}
+		for _, sdk := range cfg.SDKs {
+			generatorPath := cliName(sdk.Module) + "/generate"
+			if cfg.Modules[sdk.Module].Entrypoint {
+				generatorPath = "generate"
+			}
+			uri := (&dagaddress.Address{HasScheme: true, Path: generatorPath}).String()
+			sdkGenerators[uri] = true
+		}
 		for i, changeset := range changes {
+			if sdkGenerators[results[i].Artifact.URI] {
+				continue
+			}
 			before := dag.Directory().WithDirectory(cwd, changeset.Before())
 			after := dag.Directory().WithDirectory(cwd, changeset.After())
 			changes[i] = after.Changes(before)
