@@ -281,6 +281,45 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 	})
 }
 
+// TestWorkspaceModuleUninstallKeepsAuthoredModule verifies uninstall only edits dagger.toml.
+func (WorkspaceModulesSuite) TestWorkspaceModuleUninstallKeepsAuthoredModule(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.CopyFS(
+		filepath.Join(workdir, "sdk"),
+		os.DirFS(filepath.Join("testdata", "sdks", "module-max-workspace-writer")),
+	))
+	writeWorkspaceConfigFile(t, workdir, `[modules.workspace-writer]
+source = "sdk"
+
+[sdks.test]
+module = "workspace-writer"
+`)
+
+	_, err := hostDaggerExecRaw(ctx, t, workdir, "--auto-apply", "module", "init", "test", "--name", "demo")
+	require.NoError(t, err)
+
+	moduleDir := filepath.Join(workdir, "generated", "demo")
+	moduleFile := filepath.Join(moduleDir, "dagger-module.toml")
+	moduleFileBefore, err := os.ReadFile(moduleFile)
+	require.NoError(t, err)
+
+	out, err := hostDaggerExecRaw(ctx, t, workdir, "module", "uninstall", "demo")
+	require.NoError(t, err)
+	require.Contains(t, string(out), "Module files remain at "+moduleDir+"\n")
+
+	moduleFileAfter, err := os.ReadFile(moduleFile)
+	require.NoError(t, err, "module files must survive uninstall")
+	require.Equal(t, string(moduleFileBefore), string(moduleFileAfter))
+
+	cfg := readInstalledWorkspaceConfig(t, workdir)
+	require.NotContains(t, cfg.Modules, "demo")
+	require.Equal(t, workspacecfg.SDKScope{
+		IsModule: true,
+		Name:     "demo",
+	}, cfg.SDKs["test"].Scopes["generated/demo"], "the module's SDK scope must survive uninstall")
+}
+
 // TestWorkspaceModuleMutation should cover updates and config-level conflicts
 // around configured modules.
 func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t *testctx.T) {

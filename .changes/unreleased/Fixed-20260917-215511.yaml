@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  `dagger module uninstall` no longer deletes the module's files, and no longer
+  removes the module's SDK scope from `dagger.toml`.
+time: 2026-09-17T21:55:11Z
+custom:
+  Author: eunomie

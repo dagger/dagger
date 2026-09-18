@@ -248,7 +248,7 @@ func runWorkspaceUninstall(cmd *cobra.Command, extraArgs []string) error {
 		if err := writeModuleSourceMatch(cmd.ErrOrStderr(), selection); err != nil {
 			return err
 		}
-		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), dag, selection.Name, workspaceHere)
+		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), dag, selection, workspaceHere)
 	})
 }
 
