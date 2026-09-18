@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -114,22 +115,22 @@ func migrationDisposition(cmd *cobra.Command, apply, noApply, runningInAgent boo
 
 // runMigration presents an engine-owned plan and exports it only after approval.
 func runMigration(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, args []string, moduleOnly bool, disposition changesetDisposition) (bool, error) {
-	ws := dag.CurrentWorkspace()
-	var migration *dagger.WorkspaceMigration
+	ws := core.NewQuery(dag).CurrentWorkspace()
+	var migration *core.WorkspaceMigration
 	var selectedModules []string
 	if moduleOnly {
 		target := "."
 		if len(args) > 0 {
 			target = args[0]
 		}
-		migration = ws.MigrateModule(dagger.WorkspaceMigrateModuleOpts{Path: target})
+		migration = ws.MigrateModule(core.WorkspaceMigrateModuleOpts{Path: target})
 	} else {
 		var err error
 		selectedModules, err = cmd.Flags().GetStringArray("module")
 		if err != nil {
 			return false, err
 		}
-		migration = ws.Migrate(dagger.WorkspaceMigrateOpts{Modules: selectedModules})
+		migration = ws.Migrate(core.WorkspaceMigrateOpts{Modules: selectedModules})
 	}
 	migration, err := materializeMigration(ctx, dag, migration)
 	if err != nil {
@@ -160,7 +161,7 @@ func runMigration(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, a
 			for _, target := range selected {
 				selectedModules = append(selectedModules, "/"+target)
 			}
-			migration, err = materializeMigration(ctx, dag, ws.Migrate(dagger.WorkspaceMigrateOpts{Modules: selectedModules}))
+			migration, err = materializeMigration(ctx, dag, ws.Migrate(core.WorkspaceMigrateOpts{Modules: selectedModules}))
 			if err != nil {
 				return false, err
 			}
@@ -195,12 +196,12 @@ func runMigration(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, a
 
 // Keep the preview and metadata on the same plan. Migration reads live files,
 // so querying the planning call again could produce a different result.
-func materializeMigration(ctx context.Context, dag *dagger.Client, migration *dagger.WorkspaceMigration) (*dagger.WorkspaceMigration, error) {
+func materializeMigration(ctx context.Context, dag *dagger.Client, migration *core.WorkspaceMigration) (*core.WorkspaceMigration, error) {
 	id, err := migration.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return dagger.Ref[*dagger.WorkspaceMigration](dag, id), nil
+	return core.Ref[*core.WorkspaceMigration](core.NewQuery(dag), id), nil
 }
 
 func migrationApplyCommand(cmd *cobra.Command, args []string, moduleOnly bool, selected []string) string {

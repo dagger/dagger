@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/sync/errgroup"
@@ -143,10 +144,10 @@ type moduleContext interface {
 	Subpath() string
 
 	// Directory returns a Directory object for the given subpath
-	Directory(dag *dagger.Client, subpath string) *dagger.Directory
+	Directory(dag *dagger.Client, subpath string) *core.Directory
 
 	// File returns a File object for the given subpath
-	File(dag *dagger.Client, subpath string) *dagger.File
+	File(dag *dagger.Client, subpath string) *core.File
 }
 
 type localSourceContext struct {
@@ -169,14 +170,14 @@ func (src localSourceContext) Subpath() string {
 	return src.Path
 }
 
-func (src localSourceContext) Directory(dag *dagger.Client, subpath string) *dagger.Directory {
+func (src localSourceContext) Directory(dag *dagger.Client, subpath string) *core.Directory {
 	// Don't recursively include every subdir, we're just interested in listing the entries
 	// or checking if the directory exists
-	return dag.Host().Directory(filepath.Join(src.Root, subpath), dagger.HostDirectoryOpts{Exclude: []string{"*/**", "!*"}})
+	return core.NewQuery(dag).Host().Directory(filepath.Join(src.Root, subpath), core.HostDirectoryOpts{Exclude: []string{"*/**", "!*"}})
 }
 
-func (src localSourceContext) File(dag *dagger.Client, subpath string) *dagger.File {
-	return dag.Host().File(filepath.Join(src.Root, subpath))
+func (src localSourceContext) File(dag *dagger.Client, subpath string) *core.File {
+	return core.NewQuery(dag).Host().File(filepath.Join(src.Root, subpath))
 }
 
 type gitSourceContext struct {
@@ -231,12 +232,12 @@ func (src gitSourceContext) Subpath() string {
 	return src.Path
 }
 
-func (src gitSourceContext) context(dag *dagger.Client) *dagger.Directory {
-	gitOpts := dagger.GitOpts{
+func (src gitSourceContext) context(dag *dagger.Client) *core.Directory {
+	gitOpts := core.GitOpts{
 		KeepGitDir: true,
 	}
-	git := dag.Git(src.Root, gitOpts)
-	var gitRef *dagger.GitRef
+	git := core.NewQuery(dag).Git(src.Root, gitOpts)
+	var gitRef *core.GitRef
 	if src.Pin != "" {
 		gitRef = git.Ref(src.Pin)
 	} else if src.Version != "" {
@@ -247,11 +248,11 @@ func (src gitSourceContext) context(dag *dagger.Client) *dagger.Directory {
 	return gitRef.Tree()
 }
 
-func (src gitSourceContext) Directory(dag *dagger.Client, subpath string) *dagger.Directory {
+func (src gitSourceContext) Directory(dag *dagger.Client, subpath string) *core.Directory {
 	return src.context(dag).Directory(subpath)
 }
 
-func (src gitSourceContext) File(dag *dagger.Client, subpath string) *dagger.File {
+func (src gitSourceContext) File(dag *dagger.Client, subpath string) *core.File {
 	return src.context(dag).File(subpath)
 }
 
@@ -317,7 +318,7 @@ func (h *shellCallHandler) parseModRef(ctx context.Context, path string) (rcfg *
 }
 
 type configuredModule struct {
-	Source  *dagger.ModuleSource
+	Source  *core.ModuleSource
 	Ref     string
 	Subpath string
 	Digest  string
@@ -332,7 +333,7 @@ func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcf
 	ctx, span := Tracer().Start(ctx, "detect module: "+ref)
 	defer telemetry.EndWithCause(span, &rerr)
 
-	src := h.dag.ModuleSource(ref)
+	src := core.NewQuery(h.dag).ModuleSource(ref)
 
 	// could be a git repo without a module config file in a parent directory
 	// (i.e., doesn't return an error)
@@ -394,7 +395,7 @@ func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcf
 		Digest:  digest,
 		Ref:     srcRef,
 		Subpath: filepath.Join("/", subpath),
-		Source: h.dag.ModuleSource(srcRef, dagger.ModuleSourceOpts{
+		Source: core.NewQuery(h.dag).ModuleSource(srcRef, core.ModuleSourceOpts{
 			RefPin: srcPin,
 		}),
 	}, nil
@@ -438,7 +439,7 @@ func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpa
 			ctx, span := Tracer().Start(ctx, "looking for context directory", telemetry.Internal())
 			defer telemetry.EndWithCause(span, &rerr)
 
-			src := h.dag.ModuleSource(root, dagger.ModuleSourceOpts{
+			src := core.NewQuery(h.dag).ModuleSource(root, core.ModuleSourceOpts{
 				DisableFindUp:  true,
 				AllowNotExists: true,
 			})
@@ -482,7 +483,7 @@ func newModuleContext(ctx context.Context, def *moduleDef) (rctx moduleContext, 
 	ctx, span := Tracer().Start(ctx, "getting more information from module source", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	if def.SourceKind == dagger.ModuleSourceKindLocalSource {
+	if def.SourceKind == core.ModuleSourceKindLocalSource {
 		root, err := def.Source.LocalContextDirectoryPath(ctx)
 		if err != nil {
 			return nil, err
@@ -538,7 +539,7 @@ func newModuleContext(ctx context.Context, def *moduleDef) (rctx moduleContext, 
 	}, nil
 }
 
-func (h *shellCallHandler) Directory(subpath string) (*dagger.Directory, error) {
+func (h *shellCallHandler) Directory(subpath string) (*core.Directory, error) {
 	apath, err := h.contextAbsPath(subpath)
 	if err != nil {
 		return nil, err
@@ -548,7 +549,7 @@ func (h *shellCallHandler) Directory(subpath string) (*dagger.Directory, error) 
 	return h.wd.Context.Directory(h.dag, apath), nil
 }
 
-func (h *shellCallHandler) File(subpath string) (*dagger.File, error) {
+func (h *shellCallHandler) File(subpath string) (*core.File, error) {
 	apath, err := h.contextAbsPath(subpath)
 	if err != nil {
 		return nil, err

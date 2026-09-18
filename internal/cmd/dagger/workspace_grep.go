@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 
@@ -70,7 +71,7 @@ Exit status is 0 if a match is found, 1 if no matches are found, and 2 on error.
 				SkipWorkspaceModules: true,
 			}, func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				cwd, err := dag.CurrentWorkspace().Cwd(ctx)
+				cwd, err := core.NewQuery(dag).CurrentWorkspace().Cwd(ctx)
 				if err != nil {
 					return fmt.Errorf("load workspace cwd: %w", err)
 				}

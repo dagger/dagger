@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/util/patchpreview"
 )
 
@@ -24,7 +25,7 @@ query PreviewPatch($changeset: ID!) {
 }
 `
 
-func PreviewPatch(ctx context.Context, dag *dagger.Client, changeset *dagger.Changeset) ([]patchpreview.Entry, error) {
+func PreviewPatch(ctx context.Context, dag *dagger.Client, changeset *core.Changeset) ([]patchpreview.Entry, error) {
 	changesetID, err := changeset.ID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query diff stat: get changeset id: %w", err)

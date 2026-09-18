@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"os"
@@ -73,7 +74,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 		params,
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			ws := dag.CurrentWorkspace()
+			ws := core.NewQuery(dag).CurrentWorkspace()
 			artifacts, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, false)
 			if err != nil {
 				return err
@@ -90,7 +91,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 	)
 }
 
-func runChecks(ctx context.Context, dag *dagger.Client, checks *dagger.Artifacts, _ *cobra.Command, include []string) error {
+func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, _ *cobra.Command, include []string) error {
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -64,8 +64,8 @@ func (e *HandlerError) Unwrap() []error {
 func NewHandlerError(err error) *HandlerError {
 	exit := 1
 
-	// Currently only dagger.ExecError produces an exit code > 1.
-	var exe *dagger.ExecError
+	// Currently only core.ExecError produces an exit code > 1.
+	var exe *core.ExecError
 	if errors.As(err, &exe) {
 		exit = exe.ExitCode
 	}
@@ -527,14 +527,14 @@ func (h *shellCallHandler) shellPreprocessArgs(
 		name := arg.FlagName()
 
 		switch arg.TypeDef.Kind {
-		case dagger.TypeDefKindListKind:
+		case core.TypeDefKindListKind:
 			switch arg.TypeDef.AsList.ElementTypeDef.Kind {
-			case dagger.TypeDefKindBooleanKind:
+			case core.TypeDefKindBooleanKind:
 				flags.BoolSlice(name, nil, "")
 			default:
 				flags.StringSlice(name, nil, "")
 			}
-		case dagger.TypeDefKindBooleanKind:
+		case core.TypeDefKindBooleanKind:
 			flags.Bool(name, false, "")
 		default:
 			flags.String(name, "", "")
@@ -546,14 +546,14 @@ func (h *shellCallHandler) shellPreprocessArgs(
 		name := arg.FlagName()
 
 		switch arg.TypeDef.Kind {
-		case dagger.TypeDefKindListKind:
+		case core.TypeDefKindListKind:
 			switch arg.TypeDef.AsList.ElementTypeDef.Kind {
-			case dagger.TypeDefKindBooleanKind:
+			case core.TypeDefKindBooleanKind:
 				flags.BoolSlice(name, nil, "")
 			default:
 				flags.StringSlice(name, nil, "")
 			}
-		case dagger.TypeDefKindBooleanKind:
+		case core.TypeDefKindBooleanKind:
 			flags.Bool(name, false, "")
 		default:
 			flags.String(name, "", "")
@@ -747,7 +747,7 @@ func (h *shellCallHandler) parseArgumentValues(
 			return flags.Set(flag.Name, v)
 		}
 
-		if a.TypeDef.Kind == dagger.TypeDefKindListKind {
+		if a.TypeDef.Kind == core.TypeDefKindListKind {
 			// Final values are of type `any` and for a slice flag each
 			// element will go through this parsing function independently.
 			// For non object IDs the `flags.Set()` above already handles this
@@ -830,7 +830,7 @@ func (h *shellCallHandler) defaultWorkspaceArgs(
 		if _, ok := values[arg.Name]; ok {
 			continue
 		}
-		wsID, err := h.dag.CurrentWorkspace().ID(ctx)
+		wsID, err := core.NewQuery(h.dag).CurrentWorkspace().ID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("resolve current workspace for %q: %w", fn.CmdName(), err)
 		}
@@ -933,7 +933,7 @@ func (r *Result) IsObject() bool {
 }
 
 func (r *Result) IsVoid() bool {
-	return r.typeDef != nil && r.typeDef.Kind == dagger.TypeDefKindVoidKind
+	return r.typeDef != nil && r.typeDef.Kind == core.TypeDefKindVoidKind
 }
 
 // StateResult resolves a state into a value, more commonly by making an API request.

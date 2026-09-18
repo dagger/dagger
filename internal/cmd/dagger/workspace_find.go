@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/client"
 )
 
@@ -40,7 +41,7 @@ Use --name more than once to match any of the patterns.`,
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			ws := engineClient.Dagger().CurrentWorkspace()
+			ws := core.NewQuery(engineClient.Dagger()).CurrentWorkspace()
 			var errs []error
 			for _, target := range args {
 				displayTarget := path.Clean(target)
