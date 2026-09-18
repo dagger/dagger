@@ -284,7 +284,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "":
 		return dag.Module().
-			WithDescription("TLA+ model checking for the dagql cache spec (dagql/tla).\n\nRuns every TLC configuration of CacheLifecycle.tla. Green configurations\nare regression gates: any violation fails the check. A configuration may\nname an expected invariant only when it deliberately mutates behavior to\nprove that the gate detects the bug, or tracks an accepted model finding.\n").
+			WithDescription("TLA+ model checking for the dagql cache spec (dagql/tla).\n\nRuns every TLC configuration of CacheLifecycle.tla. Green configurations\nare regression checks: any violation fails the check. A configuration may\nname an expected invariant only when it deliberately mutates behavior to\nprove that the check detects the bug, or tracks an accepted model finding.\n").
 			WithObject(
 				dag.TypeDef().WithObject("TlaCheck", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 136, 6)}).
 					WithFunction(

@@ -50,8 +50,8 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     public function emitHistory(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('emitHistory');
-        $this->queryLeaf($leafQueryBuilder, 'emitHistory');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'emitHistory');
+        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
     }
 
     /**
