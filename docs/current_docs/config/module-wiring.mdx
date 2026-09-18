@@ -7,10 +7,10 @@ description: "Connect installed modules by wiring one module's output into anoth
 # Module wiring
 
 Modules in a workspace connect to each other through settings. A setting whose
-value is a `"<module>:<function>"` string is a module reference. It injects the
-value returned by a function on another installed module. This is how generic
-modules compose without knowing about each other, and without you writing a
-glue module.
+value is a `"dag://<module>/<function>"` DAG address is a module reference. It
+injects the value returned by a function on another installed module. This is
+how generic modules compose without knowing about each other, and without you
+writing a glue module.
 
 ## Wire a service into a module
 
@@ -25,17 +25,17 @@ source = "./ci/myapp"
 source = "dagger.io/js/playwright"
 
 [modules.playwright.settings]
-service = "myapp:serve"
+service = "dag://myapp/serve"
 ```
 
 Now `dagger check playwright:test` runs the browser tests against your app.
 Dagger resolves the reference when it constructs the playwright module and
 passes the running service in.
 
-To find functions you can wire, run `dagger up -l`. It lists every
-service-returning function in the workspace, in exactly the
-`module:function` form a setting accepts. Any function returning the right
-type works, whether or not it appears there.
+To find functions you can wire, run `dagger artifacts list --type Service`.
+It lists every service-returning function in the workspace, in exactly the
+`dag://` address form a setting accepts. Any function returning the right
+type works.
 
 ## Wire a container
 
@@ -44,7 +44,7 @@ way:
 
 ```toml
 [modules.playwright.settings]
-baseCtr = "base-images:chromium"
+baseCtr = "dag://base-images/chromium"
 ```
 
 ## Wire a file, directory, or workspace
@@ -55,9 +55,9 @@ a matching constructor argument:
 
 ```toml
 [modules.packager.settings]
-binary = "builder:binary"
-assets = "frontend:assets"
-source = "source-prep:workspace"
+binary = "dag://builder/binary"
+assets = "dag://frontend/assets"
+source = "dag://source-prep/workspace"
 ```
 
 ## Reference the workspace entrypoint
@@ -69,7 +69,7 @@ reference to one can drop the module name:
 dagger module settings playwright service serve
 ```
 
-The config always stores the long form:
+The config always stores the full address:
 
 ```toml
 [modules.myapp]
@@ -77,11 +77,12 @@ source = "./ci/myapp"
 entrypoint = true
 
 [modules.playwright.settings]
-service = "myapp:serve"
+service = "dag://myapp/serve"
 ```
 
-A bare name is only treated as a reference when the entrypoint has a function
-of that name; otherwise it keeps its ordinary address meaning.
+The `dagger settings` command only rewrites a bare name when the entrypoint
+has a function of that name. In `dagger.toml`, the entrypoint's functions are
+also addressed without the module name: `dag://serve`.
 
 ## Use a reference on the command line
 
@@ -89,23 +90,22 @@ A module reference is an ordinary address string, so it also works as a CLI
 flag for any object-typed constructor argument:
 
 ```shell
-dagger api call playwright --service=myapp:serve test
+dagger api call playwright --service=dag://myapp/serve test
 ```
 
 ## How references resolve
 
-- The leading segment is a module's install name, the `[modules.X]` key in
-  this `dagger.toml`. The second segment is a zero-arg function on it whose
-  return type matches the argument. A bare `<function>` with no module segment
-  refers to the workspace entrypoint module.
-- If the first segment names an installed module, the string *is* a module
-  reference. A missing function or mismatched type is then a hard error, never
-  a silent fallback to an image or URL. If no install name matches, the string
-  keeps its ordinary address meaning: an OCI ref for a `Container`, a `tcp://`
-  URL for a `Service`.
-- Core names (`host`, `git`, `secret`, `container`, `http`, `module`, and so
-  on) are reserved and never resolve as module references, so `git:2.40` stays
-  an image ref.
+- The `dag://` scheme marks a workspace artifact address. The path's leading
+  segment is a module's install name, the `[modules.X]` key in this
+  `dagger.toml`, and the rest names a zero-arg function on it whose return type
+  matches the argument. The workspace entrypoint module's functions drop the
+  module segment: `dag://serve`.
+- An address with `dag://` *is* a module reference. A missing function or a
+  mismatched type is then a hard error, never a silent fallback to an image or
+  URL. `dagger artifacts list` prints every address the workspace has.
+- A value without `dag://` keeps its ordinary address meaning: an OCI ref for
+  a `Container`, a `tcp://` URL for a `Service`. So `git:2.40` and
+  `alpine:3.20` stay image refs.
 
 ## Design your module for wiring
 
