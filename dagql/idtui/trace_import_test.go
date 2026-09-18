@@ -349,6 +349,42 @@ func TestImportedRootRendersPassthrough(t *testing.T) {
 		"the imported root's children must render in its place")
 }
 
+// TestImportKeepRootsLeavesTheRootAsPrimary is the `dagger trace` shape: the
+// imported trace is the only trace the DB holds, so its root must stay a real
+// root -- the DB's own root and primary span, rendering its children the way a
+// live session's root does -- rather than a passthrough second root.
+func TestImportKeepRootsLeavesTheRootAsPrimary(t *testing.T) {
+	ctx := context.Background()
+	db := dagui.NewDB()
+
+	imp := enginetel.NewTraceImporter(enginetel.TraceImportSinks{
+		Spans:   db,
+		Logs:    db.LogExporter(),
+		Metrics: db.MetricExporter(),
+	})
+	imp.KeepRoots = true
+	require.NoError(t, imp.ImportSpans(ctx, foreignSessionTrace(true)))
+	require.NoError(t, imp.Seal(ctx))
+
+	rootID := prettyTestSpanID(foreignRootSpanID)
+	root := db.Spans.Map[rootID]
+	require.NotNil(t, root)
+	require.False(t, root.Passthrough, "KeepRoots must not stamp the root passthrough")
+	require.Equal(t, rootID, db.PrimarySpan, "the imported root must become the primary span")
+	require.NotNil(t, db.RootSpan)
+	require.Equal(t, rootID, db.RootSpan.ID)
+
+	// Sealing still applies: the capture's unfinished spans do not spin.
+	require.False(t, root.IsRunning(), "the imported root was not sealed")
+	require.True(t, root.Canceled)
+
+	// Zoomed to the root, the view is the root's children -- what a
+	// passthrough root would replace with its revealed spans only.
+	view := db.RowsView(dagui.FrontendOpts{ZoomedSpan: rootID})
+	require.Contains(t, view.BySpan, prettyTestSpanID(foreignLoopSpanID),
+		"the root's children must render beneath the zoomed root")
+}
+
 // TestImportMergesTheAgentsLoopSpans is what importing into the LIVE DB buys
 // (§5.1, §4.5): a re-hydrated agent keeps its runtime handle, so its old life and
 // its new one fold into one roster entry rather than two agents with one name.
