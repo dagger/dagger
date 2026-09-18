@@ -106,15 +106,19 @@ func (ws *Workspace) GitAddress() (address, commit string, err error) {
 	}
 	// The address is <cloneRef>[/<subdir>]@<version>; the version is what the
 	// user requested, and the ref carries the commit it resolved to.
-	location, version, _ := strings.Cut(ws.Address, "@")
-	address = workspace.NormalizeGitRemote(location)
+	urls, err := gitutil.ParseCloneURL(ws.Address)
+	if err != nil {
+		return "", "", fmt.Errorf("parse workspace Git address: %w", err)
+	}
+	location := urls[0]
+	address = workspace.NormalizeGitRemote(location.Remote())
 	if address == "" {
 		return "", "", fmt.Errorf("workspace %s has no Git address", ws.Address)
 	}
 	if gitRef := ref.Self().Ref; gitRef != nil && gitutil.IsCommitSHA(gitRef.SHA) {
 		commit = gitRef.SHA
-	} else if gitutil.IsCommitSHA(version) {
-		commit = version
+	} else if location.Fragment != nil && gitutil.IsCommitSHA(location.Fragment.Ref) {
+		commit = location.Fragment.Ref
 	} else {
 		return "", "", fmt.Errorf("workspace %s is not pinned to a commit", ws.Address)
 	}

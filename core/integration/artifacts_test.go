@@ -590,6 +590,59 @@ entrypoint = true
 	require.Equal(t, "dag://types\n", out)
 }
 
+func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).WithDirectory("/work/selected", artifactSource(c))
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"list", "dag+container://docs", "dag+directory://consumer"}, ""},
+		{[]string{"list", "dag+directory://docs", "dag+container://consumer"}, "dag://consumer/base\ndag://docs/source\n"},
+		{[]string{"list", "dag://docs?missing=value", "consumer/base"}, "dag://consumer/base\n"},
+		{[]string{"list", "docs", "docs/source"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "dag://docs/source\n"},
+		{[]string{"types", "dag+directory://docs", "dag+container://consumer"}, "Container\nDirectory\n"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
+			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
+			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, out)
+		})
+	}
+}
+
+func (ArtifactsSuite) TestCLIExcludedModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := artifactSource(c).WithNewFile("dagger.toml", `[modules.provider]
+source = "./provider"
+settings.label = "configured"
+[modules.invalid]
+source = "./does-not-exist"
+`)
+	base := nativeWorkspaceBase(t, c).WithDirectory("/work/selected", source)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"list", "provider/docs", "--type", "Directory"}, "dag://provider/docs/source\n"},
+		{[]string{"types", "provider/docs"}, "Directory\nProviderDocs\n"},
+		{[]string{"dimensions", "provider/docs"}, ""},
+		{[]string{"keys", "missing", "provider/docs"}, ""},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
+			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
+			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, out)
+		})
+	}
+	out, err := base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "artifacts", "list", "provider/docs", "--type", "Dir")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Directory\n")
+}
+
 func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).AsWorkspace().ID(ctx)

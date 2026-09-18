@@ -163,54 +163,31 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 	if strings.Contains(rest, ":") {
 		return true, fmt.Errorf("invalid module reference %q: only %s:<function> is supported today (a single function segment); got extra segments in %q", addr, module, rest)
 	}
-	if !qualified {
-		obj, exists := srv.ObjectType(spec.Type.Type().Name())
-		if exists {
-			if _, exists := obj.FieldSpec(strcase.ToLowerCamel(rest), srv.View); !exists {
-				return false, nil
-			}
-		}
+	functionField := strcase.ToLowerCamel(rest)
+	var functionSpec dagql.FieldSpec
+	functionExists := false
+	if objType, exists := srv.ObjectType(spec.Type.Type().Name()); exists {
+		functionSpec, functionExists = objType.FieldSpec(functionField, srv.View)
 	}
-	return true, selectModuleRef(ctx, srv, addr, module, rest, dest)
-}
-
-func selectModuleRef(ctx context.Context, srv *dagql.Server, addr, module, rest string, dest any) error {
-	srv = srv.Canonical()
-	root := srv.Root()
-	moduleField := strcase.ToLowerCamel(module)
-	spec, exists := root.ObjectType().FieldSpec(moduleField, srv.View)
-	if !exists {
-		return fmt.Errorf("workspace module %q has no constructor", module)
+	if !qualified && !functionExists {
+		return false, nil
 	}
-	fields := core.NewModTreePath(rest).APICase()
-	selectors := []dagql.Selector{{
-		Field: moduleField,
-		Args:  core.WithBoundWorkspaceArgs(ctx, srv, spec.Args.Inputs(srv.View), nil),
-	}}
-	parentType := spec.Type.Type()
-	for _, field := range fields {
-		objType, exists := srv.ObjectType(parentType.Name())
-		if !exists || parentType.Elem != nil {
-			return fmt.Errorf("resolve module reference %q: cannot traverse %s", addr, parentType)
-		}
-		fieldSpec, exists := objType.FieldSpec(field, srv.View)
-		if !exists {
-			return fmt.Errorf("resolve module reference %q: %s has no field %q", addr, parentType.Name(), field)
-		}
-		selectors = append(selectors, dagql.Selector{
-			Field: field,
-			Args:  core.WithBoundWorkspaceArgs(ctx, srv, fieldSpec.Args.Inputs(srv.View), nil),
-		})
-		parentType = fieldSpec.Type.Type()
+	var functionArgs []dagql.NamedInput
+	if functionExists {
+		functionArgs = core.WithBoundWorkspaceArgs(ctx, srv, functionSpec.Args.Inputs(srv.View), nil)
+	}
+	selectors := []dagql.Selector{
+		{Field: moduleField, Args: core.WithBoundWorkspaceArgs(ctx, srv, spec.Args.Inputs(srv.View), nil)},
+		{Field: functionField, Args: functionArgs},
 	}
 
 	// Normalize names so case variants cannot evade cycle detection during
 	// nested module construction.
-	normalized := moduleField + ":" + strings.Join(fields, ":")
+	normalized := moduleField + ":" + functionField
 	chain, _ := ctx.Value(moduleRefCycleKey{}).([]string)
 	for _, seen := range chain {
 		if seen == normalized {
-			return fmt.Errorf("module reference cycle detected: %s -> %s",
+			return true, fmt.Errorf("module reference cycle detected: %s -> %s",
 				strings.Join(chain, " -> "), normalized)
 		}
 	}
@@ -219,10 +196,10 @@ func selectModuleRef(ctx context.Context, srv *dagql.Server, addr, module, rest 
 	newChain[len(chain)] = normalized
 	ctx = context.WithValue(ctx, moduleRefCycleKey{}, newChain)
 
-	if err := srv.Select(ctx, root, dest, selectors...); err != nil {
-		return fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
+	if err := srv.Select(ctx, srv.Root(), dest, selectors...); err != nil {
+		return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
 	}
-	return nil
+	return true, nil
 }
 
 // demandLoadInstalledModule loads and serves the named workspace module when
