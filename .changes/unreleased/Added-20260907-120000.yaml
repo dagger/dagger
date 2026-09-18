@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  The interval at which the engine samples container resource metrics (CPU,
+  memory, IO, network) from cgroups is now configurable via the engine
+  configuration: `telemetry.cgroupSampleInterval` in `engine.json` (e.g.
+  `{"telemetry": {"cgroupSampleInterval": "10s"}}`) or a `[telemetry]` section
+  with `cgroupSampleInterval` in the engine TOML config. The `engine.json`
+  setting takes precedence; unset keeps the built-in 5s default.
+time: 2026-09-07T12:00:00Z
+custom:
+  Author: marcosnils
+  PR: ""

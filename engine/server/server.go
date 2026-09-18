@@ -115,6 +115,7 @@ type Server struct {
 	dns                     *oci.DNSConfig
 	apparmorProfile         string
 	selinux                 bool
+	cgroupSampleInterval    time.Duration
 	entitlements            entitlements.Set
 	enabledPlatforms        []ocispecs.Platform
 	defaultPlatform         ocispecs.Platform
@@ -222,6 +223,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	var err error
 	if err := srv.configureLocalCacheGC(cfg.GC, ociCfg.GCConfig); err != nil {
+		return nil, err
+	}
+
+	srv.cgroupSampleInterval, err = resolveCgroupSampleInterval(cfg.Telemetry, bkcfg.Telemetry)
+	if err != nil {
 		return nil, err
 	}
 
@@ -432,13 +438,14 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		TelemetryPubSub:  srv.telemetryPubSub,
 		SessionHandler:   srv,
 
-		Runc:                srv.runc,
-		DefaultCgroupParent: srv.cgroupParent,
-		ProcessMode:         srv.processMode,
-		DNSConfig:           srv.dns,
-		ApparmorProfile:     srv.apparmorProfile,
-		SELinux:             srv.selinux,
-		Entitlements:        srv.entitlements,
+		Runc:                 srv.runc,
+		DefaultCgroupParent:  srv.cgroupParent,
+		CgroupSampleInterval: srv.cgroupSampleInterval,
+		ProcessMode:          srv.processMode,
+		DNSConfig:            srv.dns,
+		ApparmorProfile:      srv.apparmorProfile,
+		SELinux:              srv.selinux,
+		Entitlements:         srv.entitlements,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,
