@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -451,4 +452,109 @@ func TestFixtureBarrierDecodeJoined(t *testing.T) {
 		}
 	}
 	require.EqualValues(t, 1, entries.Load(), "one decode served both")
+}
+
+// The second schedule of the same faults: the slot's attempt meets the fault
+// and retires with its bookkeeping pending before the external Finish runs
+// the task. Finish then leads the retry itself, as the kernel's next attempt
+// does: bookkeeping only, so exactly one more attachment, the output settled,
+// no second preparation or pin, the protection released once. The pinned
+// joined schedule is TestFixtureBarrierOwnerAttachFaults; both are correct
+// and both now have a test.
+func TestFixtureBarrierOwnerAttachFaultFinishLedRetry(t *testing.T) {
+	for _, tc := range []struct {
+		action   FixtureBarrierAction
+		point    FixtureBarrierPoint
+		attaches int32
+	}{
+		{FixtureFailOwnerAttachBefore, FixtureBeforeOwnerAttach, 0},
+		{FixtureFailOwnerAttachAfter, FixtureAfterOwnerAttach, 1},
+	} {
+		t.Run(string(tc.action), func(t *testing.T) {
+			ctx, c, srv, manager := shareTestCache(t)
+			c.EnableTransferFixtureParts()
+			donor, receiver := shareTestPair(t, ctx, c, srv,
+				map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+				map[string]sharePartState{"fs": {}},
+			)
+			_ = donor
+			row := receiver.cacheSharedResult()
+			address := PersistedPartAddress{Part: "fs"}
+			attachesBefore := manager.attaches.Load()
+			armed, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "attach", Point: tc.point, Selector: FixtureBarrierSelector{ResultID: uint64(row.id)}, Action: tc.action})
+			require.NoError(t, err)
+			held, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "synced", Point: FixtureOwnerSyncDone, Selector: FixtureBarrierSelector{ResultID: uint64(row.id)}, Action: FixturePause})
+			require.NoError(t, err)
+
+			// An Installed receipt from a task whose owner sync only the test
+			// opens, as a sharing slot's is only opened by the pass's Finish.
+			never := make(chan struct{})
+			receipts := make(chan *ReadyPartReceipt, 1)
+			attemptDone := make(chan error, 1)
+			go func() {
+				attemptDone <- c.RunLazyTask(ctx, receiver, partTaskKey("obtain", address), LazyTaskSpec{OwnerSyncReady: never, Body: func(ctx context.Context) error {
+					source, err := c.AcquireEquivalentPartSource(ctx, receiver, address)
+					if err != nil {
+						return err
+					}
+					permit, _, err := c.TryAcquire(ctx, receiver, address, PartTaskFromContext(ctx))
+					if err != nil {
+						return err
+					}
+					p, err := c.PrepareReadyPart(ctx, receiver, source, permit)
+					if err != nil {
+						return err
+					}
+					receipt, outcome, err := c.CommitReadyPart(ctx, p)
+					if outcome != PartInstalled {
+						return errors.New("publication refused")
+					}
+					receipts <- receipt
+					return err
+				}})
+			}()
+			var receipt *ReadyPartReceipt
+			select {
+			case receipt = <-receipts:
+			case err := <-attemptDone:
+				require.NoError(t, err)
+				t.Fatal("missing receipt")
+			case <-time.After(10 * time.Second):
+				t.Fatal("the task never published")
+			}
+			pins := manager.pins.Load()
+
+			// Open the sync ourselves; the attempt meets the fault and is held
+			// after it, then released to retire with its bookkeeping pending.
+			receipt.task.openOwnerSync()
+			reached, err := c.WaitTransferFixtureBarrier(ctx, "attach", armed.Generation)
+			require.NoError(t, err)
+			require.Contains(t, reached.Event.Detail, "fs-snap")
+			_, err = c.WaitTransferFixtureBarrier(ctx, "synced", held.Generation)
+			require.NoError(t, err)
+			require.Equal(t, tc.attaches, manager.attaches.Load()-attachesBefore)
+			require.NoError(t, c.ReleaseTransferFixtureBarrier("synced", held.Generation))
+			select {
+			case err := <-attemptDone:
+				require.ErrorIs(t, err, ErrFixtureLocalStorage, "the attempt ended with the fault")
+			case <-time.After(10 * time.Second):
+				t.Fatal("the attempt never retired")
+			}
+			require.False(t, receipt.task.settled.Load())
+
+			// Finish arrives after the retirement and leads the retry.
+			require.NoError(t, c.FinishReadyPart(ctx, receipt), "Finish leads the bookkeeping-only retry")
+			require.Equal(t, tc.attaches+1, manager.attaches.Load()-attachesBefore, "exactly one more attachment")
+			require.True(t, receipt.task.settled.Load())
+			key, _ := partAddressKey(address)
+			gate := row.partGate.gate.Load()
+			gate.mu.Lock()
+			phase := gate.outputs[key].phase
+			gate.mu.Unlock()
+			require.Equal(t, PartComplete, phase, "the output is settled")
+			require.Equal(t, pins, manager.pins.Load(), "no second preparation or pin")
+			require.Equal(t, int32(1), manager.released.Load(), "the protection is released once")
+			require.True(t, shareTestHasLink(receiver, "fs-snap"))
+		})
+	}
 }
