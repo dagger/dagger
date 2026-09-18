@@ -277,7 +277,7 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		io.WriteString(w, encoded)
+		io.WriteString(w, encoded) //nolint:gosec // G705: base64 as text/plain, never rendered as HTML.
 	})
 	mux.HandleFunc("/calls", func(w http.ResponseWriter, r *http.Request) {
 		pattern := r.URL.Query().Get("grep")
@@ -298,7 +298,7 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 			io.WriteString(w, "no calls match\n")
 			return
 		}
-		io.WriteString(w, strings.Join(lines, "\n")+"\n")
+		io.WriteString(w, strings.Join(lines, "\n")+"\n") //nolint:gosec // G705: call listing as text/plain, never rendered as HTML.
 	})
 	inspector := &consoleTraceInspector{frontend: fe}
 	mux.HandleFunc("/agents", inspector.agents)
