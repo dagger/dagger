@@ -47,6 +47,8 @@ build, and golangci-lint caches are shared between runs.
   is included as well.
 - Every `go.mod` counts, including those under `vendor/`, `testdata/`,
   `examples/`, hidden directories, and directories listed in `.gitignore`.
+- A directory is a module when its `go.mod` parses and it holds at least one
+  Go file, so an empty module or a placeholder `go.mod` is left out.
 
 Exclude a module with the `lint` setting, which selects module roots by path
 from the workspace root. `"!vendor"` excludes the module at `vendor` and any
@@ -60,16 +62,18 @@ List the current settings with `dagger module settings golangci-lint`, then
 change one with `dagger module settings golangci-lint <key> <value>`. Settings
 live in `dagger.toml` under `[modules.golangci-lint.settings]`:
 
-- `version` (default `2.11.4`) selects the golangci-lint version, without the
-  `v` prefix. It selects the `golangci/golangci-lint:v<version>-alpine` image.
-  The default is pinned by digest and includes a C/C++ toolchain for cgo
-  typechecking.
-- The Go toolchain is the one in that image. golangci-lint `2.11.4` ships Go
-  `1.26.1`. The Go module's `version` and `base` settings apply to tests and
-  generators, and this module has its own. To lint with a newer Go, set
-  `version` to a golangci-lint release built with it, or supply `base`.
-- `base` is an optional custom container with Go, golangci-lint, and any required
-  system dependencies installed. It cannot be combined with `version`.
+- `version` (default `2.11.4`) selects the golangci-lint release every module
+  is linted with, without the `v` prefix. The default is pinned by digest. It is
+  installed into the lint container unless that container already carries
+  golangci-lint.
+- `goVersion` sets one Go toolchain for every module, overriding the `go`
+  directive in each module's `go.mod`. Without it, each module is linted with
+  the toolchain its own `go.mod` asks for. It is separate from the Go module's
+  `version`, which applies to tests and generators.
+- `base` is an optional container to run golangci-lint in. It must carry a Go
+  toolchain and any C/C++ dependencies the modules need, and golangci-lint is
+  installed into it unless it already has one. It supplies its own toolchain,
+  so `goVersion` is ignored alongside it.
 - `includeExtraFiles` (default empty) adds workspace-root path patterns for
   files that automatic source discovery misses.
 - `lint` (default `["**"]`) selects module roots to lint. A bare path or
@@ -83,6 +87,7 @@ Edit list-valued settings directly in `dagger.toml`:
 ```toml
 [modules.golangci-lint.settings]
 version = "2.11.4"
+goVersion = "1.26"
 lint = ["**", "!legacy-service"]
 includeExtraFiles = ["shared/config/**"]
 ```
@@ -91,4 +96,4 @@ includeExtraFiles = ["shared/config/**"]
 
 Use this module alongside [Go](../go.mdx) for tests and code generation.
 
-[source code](https://github.com/dagger/golangci-lint)
+[source code](https://github.com/dagger/go/tree/main/golangci-lint)

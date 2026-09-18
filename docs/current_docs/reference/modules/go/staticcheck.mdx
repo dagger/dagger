@@ -49,6 +49,8 @@ between runs.
   is included as well.
 - Every `go.mod` counts, including those under `vendor/`, `testdata/`,
   `examples/`, hidden directories, and directories listed in `.gitignore`.
+- A directory is a module when its `go.mod` parses and it holds at least one
+  Go file, so an empty module or a placeholder `go.mod` is left out.
 
 Exclude a module with the `lint` setting, which selects module roots by path
 from the workspace root. `"!vendor"` excludes the module at `vendor` and any
@@ -62,17 +64,18 @@ List the current settings with `dagger module settings staticcheck`, then
 change one with `dagger module settings staticcheck <key> <value>`. Settings
 live in `dagger.toml` under `[modules.staticcheck.settings]`:
 
-- `version` (default `v0.8.1`) selects the Staticcheck release installed with
-  `go install`.
-- `goVersion` (default `1.26`) selects the Go version for the default
-  `golang:<goVersion>-alpine` container, which Staticcheck is built and run in.
-  Set it to at least the `go` version in the project's `go.mod`, and to a
-  toolchain the Staticcheck release supports. The Go module's `version` and
-  `base` settings apply to tests and generators, and this module has its own.
-  The default container includes a C/C++ toolchain.
-- `base` is an optional custom Go container with any required native
-  dependencies. Staticcheck is built in this container. It cannot be combined
-  with `goVersion`.
+- `version` (default `v0.8.1`) selects the Staticcheck release every module is
+  checked with. It is installed into the lint container unless that container
+  already carries Staticcheck.
+- `goVersion` sets one Go toolchain for every module, overriding the `go`
+  directive in each module's `go.mod`. Without it, each module is checked in
+  `golang:<version>-alpine` for the version its own `go.mod` asks for. It is
+  separate from the Go module's `version`, which applies to tests and
+  generators.
+- `base` is an optional container to run Staticcheck in. It must carry a Go
+  toolchain and any C/C++ dependencies the modules need, and Staticcheck is
+  installed into it unless it already has one. It supplies its own toolchain,
+  so `goVersion` is ignored alongside it.
 - `includeExtraFiles` (default empty) adds workspace-root path patterns for
   files that automatic source discovery misses.
 - `lint` (default `["**"]`) selects module roots to analyze. A bare path or
@@ -95,4 +98,4 @@ includeExtraFiles = ["shared-assets/**"]
 
 Use this module alongside [Go](../go.mdx) for tests and code generation.
 
-[source code](https://github.com/dagger/staticcheck)
+[source code](https://github.com/dagger/go/tree/main/staticcheck)

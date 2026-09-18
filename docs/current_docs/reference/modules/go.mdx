@@ -10,8 +10,8 @@ The Go module gives a Go workspace one shared way to test and run
 `go generate`. It scans the workspace for `go.mod` files, treats each one as a Go
 module, and exposes workspace-level functions that run across all of them. That
 makes it a good fit for monorepos, service repos, and libraries with generated
-code, especially when several modules should share one Go version and the same
-CI checks.
+code. Each module runs on the Go toolchain its own `go.mod` asks for, and the
+same checks cover all of them.
 
 ## Add it to your workspace
 
@@ -42,6 +42,8 @@ TUI and Dagger Cloud.
   is included as well.
 - Every `go.mod` counts, including those under `vendor/`, `testdata/`,
   `examples/`, hidden directories, and directories listed in `.gitignore`.
+- A directory is a module when its `go.mod` parses and it holds at least one
+  Go file, so an empty module or a placeholder `go.mod` is left out.
 
 Exclude a Go module from `test-all` with the `test` setting, which selects
 module roots by path from the workspace root:
@@ -83,13 +85,17 @@ List the current settings with `dagger module settings go`, then change one with
 `dagger module settings go <key> <value>`. They live in `dagger.toml` under
 `[modules.go.settings]`:
 
-- `version` (default `1.26`) is the Go toolchain version used to build the test
-  and generate containers (`golang:<version>-alpine`). Set this so every module
-  is tested and generated against the same Go version.
+- `version` sets one Go toolchain for every module, overriding the `go`
+  directive in each module's `go.mod`. Without it, each module is tested and
+  generated in `golang:<version>-alpine` for the version its own `go.mod` asks
+  for, and a module with no `go` directive uses `1.26`.
 - `base` is an optional container to use instead of that image, for tests and
-  generators that need system packages or bound services. It needs Go 1.26 or
-  newer and cannot be combined with `version`. Wire a function of your own into
-  it with [module wiring](../../config/module-wiring.mdx).
+  generators that need system packages or bound services. It must carry a Go
+  toolchain and any C/C++ dependencies the modules need, and the test runner
+  is installed into it unless it already has one. It supplies its own
+  toolchain, so `version` is ignored alongside it and the run reports the
+  ignored value. Wire a function of your own into it with
+  [module wiring](../../config/module-wiring.mdx).
 - `includeExtraFiles` (default empty) are extra workspace-root path patterns
   mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`,
   and `testdata/` directories are already included automatically; use this for
@@ -107,24 +113,23 @@ List the current settings with `dagger module settings go`, then change one with
   the workspace address, usually the repository name.
 
 ```bash
-# Pin the Go version for the whole workspace
-dagger module settings go version 1.25
+# Use one Go version for the whole workspace, whatever each go.mod says
+dagger module settings go version 1.26
 ```
 
 List-valued settings are edited directly in `dagger.toml`:
 
 ```toml
 [modules.go.settings]
-version = "1.25"
+version = "1.26"
 includeExtraFiles = ["Makefile", "tools/**"]
 test = ["**", "!legacy-service"] # Test all modules except legacy-service and modules below it
 ```
 
 ## Working with other modules
 
-Reach for this module whenever the repo contains one or more Go modules,
-especially when they should share the same Go version and CI checks. To exclude a
-single module from a workflow, add a `!`-prefixed module path to the corresponding
+Reach for this module whenever the repo contains one or more Go modules that
+should share the same CI checks. To exclude a single module from a workflow, add a `!`-prefixed module path to the corresponding
 selector array rather than splitting the repo into separate check systems.
 
 For Go lint checks, install [golangci-lint](./go/golangci-lint.mdx) or

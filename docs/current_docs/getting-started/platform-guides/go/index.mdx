@@ -62,8 +62,8 @@ dagger module settings go
 
 ```text
 MODULE  KEY                VALUE  DESCRIPTION
-go      version                   Go version used for the default Go base image.
-go      base                      Base image used for Go test, generate, and helper containers.
+go      version                   Go toolchain version for every module, overriding what each module's own
+go      base                      Base image for Go test and generate containers. It must carry a Go
 go      includeExtraFiles         Extra workspace-root include patterns mounted for each module's Go commands.
 go      test                      Module roots to test. A bare pattern selects, a "!"-prefixed pattern
 go      generate                  Directories to run go generate in. Paths are relative to the workspace root
@@ -79,8 +79,8 @@ dagger module settings go version 1.26
 
 The settings that come up most often:
 
-- **`version`**: the Go toolchain used to test and generate every Go module in the workspace. It selects the tag of the default `golang:<version>-alpine` image.
-- **`base`**: a container to use instead of that image. `version` and `base` are mutually exclusive, and the `go` module fails to load when both are set. The second half of this guide sets `base`.
+- **`version`**: one Go toolchain for every Go module in the workspace. Without it, each module is tested and generated with the toolchain its own `go.mod` asks for, in a `golang:<version>-alpine` image.
+- **`base`**: a container to use instead of that image. It supplies its own toolchain, so `version` is ignored alongside it. The second half of this guide sets `base`.
 - **`includeExtraFiles`**: files the `go` module does not mount on its own. By default each Go command sees the module's Go source files, its `go.mod`, `go.sum`, and `go.work`, the files named by `go:embed` directives, and local `replace` targets, and tests also see every `testdata/` directory. Anything else a test opens by relative path can be listed here as a pattern from the repository root. A file that only one package needs is better declared next to that package with a directive, covered in [Declare the files a test or generator reads](#declare-the-files-a-test-or-generator-reads).
 - **`test`**: which Go modules are tested, as module-root selectors. The `go` module covers every `go.mod` it finds, including ones under directories like `examples/` or `tools/`. To cover only the root module, set it to `["."]`. To cover everything except one module, keep `"**"` and add a `!`-prefixed path, as in `["**", "!legacy-service", "!test-fixtures"]`.
 - **`generate`**: which directories `go generate` runs in, as paths and globs from the repository root. A literal path selects only that directory, `internal/**` selects `internal` and everything below it, and a `!` prefix excludes.
@@ -122,7 +122,7 @@ go:generate-all          # Did you "run go generate . in selected directories ac
 golangci-lint:lint-all   # Run golangci-lint in every selected Go module.
 ```
 
-`golangci-lint:lint-all` runs the linter in every selected Go module and reports diagnostics with paths relative to the repository root. It runs in its own pinned image with its own Go toolchain, so the `go` module's `version` and `base` settings do not affect it. The linter module has settings of the same shape:
+`golangci-lint:lint-all` runs the linter in every selected Go module and reports diagnostics with paths relative to the repository root. It runs in its own container, built for the toolchain each module's `go.mod` asks for, so the `go` module's `version` and `base` settings do not affect it. The linter module has settings of the same shape:
 
 ```shell
 dagger module settings golangci-lint
@@ -130,13 +130,14 @@ dagger module settings golangci-lint
 
 ```text
 MODULE         KEY                VALUE  DESCRIPTION
-golangci-lint  version                   golangci-lint version for the default Alpine image, without the v prefix.
-golangci-lint  base                      Custom container with golangci-lint and Go installed. Mutually exclusive
+golangci-lint  version                   golangci-lint release every module is linted with, without the v prefix.
+golangci-lint  goVersion                 Go toolchain version for every module, overriding what each module's own
+golangci-lint  base                      Container to run golangci-lint in. It must carry a Go toolchain, along with
 golangci-lint  includeExtraFiles
 golangci-lint  lint                      Module roots to lint. Bare patterns select, "!"-prefixed patterns exclude,
 ```
 
-`version` selects the golangci-lint release, and `base` replaces the image with one of your own, so the two are mutually exclusive here too. `includeExtraFiles` and `lint` follow the same rules as the `go` module's settings, so a monorepo that excludes a module from tests usually excludes it from lint the same way:
+`version` selects the golangci-lint release, `goVersion` overrides the Go toolchain the same way the `go` module's `version` does, and `base` supplies a container of your own, which brings its own toolchain. `includeExtraFiles` and `lint` follow the same rules as the `go` module's settings, so a monorepo that excludes a module from tests usually excludes it from lint the same way:
 
 ```toml
 [modules.golangci-lint.settings]
@@ -189,7 +190,7 @@ Prefer a directive when one package needs the file. It travels with the code, an
 
 ## Provide the runtime the tests and generators run in
 
-By default the `go` module runs every Go command in `golang:<version>-alpine`. The most common reason to provide a custom runtime is if your tests or generators require system dependencies such as `git`, a C compiler for cgo, or `protoc`. The `base` setting takes that runtime, and module wiring lets a function of your own build it.
+By default the `go` module runs every Go command in `golang:<version>-alpine`, for the version each module's `go.mod` asks for. The most common reason to provide a custom runtime is if your tests or generators require system dependencies such as `git`, a C compiler for cgo, or `protoc`. The `base` setting takes that runtime, and module wiring lets a function of your own build it.
 
 ### Create a runtime module
 
@@ -210,7 +211,7 @@ dagger module init dang
 `testRuntime` starts from the Debian-based `golang:1.26-bookworm` image instead of the Alpine default, which brings `git` and `gcc` with it, and installs `protobuf-compiler`, so a `//go:generate` line that runs `protoc` works. It is deliberately minimal:
 
 - **Only an image and its packages.** No working directory, no source, no cache mounts. The `go` module adds its own on top.
-- **The image sets the Go version.** Once `base` is wired, the toolchain is whatever your container provides. The `go` module requires this container to have Go 1.26 or newer.
+- **The image sets the Go version.** Once `base` is wired, the toolchain is whatever your container provides, for every Go module in the workspace. The `go` module installs its test runner into the container, which needs Go 1.25 or newer.
 
 Open a shell in the container the `go` module will receive, and run `protoc --version` to confirm the package is there:
 
@@ -222,7 +223,7 @@ dagger shell test-runtime
 
 A setting can hold a module reference instead of a literal value, which is called [module wiring](../../../config/module-wiring.mdx). `<project>-dev:test-runtime` names the `<project>-dev` module and its `test-runtime` function. Dagger calls the function when it loads the `go` module and passes the result in as the setting's value. The reusable module gets a project-specific container, and nobody writes a custom test Check.
 
-`version` and `base` are mutually exclusive. With both set, every Check fails with `version and base are mutually exclusive`. If the project set `version` earlier, remove it, since the Go version now comes from `base`:
+`base` supplies its own toolchain, so a `version` the project set earlier is ignored from now on, and each run says so. Remove it:
 
 ```shell
 dagger module settings -u go version
