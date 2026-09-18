@@ -148,6 +148,39 @@ func (a *Artifacts) Pretty() []string {
 	return lines
 }
 
+// Evaluate selects the artifact's value in the caller's session. The cached
+// module tree carries the dagql server that discovered it, whose field specs
+// reference module provenance results owned by that session. A fresh server
+// binds the provenance to results this session owns, so evaluation does not
+// depend on the discovering session being alive.
+func (a *Artifact) Evaluate(ctx context.Context, dest any) error {
+	if a.Node == nil {
+		return fmt.Errorf("artifact %s has no module tree", strings.Join(a.Path, "/"))
+	}
+	artifact := a.Clone()
+	servers := map[uint64]*dagql.Server{}
+	for node := artifact.Node; node != nil; node = node.Parent {
+		if node.Module.Self() == nil {
+			continue
+		}
+		moduleID, err := node.Module.ID()
+		if err != nil {
+			return fmt.Errorf("artifact module ID: %w", err)
+		}
+		key := moduleID.EngineResultID()
+		srv, ok := servers[key]
+		if !ok {
+			srv, err = dagqlServerForModule(ctx, node.Module)
+			if err != nil {
+				return fmt.Errorf("artifact %s: %w", strings.Join(artifact.Path, "/"), err)
+			}
+			servers[key] = srv
+		}
+		node.DagqlServer = srv
+	}
+	return artifact.Node.DagqlValue(ctx, dest)
+}
+
 // ModuleArtifactNodes lists object values without evaluating them. Walk through
 // module objects and stop at core objects. Skip caller arguments, nullable
 // values, and lists.
