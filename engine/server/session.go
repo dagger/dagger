@@ -137,10 +137,13 @@ type daggerSession struct {
 	telemetryPubSub *PubSub
 	seenKeys        sync.Map
 
-	// callPayloadTargets tracks which client delivery targets have claimed each
-	// immutable call payload digest. Checks may race harmlessly; the log exporter
-	// claims all missing targets for one record under callPayloadMu so overlapping
-	// routes can never persist the same digest twice to a target.
+	// Serialize log exports across the ordinary and payload processors so a
+	// delivery decision can be committed only after persistence succeeds. This
+	// lock is separate from callPayloadMu: producer checks never wait for I/O.
+	logExportMu sync.Mutex
+
+	// callPayloadTargets tracks which client delivery targets have received each
+	// immutable call payload digest, either on a span or through the log exporter.
 	callPayloadMu      sync.Mutex
 	callPayloadTargets map[string]map[string]struct{}
 
@@ -3483,7 +3486,7 @@ func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.CallPaylo
 // callPayloadDeliveryStore suppresses the producer's recipe walk when every
 // target on its route already has a digest. It deliberately does not claim:
 // checks can overlap while records are queued, and sessionLogExporter settles
-// the exact per-target decision atomically immediately before persistence.
+// the exact per-target decision after successful persistence.
 type callPayloadDeliveryStore struct {
 	session *daggerSession
 	targets []string

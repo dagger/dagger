@@ -215,7 +215,11 @@ type sessionLogExporter struct {
 }
 
 func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	exp.sess.logExportMu.Lock()
+	defer exp.sess.logExportMu.Unlock()
+
 	byTarget := map[string][]sdklog.Record{}
+	payloadsByTarget := map[string]map[string]struct{}{}
 	for _, rec := range records {
 		digest, payload, err := classifyCallPayloadRecord(rec)
 		if err != nil {
@@ -232,13 +236,22 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			return err
 		}
 		if payload {
-			route = exp.sess.callPayloadMissingTargets(digest, route, true)
+			route = exp.sess.callPayloadMissingTargets(digest, route, false)
 		}
 		if len(route) == 0 {
 			continue
 		}
 		rec = withoutLogOrigin(rec)
 		for _, target := range route {
+			if payload {
+				if payloadsByTarget[target] == nil {
+					payloadsByTarget[target] = map[string]struct{}{}
+				}
+				if _, duplicate := payloadsByTarget[target][digest]; duplicate {
+					continue
+				}
+				payloadsByTarget[target][digest] = struct{}{}
+			}
 			byTarget[target] = append(byTarget[target], rec)
 		}
 	}
@@ -247,6 +260,9 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		eg.Go(func() error {
 			if err := exp.ps.Logs(target).Export(ctx, targetRecords); err != nil {
 				return fmt.Errorf("export logs to %s: %w", target, err)
+			}
+			for digest := range payloadsByTarget[target] {
+				exp.sess.callPayloadMissingTargets(digest, []string{target}, true)
 			}
 			return nil
 		})
@@ -731,13 +747,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	appendStart := time.Now()
 	stats, appendErr := db.AppendLogs(inserts)
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
-	if appendErr != nil {
-		// Log export remains best-effort, but the append-only store's I/O
-		// failures apply to the entire batch rather than an individual row.
-		slog.Warn("failed to append log records", "error", appendErr)
-	}
-
-	return nil
+	return appendErr
 }
 
 func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
