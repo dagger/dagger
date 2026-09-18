@@ -1,0 +1,6 @@
+name = "cache-demo"
+engineVersion = "v1.0.0-0"
+disableDefaultFunctionCaching = true
+
+[runtime]
+  source = "dang"
