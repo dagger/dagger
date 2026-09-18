@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,12 @@ type RemoteCacheFixturePersistence struct {
 // Query.Server, so core does not import engine/server. An engine started
 // without the fixture gate does not implement any of them usefully: every
 // method then reports that the fixture is not enabled.
+// ErrRemoteCacheFixtureNoController is what every server-only control
+// answers on an engine that has no fixture controller: the gate is unset, or
+// a real integration is configured and the fixture supplies no consumer. The
+// report omits the groups that need the controller rather than failing.
+var ErrRemoteCacheFixtureNoController = errors.New("remote cache fixture: this engine has no fixture controller")
+
 type RemoteCacheFixtureControls interface {
 	// RemoteCacheFixtureGC runs the engine's actual metadata and snapshot
 	// garbage collection under its existing serialization.

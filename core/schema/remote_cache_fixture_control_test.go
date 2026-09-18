@@ -157,3 +157,72 @@ func TestFixtureControls(t *testing.T) {
 		require.ErrorContains(t, run("armRenewalReply", "reply.json", nil, nil), "no fixture server controls")
 	})
 }
+
+// noControllerServer has the engine server's controls but no controller: the
+// gate is set and a real integration is configured, so the fixture supplies
+// no consumer loop. Every server-only control answers accordingly.
+type noControllerServer struct{ *fixtureTestServer }
+
+func (noControllerServer) RemoteCacheFixtureGC(context.Context) (core.RemoteCacheFixtureGC, error) {
+	return core.RemoteCacheFixtureGC{}, core.ErrRemoteCacheFixtureNoController
+}
+func (noControllerServer) RemoteCacheFixtureStorage(context.Context) (core.RemoteCacheFixtureStorage, error) {
+	return core.RemoteCacheFixtureStorage{}, core.ErrRemoteCacheFixtureNoController
+}
+func (noControllerServer) RemoteCacheFixtureOffer(context.Context, dagql.AnyResult, []dagql.PersistedPartOffer) ([]dagql.OfferDisposition, error) {
+	return nil, core.ErrRemoteCacheFixtureNoController
+}
+func (noControllerServer) RemoteCacheFixtureTakeRenewal(context.Context) (core.RemoteCacheFixtureRenewal, error) {
+	return core.RemoteCacheFixtureRenewal{}, core.ErrRemoteCacheFixtureNoController
+}
+func (noControllerServer) RemoteCacheFixtureReplyRenewal(core.RemoteCacheFixtureRenewalReply) (string, error) {
+	return "", core.ErrRemoteCacheFixtureNoController
+}
+func (noControllerServer) RemoteCacheFixtureArmRenewalReply(core.RemoteCacheFixtureRenewalReply) error {
+	return core.ErrRemoteCacheFixtureNoController
+}
+func (noControllerServer) RemoteCacheFixtureRenewals() (core.RemoteCacheFixtureRenewals, error) {
+	return core.RemoteCacheFixtureRenewals{}, core.ErrRemoteCacheFixtureNoController
+}
+func (noControllerServer) RemoteCacheFixtureObserve(int) error {
+	return core.ErrRemoteCacheFixtureNoController
+}
+
+// A report on an engine whose server has the controls but no controller
+// omits the storage and renewal groups instead of failing; the server-only
+// controls themselves still answer that there is no controller.
+func TestFixtureReportWithoutController(t *testing.T) {
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{SessionID: "fixture", ClientID: "client"})
+	cache, err := dagql.NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.CloseDiscardingPersistence()) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	facade := &fixtureTestServer{currentTypeDefsTestServer: &currentTypeDefsTestServer{}, fn: &core.FunctionCall{Name: "report", ParentName: "Probe"}}
+	q := core.NewRoot(noControllerServer{facade})
+	ctx = core.ContextWithQuery(ctx, q)
+	srv, err := dagql.NewServer(ctx, q)
+	require.NoError(t, err)
+	facade.dag = srv
+	t.Setenv(remoteCacheFixtureGate, t.TempDir())
+	require.NoError(t, installRemoteCacheFixture(srv))
+	run := func(operation string, out any) error {
+		result, err := srv.Query(ctx, `query($op:String!){_remoteCacheFixture(operation:$op,path:"",ids:[])}`, map[string]any{"op": operation})
+		if err != nil {
+			return err
+		}
+		raw, err := json.Marshal(result["_remoteCacheFixture"])
+		require.NoError(t, err)
+		var text string
+		require.NoError(t, json.Unmarshal(raw, &text))
+		return json.Unmarshal([]byte(text), out)
+	}
+	var report struct {
+		Rows    []dagql.TransferFixtureRow       `json:"rows"`
+		Storage *core.RemoteCacheFixtureStorage  `json:"storage"`
+		Renewal *core.RemoteCacheFixtureRenewals `json:"renewal"`
+	}
+	require.NoError(t, run("report", &report), "the report does not need the controller")
+	require.Nil(t, report.Storage, "the storage group is omitted, not invented")
+	require.Nil(t, report.Renewal)
+	require.ErrorContains(t, run("gc", new(json.RawMessage)), "no fixture controller")
+}
