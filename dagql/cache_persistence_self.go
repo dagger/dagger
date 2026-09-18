@@ -385,7 +385,7 @@ func decodePersistedResultEnvelope(ctx context.Context, dec *PersistDecodeContex
 		}
 		return setHandle(res), nil
 	case persistedResultKindScalar:
-		res, err := decodePersistedScalarEnvelope(dec, env, call, dag)
+		res, err := decodePersistedScalarEnvelope(env, call, dag)
 		if err != nil {
 			return nil, err
 		}
@@ -443,7 +443,7 @@ func decodePersistedObjectEnvelope(ctx context.Context, dec *PersistDecodeContex
 
 // decodePersistedScalarEnvelope decodes a scalar_json envelope through the
 // server's scalar type when it has one, else the builtin scalar decoder.
-func decodePersistedScalarEnvelope(dec *PersistDecodeContext, env PersistedResultEnvelope, call *ResultCall, dag *Server) (AnyResult, error) {
+func decodePersistedScalarEnvelope(env PersistedResultEnvelope, call *ResultCall, dag *Server) (AnyResult, error) {
 	if call == nil {
 		return nil, fmt.Errorf("decode scalar_json envelope: missing authoritative call")
 	}
