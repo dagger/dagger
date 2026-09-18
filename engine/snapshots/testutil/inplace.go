@@ -138,6 +138,31 @@ func (c *readCounter) Read(p []byte) (int, error) {
 
 type inPlaceDiffer struct{ store content.Store }
 
+// diffCompression picks the compression for a diff from its config, defaulting
+// the media type to gzip when no compressor is supplied, exactly as
+// containerd's walking differ does.
+func diffCompression(config *diff.Config) (compression.Compression, error) {
+	if config.Compressor != nil {
+		if config.MediaType == "" {
+			return compression.Uncompressed, errors.New("media type must be explicitly specified when using custom compressor")
+		}
+		return compression.Unknown, nil
+	}
+	if config.MediaType == "" {
+		config.MediaType = ocispecs.MediaTypeImageLayerGzip
+	}
+	switch config.MediaType {
+	case ocispecs.MediaTypeImageLayer:
+		return compression.Uncompressed, nil
+	case ocispecs.MediaTypeImageLayerGzip:
+		return compression.Gzip, nil
+	case ocispecs.MediaTypeImageLayerZstd:
+		return compression.Zstd, nil
+	default:
+		return compression.Uncompressed, fmt.Errorf("unsupported diff media type: %v: %w", config.MediaType, errdefs.ErrNotImplemented)
+	}
+}
+
 func (d inPlaceDiffer) Compare(ctx context.Context, lower, upper []mount.Mount, opts ...diff.Opt) (_ ocispecs.Descriptor, rerr error) {
 	var config diff.Config
 	for _, opt := range opts {
@@ -152,25 +177,9 @@ func (d inPlaceDiffer) Compare(ctx context.Context, lower, upper []mount.Mount, 
 	if config.SourceDateEpoch != nil {
 		writeDiffOpts = append(writeDiffOpts, archive.WithSourceDateEpoch(config.SourceDateEpoch))
 	}
-	compressionType := compression.Uncompressed
-	if config.Compressor != nil {
-		if config.MediaType == "" {
-			return ocispecs.Descriptor{}, errors.New("media type must be explicitly specified when using custom compressor")
-		}
-		compressionType = compression.Unknown
-	} else {
-		if config.MediaType == "" {
-			config.MediaType = ocispecs.MediaTypeImageLayerGzip
-		}
-		switch config.MediaType {
-		case ocispecs.MediaTypeImageLayer:
-		case ocispecs.MediaTypeImageLayerGzip:
-			compressionType = compression.Gzip
-		case ocispecs.MediaTypeImageLayerZstd:
-			compressionType = compression.Zstd
-		default:
-			return ocispecs.Descriptor{}, fmt.Errorf("unsupported diff media type: %v: %w", config.MediaType, errdefs.ErrNotImplemented)
-		}
+	compressionType, err := diffCompression(&config)
+	if err != nil {
+		return ocispecs.Descriptor{}, err
 	}
 	lowerRoot, releaseLower, err := bindSource(lower)
 	if err != nil {
