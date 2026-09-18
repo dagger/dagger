@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -24,6 +25,10 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("filterPath", s.filterPath).Doc("Match one complete, ordered field sequence exactly."),
 		dagql.Func("filterDimensions", s.filterDimensions).Doc("Keep artifacts selected through any listed dimension."),
 		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension."),
+		dagql.Func("filterUri", s.filterURI).
+			Doc("Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.",
+				"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.").
+			Args(dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")),
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
 		dagql.Func("items", s.items).Doc("Enumerate complete artifacts without evaluating their values."),
@@ -64,6 +69,34 @@ func (*artifactsSchema) filterDimensionKeys(_ context.Context, parent *core.Arti
 }) (*core.Artifacts, error) {
 	return parent.FilterDimensionKeys(args.Dimension, args.Keys), nil
 }
+func (*artifactsSchema) filterURI(_ context.Context, parent *core.Artifacts, args struct{ URI string }) (*core.Artifacts, error) {
+	addr, err := dagaddress.Parse(args.URI)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkArtifactAddressWorkspace(parent.Entries, addr, args.URI); err != nil {
+		return nil, err
+	}
+	return parent.FilterURI(addr)
+}
+
+// checkArtifactAddressWorkspace reserves the absolute form. Only the current
+// workspace, at its own commit, is accepted.
+func checkArtifactAddressWorkspace(entries []*core.Artifact, addr *dagaddress.Address, uri string) error {
+	if !addr.Absolute {
+		return nil
+	}
+	notSupported := fmt.Errorf("absolute addresses are not supported yet: %s", uri)
+	if len(entries) == 0 {
+		return notSupported
+	}
+	address, commit, err := entries[0].Workspace.Self().GitAddress()
+	if err != nil || address != addr.Workspace || commit != addr.Version {
+		return notSupported
+	}
+	return nil
+}
+
 func (*artifactsSchema) dimensions(_ context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
 	return parent.Dimensions(), nil
 }
