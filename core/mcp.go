@@ -1213,22 +1213,110 @@ func workspaceRoot(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult
 // applyWorkspaceSnapshot overlays the difference between before and after (the
 // pre- and post-run workspace filesystem, e.g. edits made by an external MCP
 // server) onto the bound workspace.
+//
+// The snapshot holds everything the server wrote, so the difference is
+// filtered the way git status would see it before it's overlaid: additions the
+// snapshot's own .gitignore rules ignore (node_modules/, .venv/, target/, build
+// caches) are dropped, keeping modifications and deletions of tracked paths,
+// and the workspace-root .git directory is never touched. Without this a
+// single `npm install` overlays tens of thousands of files onto the workspace,
+// and summarizing that as a patch takes forever or fails outright.
 func (m *MCP) applyWorkspaceSnapshot(ctx context.Context, srv *dagql.Server, before, after dagql.ObjectResult[*Directory]) error {
-	beforeID, err := before.ID()
+	changes, err := snapshotChanges(ctx, srv, before, after)
 	if err != nil {
 		return err
 	}
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return err
+	}
+	filtered := false
+	// The tool may have run git itself (init, commit, ...): the repository's
+	// metadata is the workspace's own concern, so leave it out of the diff
+	// entirely by comparing the two trees without it.
+	if n := gitMetaPathCount(paths); n > 0 {
+		before, err = withoutGitMetaDir(ctx, srv, before)
+		if err != nil {
+			return err
+		}
+		after, err = withoutGitMetaDir(ctx, srv, after)
+		if err != nil {
+			return err
+		}
+		changes, err = snapshotChanges(ctx, srv, before, after)
+		if err != nil {
+			return err
+		}
+		slog.Debug("mcp: dropped VCS metadata written by MCP server from workspace snapshot", "paths", n)
+		filtered = true
+	}
+	// A workspace whose .gitignore rules match nothing makes this a cheap
+	// no-op: only the .gitignore files along each added path are read.
+	after, ignored, err := WithoutGitIgnoredAdditions(ctx, srv, after, changes)
+	if err != nil {
+		return err
+	}
+	if ignored > 0 {
+		changes, err = snapshotChanges(ctx, srv, before, after)
+		if err != nil {
+			return err
+		}
+		slog.Debug("mcp: dropped gitignored additions written by MCP server from workspace snapshot", "paths", ignored)
+		filtered = true
+	}
+	if filtered {
+		empty, err := changes.Self().IsEmpty(ctx)
+		if err != nil {
+			return err
+		}
+		if empty {
+			return nil
+		}
+	}
+	return m.applyChangeset(ctx, srv, changes)
+}
+
+// snapshotChanges computes after.changes(from: before).
+func snapshotChanges(ctx context.Context, srv *dagql.Server, before, after dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Changeset], error) {
 	var changes dagql.ObjectResult[*Changeset]
-	if err := srv.Select(ctx, after, &changes, dagql.Selector{
+	beforeID, err := before.ID()
+	if err != nil {
+		return changes, err
+	}
+	err = srv.Select(ctx, after, &changes, dagql.Selector{
 		View:  srv.View,
 		Field: "changes",
 		Args: []dagql.NamedInput{
 			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
 		},
-	}); err != nil {
-		return err
+	})
+	return changes, err
+}
+
+// gitMetaPathCount counts the paths in ch under the workspace-root .git
+// directory (see gitMetaPath).
+func gitMetaPathCount(ch *ChangesetPaths) int {
+	n := 0
+	for _, paths := range [][]string{ch.Added, ch.Modified, ch.Removed} {
+		for _, p := range paths {
+			if gitMetaPath(p) {
+				n++
+			}
+		}
 	}
-	return m.applyChangeset(ctx, srv, changes)
+	return n
+}
+
+// withoutGitMetaDir returns dir without its workspace-root .git directory.
+func withoutGitMetaDir(ctx context.Context, srv *dagql.Server, dir dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
+	err := srv.Select(ctx, dir, &dir, dagql.Selector{
+		View:  srv.View,
+		Field: "withoutDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(".git")},
+		},
+	})
+	return dir, err
 }
 
 func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
