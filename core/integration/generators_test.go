@@ -226,10 +226,9 @@ func (GeneratorsSuite) TestGenerateApplyDisposition(ctx context.Context, t *test
 // A generator whose changeset evaluates lazily and whose backing exec fails must
 // surface that failure -- the command, its stderr, and its exit code -- to the
 // user of `dagger generate`, rather than a bare "exit code: N" with the detail
-// hidden. The failing exec is now forced inside the generator's span (see
-// ModTreeNode.runGeneratorLocally), so the run fails there. Regression for
-// #13606; the rendered-attribution half (a red generator row) is pinned by the
-// generate-fail golden in dagql/idtui.
+// hidden. Artifact evaluation must keep the generator's execution visible.
+// Regression for #13606; the rendered-attribution half (a red generator row)
+// is pinned by the generate-fail golden in dagql/idtui.
 func (GeneratorsSuite) TestGeneratorLazyExecFailureSurfacesStderr(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
