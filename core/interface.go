@@ -68,6 +68,13 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 
 	switch value := value.(type) {
 	case dagql.AnyObjectResult:
+		// Retained fields carry attached results. Resolve their concrete type
+		// through the implementation's call, just as for SDK handles: the
+		// interface's module need not depend on the implementing module.
+		if id, err := value.ID(); err == nil {
+			return fromID(id)
+		}
+		// Detached objects have no handle; use the available dependency types.
 		typeName := value.Type().Name()
 		loadedImpl := &loadedIfaceImpl{val: value}
 		var err error

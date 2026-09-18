@@ -1000,6 +1000,18 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	)
 	assert.NilError(t, err)
 
+	// Reading the retained field must still resolve its implementation, even
+	// though that type is absent from the interface module's dependencies.
+	parentObj, ok := parentAttached.(dagql.ObjectResult[*ModuleObject])
+	assert.Assert(t, ok)
+	field, err := objField(producerCtx, producerModRes, parentObjDef.Fields[0].Self())
+	assert.NilError(t, err)
+	read, err := field.Func(producerCtx, parentObj, nil, "")
+	assert.NilError(t, err)
+	readID, err := read.ID()
+	assert.NilError(t, err)
+	assert.Equal(t, childID.EngineResultID(), readID.EngineResultID())
+
 	// A declared SDK handle must enter the persisted reference grammar too.
 	// Keeping its original string retains liveness but bypasses relocation.
 	record := coreRelocationRecord(t, producerCtx, producerCache, parentAttached)
