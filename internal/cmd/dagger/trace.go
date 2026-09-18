@@ -46,7 +46,7 @@ are fetched incrementally, so the whole trace doesn't have to load up front.
 
 Use --span/--check/--test to scope and zoom the view to a single span, check, or
 test by name.`,
-	Example: `dagger trace 2f123ba77bf7bd2d4db2f70ed20613e8`,
+	Example: `dagger cloud traces 2f123ba77bf7bd2d4db2f70ed20613e8`,
 	RunE:    traceRun,
 }
 
