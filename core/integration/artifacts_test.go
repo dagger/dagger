@@ -121,7 +121,7 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts { filterPath(path: ["absent"]) { one { uri } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
-	require.ErrorContains(t, err, "no artifact matches dag://absent")
+	require.ErrorContains(t, err, "no artifact matches dag://{}")
 	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts { filterTypes(types: ["Container"]) { one { uri } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
@@ -271,6 +271,7 @@ func (ArtifactsSuite) TestSelectorRoundTrip(ctx context.Context, t *testctx.T) {
 		{`artifacts { filterPath(path: []) ` + sel + ` }`, "dag://{}"},
 		{`artifacts { filterPath(path: ["docs", "Source"]) ` + sel + ` }`, "dag://{}"},
 		{`artifacts { filterPath(path: ["docs", "*"]) ` + sel + ` }`, "dag://{}"},
+		{`artifacts { filterUri(uri: "docs/**") { filterUri(uri: "consumer/**") ` + sel + ` } }`, "dag://{}"},
 	} {
 		t.Run(tc.uri, func(ctx context.Context, t *testctx.T) {
 			got, err := testutil.QueryWithClient[json.RawMessage](c, t,
