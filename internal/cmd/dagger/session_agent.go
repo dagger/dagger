@@ -1063,6 +1063,14 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 	}
 	preview, err := previewWorkspaceChanges(a.session.plumbingCtx, a.session.dag, workspace, baseline)
 	if err != nil {
+		// Replace the bubble rather than leaving the previous preview up: it
+		// described an earlier workspace and may advertise a save that no
+		// longer applies. A switched workspace is a state, not a failure.
+		a.session.frontend.SetSidebarContent(changesPreviewFailure(err))
+		var switched *workspaceSwitchedError
+		if errors.As(err, &switched) {
+			return nil
+		}
 		return err
 	}
 	if preview.empty() {
@@ -1072,10 +1080,7 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 	a.session.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title:       "Changes",
 		ContentFunc: preview.render,
-		KeyMap: []key.Binding{
-			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
-			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reload")),
-		},
+		KeyMap:      []key.Binding{changesSaveBinding, changesReloadBinding},
 	})
 	return nil
 }
@@ -1200,7 +1205,9 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 		Path: root,
 		From: a.lastSynced(),
 	}); err != nil {
-		return err
+		// The engine refuses to export a workspace unrelated to the checkout,
+		// but with a Git-level reason; name the swap instead.
+		return switchedWorkspace(ctx, source, err)
 	}
 	a.setLastSynced(source)
 	a.scheduleUIRefresh()
