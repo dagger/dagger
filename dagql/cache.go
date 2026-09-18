@@ -2049,6 +2049,10 @@ type sharedResult struct {
 	// schema). Nil when the result has not yet been wrapped as an object
 	// (e.g. just imported from persistence and not yet decoded).
 	objClass ObjectType
+	// schemaRef caches a self-contained provenance snapshot for this result's
+	// current frame. It is populated only for results used in installed schemas.
+	// Guarded by resultCallMu; the snapshot's own lock guards initialization.
+	schemaRef *schemaResultCallRef
 	// resultCall is the non-lossy semantic/provenance call-node metadata
 	// for this materialized result. It is used for canonical recipe
 	// reconstruction and telemetry hierarchy reconstruction, not execution or
@@ -2250,6 +2254,9 @@ func (res *sharedResult) storeResultCall(frame *ResultCall) {
 		return
 	}
 	res.resultCallMu.Lock()
+	if res.resultCall != frame {
+		res.schemaRef = nil
+	}
 	res.resultCall = frame
 	res.resultCallMu.Unlock()
 }

@@ -501,7 +501,7 @@ func NoopDone(res AnyResult, cached bool, rerr *error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
-	r, preselectResult, err := r.preselect(ctx, sel)
+	r, preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -527,7 +527,7 @@ func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.Vi
 	})
 }
 
-func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectResult[T], *preselectResult, error) {
+func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selector) (ObjectResult[T], *preselectResult, error) {
 	view := sel.View
 	field, ok := r.class.Field(sel.Field, view)
 	if !ok {
@@ -592,6 +592,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 		}
 		return r, nil, fmt.Errorf("failed to resolve receiver for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
+	module, err := field.Spec.Module.resolveForCall(ctx, srv)
+	if err != nil {
+		return r, nil, fmt.Errorf("resolve module for %s.%s: %w", r.class.TypeName(), sel.Field, err)
+	}
 	req := &CallRequest{
 		ResultCall: &ResultCall{
 			Kind:           ResultCallKindField,
@@ -600,7 +604,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 			View:           view,
 			Nth:            int64(sel.Nth),
 			Receiver:       receiverRef,
-			Module:         field.Spec.Module.clone(),
+			Module:         module,
 			Args:           frameArgs,
 			ImplicitInputs: implicitInputs,
 		},
@@ -904,7 +908,8 @@ type FieldSpec struct {
 	// ExperimentalReason marks the field as experimental and provides a reason.
 	ExperimentalReason string
 	// Module is frame-native provenance for the module that provides the field's
-	// implementation.
+	// implementation. Long-lived schemas use ResultCallRefForSchema: selection
+	// resolves its portable recipe into a session-owned module dependency.
 	Module *ResultCallModule
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive

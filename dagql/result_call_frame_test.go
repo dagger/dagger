@@ -4,12 +4,99 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
+
+func TestResultCallRefFromRecipeID(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	for _, id := range []*call.ID{nil, call.New(), call.NewEngineResultID(1, call.NewType(Int(0).Type()))} {
+		_, err := resultCallRefFromRecipeID(ctx, id)
+		require.ErrorContains(t, err, "typed recipe-form ID")
+	}
+
+	// Preserve shared inputs as a DAG, not one expanded tree per reference.
+	shared := call.New().Append(Int(0).Type(), "shared")
+	extra := call.ExtraDigest{Digest: digest.FromString("module-content")}
+	id := shared.Append(Int(0).Type(), "module",
+		call.WithArgs(call.NewArgument("input", call.NewLiteralID(shared), false)),
+		call.WithExtraDigest(extra),
+	)
+	ref, err := resultCallRefFromRecipeID(ctx, id)
+	require.NoError(t, err)
+	require.Zero(t, ref.ResultID)
+	require.NotNil(t, ref.Call)
+	require.Nil(t, ref.shared)
+	require.Same(t, ref.Call.Receiver.Call, ref.Call.Args[0].Value.ResultRef.Call)
+	require.Equal(t, []call.ExtraDigest{extra}, ref.Call.ExtraDigests)
+
+	// Reconstruction must not need a cache: schema provenance has no live IDs.
+	rebuilt, err := ref.Call.recipeID(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, id.Digest(), rebuilt.Digest())
+	require.Equal(t, id.ExtraDigests(), rebuilt.ExtraDigests())
+}
+
+func TestResultCallRefForSchemaSnapshot(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+	res, err := NewResultForCall(Int(1), cacheTestIntCall("module-a"))
+	require.NoError(t, err)
+
+	// A failed capture must not poison the memo for a later valid context.
+	_, err = ResultCallRefForSchema(context.Background(), res)
+	require.Error(t, err)
+
+	const fields = 16
+	refs := make([]*ResultCallRef, fields)
+	var wg sync.WaitGroup
+	for i := range fields {
+		wg.Go(func() {
+			ref, err := ResultCallRefForSchema(ctx, res)
+			if err != nil {
+				t.Errorf("capture schema provenance: %v", err)
+				return
+			}
+			refs[i] = ref
+		})
+	}
+	wg.Wait()
+	for _, ref := range refs {
+		require.Same(t, refs[0], ref, "fields must share one immutable recipe DAG")
+		require.Zero(t, ref.ResultID)
+		require.Nil(t, ref.shared)
+		require.NotNil(t, ref.recipeID)
+	}
+	original := refs[0]
+	cloned := original.cloneWith(resultCallCloneMemo{})
+	require.Nil(t, cloned.recipeID, "cloned calls may be edited")
+
+	// Captures follow newly published provenance, while already-installed
+	// fields keep the immutable implementation they were defined against.
+	res.shared.storeResultCall(cacheTestIntCall("module-b"))
+	updated, err := ResultCallRefForSchema(ctx, res)
+	require.NoError(t, err)
+	require.NotSame(t, original, updated)
+	require.Equal(t, "module-a", original.Call.Field)
+	require.Equal(t, "module-b", updated.Call.Field)
+	require.NotEqual(t, original.recipeID.Digest(), updated.recipeID.Digest())
+
+	res.shared.storeResultCall(nil)
+	require.Nil(t, res.shared.schemaRef, "release must drop the snapshot memo")
+	_, err = ResultCallRefForSchema(ctx, res)
+	require.ErrorContains(t, err, "missing result call")
+	rebuilt, err := original.Call.recipeID(ctx, nil)
+	require.NoError(t, err, "installed provenance survives collection")
+	require.Equal(t, original.recipeID.Digest(), rebuilt.Digest())
+}
 
 func TestResultCallDigestErrorsDoNotPanic(t *testing.T) {
 	t.Parallel()

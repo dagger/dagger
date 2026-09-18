@@ -67,6 +67,11 @@ type ResultCallRef struct {
 	// shared is a runtime-only fast path for attached result refs. It is not
 	// persisted and must never be the sole source of truth for identity.
 	shared *sharedResult
+
+	// recipeID is the immutable source of a schema-only ref. It avoids
+	// rebuilding a whole module recipe on every method selection. Clones omit
+	// it so edits to a cloned inline call cannot reuse a stale recipe.
+	recipeID *call.ID
 }
 
 type ResultCallModule struct {
@@ -86,6 +91,87 @@ type ResultCallModule struct {
 // one clone is preserved, which is safe because frames are frozen provenance
 // (never mutated in place below the top-level spine).
 type resultCallCloneMemo = map[*ResultCall]*ResultCall
+
+// schemaResultCallRef shares a portable snapshot across a module's fields. The
+// memo is reset when the cache result publishes a different call frame.
+type schemaResultCallRef struct {
+	mu  sync.Mutex
+	ref *ResultCallRef
+}
+
+// ResultCallRefForSchema snapshots res's provenance without retaining cache-local
+// IDs. The returned ref and its inline call DAG are immutable and may be shared
+// by all fields installed from the result. Executing calls resolve this recipe
+// to a session-owned result rather than borrowing the schema installer's ID.
+func ResultCallRefForSchema(ctx context.Context, res AnyResult) (*ResultCallRef, error) {
+	if res == nil || res.cacheSharedResult() == nil {
+		return nil, fmt.Errorf("schema provenance: missing result")
+	}
+	shared := res.cacheSharedResult()
+	shared.resultCallMu.Lock()
+	frame := shared.resultCall
+	if frame == nil {
+		shared.resultCallMu.Unlock()
+		return nil, fmt.Errorf("schema provenance: missing result call")
+	}
+	snapshot := shared.schemaRef
+	if snapshot == nil {
+		snapshot = &schemaResultCallRef{}
+		shared.schemaRef = snapshot
+	}
+	shared.resultCallMu.Unlock()
+
+	// Recipe reconstruction reads the cache graph, so never hold resultCallMu
+	// across it. Failed captures are retryable, not memoized across contexts.
+	snapshot.mu.Lock()
+	defer snapshot.mu.Unlock()
+	if snapshot.ref != nil {
+		return snapshot.ref, nil
+	}
+	id, err := frame.RecipeID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := resultCallRefFromRecipeID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	ref.recipeID = id
+	snapshot.ref = ref
+	return ref, nil
+}
+
+// resolveForCall keeps installed schema provenance independent of cache-local
+// lifetimes while giving each executing call a real, session-owned module input.
+// Do not rewrite mod: classes (including cached object classes and lazy tool
+// bindings) may be shared by concurrent sessions after this result is released.
+func (mod *ResultCallModule) resolveForCall(ctx context.Context, srv *Server) (*ResultCallModule, error) {
+	if mod == nil || mod.ResultRef == nil || mod.ResultRef.Call == nil {
+		return mod.clone(), nil
+	}
+	id := mod.ResultRef.recipeID
+	if id == nil {
+		var err error
+		id, err = mod.ResultRef.Call.RecipeID(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	res, err := srv.LoadType(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := resultCallRefFromResult(ctx, res)
+	if err != nil {
+		return nil, err
+	}
+	return &ResultCallModule{
+		ResultRef: ref,
+		Name:      mod.Name,
+		Ref:       mod.Ref,
+		Pin:       mod.Pin,
+	}, nil
+}
 
 func (mod *ResultCallModule) clone() *ResultCallModule {
 	return mod.cloneWith(resultCallCloneMemo{})
