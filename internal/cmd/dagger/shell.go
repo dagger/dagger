@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -187,6 +188,7 @@ type shellCallHandler struct {
 
 	// debugServer is the hidden, hotkey-controlled local pprof server.
 	debugServer     *http.Server
+	debugListener   net.Listener
 	debugServerStop func() bool
 	debugServerL    sync.Mutex
 
@@ -1103,6 +1105,9 @@ func (h *shellCallHandler) toggleDebugServer(ctx context.Context) {
 		if err := h.debugServer.Close(); err != nil {
 			slog.Debug("failed to stop debug server", "error", err)
 		}
+		// Serve may not have registered the listener yet; close it directly.
+		h.debugListener.Close()
+		h.debugListener = nil
 		h.debugServer = nil
 		h.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Debug"})
 		return
@@ -1118,6 +1123,7 @@ func (h *shellCallHandler) toggleDebugServer(ctx context.Context) {
 		return
 	}
 	h.debugServer = srv
+	h.debugListener = lis
 	h.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title:   "Debug",
 		Content: fmt.Sprintf("http://%s/debug/pprof/", lis.Addr()),
@@ -1136,6 +1142,9 @@ func (h *shellCallHandler) toggleDebugServer(ctx context.Context) {
 		if err := srv.Close(); err != nil {
 			slog.Debug("failed to stop debug server", "error", err)
 		}
+		// Serve may not have registered the listener yet; close it directly.
+		lis.Close()
+		h.debugListener = nil
 		h.debugServer = nil
 		h.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Debug"})
 	})
