@@ -162,10 +162,10 @@ func (b *RemoteCacheBridge) retireCanceledLocked(exchange *renewalExchange) bool
 }
 
 // finish publishes the first terminal result; later paths observe it.
-func (b *RemoteCacheBridge) finish(exchange *renewalExchange, addresses map[digest.Digest]BlobAddress, err error) bool {
+func (b *RemoteCacheBridge) finish(exchange *renewalExchange, addresses map[digest.Digest]BlobAddress, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.finishLocked(exchange, addresses, err)
+	b.finishLocked(exchange, addresses, err)
 }
 
 func (b *RemoteCacheBridge) finishLocked(exchange *renewalExchange, addresses map[digest.Digest]BlobAddress, err error) bool {
