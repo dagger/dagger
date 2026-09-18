@@ -167,6 +167,21 @@ func (c *Client) LocalDirExport(
 	destPath string,
 	merge bool,
 	removePaths []string,
+) error {
+	outputFS, err := fsutil.NewFS(srcPath)
+	if err != nil {
+		return err
+	}
+	return c.LocalFSExport(ctx, outputFS, destPath, merge, removePaths)
+}
+
+// LocalFSExport exports a filesystem view, which may select only part of a directory.
+func (c *Client) LocalFSExport(
+	ctx context.Context,
+	outputFS fsutil.FS,
+	destPath string,
+	merge bool,
+	removePaths []string,
 ) (rerr error) {
 	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With("export_path", destPath))
 	slog.DebugContext(ctx, "exporting local dir")
@@ -179,11 +194,6 @@ func (c *Client) LocalDirExport(
 		return err
 	}
 	defer cancel(errors.New("local dir export done"))
-
-	outputFS, err := fsutil.NewFS(srcPath)
-	if err != nil {
-		return err
-	}
 
 	caller, err := c.GetSessionCaller(ctx)
 	if err != nil {
