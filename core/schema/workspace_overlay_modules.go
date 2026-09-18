@@ -49,7 +49,7 @@ func (s *workspaceSchema) workspacePrimaryModules(
 	return mods, failures, err
 }
 
-// workspaceOverlayModules loads the workspace modules that the workspace's
+// workspaceOverlayModulesWithLoadFailures loads the workspace modules that the workspace's
 // pending overlay affects, resolving their source through the overlay instead
 // of the host checkout.
 //
@@ -75,15 +75,6 @@ func (s *workspaceSchema) workspacePrimaryModules(
 //     are left to the served path, whose host-ref based context resolution has
 //     no overlay equivalent. Value workspaces load them here, with their own
 //     tree as the +defaultPath context (see workspaceOverlayContextSource).
-func (s *workspaceSchema) workspaceOverlayModules(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Workspace],
-	include []string,
-) ([]overlayModule, error) {
-	loaded, _, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, core.ModuleLoadStrict)
-	return loaded, err
-}
-
 func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],

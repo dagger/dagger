@@ -179,14 +179,6 @@ func argRequired(arg *FunctionArg) bool {
 	return true
 }
 
-// agentBaseArgName is the conventional name for an @agent middleware's base
-// argument, used only as a fallback when the actual LLM! argument can't be
-// resolved. The base is identified by *type* — a single required LLM! arg — not
-// by name, so authors may call it `base`, `llm`, etc. (hack/designs/workspace-agents.md §3). The
-// artifact composition loop fills that argument with the running
-// accumulator explicitly.
-const agentBaseArgName = "base"
-
 // isCoreLLMArg reports whether an argument is of the core LLM type. Like
 // IsWorkspace, the SourceModuleName guard keeps it to the core LLM (functions
 // can't currently accept types from other modules, but be explicit anyway).

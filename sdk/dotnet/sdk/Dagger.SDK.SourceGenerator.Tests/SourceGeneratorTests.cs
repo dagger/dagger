@@ -78,7 +78,8 @@ public class SourceGeneratorTests
     [TestMethod]
     public void CustomScalarDefaultsAreAppliedByTheEngine()
     {
-        var introspection = JsonSerializer.Deserialize<Introspection>("""
+        var introspection = JsonSerializer.Deserialize<Introspection>(
+            """
             {"__schema":{"types":[
               {"kind":"SCALAR","name":"JSON"},
               {"kind":"OBJECT","name":"Query","fields":[
@@ -87,7 +88,8 @@ public class SourceGeneratorTests
                 ]}
               ]}
             ]}}
-            """)!;
+            """
+        )!;
 
         var code = new CodeGenerator(new CodeRenderer()).Generate(introspection);
 
