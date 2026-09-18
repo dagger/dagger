@@ -16,6 +16,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 // TypeName is the interface an entrypoint must implement.
@@ -67,14 +68,14 @@ func ResolveSource(
 	return entrySrcResult, workspace, nil
 }
 
-// Workspace returns the workspace to pass to a module entrypoint, with its
-// working directory at the module's directory.
+// Workspace returns the workspace to pass to a module entrypoint: a workspace
+// rooted at the module's context, with its working directory at the module's
+// directory.
 //
 // The engine already treats the workspace cwd as the module's scope when it
 // hands a workspace to an SDK, so an entrypoint can find the module it serves
-// through relative workspace paths, without a path generated into it. The root
-// is unchanged: an entrypoint can still read above the module with an
-// absolute workspace path.
+// through relative workspace paths, without a path generated into it. An
+// entrypoint can still read above the module with an absolute workspace path.
 //
 // A source that carries a workspace is scoped within that workspace, because
 // its subpath is relative to it. Workspace.moduleSource attaches one on a local
@@ -82,8 +83,10 @@ func ResolveSource(
 // one a module's process finds in its own container.
 //
 // A local source without an attached workspace is scoped within the current
-// workspace only when host paths place the module under that workspace's root.
-// Any other source keeps the current workspace's cwd.
+// workspace when host paths place the module under that workspace's root. Any
+// other source is in no workspace of the caller's, so the entrypoint gets a
+// workspace built from the module's own source instead. It never gets the
+// caller's workspace, whose files belong to someone else.
 func Workspace(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -101,7 +104,7 @@ func Workspace(
 		var ok bool
 		subpath, ok = moduleWorkspacePath(workspace.Self(), src.Self())
 		if !ok {
-			return workspace, nil
+			return sourceWorkspace(ctx, dag, src.Self())
 		}
 	}
 	// withWorkdir takes a path relative to the workspace root, so reset first
@@ -125,11 +128,17 @@ func Workspace(
 // is derived from the host paths of the context directory and the workspace
 // root. A git or directory source without a workspace has no place in the
 // workspace.
+//
+// A rootless workspace, which the engine detects where it finds no workspace
+// root, holds no files, so no module is in it.
 func moduleWorkspacePath(ws *core.Workspace, src *core.ModuleSource) (string, bool) {
 	if ws == nil || src == nil {
 		return "", false
 	}
 	if src.Kind != core.ModuleSourceKindLocal || src.Local == nil {
+		return "", false
+	}
+	if _, rootless := ws.BaseSource().(*core.WorkspaceSourceRootlessLocal); rootless {
 		return "", false
 	}
 	root := ws.HostPath()
@@ -143,6 +152,88 @@ func moduleWorkspacePath(ws *core.Workspace, src *core.ModuleSource) (string, bo
 		return "", false
 	}
 	return rel, true
+}
+
+// sourceWorkspace builds the workspace of a module that is in no workspace of
+// the caller's. Its root is the module's full context directory and its
+// working directory is the module's directory.
+func sourceWorkspace(
+	ctx context.Context,
+	dag *dagql.Server,
+	src *core.ModuleSource,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	var workspace dagql.ObjectResult[*core.Workspace]
+	if src == nil {
+		return workspace, fmt.Errorf("module entrypoint workspace: module source is not set")
+	}
+	root, err := sourceContextDirectory(ctx, dag, src)
+	if err != nil {
+		return workspace, fmt.Errorf("module entrypoint workspace: %w", err)
+	}
+	subpath := cleanSubpath(src.SourceRootSubpath)
+	if err := dag.Select(ctx, root, &workspace, dagql.Selector{
+		Field: "asWorkspace",
+		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.String(subpath)}},
+	}); err != nil {
+		return workspace, fmt.Errorf("module entrypoint workspace at %q: %w", subpath, err)
+	}
+	return workspace, nil
+}
+
+// sourceContextDirectory returns the context directory of a module source
+// without the include filter of its manifest. The filtered ContextDirectory
+// holds only the manifest and the module's own files, so it would drop files
+// above the module, such as the go.mod of a nested Go root.
+//
+// A git context is the whole repository at the pinned commit, content-addressed
+// by that commit. A directory context is the directory the module source was
+// created from. A local context is read from the host of the client that loaded
+// the module, the way the module source itself is read.
+func sourceContextDirectory(
+	ctx context.Context,
+	dag *dagql.Server,
+	src *core.ModuleSource,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var dir dagql.ObjectResult[*core.Directory]
+	switch src.Kind {
+	case core.ModuleSourceKindGit:
+		if src.Git == nil || src.Git.UnfilteredContextDir.Self() == nil {
+			return dir, fmt.Errorf("git module source has no context directory")
+		}
+		return src.Git.UnfilteredContextDir, nil
+	case core.ModuleSourceKindDir:
+		if src.DirSrc == nil || src.DirSrc.OriginalContextDir.Self() == nil {
+			return dir, fmt.Errorf("directory module source has no context directory")
+		}
+		return src.DirSrc.OriginalContextDir, nil
+	case core.ModuleSourceKindLocal:
+		if src.Local == nil || src.Local.ContextDirectoryPath == "" {
+			return dir, fmt.Errorf("local module source has no context directory")
+		}
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return dir, err
+		}
+		clientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return dir, fmt.Errorf("get client metadata for local module source: %w", err)
+		}
+		ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
+		if err := dag.Select(ctx, dag.Root(), &dir,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{
+				Field: "directory",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)}},
+			},
+		); err != nil {
+			return dir, fmt.Errorf("load local module context %q: %w", src.Local.ContextDirectoryPath, err)
+		}
+		// A worktree or submodule checkout has a .git pointer file at its root,
+		// whose target is outside the context. Workspace reads drop it too.
+		return core.DropRootGitPointerFile(ctx, dag, dir)
+	default:
+		return dir, fmt.Errorf("unsupported module source kind %q", src.Kind)
+	}
 }
 
 func cleanSubpath(p string) string {

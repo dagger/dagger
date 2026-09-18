@@ -162,13 +162,13 @@ Defines and calls one Dagger module.
 interface ModuleEntrypoint {
   """Return all types defined by the module."""
   types(
-    """The workspace that contains the module implementation."""
+    """The module workspace, with its working directory at the module."""
     workspace: Workspace!
   ): [TypeDef!]!
 
   """Call one object constructor or function and return its JSON result."""
   call(
-    """The workspace in which to run the call."""
+    """The module workspace, with its working directory at the module."""
     workspace: Workspace!
 
     """The original name of the receiver object type."""
@@ -193,9 +193,17 @@ The entrypoint and its driver use the same engine session. `Workspace` and
 `TypeDef` values are normal Dagger object references. The driver passes their
 object IDs. It does not copy these objects between client schemas.
 
-The engine passes the same module workspace to `types` and `call`. The
+The engine passes the same module workspace to `types` and `call`. Its root is
+the module's context and its working directory is the module directory. The
 workspace boundary can be above the module directory. Thus, the entrypoint can
 read a file such as `go.mod` above the module directory.
+
+For a module in the caller's workspace, the module workspace is the caller's
+workspace. For a module loaded by Git ref, from a directory, or from a local
+path outside the caller's workspace, the engine builds the module workspace
+from the module's own source. The entrypoint never receives the caller's
+workspace for such a module. A module function that declares a `Workspace`
+argument still receives the caller's workspace through that argument.
 
 ### Type rules
 

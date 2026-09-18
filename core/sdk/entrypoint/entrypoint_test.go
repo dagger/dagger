@@ -131,6 +131,14 @@ func TestModuleWorkspacePath(t *testing.T) {
 	// A remote or synthetic workspace has no host path to relate to.
 	_, ok = moduleWorkspacePath(&core.Workspace{}, local("/home/me/repo", "mod"))
 	require.False(t, ok)
+
+	// A rootless workspace holds no files, even where its host path contains
+	// the module.
+	rootless := &core.Workspace{}
+	rootless.SetHostPath("/home/me/repo")
+	rootless.SetSource(core.NewWorkspaceSourceRootlessLocal("/home/me/repo"))
+	_, ok = moduleWorkspacePath(rootless, local("/home/me/repo", "mod"))
+	require.False(t, ok)
 }
 
 func TestValidateConstructorsRejectsObjectWithoutDefinition(t *testing.T) {

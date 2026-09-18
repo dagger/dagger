@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  A module run through a Dang entrypoint and loaded from outside the caller's
+  workspace, such as by git ref, from a directory, or from a local path
+  outside the workspace, now receives a workspace built from its own source,
+  with its working directory at the module. It used to receive the caller's
+  workspace, so an entrypoint that read its module through the workspace read
+  the caller's files instead.
+time: 2026-09-18T23:00:00Z
+custom:
+  Author: eunomie

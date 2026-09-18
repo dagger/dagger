@@ -1,0 +1,47 @@
+# An entrypoint for a module that is in no workspace of the caller's: loaded by
+# git ref, as a directory, or from a local path outside the caller's workspace.
+# It reads through the workspace it is handed, so a test can tell whether that
+# workspace is the module's own context or the caller's.
+type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    # The marker sits above the module, in files the module does not include.
+    if (workspace.findUp("marker.txt") == null) {
+      raise "types: no marker.txt at or above " + workspace.cwd
+    }
+    [
+      typeDef
+        .withObject("Tiny")
+        .withConstructor(function("", typeDef.withObject("Tiny")))
+        .withFunction(
+          function("Probe", typeDef.withKind(TypeDefKind.STRING_KIND)),
+        )
+        .withFunction(
+          function("Address", typeDef.withKind(TypeDefKind.STRING_KIND)),
+        ),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Probe") {
+      # The working directory, the marker found up from it and its contents,
+      # and whether a file only the caller has is visible.
+      let marker = workspace.findUp("marker.txt") ?? "none"
+      let contents = if (marker == "none") { "none" } else { workspace.file(marker).contents }
+      let caller = workspace.findUp("caller.txt") ?? "none"
+      let probe = workspace.cwd + " " + marker + " " + contents + " " + caller
+      (("\"" + probe + "\"") :: JSON!)
+    } else if (fnName == "Address") {
+      (("\"" + workspace.address + "\"") :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}
