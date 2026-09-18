@@ -4168,33 +4168,9 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// goroutine and ended on another is safe.
 			callbackCtx := lazyCallbackCtx
 
-			var err error
-			// bodyDone means the callback body (if this attempt had one) has
-			// succeeded and consumed its object-side state; any later error in
-			// this attempt is cache-side bookkeeping, which stays retryable.
-			bodyDone := false
 			partial := false
 			abandoned := false
-			runEval := func() {
-				leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
-				if leaseErr != nil {
-					err = fmt.Errorf("acquire operation lease: %w", leaseErr)
-					return
-				}
-				callbackCtx = leaseCtx
-
-				if lazyEval != nil {
-					err = lazyEval(callbackCtx)
-				}
-				if err == nil {
-					bodyDone = true
-					err = c.syncResultSnapshotLeases(callbackCtx, shared)
-				}
-				if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
-					err = releaseErr
-				}
-			}
-			runEval()
+			callbackCtx, bodyDone, err := c.runLazyEvalBody(callbackCtx, shared, lazyEval)
 			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 			shared.lazyMu.Lock()
@@ -4253,6 +4229,34 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 		}
 		return waitErr
 	}
+}
+
+// runLazyEvalBody runs one lazy attempt's callback body under an operation
+// lease and then syncs the result's snapshot leases. It returns the context
+// the body ran under (the leased context, or the input when no lease could be
+// acquired), whether the body succeeded and consumed its object-side state
+// (bodyDone: any later error in the attempt is cache-side bookkeeping, which
+// stays retryable), and the first error.
+func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResult, lazyEval func(context.Context) error) (context.Context, bool, error) {
+	leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+	if leaseErr != nil {
+		return callbackCtx, false, fmt.Errorf("acquire operation lease: %w", leaseErr)
+	}
+	callbackCtx = leaseCtx
+
+	var err error
+	bodyDone := false
+	if lazyEval != nil {
+		err = lazyEval(callbackCtx)
+	}
+	if err == nil {
+		bodyDone = true
+		err = c.syncResultSnapshotLeases(callbackCtx, shared)
+	}
+	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
+		err = releaseErr
+	}
+	return callbackCtx, bodyDone, err
 }
 
 func (c *Cache) Close(ctx context.Context) error {
