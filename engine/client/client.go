@@ -1392,6 +1392,14 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	maps.Copy(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
+	// Flush the headers right away rather than waiting for the first body
+	// write. The engine flushes an empty 200 to signal a telemetry stream is
+	// attached, and the nested client blocks on those headers before it
+	// proceeds; a quiet stream (e.g. /v1/metrics with nothing to report)
+	// would otherwise never let the nested client past subscription.
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 	_, err = io.Copy(writeFlusher{w}, resp.Body)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err) // don't write header because we already wrote to the body, which isn't allowed
