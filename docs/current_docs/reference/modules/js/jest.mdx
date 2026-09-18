@@ -18,7 +18,7 @@ dagger module install dagger.io/js/jest
 
 ```bash
 dagger check           # run every check in the workspace
-dagger check jest:test # run the Jest suite
+dagger check dag://jest/test # run the Jest suite
 ```
 
 `jest:test` installs dependencies and runs the Jest suite over the workspace (excluding `node_modules`, `dist`, and `build`). It automatically registers an OpenTelemetry hook, so individual tests appear as spans in the Dagger TUI and Dagger Cloud without changing the project's Jest config.

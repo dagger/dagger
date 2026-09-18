@@ -183,7 +183,7 @@ func argRequired(arg *FunctionArg) bool {
 // argument, used only as a fallback when the actual LLM! argument can't be
 // resolved. The base is identified by *type* — a single required LLM! arg — not
 // by name, so authors may call it `base`, `llm`, etc. (hack/designs/workspace-agents.md §3). The
-// compose fold (AgentMiddlewareGroup.Compose) fills that argument with the running
+// artifact composition loop fills that argument with the running
 // accumulator explicitly.
 const agentBaseArgName = "base"
 
@@ -1383,6 +1383,12 @@ func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDe
 	if gqlFieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 	}
+	if fn.IsCheck && fn.CheckReturnType.Self() == nil && fn.ReturnType.Self().Kind != TypeDefKindVoid &&
+		mod.Source.Valid && AfterVersion("v1.0.0-0").Contains(call.View(mod.Source.Value.Self().EngineVersion)) {
+		if obj.SourceModuleName == "" || fn.ReturnType.Self().ToType().Name() != "Check" {
+			return fmt.Errorf("check %s.%s must return Void", obj.Name, fn.Name)
+		}
+	}
 	if fn.IsUp {
 		if err := validateUpFunction(obj, fn); err != nil {
 			return err
@@ -1573,14 +1579,26 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 		if err != nil {
 			return updated, err
 		}
-		if !sameAttachedResult(returnType, fn.Self().ReturnType) {
+		returnTypes := []dagql.ObjectResult[*TypeDef]{returnType}
+		if fn.Self().IsCheck && fn.Self().CheckReturnType.Self() == nil {
+			checkType, err := SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withObject", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("Check")}},
+			})
+			if err != nil {
+				return updated, err
+			}
+			returnTypes = append(returnTypes, checkType)
+		}
+		for _, returnType := range returnTypes {
+			if sameAttachedResult(returnType, updated.Self().ReturnType) {
+				continue
+			}
 			returnTypeID, err := ResultIDInput(returnType)
 			if err != nil {
 				return updated, fmt.Errorf("namespace function return type id: %w", err)
 			}
 			if err := dag.Select(ctx, updated, &updated, dagql.Selector{
-				Field: "__withReturnType",
-				Args:  []dagql.NamedInput{{Name: "returnType", Value: returnTypeID}},
+				Field: "__withReturnType", Args: []dagql.NamedInput{{Name: "returnType", Value: returnTypeID}},
 			}); err != nil {
 				return updated, fmt.Errorf("namespace function return type: %w", err)
 			}

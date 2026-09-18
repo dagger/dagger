@@ -179,7 +179,7 @@ my-ci:my-generate   # Did you "generate an example backend test"?
 ```
 
 ```shell
-dagger check my-ci:my-check
+dagger check dag://my-ci/my-check
 ```
 
 A module created with `--path` is not installed. Call it by pointing `-m` at its directory instead, or install it with `dagger module install <path>`.

@@ -19,8 +19,9 @@ var artifactsCmd = newArtifactsCommand()
 
 func newArtifactsCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "artifacts",
-		Short: "List and filter workspace artifacts",
+		Use:     "artifact",
+		Aliases: []string{"artifacts"},
+		Short:   "List and filter workspace artifacts",
 		Long: `List artifact addresses without evaluating their values.
 
 An address selects that path and its children. Use / between fields; : is
@@ -34,13 +35,13 @@ conflicts with an existing flag. A query in the address has the same meaning
 as these flags: dag://<path>?<dimension>=<key>.
 
 Examples:
-  dagger artifacts list
-  dagger artifacts list engine-dev --type Container
-  dagger artifacts list 'go*/**' --type Container --type Directory
-  dagger artifacts list 'dag://golang/modules/tests/container?go-module=sdk/go'
-  dagger artifacts types
-  dagger artifacts dimensions
-  dagger artifacts keys go-test --go-module=sdk/go`,
+  dagger artifact list
+  dagger artifact list engine-dev --type Container
+  dagger artifact list 'go*/**' --type Container --type Directory
+  dagger artifact list 'dag://golang/modules/tests/container?go-module=sdk/go'
+  dagger artifact types
+  dagger artifact dimensions
+  dagger artifact keys go-test --go-module=sdk/go`,
 		Args: cobra.NoArgs,
 	}
 	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Keep artifacts of this GraphQL type (repeat for alternatives)")
@@ -90,12 +91,33 @@ func parseArtifactAddresses(addresses []string) ([]*dagaddress.Address, error) {
 		if err != nil {
 			return nil, err
 		}
-		if addr.Absolute {
-			return nil, fmt.Errorf("absolute addresses are not supported yet: %s", address)
-		}
 		parsed = append(parsed, addr)
 	}
 	return parsed, nil
+}
+
+// artifactClientParams binds an absolute address before workspace discovery.
+// One command uses one workspace; relative addresses use that same workspace.
+func artifactClientParams(params client.Params, addresses []string) (client.Params, error) {
+	parsed, err := parseArtifactAddresses(addresses)
+	if err != nil {
+		return params, err
+	}
+	var selected string
+	for _, address := range parsed {
+		if !address.Absolute {
+			continue
+		}
+		ref := address.Workspace + "@" + address.Version
+		if selected != "" && selected != ref {
+			return params, fmt.Errorf("addresses select different workspaces: %s and %s", selected, ref)
+		}
+		selected = ref
+	}
+	if selected != "" {
+		params.Workspace = &selected
+	}
+	return params, nil
 }
 
 func artifactPaths(addresses []*dagaddress.Address) []string {
@@ -118,6 +140,7 @@ func selectArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifac
 	// Send the remaining address and flag filters through the engine's parser.
 	filter := *addr
 	filter.Path = ""
+	filter.Absolute = false
 	filter.Query = slices.Clone(addr.Query)
 	keys, _ := cmd.Flags().GetStringArray("dimension-key")
 	for _, key := range keys {
@@ -147,7 +170,11 @@ func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]strin
 		return nil, cobra.ShellCompDirectiveError
 	}
 	var types []string
-	err = withEngineSilent(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
+	params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, args)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	err = withEngineSilent(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
 		types, err = ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}).Types(ctx)
 		return err
 	})
@@ -166,7 +193,11 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 	if err != nil {
 		return err
 	}
-	return withEngine(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
+	params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, addresses)
+	if err != nil {
+		return err
+	}
+	return withEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
 		var lines []string
 		for _, addr := range parsed {
 			artifacts := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})

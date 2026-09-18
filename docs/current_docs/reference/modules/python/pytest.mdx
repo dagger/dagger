@@ -18,7 +18,7 @@ dagger module install dagger.io/python/pytest
 
 ```bash
 dagger check                 # run every check in the workspace
-dagger check pytest:test-all # run Pytest against the selected projects
+dagger check dag://pytest/test-all # run Pytest against the selected projects
 ```
 
 `pytest:test-all` injects `pytest_otel` automatically, so individual Python tests appear as spans in the Dagger TUI and Dagger Cloud with no project changes. The module uses uv to install the project dependencies, pytest, and `pytest_otel` together.

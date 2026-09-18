@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -173,6 +174,12 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	// http://<host>/repo.git@main becomes <host>/repo at the resolved commit.
 	host := strings.TrimSuffix(strings.TrimPrefix(ref, "http://"), "/repo.git@main")
 	require.Regexp(t, regexp.MustCompile(`^dag://`+regexp.QuoteMeta(host)+`/repo@[0-9a-f]{40}:base$`), uri)
+
+	for _, prefix := range []string{"dag://"} {
+		out, err := base.With(workspaceSelectionDaggerExec("artifact", "list", prefix+ref+":base")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag://base\n", out)
+	}
 
 	// The current workspace's own absolute address is accepted; any other is reserved.
 	out, err = base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace {
@@ -575,8 +582,7 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "artifacts", "--type", "Pro")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "ProviderDocs\n")
-	_, err = base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "list", "dag://github.com/dagger/dagger@main:base")).Sync(ctx)
-	requireErrOut(t, err, "absolute addresses are not supported yet")
+
 	reserved := base.
 		WithNewFile("/work/selected/dagger.toml", `[modules.provider]
 source = "./provider"
@@ -798,4 +804,188 @@ settings.label = "second"
   node(id: $ws) { ... on Workspace { artifacts { items { path } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.ErrorContains(t, err, "ambiguous artifact path")
+}
+
+func (ArtifactsSuite) TestCheckProjection(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	src := c.Directory().WithNewFile("dagger.toml", `[modules.example]
+source = "./example"
+entrypoint = true
+`).WithNewFile("example/dagger-module.toml", `name = "example"
+engineVersion = "v1.0.0"
+[runtime]
+source = "dang"
+`).WithNewFile("example/main.dang", `type Example {
+ pub passing: Void @check { null }
+ pub failing: Void @check { raise "check failed" }
+ pub clean(ws: Workspace!): Changeset! @generate { ws.changes(ws) }
+ pub dirty(ws: Workspace!): Changeset! @generate { ws.withNewFile("generated", "new").changes(ws) }
+ pub broken: Container! { raise "metadata evaluated a leaf" }
+}`)
+	wsID, err := src.AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	opts := &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}}
+	metadata, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+ node(id: $ws) { ... on Workspace { artifacts { filterDirectives(directives: ["check"]) { items { uri directives } } } } }
+}`, opts)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{"filterDirectives":{"items":[
+ {"uri":"dag://clean/stale","directives":["check"]},
+ {"uri":"dag://dirty/stale","directives":["check"]},
+ {"uri":"dag://failing","directives":["check"]},
+ {"uri":"dag://passing","directives":["check"]}
+ ]}}}}`, string(*metadata))
+	results, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+ node(id: $ws) { ... on Workspace { artifacts { filterDirectives(directives: ["check"]) {
+ items { uri value { ... on Check { pass error { message } } } }
+ } } } }
+}`, opts)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{"filterDirectives":{"items":[
+ {"uri":"dag://clean/stale","value":{"pass":true,"error":null}},
+ {"uri":"dag://dirty/stale","value":{"pass":false,"error":{"message":"generated files are not up to date"}}},
+ {"uri":"dag://failing","value":{"pass":false,"error":{"message":"check failed"}}},
+ {"uri":"dag://passing","value":{"pass":true,"error":null}}
+ ]}}}}`, string(*results))
+	values, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+ node(id: $ws) { ... on Workspace { artifacts { filterDirectives(directives: ["check"]) {
+ values { artifact { uri } error { message } value { ... on Check { pass } } }
+ } } } }
+}`, opts)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{"filterDirectives":{"values":[
+ {"artifact":{"uri":"dag://clean/stale"},"value":{"pass":true},"error":null},
+ {"artifact":{"uri":"dag://dirty/stale"},"value":null,"error":{"message":"generated files are not up to date"}},
+ {"artifact":{"uri":"dag://failing"},"value":null,"error":{"message":"check failed"}},
+ {"artifact":{"uri":"dag://passing"},"value":{"pass":true},"error":null}
+ ]}}}}`, string(*values))
+
+}
+
+func artifactValue[T dagger.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *dagger.Artifact) T {
+	t.Helper()
+	id, err := artifact.Value().ID(ctx)
+	require.NoError(t, err)
+	return dagger.Ref[T](c, id)
+}
+
+func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, artifacts *dagger.Artifacts, base ...*dagger.LLM) (*dagger.LLM, error) {
+	if artifacts == nil {
+		artifacts = ws.Artifacts()
+	}
+	var response struct {
+		Node struct {
+			Items []struct {
+				ID         dagger.ID
+				LoadError  string
+				Directives []string
+				Arguments  []struct {
+					Name    string
+					TypeDef struct{ AsObject *struct{ Name string } }
+				}
+			}
+		}
+	}
+	id, err := artifacts.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = c.Do(ctx, &dagger.Request{Query: `query($id: ID!) { node(id: $id) { ... on Artifacts {
+  items { id loadError directives arguments { name typeDef { asObject { name } } } }
+ } } }`, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
+	if err != nil {
+		return nil, err
+	}
+	llm := c.LLM().WithWorkspace(ws)
+	if len(base) > 0 {
+		llm = base[0]
+	}
+	for _, artifact := range response.Node.Items {
+		if artifact.LoadError != "" {
+			return nil, fmt.Errorf("%s", artifact.LoadError)
+		}
+		if !slices.Contains(artifact.Directives, "agent") {
+			continue
+		}
+		baseID, err := llm.ID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		inputs := map[string]any{}
+		for _, arg := range artifact.Arguments {
+			if arg.TypeDef.AsObject != nil && arg.TypeDef.AsObject.Name == "LLM" {
+				inputs[arg.Name] = baseID
+			}
+		}
+		encoded, err := json.Marshal(inputs)
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Node struct{ Value struct{ ID dagger.ID } }
+		}
+		err = c.Do(ctx, &dagger.Request{Query: `query($id: ID!, $arguments: JSON!) {
+   node(id: $id) { ... on Artifact { value(arguments: $arguments) { id } } }
+  }`, Variables: map[string]any{"id": artifact.ID, "arguments": string(encoded)}}, &dagger.Response{Data: &result})
+		if err != nil {
+			return nil, err
+		}
+		llm = dagger.Ref[*dagger.LLM](c, result.Node.Value.ID)
+	}
+	return llm, nil
+}
+
+func (ArtifactsSuite) TestCheckCachePolicy(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
+		WithNewFile("probe/main.go", `package main
+import ("crypto/rand"; "fmt")
+type Probe struct{}
+// +check
+func (*Probe) Once() error { return fmt.Errorf("once %s", rand.Text()) }
+// +check
+// +cache="never"
+func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
+`)
+	out, err := base.With(daggerQuery(`{
+ a: once { error { message } }
+ b: once { error { message } }
+ currentWorkspace { artifacts(include: ["once"]) { one { value { ... on Check { error { message } } } } } }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var direct struct {
+		A, B             struct{ Error struct{ Message string } }
+		CurrentWorkspace struct {
+			Artifacts struct {
+				One struct {
+					Value struct{ Error struct{ Message string } }
+				}
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &direct))
+	require.NotEmpty(t, direct.A.Error.Message)
+	require.Equal(t, direct.A.Error.Message, direct.B.Error.Message)
+	require.Equal(t, direct.A.Error.Message, direct.CurrentWorkspace.Artifacts.One.Value.Error.Message)
+
+	out, err = base.With(daggerQuery(`{
+ currentWorkspace { artifacts(include: ["every"]) {
+  a: values { error { message } }
+  b: values { error { message } }
+ } }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var repeated struct {
+		CurrentWorkspace struct {
+			Artifacts struct {
+				A, B []struct{ Error struct{ Message string } }
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &repeated))
+	require.Len(t, repeated.CurrentWorkspace.Artifacts.A, 1)
+	require.Len(t, repeated.CurrentWorkspace.Artifacts.B, 1)
+	require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Error.Message)
 }

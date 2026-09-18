@@ -18,13 +18,23 @@ Runs all checks in your workspace in parallel. Exits non-zero if any check fails
 dagger check -l
 ```
 
+Each row contains a complete `dag://` address. Copy an address into `dagger check` to run that check.
+
 ## Filter checks
 
 ```shell
-dagger check eslint:*          # all checks from a module
-dagger check vitest:test       # a single check
-dagger check *:lint            # pattern across modules
+dagger check 'dag://eslint/*'          # all checks from a module
+dagger check dag://vitest/test       # a single check
+dagger check 'dag://*/lint'            # pattern across modules
 ```
+
+Use an absolute address to select a Git workspace from any directory:
+
+```shell
+dagger check github.com/dagger/dagger@main:golang
+```
+
+The `dag://` prefix is optional for command arguments. One command can select one workspace. Relative addresses in the same command use that workspace.
 
 ## Stop on first failure
 
@@ -36,7 +46,7 @@ dagger check --failfast
 
 ## Checks and generators
 
-A generator can be run as a check to confirm its output is up to date. To control which kind runs:
+Each generator returns a `Changeset`. Its `stale` field is a `Check` that passes when the changeset is empty. For example, `dag://assets/generate/stale` checks `dag://assets/generate`. To control which kind runs:
 
 ```shell
 dagger check --no-generate     # only annotated check functions

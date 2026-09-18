@@ -78,8 +78,8 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 			require.Contains(t, out, "failing-check")
 			require.Contains(t, out, "passing-container")
 			require.Contains(t, out, "failing-container")
-			require.Contains(t, out, "test:lint")
-			require.Contains(t, out, "test:unit")
+			require.Contains(t, out, "test/lint")
+			require.Contains(t, out, "test/unit")
 			// run a specific passing check
 			out, err = modGen.
 				With(daggerExec("--progress=report", "check", "passing-*")).
@@ -183,8 +183,8 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.Regexp(t, `passing-check\s+# A regular passing check`, out)
 		// A generate-derived check is listed under an up-to-date leaf, so its name
 		// cannot be mistaken for the generator `dagger generate -l` lists.
-		require.Regexp(t, `(?m)^empty-generate:up-to-date\s+# Did you "`, out)
-		require.Regexp(t, `(?m)^non-empty-generate:up-to-date\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^dag://empty-generate/stale\s+# `, out)
+		require.Regexp(t, `(?m)^dag://non-empty-generate/stale\s+# `, out)
 		require.NotContains(t, out, "Generators")
 	})
 
@@ -206,8 +206,8 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		// Should only list generators (rendered with `# Did you "..."?` comments), no regular checks
-		require.Regexp(t, `(?m)^empty-generate:up-to-date\s+# Did you "`, out)
-		require.Regexp(t, `(?m)^non-empty-generate:up-to-date\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^dag://empty-generate/stale\s+# `, out)
+		require.Regexp(t, `(?m)^dag://non-empty-generate/stale\s+# `, out)
 		require.NotContains(t, out, "passing-check")
 	})
 
@@ -217,7 +217,7 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		// The run report has to name the check as the list does.
-		require.Regexp(t, `empty-generate:up-to-date.*OK`, out)
+		require.Regexp(t, `empty-generate/stale.*OK`, out)
 	})
 
 	t.Run("run non-empty generator fails", func(ctx context.Context, t *testctx.T) {
@@ -225,65 +225,38 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			With(daggerExecFail("--progress=report", "check", "non-empty-generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `non-empty-generate:up-to-date.*ERROR`, out)
+		require.Regexp(t, `non-empty-generate/stale.*ERROR`, out)
 		// The fix is to run the generator, so the advice names it, not the check.
-		require.Regexp(t, `run 'dagger generate \S*non-empty-generate' to apply`, out)
+		require.Contains(t, out, "generated files are not up to date")
 	})
 
 	t.Run("the listed name selects the check", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
-			With(daggerExec("--progress=report", "check", "empty-generate:up-to-date")).
+			With(daggerExec("--progress=report", "check", "empty-generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `empty-generate:up-to-date.*OK`, out)
+		require.Regexp(t, `empty-generate/stale.*OK`, out)
 		require.NotContains(t, out, "passing-check")
 
 		out, err = modGen.
-			With(daggerExecFail("--progress=report", "check", "non-empty-generate:up-to-date")).
+			With(daggerExecFail("--progress=report", "check", "non-empty-generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `non-empty-generate:up-to-date.*ERROR`, out)
+		require.Regexp(t, `non-empty-generate/stale.*ERROR`, out)
 	})
 
-	t.Run("the module API resolves the name it reports", func(ctx context.Context, t *testctx.T) {
-		// Round-trip: whatever Module.checks names a generate-derived check has
-		// to select it again through Module.check and Module.checks(include:).
-		out, err := modGen.
-			With(daggerQuery(`{host{directory(path:"."){asModule{checks{list{name path checkType}}}}}}`)).
-			Stdout(ctx)
+	t.Run("the artifact API resolves the address it reports", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerQuery(`{currentWorkspace{artifacts{filterUri(uri:"**/stale"){items{uri path}}}}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		strs := func(result gjson.Result) []string {
-			var values []string
-			for _, value := range result.Array() {
-				values = append(values, value.String())
-			}
-			return values
-		}
-		listed := gjson.Get(out, `host.directory.asModule.checks.list.#(checkType=="generate")#`).Array()
+		listed := gjson.Get(out, "currentWorkspace.artifacts.filterUri.items").Array()
 		require.Len(t, listed, 2)
 		for _, check := range listed {
-			name := check.Get("name").String()
-			require.Contains(t, []string{"empty-generate:up-to-date", "non-empty-generate:up-to-date"}, name)
-			// name and path are the same identity: path keeps the functions'
-			// own casing, but it carries the up-to-date leaf too.
-			path := strs(check.Get("path"))
-			require.Len(t, path, 2)
-			require.Equal(t, "up-to-date", path[1])
-
-			out, err := modGen.
-				With(daggerQuery(`{host{directory(path:"."){asModule{check(name:%q){name} checks(include:[%q]){list{name}}}}}}`, name, name)).
-				Stdout(ctx)
+			uri := check.Get("uri").String()
+			require.Contains(t, []string{"dag://empty-generate/stale", "dag://non-empty-generate/stale"}, uri)
+			out, err := modGen.With(daggerQuery(`{currentWorkspace{artifacts{filterUri(uri:%q){one{uri}}}}}`, uri)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, name, gjson.Get(out, "host.directory.asModule.check.name").String())
-			require.Equal(t, []string{name}, strs(gjson.Get(out, "host.directory.asModule.checks.list.#.name")))
+			require.Equal(t, uri, gjson.Get(out, "currentWorkspace.artifacts.filterUri.one.uri").String())
 		}
-
-		// The generator's own name keeps selecting the check.
-		out, err = modGen.
-			With(daggerQuery(`{host{directory(path:"."){asModule{check(name:"empty-generate"){name}}}}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "empty-generate:up-to-date", gjson.Get(out, "host.directory.asModule.check.name").String())
 	})
 
 	t.Run("a wildcard matching the generator still selects the check", func(ctx context.Context, t *testctx.T) {
@@ -293,7 +266,7 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			With(daggerExec("check", "-l", "empty-*")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `(?m)^empty-generate:up-to-date\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^dag://empty-generate/stale\s+# `, out)
 		require.NotContains(t, out, "passing-check")
 	})
 
@@ -352,8 +325,8 @@ func (ChecksSuite) TestChecksSkipFlag(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, out, "passing-check")
 		require.Contains(t, out, "passing-container")
-		require.Contains(t, out, "test:lint")
-		require.Contains(t, out, "test:unit")
+		require.Contains(t, out, "test/lint")
+		require.Contains(t, out, "test/unit")
 		require.NotContains(t, out, "failing-check")
 		require.NotContains(t, out, "failing-container")
 	})
@@ -363,8 +336,8 @@ func (ChecksSuite) TestChecksSkipFlag(ctx context.Context, t *testctx.T) {
 			With(daggerExec("check", "-l", "--skip", "**:unit")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "test:lint")
-		require.NotContains(t, out, "test:unit")
+		require.Contains(t, out, "test/lint")
+		require.NotContains(t, out, "test/unit")
 	})
 
 	t.Run("list with prefix skip pattern", func(ctx context.Context, t *testctx.T) {
@@ -373,8 +346,8 @@ func (ChecksSuite) TestChecksSkipFlag(ctx context.Context, t *testctx.T) {
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "passing-check")
-		require.NotContains(t, out, "test:lint")
-		require.NotContains(t, out, "test:unit")
+		require.NotContains(t, out, "test/lint")
+		require.NotContains(t, out, "test/unit")
 	})
 
 	t.Run("list with include and skip combined", func(ctx context.Context, t *testctx.T) {
@@ -382,8 +355,8 @@ func (ChecksSuite) TestChecksSkipFlag(ctx context.Context, t *testctx.T) {
 			With(daggerExec("check", "-l", "test", "--skip", "**:unit")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "test:lint")
-		require.NotContains(t, out, "test:unit")
+		require.Contains(t, out, "test/lint")
+		require.NotContains(t, out, "test/unit")
 		require.NotContains(t, out, "passing-check")
 	})
 
@@ -412,10 +385,10 @@ check.skip = ["failing-check", "failing-container"]
 
 	out, err := ctr.With(daggerExec("check", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "hello-with-checks:passing-check")
-	require.Contains(t, out, "hello-with-checks:passing-container")
-	require.NotContains(t, out, "hello-with-checks:failing-check")
-	require.NotContains(t, out, "hello-with-checks:failing-container")
+	require.Contains(t, out, "hello-with-checks/passing-check")
+	require.Contains(t, out, "hello-with-checks/passing-container")
+	require.NotContains(t, out, "hello-with-checks/failing-check")
+	require.NotContains(t, out, "hello-with-checks/failing-container")
 }
 
 func (ChecksSuite) TestWorkspaceCheckGeneratedSetting(ctx context.Context, t *testctx.T) {
@@ -433,7 +406,7 @@ source = "hello-with-generate-checks"
 	t.Run("list excludes generators by default", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.Contains(t, out, "hello-with-generate-checks/passing-check")
 		require.NotContains(t, out, "empty-generate")
 		require.NotContains(t, out, "non-empty-generate")
 	})
@@ -448,15 +421,15 @@ source = "hello-with-generate-checks"
 	t.Run("--generate flag overrides the config", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "--generate")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `:empty-generate:up-to-date\s+# Did you "`, out)
-		require.Regexp(t, `:non-empty-generate:up-to-date\s+# Did you "`, out)
+		require.Regexp(t, `:empty-generate/stale\s+# Did you "`, out)
+		require.Regexp(t, `:non-empty-generate/stale\s+# Did you "`, out)
 		require.NotContains(t, out, "passing-check")
 	})
 
 	t.Run("--no-generate flag matches the config default", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "--no-generate")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.Contains(t, out, "hello-with-generate-checks/passing-check")
 		require.NotContains(t, out, "empty-generate")
 	})
 }
@@ -476,10 +449,10 @@ check.skip = ["failing-check", "failing-container"]
 		With(workspaceSelectionDaggerExec("-W", remoteRef, "check", "-l")).
 		CombinedOutput(ctx)
 	require.NoError(t, err, out)
-	require.Contains(t, out, "hello-with-checks:passing-check")
-	require.Contains(t, out, "hello-with-checks:passing-container")
-	require.NotContains(t, out, "hello-with-checks:failing-check")
-	require.NotContains(t, out, "hello-with-checks:failing-container")
+	require.Contains(t, out, "hello-with-checks/passing-check")
+	require.Contains(t, out, "hello-with-checks/passing-container")
+	require.NotContains(t, out, "hello-with-checks/failing-check")
+	require.NotContains(t, out, "hello-with-checks/failing-container")
 }
 
 // TestChecksReportUnloadableModules covers `dagger check`'s handling of a
@@ -497,20 +470,20 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 			With(daggerExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "good:verify")
-		require.Contains(t, out, "bad:load")
+		require.Contains(t, out, "good/verify")
+		require.Contains(t, out, "bad/load")
 		require.Contains(t, out, "this workspace module could not be loaded")
 	})
 
 	t.Run("running reports the load failure as a failed check and still runs the rest", func(ctx context.Context, t *testctx.T) {
-		// good:verify passes, so the non-zero exit can only come from the
+		// good/verify passes, so the non-zero exit can only come from the
 		// module that could not be loaded.
 		out, err := base.
 			With(daggerExecFail("check", "--no-generate", "--progress=report")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `good:verify.*OK`, out)
-		require.Regexp(t, `bad:load.*ERROR`, out)
+		require.Regexp(t, `good/verify.*OK`, out)
+		require.Regexp(t, `bad/load.*ERROR`, out)
 		require.Contains(t, out, `loading module "/work/.dagger/modules/bad"`)
 	})
 
@@ -519,7 +492,7 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 			With(daggerExecFail("check", "bad", "--no-generate", "--progress=report")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `bad:load.*ERROR`, out)
+		require.Regexp(t, `bad/load.*ERROR`, out)
 	})
 
 	t.Run("scoping to the healthy module passes and never mentions the broken one", func(ctx context.Context, t *testctx.T) {
@@ -527,7 +500,7 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 			With(daggerExec("check", "good", "--no-generate", "--progress=report")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `good:verify.*OK`, out)
+		require.Regexp(t, `good/verify.*OK`, out)
 		require.NotContains(t, out, "modules/bad")
 	})
 
@@ -559,8 +532,8 @@ engineVersion = "v0.21.9"
 			With(daggerExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "alpha-sdk:generate:up-to-date")
-		require.Contains(t, out, "bad:load")
+		require.Contains(t, out, "alpha-sdk/generate/stale")
+		require.Contains(t, out, "bad/load")
 	})
 
 	t.Run("a module missing its generated files is still told to generate", func(ctx context.Context, t *testctx.T) {
@@ -617,8 +590,8 @@ source = "../%s"
 			require.NoError(t, err)
 			require.Contains(t, out, tc.path+":passing-check")
 			require.Contains(t, out, tc.path+":failing-check")
-			require.Contains(t, out, tc.path+":test:lint")
-			require.Contains(t, out, tc.path+":test:unit")
+			require.Contains(t, out, tc.path+":test/lint")
+			require.Contains(t, out, tc.path+":test/unit")
 			// run a specific passing check
 			_, err = modGen.
 				With(daggerExec("--progress=report", "check", tc.path+":passing-check")).
@@ -717,7 +690,7 @@ name = "beta"
 		require.NoError(t, err, out)
 		// The "Did you ..." comment is how the CLI renders a check whose type
 		// is "generate", so matching it proves the derived check is one.
-		require.Regexp(t, `(?m)^alpha-sdk:generate:up-to-date\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^alpha-sdk/generate/stale\s+# Did you "`, out)
 	})
 
 	t.Run("the generator keeps the un-suffixed name", func(ctx context.Context, t *testctx.T) {
@@ -726,8 +699,8 @@ name = "beta"
 			With(daggerNonNestedExec("generate", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^alpha-sdk:generate\s+#`, out)
-		require.NotContains(t, out, ":up-to-date")
+		require.Regexp(t, `(?m)^alpha-sdk/generate\s+#`, out)
+		require.NotContains(t, out, "/stale")
 	})
 
 	t.Run("no-generate excludes the derived check", func(ctx context.Context, t *testctx.T) {
@@ -735,7 +708,7 @@ name = "beta"
 			With(daggerNonNestedExec("check", "-l", "--no-generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.NotContains(t, out, "alpha-sdk:generate")
+		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
 	t.Run("generate only includes the derived check", func(ctx context.Context, t *testctx.T) {
@@ -743,7 +716,7 @@ name = "beta"
 			With(daggerNonNestedExec("check", "-l", "--generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "alpha-sdk:generate:up-to-date")
+		require.Contains(t, out, "alpha-sdk/generate/stale")
 	})
 
 	t.Run("check-generated false excludes the derived check", func(ctx context.Context, t *testctx.T) {
@@ -751,15 +724,15 @@ name = "beta"
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.NotContains(t, out, "alpha-sdk:generate")
+		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
 	t.Run("skip excludes the derived check", func(ctx context.Context, t *testctx.T) {
 		out, err := generated(ctx, t, alphaOnly).
-			With(daggerNonNestedExec("check", "-l", "--skip", "alpha-sdk:generate")).
+			With(daggerNonNestedExec("check", "-l", "--skip", "alpha-sdk/generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.NotContains(t, out, "alpha-sdk:generate")
+		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
 	t.Run("a configured module skip excludes the derived check", func(ctx context.Context, t *testctx.T) {
@@ -771,7 +744,7 @@ skip = ["generate"]
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.NotContains(t, out, "alpha-sdk:generate")
+		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
 	t.Run("an entrypoint provider drops the module prefix", func(ctx context.Context, t *testctx.T) {
@@ -783,16 +756,16 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^\s*generate:up-to-date\s+# Did you "`, out)
-		require.NotContains(t, out, "alpha-sdk:generate")
+		require.Regexp(t, `(?m)^\s*generate/stale\s+# Did you "`, out)
+		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
 	t.Run("the derived check passes when the scope is generated", func(ctx context.Context, t *testctx.T) {
 		out, err := generated(ctx, t, alphaOnly).
-			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk:generate")).
+			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk/generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `alpha-sdk:generate:up-to-date.*OK`, out)
+		require.Regexp(t, `alpha-sdk/generate/stale.*OK`, out)
 	})
 
 	t.Run("the listed name selects the derived check", func(ctx context.Context, t *testctx.T) {
@@ -800,44 +773,44 @@ entrypoint = true`, 1)
 		// name has to select and run the check, not just label it.
 		base := generated(ctx, t, bothSDKs)
 		out, err := base.
-			With(daggerNonNestedExec("check", "-l", "alpha-sdk:generate:up-to-date")).
+			With(daggerNonNestedExec("check", "-l", "alpha-sdk/generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^alpha-sdk:generate:up-to-date\s+# Did you "`, out)
+		require.Regexp(t, `(?m)^alpha-sdk/generate/stale\s+# Did you "`, out)
 		require.NotContains(t, out, "beta-sdk")
 
 		out, err = base.
-			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk:generate:up-to-date")).
+			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk/generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `alpha-sdk:generate:up-to-date.*OK`, out)
+		require.Regexp(t, `alpha-sdk/generate/stale.*OK`, out)
 
 		// Running it is what makes a stale scope fail under that name.
 		out, err = base.
 			WithoutFile(alphaMarker).
-			With(daggerNonNestedExecFail("--progress=report", "check", "alpha-sdk:generate:up-to-date")).
+			With(daggerNonNestedExecFail("--progress=report", "check", "alpha-sdk/generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `alpha-sdk:generate:up-to-date.*ERROR`, out)
+		require.Regexp(t, `alpha-sdk/generate/stale.*ERROR`, out)
 	})
 
 	t.Run("skipping the listed name excludes the derived check", func(ctx context.Context, t *testctx.T) {
 		out, err := generated(ctx, t, alphaOnly).
-			With(daggerNonNestedExec("check", "-l", "--skip", "alpha-sdk:generate:up-to-date")).
+			With(daggerNonNestedExec("check", "-l", "--skip", "alpha-sdk/generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.NotContains(t, out, "alpha-sdk:generate")
+		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
 	t.Run("the derived check fails when the scope is stale", func(ctx context.Context, t *testctx.T) {
 		out, err := generated(ctx, t, alphaOnly).
 			WithoutFile(alphaMarker).
-			With(daggerNonNestedExecFail("--progress=report", "check", "alpha-sdk:generate")).
+			With(daggerNonNestedExecFail("--progress=report", "check", "alpha-sdk/generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `alpha-sdk:generate:up-to-date.*ERROR`, out)
+		require.Regexp(t, `alpha-sdk/generate/stale.*ERROR`, out)
 		// The fix is to run the generator, so the advice names it, not the check.
-		require.Contains(t, out, "run 'dagger generate alpha-sdk:generate' to apply")
+		require.Contains(t, out, "run 'dagger generate alpha-sdk/generate' to apply")
 	})
 
 	t.Run("an explicit check at the same name wins", func(ctx context.Context, t *testctx.T) {
@@ -854,24 +827,24 @@ entrypoint = true`, 1)
 		require.NoError(t, err, out)
 		// The derived check no longer shares the explicit check's name, but the
 		// explicit check still wins: the dedup is keyed on the generator's name.
-		require.Equal(t, 1, strings.Count(out, "alpha-sdk:generate"))
-		require.NotContains(t, out, ":up-to-date")
+		require.Equal(t, 1, strings.Count(out, "alpha-sdk/generate"))
+		require.NotContains(t, out, "/stale")
 
 		// Asking for the derived check by name does not bring it back.
 		out, err = base.
-			With(daggerNonNestedExecFail("check", "alpha-sdk:generate:up-to-date")).
+			With(daggerNonNestedExecFail("check", "alpha-sdk/generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `no checks matched pattern "alpha-sdk:generate:up-to-date"`)
+		require.Contains(t, out, `no checks matched pattern "alpha-sdk/generate/stale"`)
 
 		// The explicit check passes on a stale scope; the derived check would
 		// have failed, so this proves which one survived the dedup.
 		out, err = base.
 			WithoutFile(alphaMarker).
-			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk:generate")).
+			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk/generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `alpha-sdk:generate.*OK`, out)
+		require.Regexp(t, `alpha-sdk/generate.*OK`, out)
 	})
 
 	t.Run("each SDK gets its own check", func(ctx context.Context, t *testctx.T) {
@@ -879,20 +852,19 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "alpha-sdk:generate:up-to-date")
-		require.Contains(t, out, "beta-sdk:generate:up-to-date")
+		require.Contains(t, out, "alpha-sdk/generate/stale")
+		require.Contains(t, out, "beta-sdk/generate/stale")
 	})
 
-	t.Run("a stale dependency fails the dependent SDK's check too", func(ctx context.Context, t *testctx.T) {
-		// A derived check verifies its SDK's scopes and the scopes they depend
-		// on, so stale output in alpha's scope also fails beta's check.
+	t.Run("each SDK check covers its own generated files", func(ctx context.Context, t *testctx.T) {
+		// Dependency generation prepares inputs; each changeset contains only its own SDK output.
 		out, err := generated(ctx, t, bothSDKs).
 			WithoutFile(alphaMarker).
 			With(daggerNonNestedExecFail("--progress=report", "check")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `alpha-sdk:generate:up-to-date.*ERROR`, out)
-		require.Regexp(t, `beta-sdk:generate:up-to-date.*ERROR`, out)
+		require.Regexp(t, `alpha-sdk/generate/stale.*ERROR`, out)
+		require.Regexp(t, `beta-sdk/generate/stale.*OK`, out)
 	})
 
 	t.Run("an independent SDK's check is unaffected", func(ctx context.Context, t *testctx.T) {
@@ -901,26 +873,8 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExecFail("--progress=report", "check")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `alpha-sdk:generate:up-to-date.*ERROR`, out)
-		require.Regexp(t, `beta-sdk:generate:up-to-date.*OK`, out)
+		require.Regexp(t, `alpha-sdk/generate/stale.*ERROR`, out)
+		require.Regexp(t, `beta-sdk/generate/stale.*OK`, out)
 	})
 
-	t.Run("originalModule reports that the check is engine-defined", func(ctx context.Context, t *testctx.T) {
-		out, err := generated(ctx, t, alphaOnly).
-			WithNewFile("/query.graphql", `{
-  currentWorkspace {
-    checks(include: ["alpha-sdk:generate"]) {
-      list {
-        name
-        originalModule { name }
-      }
-    }
-  }
-}
-`).
-			With(daggerNonNestedExecFail("api", "query", "--doc=/query.graphql")).
-			CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "has no original module")
-	})
 }

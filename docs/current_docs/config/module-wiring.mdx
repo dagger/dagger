@@ -28,11 +28,11 @@ source = "dagger.io/js/playwright"
 service = "dag://myapp/serve"
 ```
 
-Now `dagger check playwright:test` runs the browser tests against your app.
+Now `dagger check dag://playwright/test` runs the browser tests against your app.
 Dagger resolves the reference when it constructs the playwright module and
 passes the running service in.
 
-To find functions you can wire, run `dagger artifacts list --type Service`.
+To find functions you can wire, run `dagger artifact list --type Service`.
 It lists every service-returning function in the workspace, in exactly the
 `dag://` address form a setting accepts. Any function returning the right
 type works.
@@ -102,7 +102,7 @@ dagger api call playwright --service=dag://myapp/serve test
   module segment: `dag://serve`.
 - An address with `dag://` *is* a module reference. A missing function or a
   mismatched type is then a hard error, never a silent fallback to an image or
-  URL. `dagger artifacts list` prints every address the workspace has.
+  URL. `dagger artifact list` prints every address the workspace has.
 - A value without `dag://` keeps its ordinary address meaning: an OCI ref for
   a `Container`, a `tcp://` URL for a `Service`. So `git:2.40` and
   `alpine:3.20` stay image refs.
