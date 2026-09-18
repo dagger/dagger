@@ -1376,28 +1376,21 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 			return strings.TrimSpace(randomContents)
 		}
 
-		runGeneratorGroup := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
+		runGeneratorArtifact := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
 			t.Helper()
 
-			run := engineClient.
-				CurrentWorkspace().
-				Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"generate-files"}}).
-				Run()
-
-			empty, err := run.IsEmpty(ctx)
+			artifact := engineClient.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"generate-files"}}).FilterDirectives([]string{"generate"}).One()
+			changes := artifactValue[*dagger.Changeset](ctx, t, engineClient, artifact)
+			empty, err := changes.IsEmpty(ctx)
 			require.NoError(t, err)
 			require.False(t, empty)
-
-			changesEmpty, err := run.Changes().IsEmpty(ctx)
-			require.NoError(t, err)
-			require.False(t, changesEmpty)
 		}
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		randomA := runRandom(ctx, t, engineClientA)
-		runGeneratorGroup(ctx, t, engineClientA)
+		runGeneratorArtifact(ctx, t, engineClientA)
 		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
 		upstreamSvcA = nil
 		engineSvcA = nil

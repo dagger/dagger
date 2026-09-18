@@ -543,12 +543,12 @@ func (*Probe) Committed() error { return nil }
 `)
 	committed, err := commitWorkspace(ctx, c, ws, "add module", nil)
 	require.NoError(t, err)
-	checks, err := dagger.Ref[*dagger.Workspace](c, committed.ID).Checks(dagger.WorkspaceChecksOpts{NoGenerate: true}).List(ctx)
+	checks, err := dagger.Ref[*dagger.Workspace](c, committed.ID).Artifacts().FilterDirectives([]string{"check"}).WithoutURI("**/stale").Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, checks, 1)
-	name, err := checks[0].Name(ctx)
+	name, err := checks[0].URI(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "probe:committed", name)
+	require.Equal(t, "dag://probe/committed", name)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context, t *testctx.T) {

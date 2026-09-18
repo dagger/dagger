@@ -65,7 +65,7 @@ func (UpSuite) TestUpDirectSDK(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Contains(t, out, "web")
 			require.Contains(t, out, "redis")
-			require.Contains(t, out, "infra:database")
+			require.Contains(t, out, "infra/database")
 		})
 	}
 }
@@ -85,7 +85,7 @@ func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "web")
 	require.Contains(t, out, "redis")
-	require.Contains(t, out, "infra:database")
+	require.Contains(t, out, "infra/database")
 }
 
 func (UpSuite) TestUpNoServices(ctx context.Context, t *testctx.T) {
@@ -684,9 +684,9 @@ up.skip = ["redis"]
 
 	out, err := ctr.With(daggerExec("up", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "hello-with-services:web")
-	require.NotContains(t, out, "hello-with-services:redis")
-	require.Contains(t, out, "hello-with-services:infra:database")
+	require.Contains(t, out, "hello-with-services/web")
+	require.NotContains(t, out, "hello-with-services/redis")
+	require.Contains(t, out, "hello-with-services/infra/database")
 }
 
 func (UpSuite) TestWorkspaceUpPortMapping(ctx context.Context, t *testctx.T) {
@@ -696,10 +696,10 @@ func (UpSuite) TestWorkspaceUpPortMapping(ctx context.Context, t *testctx.T) {
 
 	ctr := modGen.WithNewFile("dagger.toml", `[modules.hello-with-services]
 source = "hello-with-services"
-up.skip = ["redis", "infra:database"]
+up.skip = ["redis", "infra/database"]
 
 [ports.3000]
-backendService = "hello-with-services:web"
+backendService = "hello-with-services/web"
 backendPort = 80
 `)
 
@@ -739,7 +739,7 @@ source = "../%s"
 			require.NoError(t, err)
 			require.Contains(t, out, tc.path+":web")
 			require.Contains(t, out, tc.path+":redis")
-			require.Contains(t, out, tc.path+":infra:database")
+			require.Contains(t, out, tc.path+":infra/database")
 		})
 	}
 }

@@ -23,7 +23,7 @@ dagger module install dagger.io/go/golangci-lint
 
 ```bash
 dagger check                       # run every check in the workspace
-dagger check golangci-lint:lint-all # lint the selected Go modules
+dagger check dag://golangci-lint/lint-all # lint the selected Go modules
 ```
 
 `lint-all` discovers Go modules at or below the working directory, including

@@ -211,7 +211,7 @@ type Artifact implements Node {
   id: ID!
   path: [String!]!
   uri(absolute: Boolean = false, dimensionKeys: Boolean = true, typeAssertion: Boolean = false): String!
-  value: Node!
+  value(arguments: JSON = "{}"): Node!
 }
 
 type ArtifactDimensionKey implements Node {
@@ -227,13 +227,14 @@ extend type Artifacts {
   filterDimensions(dimensions: [String!]!): Artifacts!
   filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
   filterUri(uri: String!): Artifacts!
+  withoutUri(uri: String!): Artifacts!
   dimensions: [String!]!
   dimensionKeys(dimension: String!): [String!]!
   types: [String!]!
   items: [Artifact!]!
   one: Artifact!
   uri: String!
-  values(failFast: Boolean = true): [ArtifactResult!]!
+  values(failFast: Boolean = false): [ArtifactResult!]!
 }
 
 type ArtifactResult {
@@ -359,22 +360,22 @@ In a set, `+<type>` is a filter. On one artifact, it is an assertion: a differen
 ### 5. Use the existing CLI and resolver
 
 ```console
-$ dagger artifacts dimensions
+$ dagger artifact dimensions
 NAME               IDENTIFIER
 app-dependencies   App.dependencies
 go-test            GoModule.tests
 golang-modules     Golang.modules
 
-$ dagger artifacts dimensions golang
+$ dagger artifact dimensions golang
 NAME        IDENTIFIER
 go-module   Golang.modules
 go-test     GoModule.tests
 
-$ dagger artifacts keys go-test golang --go-module=sdk/go
+$ dagger artifact keys go-test golang --go-module=sdk/go
 TestConnect
 TestQuery
 
-$ dagger artifacts list golang/modules/tests/container --go-module=sdk/go --go-test=TestConnect
+$ dagger artifact list golang/modules/tests/container --go-module=sdk/go --go-test=TestConnect
 dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 ```
 
@@ -383,7 +384,7 @@ Keep the dynamic flags from #14178 as `--<dimension>=<key>`. Rename its generic 
 A flag has the same meaning as one query pair, and the two combine. Flags need no shell quotes; an address with `&` does:
 
 ```console
-$ dagger artifacts list 'dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect'
+$ dagger artifact list 'dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect'
 dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 ```
 
@@ -405,7 +406,7 @@ dagger call golang modules get --key=sdk/go tests subset --keys=TestConnect --ke
 
 ### 6. Select checks and generators
 
-`dagger check` and `dagger generate` build their selection with the `Artifacts` filters of section 3: path patterns, `filterDimensionKeys`, and `filterDirectives`. The dimension names, key text, and filter rules are the same as for `dagger artifacts`.
+`dagger check` and `dagger generate` build their selection with the `Artifacts` filters of section 3: path patterns, `filterDimensionKeys`, and `filterDirectives`. The dimension names, key text, and filter rules are the same as for `dagger artifact`.
 
 Resolve dimension names within the selected paths. Then merge keys for the same dimension with OR, and combine different dimensions with AND. An omitted dimension selects all keys. An empty key list matches nothing.
 
@@ -466,12 +467,12 @@ extend type Changeset {
 
 A generator's check now has the address `<generator path>/stale`. `dagger check foo/bar` still selects it: a plain path filter selects that path and its children. `check -l` prints the real address. Generators supplied by the engine must also be schema fields that return `Changeset`.
 
-**Walk rule.** The walk visits every reachable object field, with the existing limits for cycles, nullable values, raw lists, and required arguments. It collects an artifact when one of two rules applies:
+**Walk rule.** The walk visits eligible object fields, with the existing limits for cycles, nullable values, raw lists, and required arguments. It collects an artifact and descends when one of two rules applies:
 
 - The field belongs to a module type.
 - The field has a user-facing directive: `@check`, `@up`, `@generate`, or `@agent`.
 
-So a module publishes every eligible object, and the engine publishes only targets. `Changeset.stale` is a check, so the engine marks it `@check` and the walk collects it. `Container.rootfs` and `Check.report` have no directive, so they have no address. The walker holds no list of types or fields.
+So a module publishes every eligible object, and the engine publishes only targets. `Changeset.stale` is a check, so the engine marks it `@check` and the walk collects it. `Container.rootfs` and `Check.report` have no directive, so the walk stops at those fields and gives them no address. The walker holds no list of types or fields.
 
 ### 8. Replace the group APIs with Artifacts
 
@@ -486,7 +487,7 @@ Today `core/modtree.go` has six walks over the same tree: `RollupChecks`, `Rollu
 3. **Select through artifacts.** Port CLI commands and internal callers to `Workspace.artifacts`. Use `filterDirectives` for checks, generators, services, and agent middleware. Use `filterTypes` for terminals. Remove calls to the group APIs.
 4. **One evaluation.** `Artifacts.values(failFast:)` evaluates independent artifacts in parallel, with one span per artifact. It records each error in an `ArtifactResult`. The wrapper is necessary: a raised error in a non-null field ends the whole list. Commands apply their final actions to the results. Agent middleware keeps its composition order. Remove the group types, their workspace fields, the separate rollup methods, and the per-command runners in `modtree.go`.
 
-Checks do not need `values`. `Check.pass` returns `false` and fills `error`; it never raises. So `dagger check` is one query:
+`Check.pass` returns `false` and fills `error` for an assertion failure. Callers can read checks directly in one query. The CLI uses `values(failFast:)` to preserve failure isolation and cancellation:
 
 ```graphql
 artifacts(include: ["golang/modules/tests/run"])
@@ -501,14 +502,14 @@ Keep these execution behaviors through all four steps:
 
 - Bind the overlay workspace into each target, so an injected `Workspace!` resolves against overlay edits.
 - An entrypoint module drops its prefix in the printed name. Artifacts print the same name.
-- Scale-out becomes "evaluate this address on a remote engine", for every directive.
+- Scale-out sends a workspace recipe and artifact address to a remote engine. The check command reads `pass` and `error` there. It does not transfer engine-local result handles.
 - A module that does not load is an artifact whose value is a failed `Check`.
 
 ### First implementation
 
 Ship collection declarations, the standard API, nested artifact discovery and resolution, and check and generator selection together. Support Go, Dang, Python, and TypeScript authoring. Generate clients from the public collection schema. Expose new schema fields in the v1 API only, as in #14178.
 
-Ship the relative address form: optional `dag://`, path, and query. Reserve the syntax for type assertions, absolute addresses, and tree addresses.
+Commands support relative addresses and absolute Git workspace addresses, with an optional `dag://` scheme, type assertions, paths, and queries. One command selects one workspace. An absolute address binds that workspace before discovery. Tree addresses remain reserved. API filters operate on their existing workspace; they do not load a different workspace.
 
 Ship the `Check` projection and `Changeset.stale` with the walk, and all four steps of the port, `dagger shell` first. The release removes the group APIs and their separate runners.
 

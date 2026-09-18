@@ -21,7 +21,7 @@ dagger module install dagger.io/js/prettier
 
 ```bash
 dagger check                 # run every check in the workspace
-dagger check prettier:check  # just check formatting
+dagger check dag://prettier/check  # just check formatting
 ```
 
 `prettier:check` installs dependencies and runs `prettier --check .` across the

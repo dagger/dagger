@@ -52,7 +52,11 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 		if err != nil {
 			return err
 		}
-		if err := withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
+		params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, paths)
+		if err != nil {
+			return err
+		}
+		if err := withEngineSilent(ctx, params, func(ctx context.Context, ec *client.Client) error {
 			dimensions, err := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}).Dimensions(ctx)
 			if err != nil {
 				return err

@@ -94,7 +94,7 @@ source = "other"
 	t.Run("caller skip only excludes the entrypoint", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("check", "-l", "--no-generate", "--skip=verify")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "other:verify", strings.TrimSpace(out))
+		require.Equal(t, "other/verify", strings.TrimSpace(out))
 	})
 
 	t.Run("module settings keep local skip names", func(ctx context.Context, t *testctx.T) {
@@ -106,15 +106,15 @@ source = "other"
 
 	t.Run("value workspace uses its own entrypoint", func(ctx context.Context, t *testctx.T) {
 		ws := base.Directory("/work").AsWorkspace()
-		checks, err := ws.Checks(dagger.WorkspaceChecksOpts{Include: []string{"verify"}, NoGenerate: true}).List(ctx)
+		checks, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterDirectives([]string{"check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Len(t, checks, 1)
-		name, err := checks[0].Name(ctx)
+		name, err := checks[0].URI(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "verify", name)
+		require.Equal(t, "dag://verify", name)
 
 		changed := ws.WithNewFile("dagger.toml", strings.Replace(config, "entrypoint = true", "entrypoint = false", 1))
-		checks, err = changed.Checks(dagger.WorkspaceChecksOpts{Include: []string{"verify"}, NoGenerate: true}).List(ctx)
+		checks, err = changed.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterDirectives([]string{"check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Empty(t, checks)
 	})
@@ -124,7 +124,7 @@ source = "other"
 		out, err := generated.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "files")
-		require.NotContains(t, out, "app:files")
+		require.NotContains(t, out, "app/files")
 		exists, err := generated.Exists(ctx, "app.txt")
 		require.NoError(t, err)
 		require.True(t, exists)
@@ -136,7 +136,7 @@ source = "other"
 	t.Run("run the entrypoint check only", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("check", "verify", "--no-generate")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.NotContains(t, out, "app:verify")
-		require.NotContains(t, out, "other:verify")
+		require.NotContains(t, out, "app/verify")
+		require.NotContains(t, out, "other/verify")
 	})
 }

@@ -142,28 +142,28 @@ legacy-default-path = true
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ws := tc.ws
-			checks, err := ws.Checks().List(ctx)
+			checks, err := ws.Artifacts().FilterDirectives([]string{"check"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, checks, 1)
-			name, err := checks[0].Name(ctx)
+			name, err := checks[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "reader:check-marker", name)
+			require.Equal(t, "dag://reader/check-marker", name)
 
-			passed, err := checks[0].Run().Passed(ctx)
+			passed, err := artifactValue[*dagger.Check](ctx, t, c, &checks[0]).Pass(ctx)
 			require.NoError(t, err)
 			require.True(t, passed)
 
 			// The module code is unchanged, so only the context tree differs.
 			// Its content must distinguish module instances in the cache.
 			edited := ws.WithNewFile("workspace-marker.txt", "wrong marker")
-			editedChecks, err := edited.Checks().List(ctx)
+			editedChecks, err := edited.Artifacts().FilterDirectives([]string{"check"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, editedChecks, 1)
-			passed, err = editedChecks[0].Run().Passed(ctx)
+			passed, err = artifactValue[*dagger.Check](ctx, t, c, &editedChecks[0]).Pass(ctx)
 			require.NoError(t, err)
 			require.False(t, passed)
 
-			passed, err = checks[0].Run().Passed(ctx)
+			passed, err = artifactValue[*dagger.Check](ctx, t, c, &checks[0]).Pass(ctx)
 			require.NoError(t, err)
 			require.True(t, passed)
 		})

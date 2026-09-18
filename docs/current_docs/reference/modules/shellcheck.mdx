@@ -18,7 +18,7 @@ dagger module install dagger.io/shellcheck
 
 ```bash
 dagger check                  # run every check in the workspace
-dagger check shellcheck:check # run ShellCheck on discovered shell scripts
+dagger check dag://shellcheck/check # run ShellCheck on discovered shell scripts
 ```
 
 `check` finds every `.sh` file in the workspace and runs ShellCheck on each one, so a script must use the `.sh` extension to be discovered. Use `scripts` to see exactly which files the module found.

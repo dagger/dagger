@@ -580,42 +580,7 @@ func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
 	})
 }
 
-func TestWorkspaceConfigSkipPatterns(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("missing config has no skips", func(t *testing.T) {
-		patterns, err := workspaceConfigSkipPatterns(ctx, &core.Workspace{}, func(entry workspace.ModuleEntry) []string {
-			return entry.Generate.Skip
-		})
-		require.NoError(t, err)
-		require.Empty(t, patterns)
-	})
-
-	t.Run("compat workspace uses projected skips", func(t *testing.T) {
-		compat, err := workspace.ParseCompatWorkspace([]byte(`{
-			"name": "app",
-			"toolchains": [{
-				"name": "hello-with-generators",
-				"source": "./hello-with-generators",
-				"ignoreGenerators": ["generate-other-files", "other-generators:*"]
-			}]
-		}`))
-		require.NoError(t, err)
-		require.NotNil(t, compat)
-
-		ws := &core.Workspace{}
-		ws.SetCompatWorkspace(compat)
-		patterns, err := workspaceConfigSkipPatterns(ctx, ws, func(entry workspace.ModuleEntry) []string {
-			return entry.Generate.Skip
-		})
-		require.NoError(t, err)
-		require.Equal(t, map[string][]string{
-			"hello-with-generators": {"generate-other-files", "other-generators:*"},
-		}, patterns)
-	})
-}
-
-func TestFilterGeneratorsByInclude(t *testing.T) {
+func TestArtifactNodesByInclude(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {
 		name       string
@@ -629,16 +594,20 @@ func TestFilterGeneratorsByInclude(t *testing.T) {
 		{"single ordinary module requires prefix", false, []string{"generate-*"}, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			generators := []*core.Generator{
-				{Node: modTreeNode("app", "generate-files")},
-				{Node: modTreeNode("app", "generate-other-files")},
+			nodes := []*core.ModTreeNode{
+				modTreeNode("app", "generate-files"),
+				modTreeNode("app", "generate-other-files"),
 			}
-			for _, generator := range generators {
-				generator.Node.Parent.WorkspaceEntrypoint = test.entrypoint
+			matched := 0
+			for _, node := range nodes {
+				node.Parent.WorkspaceEntrypoint = test.entrypoint
+				match, err := matchWorkspaceInclude(ctx, node, test.include)
+				require.NoError(t, err)
+				if match {
+					matched++
+				}
 			}
-			filtered, err := filterGeneratorsByInclude(ctx, generators, test.include)
-			require.NoError(t, err)
-			require.Len(t, filtered, test.want)
+			require.Equal(t, test.want, matched)
 		})
 	}
 }
@@ -661,18 +630,20 @@ func TestWorkspaceTargetSkipNames(t *testing.T) {
 		{"module settings use local names", []string{"verify"}, true, nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			filtered, err := filterNodesByExclude(ctx, []*core.ModTreeNode{app, other}, test.exclude, test.moduleLocal,
-				singleNode(func(node *core.ModTreeNode) *core.ModTreeNode { return node }),
-				func(node *core.ModTreeNode) string { return node.CommandName() }, "test")
-			require.NoError(t, err)
+			var filtered []*core.ModTreeNode
+			for _, node := range []*core.ModTreeNode{app, other} {
+				match, err := matchAnyNode(ctx, []*core.ModTreeNode{node}, test.exclude, test.moduleLocal)
+				require.NoError(t, err)
+				if !match {
+					filtered = append(filtered, node)
+				}
+			}
 			require.ElementsMatch(t, test.want, filtered)
 		})
 	}
 }
 
-// TestGenerateCheckPatterns pins which patterns select a generate-derived
-// check: the up-to-date name it is listed under, and every pattern that selected
-// it while it was still named after its generator.
+// A generator selector also includes its stale check.
 func TestGenerateCheckPatterns(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {
@@ -685,106 +656,29 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		included      bool
 		moduleSkipped bool
 	}{
-		{"check name", false, []string{"alpha-sdk:generate:up-to-date"}, true, true},
+		{"check name", false, []string{"alpha-sdk:generate:stale"}, true, true},
 		{"generator name", false, []string{"alpha-sdk:generate"}, true, true},
 		{"module name", false, []string{"alpha-sdk"}, true, true},
 		{"single segment wildcard on the generator", false, []string{"alpha-sdk:*"}, true, true},
-		{"wildcard on the check name", false, []string{"alpha-sdk:*:up-to-date"}, true, true},
-		{"entrypoint check name", true, []string{"generate:up-to-date"}, true, true},
+		{"wildcard on the check name", false, []string{"alpha-sdk:*:stale"}, true, true},
+		{"entrypoint check name", true, []string{"generate:stale"}, true, true},
 		{"entrypoint generator name", true, []string{"generate"}, true, true},
-		{"module-local check name", false, []string{"generate:up-to-date"}, false, true},
+		{"module-local check name", false, []string{"generate:stale"}, false, true},
 		{"module-local generator name", false, []string{"generate"}, false, true},
 		{"other leaf", false, []string{"alpha-sdk:generate:other"}, false, false},
-		{"other module", false, []string{"beta-sdk:generate:up-to-date"}, false, false},
+		{"other module", false, []string{"beta-sdk:generate:stale"}, false, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			node := modTreeNode("alpha-sdk", "generate")
-			node.Parent.WorkspaceEntrypoint = test.entrypoint
-			check := &core.Check{Node: node, IsGenerate: true}
-
-			wantName := "alpha-sdk:generate:up-to-date"
-			if test.entrypoint {
-				wantName = "generate:up-to-date"
-			}
-			require.Equal(t, wantName, check.Name())
-			// path is the qualified identity of the same check name reports.
-			require.Equal(t, []string{"alpha-sdk", "generate", "up-to-date"}, check.Path())
-
-			included, err := filterChecksByInclude(ctx, []*core.Check{check}, test.patterns)
+			node := modTreeNode("alpha-sdk", "generate", "stale")
+			node.Parent.Parent.WorkspaceEntrypoint = test.entrypoint
+			match, err := matchWorkspaceInclude(ctx, node, test.patterns)
 			require.NoError(t, err)
-			require.Equal(t, test.included, len(included) == 1)
-
-			remaining, err := filterChecksByExclude(ctx, []*core.Check{check}, test.patterns, false)
+			require.Equal(t, test.included, match)
+			match, err = matchAnyNode(ctx, []*core.ModTreeNode{node}, test.patterns, true)
 			require.NoError(t, err)
-			require.Equal(t, test.included, len(remaining) == 0)
-
-			remaining, err = filterChecksByExclude(ctx, []*core.Check{check}, test.patterns, true)
-			require.NoError(t, err)
-			require.Equal(t, test.moduleSkipped, len(remaining) == 0)
+			require.Equal(t, test.moduleSkipped, match)
 		})
 	}
-
-	t.Run("the up-to-date name alone would lose single segment wildcards", func(t *testing.T) {
-		// Why a generate-derived check also answers to its generator node.
-		check := &core.Check{Node: modTreeNode("alpha-sdk", "generate"), IsGenerate: true}
-		match, err := matchWorkspaceInclude(ctx, check.NamingNode(), []string{"alpha-sdk:*"})
-		require.NoError(t, err)
-		require.False(t, match)
-	})
-
-	t.Run("a module's own check is selected by the name it reports", func(t *testing.T) {
-		// Module.check and Module.checks match against the module's own tree,
-		// whose functions sit directly under the root.
-		check := &core.Check{Node: modTreeNode("empty-generate"), IsGenerate: true}
-		require.Equal(t, "empty-generate:up-to-date", check.Name())
-		for _, pattern := range []string{check.Name(), "empty-generate", "empty-*"} {
-			included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{pattern})
-			require.NoError(t, err)
-			require.Len(t, included, 1, pattern)
-		}
-	})
-
-	t.Run("an ordinary check has no up-to-date name", func(t *testing.T) {
-		check := &core.Check{Node: modTreeNode("go", "lint")}
-		require.Equal(t, "go:lint", check.Name())
-		included, err := filterChecksByInclude(ctx, []*core.Check{check}, []string{"go:lint:up-to-date"})
-		require.NoError(t, err)
-		require.Empty(t, included)
-	})
-}
-
-func TestSelectVisibleGeneratorModules(t *testing.T) {
-	names := func(entries []workspaceGeneratorModule) []string {
-		result := make([]string, 0, len(entries))
-		for _, entry := range entries {
-			result = append(result, entry.name)
-		}
-		return result
-	}
-
-	t.Run("wrapper hides raw blueprint alias", func(t *testing.T) {
-		visible := selectVisibleGeneratorModules([]workspaceGeneratorModule{
-			{name: "hello-with-generators", sourceDigest: "sha256:blueprint", isWrapper: false},
-			{name: "app", sourceDigest: "sha256:blueprint", isWrapper: true},
-		})
-		require.Equal(t, []string{"app"}, names(visible))
-	})
-
-	t.Run("single raw module remains visible", func(t *testing.T) {
-		visible := selectVisibleGeneratorModules([]workspaceGeneratorModule{
-			{name: "hello-with-generators", sourceDigest: "sha256:blueprint", isWrapper: false},
-		})
-		require.Equal(t, []string{"hello-with-generators"}, names(visible))
-	})
-
-	t.Run("multiple wrappers sharing one implementation remain visible", func(t *testing.T) {
-		visible := selectVisibleGeneratorModules([]workspaceGeneratorModule{
-			{name: "hello-with-generators", sourceDigest: "sha256:blueprint", isWrapper: false},
-			{name: "app", sourceDigest: "sha256:blueprint", isWrapper: true},
-			{name: "ci", sourceDigest: "sha256:blueprint", isWrapper: true},
-		})
-		require.Equal(t, []string{"app", "ci"}, names(visible))
-	})
 }
 
 func TestResolveWorkspacePath(t *testing.T) {

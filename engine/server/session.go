@@ -3765,7 +3765,12 @@ func (srv *Server) CloudEngineClient(
 
 	engineClient, err := engineclient.ConnectEngineToEngine(ctx, engineclient.EngineToEngineParams{
 		Params: engineclient.Params{
-			RunnerHost: engine.DefaultCloudRunnerHost,
+			RunnerHost:     engine.DefaultCloudRunnerHost,
+			Workspace:      parentClient.clientMetadata.Workspace,
+			WorkspaceEnv:   parentClient.clientMetadata.WorkspaceEnv,
+			UserConfigPath: parentClient.clientMetadata.UserConfigPath,
+			// Artifact queries load their own selected modules.
+			SkipWorkspaceModules: true,
 
 			Module:   module,
 			Function: function,

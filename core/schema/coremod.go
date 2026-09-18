@@ -228,10 +228,6 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&envfileSchema{},
 		&addressSchema{},
 		&checksSchema{},
-		&generatorsSchema{},
-		&upSchema{},
-		&terminalsSchema{},
-		&agentsSchema{},
 		&artifactsSchema{},
 		&workspaceSchema{},
 	} {

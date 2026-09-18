@@ -29,7 +29,7 @@ uses the version declared in `package.json`, where a floating range like
 
 ```bash
 dagger check                  # run every check in the workspace
-dagger check playwright:test  # just the Playwright suite
+dagger check dag://playwright/test  # just the Playwright suite
 ```
 
 `playwright:test` finds the directory containing `playwright.config.*`,

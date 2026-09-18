@@ -34,6 +34,8 @@ type Artifact struct {
 	Path          []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
 	DimensionKeys []*ArtifactDimensionKey `field:"true" doc:"One key per dimension along the path. Unordered; empty for static artifacts."`
 	TypeName      string
+	Directives    []string `field:"true" doc:"The directives carried by this artifact."`
+	LoadFailure   *ModuleLoadFailure
 	Node          *ModTreeNode
 	Workspace     dagql.ObjectResult[*Workspace]
 }
@@ -197,6 +199,14 @@ func (a *Artifacts) exactPaths() []string {
 	// Preserve an empty, non-nil list: nil means no path filter.
 	slices.Sort(paths)
 	return slices.Compact(paths)
+}
+
+func (a *Artifacts) FilterDirectives(directives []string) *Artifacts {
+	selected := a.filter(func(artifact *Artifact) bool {
+		return slices.ContainsFunc(artifact.Directives, func(dir string) bool { return slices.Contains(directives, dir) })
+	})
+	selected.Selector.Paths = selected.exactPaths()
+	return selected
 }
 
 func (a *Artifacts) FilterTypes(types []string) *Artifacts {
@@ -477,7 +487,7 @@ func (a *Artifact) AssertType(types []string) error {
 // reference module provenance results owned by that session. A fresh server
 // binds the provenance to results this session owns, so evaluation does not
 // depend on the discovering session being alive.
-func (a *Artifact) Evaluate(ctx context.Context, dest any) error {
+func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.NamedInput) error {
 	if a.Node == nil {
 		return fmt.Errorf("artifact %s has no module tree", strings.Join(a.Path, "/"))
 	}
@@ -485,6 +495,11 @@ func (a *Artifact) Evaluate(ctx context.Context, dest any) error {
 	servers := map[uint64]*dagql.Server{}
 	for node := artifact.Node; node != nil; node = node.Parent {
 		if node.Module.Self() == nil {
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return err
+			}
+			node.DagqlServer = srv
 			continue
 		}
 		moduleID, err := node.Module.ID()
@@ -502,76 +517,48 @@ func (a *Artifact) Evaluate(ctx context.Context, dest any) error {
 		}
 		node.DagqlServer = srv
 	}
-	return artifact.Node.DagqlValue(ctx, dest)
+	return artifact.Node.dagqlValue(ctx, dest, inputs)
 }
 
-// ModuleArtifactNodes lists object values without evaluating them. Walk through
-// module objects and stop at core objects. Skip caller arguments, nullable
-// values, and lists.
+// ModuleArtifactNodes discovers object fields without evaluating their values.
+// Module fields are artifacts; core fields are artifacts only with a target
+// directive. Both can lead to further artifacts.
 func ModuleArtifactNodes(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeNode, []*ModTreeNode, error) {
 	root, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, nil, err
 	}
-	var nodes []*ModTreeNode
-	seen := map[string]bool{}
-	err = root.Walk(ctx, func(_ context.Context, node *ModTreeNode) (bool, error) {
+	nodes, err := ArtifactNodes(ctx, root)
+	return root, nodes, err
+}
+
+func ArtifactNodes(ctx context.Context, root *ModTreeNode) ([]*ModTreeNode, error) {
+	return root.RollupNodes(ctx, func(node *ModTreeNode) (bool, bool) {
 		typ := node.Type.Self()
 		if typ == nil || typ.Optional || typ.Kind != TypeDefKindObject {
-			return false, nil
-		}
-		var fn *Function
-		if node.Parent == nil {
-			if obj := node.ObjectType(); obj != nil && obj.Constructor.Valid {
-				fn = obj.Constructor.Value.Self()
-			}
-		} else if obj := node.Parent.ObjectType(); obj != nil {
-			fn, _ = obj.FunctionByName(node.Name)
-		}
-		if fn != nil {
-			if fn.ReturnType.Self().Optional {
-				return false, nil
-			}
-			for _, arg := range fn.Args {
-				if argRequired(arg.Self()) {
-					return false, nil
-				}
-			}
-		}
-		obj := node.ObjectType()
-		if obj == nil {
-			return false, nil
-		}
-		path := node.PathString()
-		if !seen[path] {
-			seen[path] = true
-			nodes = append(nodes, node)
-		}
-		if fullType, ok := node.OriginalModule.Self().objectTypeDefResultByName(obj.Name); ok {
-			// Field types can be references with no members. ModTree already
-			// adds a separate complete subtree for function return types.
-			if fn == nil {
-				node.Type = fullType
-			}
-			return true, nil
-		}
-		if obj.SourceModuleName != "" {
-			return true, nil
+			return false, false
 		}
 		if node == root {
-			return true, nil
+			if obj := node.ObjectType(); obj.Constructor.Valid && functionRequiresCallerArgs(obj.Constructor.Value.Self()) {
+				return false, false
+			}
+			return true, true
 		}
-		return false, nil
-	})
-	return root, nodes, err
+		parent := node.Parent.ObjectType()
+		moduleField := parent != nil && parent.SourceModuleName != ""
+		eligible := moduleField || slices.ContainsFunc(node.Directives, isArtifactDirective)
+		return eligible, eligible
+	}, nil, nil)
 }
 
 // Persist both individual artifacts and selections. One tree encoding shares
 // module and type references across all entries in a selection.
 type persistedArtifact struct {
+	LoadFailure   *ModuleLoadFailure
 	Path          []string
 	DimensionKeys []*ArtifactDimensionKey
 	TypeName      string
+	Directives    []string
 	Node          int
 	Workspace     uint64
 }
@@ -585,7 +572,7 @@ func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact, sele
 	tree := newPersistedModTreeEncoder(cache)
 	payload := persistedArtifacts{Selector: selector}
 	for _, a := range entries {
-		p := persistedArtifact{Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName}
+		p := persistedArtifact{LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, Directives: a.Directives}
 		var err error
 		p.Node, err = tree.Add(a.Node)
 		if err != nil {
@@ -613,11 +600,11 @@ func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage
 	}
 	result := &Artifacts{Selector: payload.Selector}
 	for _, p := range payload.Entries {
-		a := &Artifact{Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Node: nodes[p.Node]}
+		a := &Artifact{LoadFailure: p.LoadFailure, Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Directives: p.Directives, Node: nodes[p.Node]}
 		if a.DimensionKeys == nil {
 			a.DimensionKeys = []*ArtifactDimensionKey{}
 		}
-		if a.Node == nil {
+		if a.Node == nil && a.LoadFailure == nil {
 			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
 		}
 		a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, srv, p.Workspace, "artifact workspace")
@@ -676,4 +663,18 @@ func (a *Artifacts) AttachDependencyResults(ctx context.Context, _ dagql.AnyResu
 		owned = append(owned, deps...)
 	}
 	return owned, nil
+}
+
+func (a *Artifacts) WithoutURI(address *dagaddress.Address) (*Artifacts, error) {
+	excluded, err := a.FilterURI(address)
+	if err != nil {
+		return nil, err
+	}
+	paths := map[string]bool{}
+	for _, artifact := range excluded.Entries {
+		paths[strings.Join(artifact.Path, "/")] = true
+	}
+	selected := a.filter(func(artifact *Artifact) bool { return !paths[strings.Join(artifact.Path, "/")] })
+	selected.Selector.Paths = selected.exactPaths()
+	return selected, nil
 }

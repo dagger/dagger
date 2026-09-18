@@ -18,7 +18,7 @@ dagger module install dagger.io/dotnet/PsScriptAnalyzer
 
 ```bash
 dagger check                   # run every check in the workspace
-dagger check ps-analyzer:check # run PSScriptAnalyzer on discovered PowerShell scripts
+dagger check dag://ps-analyzer/check # run PSScriptAnalyzer on discovered PowerShell scripts
 ```
 
 `ps-analyzer:check` finds every `.ps1`, `.psm1`, and `.psd1` file in the workspace and runs `Invoke-ScriptAnalyzer` recursively, failing on any diagnostic it reports.
