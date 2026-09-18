@@ -237,7 +237,11 @@ func (a *Artifacts) withPathFilter(matches func(*Artifact) bool, patterns []stri
 }
 
 func (a *Artifacts) FilterPath(path []string) *Artifacts {
-	return a.withPathFilter(func(artifact *Artifact) bool { return slices.Equal(path, artifact.Path) }, []string{strings.Join(path, "/")})
+	selected := a.filter(func(artifact *Artifact) bool { return slices.Equal(path, artifact.Path) })
+	// A literal path is not a pattern. Record only the matching paths so an
+	// empty path, glob character, or different case cannot broaden URI().
+	selected.Selector.Paths = selected.exactPaths()
+	return selected
 }
 
 // FilterPattern keeps artifacts whose path matches the pattern, with the
