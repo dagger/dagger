@@ -147,7 +147,7 @@ func (r *Release) RustSdkTargetVersion(ctx context.Context) (*dagger.Changeset, 
 		return nil, err
 	}
 
-	versionRe := regexp.MustCompile(`pub const DAGGER_ENGINE_VERSION: &str = "([0-9\.-a-zA-Z]+)";`)
+	versionRe := regexp.MustCompile(`pub const DAGGER_ENGINE_VERSION: &str = "([0-9.a-zA-Z+-]+)";`)
 	versionBumpedContents := versionRe.ReplaceAllString(
 		versionContents,
 		fmt.Sprintf(`pub const DAGGER_ENGINE_VERSION: &str = "%s";`, version),
