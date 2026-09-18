@@ -10,8 +10,8 @@ The Go module gives a Go workspace one shared way to test and run
 `go generate`. It scans the workspace for `go.mod` files, treats each one as a Go
 module, and exposes workspace-level functions that run across all of them. That
 makes it a good fit for monorepos, service repos, and libraries with generated
-code, especially when several modules should share one Go version and the same
-CI checks.
+code. Each module runs on the Go toolchain its own `go.mod` asks for, and the
+same checks cover all of them.
 
 ## Add it to your workspace
 
@@ -31,6 +31,39 @@ a Go module, and runs tests against all of them. Tests run through an
 OpenTelemetry-aware runner, so individual Go tests appear as spans in the Dagger
 TUI and Dagger Cloud.
 
+## Module discovery
+
+`test-all` and `generate-all` find Go modules by looking for `go.mod` files:
+
+- Every directory at or below the directory `dagger` runs from that holds a
+  `go.mod` is a Go module. Run `dagger` from the workspace root to cover the
+  whole repository.
+- When `dagger` runs from a directory inside a Go module, that enclosing module
+  is included as well.
+- Every `go.mod` counts, including those under `vendor/`, `testdata/`,
+  `examples/`, hidden directories, and directories listed in `.gitignore`.
+- A directory is a module when its `go.mod` parses and it holds at least one
+  Go file, so an empty module or a placeholder `go.mod` is left out.
+
+Exclude a Go module from `test-all` with the `test` setting, which selects
+module roots by path from the workspace root:
+
+| Pattern | Selects |
+| --- | --- |
+| `"**"` or `"*"` | Every module |
+| `"services/api"` or `"services/api/**"` | The module at `services/api` and any module below it |
+| `"."` | The root module only |
+| `"!vendor"` | Excludes the module at `vendor` and any module below it |
+
+Exclusions always win, whatever the order. A list with only exclusions starts
+from every module, so `["!vendor", "!testdata"]` tests everything except those
+two trees, and `["!**"]` turns the workflow off.
+
+`generate-all` is scoped by directory instead, with the `generate` setting. A
+literal path selects only that directory, `"internal/**"` selects `internal`
+and everything below it, and a `!` prefix excludes. `go generate` runs in a
+selected directory only when it contains a `//go:generate` directive.
+
 ## Generate code
 
 Run the generator when generated Go files are part of normal development, such
@@ -41,8 +74,10 @@ as mocks, embedded assets, protobuf output, or anything produced by
 dagger generate go:generate-all
 ```
 
-`generate-all` runs only in modules that contain a `//go:generate` directive, and
-returns the result as a changeset to review before applying.
+`generate-all` runs `go generate .` in each selected directory that contains a
+`//go:generate` command, and returns the result as a changeset to review before
+applying. Within a Go module, directories run in lexical path order and share a
+container, so a later command can use an earlier one's output.
 
 ## Configure it
 
@@ -50,44 +85,63 @@ List the current settings with `dagger module settings go`, then change one with
 `dagger module settings go <key> <value>`. They live in `dagger.toml` under
 `[modules.go.settings]`:
 
-- `version` (default `1.26`) is the Go toolchain version used to build the test
-  and generate containers (`golang:<version>-alpine`). Set this so every module
-  is tested and generated against the same Go version.
+- `version` sets one Go toolchain for every module, overriding the `go`
+  directive in each module's `go.mod`. Without it, each module is tested and
+  generated in `golang:<version>-alpine` for the version its own `go.mod` asks
+  for, and a module with no `go` directive uses `1.26`.
+- `base` is an optional container to use instead of that image, for tests and
+  generators that need system packages or bound services. It must carry a Go
+  toolchain and any C/C++ dependencies the modules need, and the test runner
+  is installed into it unless it already has one. It supplies its own
+  toolchain, so `version` is ignored alongside it and the run reports the
+  ignored value. Wire a function of your own into it with
+  [module wiring](../../config/module-wiring.mdx).
 - `includeExtraFiles` (default empty) are extra workspace-root path patterns
   mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`,
   and `testdata/` directories are already included automatically; use this for
   inputs those patterns miss, such as embedded non-Go assets, generator inputs,
   or fixtures kept outside `testdata/`.
-- `test` and `generate` (each defaults to `["**"]`) are module-root
-  selector arrays for `test-all` and `generate-all`.
-  A bare pattern includes modules, a `!`-prefixed pattern excludes them, and
-  exclusions always win. `"**"` and `"*"` match every module; `"path"` and
-  `"path/**"` match the module at `path` and any modules below it. With no
-  positive pattern, every module is included unless excluded, so `["!**"]`
-  disables that workflow everywhere.
+- `test` (default `["**"]`) selects the module roots `test-all` covers. See
+  [Module discovery](#module-discovery) for the pattern rules.
+- `generate` (default `["**"]`) selects the directories `generate-all` runs
+  `go generate` in, as paths and globs from the workspace root.
+- `goflags` sets the `GOFLAGS` environment variable in every Go container, which
+  is how build tags are passed, as in `-tags=extended`. Flags that take a value
+  use the `-flag=value` form. On the command line, put `--` before the value so
+  the CLI does not read its leading dash as flags of its own.
+- `mountPath` is the absolute container path where the workspace is mounted. It
+  defaults to `/src/<workspace name>`, where the name is the last segment of
+  the workspace address, usually the repository name.
 
 ```bash
-# Pin the Go version for the whole workspace
-dagger module settings go version 1.25
+# Use one Go version for the whole workspace, whatever each go.mod says
+dagger module settings go version 1.26
+
+# Pass build tags to every Go command. The value starts with a dash, so it
+# goes after "--"; quoting it is not enough.
+dagger module settings go goflags -- -tags=extended
 ```
 
 List-valued settings are edited directly in `dagger.toml`:
 
 ```toml
 [modules.go.settings]
-version = "1.25"
+version = "1.26"
 includeExtraFiles = ["Makefile", "tools/**"]
 test = ["**", "!legacy-service"] # Test all modules except legacy-service and modules below it
 ```
 
 ## Working with other modules
 
-Reach for this module whenever the repo contains one or more Go modules,
-especially when they should share the same Go version and CI checks. To exclude a
-single module from a workflow, add a `!`-prefixed module path to the corresponding
+Reach for this module whenever the repo contains one or more Go modules that
+should share the same CI checks. To exclude a single module from a workflow, add a `!`-prefixed module path to the corresponding
 selector array rather than splitting the repo into separate check systems.
 
 For Go lint checks, install [golangci-lint](./go/golangci-lint.mdx) or
 [Staticcheck](./go/staticcheck.mdx) alongside this module.
+
+When the tests need a service the module cannot start, such as a database, wire
+a container with that service bound into the `base` setting.
+[Daggerize a Go Project](../../getting-started/platform-guides/go/index.mdx) walks through it.
 
 [source code](https://github.com/dagger/go)

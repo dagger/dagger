@@ -1,0 +1,347 @@
+---
+title: "Daggerize a Go Project"
+slug: /getting-started/platform-guides/go
+description: "Run a Go project's tests, lint, and generators through Dagger, and give its end-to-end tests the services they need with module wiring."
+pagination_next: null
+---
+
+# Daggerize a Go Project
+
+This guide continues from the Quickstart for a Go project. At the end, its tests, lint, and `go generate` run through Dagger in a runtime you control, and its end-to-end tests run against the services they need, such as Postgres.
+
+## What this guide covers
+
+1. Install and configure the Dagger module for Go, which tests the project and runs `go generate`
+1. Add a module for your linter
+1. Declare the files a test or generator reads from outside its package
+1. Provide a custom runtime container for tests and generators
+1. Give end-to-end tests the services they need, such as a database
+
+The steps are in the order you should do them, and each one is more specific to your project than the last. Not all sections apply to all projects, so it is fine to skip ahead. Stop when the Checks cover what your project does, and come back when it needs more.
+
+Complete the [Quickstart](../../quickstart.mdx) in the project before you start. It creates `dagger.toml`, and its module recommendations include the Dagger module for Go for any project with a `go.mod`, so some of the modules in this guide may already be installed. The project must be a Git repository.
+
+## Install the Dagger module for Go
+
+The Dagger module for Go is a reusable module from `dagger.io/go`. It finds every `go.mod` in the repository, tests each one, and runs `go generate` in it. It is installed in the workspace under the name `go`.
+
+```shell
+dagger module install dagger.io/go
+```
+
+If the Quickstart already installed it, Dagger reports `Module "go" is already installed` and changes nothing. Every install command in this guide behaves the same way, and `dagger module list` shows what the workspace has. List the Checks the module added:
+
+```shell
+dagger check go -l
+```
+
+```text
+go:test-all       # Run tests in every discovered Go module.
+go:generate-all   # Did you "run go generate . in selected directories across the workspace"?
+```
+
+Run them:
+
+```shell
+dagger check go
+```
+
+`go:test-all` runs `go test ./...` in every Go module it finds. Each Go test is reported as its own span, so a failure names the test that failed. `go:generate-all` is the drift check for the generator: it fails when `go generate` would change a committed file.
+
+A test that skips itself because a service is unavailable is not a failure. The Check passes, and the summary adds a `skipped` count next to `passed` whenever a test skipped. If that count appears, the project needs the second half of this guide.
+
+## Configure the `go` module
+
+The module relies on native configurations to provide the right defaults where possible, but you can still explicitly provide settings based on your project's needs.
+
+List the settings:
+
+```shell
+dagger module settings go
+```
+
+```text
+MODULE  KEY                VALUE  DESCRIPTION
+go      version                   Go toolchain version for every module, overriding what each module's own
+go      base                      Base image for Go test and generate containers. It must carry a Go
+go      includeExtraFiles         Extra workspace-root include patterns mounted for each module's Go commands.
+go      test                      Module roots to test. A bare pattern selects, a "!"-prefixed pattern
+go      generate                  Directories to run go generate in. Paths are relative to the workspace root
+go      goflags                   Value of the GOFLAGS environment variable in every Go container, e.g.
+go      mountPath                 Absolute container path where the workspace is mounted for Go commands.
+```
+
+Set a single value with the same command:
+
+```shell
+dagger module settings go version 1.26
+```
+
+A value that starts with a dash, such as build tags in `goflags`, needs `--` in front of it. Without it, the CLI reads the value as flags of its own and fails with `invalid argument "extended" for "-s, --silent" flag`. Quoting the value does not help, since the shell removes the quotes before the CLI sees them:
+
+```shell
+dagger module settings go goflags -- -tags=extended
+```
+
+Settings are committed in `dagger.toml`:
+
+```toml
+[modules.go.settings]
+version = "1.26"
+includeExtraFiles = ["fixtures/**", "config.yaml"]
+test = ["**", "!legacy-service", "!test-fixtures"]
+goflags = "-tags=extended"
+```
+
+The [Go module reference](../../../reference/modules/go.mdx) describes every setting in detail.
+
+## Lint the project
+
+Linting is a separate module, so a project picks the linter it already uses. Two are available, and both discover Go modules the same way the `go` module does:
+
+- **golangci-lint** from `dagger.io/go/golangci-lint` runs `golangci-lint run` with the project's `.golangci.*` config if it has one.
+- **Staticcheck** from `dagger.io/go/staticcheck` runs `staticcheck ./...` with the project's `staticcheck.conf` files if it has any.
+
+Install one, unless `dagger module list` shows the workspace already has one. The rest of this section uses golangci-lint, and Staticcheck works the same way with `staticcheck` in place of `golangci-lint`:
+
+```shell
+dagger module install dagger.io/go/golangci-lint
+```
+
+The Check list gains a lint Check:
+
+```shell
+dagger check -l
+```
+
+```text
+go:test-all              # Run tests in every discovered Go module.
+go:generate-all          # Did you "run go generate . in selected directories across the workspace"?
+golangci-lint:lint-all   # Run golangci-lint in every selected Go module.
+```
+
+`golangci-lint:lint-all` runs the linter in every selected Go module and reports diagnostics with paths relative to the repository root. It runs in its own container, built for the toolchain each module's `go.mod` asks for, so the `go` module's `version` and `base` settings do not affect it. The linter module has settings of the same shape:
+
+```shell
+dagger module settings golangci-lint
+```
+
+```text
+MODULE         KEY                VALUE  DESCRIPTION
+golangci-lint  version                   golangci-lint release every module is linted with, without the v prefix.
+golangci-lint  goVersion                 Go toolchain version for every module, overriding what each module's own
+golangci-lint  base                      Container to run golangci-lint in. It must carry a Go toolchain, along with
+golangci-lint  includeExtraFiles
+golangci-lint  lint                      Module roots to lint. Bare patterns select, "!"-prefixed patterns exclude,
+```
+
+`version` selects the golangci-lint release, `goVersion` overrides the Go toolchain the same way the `go` module's `version` does, and `base` supplies a container of your own, which brings its own toolchain. `includeExtraFiles` and `lint` follow the same rules as the `go` module's settings, so a monorepo that excludes a module from tests usually excludes it from lint the same way:
+
+```toml
+[modules.golangci-lint.settings]
+lint = ["**", "!legacy-service", "!test-fixtures"]
+```
+
+## Run generators
+
+If the project uses `go generate`, the `go` module's generator runs it in every Go module that has a `//go:generate` directive:
+
+```shell
+dagger generate
+```
+
+Dagger shows the resulting changes as a changeset to review before applying them. Nothing is written until you apply it. `dagger check` includes the matching drift check, so a forgotten `go generate` fails the Checks instead of reaching a pull request unnoticed. See [Generating code](../../../using/generating.mdx).
+
+## Declare the files a test or generator reads
+
+Every Go command runs against a directory Dagger assembles from the repository, not against the checkout itself, so a Check's result is cached by exactly the files it saw. The `go` module decides what goes into that directory by reading the Go source. Beyond the source files and `go.mod`, it follows what the code declares: the files named by `//go:embed`, the Go module named by a `go -C` argument on a `//go:generate` line, and local `replace` targets. Tests also see every `testdata/` directory.
+
+A file that a test opens by relative path, or that a generator reads as input, is invisible to that scan. The `go` module uses two directives for those cases as an alternative to listing files with `includeExtraFiles`:
+
+- **`//go:test:include`** names files to mount when the module's tests run.
+- **`//go:generate:include`** names files to mount when `go generate` runs.
+
+Each takes one or more patterns with the same syntax as `//go:embed`. A pattern is relative to the directory of the file that holds the directive, and a leading `/` makes it relative to the repository root. Quote a path that contains a space. The directive can sit in any Go file in the module, including a `_test.go` file, so it lives next to the code that needs the file. A test in `store/` that reads `../fixtures/users.json` declares it in one line:
+
+```go
+//go:test:include ../fixtures/*.json
+```
+
+A generator that reads a template declares it the same way, above the `//go:generate` line that runs it:
+
+```go
+//go:generate:include templates/version.txt
+```
+
+Without the directive, the test fails the same way it would on a machine that does not have the file:
+
+```text
+✘ example.com/greetings/store › TestFixture FAIL
+          fixture_test.go:10: open ../fixtures/users.json: no such file or directory
+```
+
+A generator without its input either fails or writes different output, and `go:generate-all` reports the difference as drift. Add the directive and both Checks pass.
+
+Dagger's own repository uses this for its CLI reference. A Go file with no code holds a `//go:generate:include` line for the rendered page above the `//go:generate go -C ../../../../ run ./internal/cmd/dagger/docsgen` line that renders it, so the drift check compares the regenerated page against the committed one, and the `go -C` argument pulls the repository's root Go module in as the generator's input.
+
+Prefer a directive when one package needs the file. It travels with the code, and it is scoped to the workflow that needs it. Use `includeExtraFiles` when every Go module in the workspace needs the file, or when the source should not change. The linter modules only read `//go:embed`, so a file the linter needs goes in the linter module's `includeExtraFiles`.
+
+## Customize test and generator runtime
+
+By default the `go` module runs every Go command in `golang:<version>-alpine`, for the version each module's `go.mod` asks for. The most common reason to provide a custom runtime is if your tests or generators require system dependencies such as `git`, a C compiler for cgo, or `protoc`. The `base` setting takes that runtime, and module wiring lets a function of your own build it.
+
+### Create a custom module
+
+The module is a few lines of [Dang](../../../reference/sdks/dang.mdx) in your repository. Install the Dang SDK into the workspace if it is not there already, then create the module if you do not already have a dev module for your project:
+
+```shell
+dagger module install dagger.io/sdk/dang
+dagger module init dang
+```
+
+`dagger module init` creates the module at `.dagger/modules/<project>-dev` and records it in `dagger.toml`. Add the following function to your module, replacing the ProjectDev type name with the generated type name from your module:
+
+```dang file=./snippets/go-runtime/main.dang
+```
+
+`ProjectDev` stands in for the type `dagger module init` generated, which is named after your module. Keep your module's type name, or the module fails to load with `no main object`. A module that `dagger module init` just created also has starter functions inside that type, which you can delete.
+
+`testRuntime` starts from the Debian-based `golang:1.26-bookworm` image instead of the Alpine default, which brings `git` and `gcc` with it, and installs `protobuf-compiler`, so a `//go:generate` line that runs `protoc` works. It is deliberately minimal:
+
+- **Only an image and its packages.** No working directory, no source, no cache mounts. The `go` module adds its own on top.
+- **The image sets the Go version.** Once `base` is wired, the toolchain is whatever your container provides, for every Go module in the workspace. The `go` module installs its test runner into the container, which needs Go 1.25 or newer.
+
+Open a shell in the container the `go` module will receive, and run `protoc --version` to confirm the package is there:
+
+```shell
+dagger shell test-runtime
+```
+
+### Wire it into the `go` module
+
+A setting can hold a module reference instead of a literal value, which is called [module wiring](../../../config/module-wiring.mdx). `<project>-dev:test-runtime` names the `<project>-dev` module and its `test-runtime` function. Dagger calls the function when it loads the `go` module and passes the result in as the setting's value. The reusable module gets a project-specific container, and nobody writes a custom test Check.
+
+`base` supplies its own toolchain, so a `version` the project set earlier is ignored from now on, and each run says so. Remove it:
+
+```shell
+dagger module settings -u go version
+dagger module settings go base test-runtime
+```
+
+`dagger.toml` now connects the two modules. For a workspace with only the modules from this guide, the whole file reads as follows, including the SDK entry and the `[sdks.dang]` tables that `dagger module init` wrote:
+
+```toml
+[modules.go]
+source = "dagger.io/go"
+
+[modules.golangci-lint]
+source = "dagger.io/go/golangci-lint"
+
+[modules.dang-sdk]
+source = "dagger.io/sdk/dang"
+
+[sdks.dang]
+module = "dang-sdk"
+
+[modules.<project>-dev]
+entrypoint = true
+source = ".dagger/modules/<project>-dev"
+
+[sdks.dang.scopes.".dagger/modules/<project>-dev"]
+is-module = true
+
+[modules.go.settings]
+base = "<project>-dev:test-runtime"
+```
+
+Run the Checks again:
+
+```shell
+dagger check
+```
+
+Tests and generators now run in the container the function built. Lint is unaffected, since the linter module runs in its own image and has its own `base` setting for the same purpose.
+
+## Give the tests the services they need
+
+End-to-end tests often need a database or another service running, so the runtime needs those services configured. The `test-runtime` function already describes the runtime, so that is where the services go.
+
+Two conventions on the test side make this work without any Dagger-specific code in the project:
+
+- **Tests read the service address from an environment variable**, such as `DATABASE_URL`.
+- **Tests skip when the variable is unset**, so `go test ./...` still passes on a laptop without the service.
+
+### Add the services to the runtime
+
+Add a `postgres` function to the module and bind it into `test-runtime`:
+
+```dang file=./snippets/go-runtime-with-services/main.dang
+```
+
+`postgres` describes the database. The `@up` directive also makes it a service that `dagger up` starts for local development, so one definition serves both purposes.
+
+`testRuntime` gains two lines. The binding survives: every container the `go` module derives from this base keeps the `db` service, so Postgres is running whenever `go test` runs. `DATABASE_URL` points at it, which is the variable the tests read.
+
+The database is also now a service the workspace can start:
+
+```shell
+dagger up -l
+```
+
+```text
+postgres   # A Postgres database for development and tests.
+```
+
+`dagger module init` made the dev module the workspace entrypoint, so its functions are listed without the module name. `dagger.toml` always stores the full `<project>-dev:` form.
+
+### Make sure the runtime is wired
+
+If you wired `<project>-dev:test-runtime` into `base` in the previous section, nothing changes in `dagger.toml`. If you skipped that section, [create the dev module](#create-a-runtime-module) first, then wire it now with [module wiring](../../../config/module-wiring.mdx):
+
+```shell
+dagger module settings go base <project>-dev:test-runtime
+```
+
+Run the tests again:
+
+```shell
+dagger check go:test-all
+```
+
+The tests that skipped before now run, and the output gains a services section showing Postgres starting alongside them. The `go` module still owns the test logic. The project's own code is two functions that describe its runtime and its database, and `dagger.toml` connects them.
+
+## Run every Check
+
+```shell
+dagger check
+```
+
+```text
+== CHECKS ==  ✔ 3 passed
+✔ go:generate-all 1.5s OK
+✔ go:test-all 1.5s OK
+  == TESTS ==
+    ✔ example.com/greetings  1 passed
+    ✔ example.com/greetings/store  2 passed
+
+    ✔ 3 passed
+✔ golangci-lint:lint-all 0.5s OK
+
+== SERVICES ==
+✔ ...dagger.local exec docker-entrypoint.sh postgres 1.3s EXITED
+```
+
+Commit the configuration, the lock file, and the module. Dagger needs all three to load the workspace the same way everywhere:
+
+```shell
+git add dagger.toml dagger.lock .dagger
+git commit -m "Daggerize"
+```
+
+`dagger.lock` pins every image and Git ref the workspace resolved, including the `golang` tag behind `version` and the images the custom module uses. Any Dagger command may add to it, and entries for images the workspace no longer uses, such as a previous `version`, stay in the file. Those stale pins are expected and harmless. `dagger workspace update` refreshes the pinned versions.
+
+## Next steps
+
+- [Go module reference](../../../reference/modules/go.mdx) for every setting and Check
+- [golangci-lint](../../../reference/modules/go/golangci-lint.mdx) and [Staticcheck](../../../reference/modules/go/staticcheck.mdx) references for the linter settings
+- [Dang SDK reference](../../../reference/sdks/dang.mdx) for writing more of your own functions
