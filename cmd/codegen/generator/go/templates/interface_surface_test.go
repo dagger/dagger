@@ -38,7 +38,10 @@ func TestNewGoSDKInterfaceSurface(t *testing.T) {
 	}, nil, nil, 0)
 	tree, err := buildTemplateTree(funcs)
 	require.NoError(t, err)
-	tmpl := tree.Lookup("internal/dagger/dagger.gen.go.tmpl")
+	// The actual API bindings (including custom interface definitions) are
+	// generated into internal/dagger/core; internal/dagger/dagger.gen.go
+	// only re-exports them via aliases.
+	tmpl := tree.Lookup("internal/dagger/core/core.gen.go.tmpl")
 	require.NotNil(t, tmpl)
 
 	data := struct {

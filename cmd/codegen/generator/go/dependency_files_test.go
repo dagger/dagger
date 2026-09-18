@@ -25,7 +25,7 @@ func TestFindStaleDependencyBindings(t *testing.T) {
 	require.NoError(t, overlay.MkdirAll(bindingsDir, 0o755))
 	require.NoError(t, overlay.WriteFile(filepath.Join(bindingsDir, "current.gen.go"), generated, 0o600))
 
-	stale, err := findStaleDependencyBindings(outDir, bindingsDir, overlay)
+	stale, err := findStaleDependencyBindings(outDir, bindingsDir, "dagger.gen.go", overlay)
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		filepath.Join(bindingsDir, "stale-a.gen.go"),
@@ -34,7 +34,7 @@ func TestFindStaleDependencyBindings(t *testing.T) {
 }
 
 func TestFindStaleDependencyBindingsMissingDirectory(t *testing.T) {
-	stale, err := findStaleDependencyBindings(t.TempDir(), filepath.Join("internal", "dagger"), memfs.New())
+	stale, err := findStaleDependencyBindings(t.TempDir(), filepath.Join("internal", "dagger"), "dagger.gen.go", memfs.New())
 	require.NoError(t, err)
 	require.Empty(t, stale)
 }
