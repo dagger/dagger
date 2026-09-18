@@ -26,21 +26,19 @@ func (fe *frontendPretty) cacheReport(zoomed bool) []string {
 	lines := []string{reportHeadingLine(out, fe.agentStyle(), "CACHE")}
 	if lookups := stats.Lookups(); lookups > 0 {
 		rate := float64(stats.Hits) / float64(lookups) * 100
-		lines = append(lines, fmt.Sprintf("%d / %d lookups hit (%.0f%%)", stats.Hits, lookups, rate))
+		lines = append(lines, fmt.Sprintf("Cache hit rate: %.0f%% (%d/%d)", rate, stats.Hits, lookups))
 	}
+	lines = append(lines, fmt.Sprintf("Mutualized jobs: %d", stats.Joined))
 
 	var details []string
-	if stats.Executed > 0 {
-		details = append(details, fmt.Sprintf("%d executed", stats.Executed))
-	}
-	if stats.Joined > 0 {
-		details = append(details, fmt.Sprintf("%d joined", stats.Joined))
-	}
+	// Executed is intentionally not rendered: it is the complement of hits and
+	// mutualized jobs, and exposing the engine term made the report harder to
+	// understand without adding useful information.
 	if stats.Uncached > 0 {
-		details = append(details, fmt.Sprintf("%d uncached", stats.Uncached))
+		details = append(details, fmt.Sprintf("Cache bypassed: %d", stats.Uncached))
 	}
 	if stats.Unsupported > 0 {
-		details = append(details, fmt.Sprintf("%d unsupported", stats.Unsupported))
+		details = append(details, fmt.Sprintf("Unsupported records: %d", stats.Unsupported))
 	}
 	if len(details) > 0 {
 		lines = append(lines, strings.Join(details, " · "))
