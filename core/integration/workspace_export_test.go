@@ -718,12 +718,9 @@ func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 // Export always applies root-relative changes at the stored host root, even
 // when invoked from a module directory and compared with a workspace at the root.
 func (WorkspaceSuite) TestWorkspaceExportLocalWorkdirAndFrom(ctx context.Context, t *testctx.T) {
-	for _, incremental := range []bool{false, true} {
-		name := "cumulative"
-		if incremental {
-			name = "from baseline"
-		}
+	for _, name := range []string{"cumulative", "from baseline", "from baseline with timestamp changes"} {
 		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			incremental := name != "cumulative"
 			checkout, git := workspaceExportCheckout(ctx, t)
 			modulePath := filepath.Join(".dagger", "modules", "foo")
 			moduleDir := filepath.Join(checkout, modulePath)
@@ -743,6 +740,21 @@ func (WorkspaceSuite) TestWorkspaceExportLocalWorkdirAndFrom(ctx context.Context
 				WithNewFile("modified.txt", "after").WithoutFile("removed.txt").
 				WithNewFile("/root-generated.txt", "root generated").
 				WithMountedDirectory("mount", c.Directory().WithNewFile("private.txt", "private"))
+			if name == "from baseline with timestamp changes" {
+				// Content-equivalent cached trees can carry different timestamps.
+				// Force that difference without changing the comparator's bytes.
+				after = after.WithFile("prior.txt", baseline.File("prior.txt").WithTimestamps(1700000000)).
+					WithNewDirectory("literal[1]", c.Directory().WithNewDirectory("empty").WithNewFile("file*.txt", "literal"))
+				for _, ws := range []*dagger.Workspace{baseline.WithWorkdir("."), after.WithWorkdir(".")} {
+					contents, err := ws.File(filepath.ToSlash(filepath.Join(modulePath, "prior.txt"))).Contents(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "earlier overlay", contents)
+				}
+				modified, err := after.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: baseline.WithWorkdir(".")}).ModifiedPaths(ctx)
+				require.NoError(t, err)
+				require.NotContains(t, modified, filepath.ToSlash(filepath.Join(modulePath, "prior.txt")))
+				t.Logf("baseline and after contain earlier overlay; declared modified paths: %v", modified)
+			}
 			opts := dagger.WorkspaceExportOpts{}
 			if incremental {
 				// The comparator's cwd does not change the coordinate system used
@@ -770,6 +782,21 @@ func (WorkspaceSuite) TestWorkspaceExportLocalWorkdirAndFrom(ctx context.Context
 			require.Empty(t, git("diff", "--cached"))
 			if incremental {
 				require.NoError(t, after.Export(ctx, dagger.WorkspaceExportOpts{From: after}), "equal source and baseline are a no-op")
+			}
+			if name == "from baseline with timestamp changes" {
+				contents, err := os.ReadFile(filepath.Join(moduleDir, "literal[1]", "file*.txt"))
+				require.NoError(t, err)
+				require.Equal(t, "literal", string(contents))
+				entries, err := os.ReadDir(filepath.Join(moduleDir, "literal[1]", "empty"))
+				require.NoError(t, err)
+				require.Empty(t, entries)
+				// A deletion-only export must not send any unchanged source files.
+				require.NoError(t, after.WithoutFile("generated.txt").Export(ctx, dagger.WorkspaceExportOpts{From: after}))
+				_, err = os.Stat(filepath.Join(moduleDir, "generated.txt"))
+				require.ErrorIs(t, err, os.ErrNotExist)
+				contents, err = os.ReadFile(filepath.Join(moduleDir, "prior.txt"))
+				require.NoError(t, err)
+				require.Equal(t, "host prior", string(contents))
 			}
 		})
 	}
