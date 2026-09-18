@@ -51,7 +51,7 @@ func (fe *frontendPretty) cacheReport(zoomed bool) []string {
 			line += " · Saved " + strings.Join(savings, " | ")
 		}
 	}
-	return []string{out.String(line).Foreground(termenv.ANSIBrightBlack).String()}
+	return []string{out.String(line).Foreground(termenv.ANSIYellow).String()}
 }
 
 func humanDuration(d time.Duration) string {
