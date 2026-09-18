@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -79,7 +80,7 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 		params,
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			all, err := commandArtifactsWithFlags(ctx, dag, dag.CurrentWorkspace(), cmd, args, true)
+			all, err := commandArtifactsWithFlags(ctx, dag, core.NewQuery(dag).CurrentWorkspace(), cmd, args, true)
 			if err != nil {
 				return err
 			}
@@ -100,7 +101,7 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 				if err != nil {
 					return err
 				}
-				ctr = ctr.WithDirectory(path, dag.Address(source).Directory())
+				ctr = ctr.WithDirectory(path, core.NewQuery(dag).Address(source).Directory())
 			}
 			if len(terminalInits) > 0 {
 				shell, err := containerShell(ctx, dag, ctr, true)
@@ -108,7 +109,7 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 					return err
 				}
 				for _, command := range terminalInits {
-					ctr = ctr.WithExec(append(slices.Clone(shell.Args), command), dagger.ContainerWithExecOpts{
+					ctr = ctr.WithExec(append(slices.Clone(shell.Args), command), core.ContainerWithExecOpts{
 						DisableDaggerInDagger:    !shell.PrivilegedNesting,
 						InsecureRootCapabilities: shell.InsecureRootCapabilities,
 					})
@@ -127,9 +128,9 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 			}
 			// Cache setup work, but run the final user command on every invocation.
 			ctr = ctr.WithEnvVariable("_DAGGER_SHELL_NONCE", rand.Text())
-			return execTerminalCommand(ctx, cmd, ctr.WithExec(shell.Args, dagger.ContainerWithExecOpts{
+			return execTerminalCommand(ctx, cmd, ctr.WithExec(shell.Args, core.ContainerWithExecOpts{
 				Stdin:                    in,
-				Expect:                   dagger.ReturnTypeAny,
+				Expect:                   core.ReturnTypeAny,
 				DisableDaggerInDagger:    !shell.PrivilegedNesting,
 				InsecureRootCapabilities: shell.InsecureRootCapabilities,
 			}))
@@ -143,7 +144,7 @@ type shellArtifact struct {
 	Type string
 }
 
-func selectShellArtifact(ctx context.Context, dag *dagger.Client, terminals *dagger.Artifacts) (shellArtifact, error) {
+func selectShellArtifact(ctx context.Context, dag *dagger.Client, terminals *core.Artifacts) (shellArtifact, error) {
 	items, err := shellArtifacts(ctx, dag, terminals)
 	if err != nil {
 		return shellArtifact{}, err
@@ -163,7 +164,7 @@ func selectShellArtifact(ctx context.Context, dag *dagger.Client, terminals *dag
 	if len(containers) == 1 {
 		return containers[0], nil
 	}
-	entrypoint, err := dag.CurrentWorkspace().Entrypoint(ctx)
+	entrypoint, err := core.NewQuery(dag).CurrentWorkspace().Entrypoint(ctx)
 	if err != nil {
 		return shellArtifact{}, err
 	}
@@ -183,7 +184,7 @@ func selectShellArtifact(ctx context.Context, dag *dagger.Client, terminals *dag
 	return shellArtifact{}, fmt.Errorf("shell selection matched %d targets: %s; select one, or run 'dagger shell -l' to list them", len(names), strings.Join(names, ", "))
 }
 
-func shellArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts) ([]shellArtifact, error) {
+func shellArtifacts(ctx context.Context, dag *dagger.Client, selection *core.Artifacts) ([]shellArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -213,18 +214,18 @@ func shellArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.A
 	return result.Node.Items, nil
 }
 
-func shellArtifactContainer(ctx context.Context, dag *dagger.Client, target shellArtifact) (*dagger.Container, error) {
-	id, err := dagger.Ref[*dagger.Artifact](dag, dagger.ID(target.ID)).Value().ID(ctx)
+func shellArtifactContainer(ctx context.Context, dag *dagger.Client, target shellArtifact) (*core.Container, error) {
+	id, err := core.Ref[*core.Artifact](dag, core.ID(target.ID)).Value().ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if target.Type == "Container" {
-		return dagger.Ref[*dagger.Container](dag, id), nil
+		return core.Ref[*core.Container](dag, id), nil
 	}
 	// Directory shells use the CLI's default image and the engine's default
 	// platform. The Directory API does not expose a source platform.
-	dir := dagger.Ref[*dagger.Directory](dag, id)
-	return dag.Container().From(distconsts.AlpineImage).
+	dir := core.Ref[*core.Directory](dag, id)
+	return core.NewQuery(dag).Container().From(distconsts.AlpineImage).
 		WithMountedDirectory("/src", dir).
 		WithWorkdir("/src"), nil
 }
@@ -237,7 +238,7 @@ type shellCommand struct {
 	InsecureRootCapabilities bool
 }
 
-func containerShell(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, batch bool) (shellCommand, error) {
+func containerShell(ctx context.Context, dag *dagger.Client, ctr *core.Container, batch bool) (shellCommand, error) {
 	id, err := ctr.ID(ctx)
 	if err != nil {
 		return shellCommand{}, err
@@ -280,7 +281,7 @@ func parseTerminalCopy(arg string) (path, source string, _ error) {
 	return path, source, nil
 }
 
-func execTerminalCommand(ctx context.Context, cmd *cobra.Command, exec *dagger.Container) error {
+func execTerminalCommand(ctx context.Context, cmd *cobra.Command, exec *core.Container) error {
 	// Pin the result before reading its exit code and output.
 	executed, err := exec.Sync(ctx)
 	if err != nil {

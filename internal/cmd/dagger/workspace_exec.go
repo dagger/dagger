@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"errors"
 	"fmt"
@@ -94,7 +95,7 @@ func runWorkspaceExec(
 	Frontend.SetPrimary(dagui.SpanID{SpanID: execSpan.SpanContext().SpanID()})
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
-	ws := dag.CurrentWorkspace()
+	ws := core.NewQuery(dag).CurrentWorkspace()
 	cwd, err := ws.Cwd(ctx)
 	if err != nil {
 		return fmt.Errorf("load workspace cwd: %w", err)
@@ -108,7 +109,7 @@ func runWorkspaceExec(
 		return err
 	}
 
-	beforeMount := ws.Directory("/", dagger.WorkspaceDirectoryOpts{
+	beforeMount := ws.Directory("/", core.WorkspaceDirectoryOpts{
 		Include: opts.include,
 		Exclude: opts.exclude,
 	})
@@ -116,7 +117,7 @@ func runWorkspaceExec(
 	executed := base.
 		WithMountedDirectory(workspaceExecMountPath, beforeMount).
 		WithWorkdir(containerWorkdir).
-		WithExec(args, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
+		WithExec(args, core.ContainerWithExecOpts{Expect: core.ReturnTypeAny})
 	exitCode, err := executed.ExitCode(ctx)
 	if err != nil {
 		return fmt.Errorf("execute command: %w", err)

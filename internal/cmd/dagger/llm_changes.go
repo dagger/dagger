@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -91,7 +92,7 @@ func unrelatedHistories(err error) bool {
 
 // switchedWorkspace wraps err as a workspaceSwitchedError naming ws when err
 // says ws and the baseline are unrelated, and returns err unchanged otherwise.
-func switchedWorkspace(ctx context.Context, ws *dagger.Workspace, err error) error {
+func switchedWorkspace(ctx context.Context, ws *core.Workspace, err error) error {
 	if !incomparableWorkspaces(err) && !unrelatedHistories(err) {
 		return err
 	}
@@ -105,12 +106,12 @@ func switchedWorkspace(ctx context.Context, ws *dagger.Workspace, err error) err
 // workspaceRelated returns a workspaceSwitchedError when ws's HEAD shares no
 // history with baseline's HEAD. Any other failure (no Git on either side, a
 // transient error) is returned as-is: the caller decides whether that blocks.
-func workspaceRelated(ctx context.Context, ws, baseline *dagger.Workspace) error {
+func workspaceRelated(ctx context.Context, ws, baseline *core.Workspace) error {
 	_, err := ws.Git().Head().CommonAncestor(baseline.Git().Head()).CommitSHA(ctx)
 	return switchedWorkspace(ctx, ws, err)
 }
 
-func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseline *dagger.Workspace) (workspaceChangesPreview, error) {
+func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseline *core.Workspace) (workspaceChangesPreview, error) {
 	var preview workspaceChangesPreview
 	workspaceID, err := ws.ID(ctx)
 	if err != nil {
@@ -123,7 +124,7 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 	if workspaceID == baselineID {
 		return preview, nil
 	}
-	changes := ws.Changes(dagger.WorkspaceChangesOpts{From: baseline})
+	changes := ws.Changes(core.WorkspaceChangesOpts{From: baseline})
 	if err := preview.loadHistory(ctx, dag, ws, baseline); err != nil {
 		var switched *workspaceSwitchedError
 		if errors.As(err, &switched) {
@@ -142,7 +143,7 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 		// gitignore, but an ignored file the agent wrote is still an edit
 		// the user will save, so the sidebar shows it like the checkpoint
 		// comparison does.
-		changes = ws.Changes(dagger.WorkspaceChangesOpts{From: ws.Git().Head().AsWorkspace()})
+		changes = ws.Changes(core.WorkspaceChangesOpts{From: ws.Git().Head().AsWorkspace()})
 	}
 	entries, err := idtui.PreviewPatch(ctx, dag, changes)
 	if err != nil {
@@ -157,7 +158,7 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 	return preview, nil
 }
 
-func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.Client, ws, baseline *dagger.Workspace) error {
+func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.Client, ws, baseline *core.Workspace) error {
 	workspace, err := ws.Git().Head().ID(ctx)
 	if err != nil {
 		return err

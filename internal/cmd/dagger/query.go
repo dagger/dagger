@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 )
@@ -72,7 +72,7 @@ EOF
 	return cmd
 }
 
-func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, args []string) (rerr error) {
+func Query(ctx context.Context, engineClient *client.Client, _ *core.Module, cmd *cobra.Command, args []string) (rerr error) {
 	res, err := runQuery(ctx, engineClient, args)
 	if err != nil {
 		return err

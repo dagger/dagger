@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
@@ -198,9 +199,9 @@ func registerModuleSDKCommandsFromConfig(
 			if err != nil {
 				return err
 			}
-			modSrc := dag.ModuleSource(sdkRef)
+			modSrc := core.NewQuery(dag).ModuleSource(sdkRef)
 			if workspace.IsLocalRef(sdk.entry.Source, sdk.entry.Pin) {
-				currentWorkspace := dag.CurrentWorkspace()
+				currentWorkspace := core.NewQuery(dag).CurrentWorkspace()
 				workspaceConfigFile, err := currentWorkspace.ConfigFile(ctx)
 				if err != nil {
 					return fmt.Errorf("find SDK module %q workspace config: %w", sdk.commandName, err)
@@ -259,7 +260,7 @@ func inspectSDKModuleConstructorArgs(
 	ctx context.Context,
 	dag *dagger.Client,
 	sdkRef string,
-	modSrc *dagger.ModuleSource,
+	modSrc *core.ModuleSource,
 ) ([]*modFunctionArg, error) {
 	mod, err := initializeModule(ctx, dag, sdkRef, modSrc, initModuleOpts{skipDependencies: true})
 	if err != nil {
@@ -293,7 +294,7 @@ func addSDKModuleSettingFlags(cmd *cobra.Command, sdk configuredSDK, args []*mod
 			if err != nil {
 				return fmt.Errorf("encode SDK module %q setting %q: %w", sdk.commandName, arg.Name, err)
 			}
-			flagArg.DefaultValue = dagger.JSON(encoded)
+			flagArg.DefaultValue = core.JSON(encoded)
 		}
 		if err := flagArg.AddFlag(cmd.Flags()); err != nil {
 			var unsupported *UnsupportedFlagError

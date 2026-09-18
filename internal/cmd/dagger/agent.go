@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"errors"
 	"fmt"
@@ -370,11 +371,11 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cm
 	if err != nil {
 		return "", err
 	}
-	refs := make([]*dagger.Expertise, len(expertise))
+	refs := make([]*core.Expertise, len(expertise))
 	for i := range expertise {
 		refs[i] = &expertise[i]
 	}
-	id, err := dag.LLM().WithWorkspace(workspace).Compose(refs).ID(ctx)
+	id, err := core.NewQuery(dag).LLM().WithWorkspace(workspace).Compose(refs).ID(ctx)
 	return string(id), err
 }
 
@@ -383,8 +384,8 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cm
 // warning) when git capture refuses, e.g. a dirty submodule, an oversized or
 // special untracked file, or a cancelled untracked-files prompt. A recipe built
 // on the live workspace is not portable, so a trace resume may not reproduce it.
-func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
-	workspace := dag.CurrentWorkspace()
+func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*core.Workspace, error) {
+	workspace := core.NewQuery(dag).CurrentWorkspace()
 	id, err := workspace.Snapshot().ID(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -393,11 +394,11 @@ func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspa
 		slog.WarnContext(ctx, "could not snapshot workspace; continuing with the live workspace", "error", err)
 		return workspace, nil
 	}
-	return dagger.Ref[*dagger.Workspace](dag, id), nil
+	return core.Ref[*core.Workspace](core.NewQuery(dag), id), nil
 }
 
 func listAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) error {
-	all, err := commandArtifactsWithFlags(ctx, dag, dag.CurrentWorkspace(), cmd, include, true)
+	all, err := commandArtifactsWithFlags(ctx, dag, core.NewQuery(dag).CurrentWorkspace(), cmd, include, true)
 	if err != nil {
 		return err
 	}

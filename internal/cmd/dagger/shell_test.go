@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"io"
 	"net"
@@ -68,7 +69,7 @@ func TestAssignAgentUsesSnapshotID(t *testing.T) {
 	handler := &shellCallHandler{shellEnv: newShellEnvironment()}
 	handler.state = NewStateStore(nil)
 
-	snapshotID := dagger.ID("portable-agent-id")
+	snapshotID := core.ID("portable-agent-id")
 	handler.assignAgent(snapshotID)
 
 	agentToken := handler.shellEnv.Get(agentVar).String()
