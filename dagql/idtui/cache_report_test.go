@@ -44,8 +44,8 @@ func TestCacheReportRendersExactHitRate(t *testing.T) {
 
 	fe.profile = termenv.ANSI
 	got = strings.Join(fe.cacheReport(false), "\n")
-	if !strings.Contains(got, "\x1b[90m") {
-		t.Fatalf("cache report is not grey: %q", got)
+	if !strings.Contains(got, "\x1b[33m") {
+		t.Fatalf("cache report is not yellow: %q", got)
 	}
 }
 
