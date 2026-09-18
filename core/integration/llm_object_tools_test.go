@@ -455,6 +455,65 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 		)).Stdout(ctx)
 		require.Error(t, err)
 	})
+
+	t.Run("a swap that builds on the current workspace shows the model a patch", func(ctx context.Context, t *testctx.T) {
+		// The returned workspace is the bound one plus an edit (same base), so
+		// the tool result is the patch of that edit — not a replacement notice.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "swap the workspace" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "SWAPPED.txt")
+		require.Contains(t, out, "+swapped by tool")
+		require.NotContains(t, out, "Workspace replaced")
+		require.NotContains(t, out, "Workspace moved")
+	})
+}
+
+// TestToolReturningUnrelatedWorkspaceIsNotDiffed locks in the other half of
+// the rebinding's visibility rule: a tool may bind ANY workspace, but what the
+// model is told depends on how it relates to the one it replaces
+// (core.WorkspaceRelation). A workspace with no base or origin in common gets a
+// one-line replacement notice — diffing it against the old one would upload
+// the old tree in full and produce a patch describing nothing actionable.
+func (LLMSuite) TestToolReturningUnrelatedWorkspaceIsNotDiffed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("swap to an unrelated workspace").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swapToUnrelated"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+	loopThen := func(ctx context.Context, t *testctx.T, then string) string {
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "swap to an unrelated workspace" | loop | %s`,
+			model, then,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("the unrelated workspace is still adopted", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, "from an unrelated workspace", strings.TrimSpace(loopThen(ctx, t, "workspace | file OTHER.txt | contents")))
+	})
+
+	t.Run("the model sees a replacement notice, not a patch", func(ctx context.Context, t *testctx.T) {
+		transcript := loopThen(ctx, t, "transcript")
+		require.Contains(t, transcript, "Workspace replaced: file://")
+		require.Contains(t, transcript, "-> directory://")
+		require.Contains(t, transcript, "Files were not diffed")
+		// Neither side's content was rendered: no patch of the new tree's
+		// files, and none of the old tree's removals.
+		require.NotContains(t, transcript, "diff --git")
+		require.NotContains(t, transcript, "+from an unrelated workspace")
+		require.NotContains(t, transcript, "-line1: placeholder")
+	})
 }
 
 // TestToolReturningLLMContinues locks in the continuation ring of the state-return
