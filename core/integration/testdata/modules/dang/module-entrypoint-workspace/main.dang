@@ -1,0 +1,32 @@
+# An entrypoint reads the module it serves through the workspace it is handed.
+# This one reports that workspace's working directory and the contents of a
+# marker file next to the module's manifest, so a test can tell which workspace
+# it got.
+type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Tiny")
+        .withConstructor(function("", typeDef.withObject("Tiny")))
+        .withFunction(
+          function("Marker", typeDef.withKind(TypeDefKind.STRING_KIND)),
+        ),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Marker") {
+      (("\"" + workspace.cwd + " " + workspace.file("marker.txt").contents + "\"") :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}

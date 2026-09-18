@@ -76,23 +76,36 @@ func ResolveSource(
 // is unchanged: an entrypoint can still read above the module with an
 // absolute workspace path.
 //
-// A git or directory source keeps the caller's cwd, because its files are not
-// in the workspace at all; they are in its context directory.
+// A source that carries a workspace is scoped within that workspace, because
+// its subpath is relative to it. Workspace.moduleSource attaches one on a local
+// or Git workspace. The current workspace can be a different tree, such as the
+// one a module's process finds in its own container.
+//
+// A local source without an attached workspace is scoped within the current
+// workspace only when host paths place the module under that workspace's root.
+// Any other source keeps the current workspace's cwd.
 func Workspace(
 	ctx context.Context,
 	dag *dagql.Server,
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	var workspace dagql.ObjectResult[*core.Workspace]
-	if err := dag.Select(ctx, dag.Root(), &workspace, dagql.Selector{Field: "currentWorkspace"}); err != nil {
-		return workspace, fmt.Errorf("get module workspace: %w", err)
-	}
-	subpath, ok := moduleWorkspacePath(workspace.Self(), src.Self())
-	if !ok {
-		return workspace, nil
+	var subpath string
+	if src.Self() != nil && src.Self().Workspace.Self() != nil {
+		workspace = src.Self().Workspace
+		subpath = cleanSubpath(src.Self().SourceRootSubpath)
+	} else {
+		if err := dag.Select(ctx, dag.Root(), &workspace, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+			return workspace, fmt.Errorf("get module workspace: %w", err)
+		}
+		var ok bool
+		subpath, ok = moduleWorkspacePath(workspace.Self(), src.Self())
+		if !ok {
+			return workspace, nil
+		}
 	}
 	// withWorkdir takes a path relative to the workspace root, so reset first
-	// in case the current workspace already has a working directory.
+	// in case the workspace already has a working directory.
 	var scoped dagql.ObjectResult[*core.Workspace]
 	if err := dag.Select(ctx, workspace, &scoped,
 		dagql.Selector{Field: "withWorkdir", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(".")}}},
@@ -106,18 +119,15 @@ func Workspace(
 // moduleWorkspacePath returns the module directory relative to the workspace
 // root, and whether the module is in the workspace at all.
 //
-// A source loaded through Workspace.moduleSource carries its workspace, and its
-// SourceRootSubpath is already workspace-root-relative. The engine's own module
-// loader goes through Query.moduleSource instead, which attaches no workspace:
-// there SourceRootSubpath is relative to the source's context directory, and
-// the two directories are related on the host, so the path is derived from
-// their host paths. A git or directory source has neither.
+// It applies to sources without an attached workspace. The engine's own module
+// loader goes through Query.moduleSource, which attaches none. There
+// SourceRootSubpath is relative to the source's context directory, so the path
+// is derived from the host paths of the context directory and the workspace
+// root. A git or directory source without a workspace has no place in the
+// workspace.
 func moduleWorkspacePath(ws *core.Workspace, src *core.ModuleSource) (string, bool) {
 	if ws == nil || src == nil {
 		return "", false
-	}
-	if src.Workspace.Self() != nil {
-		return cleanSubpath(src.SourceRootSubpath), true
 	}
 	if src.Kind != core.ModuleSourceKindLocal || src.Local == nil {
 		return "", false
