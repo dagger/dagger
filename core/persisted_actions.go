@@ -204,10 +204,10 @@ func attachPersistedCheckResults(c *Check, attach func(dagql.AnyResult) (dagql.A
 
 func (t *TerminalTarget) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if t == nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted terminal t: nil t")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted terminal target: nil target")
 	}
 	tree := newPersistedModTreeEncoder(enc)
-	leaf, err := encodePersistedActionLeaf(tree, t.Node, "terminal t")
+	leaf, err := encodePersistedActionLeaf(tree, t.Node, "terminal target")
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
