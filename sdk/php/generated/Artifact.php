@@ -9,17 +9,17 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * One workspace value with a complete path and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+ * One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
  */
 class Artifact extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * One key per collection along the path. Unordered; empty for static artifacts.
+     * One key per dimension along the path. Unordered; empty for static artifacts.
      */
-    public function collectionKeys(): array
+    public function dimensionKeys(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('collectionKeys');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'collectionKeys');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
     }
 
     /**
@@ -41,12 +41,21 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The full address, formatted for CLI input with consistent flag order.
+     * The artifact's DAG address, such as dag://engine-dev/playground.
      */
-    public function pretty(): string
+    public function uri(?bool $absolute = false, ?bool $dimensionKeys = true, ?bool $typeAssertion = false): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pretty');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'pretty');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uri');
+        if (null !== $absolute) {
+        $leafQueryBuilder->setArgument('absolute', $absolute);
+        }
+        if (null !== $dimensionKeys) {
+        $leafQueryBuilder->setArgument('dimensionKeys', $dimensionKeys);
+        }
+        if (null !== $typeAssertion) {
+        $leafQueryBuilder->setArgument('typeAssertion', $typeAssertion);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'uri');
     }
 
     /**

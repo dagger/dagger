@@ -1166,12 +1166,12 @@ func (r *AgentMiddlewareGroup) AsNode() Node {
 	}
 }
 
-// One workspace value with a complete path and all required collection keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+// One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
 type Artifact struct {
 	query *querybuilder.Selection
 
-	id     *ID
-	pretty *string
+	id  *ID
+	uri *string
 }
 
 func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
@@ -1180,28 +1180,28 @@ func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
 	}
 }
 
-// One key per collection along the path. Unordered; empty for static artifacts.
-func (r *Artifact) CollectionKeys(ctx context.Context) ([]ArtifactCollectionKey, error) {
-	q := r.query.Select("collectionKeys")
+// One key per dimension along the path. Unordered; empty for static artifacts.
+func (r *Artifact) DimensionKeys(ctx context.Context) ([]ArtifactDimensionKey, error) {
+	q := r.query.Select("dimensionKeys")
 
 	q = q.Select("id")
 
-	type collectionKeys struct {
+	type dimensionKeys struct {
 		Id ID
 	}
 
-	convert := func(fields []collectionKeys) []ArtifactCollectionKey {
-		out := []ArtifactCollectionKey{}
+	convert := func(fields []dimensionKeys) []ArtifactDimensionKey {
+		out := []ArtifactDimensionKey{}
 
 		for i := range fields {
-			val := ArtifactCollectionKey{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactCollectionKey")
+			val := ArtifactDimensionKey{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactDimensionKey")
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []collectionKeys
+	var response []dimensionKeys
 
 	q = q.Bind(&response)
 
@@ -1263,12 +1263,38 @@ func (r *Artifact) Path(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The full address, formatted for CLI input with consistent flag order.
-func (r *Artifact) Pretty(ctx context.Context) (string, error) {
-	if r.pretty != nil {
-		return *r.pretty, nil
+// ArtifactURIOpts contains options for Artifact.URI
+type ArtifactURIOpts struct {
+	// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+	Absolute bool
+	// Include the dimension keys as a query. Without them, the address is a path selector.
+	//
+	// Default: true
+	DimensionKeys bool
+	// Include the artifact type in the scheme: dag+container://.
+	TypeAssertion bool
+}
+
+// The artifact's DAG address, such as dag://engine-dev/playground.
+func (r *Artifact) URI(ctx context.Context, opts ...ArtifactURIOpts) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
 	}
-	q := r.query.Select("pretty")
+	q := r.query.Select("uri")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `absolute` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Absolute) {
+			q = q.Arg("absolute", opts[i].Absolute)
+		}
+		// `dimensionKeys` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DimensionKeys) {
+			q = q.Arg("dimensionKeys", opts[i].DimensionKeys)
+		}
+		// `typeAssertion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TypeAssertion) {
+			q = q.Arg("typeAssertion", opts[i].TypeAssertion)
+		}
+	}
 
 	var response string
 
@@ -1292,26 +1318,26 @@ func (r *Artifact) AsNode() Node {
 	}
 }
 
-type ArtifactCollectionKey struct {
+type ArtifactDimensionKey struct {
 	query *querybuilder.Selection
 
-	collection *string
-	id         *ID
-	key        *string
+	dimension *string
+	id        *ID
+	key       *string
 }
 
-func (r *ArtifactCollectionKey) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactCollectionKey {
-	return &ArtifactCollectionKey{
+func (r *ArtifactDimensionKey) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimensionKey {
+	return &ArtifactDimensionKey{
 		query: q,
 	}
 }
 
-// The collection identifier, fixed across the workspace schema.
-func (r *ArtifactCollectionKey) Collection(ctx context.Context) (string, error) {
-	if r.collection != nil {
-		return *r.collection, nil
+// The dimension identifier, fixed across the workspace schema.
+func (r *ArtifactDimensionKey) Dimension(ctx context.Context) (string, error) {
+	if r.dimension != nil {
+		return *r.dimension, nil
 	}
-	q := r.query.Select("collection")
+	q := r.query.Select("dimension")
 
 	var response string
 
@@ -1319,8 +1345,8 @@ func (r *ArtifactCollectionKey) Collection(ctx context.Context) (string, error) 
 	return response, q.Execute(ctx)
 }
 
-// A unique identifier for this ArtifactCollectionKey.
-func (r *ArtifactCollectionKey) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this ArtifactDimensionKey.
+func (r *ArtifactDimensionKey) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -1333,17 +1359,17 @@ func (r *ArtifactCollectionKey) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ArtifactCollectionKey) XXX_GraphQLType() string {
-	return "ArtifactCollectionKey"
+func (r *ArtifactDimensionKey) XXX_GraphQLType() string {
+	return "ArtifactDimensionKey"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ArtifactCollectionKey) XXX_GraphQLIDType() string {
+func (r *ArtifactDimensionKey) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ArtifactCollectionKey) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *ArtifactDimensionKey) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -1351,7 +1377,7 @@ func (r *ArtifactCollectionKey) XXX_GraphQLID(ctx context.Context) (string, erro
 	return string(id), nil
 }
 
-func (r *ArtifactCollectionKey) MarshalJSON() ([]byte, error) {
+func (r *ArtifactDimensionKey) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -1359,8 +1385,8 @@ func (r *ArtifactCollectionKey) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The collection item's key.
-func (r *ArtifactCollectionKey) Key(ctx context.Context) (string, error) {
+// The dimension item's key.
+func (r *ArtifactDimensionKey) Key(ctx context.Context) (string, error) {
 	if r.key != nil {
 		return *r.key, nil
 	}
@@ -1372,19 +1398,20 @@ func (r *ArtifactCollectionKey) Key(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// AsNode returns this ArtifactCollectionKey as a Node.
+// AsNode returns this ArtifactDimensionKey as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *ArtifactCollectionKey) AsNode() Node {
+func (r *ArtifactDimensionKey) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
 }
 
-// An immutable selection of workspace artifacts. Listed types, collections, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or collection identifiers.
+// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
 type Artifacts struct {
 	query *querybuilder.Selection
 
-	id *ID
+	id  *ID
+	uri *string
 }
 type WithArtifactsFunc func(r *Artifacts) *Artifacts
 
@@ -1401,10 +1428,10 @@ func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
 	}
 }
 
-// List keys represented in this selection for the given collection, sorted with no duplicates.
-func (r *Artifacts) CollectionKeys(ctx context.Context, collection string) ([]string, error) {
-	q := r.query.Select("collectionKeys")
-	q = q.Arg("collection", collection)
+// List keys represented in this selection for the given dimension, sorted with no duplicates.
+func (r *Artifacts) DimensionKeys(ctx context.Context, dimension string) ([]string, error) {
+	q := r.query.Select("dimensionKeys")
+	q = q.Arg("dimension", dimension)
 
 	var response []string
 
@@ -1412,9 +1439,9 @@ func (r *Artifacts) CollectionKeys(ctx context.Context, collection string) ([]st
 	return response, q.Execute(ctx)
 }
 
-// List collection identifiers represented in this selection, sorted with no duplicates.
-func (r *Artifacts) Collections(ctx context.Context) ([]string, error) {
-	q := r.query.Select("collections")
+// List dimension identifiers represented in this selection, sorted with no duplicates.
+func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("dimensions")
 
 	var response []string
 
@@ -1422,10 +1449,10 @@ func (r *Artifacts) Collections(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Keep artifacts with any listed key in this collection.
-func (r *Artifacts) FilterCollectionKeys(collection string, keys []string) *Artifacts {
-	q := r.query.Select("filterCollectionKeys")
-	q = q.Arg("collection", collection)
+// Keep artifacts with any listed key in this dimension.
+func (r *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
+	q := r.query.Select("filterDimensionKeys")
+	q = q.Arg("dimension", dimension)
 	q = q.Arg("keys", keys)
 
 	return &Artifacts{
@@ -1433,10 +1460,10 @@ func (r *Artifacts) FilterCollectionKeys(collection string, keys []string) *Arti
 	}
 }
 
-// Keep artifacts selected through any listed collection.
-func (r *Artifacts) FilterCollections(collections []string) *Artifacts {
-	q := r.query.Select("filterCollections")
-	q = q.Arg("collections", collections)
+// Keep artifacts selected through any listed dimension.
+func (r *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
+	q := r.query.Select("filterDimensions")
+	q = q.Arg("dimensions", dimensions)
 
 	return &Artifacts{
 		query: q,
@@ -1457,6 +1484,18 @@ func (r *Artifacts) FilterPath(path []string) *Artifacts {
 func (r *Artifacts) FilterTypes(types []string) *Artifacts {
 	q := r.query.Select("filterTypes")
 	q = q.Arg("types", types)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
+//
+// The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+func (r *Artifacts) FilterURI(uri string) *Artifacts {
+	q := r.query.Select("filterUri")
+	q = q.Arg("uri", uri)
 
 	return &Artifacts{
 		query: q,
@@ -1536,7 +1575,7 @@ func (r *Artifacts) Items(ctx context.Context) ([]Artifact, error) {
 	return convert(response), nil
 }
 
-// Require exactly one artifact; fail if there are zero or multiple matches.
+// Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
 func (r *Artifacts) One() *Artifact {
 	q := r.query.Select("one")
 
@@ -1545,9 +1584,9 @@ func (r *Artifacts) One() *Artifact {
 	}
 }
 
-// Display lines for this selection, with no trailing newlines.
-func (r *Artifacts) Pretty(ctx context.Context) ([]string, error) {
-	q := r.query.Select("pretty")
+// List concrete GraphQL types represented in this selection, sorted with no duplicates.
+func (r *Artifacts) Types(ctx context.Context) ([]string, error) {
+	q := r.query.Select("types")
 
 	var response []string
 
@@ -1555,11 +1594,14 @@ func (r *Artifacts) Pretty(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// List concrete GraphQL types represented in this selection, sorted with no duplicates.
-func (r *Artifacts) Types(ctx context.Context) ([]string, error) {
-	q := r.query.Select("types")
+// The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+func (r *Artifacts) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
 
-	var response []string
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -17890,7 +17932,7 @@ func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentMiddlewareGroup {
 
 // WorkspaceArtifactsOpts contains options for Workspace.Artifacts
 type WorkspaceArtifactsOpts struct {
-	// Only include artifacts matching these path patterns, as with checks and services.
+	// Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.
 	Include []string
 }
 
@@ -18473,9 +18515,11 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	return convert(response), nil
 }
 
-// Try workspace references before external resolution.
+// Resolve an address in this workspace.
 //
-// Local errors stop resolution; only absence permits fallback.
+// A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+//
+// A value without the dag:// scheme keeps its external meaning, such as a container image reference.
 //
 // The Address retains this workspace across module calls and ID reloads.
 func (r *Workspace) Resolve(value string) *Address {

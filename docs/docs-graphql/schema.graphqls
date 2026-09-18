@@ -442,15 +442,15 @@ enum AgentState {
 }
 
 """
-One workspace value with a complete path and all required collection keys.
+One workspace value with a complete path and all required dimension keys.
 Reading metadata does not evaluate the value. Different addresses remain
 distinct even if they return the same object.
 """
 type Artifact implements Node {
   """
-  One key per collection along the path. Unordered; empty for static artifacts.
+  One key per dimension along the path. Unordered; empty for static artifacts.
   """
-  collectionKeys: [ArtifactCollectionKey!]!
+  dimensionKeys: [ArtifactDimensionKey!]!
 
   """A unique identifier for this Artifact."""
   id: ID!
@@ -460,51 +460,76 @@ type Artifact implements Node {
   """
   path: [String!]!
 
-  """The full address, formatted for CLI input with consistent flag order."""
-  pretty: String!
+  """The artifact's DAG address, such as dag://engine-dev/playground."""
+  uri(
+    """
+    Prefix the workspace's Git address and commit:
+    dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git
+    address.
+    """
+    absolute: Boolean = false
+
+    """
+    Include the dimension keys as a query. Without them, the address is a path selector.
+    """
+    dimensionKeys: Boolean = true
+
+    """Include the artifact type in the scheme: dag+container://."""
+    typeAssertion: Boolean = false
+  ): String!
 
   """Evaluate the target in the workspace that supplied this artifact."""
   value: Node!
 }
 
-type ArtifactCollectionKey implements Node {
-  """The collection identifier, fixed across the workspace schema."""
-  collection: String!
+type ArtifactDimensionKey implements Node {
+  """The dimension identifier, fixed across the workspace schema."""
+  dimension: String!
 
-  """A unique identifier for this ArtifactCollectionKey."""
+  """A unique identifier for this ArtifactDimensionKey."""
   id: ID!
 
-  """The collection item's key."""
+  """The dimension item's key."""
   key: String!
 }
 
 """
-An immutable selection of workspace artifacts. Listed types, collections, and
+An immutable selection of workspace artifacts. Listed types, dimensions, and
 keys use OR; chained filters use AND. Empty alternatives and unknown names match
-nothing. Filters never change addresses or collection identifiers.
+nothing. Filters never change addresses or dimension identifiers.
 """
 type Artifacts implements Node {
   """
-  List keys represented in this selection for the given collection, sorted with no duplicates.
+  List keys represented in this selection for the given dimension, sorted with no duplicates.
   """
-  collectionKeys(collection: String!): [String!]!
+  dimensionKeys(dimension: String!): [String!]!
 
   """
-  List collection identifiers represented in this selection, sorted with no duplicates.
+  List dimension identifiers represented in this selection, sorted with no duplicates.
   """
-  collections: [String!]!
+  dimensions: [String!]!
 
-  """Keep artifacts with any listed key in this collection."""
-  filterCollectionKeys(collection: String!, keys: [String!]!): Artifacts!
+  """Keep artifacts with any listed key in this dimension."""
+  filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
 
-  """Keep artifacts selected through any listed collection."""
-  filterCollections(collections: [String!]!): Artifacts!
+  """Keep artifacts selected through any listed dimension."""
+  filterDimensions(dimensions: [String!]!): Artifacts!
 
   """Match one complete, ordered field sequence exactly."""
   filterPath(path: [String!]!): Artifacts!
 
   """Keep artifacts of any listed concrete GraphQL type."""
   filterTypes(types: [String!]!): Artifacts!
+
+  """
+  Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
+
+  The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+  """
+  filterUri(
+    """A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]"""
+    uri: String!
+  ): Artifacts!
 
   """A unique identifier for this Artifacts."""
   id: ID!
@@ -514,16 +539,19 @@ type Artifacts implements Node {
 
   """
   Require exactly one artifact; fail if there are zero or multiple matches.
+  Several matches are listed, one address per line.
   """
   one: Artifact!
-
-  """Display lines for this selection, with no trailing newlines."""
-  pretty: [String!]!
 
   """
   List concrete GraphQL types represented in this selection, sorted with no duplicates.
   """
   types: [String!]!
+
+  """
+  The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+  """
+  uri: String!
 }
 
 """Key value object that represents a build argument."""
@@ -6466,7 +6494,8 @@ type Workspace implements Node {
   """
   artifacts(
     """
-    Only include artifacts matching these path patterns, as with checks and services.
+    Only include artifacts matching these path patterns, as with checks and
+    services. A path selects that path and its children.
     """
     include: [String!]
   ): Artifacts!
@@ -6777,13 +6806,20 @@ type Workspace implements Node {
   modules: [WorkspaceModule!]!
 
   """
-  Try workspace references before external resolution.
+  Resolve an address in this workspace.
 
-  Local errors stop resolution; only absence permits fallback.
+  A DAG address (dag://<path>) selects exactly one workspace artifact:
+  artifacts.filterUri(value).one(). Its typed loaders use that artifact and
+  never fall back to external resolution.
+
+  A value without the dag:// scheme keeps its external meaning, such as a container image reference.
 
   The Address retains this workspace across module calls and ID reloads.
   """
-  resolve(value: String!): Address!
+  resolve(
+    """A DAG address, or an external reference."""
+    value: String!
+  ): Address!
 
   """An installed SDK, by name."""
   sdk(

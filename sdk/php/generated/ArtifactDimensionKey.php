@@ -8,19 +8,19 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class ArtifactCollectionKey extends Client\AbstractObject implements Client\IdAble, Node
+class ArtifactDimensionKey extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The collection identifier, fixed across the workspace schema.
+     * The dimension identifier, fixed across the workspace schema.
      */
-    public function collection(): string
+    public function dimension(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('collection');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'collection');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimension');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'dimension');
     }
 
     /**
-     * A unique identifier for this ArtifactCollectionKey.
+     * A unique identifier for this ArtifactDimensionKey.
      */
     public function id(): Id
     {
@@ -29,7 +29,7 @@ class ArtifactCollectionKey extends Client\AbstractObject implements Client\IdAb
     }
 
     /**
-     * The collection item's key.
+     * The dimension item's key.
      */
     public function key(): string
     {
