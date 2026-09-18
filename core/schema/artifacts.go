@@ -91,7 +91,7 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, _ map
 	}
 	ctx = core.WorkspaceToContext(ctx, artifact.Workspace)
 	var result dagql.AnyObjectResult
-	if err := artifact.Node.DagqlValue(ctx, &result); err != nil {
+	if err := artifact.Evaluate(ctx, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
