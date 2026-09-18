@@ -190,7 +190,9 @@ func (a *Artifacts) exactPaths() []string {
 	for _, artifact := range a.Entries {
 		paths = append(paths, strings.Join(artifact.Path, "/"))
 	}
-	return slices.Compact(slices.Sorted(slices.Values(paths)))
+	// Preserve an empty, non-nil list: nil means no path filter.
+	slices.Sort(paths)
+	return slices.Compact(paths)
 }
 
 func (a *Artifacts) FilterTypes(types []string) *Artifacts {
