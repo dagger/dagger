@@ -682,6 +682,29 @@ func (c *Cache) sessionSatisfiesResourceRequirementsLocked(sessionID string, res
 	return available.Subset(res.requiredSessionResources)
 }
 
+// sessionStillSatisfiesResourceRequirements re-runs the lookup filter after
+// a serve path left the selection critical section. The stored required set
+// can grow after selection: an attached dep may carry requirements while
+// the result's attachment is in flight, and an explicit retention edge
+// (AddExplicitDependency) may land a requirement-carrying dep after the
+// result settled. Every change to the stored set bumps the result's
+// requirement generation inside the same egraphMu write critical section,
+// so a serve whose selection-time capture still matches the current
+// generation is serving the exact set the selection check validated and
+// skips the locked re-check; on a mismatch the full locked subset check
+// decides.
+func (c *Cache) sessionStillSatisfiesResourceRequirements(sessionID string, res *sharedResult, requiredGenAtSelection uint64) bool {
+	if res == nil {
+		return true
+	}
+	if res.requiredSessionResourcesGen.Load() == requiredGenAtSelection {
+		return true
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.sessionSatisfiesResourceRequirementsLocked(sessionID, res)
+}
+
 func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidates *set.TreeSet[*sharedResult]) *sharedResult {
 	if candidates == nil {
 		return nil
@@ -985,6 +1008,12 @@ func (c *Cache) lookupCacheForRequest(
 	}
 
 	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, hitShared)
+	// Capture the requirement generation inside the same critical section
+	// that ran the selection-time subset check. Captured after the unlock, a
+	// concurrent growth's bump could already be reflected in the captured
+	// value, the serve-time comparison would see equality, and the stale
+	// serve would go through.
+	requiredGenAtSelection := hitShared.requiredSessionResourcesGen.Load()
 	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, false, err
@@ -992,7 +1021,29 @@ func (c *Cache) lookupCacheForRequest(
 
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
+		if errors.Is(err, errAttachRefusedByProducerRelease) {
+			// The hit's attachment failed only because the producing
+			// session was released before its attachment-time claim ran.
+			// This reader is innocent and a fresh execution would succeed,
+			// so fall through to the singleflight instead of surfacing the
+			// producer's release as this caller's failure. The recorded
+			// session edge stays until session release, exactly as the
+			// requirement re-validation's miss conversion below keeps it.
+			return nil, false, nil
+		}
 		return nil, false, err
+	}
+	if c.testBeforeServeRequirementRecheck != nil {
+		c.testBeforeServeRequirementRecheck(hitShared)
+	}
+	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared, requiredGenAtSelection) {
+		// The required set grew after this hit was selected (an attached or
+		// late explicit dep carried requirements), so serving would hand
+		// the session a result it no longer satisfies. Fall through to the
+		// singleflight instead. The recorded session edge stays until
+		// session release; over-retaining one result is cheaper than a
+		// dedicated decrement-and-collect path here.
+		return nil, false, nil
 	}
 	if req.IsPersistable {
 		// Only persistable hits pay this second graph-lock acquisition. Keep

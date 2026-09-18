@@ -34,8 +34,9 @@ const temporalOutcome = "temporal"
 // a temporal property must be violated; any other value names the one
 // invariant that must be violated.
 var expectedOutcome = map[string]string{
-	// green: regression gates over the modeled cache behavior
-	"core":              "",
+	// green: regression gates over the modeled cache behavior. (The
+	// former core configuration is folded into resources: same bounds,
+	// every core invariant, and strictly more behavior.)
 	"release_prune":     "",
 	"liveness":          "",
 	"lazy":              "",
@@ -71,6 +72,44 @@ var expectedOutcome = map[string]string{
 	// lease sync; see the config headers.
 	"decode_cancel":          "",
 	"decode_cancel_liveness": "",
+
+	// green: session-resource gating (the filter in
+	// LookupHit/CanonicalPick/FnComplete, PubIndexFresh/PubAttachAddDep
+	// maintenance, BindResource, RequiredExact and ReturnedGated).
+	// resources_restart additionally gates the import-time accounting:
+	// the dependency-first required recompute at import and the decode
+	// installs leaving the stored set alone; see the config headers.
+	"resources":         "",
+	"resources_restart": "",
+	// green: explicit retention edges on already-published results
+	// (AddExplicitDependency) accept requirement-carrying deps; the
+	// grown stored set cascades to the parent's ancestors and
+	// RequiredExact holds the accounting exact. See the config header.
+	"resources_latedep": "",
+
+	// green: requirement growth after the lookup filter. The stored set
+	// can grow after a hit was selected (an attached dep while
+	// attachment is in flight, or a requirement-carrying retention edge
+	// after settling); the serve re-validates by the requirement
+	// generation captured at selection and converts a stale hit to a
+	// miss. resources_gated_growth covers the attachment window,
+	// resources_latedep_recheck the retention-edge window and
+	// resources_latedep_cascade the ancestor cascade, each from an
+	// imported starting graph; see the config headers.
+	"resources_gated_growth":    "",
+	"resources_latedep_recheck": "",
+	"resources_latedep_cascade": "",
+
+	// green: a session's release can no longer manufacture a failure for
+	// a live, innocent caller through the attachment machinery. The
+	// publisher's own release still fails the publisher, but its barrier
+	// error is classified so parked cross-session readers convert to a
+	// miss and execute the call themselves; and attachment targets are
+	// always pinned for the session (the claim-at-acquisition invariant,
+	// with the claim running before the unlocked refresh), so no other
+	// session's release can collect a target out from under its claim.
+	// See the config header.
+	"attach_release_reader": "",
 }
 
 var clientExpectedOutcome = map[string]string{
@@ -111,27 +150,102 @@ func (m *TlaCheck) base(source *dagger.Directory) *dagger.Container {
 		WithWorkdir("/spec")
 }
 
+// quickConfigs is the curated cheap subset for Quick: every configuration
+// that finishes in seconds (roughly 100k distinct states or fewer). It
+// catches a spec that stops parsing and registration drift without paying
+// for the big state spaces. Keep it in sync when configurations are added
+// or their costs change materially.
+var quickConfigs = []string{
+	"drain_escape",
+	"drain_orphan",
+	"flush_closure",
+	"flush_drained",
+	"flush_inflight",
+	"flush_roundtrip",
+	"lazy_liveness",
+	"lazy_release",
+	"lazy_stale_cancel",
+	"liveness",
+	"lost_cancel",
+	"orphan_edges",
+	"poisoned",
+	"poisoned_restart",
+	"release_inflight",
+	"release_steal",
+}
+
 // CacheLifecycle model-checks every configuration of the dagql cache spec
 // and verifies each outcome against its expectation.
+//
+// WARNING: the full run is expensive - well over an hour wall with four
+// TLC JVMs, and the largest configurations reach more than 110 million
+// distinct states each. Run it sparingly: it is required before pushing changes
+// under dagql/tla (it no longer runs in CI), but for iteration prefer
+// Quick (seconds), Some (chosen configurations with their expectations
+// enforced), or One (a single configuration, raw output, optional probe
+// injection).
 // +check
 func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
-	base := m.base(m.Source)
-
 	names := make([]string, 0, len(expectedOutcome))
 	for name := range expectedOutcome {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	return m.runConfigs(ctx, names)
+}
+
+// Quick model-checks only the cheap configurations (quickConfigs), with
+// their expectations enforced. It finishes in about a minute and is the
+// right default while iterating; it does not replace the full
+// CacheLifecycle run before a push.
+// +check
+func (m *TlaCheck) Quick(ctx context.Context) error {
+	return m.runConfigs(ctx, quickConfigs)
+}
+
+// Some model-checks the named configurations (without the CacheLifecycle_
+// prefix), with their expectations enforced - the middle ground between
+// the full check and One, which enforces nothing.
+func (m *TlaCheck) Some(
+	ctx context.Context,
+	// configuration names without the CacheLifecycle_ prefix, e.g.
+	// "resources,resources_latedep"
+	configs []string,
+) error {
+	if len(configs) == 0 {
+		return fmt.Errorf("some: no configurations named")
+	}
+	var unknown []string
+	for _, name := range configs {
+		if _, ok := expectedOutcome[name]; !ok {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return fmt.Errorf("some: unknown configurations %s (see expectedOutcome in this module)", strings.Join(unknown, ", "))
+	}
+	return m.runConfigs(ctx, configs)
+}
+
+func (m *TlaCheck) runConfigs(ctx context.Context, names []string) error {
+	base := m.base(m.Source)
+	sorted := append([]string(nil), names...)
+	sort.Strings(sorted)
 
 	var (
 		mu       sync.Mutex
 		failures []runFailure
 		wg       sync.WaitGroup
+		// Each configuration is a TLC JVM of several GiB; unbounded fan-out
+		// over 30 configurations exhausted a 64 GiB host.
+		sem = make(chan struct{}, 4)
 	)
-	for _, name := range names {
+	for _, name := range sorted {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			if failure := runOne(ctx, base, "CacheLifecycle", "CacheLifecycle_", name, expectedOutcome[name]); failure != nil {
 				mu.Lock()
 				failures = append(failures, *failure)
@@ -141,7 +255,7 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 	}
 	wg.Wait()
 
-	return reportFailures("cache", failures, len(names))
+	return reportFailures("cache", failures, len(sorted))
 }
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
@@ -155,11 +269,15 @@ func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
 		mu       sync.Mutex
 		failures []runFailure
 		wg       sync.WaitGroup
+		// The same JVM fan-out bound as CacheLifecycle.
+		sem = make(chan struct{}, 4)
 	)
 	run := func(group, specName, configPrefix, name, expect string) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			if failure := runOne(ctx, base, specName, configPrefix, name, expect); failure != nil {
 				failure.name = group + "/" + failure.name
 				mu.Lock()
@@ -249,8 +367,10 @@ func (m *TlaCheck) One(
 		ctr = ctr.WithNewFile("/spec/"+cfgPath, strings.Join(kept, "\n"))
 	}
 
+	// -Xmx8g: the JVM's default heap is a quarter of host memory, so four
+	// concurrent configurations could still overcommit a 64 GiB host.
 	cmd := fmt.Sprintf(
-		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s CacheLifecycle.tla 2>&1; true",
+		"java -Xmx8g -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s CacheLifecycle.tla 2>&1; true",
 		cfgPath)
 	return ctr.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
 }
@@ -302,8 +422,10 @@ func runOne(
 	name,
 	expect string,
 ) *runFailure {
+	// -Xmx8g: the JVM's default heap is a quarter of host memory, so four
+	// concurrent configurations could still overcommit a 64 GiB host.
 	cmd := fmt.Sprintf(
-		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s%s.cfg %s.tla 2>&1; true",
+		"java -Xmx8g -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s%s.cfg %s.tla 2>&1; true",
 		configPrefix, name, specName)
 	out, err := base.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
 	if err != nil {
@@ -314,8 +436,9 @@ func runOne(
 	violated := ""
 	for _, line := range strings.Split(out, "\n") {
 		if rest, ok := strings.CutPrefix(line, "Error: Invariant "); ok {
-			violated = strings.TrimSuffix(strings.TrimSpace(rest), " is violated.")
-			violated = strings.TrimSuffix(violated, " is violated")
+			// The invariant name is the first word; the rest is either
+			// " is violated." or " is violated by the initial state:".
+			violated = strings.Fields(rest)[0]
 			break
 		}
 		if strings.HasPrefix(line, "Error: Temporal properties were violated") {
