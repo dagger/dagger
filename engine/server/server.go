@@ -939,7 +939,9 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		return nil
 	})
 
-	doneClosingCh := make(chan error)
+	// Buffered, so the closing goroutine can finish after GracefulStop returns
+	// through ctx.Done().
+	doneClosingCh := make(chan error, 1)
 	go func() {
 		defer close(doneClosingCh)
 
