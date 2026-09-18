@@ -1963,6 +1963,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	}
 
 	var results []*LLMMessage
+	ran := false
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
 		runningSvc,
@@ -1970,11 +1971,19 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		sourceDir,
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
+			ran = true
 			results = m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 			return nil
 		})
 
 	if err != nil {
+		if ran {
+			// The tools already ran (and may have mutated state, or taken the
+			// server down with them); re-running them is not an option. Keep
+			// their results and give up on syncing this batch.
+			slog.Warn("failed to snapshot workspace after MCP server batch; changes not synced", "server", serverName, "error", err)
+			return results
+		}
 		// Fall back to individual calls if sync fails
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
