@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -14,7 +15,16 @@ import (
 
 var githubOpen bool
 
-const githubOAuthRedirect = "http://localhost:3000/github/callback"
+// githubOAuthRedirect returns the Cloud frontend URL GitHub sends the user
+// back to after consent. It follows the same environment rule as
+// gitHubAppInstallURL: the local frontend when DAGGER_CLOUD_URL points
+// somewhere other than production, and dagger.cloud otherwise.
+func githubOAuthRedirect() string {
+	if url := os.Getenv("DAGGER_CLOUD_URL"); url != "" && !strings.Contains(url, "://api.dagger.cloud") {
+		return "http://localhost:3000/github/callback"
+	}
+	return "https://dagger.cloud/github/callback"
+}
 
 // cloudIntegrationCmd is the `dagger cloud integration` group. The original
 // top-level `dagger integration` was singleton-shaped (one provider per type,
@@ -172,13 +182,14 @@ func (cli *CloudCLI) githubConnected(ctx context.Context, client *cloudapi.Clien
 }
 
 func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.Client) (*githubSetupHandoff, error) {
-	oauthURL, err := client.GitHubOAuthURL(ctx, githubOAuthRedirect)
+	redirectURI := githubOAuthRedirect()
+	oauthURL, err := client.GitHubOAuthURL(ctx, redirectURI)
 	if err != nil {
 		return nil, err
 	}
 	return &githubSetupHandoff{
 		URL:         oauthURL,
-		RedirectURI: githubOAuthRedirect,
+		RedirectURI: redirectURI,
 	}, nil
 }
 
