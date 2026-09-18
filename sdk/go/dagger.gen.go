@@ -5425,6 +5425,16 @@ func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	}
 }
 
+// Return a snapshot with subdirectories removed
+func (r *Directory) WithoutDirectories(paths []string) *Directory {
+	q := r.query.Select("withoutDirectories")
+	q = q.Arg("paths", paths)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Return a snapshot with a subdirectory removed
 func (r *Directory) WithoutDirectory(path string) *Directory {
 	q := r.query.Select("withoutDirectory")
