@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
@@ -22,6 +23,8 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 	cold := cacheImpactTestDB(t, 10*time.Second, 8*time.Second,
 		telemetryattrs.CacheOutcomeExecuted, telemetryattrs.CacheOutcomeExecuted)
 	cold.MetricsByCall = cacheImpactTestMetrics(90*time.Second, 1_200_000_000)
+	addMemoryTestSeries(cold.MetricsByCall, "branch-a", 2, startForCacheImpactTest(), 10*time.Second, 4_000_000_000)
+	addMemoryTestSeries(cold.MetricsByCall, "branch-b", 3, startForCacheImpactTest(), 8*time.Second, 2_000_000_000)
 	coldFE := NewWithDB(io.Discard, cold)
 	coldFE.prepareCacheImpact()
 	if coldFE.cacheImpact != nil {
@@ -33,6 +36,7 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 	warm := cacheImpactTestDB(t, 100*time.Millisecond, 8*time.Second,
 		telemetryattrs.CacheOutcomeHit, telemetryattrs.CacheOutcomeExecuted)
 	warm.MetricsByCall = cacheImpactTestMetrics(30*time.Second, 200_000_000)
+	addMemoryTestSeries(warm.MetricsByCall, "branch-b", 3, startForCacheImpactTest(), 8*time.Second, 2_000_000_000)
 	warmFE := NewWithDB(io.Discard, warm)
 	warmFE.prepareCacheImpact()
 
@@ -49,6 +53,9 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 	if impact.NetworkBytes != 1_000_000_000 {
 		t.Fatalf("network saved = %d, want 1000000000", impact.NetworkBytes)
 	}
+	if impact.MemoryBytes != 4_000_000_000 || impact.MemoryPeriod != 10*time.Second {
+		t.Fatalf("memory saved = %g bytes for %s, want 4000000000 bytes for 10s", impact.MemoryBytes, impact.MemoryPeriod)
+	}
 
 	got := strings.Join(warmFE.cacheReport(false), "\n")
 	for _, want := range []string{
@@ -57,6 +64,7 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 		"Finished ~2s faster (20%)",
 		"Compute avoided: ~1m of CPU work",
 		"Network transfer avoided: ~1.0 GB",
+		"Memory occupancy avoided: equivalent to ~4.0 GB held for 10s",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("cache report missing %q:\n%s", want, got)
@@ -82,10 +90,35 @@ func TestSaveCacheImpactProfileReplacesCorruptStore(t *testing.T) {
 	}
 }
 
+func TestIntegrateMemorySeriesUsesSampleIntervals(t *testing.T) {
+	start := time.Unix(100, 0)
+	points := []metricdata.DataPoint[int64]{
+		{Time: start.Add(5 * time.Second), Value: 4_000_000_000},
+		{Time: start.Add(10 * time.Second), Value: 2_000_000_000},
+	}
+	got, ok := integrateMemorySeries(points, start, start.Add(10*time.Second))
+	if !ok {
+		t.Fatal("memory series was not integrated")
+	}
+	// Samples describe the interval since the preceding sample: 4 GB for five
+	// seconds, then 2 GB for five seconds.
+	if want := float64(30_000_000_000); got != want {
+		t.Fatalf("memory byte-seconds = %g, want %g", got, want)
+	}
+}
+
+func TestMemoryByteSecondsTreatsNoContainersAsZero(t *testing.T) {
+	db := dagui.NewDB()
+	got, available := memoryByteSeconds(db)
+	if !available || got != 0 {
+		t.Fatalf("memory byte-seconds = %g, available %v; want zero, true", got, available)
+	}
+}
+
 func cacheImpactTestDB(t *testing.T, first, second time.Duration, firstOutcome, secondOutcome string) *dagui.DB {
 	t.Helper()
 	db := dagui.NewDB()
-	start := time.Unix(100, 0)
+	start := startForCacheImpactTest()
 	root := prettyTestSpanID(1)
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: root, TraceID: prettyTestTraceID(), Name: "workflow", StartTime: start, EndTime: start.Add(max(first, second)), Final: true},
@@ -104,12 +137,33 @@ func cacheImpactTestDB(t *testing.T, first, second time.Duration, firstOutcome, 
 	return db
 }
 
+func startForCacheImpactTest() time.Time {
+	return time.Unix(100, 0)
+}
+
 func cacheImpactTestMetrics(cpu time.Duration, network int64) map[string]map[string][]metricdata.DataPoint[int64] {
 	return map[string]map[string][]metricdata.DataPoint[int64]{
 		"call": {
 			telemetry.CPUStatUsage:   {{Value: cpu.Microseconds()}},
 			telemetry.NetstatRxBytes: {{Value: network / 2}},
 			telemetry.NetstatTxBytes: {{Value: network - network/2}},
+		},
+	}
+}
+
+func addMemoryTestSeries(
+	metrics map[string]map[string][]metricdata.DataPoint[int64],
+	call string,
+	spanID byte,
+	start time.Time,
+	duration time.Duration,
+	bytes int64,
+) {
+	attrs := attribute.NewSet(attribute.String(telemetry.MetricsSpanIDAttr, prettyTestSpanID(spanID).String()))
+	metrics[call] = map[string][]metricdata.DataPoint[int64]{
+		telemetry.MemoryCurrentBytes: {
+			{Attributes: attrs, Time: start.Add(min(5*time.Second, duration)), Value: bytes},
+			{Attributes: attrs, Time: start.Add(duration), Value: bytes},
 		},
 	}
 }
