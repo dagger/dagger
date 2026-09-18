@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -16,15 +17,15 @@ import (
 // Only FS chains cross the boundary; execMeta must run the saved exec privately.
 func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t *testctx.T) {
 	outer := connect(ctx, t)
-	start := func(volume *dagger.CacheVolume) *dagger.Client {
-		ctr := devEngineContainerWithStateKey(outer, "b4-mixed-state-"+identity.NewID(), func(ctr *dagger.Container) *dagger.Container {
+	start := func(volume *core.CacheVolume) *dagger.Client {
+		ctr := devEngineContainerWithStateKey(outer, "b4-mixed-state-"+identity.NewID(), func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		upstream := devEngineContainerAsService(ctr)
-		tunnel, err := outer.Host().Tunnel(upstream).Start(ctx)
+		tunnel, err := core.NewQuery(outer).Host().Tunnel(upstream).Start(ctx)
 		require.NoError(t, err)
-		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(t.TempDir()), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
@@ -33,10 +34,10 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 		})
 		return client
 	}
-	aVolume := outer.CacheVolume("b4-mixed-a-" + identity.NewID())
-	bVolume := outer.CacheVolume("b4-mixed-b-" + identity.NewID())
+	aVolume := core.NewQuery(outer).CacheVolume("b4-mixed-a-" + identity.NewID())
+	bVolume := core.NewQuery(outer).CacheVolume("b4-mixed-b-" + identity.NewID())
 	a, b := start(aVolume), start(bVolume)
-	parent := a.Container().From(alpineImage)
+	parent := core.NewQuery(a).Container().From(alpineImage)
 	executed := parent.WithExec([]string{"sh", "-ec", "printf 'downloaded filesystem' > /payload; printf 'private exec metadata'"})
 	stdout, err := executed.Stdout(ctx)
 	require.NoError(t, err)
@@ -47,7 +48,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	require.NoError(t, err)
 	var exported []transferFixtureMapping
 	require.NoError(t, transferFixtureSelected(ctx, a, "mixed.json", []string{string(aID)}, []string{string(aID), string(parentID)}, &exported))
-	_, err = outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
+	_, err = core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
 		WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/mixed.json /destination/bundles/; cp -a /source/blobs /destination/"}).Sync(ctx)
 	require.NoError(t, err)
 	var imported []transferFixtureMapping
@@ -55,7 +56,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	require.NotEmpty(t, imported)
 	require.Equal(t, "Container", imported[0].Type.NamedType)
 	handle, rowID := imported[0].Handle, imported[0].ResultID
-	loaded := dagger.Ref[*dagger.Container](b, dagger.ID(handle))
+	loaded := core.Ref[*core.Container](core.NewQuery(b), core.ID(handle))
 	readReport := func() transferFixtureReport {
 		var report transferFixtureReport
 		require.NoError(t, transferFixture(ctx, b, "report", "", []string{handle}, &report))

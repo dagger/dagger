@@ -8,6 +8,7 @@ package core
 // - module_type_test.go: cross-SDK custom type behavior.
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"testing"
@@ -194,7 +195,7 @@ func (GoSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
 		require.JSONEq(t, `{"read":"bar"}`, out)
 	})
 
-	t.Run("func ReadPointer(ctx, *dagger.Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
+	t.Run("func ReadPointer(ctx, *core.Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQueryAt(".", fmt.Sprintf(`{readPointer(dir: "%s")}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"readPointer":"bar"}`, out)

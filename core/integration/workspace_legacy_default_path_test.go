@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -34,11 +35,11 @@ func (WorkspaceLegacyDefaultPathSuite) TestToolchainDefaultPathResolvesFromWorks
 
 	for _, tc := range []struct {
 		name  string
-		setup func(testing.TB, *dagger.Client) *dagger.Container
+		setup func(testing.TB, *dagger.Client) *core.Container
 	}{
 		{
 			name: "native workspace config",
-			setup: func(t testing.TB, c *dagger.Client) *dagger.Container {
+			setup: func(t testing.TB, c *dagger.Client) *core.Container {
 				return legacyDefaultPathFixture(t, c, workspaceMarker, toolMarker).
 					WithNewFile("dagger.toml", `[modules.reader]
 source = "tool"
@@ -48,7 +49,7 @@ legacy-default-path = true
 		},
 		{
 			name: "compat dagger.json",
-			setup: func(t testing.TB, c *dagger.Client) *dagger.Container {
+			setup: func(t testing.TB, c *dagger.Client) *core.Container {
 				return legacyDefaultPathFixture(t, c, workspaceMarker, toolMarker).
 					WithNewFile("dagger.json", `{
   "name": "app",
@@ -91,8 +92,8 @@ func (WorkspaceLegacyDefaultPathSuite) TestToolchainDefaultPathResolvesFromGitWo
 
 	c := connect(ctx, t)
 
-	readerFixture := c.Host().Directory(testDataPath(t, "modules", "go/legacy-default-path-reader"))
-	workspaceDir := c.Directory().
+	readerFixture := core.NewQuery(c).Host().Directory(testDataPath(t, "modules", "go/legacy-default-path-reader"))
+	workspaceDir := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.reader]
 source = "tool"
 legacy-default-path = true
@@ -103,7 +104,7 @@ legacy-default-path = true
 
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceDir)
 
-	out, err := c.Container().From(alpineImage).
+	out, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/empty").
 		With(workspaceSelectionDaggerCall("-W", remoteRef, "reader", "read")).
@@ -123,8 +124,8 @@ func (WorkspaceLegacyDefaultPathSuite) TestToolchainDefaultPathResolvesFromValue
 
 	c := connect(ctx, t)
 
-	readerFixture := c.Host().Directory(testDataPath(t, "modules", "go/legacy-default-path-reader"))
-	source := c.Directory().
+	readerFixture := core.NewQuery(c).Host().Directory(testDataPath(t, "modules", "go/legacy-default-path-reader"))
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.reader]
 source = "tool"
 legacy-default-path = true
@@ -135,10 +136,10 @@ legacy-default-path = true
 	daemon, url := gitService(ctx, t, c, source)
 	for _, tc := range []struct {
 		name string
-		ws   *dagger.Workspace
+		ws   *core.Workspace
 	}{
 		{"directory", source.AsWorkspace()},
-		{"git", c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()},
+		{"git", core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ws := tc.ws
@@ -170,7 +171,7 @@ legacy-default-path = true
 	}
 }
 
-func legacyDefaultPathFixture(t testing.TB, c *dagger.Client, workspaceMarker, toolMarker string) *dagger.Container {
+func legacyDefaultPathFixture(t testing.TB, c *dagger.Client, workspaceMarker, toolMarker string) *core.Container {
 	t.Helper()
 
 	return goGitBase(t, c).

@@ -20,6 +20,7 @@ package core
 // - module_runtime_behavior_test.go: services used from module code.
 
 import (
+	"dagger.io/dagger/core"
 	"bytes"
 	"context"
 	_ "embed"
@@ -69,13 +70,13 @@ func (ServiceSuite) TestNesting(ctx context.Context, t *testctx.T) {
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			svc := c.Container().From(busyboxImage).
+			svc := core.NewQuery(c).Container().From(busyboxImage).
 				WithExposedPort(8080).
-				AsService(dagger.ContainerAsServiceOpts{
+				AsService(core.ContainerAsServiceOpts{
 					Args:                  []string{"sh", "-c", `mkdir -p /www; if [ -n "$DAGGER_SESSION_PORT" ]; then echo enabled; else echo disabled; fi > /www/index.html; exec httpd -f -p 8080 -h /www`},
 					DisableDaggerInDagger: tc.disableDaggerInDagger,
 				})
-			out, err := c.Container().From(alpineImage).
+			out, err := core.NewQuery(c).Container().From(alpineImage).
 				WithServiceBinding("nested", svc).
 				WithExec([]string{"wget", "-qO-", "http://nested:8080"}).Stdout(ctx)
 			require.NoError(t, err)
@@ -198,9 +199,9 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 
 func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 	hostname := func(ctx context.Context, c *dagger.Client) string {
-		www := c.Directory().WithNewFile("index.html", "Hello, world!")
+		www := core.NewQuery(c).Directory().WithNewFile("index.html", "Hello, world!")
 
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
 			WithMountedDirectory("/srv/www", www).
 			WithWorkdir("/srv/www").
@@ -226,13 +227,13 @@ func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 	t.Run("hostnames are different for different services", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		srv1 := c.Container().
+		srv1 := core.NewQuery(c).Container().
 			From("python").
 			WithExposedPort(8000).
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
-		srv2 := c.Container().
+		srv2 := core.NewQuery(c).Container().
 			From("python").
 			WithExposedPort(8001).
 			WithDefaultArgs([]string{"python", "-m", "http.server", "8081"}).
@@ -273,7 +274,7 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("hostname is same as endpoint", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
 			WithExposedPort(8000).
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
@@ -289,7 +290,7 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("endpoint can specify arbitrary port", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
@@ -297,7 +298,7 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 		hn, err := srv.Hostname(ctx)
 		require.NoError(t, err)
 
-		ep, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
+		ep, err := srv.Endpoint(ctx, core.ServiceEndpointOpts{
 			Port: 1234,
 		})
 		require.NoError(t, err)
@@ -306,7 +307,7 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("endpoint with no port errors if no exposed port", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
@@ -319,7 +320,7 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From(busyboxImage).
 		WithWorkdir("/srv").
 		WithNewFile("index.html", "Hello, world!").
@@ -340,7 +341,7 @@ func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
 	_, err = srv.Start(ctx)
 	require.NoError(t, err)
 
-	resp, err := c.Container().
+	resp, err := core.NewQuery(c).Container().
 		From(busyboxImage).
 		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
 		Stdout(ctx)
@@ -443,14 +444,14 @@ func (ServiceSuite) TestServiceTunnelStartsOnceForDifferentClients(ctx context.C
 func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From("python").
-		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
+		WithExposedPort(8000, core.ContainerWithExposedPortOpts{
 			Description: "eight thousand",
 		}).
-		WithExposedPort(9000, dagger.ContainerWithExposedPortOpts{
+		WithExposedPort(9000, core.ContainerWithExposedPortOpts{
 			Description: "nine thousand",
-			Protocol:    dagger.NetworkProtocolUdp,
+			Protocol:    core.NetworkProtocolUdp,
 		}).
 		WithDefaultArgs([]string{"python", "-m", "http.server"}).
 		AsService()
@@ -472,11 +473,11 @@ func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 		case 0:
 			require.Equal(t, 8000, port)
 			require.Equal(t, "eight thousand", desc)
-			require.Equal(t, dagger.NetworkProtocolTcp, proto)
+			require.Equal(t, core.NetworkProtocolTcp, proto)
 		case 1:
 			require.Equal(t, 9000, port)
 			require.Equal(t, "nine thousand", desc)
-			require.Equal(t, dagger.NetworkProtocolUdp, proto)
+			require.Equal(t, core.NetworkProtocolUdp, proto)
 		}
 	}
 }
@@ -485,12 +486,12 @@ func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) 
 	t.Run("Healthchecks pass when all ports are skipped", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
-			WithExposedPort(6214, dagger.ContainerWithExposedPortOpts{
+			WithExposedPort(6214, core.ContainerWithExposedPortOpts{
 				ExperimentalSkipHealthcheck: true,
 			}).
-			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
+			WithExposedPort(6215, core.ContainerWithExposedPortOpts{
 				ExperimentalSkipHealthcheck: true,
 			}).
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
@@ -503,13 +504,13 @@ func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) 
 	t.Run("Healthchecks pass when some ports are skipped", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
-			WithExposedPort(6214, dagger.ContainerWithExposedPortOpts{
+			WithExposedPort(6214, core.ContainerWithExposedPortOpts{
 				ExperimentalSkipHealthcheck: true,
 			}).
 			WithExposedPort(8000).
-			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
+			WithExposedPort(6215, core.ContainerWithExposedPortOpts{
 				ExperimentalSkipHealthcheck: true,
 			}).
 			WithDefaultArgs([]string{"python", "-m", "http.server", "8000"}).
@@ -523,13 +524,13 @@ func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) 
 func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	withPorts := c.Container().
+	withPorts := core.NewQuery(c).Container().
 		From("python").
-		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
+		WithExposedPort(8000, core.ContainerWithExposedPortOpts{
 			Description: "eight thousand tcp",
 		}).
-		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
-			Protocol:    dagger.NetworkProtocolUdp,
+		WithExposedPort(8000, core.ContainerWithExposedPortOpts{
+			Protocol:    core.NetworkProtocolUdp,
 			Description: "eight thousand udp",
 		}).
 		WithExposedPort(5432)
@@ -553,7 +554,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 		Container struct {
 			ExposedPorts []struct {
 				Port        int
-				Protocol    dagger.NetworkProtocol
+				Protocol    core.NetworkProtocol
 				Description *string
 			}
 		} `json:"container"`
@@ -611,8 +612,8 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	require.True(t, ok)
 	require.Nil(t, desc)
 
-	withoutUDP := withPorts.WithoutExposedPort(8000, dagger.ContainerWithoutExposedPortOpts{
-		Protocol: dagger.NetworkProtocolUdp,
+	withoutUDP := withPorts.WithoutExposedPort(8000, core.ContainerWithoutExposedPortOpts{
+		Protocol: core.NetworkProtocolUdp,
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
@@ -643,18 +644,18 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	withPorts := c.Container().
+	withPorts := core.NewQuery(c).Container().
 		From("python").
-		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
+		WithExposedPort(8000, core.ContainerWithExposedPortOpts{
 			Description: "eight thousand tcp",
 		}).
-		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
-			Protocol:    dagger.NetworkProtocolUdp,
+		WithExposedPort(8000, core.ContainerWithExposedPortOpts{
+			Protocol:    core.NetworkProtocolUdp,
 			Description: "eight thousand udp",
 		}).
 		WithExposedPort(5432).
-		WithExposedPort(5432, dagger.ContainerWithExposedPortOpts{
-			Protocol: dagger.NetworkProtocolUdp,
+		WithExposedPort(5432, core.ContainerWithExposedPortOpts{
+			Protocol: core.NetworkProtocolUdp,
 		})
 
 	dest := t.TempDir()
@@ -676,8 +677,8 @@ func (ServiceSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
 	require.ElementsMatch(t, []string{"8000/tcp", "8000/udp", "5432/tcp", "5432/udp"}, ports)
 
 	withoutPorts := withPorts.
-		WithoutExposedPort(8000, dagger.ContainerWithoutExposedPortOpts{
-			Protocol: dagger.NetworkProtocolUdp,
+		WithoutExposedPort(8000, core.ContainerWithoutExposedPortOpts{
+			Protocol: core.NetworkProtocolUdp,
 		}).
 		WithoutExposedPort(5432)
 
@@ -706,7 +707,7 @@ func (ServiceSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) {
 	hostname, err := srv.Hostname(ctx)
 	require.NoError(t, err)
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"apk", "add", "curl"}).
@@ -727,13 +728,13 @@ func (ServiceSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	script := c.Container().
+	script := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithNewFile("script", "#!/bin/sh\nwhile true; do echo -n cool | nc -l -p 1337; done").
 		WithExec([]string{"/bin/sh", "-c", "chmod +x script"}).
 		File("script")
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithFile("/bin/app", script).
 		WithSymlink("doesnt", "matter"). // WithSymlink runs as a dagOp, so this covers services built from dagOp-produced containers
@@ -741,7 +742,7 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
 		WithExposedPort(1337)
 
-	s, err := c.Container().
+	s, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("coolserver", srv.AsService()).
 		WithExec([]string{"sh", "-c", "nc coolserver 1337"}).
@@ -754,7 +755,7 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExposedPort(8080).
 		WithDefaultArgs([]string{"sh", "-c", "echo nope; exit 42"}).
@@ -763,7 +764,7 @@ func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	host, err := srv.Hostname(ctx)
 	require.NoError(t, err)
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
@@ -772,7 +773,7 @@ func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	require.Error(t, err)
 	requireErrOut(t, err, "start "+host+" (aliased as www): exit code:")
 
-	var execErr *dagger.ExecError
+	var execErr *core.ExecError
 	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
 
 	// Verify the ExecError contains expected information
@@ -784,10 +785,10 @@ func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestExecServiceExitShortCircuits(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithDefaultArgs([]string{"sh", "-c", "while [ ! -f /checked ]; do sleep 1; done; sleep 1; echo service crashed >&2; exit 42"}).
-		WithDockerHealthcheck([]string{"touch", "/checked"}, dagger.ContainerWithDockerHealthcheckOpts{
+		WithDockerHealthcheck([]string{"touch", "/checked"}, core.ContainerWithDockerHealthcheckOpts{
 			Interval:      "1s",
 			Timeout:       "1s",
 			StartInterval: "100ms",
@@ -798,7 +799,7 @@ func (ServiceSuite) TestExecServiceExitShortCircuits(ctx context.Context, t *tes
 	host, err := srv.Hostname(ctx)
 	require.NoError(t, err)
 
-	_, err = c.Container().
+	_, err = core.NewQuery(c).Container().
 		From(alpineImage).
 		WithEnvVariable("CACHEBUST", identity.NewID()).
 		WithServiceBinding("www", srv).
@@ -817,9 +818,9 @@ func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, 
 	// already been returned as running and the exit must propagate through it.
 	// The watchdog exits with a different code so a missing signal can't pass
 	// for the intended crash.
-	gate := c.CacheVolume("service-dependency-exit-" + identity.NewID())
+	gate := core.NewQuery(c).CacheVolume("service-dependency-exit-" + identity.NewID())
 
-	dep := c.Container().
+	dep := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedCache("/gate", gate).
 		WithDefaultArgs([]string{"sh", "-c",
@@ -829,7 +830,7 @@ func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, 
 	depHost, err := dep.Hostname(ctx)
 	require.NoError(t, err)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("dep", dep).
 		WithDefaultArgs([]string{"sh", "-c", "while true; do sleep 1; done"}).
@@ -838,7 +839,7 @@ func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, 
 	host, err := srv.Hostname(ctx)
 	require.NoError(t, err)
 
-	_, err = c.Container().
+	_, err = core.NewQuery(c).Container().
 		From(alpineImage).
 		WithEnvVariable("CACHEBUST", identity.NewID()).
 		WithMountedCache("/gate", gate).
@@ -857,7 +858,7 @@ func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
 
 	// Create a service that will fail immediately with a non-zero exit code
 	// The service will start but fail during execution, triggering Service.Start error handling
-	failingService := c.Container().
+	failingService := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExposedPort(8080).
 		WithDefaultArgs([]string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}).
@@ -869,7 +870,7 @@ func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
 	// Verify we get an ExecError
 	require.Error(t, err)
 
-	var execErr *dagger.ExecError
+	var execErr *core.ExecError
 	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
 
 	// Verify the ExecError contains expected information
@@ -882,7 +883,7 @@ func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExposedPort(8080).
 		// using error to compare hostname after WithServiceBinding
@@ -892,7 +893,7 @@ func (ServiceSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
 	host, err := srv.Hostname(ctx)
 	require.NoError(t, err)
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
@@ -908,12 +909,11 @@ var udpSrc string
 func (ServiceSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From(golangImage).
-		WithMountedFile("/src/main.go",
-			c.Directory().WithNewFile("main.go", udpSrc).File("main.go")).
-		WithExposedPort(4321, dagger.ContainerWithExposedPortOpts{
-			Protocol: dagger.NetworkProtocolUdp,
+		WithMountedFile("/src/main.go", core.NewQuery(c).Directory().WithNewFile("main.go", udpSrc).File("main.go")).
+		WithExposedPort(4321, core.ContainerWithExposedPortOpts{
+			Protocol: core.NetworkProtocolUdp,
 		}).
 		// use TCP :4322 for health-check to avoid test flakiness, since UDP dial
 		// health-checks aren't really a thing
@@ -921,11 +921,11 @@ func (ServiceSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
 		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "socat"}).
 		WithServiceBinding("echo", srv).
-		WithExec([]string{"socat", "-", "udp:echo:4321"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"socat", "-", "udp:echo:4321"}, core.ContainerWithExecOpts{
 			Stdin: "Hello, world!",
 		})
 
@@ -942,7 +942,7 @@ func (ServiceSuite) TestExecServiceAlias(ctx context.Context, t *testctx.T) {
 
 	srv, _ := httpService(ctx, t, c, "Hello, world!")
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("hello", srv).
 		WithExec([]string{"apk", "add", "curl"}).
@@ -966,15 +966,14 @@ var pipeSrc string
 func (ServiceSuite) TestExecServicesDeduping(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From(golangImage).
-		WithMountedFile("/src/main.go",
-			c.Directory().WithNewFile("main.go", pipeSrc).File("main.go")).
+		WithMountedFile("/src/main.go", core.NewQuery(c).Directory().WithNewFile("main.go", pipeSrc).File("main.go")).
 		WithExposedPort(8080).
 		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("www", srv).
@@ -1003,16 +1002,15 @@ func (ServiceSuite) TestExecServicesChained(ctx context.Context, t *testctx.T) {
 	srv, _ := httpService(ctx, t, c, "0\n")
 
 	for i := 1; i < 10; i++ {
-		httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
+		httpURL, err := srv.Endpoint(ctx, core.ServiceEndpointOpts{
 			Scheme: "http",
 		})
 		require.NoError(t, err)
 
-		srv = c.Container().
+		srv = core.NewQuery(c).Container().
 			From("python").
 			WithFile(
-				"/srv/www/index.html",
-				c.HTTP(httpURL, dagger.HTTPOpts{
+				"/srv/www/index.html", core.NewQuery(c).HTTP(httpURL, core.HTTPOpts{
 					ExperimentalServiceHost: srv,
 				}),
 			).
@@ -1033,14 +1031,14 @@ func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+	code := core.NewQuery(c).Host().Directory(thisRepoPath, core.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
 	content := identity.NewID()
 	srv, svcURL := httpService(ctx, t, c, content)
 
-	fileContent, err := c.Container().
+	fileContent, err := core.NewQuery(c).Container().
 		From(golangImage).
 		With(goCache(c)).
 		WithServiceBinding("www", srv).
@@ -1063,22 +1061,22 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+	code := core.NewQuery(c).Host().Directory(thisRepoPath, core.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
 	content := identity.NewID()
 	srv, svcURL := httpService(ctx, t, c, content)
 
-	fileContent, err := c.Container().
+	fileContent, err := core.NewQuery(c).Container().
 		From(golangImage).
 		WithServiceBinding("www", srv).
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
-		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithMountedCache("/go/pkg/mod", core.NewQuery(c).CacheVolume("go-mod")).
 		With(withRepoGoModules(c)).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+		WithMountedCache("/go/build-cache", core.NewQuery(c).CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested-c2c/",
@@ -1097,22 +1095,22 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+	code := core.NewQuery(c).Host().Directory(thisRepoPath, core.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
 	content := identity.NewID()
-	srv, svcURL := gitService(ctx, t, c, c.Directory().WithNewFile("/index.html", content))
+	srv, svcURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("/index.html", content))
 
-	fileContent, err := c.Container().
+	fileContent, err := core.NewQuery(c).Container().
 		From(golangImage).
 		WithServiceBinding("www", srv).
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
-		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithMountedCache("/go/pkg/mod", core.NewQuery(c).CacheVolume("go-mod")).
 		With(withRepoGoModules(c)).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+		WithMountedCache("/go/build-cache", core.NewQuery(c).CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested-c2c/",
@@ -1129,7 +1127,7 @@ func (ServiceSuite) TestExportServices(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 	srv, httpURL := httpService(ctx, t, c, content)
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", httpURL})
@@ -1143,11 +1141,11 @@ func (ServiceSuite) TestExportServices(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestMultiPlatformExportServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
+	variants := make([]*core.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
 		srv, url := httpService(ctx, t, c, string(platform))
 
-		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+		ctr := core.NewQuery(c).Container(core.ContainerOpts{Platform: platform}).
 			From(alpineImage).
 			WithServiceBinding("www", srv).
 			WithExec([]string{"wget", url}).
@@ -1157,7 +1155,7 @@ func (ServiceSuite) TestMultiPlatformExportServices(ctx context.Context, t *test
 	}
 
 	dest := filepath.Join(t.TempDir(), "image.tar")
-	actual, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
+	actual, err := core.NewQuery(c).Container().Export(ctx, dest, core.ContainerExportOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
@@ -1171,7 +1169,7 @@ func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
 	srv, url := httpService(ctx, t, c, content)
 
 	testRef := registryRef("services-container-publish")
-	pushedRef, err := c.Container().
+	pushedRef, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", url}).
@@ -1180,7 +1178,7 @@ func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
 	require.NotEqual(t, testRef, pushedRef)
 	require.Contains(t, pushedRef, "@sha256:")
 
-	fileContent, err := c.Container().
+	fileContent, err := core.NewQuery(c).Container().
 		From(pushedRef).Rootfs().File("/index.html").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, fileContent, content)
@@ -1192,7 +1190,7 @@ func (ServiceSuite) TestRootFSServices(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
 
-	fileContent, err := c.Container().
+	fileContent, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/sub/out").
@@ -1211,24 +1209,24 @@ func (ServiceSuite) TestWithRootFSServices(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
 
-	gitDaemon, repoURL := gitService(ctx, t, c,
+	gitDaemon, repoURL := gitService(ctx, t, c, core.
 		// this little maneuver commits the entire rootfs into a git repo
-		c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", srv).
-			WithWorkdir("/sub/out").
-			WithExec([]string{"wget", url}).
-			// NB(vito): related to the package-level comment: Rootfs is not eager,
-			// so this is actually OK. File and Directory are eager because they need
-			// to check that the path exists (and is a file/dir), but Rootfs always
-			// exists, and is always a directory.
-			Rootfs())
+		NewQuery(c).Container().
+		From(alpineImage).
+		WithServiceBinding("www", srv).
+		WithWorkdir("/sub/out").
+		WithExec([]string{"wget", url}).
+		// NB(vito): related to the package-level comment: Rootfs is not eager,
+		// so this is actually OK. File and Directory are eager because they need
+		// to check that the path exists (and is a file/dir), but Rootfs always
+		// exists, and is always a directory.
+		Rootfs())
 
-	gitDir := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	gitDir := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree()
 
-	fileContent, err := c.Container().
+	fileContent, err := core.NewQuery(c).Container().
 		WithRootfs(gitDir).
 		WithExec([]string{"cat", "/sub/out/index.html"}).
 		Stdout(ctx)
@@ -1242,7 +1240,7 @@ func (ServiceSuite) TestDirectoryServices(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
 
-	wget := c.Container().
+	wget := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/sub/out").
@@ -1285,7 +1283,7 @@ func (ServiceSuite) TestFileServices(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/out").
@@ -1301,17 +1299,17 @@ func (ServiceSuite) TestWithServiceFileDirectory(ctx context.Context, t *testctx
 
 	response := identity.NewID()
 	srv, httpURL := httpService(ctx, t, c, response)
-	httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
+	httpFile := core.NewQuery(c).HTTP(httpURL, core.HTTPOpts{
 		ExperimentalServiceHost: srv,
 	})
 
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", response))
-	gitDir := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", response))
+	gitDir := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree()
 
 	t.Run("mounting", func(ctx context.Context, t *testctx.T) {
-		useBoth := c.Container().
+		useBoth := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/mnt/repo", gitDir).
 			WithMountedFile("/mnt/index.html", httpFile)
@@ -1326,7 +1324,7 @@ func (ServiceSuite) TestWithServiceFileDirectory(ctx context.Context, t *testctx
 	})
 
 	t.Run("copying", func(ctx context.Context, t *testctx.T) {
-		useBoth := c.Container().
+		useBoth := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithDirectory("/mnt/repo", gitDir).
 			WithFile("/mnt/index.html", httpFile)
@@ -1346,9 +1344,9 @@ func (ServiceSuite) TestDirectoryEntries(ctx context.Context, t *testctx.T) {
 
 	content := identity.NewID()
 
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
-	entries, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	entries, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		Entries(ctx)
@@ -1361,8 +1359,8 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		content := identity.NewID()
-		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
-		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
+		_, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			Branch("foobar").
 			Tree().
 			Sync(ctx)
@@ -1373,8 +1371,8 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		content := identity.NewID()
-		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
-		repo, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
+		repo, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			Branch("main").
 			Tree().
 			Sync(ctx)
@@ -1390,15 +1388,15 @@ func (ServiceSuite) TestDirectoryTimestamp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := identity.NewID()
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
 	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
-	stamped := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	stamped := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		WithTimestamps(int(ts.Unix()))
 
-	stdout, err := c.Container().From(alpineImage).
+	stdout, err := core.NewQuery(c).Container().From(alpineImage).
 		WithDirectory("/repo", stamped).
 		WithExec([]string{"stat", "/repo/README.md"}).
 		Stdout(ctx)
@@ -1411,13 +1409,13 @@ func (ServiceSuite) TestWithDirectoryFileServices(ctx context.Context, t *testct
 
 	content := identity.NewID()
 
-	gitSrv, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
+	gitSrv, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
-	useBoth := c.Directory().
-		WithDirectory("/repo", c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitSrv}).Branch("main").Tree()).
-		WithFile("/index.html", c.HTTP(httpURL, dagger.HTTPOpts{ExperimentalServiceHost: httpSrv}))
+	useBoth := core.NewQuery(c).Directory().
+		WithDirectory("/repo", core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitSrv}).Branch("main").Tree()).
+		WithFile("/index.html", core.NewQuery(c).HTTP(httpURL, core.HTTPOpts{ExperimentalServiceHost: httpSrv}))
 
 	entries, err := useBoth.Directory("/repo").Entries(ctx)
 	require.NoError(t, err)
@@ -1433,11 +1431,11 @@ func (ServiceSuite) TestDirectoryExport(ctx context.Context, t *testctx.T) {
 
 	content := identity.NewID()
 
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
 	dest := t.TempDir()
 
-	actual, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	actual, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		Export(ctx, dest)
@@ -1454,9 +1452,9 @@ func (FileSuite) TestServiceContents(ctx context.Context, t *testctx.T) {
 
 	content := identity.NewID()
 
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
-	fileContent, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	fileContent, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		File("README.md").
@@ -1472,7 +1470,7 @@ func (FileSuite) TestServiceSync(ctx context.Context, t *testctx.T) {
 		content := identity.NewID()
 		httpSrv, httpURL := httpService(ctx, t, c, content)
 
-		_, err := c.HTTP(httpURL+"/foobar", dagger.HTTPOpts{
+		_, err := core.NewQuery(c).HTTP(httpURL+"/foobar", core.HTTPOpts{
 			ExperimentalServiceHost: httpSrv,
 		}).Sync(ctx)
 
@@ -1486,7 +1484,7 @@ func (FileSuite) TestServiceSync(ctx context.Context, t *testctx.T) {
 		content := identity.NewID()
 		httpSrv, httpURL := httpService(ctx, t, c, content)
 
-		file, err := c.HTTP(httpURL, dagger.HTTPOpts{
+		file, err := core.NewQuery(c).HTTP(httpURL, core.HTTPOpts{
 			ExperimentalServiceHost: httpSrv,
 		}).Sync(ctx)
 		require.NoError(t, err)
@@ -1502,12 +1500,12 @@ func (FileSuite) TestServiceExport(ctx context.Context, t *testctx.T) {
 
 	content := identity.NewID()
 
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
 	dest := t.TempDir()
 	filePath := filepath.Join(dest, "README.md")
 
-	actual, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	actual, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		File("README.md").
@@ -1528,10 +1526,10 @@ func (FileSuite) TestServiceTimestamp(ctx context.Context, t *testctx.T) {
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
-	stamped := c.HTTP(httpURL, dagger.HTTPOpts{ExperimentalServiceHost: httpSrv}).
+	stamped := core.NewQuery(c).HTTP(httpURL, core.HTTPOpts{ExperimentalServiceHost: httpSrv}).
 		WithTimestamps(int(ts.Unix()))
 
-	stdout, err := c.Container().From(alpineImage).
+	stdout, err := core.NewQuery(c).Container().From(alpineImage).
 		WithFile("/index.html", stamped).
 		WithExec([]string{"stat", "/index.html"}).
 		Stdout(ctx)
@@ -1551,7 +1549,7 @@ func (ServiceSuite) TestStartStop(ctx context.Context, t *testctx.T) {
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	fetch := func() (string, error) {
-		return c.Container().
+		return core.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("BUST", identity.NewID()).
 			WithExec([]string{"wget", "-O-", httpURL}).
@@ -1586,7 +1584,7 @@ func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {
 	httpSrv, httpURL := signalService(ctx, t, c)
 
 	fetch := func() (string, error) {
-		return c.Container().
+		return core.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("BUST", identity.NewID()).
 			WithExec([]string{"wget", "-O-", httpURL + "/signals.txt"}).
@@ -1622,7 +1620,7 @@ func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {
 
 	eg.Go(func() error {
 		// attempt to SIGKILL the serive (this will work)
-		_, err := httpSrv.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		_, err := httpSrv.Stop(ctx, core.ServiceStopOpts{Kill: true})
 		return err
 	})
 
@@ -1648,7 +1646,7 @@ func (ServiceSuite) TestNoCrossTalk(ctx context.Context, t *testctx.T) {
 	httpSrv1, httpURL1 := httpService(ctx, t, c1, content1)
 
 	fetch := func(c *dagger.Client) (string, error) {
-		return c.Container().
+		return core.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("BUST", identity.NewID()).
 			WithExec([]string{"wget", "-O-", httpURL1}).
@@ -1673,18 +1671,17 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 
 	t.Run("no options means bind to random", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
 			WithMountedDirectory(
-				"/srv/www",
-				c.Directory().WithNewFile("index.html", content),
+				"/srv/www", core.NewQuery(c).Directory().WithNewFile("index.html", content),
 			).
 			WithWorkdir("/srv/www").
 			WithExposedPort(8000).
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
-		tunnel, err := c.Host().Tunnel(srv).Start(ctx)
+		tunnel, err := core.NewQuery(c).Host().Tunnel(srv).Start(ctx)
 		require.NoError(t, err)
 
 		defer func() {
@@ -1708,12 +1705,10 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("multiple ports", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
-			WithMountedDirectory("/srv/www1",
-				c.Directory().WithNewFile("index.html", content+"-1")).
-			WithMountedDirectory("/srv/www2",
-				c.Directory().WithNewFile("index.html", content+"-2")).
+			WithMountedDirectory("/srv/www1", core.NewQuery(c).Directory().WithNewFile("index.html", content+"-1")).
+			WithMountedDirectory("/srv/www2", core.NewQuery(c).Directory().WithNewFile("index.html", content+"-2")).
 			WithDefaultArgs([]string{
 				"sh", "-c",
 				`( cd /srv/www1 && python -m http.server 8000 ) &
@@ -1724,7 +1719,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 			WithExposedPort(9000).
 			AsService()
 
-		tunnel, err := c.Host().Tunnel(srv).Start(ctx)
+		tunnel, err := core.NewQuery(c).Host().Tunnel(srv).Start(ctx)
 		require.NoError(t, err)
 
 		defer func() {
@@ -1754,12 +1749,10 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("native mapping", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
-			WithMountedDirectory("/srv/www1",
-				c.Directory().WithNewFile("index.html", content+"-1")).
-			WithMountedDirectory("/srv/www2",
-				c.Directory().WithNewFile("index.html", content+"-2")).
+			WithMountedDirectory("/srv/www1", core.NewQuery(c).Directory().WithNewFile("index.html", content+"-1")).
+			WithMountedDirectory("/srv/www2", core.NewQuery(c).Directory().WithNewFile("index.html", content+"-2")).
 			WithDefaultArgs([]string{
 				"sh", "-c",
 				`( cd /srv/www1 && python -m http.server 32767 ) &
@@ -1770,7 +1763,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 			WithExposedPort(32766).
 			AsService()
 
-		tunnel, err := c.Host().Tunnel(srv, dagger.HostTunnelOpts{
+		tunnel, err := core.NewQuery(c).Host().Tunnel(srv, core.HostTunnelOpts{
 			Native: true,
 		}).Start(ctx)
 		require.NoError(t, err)
@@ -1804,12 +1797,10 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("native mapping + extra ports", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
-			WithMountedDirectory("/srv/www1",
-				c.Directory().WithNewFile("index.html", content+"-1")).
-			WithMountedDirectory("/srv/www2",
-				c.Directory().WithNewFile("index.html", content+"-2")).
+			WithMountedDirectory("/srv/www1", core.NewQuery(c).Directory().WithNewFile("index.html", content+"-1")).
+			WithMountedDirectory("/srv/www2", core.NewQuery(c).Directory().WithNewFile("index.html", content+"-2")).
 			WithDefaultArgs([]string{
 				"sh", "-c",
 				// 32764 is not exposed, so nothing health-checks it; wait for it
@@ -1822,9 +1813,9 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 			WithExposedPort(32765). // NB: trying to avoid conflicts...
 			AsService()
 
-		tunnel, err := c.Host().Tunnel(srv, dagger.HostTunnelOpts{
+		tunnel, err := core.NewQuery(c).Host().Tunnel(srv, core.HostTunnelOpts{
 			Native: true,
-			Ports: []dagger.PortForward{
+			Ports: []core.PortForward{
 				{Backend: 32764, Frontend: 32764},
 			},
 		}).Start(ctx)
@@ -1859,18 +1850,17 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("no ports to forward", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := core.NewQuery(c).Container().
 			From("python").
 			WithMountedDirectory(
-				"/srv/www",
-				c.Directory().WithNewFile("index.html", content),
+				"/srv/www", core.NewQuery(c).Directory().WithNewFile("index.html", content),
 			).
 			WithWorkdir("/srv/www").
 			// WithExposedPort(8000). // INTENTIONAL
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
-		_, err := c.Host().Tunnel(srv).ID(ctx)
+		_, err := core.NewQuery(c).Host().Tunnel(srv).ID(ctx)
 		require.Error(t, err)
 	})
 }
@@ -1887,7 +1877,7 @@ func tcpService(t *testctx.T, h func(http.ResponseWriter, *http.Request)) int {
 	return port
 }
 
-func httpQuery(t *testctx.T, c *dagger.Client, svc *dagger.Service, urls ...string) string {
+func httpQuery(t *testctx.T, c *dagger.Client, svc *core.Service, urls ...string) string {
 	var cmds []string
 	for _, url := range urls {
 		quoted, err := syntax.Quote(url, syntax.LangBash)
@@ -1895,7 +1885,7 @@ func httpQuery(t *testctx.T, c *dagger.Client, svc *dagger.Service, urls ...stri
 		cmds = append(cmds, "wget -O- "+quoted)
 	}
 	script := strings.Join(cmds, "\n")
-	out, err := c.Container().
+	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", svc).
 		WithExec([]string{"sh", "-c", script}).
@@ -1912,7 +1902,7 @@ func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("simple", func(ctx context.Context, t *testctx.T) {
-		host := c.Host().Service([]dagger.PortForward{
+		host := core.NewQuery(c).Host().Service([]core.PortForward{
 			{Frontend: 80, Backend: port},
 		})
 		for _, content := range []string{"yes", "no", "maybe", "so"} {
@@ -1922,7 +1912,7 @@ func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("using hostname", func(ctx context.Context, t *testctx.T) {
-		host := c.Host().Service([]dagger.PortForward{
+		host := core.NewQuery(c).Host().Service([]core.PortForward{
 			{Frontend: 80, Backend: port},
 		})
 		hn, err := host.Hostname(ctx)
@@ -1932,10 +1922,10 @@ func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("using endpoint", func(ctx context.Context, t *testctx.T) {
-		host := c.Host().Service([]dagger.PortForward{
+		host := core.NewQuery(c).Host().Service([]core.PortForward{
 			{Frontend: 80, Backend: port},
 		})
-		rootURL, err := host.Endpoint(ctx, dagger.ServiceEndpointOpts{
+		rootURL, err := host.Endpoint(ctx, core.ServiceEndpointOpts{
 			Scheme: "http",
 		})
 		require.NoError(t, err)
@@ -1946,7 +1936,7 @@ func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
 		port2 := tcpService(t, func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, r.URL.Query().Get("content")+"-2")
 		})
-		host := c.Host().Service([]dagger.PortForward{
+		host := core.NewQuery(c).Host().Service([]core.PortForward{
 			{Frontend: 80, Backend: port},
 			{Frontend: 8000, Backend: port2},
 		})
@@ -1957,7 +1947,7 @@ func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("invalid host service", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Host().Service(nil).ID(ctx)
+		_, err := core.NewQuery(c).Host().Service(nil).ID(ctx)
 		require.Error(t, err)
 	})
 }
@@ -1973,7 +1963,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
-	resolvContents, err := c.Container().From(alpineImage).
+	resolvContents, err := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"cat", "/etc/resolv.conf"}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -1986,27 +1976,27 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 		newResolvContents += line + "\n"
 	}
 
-	newResolvConf := c.Directory().
-		WithNewFile("resolv.conf", newResolvContents, dagger.DirectoryWithNewFileOpts{Permissions: 0644}).
+	newResolvConf := core.NewQuery(c).Directory().
+		WithNewFile("resolv.conf", newResolvContents, core.DirectoryWithNewFileOpts{Permissions: 0644}).
 		File("resolv.conf")
 
-	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithMountedFile("/etc/resolv.conf", newResolvConf)
 	})
 	devEngineSvc := devEngineContainerAsService(devEngine)
 	t.Cleanup(func() {
-		devEngineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		devEngineSvc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 	})
 
-	hostSvc, err := c.Host().Tunnel(devEngineSvc, dagger.HostTunnelOpts{
-		Ports: []dagger.PortForward{{
+	hostSvc, err := core.NewQuery(c).Host().Tunnel(devEngineSvc, core.HostTunnelOpts{
+		Ports: []core.PortForward{{
 			Backend:  1234,
 			Frontend: 32132,
 		}},
 	}).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		hostSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		hostSvc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 	})
 
 	c2, err := dagger.Connect(ctx,
@@ -2016,7 +2006,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
-	resolvContents2, err := c2.Container().From(alpineImage).
+	resolvContents2, err := core.NewQuery(c2).Container().From(alpineImage).
 		WithExec([]string{"cat", "/etc/resolv.conf"}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -2034,17 +2024,17 @@ func (ServiceSuite) TestServiceFromUncachedPrivateImage(ctx context.Context, t *
 	c := connect(ctx, t)
 
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"
-	privateRegistrySvc := c.Container().
+	privateRegistrySvc := core.NewQuery(c).Container().
 		From("registry:2").
 		WithNewFile("/auth/htpasswd", htpasswd).
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
+		AsService(core.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	engineSvc := devEngineContainerAsService(devEngineContainer(c,
-		func(ctr *dagger.Container) *dagger.Container {
+		func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithServiceBinding("registry", privateRegistrySvc)
 		},
@@ -2092,18 +2082,18 @@ func (ServiceSuite) TestServiceFromUncachedPrivateImage(ctx context.Context, t *
 	require.Equal(t, "yoyoyo", strings.TrimSpace(out))
 }
 
-func httpService(ctx context.Context, t testing.TB, c *dagger.Client, content string) (*dagger.Service, string) {
+func httpService(ctx context.Context, t testing.TB, c *dagger.Client, content string) (*core.Service, string) {
 	return httpServiceAuth(ctx, t, c, content, "", nil)
 }
-func httpServiceDir(ctx context.Context, t testing.TB, c *dagger.Client, dir *dagger.Directory) (*dagger.Service, string) {
+func httpServiceDir(ctx context.Context, t testing.TB, c *dagger.Client, dir *core.Directory) (*core.Service, string) {
 	return httpServiceDirAuth(ctx, t, c, "", dir, "", nil)
 }
 
-func httpServiceAuth(ctx context.Context, t testing.TB, c *dagger.Client, content string, username string, token *dagger.Secret) (*dagger.Service, string) {
-	return httpServiceDirAuth(ctx, t, c, "", c.Directory().WithNewFile("index.html", content), username, token)
+func httpServiceAuth(ctx context.Context, t testing.TB, c *dagger.Client, content string, username string, token *core.Secret) (*core.Service, string) {
+	return httpServiceDirAuth(ctx, t, c, "", core.NewQuery(c).Directory().WithNewFile("index.html", content), username, token)
 }
 
-func httpServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *dagger.Directory, username string, token *dagger.Secret) (*dagger.Service, string) {
+func httpServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *core.Directory, username string, token *core.Secret) (*core.Service, string) {
 	t.Helper()
 
 	if username == "" {
@@ -2141,16 +2131,16 @@ server {
 	})
 	require.NoError(t, err)
 
-	svc := c.Container().
+	svc := core.NewQuery(c).Container().
 		From("nginx").
 		WithNewFile("/etc/nginx/conf.d/default.conf", config.String()).
 		WithMountedDirectory("/usr/share/nginx/html", dir).
 		WithEnvVariable("CACHE_BUSTER", fmt.Sprintf("%s-%d", username, time.Now().UnixNano())).
-		WithMountedSecret("/usr/share/nginx/htpasswd", c.SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext), dagger.ContainerWithMountedSecretOpts{
+		WithMountedSecret("/usr/share/nginx/htpasswd", core.NewQuery(c).SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext), core.ContainerWithMountedSecretOpts{
 			Owner: "nginx",
 		}).
 		WithExposedPort(80).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+		AsService(core.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	if hostname == "" {
 		hostname, err = svc.Hostname(ctx)
@@ -2162,7 +2152,7 @@ server {
 	return svc, url
 }
 
-func gitSmartHTTPServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *dagger.Directory, username string, token *dagger.Secret, publicRead ...bool) (*dagger.Service, string) {
+func gitSmartHTTPServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *core.Directory, username string, token *core.Secret, publicRead ...bool) (*core.Service, string) {
 	t.Helper()
 
 	if username == "" {
@@ -2211,7 +2201,7 @@ server {
 		"publicRead": len(publicRead) > 0 && publicRead[0],
 	}))
 
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From("nginx").
 		WithExec([]string{"sh", "-lc", `
 set -eux
@@ -2226,9 +2216,7 @@ test -x /usr/lib/git-core/git-http-backend
 
 	if token != nil {
 		ctr = ctr.WithMountedSecret(
-			"/usr/share/nginx/htpasswd",
-			c.SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext),
-			dagger.ContainerWithMountedSecretOpts{Owner: "nginx"},
+			"/usr/share/nginx/htpasswd", core.NewQuery(c).SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext), core.ContainerWithMountedSecretOpts{Owner: "nginx"},
 		)
 	}
 
@@ -2236,7 +2224,7 @@ test -x /usr/lib/git-core/git-http-backend
 		WithExposedPort(80).
 		WithEntrypoint([]string{"sh", "-lc",
 			"spawn-fcgi -s /var/run/fcgiwrap.socket -M 766 /usr/sbin/fcgiwrap && exec nginx -g 'daemon off;'"}).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+		AsService(core.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	if hostname == "" {
 		var err error
@@ -2248,16 +2236,16 @@ test -x /usr/lib/git-core/git-http-backend
 	return svc, "http://" + hostname
 }
 
-func gitService(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
+func gitService(ctx context.Context, t *testctx.T, c *dagger.Client, content *core.Directory) (*core.Service, string) {
 	t.Helper()
 	return gitServiceWithBranch(ctx, t, c, content, "main")
 }
 
-func gitServiceWithBranch(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory, branchName string) (*dagger.Service, string) {
+func gitServiceWithBranch(ctx context.Context, t *testctx.T, c *dagger.Client, content *core.Directory, branchName string) (*core.Service, string) {
 	t.Helper()
 
 	const gitPort = 9418
-	gitDaemon := c.Container().
+	gitDaemon := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithDirectory("/root/srv", makeGitDir(c, content, branchName)).
@@ -2273,7 +2261,7 @@ func gitServiceWithBranch(ctx context.Context, t *testctx.T, c *dagger.Client, c
 	return gitDaemon, repoURL
 }
 
-func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, content *dagger.Directory, branchName string, username string, token *dagger.Secret) (*dagger.Service, string) {
+func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, content *core.Directory, branchName string, username string, token *core.Secret) (*core.Service, string) {
 	t.Helper()
 
 	gitDaemon, repoURL := httpServiceDirAuth(ctx, t, c, hostname, makeGitDir(c, content, branchName), username, token)
@@ -2281,8 +2269,8 @@ func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Clien
 	return gitDaemon, repoURL
 }
 
-func makeGitDir(c *dagger.Client, content *dagger.Directory, branchName string) *dagger.Directory {
-	return c.Container().
+func makeGitDir(c *dagger.Client, content *core.Directory, branchName string) *core.Directory {
+	return core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/root/repo", content).
@@ -2320,10 +2308,10 @@ cd ..
 
 // signalService is a little helper service that writes assorted signals that
 // it receives to /signals.txt.
-func signalService(ctx context.Context, t *testctx.T, c *dagger.Client) (*dagger.Service, string) {
+func signalService(ctx context.Context, t *testctx.T, c *dagger.Client) (*core.Service, string) {
 	t.Helper()
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From("python").
 		WithNewFile("/signals.py", `
 import http.server
@@ -2348,7 +2336,7 @@ with socketserver.TCPServer(("", 8000), http.server.SimpleHTTPRequestHandler) as
 		WithDefaultArgs([]string{"python", "/signals.py"}).
 		AsService()
 
-	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
+	httpURL, err := srv.Endpoint(ctx, core.ServiceEndpointOpts{
 		Scheme: "http",
 	})
 	require.NoError(t, err)
@@ -2366,7 +2354,7 @@ var (
 // nested (dagger-in-dagger), so we need to calculate how deeply we can nest.
 func calculateNestingLimit(ctx context.Context, c *dagger.Client, t *testctx.T) int {
 	nestingLimitOnce.Do(func() {
-		baseSearch, err := c.Container().
+		baseSearch, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"grep", `^search\s`, "/etc/resolv.conf"}).
 			Stdout(ctx)
@@ -2425,7 +2413,7 @@ func main() {
 
 	fmt.Println(http.ListenAndServe(":8080", nil))
 }`
-	buildctr := c.Container().
+	buildctr := core.NewQuery(c).Container().
 		From(golangImage).
 		WithWorkdir("/work").
 		WithNewFile("/work/main.go", maingo).
@@ -2448,12 +2436,12 @@ func main() {
 		},
 	} {
 		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
-			binctr := c.Container().
+			binctr := core.NewQuery(c).Container().
 				From(alpineImage).
 				WithFile("/bin/app", buildctr.File("/work/app")).
 				WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
 				WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
-				WithDockerHealthcheck(tt.command, dagger.ContainerWithDockerHealthcheckOpts{
+				WithDockerHealthcheck(tt.command, core.ContainerWithDockerHealthcheckOpts{
 					Shell:         tt.shell,
 					Interval:      "1s",
 					Timeout:       "3s",
@@ -2463,7 +2451,7 @@ func main() {
 				}).
 				WithExposedPort(8080)
 
-			curlctr := c.Container().
+			curlctr := core.NewQuery(c).Container().
 				From(alpineImage).
 				WithExec([]string{"sh", "-c", "apk add curl"})
 
@@ -2480,7 +2468,7 @@ func main() {
 func (ServiceSuite) TestServiceHealthcheckFailure(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := core.NewQuery(c).Container().
 		From("python").
 		WithDefaultArgs([]string{"python", "-m", "http.server", "8080"}).
 		WithExposedPort(8080).
@@ -2490,7 +2478,7 @@ func (ServiceSuite) TestServiceHealthcheckFailure(ctx context.Context, t *testct
 	host, err := srv.Hostname(ctx)
 	require.NoError(t, err)
 
-	client := c.Container().
+	client := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
@@ -2499,7 +2487,7 @@ func (ServiceSuite) TestServiceHealthcheckFailure(ctx context.Context, t *testct
 	require.Error(t, err)
 	requireErrOut(t, err, "start "+host+" (aliased as www): health check errored: exit code:")
 
-	var execErr *dagger.ExecError
+	var execErr *core.ExecError
 	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
 
 	// Verify the ExecError contains expected information

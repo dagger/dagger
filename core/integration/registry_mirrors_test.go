@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -20,18 +21,18 @@ func (EngineSuite) TestRegistryMirrorsCustomCA(ctx context.Context, t *testctx.T
 	certGen := newGeneratedCerts(c, "ca")
 	registryCert, registryKey := certGen.newServerCerts("testreg")
 
-	cacheVolume := c.CacheVolume(t.Name())
-	registry := c.Container().From("registry:3").
+	cacheVolume := core.NewQuery(c).CacheVolume(t.Name())
+	registry := core.NewQuery(c).Container().From("registry:3").
 		WithFile("/certs/domain.crt", registryCert).
 		WithFile("/certs/domain.key", registryKey).
 		WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
 		WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		WithMountedCache("/cache/logs", cacheVolume).
 		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
 		AsService()
 
-	engine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	engine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.
 			WithMountedFile("/usr/local/share/ca-certificates/testreg.crt", registryCert)
 	},
@@ -55,9 +56,9 @@ func (EngineSuite) TestRegistryMirrorsCustomCA(ctx context.Context, t *testctx.T
 func (EngineSuite) TestRegistryMirrorsHTTP(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	cacheVolume := c.CacheVolume(t.Name())
-	registry := c.Container().From("registry:3").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+	cacheVolume := core.NewQuery(c).CacheVolume(t.Name())
+	registry := core.NewQuery(c).Container().From("registry:3").
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		WithMountedCache("/cache/logs", cacheVolume).
 		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
 		AsService()
@@ -79,11 +80,11 @@ func (EngineSuite) TestRegistryMirrorsHTTP(ctx context.Context, t *testctx.T) {
 	testImagePull(ctx, t, c, engine, cacheVolume)
 }
 
-func testImagePull(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *dagger.Container, cacheVolume *dagger.CacheVolume) {
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+func testImagePull(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *core.Container, cacheVolume *core.CacheVolume) {
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 	c2, err := dagger.Connect(
 		ctx,
@@ -93,11 +94,11 @@ func testImagePull(ctx context.Context, t *testctx.T, c *dagger.Client, devEngin
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
-	out, err := c2.Container().From("alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1").WithExec([]string{"echo", "hello"}).Stdout(ctx)
+	out, err := core.NewQuery(c2).Container().From("alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1").WithExec([]string{"echo", "hello"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello", strings.TrimSpace(out))
 
-	out, err = c.Container().
+	out, err = core.NewQuery(c).Container().
 		From("alpine").
 		WithMountedCache("/cache/logs", cacheVolume).
 		WithExec([]string{"cat", "/cache/logs/registry.log"}).

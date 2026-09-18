@@ -4,6 +4,7 @@ package core
 // legacy `.env` tests. It is helper-only and should not own behavior coverage.
 
 import (
+	"dagger.io/dagger/core"
 	"os"
 	"strings"
 
@@ -11,8 +12,8 @@ import (
 	"github.com/dagger/testctx"
 )
 
-func nestedDaggerContainer(t *testctx.T, c *dagger.Client, modLang, modName string) *dagger.Container {
-	ctr := c.Container().
+func nestedDaggerContainer(t *testctx.T, c *dagger.Client, modLang, modName string) *core.Container {
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/work").
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
@@ -20,7 +21,7 @@ func nestedDaggerContainer(t *testctx.T, c *dagger.Client, modLang, modName stri
 		ctr = ctr.
 			WithExec([]string{"apk", "add", "git"}).
 			WithExec([]string{"git", "init"}).
-			WithDirectory(modName, c.Host().Directory(testModule(t, modLang, modName)))
+			WithDirectory(modName, core.NewQuery(c).Host().Directory(testModule(t, modLang, modName)))
 	}
 	return ctr
 }

@@ -5,6 +5,7 @@ package core
 // coverage directly.
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"encoding/json"
 	"strings"
@@ -17,9 +18,9 @@ import (
 
 // gitRepoBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work
-func gitRepoBase(t testing.TB, c *dagger.Client) *dagger.Container {
+func gitRepoBase(t testing.TB, c *dagger.Client) *core.Container {
 	t.Helper()
-	return c.Container().From(golangImage).
+	return core.NewQuery(c).Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
 		WithExec([]string{"git", "config", "--global", "user.name", "Dagger Tests"}).
@@ -32,18 +33,18 @@ func gitRepoBase(t testing.TB, c *dagger.Client) *dagger.Container {
 // dagger.toml. A git root enables workspace/lockfile detection; a
 // native config opts into native workspace behavior and suppresses legacy
 // dagger.json compat inference, so tests should add it explicitly when needed.
-func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+func workspaceBase(t testing.TB, c *dagger.Client) *core.Container {
 	t.Helper()
 	return gitRepoBase(t, c)
 }
 
 // nativeWorkspaceBase adds a minimal native dagger.toml inside the git root.
-func nativeWorkspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+func nativeWorkspaceBase(t testing.TB, c *dagger.Client) *core.Container {
 	t.Helper()
 	return workspaceBase(t, c).WithNewFile("dagger.toml", "[modules]\n")
 }
 
-func workspaceFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Container {
+func workspaceFixture(t testing.TB, c *dagger.Client, fixture string) *core.Container {
 	t.Helper()
 	return workspaceBase(t, c).With(withWorkspaceFixture(t, c, ".", "workspaces/"+fixture))
 }
@@ -51,7 +52,7 @@ func workspaceFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Co
 // legacyWorkspaceBase creates a native git repo rooted at /work but seeds it
 // with a legacy dagger.json project shape. Compat detection and migration tests
 // use this to separate "legacy on disk" from "workspace at runtime".
-func legacyWorkspaceBase(t testing.TB, c *dagger.Client, config string, ops ...dagger.WithContainerFunc) *dagger.Container {
+func legacyWorkspaceBase(t testing.TB, c *dagger.Client, config string, ops ...core.WithContainerFunc) *core.Container {
 	t.Helper()
 
 	ctr := workspaceBase(t, c).
@@ -82,9 +83,9 @@ func (WorkspaceSuite) TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrok
 	})
 
 	t.Run("full schema query still loads every workspace module", func(ctx context.Context, t *testctx.T) {
-		fullSchema := base.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
+		fullSchema := base.WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
 			Stdin:  `{ __schema { queryType { name } } }`,
-			Expect: dagger.ReturnTypeFailure,
+			Expect: core.ReturnTypeFailure,
 		})
 
 		errOut, err := fullSchema.Stderr(ctx)

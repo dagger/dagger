@@ -10,6 +10,7 @@ package core
 // - services_test.go: core service lifecycle and networking.
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"errors"
 	"fmt"
@@ -28,13 +29,13 @@ func TestUp(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(UpSuite{})
 }
 
-func upTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
+func upTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 	return specificTestEnv(t, c, "services")
 }
 
 // daggerUpVerify prepares module definitions before timing service readiness.
-func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		return c.WithExec([]string{"sh", "-c", upVerifyScript(upArgs, url, expectBodyContains, okMsg, upVerifyBounds{
 			prepare: 300, ready: timeoutSecs, probe: 5, shutdown: 30,
 		})})
@@ -552,7 +553,7 @@ settings.base = "git:2.40"
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Sync(ctx)
 		require.Error(t, err)
-		var execErr *dagger.ExecError
+		var execErr *core.ExecError
 		combined := err.Error()
 		if errors.As(err, &execErr) {
 			combined = fmt.Sprintf("%s\n%s\n%s", err, execErr.Stdout, execErr.Stderr)

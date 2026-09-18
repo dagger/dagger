@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -104,7 +104,7 @@ source = "other"
 
 	t.Run("value workspace uses its own entrypoint", func(ctx context.Context, t *testctx.T) {
 		ws := base.Directory("/work").AsWorkspace()
-		checks, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
+		checks, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Len(t, checks, 1)
 		name, err := checks[0].URI(ctx)
@@ -112,7 +112,7 @@ source = "other"
 		require.Equal(t, "dag://?check=verify", name)
 
 		changed := ws.WithNewFile("dagger.toml", strings.Replace(config, "entrypoint = true", "entrypoint = false", 1))
-		checks, err = changed.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
+		checks, err = changed.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Empty(t, checks)
 	})

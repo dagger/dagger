@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +15,7 @@ func (GeneratorsSuite) TestSDKModuleInitAppliesSettings(ctx context.Context, t *
 	require.NoError(t, err)
 
 	base := goGitBase(t, c).
-		WithDirectory("/work/.dagger/modules/module-max-lifecycle", c.Host().Directory(sdkModulePath)).
+		WithDirectory("/work/.dagger/modules/module-max-lifecycle", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("/work/dagger.toml", `[modules.go-sdk]
 source = ".dagger/modules/module-max-lifecycle"
 

@@ -7,6 +7,7 @@ package core
 // - workspace_compat_test.go: detecting and running legacy compat workspaces.
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"os"
 	"path/filepath"
@@ -31,7 +32,7 @@ func TestWorkspaceMigration(t *testing.T) {
 
 // materializeModuleFiles runs codegen and exports the module's generated
 // files into the container: TOML modules don't regenerate at runtime.
-func materializeModuleFiles(refString string) dagger.WithContainerFunc {
+func materializeModuleFiles(refString string) core.WithContainerFunc {
 	return daggerQuery(`{moduleSource(refString:%q){generatedContextDirectory{export(path:".")}}}`, refString)
 }
 
@@ -51,19 +52,19 @@ func (WorkspaceMigrationSuite) TestMigrationPlanIdentity(ctx context.Context, t 
 			configPath := filepath.Join(root, "app/dagger.json")
 			require.NoError(t, os.WriteFile(configPath, []byte(`{"name":"first","sdk":"go"}`), 0o644))
 			c := connect(ctx, t, dagger.WithWorkdir(root))
-			wsID, err := c.CurrentWorkspace().ID(ctx)
+			wsID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 			require.NoError(t, err)
-			ws := dagger.Ref[*dagger.Workspace](c, wsID)
-			planFor := func(ws *dagger.Workspace) *dagger.WorkspaceMigration {
+			ws := core.Ref[*core.Workspace](core.NewQuery(c), wsID)
+			planFor := func(ws *core.Workspace) *core.WorkspaceMigration {
 				if moduleOnly {
-					return ws.MigrateModule(dagger.WorkspaceMigrateModuleOpts{Path: "app"})
+					return ws.MigrateModule(core.WorkspaceMigrateModuleOpts{Path: "app"})
 				}
 				return ws.Migrate()
 			}
 			plan := planFor(ws)
 			id, err := plan.ID(ctx)
 			require.NoError(t, err, "migration plans must have reusable engine IDs")
-			saved := dagger.Ref[*dagger.WorkspaceMigration](c, id)
+			saved := core.Ref[*core.WorkspaceMigration](core.NewQuery(c), id)
 			patch, err := saved.Changes().AsPatch().Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, patch, "first")
@@ -84,7 +85,7 @@ func (WorkspaceMigrationSuite) TestMigrationPlanIdentity(ctx context.Context, t 
 			changed := ws.WithNewFile("/app/dagger.json", `{"name":"second","sdk":"go"}`)
 			nextID, err := planFor(changed).ID(ctx)
 			require.NoError(t, err)
-			next := dagger.Ref[*dagger.WorkspaceMigration](c, nextID)
+			next := core.Ref[*core.WorkspaceMigration](core.NewQuery(c), nextID)
 			nextPatch, err := next.Changes().AsPatch().Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, nextPatch, "second")
@@ -111,7 +112,7 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigratePreviewAndApply(ctx context.C
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! {
@@ -121,7 +122,7 @@ type Myapp {
 `)
 		})
 
-		preview := ctr.WithExec([]string{"dagger", "--progress=report", "query"}, dagger.ContainerWithExecOpts{
+		preview := ctr.WithExec([]string{"dagger", "--progress=report", "query"}, core.ContainerWithExecOpts{
 			Stdin: `{
   currentWorkspace {
     migrate {
@@ -159,7 +160,7 @@ type Myapp {
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! {
@@ -306,7 +307,7 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateGeneratedCodeGitignore(ctx co
   "sdk": {"source": "dang"},
   "source": "ci",
   "dependencies": [{"name": "nested", "source": "./nested"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
@@ -363,19 +364,19 @@ func (WorkspaceMigrationSuite) TestModuleMigrateOverlayGitignore(ctx context.Con
 			}
 			c := connect(ctx, t, dagger.WithWorkdir(workdir))
 			const originalIgnore = "# overlay rules\n*.log\n/dagger.gen.go\n/internal/dagger\n/internal/telemetry\n/.env\n"
-			staged := c.CurrentWorkspace().
+			staged := core.NewQuery(c).CurrentWorkspace().
 				WithNewFile("/app/dagger.json", `{"name":"app","sdk":"go","dependencies":[{"name":"dep","source":"../dep"}]}`).
 				WithNewFile("/app/main.go", "package main\n\ntype App struct{}\n\nfunc (m *App) Greet() string { return \"overlay\" }\n").
-				WithNewFile("/app/.gitignore", originalIgnore, dagger.WorkspaceWithNewFileOpts{Permissions: 0o640}).
+				WithNewFile("/app/.gitignore", originalIgnore, core.WorkspaceWithNewFileOpts{Permissions: 0o640}).
 				WithNewFile("/dep/dagger.json", `{"name":"dep","sdk":"dang"}`).
 				WithNewFile("/dep/main.dang", "type Dep { pub value: String! { \"overlay dependency\" } }\n")
-			plan := staged.MigrateModule(dagger.WorkspaceMigrateModuleOpts{Path: "app"})
+			plan := staged.MigrateModule(core.WorkspaceMigrateModuleOpts{Path: "app"})
 			if tc.workspace {
 				plan = staged.Migrate()
 			}
 			id, err := plan.ID(ctx)
 			require.NoError(t, err)
-			plan = dagger.Ref[*dagger.WorkspaceMigration](c, id)
+			plan = core.Ref[*core.WorkspaceMigration](core.NewQuery(c), id)
 			modified, err := plan.Changes().ModifiedPaths(ctx)
 			require.NoError(t, err)
 			require.Contains(t, modified, "app/.gitignore")
@@ -416,7 +417,7 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateOutcomes(ctx context.Context,
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! {
@@ -514,7 +515,7 @@ type Myapp {
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
@@ -545,8 +546,8 @@ type Myapp {
   "toolchains": [
     {"name": "defaults", "source": "./toolchain"}
   ]
-}`, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.WithDirectory("toolchain", c.Host().Directory(toolchainSrc))
+}`, func(ctr *core.Container) *core.Container {
+			return ctr.WithDirectory("toolchain", core.NewQuery(c).Host().Directory(toolchainSrc))
 		}).With(daggerExec("workspace", "migrate", "--auto-apply"))
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
@@ -573,8 +574,8 @@ type Myapp {
       ]
     }
   ]
-}`, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.WithDirectory("toolchain", c.Host().Directory(toolchainSrc))
+}`, func(ctr *core.Container) *core.Container {
+			return ctr.WithDirectory("toolchain", core.NewQuery(c).Host().Directory(toolchainSrc))
 		}).With(daggerExec("workspace", "migrate", "--auto-apply"))
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
@@ -595,7 +596,7 @@ type Myapp {
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "./.dagger/"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile(".dagger/main.dang", `
 type Myapp {
@@ -644,7 +645,7 @@ type Myapp {
   "sdk": {"source": "dang"},
   "source": "ci",
   "toolchains": [{"name": "tc", "source": "./toolchain"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			// In 0.21 a module's toolchains were also loaded into its own API,
 			// so module code could call them like dependencies. This module
 			// does exactly that and must keep working after migration.
@@ -706,7 +707,7 @@ type Myapp {
   "sdk": {"source": "dang"},
   "source": "ci",
   "dependencies": [{"name": "foo", "source": "./libs/foo"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
@@ -758,7 +759,7 @@ type Myapp {
   "sdk": {"source": "dang"},
   "source": "ci",
   "dependencies": [{"name": "foo", "source": "./libs/foo"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
@@ -794,7 +795,7 @@ type Myapp {
   "sdk": {"source": "dang"},
   "source": "ci",
   "dependencies": [{"name": "tool", "source": "./tool"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", "\ntype Myapp {\n  pub greet: String! { \"hi\" }\n}\n").
 				WithNewFile("tool/dagger.json", `{"name":"tool","sdk":{"source":"php"},"source":"src"}`).
@@ -830,7 +831,7 @@ name = "my-go"
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", "\ntype Myapp {\n  pub greet: String! { \"hi\" }\n}\n").
 				WithNewFile("tools/dagger.toml", preExisting)
@@ -854,7 +855,7 @@ name = "my-go"
   "sdk": {"source": "dang"},
   "source": "ci",
   "dependencies": [{"name": "a", "source": "./libs/a"}, {"name": "b", "source": "./libs/b"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", "\ntype Myapp {\n  pub greet: String! { \"hello from root\" }\n}\n").
 				WithNewFile("libs/a/dagger.json", `{"name":"a","sdk":{"source":"dang"},"dependencies":[{"name":"shared","source":"../shared"}]}`).
@@ -884,7 +885,7 @@ name = "my-go"
   "sdk": {"source": "dang"},
   "source": "ci",
   "dependencies": [{"name": "a", "source": "./libs/a"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", "\ntype Myapp {\n  pub greet: String! { \"hello from root\" }\n}\n").
 				WithNewFile("libs/a/dagger.json", `{"name":"a","sdk":{"source":"dang"},"dependencies":[{"name":"b","source":"../b"}]}`).
@@ -911,7 +912,7 @@ name = "my-go"
   "sdk": {"source": "dang"},
   "source": "ci",
   "dependencies": [{"name": "nested", "source": "./nested"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
@@ -949,7 +950,7 @@ type Myapp {
   "sdk": {"source": "dang"},
   "source": "ci",
   "toolchains": [{"name": "tc", "source": "/libs/foo"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
@@ -983,7 +984,7 @@ type Myapp {
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
@@ -1013,11 +1014,11 @@ type Myapp {
 // non-TTY auto resolves to the report frontend, which renders nothing for a
 // passing run.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Context, t *testctx.T) {
-	withPlainProgress := func(ctr *dagger.Container) *dagger.Container {
+	withPlainProgress := func(ctr *core.Container) *core.Container {
 		return ctr.WithEnvVariable("DAGGER_PROGRESS", "plain")
 	}
 
-	withFreshMigrationProgress := func(ctr *dagger.Container) *dagger.Container {
+	withFreshMigrationProgress := func(ctr *core.Container) *core.Container {
 		workdir := "/work-" + identity.NewID()
 		return ctr.
 			WithExec([]string{"mv", "/work", workdir}).
@@ -1059,7 +1060,7 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Cont
     {"name": "dep1", "source": "./lib/dep1"}
   ],
   "include": ["extra/"]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 				return ctr.
 					WithNewFile("ci/main.dang", `
 type Myapp {
@@ -1114,7 +1115,7 @@ type Dep1 {
       ]
     }
   ]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("toolchain/dagger.json", `{
   "name": "toolchain",
@@ -1427,7 +1428,7 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateSafety(ctx context.Context, t
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! {
@@ -1474,7 +1475,7 @@ type Myapp {
   "toolchains": [
     {"name": "tc", "source": "`+source+`", "pin": "`+pin+`"}
   ]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.WithNewFile(".dagger/lock", string(existingLockBytes))
 		})
 
@@ -1501,7 +1502,7 @@ type Myapp {
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {

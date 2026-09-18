@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -13,12 +13,12 @@ import (
 
 func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base\n"))
-	remote := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base\n"))
+	remote := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})
 	baseSHA, err := remote.Head().CommitSHA(ctx)
 	require.NoError(t, err)
 
-	localDir := c.Container().
+	localDir := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithServiceBinding("bundle-origin", gitDaemon).
@@ -158,7 +158,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 	require.Error(t, err)
 	require.ErrorContains(t, err, `repository does not contain ref "refs/dagger/bundle/prerequisites/0"`)
 
-	stock := c.Container().
+	stock := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithServiceBinding("bundle-origin", gitDaemon).
@@ -189,8 +189,8 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 	require.NoError(t, err)
 	require.Equal(t, "local\n", stockResult.Node.Mounted.Run.Stdout)
 
-	otherDaemon, otherURL := gitService(ctx, t, c, c.Directory().WithNewFile("other.txt", "other\n"))
-	other := c.Git(otherURL, dagger.GitOpts{ExperimentalServiceHost: otherDaemon})
+	otherDaemon, otherURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("other.txt", "other\n"))
+	other := core.NewQuery(c).Git(otherURL, core.GitOpts{ExperimentalServiceHost: otherDaemon})
 	otherID, err := other.ID(ctx)
 	require.NoError(t, err)
 	_, err = testutil.QueryWithClient[struct{ ID string }](c, t, `query($repo: ID!, $bundle: ID!) {
@@ -208,7 +208,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 
 func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	repoCtr := c.Container().
+	repoCtr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"sh", "-ec", `
@@ -235,7 +235,7 @@ func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testc
 	require.Equal(t, tagSHA, bundleSHA)
 
 	gitDaemon, repoURL := gitService(ctx, t, c, repoCtr.Directory("/repo"))
-	remoteBundle := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	remoteBundle := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Bundle([]string{"refs/tags/v1.0.0"})
 	remoteRefs, err := remoteBundle.Refs(ctx)
 	require.NoError(t, err)
@@ -244,7 +244,7 @@ func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testc
 	require.NoError(t, err)
 	require.Equal(t, tagSHA, remoteBundleSHA)
 
-	objectType, err := c.Container().
+	objectType, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithMountedFile("/repository.bundle", remoteBundle.AsFile()).
@@ -260,12 +260,12 @@ func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testc
 
 func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base\n"))
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base\n"))
 
 	// Capture a bundle rooted at the remote's initial main, without resolving
 	// that remote through core Git. This keeps the later import's remote lookup
 	// honest: its first view of main is the advanced tip.
-	localCtr := c.Container().
+	localCtr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithServiceBinding("bundle-origin", gitDaemon).
@@ -308,7 +308,7 @@ func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Cont
 	// Advance the same ref after capture. A prerequisite ref is a fetch hint,
 	// not the captured identity: restore must still use the bundle's exact base
 	// SHA and captured head rather than substituting this new workspace state.
-	_, err = c.Container().
+	_, err = core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithServiceBinding("bundle-origin", gitDaemon).
@@ -326,7 +326,7 @@ func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Cont
 		Sync(ctx)
 	require.NoError(t, err)
 
-	remote := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	remote := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})
 	remoteID, err := remote.ID(ctx)
 	require.NoError(t, err)
 	imported, err := testutil.QueryWithClient[struct {
@@ -363,7 +363,7 @@ func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Cont
 func (GitSuite) TestGitBundleMalformedAndResourceFailures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	malformedID, err := c.Directory().WithNewFile("bad.bundle", "not a bundle\n").File("bad.bundle").ID(ctx)
+	malformedID, err := core.NewQuery(c).Directory().WithNewFile("bad.bundle", "not a bundle\n").File("bad.bundle").ID(ctx)
 	require.NoError(t, err)
 	_, err = testutil.QueryWithClient[struct{ Version int }](c, t, `query($file: ID!) {
 		node(id: $file) { ... on File { asGitBundle { version } } }
@@ -371,7 +371,7 @@ func (GitSuite) TestGitBundleMalformedAndResourceFailures(ctx context.Context, t
 	require.Error(t, err)
 	require.ErrorContains(t, err, "signature")
 
-	large := c.Container().From(alpineImage).
+	large := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"truncate", "-s", fmt.Sprint((128 << 20) + 1), "/large.bundle"}).
 		File("/large.bundle")
 	largeID, err := large.ID(ctx)
@@ -383,12 +383,12 @@ func (GitSuite) TestGitBundleMalformedAndResourceFailures(ctx context.Context, t
 	require.ErrorContains(t, err, "size")
 	require.ErrorContains(t, err, fmt.Sprint(128<<20))
 
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base\n"))
-	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base\n"))
+	repo := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})
 	repoID, err := repo.ID(ctx)
 	require.NoError(t, err)
 
-	sha256File := c.Container().From(alpineImage).
+	sha256File := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"sh", "-ec", `
 			git init --object-format=sha256 /sha256
@@ -444,7 +444,7 @@ func (GitSuite) TestGitBundleMalformedAndResourceFailures(ctx context.Context, t
 	}`, &testutil.QueryOptions{Variables: map[string]any{"repo": repoID}})
 	require.NoError(t, err)
 
-	truncateBase := c.Container().From(alpineImage)
+	truncateBase := core.NewQuery(c).Container().From(alpineImage)
 	truncateBaseID, err := truncateBase.ID(ctx)
 	require.NoError(t, err)
 	truncated, err := testutil.QueryWithClient[struct {

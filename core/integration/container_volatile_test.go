@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 )
 
@@ -23,7 +23,7 @@ import (
 func (ContainerSuite) TestVolatileVariableCachedExecOutputSeesLatestValue(ctx context.Context, t *testctx.T) {
 	run := func(runID, marker string) string {
 		c := connect(ctx, t)
-		out, err := c.Container().From(alpineImage).
+		out, err := core.NewQuery(c).Container().From(alpineImage).
 			WithVolatileVariable("RUN_ID", runID).
 			WithExec([]string{"true"}).
 			WithExec([]string{"sh", "-c", `printf '%s:%s' "$RUN_ID" "$1"`, "_", marker}).
@@ -44,7 +44,7 @@ func (ContainerSuite) TestVolatileVariableCachedExecOutputSeesLatestValue(ctx co
 // would make the earlier RUN_ID=one handle, or its ID, observe RUN_ID=two after
 // the second equivalent no-op exec.
 func (ContainerSuite) TestVolatileVariableCacheHitKeepsEachContainerValue(ctx context.Context, t *testctx.T) {
-	read := func(ctr *dagger.Container, marker string) string {
+	read := func(ctr *core.Container, marker string) string {
 		out, err := ctr.
 			WithExec([]string{"sh", "-c", `printf '%s:%s' "$RUN_ID" "$1"`, "_", marker}).
 			Stdout(ctx)
@@ -53,13 +53,13 @@ func (ContainerSuite) TestVolatileVariableCacheHitKeepsEachContainerValue(ctx co
 	}
 
 	c1 := connect(ctx, t)
-	first := c1.Container().From(alpineImage).
+	first := core.NewQuery(c1).Container().From(alpineImage).
 		WithVolatileVariable("RUN_ID", "one").
 		WithExec([]string{"true"})
 	require.Equal(t, "one:first", read(first, "first"))
 
 	c2 := connect(ctx, t)
-	second := c2.Container().From(alpineImage).
+	second := core.NewQuery(c2).Container().From(alpineImage).
 		WithVolatileVariable("RUN_ID", "two").
 		WithExec([]string{"true"})
 	require.Equal(t, "two:second", read(second, "second"))

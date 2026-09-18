@@ -8,6 +8,7 @@ package core
 // - platform_test.go: platform-aware container execution.
 
 import (
+	sdkcore "dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"crypto/md5"
@@ -107,14 +108,14 @@ func (ContainerSuite) TestFrom(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithRootFS(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	alpine316 := c.Container().From(alpineImage)
+	alpine316 := sdkcore.NewQuery(c).Container().From(alpineImage)
 
 	alpine316ReleaseStr, err := alpine316.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 
 	alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
 	dir := alpine316.Rootfs()
-	_, err = c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithRootfs(dir).WithExec([]string{
+	_, err = sdkcore.NewQuery(c).Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithRootfs(dir).WithExec([]string{
 		"/bin/sh",
 		"-c",
 		"test -f /etc/alpine-release && test \"$(head -n 1 /etc/alpine-release)\" = \"$ALPINE_RELEASE\"",
@@ -122,7 +123,7 @@ func (ContainerSuite) TestWithRootFS(ctx context.Context, t *testctx.T) {
 
 	require.NoError(t, err)
 
-	alpine315 := c.Container().From(alpineImage)
+	alpine315 := sdkcore.NewQuery(c).Container().From(alpineImage)
 
 	varVal := "testing123"
 
@@ -147,16 +148,16 @@ func (ContainerSuite) TestWithRootFS(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestScratchRootFSDoesNotAliasSelectedDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	entries, err := c.Container().Rootfs().Entries(ctx)
+	entries, err := sdkcore.NewQuery(c).Container().Rootfs().Entries(ctx)
 	require.NoError(t, err)
 	require.Empty(t, entries)
 
-	withFile := c.Container().Rootfs().WithNewFile("foo", "bar")
+	withFile := sdkcore.NewQuery(c).Container().Rootfs().WithNewFile("foo", "bar")
 	contents, err := withFile.File("foo").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bar", contents)
 
-	entries, err = c.Container().Rootfs().Entries(ctx)
+	entries, err = sdkcore.NewQuery(c).Container().Rootfs().Entries(ctx)
 	require.NoError(t, err)
 	require.Empty(t, entries)
 }
@@ -167,15 +168,15 @@ var helloSrc string
 func (ContainerSuite) TestWithRootFSSubdir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	hello := c.Directory().WithNewFile("main.go", helloSrc).File("main.go")
+	hello := sdkcore.NewQuery(c).Directory().WithNewFile("main.go", helloSrc).File("main.go")
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile("/src/main.go", hello).
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithExec([]string{"go", "build", "-o", "/out/hello", "/src/main.go"})
 
-	out, err := c.Container().
+	out, err := sdkcore.NewQuery(c).Container().
 		WithRootfs(ctr.Directory("/out")).
 		WithExec([]string{"/hello"}).
 		Stdout(ctx)
@@ -266,7 +267,7 @@ func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("stdout", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"echo", "hello"}).
 			Stdout(ctx)
@@ -275,7 +276,7 @@ func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("stderr", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", "echo goodbye > /dev/stderr"}).
 			Stderr(ctx)
@@ -284,14 +285,14 @@ func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("stdout without exec", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			Stdout(ctx)
 		requireErrOut(t, err, "no command has been set")
 	})
 
 	t.Run("stderr without exec", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			Stderr(ctx)
 		requireErrOut(t, err, "no command has been set")
@@ -301,7 +302,7 @@ func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestExecCombinedOutput(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithNewFile("/test.sh", `echo "out"
 echo "err" >&2
@@ -348,10 +349,10 @@ func (ContainerSuite) TestExecStdin(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestExecRedirectStdin(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir := c.Directory().WithNewFile("input.txt", "redirected stdin")
-	execWithMount := c.Container().From(alpineImage).
+	dir := sdkcore.NewQuery(c).Directory().WithNewFile("input.txt", "redirected stdin")
+	execWithMount := sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithMountedDirectory("/mnt", dir).
-		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"cat"}, sdkcore.ContainerWithExecOpts{
 			RedirectStdin:  "/mnt/input.txt",
 			RedirectStdout: "/mnt/out",
 		})
@@ -364,10 +365,10 @@ func (ContainerSuite) TestExecRedirectStdin(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestExecRedirectStdinSecret(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	secret := c.SetSecret("my-secret", "secret stdin")
-	execWithSecret := c.Container().From(alpineImage).
+	secret := sdkcore.NewQuery(c).SetSecret("my-secret", "secret stdin")
+	execWithSecret := sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithMountedSecret("/mnt/secret", secret).
-		WithExec([]string{"sh", "-c", "cat | tr '[a-z]' '[A-Z]'"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"sh", "-c", "cat | tr '[a-z]' '[A-Z]'"}, sdkcore.ContainerWithExecOpts{
 			RedirectStdin:  "/mnt/secret",
 			RedirectStdout: "/mnt/out",
 		})
@@ -381,8 +382,8 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 	c := connect(ctx, t)
 
 	t.Run("exec", func(ctx context.Context, t *testctx.T) {
-		exec := c.Container().From(alpineImage).
-			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
+		exec := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, sdkcore.ContainerWithExecOpts{
 				RedirectStdout: "out",
 				RedirectStderr: "err",
 			})
@@ -405,9 +406,9 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 
 	t.Run("exec with mount", func(ctx context.Context, t *testctx.T) {
 		// same as above, but with a mounted directory instead
-		exec := c.Container().From(alpineImage).
-			WithMountedDirectory("/mnt", c.Directory()).
-			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
+		exec := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithMountedDirectory("/mnt", sdkcore.NewQuery(c).Directory()).
+			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, sdkcore.ContainerWithExecOpts{
 				RedirectStdout: "/mnt/out",
 				RedirectStderr: "/mnt/err",
 			})
@@ -437,17 +438,17 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.T) {
 	// The markers are upper-cased by the exec so they only ever appear in its
 	// output, never in its args.
-	execs := func(c *dagger.Client, cacheBuster string) (redirectOut, redirectErr *dagger.Container) {
-		base := c.Container().From(alpineImage).
+	execs := func(c *dagger.Client, cacheBuster string) (redirectOut, redirectErr *sdkcore.Container) {
+		base := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithEnvVariable("CACHEBUST", cacheBuster)
 		redirectOut = base.WithExec([]string{"sh", "-c",
 			"echo out-redirected | tr a-z A-Z; echo err-logged | tr a-z A-Z >&2",
-		}, dagger.ContainerWithExecOpts{
+		}, sdkcore.ContainerWithExecOpts{
 			RedirectStdout: "/out",
 		})
 		redirectErr = base.WithExec([]string{"sh", "-c",
 			"echo out-logged | tr a-z A-Z; echo err-redirected | tr a-z A-Z >&2",
-		}, dagger.ContainerWithExecOpts{
+		}, sdkcore.ContainerWithExecOpts{
 			RedirectStderr: "/err",
 		})
 		return redirectOut, redirectErr
@@ -547,7 +548,7 @@ func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestExecWithoutWorkdir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	res, err := c.Container().
+	res, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/usr").
 		WithoutWorkdir().
@@ -679,7 +680,7 @@ func (ContainerSuite) TestExecWithUser(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestExecWithoutUser(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	res, err := c.Container().
+	res, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithUser("daemon").
 		WithoutUser().
@@ -693,7 +694,7 @@ func (ContainerSuite) TestExecWithoutUser(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := c.Container().From(alpineImage)
+	base := sdkcore.NewQuery(c).Container().From(alpineImage)
 	withEntry := base.WithEntrypoint([]string{"sh"})
 
 	t.Run("before", func(ctx context.Context, t *testctx.T) {
@@ -709,7 +710,7 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 	})
 
 	t.Run("used", func(ctx context.Context, t *testctx.T) {
-		used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
+		used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}, sdkcore.ContainerWithExecOpts{
 			UseEntrypoint: true,
 		}).Stdout(ctx)
 		require.NoError(t, err)
@@ -717,7 +718,7 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 	})
 
 	t.Run("prepended to exec", func(ctx context.Context, t *testctx.T) {
-		_, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
+		_, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, sdkcore.ContainerWithExecOpts{
 			UseEntrypoint: true,
 		}).Sync(ctx)
 		require.Error(t, err)
@@ -734,7 +735,7 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 		removed, err := base.
 			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}).
-			WithExec(nil, dagger.ContainerWithExecOpts{
+			WithExec(nil, sdkcore.ContainerWithExecOpts{
 				UseEntrypoint: true,
 			}).
 			Stdout(ctx)
@@ -745,10 +746,10 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 	t.Run("kept default args", func(ctx context.Context, t *testctx.T) {
 		kept, err := base.
 			WithDefaultArgs([]string{"foobar"}).
-			WithEntrypoint([]string{"echo"}, dagger.ContainerWithEntrypointOpts{
+			WithEntrypoint([]string{"echo"}, sdkcore.ContainerWithEntrypointOpts{
 				KeepDefaultArgs: true,
 			}).
-			WithExec(nil, dagger.ContainerWithExecOpts{
+			WithExec(nil, sdkcore.ContainerWithExecOpts{
 				UseEntrypoint: true,
 			}).
 			Stdout(ctx)
@@ -768,12 +769,12 @@ func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.
 	c := connect(ctx, t)
 
 	t.Run("cleared entrypoint", func(ctx context.Context, t *testctx.T) {
-		res, err := c.Container().
+		res, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			// if not unset this would return an error
 			WithEntrypoint([]string{"foo"}).
 			WithoutEntrypoint().
-			WithExec([]string{"echo", "-n", "foobar"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"echo", "-n", "foobar"}, sdkcore.ContainerWithExecOpts{
 				UseEntrypoint: true,
 			}).
 			Stdout(ctx)
@@ -782,7 +783,7 @@ func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.
 	})
 
 	t.Run("cleared entrypoint with default args", func(ctx context.Context, t *testctx.T) {
-		res, err := c.Container().
+		res, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithEntrypoint([]string{"foo"}).
 			WithDefaultArgs([]string{"echo", "-n", "foobar"}).
@@ -793,11 +794,11 @@ func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.
 	})
 
 	t.Run("cleared entrypoint without default args", func(ctx context.Context, t *testctx.T) {
-		res, err := c.Container().
+		res, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithEntrypoint([]string{"foo"}).
 			WithDefaultArgs([]string{"echo", "-n", "foobar"}).
-			WithoutEntrypoint(dagger.ContainerWithoutEntrypointOpts{
+			WithoutEntrypoint(sdkcore.ContainerWithoutEntrypointOpts{
 				KeepDefaultArgs: true,
 			}).
 			WithExec(nil).
@@ -898,12 +899,12 @@ func (ContainerSuite) TestWithDefaultArgs(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestExecWithoutDefaultArgs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	res, err := c.Container().
+	res, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithEntrypoint([]string{"echo", "-n"}).
 		WithDefaultArgs([]string{"foo"}).
 		WithoutDefaultArgs().
-		WithExec(nil, dagger.ContainerWithExecOpts{
+		WithExec(nil, sdkcore.ContainerWithExecOpts{
 			UseEntrypoint: true,
 		}).
 		Stdout(ctx)
@@ -1087,7 +1088,7 @@ func (ContainerSuite) TestWithEnvVariableExpand(ctx context.Context, t *testctx.
 	c := connect(ctx, t)
 
 	t.Run("add env var without expansion", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("FOO", "foo:$PATH").
 			WithExec([]string{"printenv", "FOO"}).
@@ -1098,13 +1099,13 @@ func (ContainerSuite) TestWithEnvVariableExpand(ctx context.Context, t *testctx.
 	})
 
 	t.Run("add env var with expansion", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("USER_PATH", "/opt").
 			WithEnvVariable(
 				"PATH",
 				"${USER_PATH}/bin:$PATH",
-				dagger.ContainerWithEnvVariableOpts{
+				sdkcore.ContainerWithEnvVariableOpts{
 					Expand: true,
 				},
 			).
@@ -1122,7 +1123,7 @@ func (ContainerSuite) TestWithEnvVariableExpand(ctx context.Context, t *testctx.
 func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	t.Run("cache ignores value changes", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := c.Container().From(alpineImage)
+		base := sdkcore.NewQuery(c).Container().From(alpineImage)
 
 		run := func(runID string) string {
 			out, err := base.
@@ -1141,7 +1142,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	t.Run("cache ignores value changes through from", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		run := func(runID string) string {
-			out, err := c.Container().
+			out, err := sdkcore.NewQuery(c).Container().
 				WithVolatileVariable("RUN_ID", runID).
 				From(alpineImage).
 				WithExec([]string{"sh", "-c", "head -c 32 /dev/random | sha256sum | cut -d ' ' -f1"}).
@@ -1158,7 +1159,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	t.Run("rerun sees latest value when another input changes", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		run := func(marker, runID string) string {
-			out, err := c.Container().
+			out, err := sdkcore.NewQuery(c).Container().
 				From(alpineImage).
 				WithNewFile("/marker", marker).
 				WithVolatileVariable("RUN_ID", runID).
@@ -1176,7 +1177,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 
 	t.Run("visibility excludes volatile vars", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("PERSIST", "persist").
 			WithVolatileVariable("VOL", "volatile")
@@ -1204,7 +1205,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 
 	t.Run("volatile value overrides persistent env and can be removed", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("FOO", "persist").
 			WithVolatileVariable("FOO", "first").
@@ -1228,7 +1229,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 
 	t.Run("removing a volatile variable with no persistent fallback unsets it", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithVolatileVariable("FOO", "volatile").
 			WithoutVolatileVariable("FOO").
@@ -1240,7 +1241,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 
 	t.Run("service start does not see volatile vars", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		svc := c.Container().
+		svc := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithDefaultArgs([]string{"sh", "-c", `test -z "$VOL" && sleep 1`}).
 			WithVolatileVariable("VOL", "volatile").
@@ -1254,7 +1255,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		imagePath := filepath.Join(t.TempDir(), identity.NewID()+".tar")
 
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("PERSIST", "persist").
 			WithVolatileVariable("VOL", "volatile")
@@ -1279,10 +1280,10 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 
 	t.Run("expand rejects volatile vars", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithVolatileVariable("RUN_ID", "123").
-			WithExec([]string{"sh", "-c", `test "${RUN_ID}" = "123"`}, dagger.ContainerWithExecOpts{Expand: true}).
+			WithExec([]string{"sh", "-c", `test "${RUN_ID}" = "123"`}, sdkcore.ContainerWithExecOpts{Expand: true}).
 			Sync(ctx)
 
 		requireErrOut(t, err, `expand cannot be used with volatile env variable "RUN_ID"`)
@@ -1290,10 +1291,10 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 
 	t.Run("with env variable expand rejects volatile vars", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithVolatileVariable("RUN_ID", "123").
-			WithEnvVariable("COPY", "$RUN_ID", dagger.ContainerWithEnvVariableOpts{Expand: true}).
+			WithEnvVariable("COPY", "$RUN_ID", sdkcore.ContainerWithEnvVariableOpts{Expand: true}).
 			Sync(ctx)
 
 		requireErrOut(t, err, `expand cannot be used with volatile env variable "RUN_ID"`)
@@ -1304,7 +1305,7 @@ func (ContainerSuite) TestLabel(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("container with new label", func(ctx context.Context, t *testctx.T) {
-		label, err := c.Container().From(alpineImage).WithLabel("FOO", "BAR").Label(ctx, "FOO")
+		label, err := sdkcore.NewQuery(c).Container().From(alpineImage).WithLabel("FOO", "BAR").Label(ctx, "FOO")
 
 		require.NoError(t, err)
 		require.Contains(t, label, "BAR")
@@ -1337,35 +1338,35 @@ func (ContainerSuite) TestLabel(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("container without label", func(ctx context.Context, t *testctx.T) {
-		label, err := c.Container().From("nginx").WithoutLabel("maintainer").Label(ctx, "maintainer")
+		label, err := sdkcore.NewQuery(c).Container().From("nginx").WithoutLabel("maintainer").Label(ctx, "maintainer")
 
 		require.NoError(t, err)
 		require.Empty(t, label)
 	})
 
 	t.Run("container replace label", func(ctx context.Context, t *testctx.T) {
-		label, err := c.Container().From("nginx").WithLabel("maintainer", "bar").Label(ctx, "maintainer")
+		label, err := sdkcore.NewQuery(c).Container().From("nginx").WithLabel("maintainer", "bar").Label(ctx, "maintainer")
 
 		require.NoError(t, err)
 		require.Contains(t, label, "bar")
 	})
 
 	t.Run("container with new label - nil panics", func(ctx context.Context, t *testctx.T) {
-		label, err := c.Container().WithLabel("FOO", "BAR").Label(ctx, "FOO")
+		label, err := sdkcore.NewQuery(c).Container().WithLabel("FOO", "BAR").Label(ctx, "FOO")
 
 		require.NoError(t, err)
 		require.Contains(t, label, "BAR")
 	})
 
 	t.Run("container label - nil panics", func(ctx context.Context, t *testctx.T) {
-		label, err := c.Container().Label(ctx, "FOO")
+		label, err := sdkcore.NewQuery(c).Container().Label(ctx, "FOO")
 
 		require.NoError(t, err)
 		require.Empty(t, label)
 	})
 
 	t.Run("container without label - nil panics", func(ctx context.Context, t *testctx.T) {
-		label, err := c.Container().WithoutLabel("maintainer").Label(ctx, "maintainer")
+		label, err := sdkcore.NewQuery(c).Container().WithoutLabel("maintainer").Label(ctx, "maintainer")
 
 		require.NoError(t, err)
 		require.Empty(t, label)
@@ -1777,12 +1778,12 @@ func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	cache := c.CacheVolume(t.Name())
+	cache := sdkcore.NewQuery(c).CacheVolume(t.Name())
 
 	saveCache := preventCacheMountPrune(c, t, cache)
 
 	rand1 := identity.NewID()
-	out1, err := c.Container().
+	out1, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCache).
 		WithEnvVariable("RAND", rand1).
@@ -1793,7 +1794,7 @@ func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
 	require.Equal(t, rand1+"\n", out1)
 
 	rand2 := identity.NewID()
-	out2, err := c.Container().
+	out2, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCache).
 		WithEnvVariable("RAND", rand2).
@@ -1807,20 +1808,20 @@ func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	cache := c.CacheVolume(t.Name())
+	cache := sdkcore.NewQuery(c).CacheVolume(t.Name())
 
-	srcDir := c.Directory().
+	srcDir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("some-dir/sub-file", "initial-content\n").
 		Directory("some-dir")
 
-	saveCache := preventCacheMountPrune(c, t, cache, dagger.ContainerWithMountedCacheOpts{Source: srcDir})
+	saveCache := preventCacheMountPrune(c, t, cache, sdkcore.ContainerWithMountedCacheOpts{Source: srcDir})
 
 	rand1 := identity.NewID()
-	out1, err := c.Container().
+	out1, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCache).
 		WithEnvVariable("RAND", rand1).
-		WithMountedCache("/mnt/cache", cache, dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache("/mnt/cache", cache, sdkcore.ContainerWithMountedCacheOpts{
 			Source: srcDir,
 		}).
 		WithExec([]string{"sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"}).
@@ -1829,11 +1830,11 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 	require.Equal(t, "initial-content\n"+rand1+"\n", out1)
 
 	rand2 := identity.NewID()
-	out2, err := c.Container().
+	out2, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCache).
 		WithEnvVariable("RAND", rand2).
-		WithMountedCache("/mnt/cache", cache, dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache("/mnt/cache", cache, sdkcore.ContainerWithMountedCacheOpts{
 			Source: srcDir,
 		}).
 		WithExec([]string{"sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"}).
@@ -1845,8 +1846,8 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	output := func(opts []dagger.ContainerWithMountedTempOpts) (string, error) {
-		o, err := c.Container().
+	output := func(opts []sdkcore.ContainerWithMountedTempOpts) (string, error) {
+		o, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedTemp("/mnt/tmp", opts...).
 			WithExec([]string{"grep", "/mnt/tmp", "/proc/mounts"}).
@@ -1856,7 +1857,7 @@ func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 	}
 
 	t.Run("default", func(ctx context.Context, t *testctx.T) {
-		output, err := output([]dagger.ContainerWithMountedTempOpts{})
+		output, err := output([]sdkcore.ContainerWithMountedTempOpts{})
 
 		require.NoError(t, err)
 		require.Contains(t, output, "tmpfs /mnt/tmp tmpfs")
@@ -1864,7 +1865,7 @@ func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("sized", func(ctx context.Context, t *testctx.T) {
-		output, err := output([]dagger.ContainerWithMountedTempOpts{
+		output, err := output([]sdkcore.ContainerWithMountedTempOpts{
 			{Size: 4000},
 		})
 
@@ -1876,12 +1877,12 @@ func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir := c.Directory().
+	dir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("some-file", "some-content").
 		WithNewFile("some-dir/sub-file", "sub-content").
 		Directory("some-dir")
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithDirectory("with-dir", dir)
@@ -1897,10 +1898,10 @@ func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "sub-content", contents)
 
 	// Test with a mount
-	mount := c.Directory().
+	mount := sdkcore.NewQuery(c).Directory().
 		WithNewFile("mounted-file", "mounted-content")
 
-	ctr = c.Container().
+	ctr = sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithMountedDirectory("mnt/mount", mount).
@@ -1916,11 +1917,11 @@ func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "sub-content", contents)
 
 	// Test with a relative mount
-	mnt := c.Directory().WithNewDirectory("/a/b/c")
-	ctr = c.Container().
+	mnt := sdkcore.NewQuery(c).Directory().WithNewDirectory("/a/b/c")
+	ctr = sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/mnt", mnt)
-	dir = c.Directory().
+	dir = sdkcore.NewQuery(c).Directory().
 		WithNewDirectory("/foo").
 		WithNewFile("/foo/some-file", "some-content")
 	ctr = ctr.WithDirectory("/mnt/a/b/foo", dir)
@@ -1930,19 +1931,19 @@ func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "some-content", contents)
 
 	t.Run("chains preserve layered semantics", func(ctx context.Context, t *testctx.T) {
-		srcA := c.Directory().
+		srcA := sdkcore.NewQuery(c).Directory().
 			WithNewFile("a.txt", "a").
 			WithNewFile("conflict.txt", "a").
 			WithNewFile("skip.txt", "skip")
-		srcB := c.Directory().
+		srcB := sdkcore.NewQuery(c).Directory().
 			WithNewFile("b.txt", "b")
-		srcC := c.Directory().
+		srcC := sdkcore.NewQuery(c).Directory().
 			WithNewFile("c.txt", "c").
 			WithNewFile("conflict.txt", "c")
 
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
-			WithDirectory("/work", srcA, dagger.ContainerWithDirectoryOpts{Exclude: []string{"skip.txt"}}).
+			WithDirectory("/work", srcA, sdkcore.ContainerWithDirectoryOpts{Exclude: []string{"skip.txt"}}).
 			WithDirectory("/work/nested", srcB).
 			WithDirectory("/work", srcC)
 
@@ -1955,14 +1956,14 @@ func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("chains into mounted directory", func(ctx context.Context, t *testctx.T) {
-		mount := c.Directory().
+		mount := sdkcore.NewQuery(c).Directory().
 			WithNewFile("base.txt", "base")
-		srcA := c.Directory().
+		srcA := sdkcore.NewQuery(c).Directory().
 			WithNewFile("a.txt", "a")
-		srcB := c.Directory().
+		srcB := sdkcore.NewQuery(c).Directory().
 			WithNewFile("b.txt", "b")
 
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/mnt", mount).
 			WithDirectory("/mnt/a", srcA).
@@ -1977,11 +1978,11 @@ func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.Directory().
+	file := sdkcore.NewQuery(c).Directory().
 		WithNewFile("some-file", "some-content").
 		File("some-file")
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithFile("target-file", file)
@@ -2000,7 +2001,7 @@ func (ContainerSuite) TestWithFile(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithoutPath(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithNewFile("moo", "").
@@ -2059,7 +2060,7 @@ func (ContainerSuite) TestWithoutPath(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithNewFile("xyz", "").
@@ -2101,15 +2102,15 @@ func (ContainerSuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file1 := c.Directory().
+	file1 := sdkcore.NewQuery(c).Directory().
 		WithNewFile("first-file", "file1 content").
 		File("first-file")
-	file2 := c.Directory().
+	file2 := sdkcore.NewQuery(c).Directory().
 		WithNewFile("second-file", "file2 content").
 		File("second-file")
-	files := []*dagger.File{file1, file2}
+	files := []*sdkcore.File{file1, file2}
 
-	check := func(ctx context.Context, t *testctx.T, ctr *dagger.Container) {
+	check := func(ctx context.Context, t *testctx.T, ctr *sdkcore.Container) {
 		contents, err := ctr.WithExec([]string{"cat", "/myfiles/first-file"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -2122,25 +2123,25 @@ func (ContainerSuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 	}
 
 	t.Run("no trailing slash", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithFiles("myfiles", files)
 		check(ctx, t, ctr)
 	})
 
 	t.Run("trailing slash", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithFiles("myfiles/", files)
 		check(ctx, t, ctr)
 	})
 
 	t.Run("inherit owner", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().From(alpineImage).
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
 			WithUser("auser:agroup").
-			WithFiles("/myfiles", files, dagger.ContainerWithFilesOpts{InheritOwner: true})
+			WithFiles("/myfiles", files, sdkcore.ContainerWithFilesOpts{InheritOwner: true})
 
 		out, err := ctr.
 			WithUser("root").
@@ -2154,15 +2155,15 @@ func (ContainerSuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithFilesAbsolute(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file1 := c.Directory().
+	file1 := sdkcore.NewQuery(c).Directory().
 		WithNewFile("first-file", "file1 content").
 		File("first-file")
-	file2 := c.Directory().
+	file2 := sdkcore.NewQuery(c).Directory().
 		WithNewFile("second-file", "file2 content").
 		File("second-file")
-	files := []*dagger.File{file1, file2}
+	files := []*sdkcore.File{file1, file2}
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/work").
 		WithFiles("/opt/myfiles", files)
@@ -2184,13 +2185,13 @@ func (ContainerSuite) TestWithFilesNested(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Create a directory with a nested file
-	dir := c.Directory().
+	dir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("/sub/file", "nested content").
 		Directory("/sub")
 	file := dir.File("file")
 
 	// WithFile should place the file directly at the target path
-	ctrWithFile := c.Container().
+	ctrWithFile := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithFile("/tmp", file)
 	filesWithFile, err := ctrWithFile.Directory("/tmp").Glob(ctx, "**/*")
@@ -2198,9 +2199,9 @@ func (ContainerSuite) TestWithFilesNested(ctx context.Context, t *testctx.T) {
 	require.Equal(t, []string{"file"}, filesWithFile)
 
 	// WithFiles should place the file at its absolute path under the target
-	ctrWithFiles := c.Container().
+	ctrWithFiles := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
-		WithFiles("/tmp", []*dagger.File{file})
+		WithFiles("/tmp", []*sdkcore.File{file})
 	filesWithFiles, err := ctrWithFiles.Directory("/tmp").Glob(ctx, "**/*")
 	require.NoError(t, err)
 	require.Equal(t, []string{"file"}, filesWithFiles)
@@ -2209,7 +2210,7 @@ func (ContainerSuite) TestWithFilesNested(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithNewFile("some-file", "some-content")
@@ -2228,7 +2229,7 @@ func (ContainerSuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	scratchID, err := c.Directory().ID(ctx)
+	scratchID, err := sdkcore.NewQuery(c).Directory().ID(ctx)
 	require.NoError(t, err)
 
 	dirRes, err := testutil.QueryWithClient[struct {
@@ -2313,11 +2314,11 @@ func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) 
 func (ContainerSuite) TestReplacedMounts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	lower := c.Directory().WithNewFile("some-file", "lower-content")
+	lower := sdkcore.NewQuery(c).Directory().WithNewFile("some-file", "lower-content")
 
-	upper := c.Directory().WithNewFile("some-file", "upper-content")
+	upper := sdkcore.NewQuery(c).Directory().WithNewFile("some-file", "upper-content")
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/mnt/dir", lower)
 
@@ -2350,7 +2351,7 @@ func (ContainerSuite) TestReplacedMounts(ctx context.Context, t *testctx.T) {
 		require.Empty(t, mnts)
 	})
 
-	clobberedDir := c.Directory().WithNewFile("some-file", "clobbered-content")
+	clobberedDir := sdkcore.NewQuery(c).Directory().WithNewFile("some-file", "clobbered-content")
 	clobbered := replaced.WithMountedDirectory("/mnt", clobberedDir)
 
 	t.Run("replacing parent of a mount clobbers child", func(ctx context.Context, t *testctx.T) {
@@ -2363,7 +2364,7 @@ func (ContainerSuite) TestReplacedMounts(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "clobbered-content", out)
 	})
 
-	clobberedSubDir := c.Directory().WithNewFile("some-file", "clobbered-sub-content")
+	clobberedSubDir := sdkcore.NewQuery(c).Directory().WithNewFile("some-file", "clobbered-sub-content")
 	clobberedSub := clobbered.WithMountedDirectory("/mnt/dir", clobberedSubDir)
 
 	t.Run("restoring mount under clobbered mount", func(ctx context.Context, t *testctx.T) {
@@ -2992,7 +2993,7 @@ func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 
 	// Ensure the bare second image is already cached. The later From must not
 	// merge with it because the mounted directory is preserved across From.
-	_, err := c.Container().From("golang:1.18.2-alpine").Sync(ctx)
+	_, err := sdkcore.NewQuery(c).Container().From("golang:1.18.2-alpine").Sync(ctx)
 	require.NoError(t, err)
 
 	dirRes, err := testutil.QueryWithClient[struct {
@@ -3055,13 +3056,13 @@ func (ContainerSuite) TestPublish(ctx context.Context, t *testctx.T) {
 	testRef := registryRef("container-publish")
 
 	args := []string{"echo", "im-a-default-arg"}
-	ctr := c.Container().From(alpineImage).WithDefaultArgs(args)
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithDefaultArgs(args)
 	pushedRef, err := ctr.Publish(ctx, testRef)
 	require.NoError(t, err)
 	require.NotEqual(t, testRef, pushedRef)
 	require.Contains(t, pushedRef, "@sha256:")
 
-	pulledCtr := c.Container().From(pushedRef)
+	pulledCtr := sdkcore.NewQuery(c).Container().From(pushedRef)
 	contents, err := pulledCtr.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(contents))
@@ -3093,16 +3094,16 @@ func (ContainerSuite) TestPublishWithDirectoryPreservesLayers(ctx context.Contex
 		})
 	}
 
-	ctr := c.Container()
+	ctr := sdkcore.NewQuery(c).Container()
 	for _, source := range sources {
-		dir := c.Directory().WithNewFile(source.file, source.contents)
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile(source.file, source.contents)
 		ctr = ctr.WithDirectory(source.path, dir)
 	}
 
 	pushedRef, err := ctr.Publish(ctx, registryRef("container-publish-with-directory-layers"))
 	require.NoError(t, err)
 
-	pulledCtr := c.Container().From(pushedRef)
+	pulledCtr := sdkcore.NewQuery(c).Container().From(pushedRef)
 	for _, source := range sources {
 		contents, err := pulledCtr.File(path.Join(source.path, source.file)).Contents(ctx)
 		require.NoError(t, err)
@@ -3126,18 +3127,18 @@ func (ContainerSuite) TestPublishWithChangesPreservesBaseLayers(ctx context.Cont
 	c := connect(ctx, t)
 
 	const seedLayers = 3
-	seed := c.Container()
+	seed := sdkcore.NewQuery(c).Container()
 	for i := 1; i <= seedLayers; i++ {
 		name := fmt.Sprintf("seed-%02d", i)
-		dir := c.Directory().WithNewFile(name+".txt", name)
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile(name+".txt", name)
 		seed = seed.WithDirectory("/seed/"+name, dir)
 	}
-	seed = seed.WithDirectory("/repo", c.Directory().WithNewFile("changed.txt", "old\n"))
+	seed = seed.WithDirectory("/repo", sdkcore.NewQuery(c).Directory().WithNewFile("changed.txt", "old\n"))
 
 	seedRef, err := seed.Publish(ctx, registryRef("container-publish-with-changes-seed"))
 	require.NoError(t, err)
 
-	pulledSeed := c.Container().From(seedRef)
+	pulledSeed := sdkcore.NewQuery(c).Container().From(seedRef)
 	seedRootfs := pulledSeed.Rootfs()
 	changedRootfs := seedRootfs.
 		WithNewFile("/repo/changed.txt", "new\n").
@@ -3149,11 +3150,11 @@ func (ContainerSuite) TestPublishWithChangesPreservesBaseLayers(ctx context.Cont
 		Publish(ctx, registryRef("container-publish-with-changes-layers"))
 	require.NoError(t, err)
 
-	changedContents, err := c.Container().From(withChangesRef).File("/repo/changed.txt").Contents(ctx)
+	changedContents, err := sdkcore.NewQuery(c).Container().From(withChangesRef).File("/repo/changed.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "new\n", changedContents)
 
-	addedContents, err := c.Container().From(withChangesRef).File("/repo/added.txt").Contents(ctx)
+	addedContents, err := sdkcore.NewQuery(c).Container().From(withChangesRef).File("/repo/added.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "added\n", addedContents)
 
@@ -3196,7 +3197,7 @@ func (ContainerSuite) TestPublishWithChangesPreservesBaseLayers(ctx context.Cont
 func (ContainerSuite) TestPublishScratchRootFSHasNoLayers(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().WithRootfs(c.Directory())
+	ctr := sdkcore.NewQuery(c).Container().WithRootfs(sdkcore.NewQuery(c).Directory())
 	pushedRef, err := ctr.Publish(ctx, registryRef("container-publish-scratch-rootfs"))
 	require.NoError(t, err)
 
@@ -3214,8 +3215,8 @@ func (ContainerSuite) TestPublishScratchRootFSHasNoLayers(ctx context.Context, t
 }
 
 func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
-	build := func(c *dagger.Client, platform dagger.Platform) *dagger.Container {
-		return c.Container(dagger.ContainerOpts{Platform: platform}).
+	build := func(c *dagger.Client, platform sdkcore.Platform) *sdkcore.Container {
+		return sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{Platform: platform}).
 			From(alpineImage).
 			WithAnnotation("org.opencontainers.image.version", "v0.1.2")
 	}
@@ -3251,8 +3252,8 @@ func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
 
 			testRef := registryRef("container-annotations")
 
-			pushedRef, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
-				PlatformVariants: []*dagger.Container{
+			pushedRef, err := sdkcore.NewQuery(c).Container().Publish(ctx, testRef, sdkcore.ContainerPublishOpts{
+				PlatformVariants: []*sdkcore.Container{
 					build(c, "linux/amd64"),
 					build(c, "linux/arm64"),
 				},
@@ -3327,9 +3328,9 @@ func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
 				imageTar := filepath.Join(dest, "image.tar")
 
 				if asTarball {
-					_, err := c.Container().
-						AsTarball(dagger.ContainerAsTarballOpts{
-							PlatformVariants: []*dagger.Container{
+					_, err := sdkcore.NewQuery(c).Container().
+						AsTarball(sdkcore.ContainerAsTarballOpts{
+							PlatformVariants: []*sdkcore.Container{
 								build(c, "linux/amd64"),
 								build(c, "linux/arm64"),
 							},
@@ -3337,8 +3338,8 @@ func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
 						Export(ctx, imageTar)
 					require.NoError(t, err)
 				} else {
-					_, err := c.Container().Export(ctx, imageTar, dagger.ContainerExportOpts{
-						PlatformVariants: []*dagger.Container{
+					_, err := sdkcore.NewQuery(c).Container().Export(ctx, imageTar, sdkcore.ContainerExportOpts{
+						PlatformVariants: []*sdkcore.Container{
 							build(c, "linux/amd64"),
 							build(c, "linux/arm64"),
 						},
@@ -3380,9 +3381,9 @@ func (ContainerSuite) TestExecFromScratch(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// execute it from scratch, where there is no default platform, make sure it works and can be pushed
-	execBusybox := c.Container().
+	execBusybox := sdkcore.NewQuery(c).Container().
 		// /bin/busybox is a static binary
-		WithMountedFile("/busybox", c.Container().From("busybox:musl").File("/bin/busybox")).
+		WithMountedFile("/busybox", sdkcore.NewQuery(c).Container().From("busybox:musl").File("/bin/busybox")).
 		WithExec([]string{"/busybox"})
 
 	_, err := execBusybox.Stdout(ctx)
@@ -3399,11 +3400,11 @@ func (ContainerSuite) TestMultipleMounts(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "two"), []byte("2"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "three"), []byte("3"), 0o600))
 
-	one := c.Host().Directory(dir).File("one")
-	two := c.Host().Directory(dir).File("two")
-	three := c.Host().Directory(dir).File("three")
+	one := sdkcore.NewQuery(c).Host().Directory(dir).File("one")
+	two := sdkcore.NewQuery(c).Host().Directory(dir).File("two")
+	three := sdkcore.NewQuery(c).Host().Directory(dir).File("three")
 
-	build := c.Container().From(alpineImage).
+	build := sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile("/example/one", one).
 		WithMountedFile("/example/two", two).
 		WithMountedFile("/example/three", three)
@@ -3424,7 +3425,7 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 	entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
-	ctr := c.Container().From(alpineImage).
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithEntrypoint(entrypoint)
 
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
@@ -3511,7 +3512,7 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 // NOTE: more test coverage of Container.AsTarball are in TestContainerExport and TestContainerMultiPlatformExport
 func (ContainerSuite) TestAsTarball(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().From(alpineImage)
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage)
 	output, err := ctr.
 		WithMountedFile("/foo.tar", ctr.AsTarball()).
 		WithExec([]string{"apk", "add", "file"}).
@@ -3523,7 +3524,7 @@ func (ContainerSuite) TestAsTarball(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestAsTarballCached(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().From(alpineImage)
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage)
 	first, err := ctr.
 		WithMountedFile("/foo.tar", ctr.AsTarball()).
 		WithExec([]string{"sha256sum", "/foo.tar"}).
@@ -3535,7 +3536,7 @@ func (ContainerSuite) TestAsTarballCached(ctx context.Context, t *testctx.T) {
 
 	// setup a second client, so we don't share the dagql cache
 	c2 := connect(ctx, t)
-	ctr2 := c2.Container().From(alpineImage)
+	ctr2 := sdkcore.NewQuery(c2).Container().From(alpineImage)
 	second, err := ctr2.
 		WithMountedFile("/foo.tar", ctr2.AsTarball()).
 		WithExec([]string{"sha256sum", "/foo.tar"}).
@@ -3549,7 +3550,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("OCI", func(ctx context.Context, t *testctx.T) {
-		pf, err := c.DefaultPlatform(ctx)
+		pf, err := sdkcore.NewQuery(c).DefaultPlatform(ctx)
 		require.NoError(t, err)
 
 		platform, err := platforms.Parse(string(pf))
@@ -3579,7 +3580,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 		cfgYaml, err := yaml.Marshal(config)
 		require.NoError(t, err)
 
-		apko := c.Container().
+		apko := sdkcore.NewQuery(c).Container().
 			From("cgr.dev/chainguard/apko:latest").
 			WithNewFile("config.yml", string(cfgYaml))
 
@@ -3591,7 +3592,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 			}).
 			File("output.tar")
 
-		imported := c.Container().Import(imageFile)
+		imported := sdkcore.NewQuery(c).Container().Import(imageFile)
 
 		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -3599,9 +3600,9 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("Docker", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
-			Import(c.Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(dagger.ContainerAsTarballOpts{
-				MediaTypes: dagger.ImageMediaTypesDockerMediaTypes,
+		out, err := sdkcore.NewQuery(c).Container().
+			Import(sdkcore.NewQuery(c).Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(sdkcore.ContainerAsTarballOpts{
+				MediaTypes: sdkcore.ImageMediaTypesDockerMediaTypes,
 			})).
 			WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -3613,7 +3614,7 @@ func (ContainerSuite) TestFromImagePlatform(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	imageRef := alpineAmd
-	var desiredPlatform dagger.Platform = "linux/amd64"
+	var desiredPlatform sdkcore.Platform = "linux/amd64"
 	targetPlatform := desiredPlatform
 	if runtime.GOARCH == "amd64" {
 		// need a platform that doesn't match the host
@@ -3622,7 +3623,7 @@ func (ContainerSuite) TestFromImagePlatform(ctx context.Context, t *testctx.T) {
 		targetPlatform = "linux/arm64/v8"
 	}
 
-	ctr := c.Container(dagger.ContainerOpts{
+	ctr := sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{
 		Platform: targetPlatform,
 	}).From(imageRef)
 	ctrPlatform, err := ctr.Platform(ctx)
@@ -3633,15 +3634,15 @@ func (ContainerSuite) TestFromImagePlatform(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestFromIDPlatform(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	var targetPlatform dagger.Platform = "linux/arm64/v8"
-	var desiredPlatform dagger.Platform = "linux/arm64"
+	var targetPlatform sdkcore.Platform = "linux/arm64/v8"
+	var desiredPlatform sdkcore.Platform = "linux/arm64"
 
-	id, err := c.Container(dagger.ContainerOpts{
+	id, err := sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{
 		Platform: targetPlatform,
 	}).From(alpineImage).ID(ctx)
 	require.NoError(t, err)
 
-	ctr, err := dagger.Load[*dagger.Container](ctx, c, id)
+	ctr, err := sdkcore.Load[*sdkcore.Container](ctx, sdkcore.NewQuery(c), id)
 	require.NoError(t, err)
 	platform, err := ctr.Platform(ctx)
 	require.NoError(t, err)
@@ -3653,9 +3654,9 @@ func (ContainerSuite) TestMultiPlatformExport(ctx context.Context, t *testctx.T)
 		t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			variants := make([]*dagger.Container, 0, len(platformToUname))
+			variants := make([]*sdkcore.Container, 0, len(platformToUname))
 			for platform, uname := range platformToUname {
-				ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+				ctr := sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{Platform: platform}).
 					From(alpineImage).
 					WithExec([]string{"uname", "-m"}).
 					WithEntrypoint([]string{"echo", uname})
@@ -3665,14 +3666,14 @@ func (ContainerSuite) TestMultiPlatformExport(ctx context.Context, t *testctx.T)
 			dest := filepath.Join(t.TempDir(), "image.tar")
 
 			if useAsTarball {
-				tarFile := c.Container().AsTarball(dagger.ContainerAsTarballOpts{
+				tarFile := sdkcore.NewQuery(c).Container().AsTarball(sdkcore.ContainerAsTarballOpts{
 					PlatformVariants: variants,
 				})
 				actual, err := tarFile.Export(ctx, dest)
 				require.NoError(t, err)
 				require.Equal(t, dest, actual)
 			} else {
-				actual, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
+				actual, err := sdkcore.NewQuery(c).Container().Export(ctx, dest, sdkcore.ContainerExportOpts{
 					PlatformVariants: variants,
 				})
 				require.NoError(t, err)
@@ -3709,7 +3710,7 @@ func (ContainerSuite) TestMultiPlatformExport(ctx context.Context, t *testctx.T)
 				configBytes := readTarFile(t, dest, "blobs/sha256/"+configDigest.Encoded())
 				var config ocispecs.Image
 				require.NoError(t, json.Unmarshal(configBytes, &config))
-				require.Equal(t, []string{"echo", platformToUname[dagger.Platform(platformStr)]}, config.Config.Entrypoint)
+				require.Equal(t, []string{"echo", platformToUname[sdkcore.Platform(platformStr)]}, config.Config.Entrypoint)
 			}
 			for platform := range platformToUname {
 				delete(exportedPlatforms, string(platform))
@@ -3723,9 +3724,9 @@ func (ContainerSuite) TestMultiPlatformExport(ctx context.Context, t *testctx.T)
 func (ContainerSuite) TestMultiPlatformPublish(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
+	variants := make([]*sdkcore.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
-		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+		ctr := sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{Platform: platform}).
 			From(alpineImage).
 			WithExec([]string{"uname", "-m"}).
 			WithDefaultArgs([]string{"echo", uname})
@@ -3734,13 +3735,13 @@ func (ContainerSuite) TestMultiPlatformPublish(ctx context.Context, t *testctx.T
 
 	testRef := registryRef("container-multiplatform-publish")
 
-	publishedRef, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
+	publishedRef, err := sdkcore.NewQuery(c).Container().Publish(ctx, testRef, sdkcore.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
 
 	for platform, uname := range platformToUname {
-		output, err := c.Container(dagger.ContainerOpts{Platform: platform}).
+		output, err := sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{Platform: platform}).
 			From(publishedRef).
 			WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
@@ -3751,9 +3752,9 @@ func (ContainerSuite) TestMultiPlatformPublish(ctx context.Context, t *testctx.T
 func (ContainerSuite) TestMultiPlatformImport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
+	variants := make([]*sdkcore.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
-		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+		ctr := sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{Platform: platform}).
 			From(alpineImage)
 
 		variants = append(variants, ctr)
@@ -3762,15 +3763,15 @@ func (ContainerSuite) TestMultiPlatformImport(ctx context.Context, t *testctx.T)
 	tmp := t.TempDir()
 	imagePath := filepath.Join(tmp, "image.tar")
 
-	actual, err := c.Container().Export(ctx, imagePath, dagger.ContainerExportOpts{
+	actual, err := sdkcore.NewQuery(c).Container().Export(ctx, imagePath, sdkcore.ContainerExportOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
 	require.Equal(t, imagePath, actual)
 
 	for platform, uname := range platformToUname {
-		imported := c.Container(dagger.ContainerOpts{Platform: platform}).
-			Import(c.Host().Directory(tmp).File("image.tar"))
+		imported := sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{Platform: platform}).
+			Import(sdkcore.NewQuery(c).Host().Directory(tmp).File("image.tar"))
 
 		out, err := imported.WithExec([]string{"uname", "-m"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -3781,14 +3782,14 @@ func (ContainerSuite) TestMultiPlatformImport(ctx context.Context, t *testctx.T)
 func (ContainerSuite) TestWithDirectoryToMount(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	mnt := c.Directory().
+	mnt := sdkcore.NewQuery(c).Directory().
 		WithNewDirectory("/top/sub-dir/sub-file").
 		Directory("/top") // <-- the important part!
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/mnt", mnt)
 
-	dir := c.Directory().
+	dir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("/copied-file", "some-content")
 
 	ctr = ctr.WithDirectory("/mnt/sub-dir/copied-dir", dir)
@@ -3807,11 +3808,11 @@ func (ContainerSuite) TestWithDirectoryToMount(ctx context.Context, t *testctx.T
 func (ContainerSuite) TestAddFileSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := c.Container().From(alpineImage).
+	base := sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"sh", "-c", "mkdir -p /target/sub && ln -s /target/sub /link"})
 
 	const want = "hello through a symlink\n"
-	src := c.Directory().WithNewFile("file", want).File("file")
+	src := sdkcore.NewQuery(c).Directory().WithNewFile("file", want).File("file")
 	ctr, err := base.WithFile("/link/file", src).Sync(ctx)
 	require.NoError(t, err)
 
@@ -3824,9 +3825,9 @@ func (ContainerSuite) TestAddFileSymlink(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestAddDirSrcSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	rel := c.Container().From(alpineImage).WithExec([]string{"sh", "-c", "mkdir -p /store/real && echo hi > /store/real/marker.txt && ln -s /store/real /store/link"}).Directory("/store/link")
+	rel := sdkcore.NewQuery(c).Container().From(alpineImage).WithExec([]string{"sh", "-c", "mkdir -p /store/real && echo hi > /store/real/marker.txt && ln -s /store/real /store/link"}).Directory("/store/link")
 
-	out, err := c.Container().From(alpineImage).WithDirectory("/release", rel).WithExec([]string{"cat", "/release/marker.txt"}).Stdout(ctx)
+	out, err := sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/release", rel).WithExec([]string{"cat", "/release/marker.txt"}).Stdout(ctx)
 
 	require.NoError(t, err)
 	require.NotEmpty(t, out)
@@ -3841,14 +3842,14 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 	encodedErrMsg := base64.StdEncoding.EncodeToString([]byte(errMsg))
 
 	t.Run("includes output of failed exec in error", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(
 				`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
 			)}).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
+		var exErr *sdkcore.ExecError
 
 		require.ErrorAs(t, err, &exErr)
 		require.Equal(t, outMsg, exErr.Stdout)
@@ -3856,20 +3857,20 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("includes output of failed exec in error when redirects are enabled", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec(
 				[]string{"sh", "-c", fmt.Sprintf(
 					`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
 				)},
-				dagger.ContainerWithExecOpts{
+				sdkcore.ContainerWithExecOpts{
 					RedirectStdout: "/out",
 					RedirectStderr: "/err",
 				},
 			).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
+		var exErr *sdkcore.ExecError
 
 		require.ErrorAs(t, err, &exErr)
 		require.Equal(t, outMsg, exErr.Stdout)
@@ -3906,16 +3907,16 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 
 		truncMsg := fmt.Sprintf(engineutil.TruncationMessage, extraByteCount)
 
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
-			WithDirectory("/", c.Directory().
+			WithDirectory("/", sdkcore.NewQuery(c).Directory().
 				WithNewFile("encout", encodedOutMsg).
 				WithNewFile("encerr", encodedErrMsg),
 			).
 			WithExec([]string{"sh", "-c", "base64 -d encout >&1; base64 -d encerr >&2; exit 1"}).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
+		var exErr *sdkcore.ExecError
 
 		require.ErrorAs(t, err, &exErr)
 		require.Equal(t, truncMsg+stdoutStr[extraByteCount+len(truncMsg):], exErr.Stdout)
@@ -3927,7 +3928,7 @@ func (ContainerSuite) TestWithRegistryAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	testRef := privateRegistryRef("container-with-registry-auth")
-	container := c.Container().From(alpineImage)
+	container := sdkcore.NewQuery(c).Container().From(alpineImage)
 
 	// Push without credentials should fail
 	_, err := container.Publish(ctx, testRef)
@@ -3935,12 +3936,11 @@ func (ContainerSuite) TestWithRegistryAuth(ctx context.Context, t *testctx.T) {
 
 	for range 2 {
 		c := connect(ctx, t)
-		container := c.Container().From(alpineImage)
+		container := sdkcore.NewQuery(c).Container().From(alpineImage)
 		pushedRef, err := container.
 			WithRegistryAuth(
 				privateRegistryHost,
-				"john",
-				c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+				"john", sdkcore.NewQuery(c).SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
 			).
 			WithEnvVariable("CACHE", time.Now().String()).
 			Publish(ctx, testRef)
@@ -3962,12 +3962,11 @@ func (ContainerSuite) TestWithRegistryAuthDoesNotInvalidateCache(ctx context.Con
 			cacheKey := identity.NewID()
 			run := func() string {
 				c := connect(ctx, t)
-				ctr := c.Container()
+				ctr := sdkcore.NewQuery(c).Container()
 				withAuth := func() {
 					ctr = ctr.WithRegistryAuth(
 						"registry.example.com",
-						"anyuser",
-						c.SetSecret("registry-auth-cache-"+cacheKey, "dummy"),
+						"anyuser", sdkcore.NewQuery(c).SetSecret("registry-auth-cache-"+cacheKey, "dummy"),
 					)
 				}
 				if tc.authBeforeFrom {
@@ -4096,27 +4095,27 @@ func credentials(r *http.Request) (string, string, bool) {
 `
 	)
 
-	tokenLogs := c.CacheVolume("bearer-token-auth-logs-" + identity.NewID())
-	tokenAuthSvc := c.Container().
+	tokenLogs := sdkcore.NewQuery(c).CacheVolume("bearer-token-auth-logs-" + identity.NewID())
+	tokenAuthSvc := sdkcore.NewQuery(c).Container().
 		From("golang:1.26-alpine").
 		WithNewFile("/src/main.go", tokenAuthServer).
 		WithMountedCache("/logs", tokenLogs).
 		WithEnvVariable("GOCACHE", "/tmp/go-cache").
-		WithExposedPort(5001, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5001, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 
-	registryLogs := c.CacheVolume("bearer-registry-logs-" + identity.NewID())
-	registrySvc := c.Container().
+	registryLogs := sdkcore.NewQuery(c).CacheVolume("bearer-registry-logs-" + identity.NewID())
+	registrySvc := sdkcore.NewQuery(c).Container().
 		From("registry:3").
 		WithNewFile("/etc/distribution/config.yml", registryConfig).
 		WithMountedCache("/cache/logs", registryLogs).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
 		AsService()
 
 	devEngine := devEngineContainer(c,
-		func(ctr *dagger.Container) *dagger.Container {
+		func(ctr *sdkcore.Container) *sdkcore.Container {
 			return ctr.
 				WithServiceBinding("registry", registrySvc).
 				WithServiceBinding("tokenauth", tokenAuthSvc)
@@ -4129,11 +4128,11 @@ func credentials(r *http.Request) (string, string, bool) {
 		}),
 	)
 
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	engineSvc, err := sdkcore.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, sdkcore.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	emptyDockerConfig := t.TempDir()
@@ -4147,15 +4146,15 @@ func credentials(r *http.Request) (string, string, bool) {
 
 	publicRef := "registry:5000/public:" + identity.NewID()
 	seedClient := connectNested()
-	_, err = seedClient.Container().
+	_, err = sdkcore.NewQuery(seedClient).Container().
 		From(alpineImage).
 		WithNewFile("/public.txt", "public").
-		WithRegistryAuth("registry:5000", "john", seedClient.SetSecret("seed-registry-password", registryPassword)).
+		WithRegistryAuth("registry:5000", "john", sdkcore.NewQuery(seedClient).SetSecret("seed-registry-password", registryPassword)).
 		Publish(ctx, publicRef)
 	require.NoError(t, err)
 
 	reproClient := connectNested()
-	out, err := reproClient.Container().
+	out, err := sdkcore.NewQuery(reproClient).Container().
 		From(publicRef).
 		WithExec([]string{"cat", "/public.txt"}).
 		Stdout(ctx)
@@ -4163,13 +4162,13 @@ func credentials(r *http.Request) (string, string, bool) {
 	require.Equal(t, "public", strings.TrimSpace(out))
 
 	privateRef := "registry:5000/private:" + identity.NewID()
-	_, err = reproClient.Container().
+	_, err = sdkcore.NewQuery(reproClient).Container().
 		From(alpineImage).
 		WithNewFile("/private.txt", "private").
-		WithRegistryAuth("registry:5000", "john", reproClient.SetSecret("repro-registry-password", registryPassword)).
+		WithRegistryAuth("registry:5000", "john", sdkcore.NewQuery(reproClient).SetSecret("repro-registry-password", registryPassword)).
 		Publish(ctx, privateRef)
 	if err != nil {
-		tokenLog, logErr := c.Container().
+		tokenLog, logErr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedCache("/logs", tokenLogs).
 			WithExec([]string{"sh", "-c", "cat /logs/token.log 2>/dev/null || true"}).
@@ -4186,7 +4185,7 @@ func credentials(r *http.Request) (string, string, bool) {
 func (ContainerSuite) TestPublishAndFromWithRegistryServiceBinding(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	module := func(ctx context.Context, t *testctx.T, devEngine *dagger.Service) *dagger.Container {
+	module := func(ctx context.Context, t *testctx.T, devEngine *sdkcore.Service) *sdkcore.Container {
 		return engineClientContainer(ctx, t, c, devEngine).
 			WithWorkdir("/work").
 			WithNewFile("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
@@ -4203,43 +4202,43 @@ go 1.26.1
 import (
 	"context"
 
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct{}
 
-func (m *Test) Check(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+func (m *Test) Check(ctx context.Context, registry *core.Service, ref string) (string, error) {
 	return publishAndRead(ctx, registry, ref, registryOptions{})
 }
 
-func (m *Test) CheckHTTP(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+func (m *Test) CheckHTTP(ctx context.Context, registry *core.Service, ref string) (string, error) {
 	return publishAndRead(ctx, registry, ref, registryOptions{
-		protocol: dagger.RegistryProtocolHttp,
+		protocol: core.RegistryProtocolHttp,
 	})
 }
 
-func (m *Test) CheckInsecureTLS(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+func (m *Test) CheckInsecureTLS(ctx context.Context, registry *core.Service, ref string) (string, error) {
 	return publishAndRead(ctx, registry, ref, registryOptions{
 		insecureSkipTLSVerify: true,
 	})
 }
 
-func (m *Test) CheckHttpWithInsecureTLS(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+func (m *Test) CheckHttpWithInsecureTLS(ctx context.Context, registry *core.Service, ref string) (string, error) {
 	return publishAndRead(ctx, registry, ref, registryOptions{
-		protocol:              dagger.RegistryProtocolHttp,
+		protocol:              core.RegistryProtocolHttp,
 		insecureSkipTLSVerify: true,
 	})
 }
 
 type registryOptions struct {
-	protocol              dagger.RegistryProtocol
+	protocol              core.RegistryProtocol
 	insecureSkipTLSVerify bool
 }
 
-func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, opts registryOptions) (string, error) {
+func publishAndRead(ctx context.Context, registry *core.Service, ref string, opts registryOptions) (string, error) {
 	_, err := dag.Container().
 		WithNewFile("/hello.txt", "hello").
-		Publish(ctx, ref, dagger.ContainerPublishOpts{
+		Publish(ctx, ref, core.ContainerPublishOpts{
 			RegistryService:       registry,
 			Protocol:              opts.protocol,
 			InsecureSkipTLSVerify: opts.insecureSkipTLSVerify,
@@ -4249,7 +4248,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 	}
 
 	return dag.Container().
-		From(ref, dagger.ContainerFromOpts{
+		From(ref, core.ContainerFromOpts{
 			RegistryService:       registry,
 			Protocol:              opts.protocol,
 			InsecureSkipTLSVerify: opts.insecureSkipTLSVerify,
@@ -4263,18 +4262,18 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 	t.Run("https", func(ctx context.Context, t *testctx.T) {
 		certGen := newGeneratedCerts(c, "ca")
 		registryCert, registryKey := certGen.newServerCerts("bound-registry")
-		registry := c.Container().
+		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-https-"+identity.NewID())).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-https-"+identity.NewID())).
 			WithFile("/certs/domain.crt", registryCert).
 			WithFile("/certs/domain.key", registryKey).
 			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
 			WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c,
-			func(ctr *dagger.Container) *dagger.Container {
+			func(ctr *sdkcore.Container) *sdkcore.Container {
 				return ctr.WithMountedFile("/usr/local/share/ca-certificates/bound-registry.crt", certGen.caRootCert)
 			},
 			engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg engineconfig.Config) engineconfig.Config {
@@ -4302,10 +4301,10 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 	})
 
 	t.Run("plain http engine config", func(ctx context.Context, t *testctx.T) {
-		registry := c.Container().
+		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-"+identity.NewID())).
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-"+identity.NewID())).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c,
@@ -4332,10 +4331,10 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 	})
 
 	t.Run("registry api option plain http", func(ctx context.Context, t *testctx.T) {
-		registry := c.Container().
+		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-api-"+identity.NewID())).
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-api-"+identity.NewID())).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4357,14 +4356,14 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 	t.Run("registry api option https self signed", func(ctx context.Context, t *testctx.T) {
 		certGen := newGeneratedCerts(c, "ca")
 		registryCert, registryKey := certGen.newServerCerts("bound-registry")
-		registry := c.Container().
+		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-https-insecure-api-"+identity.NewID())).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-https-insecure-api-"+identity.NewID())).
 			WithFile("/certs/domain.crt", registryCert).
 			WithFile("/certs/domain.key", registryKey).
 			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
 			WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4384,10 +4383,10 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 	})
 
 	t.Run("registry api option rejects http with insecure skip tls verify", func(ctx context.Context, t *testctx.T) {
-		registry := c.Container().
+		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-invalid-api-"+identity.NewID())).
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-invalid-api-"+identity.NewID())).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4413,17 +4412,17 @@ func (ContainerSuite) TestWithRegistryAuthFileAndDirectoryAccess(ctx context.Con
 	c := connect(ctx, t)
 
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"
-	registrySvc := c.Container().
+	registrySvc := sdkcore.NewQuery(c).Container().
 		From("registry:2").
 		WithNewFile("/auth/htpasswd", htpasswd).
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+		WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+		AsService(sdkcore.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	devEngine := devEngineContainerAsService(devEngineContainer(c,
-		func(ctr *dagger.Container) *dagger.Container {
+		func(ctr *sdkcore.Container) *sdkcore.Container {
 			return ctr.WithServiceBinding("registry", registrySvc)
 		},
 		engineWithBkConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
@@ -4437,7 +4436,7 @@ func (ContainerSuite) TestWithRegistryAuthFileAndDirectoryAccess(ctx context.Con
 	const authFile = `{"auths":{"registry:5000":{"auth":"am9objp4RmxlamFQZGpydDI1RHZy"}}}` // john:xFlejaPdjrt25Dvr
 	imageRef := "registry:5000/test:" + identity.NewID()
 
-	clientCtr := func() *dagger.Container {
+	clientCtr := func() *sdkcore.Container {
 		return engineClientContainer(ctx, t, c, devEngine).
 			WithNewFile("/docker/config.json", authFile).
 			WithEnvVariable("DOCKER_CONFIG", "/docker")
@@ -4542,12 +4541,12 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 	t.Run("should throw error after the container image modification with directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("some-file", "some-content").
 			WithNewFile("some-dir/sub-file", "sub-content").
 			Directory("some-dir")
 
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithWorkdir("/workdir").
 			WithDirectory("with-dir", dir)
@@ -4575,7 +4574,7 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 	}
 
 	for _, capSet := range []string{"CapPrm", "CapEff", "CapBnd"} {
-		out, err := c.Container().From(alpineImage).
+		out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "libcap"}).
 			WithExec([]string{"sh", "-c", "capsh --decode=$(grep " + capSet + " /proc/self/status | awk '{print $2}')"}).
 			Stdout(ctx)
@@ -4586,9 +4585,9 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 	}
 
 	for _, capSet := range []string{"CapPrm", "CapEff", "CapBnd", "CapInh", "CapAmb"} {
-		out, err := c.Container().From(alpineImage).
+		out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "libcap"}).
-			WithExec([]string{"sh", "-c", "capsh --decode=$(grep " + capSet + " /proc/self/status | awk '{print $2}')"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"sh", "-c", "capsh --decode=$(grep " + capSet + " /proc/self/status | awk '{print $2}')"}, sdkcore.ContainerWithExecOpts{
 				InsecureRootCapabilities: true,
 			}).
 			Stdout(ctx)
@@ -4602,8 +4601,8 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	middleware := func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithMountedCache("/tmp", c.CacheVolume("share-tmp"))
+	middleware := func(ctr *sdkcore.Container) *sdkcore.Container {
+		return ctr.WithMountedCache("/tmp", sdkcore.NewQuery(c).CacheVolume("share-tmp"))
 	}
 
 	// verify the root capabilities setting works by executing dockerd with it and
@@ -4632,15 +4631,15 @@ func (ContainerSuite) TestWithMountedFileOwner(ctx context.Context, t *testctx.T
 		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
-		file := c.Host().Directory(tmp).File("message.txt")
+		file := sdkcore.NewQuery(c).Host().Directory(tmp).File("message.txt")
 
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithMountedFile(name, file, dagger.ContainerWithMountedFileOpts{
+		testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+			return ctr.WithMountedFile(name, file, sdkcore.ContainerWithMountedFileOpts{
 				Owner: owner,
 			})
 		})
-		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
-			return ctr.WithMountedFile(name, file, dagger.ContainerWithMountedFileOpts{
+		testInheritOwnership(ctx, t, c, func(ctr *sdkcore.Container, name string) *sdkcore.Container {
+			return ctr.WithMountedFile(name, file, sdkcore.ContainerWithMountedFileOpts{
 				InheritOwner: true,
 			})
 		})
@@ -4655,10 +4654,10 @@ func (ContainerSuite) TestWithMountedFileOwner(ctx context.Context, t *testctx.T
 		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
-		file := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
+		file := sdkcore.NewQuery(c).Host().Directory(tmp).Directory("subdir").File("message.txt")
 
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithMountedFile(name, file, dagger.ContainerWithMountedFileOpts{
+		testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+			return ctr.WithMountedFile(name, file, sdkcore.ContainerWithMountedFileOpts{
 				Owner: owner,
 			})
 		})
@@ -4674,15 +4673,15 @@ func (ContainerSuite) TestWithMountedDirectoryOwner(ctx context.Context, t *test
 		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
-		dir := c.Host().Directory(tmp)
+		dir := sdkcore.NewQuery(c).Host().Directory(tmp)
 
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
+		testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+			return ctr.WithMountedDirectory(name, dir, sdkcore.ContainerWithMountedDirectoryOpts{
 				Owner: owner,
 			})
 		})
-		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
-			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
+		testInheritOwnership(ctx, t, c, func(ctr *sdkcore.Container, name string) *sdkcore.Container {
+			return ctr.WithMountedDirectory(name, dir, sdkcore.ContainerWithMountedDirectoryOpts{
 				InheritOwner: true,
 			})
 		})
@@ -4697,31 +4696,31 @@ func (ContainerSuite) TestWithMountedDirectoryOwner(ctx context.Context, t *test
 		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
-		dir := c.Host().Directory(tmp).Directory("subdir")
+		dir := sdkcore.NewQuery(c).Host().Directory(tmp).Directory("subdir")
 
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
+		testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+			return ctr.WithMountedDirectory(name, dir, sdkcore.ContainerWithMountedDirectoryOpts{
 				Owner: owner,
 			})
 		})
 	})
 
 	t.Run("permissions", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
-			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
+		dir := sdkcore.NewQuery(c).Directory().
+			WithNewDirectory("perms", sdkcore.DirectoryWithNewDirectoryOpts{
 				Permissions: 0o745,
 			}).
-			WithNewFile("perms/foo", "whee", dagger.DirectoryWithNewFileOpts{
+			WithNewFile("perms/foo", "whee", sdkcore.DirectoryWithNewFileOpts{
 				Permissions: 0o645,
 			}).
 			Directory("perms")
 
-		ctr := c.Container().From(alpineImage).
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"adduser", "-D", "inherituser"}).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
 			WithUser("inherituser").
-			WithMountedDirectory("/data", dir, dagger.ContainerWithMountedDirectoryOpts{
+			WithMountedDirectory("/data", dir, sdkcore.ContainerWithMountedDirectoryOpts{
 				Owner: "auser:agroup",
 			})
 
@@ -4744,15 +4743,15 @@ func (ContainerSuite) TestWithFileOwner(ctx context.Context, t *testctx.T) {
 		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
-		file := c.Host().Directory(tmp).File("message.txt")
+		file := sdkcore.NewQuery(c).Host().Directory(tmp).File("message.txt")
 
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithFile(name, file, dagger.ContainerWithFileOpts{
+		testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+			return ctr.WithFile(name, file, sdkcore.ContainerWithFileOpts{
 				Owner: owner,
 			})
 		})
-		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
-			return ctr.WithFile(name, file, dagger.ContainerWithFileOpts{
+		testInheritOwnership(ctx, t, c, func(ctr *sdkcore.Container, name string) *sdkcore.Container {
+			return ctr.WithFile(name, file, sdkcore.ContainerWithFileOpts{
 				InheritOwner: true,
 			})
 		})
@@ -4767,10 +4766,10 @@ func (ContainerSuite) TestWithFileOwner(ctx context.Context, t *testctx.T) {
 		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
-		file := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
+		file := sdkcore.NewQuery(c).Host().Directory(tmp).Directory("subdir").File("message.txt")
 
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithFile(name, file, dagger.ContainerWithFileOpts{
+		testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+			return ctr.WithFile(name, file, sdkcore.ContainerWithFileOpts{
 				Owner: owner,
 			})
 		})
@@ -4786,15 +4785,15 @@ func (ContainerSuite) TestWithDirectoryOwner(ctx context.Context, t *testctx.T) 
 		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
-		dir := c.Host().Directory(tmp)
+		dir := sdkcore.NewQuery(c).Host().Directory(tmp)
 
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithDirectory(name, dir, dagger.ContainerWithDirectoryOpts{
+		testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+			return ctr.WithDirectory(name, dir, sdkcore.ContainerWithDirectoryOpts{
 				Owner: owner,
 			})
 		})
-		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
-			return ctr.WithDirectory(name, dir, dagger.ContainerWithDirectoryOpts{
+		testInheritOwnership(ctx, t, c, func(ctr *sdkcore.Container, name string) *sdkcore.Container {
+			return ctr.WithDirectory(name, dir, sdkcore.ContainerWithDirectoryOpts{
 				InheritOwner: true,
 			})
 		})
@@ -4809,10 +4808,10 @@ func (ContainerSuite) TestWithDirectoryOwner(ctx context.Context, t *testctx.T) 
 		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
-		dir := c.Host().Directory(tmp).Directory("subdir")
+		dir := sdkcore.NewQuery(c).Host().Directory(tmp).Directory("subdir")
 
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithDirectory(name, dir, dagger.ContainerWithDirectoryOpts{
+		testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+			return ctr.WithDirectory(name, dir, sdkcore.ContainerWithDirectoryOpts{
 				Owner: owner,
 			})
 		})
@@ -4822,37 +4821,37 @@ func (ContainerSuite) TestWithDirectoryOwner(ctx context.Context, t *testctx.T) 
 func (ContainerSuite) TestWithNewFileOwner(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-		return ctr.WithNewFile(name, "", dagger.ContainerWithNewFileOpts{Owner: owner})
+	testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+		return ctr.WithNewFile(name, "", sdkcore.ContainerWithNewFileOpts{Owner: owner})
 	})
-	testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
-		return ctr.WithNewFile(name, "", dagger.ContainerWithNewFileOpts{InheritOwner: true})
+	testInheritOwnership(ctx, t, c, func(ctr *sdkcore.Container, name string) *sdkcore.Container {
+		return ctr.WithNewFile(name, "", sdkcore.ContainerWithNewFileOpts{InheritOwner: true})
 	})
 }
 
 func (ContainerSuite) TestWithMountedCacheOwner(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	cache := c.CacheVolume("test")
+	cache := sdkcore.NewQuery(c).CacheVolume("test")
 
-	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-		return ctr.WithMountedCache(name, cache, dagger.ContainerWithMountedCacheOpts{
+	testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+		return ctr.WithMountedCache(name, cache, sdkcore.ContainerWithMountedCacheOpts{
 			Owner: owner,
 		})
 	})
-	testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
-		return ctr.WithMountedCache(name, cache, dagger.ContainerWithMountedCacheOpts{
+	testInheritOwnership(ctx, t, c, func(ctr *sdkcore.Container, name string) *sdkcore.Container {
+		return ctr.WithMountedCache(name, cache, sdkcore.ContainerWithMountedCacheOpts{
 			InheritOwner: true,
 		})
 	})
 
 	t.Run("permissions (empty)", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().From(alpineImage).
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"adduser", "-D", "inherituser"}).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
 			WithUser("inherituser").
-			WithMountedCache("/data", cache, dagger.ContainerWithMountedCacheOpts{
+			WithMountedCache("/data", cache, sdkcore.ContainerWithMountedCacheOpts{
 				Owner: "auser:agroup",
 			})
 
@@ -4862,21 +4861,21 @@ func (ContainerSuite) TestWithMountedCacheOwner(ctx context.Context, t *testctx.
 	})
 
 	t.Run("permissions (source)", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
-			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
+		dir := sdkcore.NewQuery(c).Directory().
+			WithNewDirectory("perms", sdkcore.DirectoryWithNewDirectoryOpts{
 				Permissions: 0o745,
 			}).
-			WithNewFile("perms/foo", "whee", dagger.DirectoryWithNewFileOpts{
+			WithNewFile("perms/foo", "whee", sdkcore.DirectoryWithNewFileOpts{
 				Permissions: 0o645,
 			}).
 			Directory("perms")
 
-		ctr := c.Container().From(alpineImage).
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"adduser", "-D", "inherituser"}).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
 			WithUser("inherituser").
-			WithMountedCache("/data", cache, dagger.ContainerWithMountedCacheOpts{
+			WithMountedCache("/data", cache, sdkcore.ContainerWithMountedCacheOpts{
 				Source: dir,
 				Owner:  "auser:agroup",
 			})
@@ -4894,15 +4893,15 @@ func (ContainerSuite) TestWithMountedCacheOwner(ctx context.Context, t *testctx.
 func (ContainerSuite) TestWithMountedSecretOwner(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	secret := c.SetSecret("test", "hunter2")
+	secret := sdkcore.NewQuery(c).SetSecret("test", "hunter2")
 
-	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-		return ctr.WithMountedSecret(name, secret, dagger.ContainerWithMountedSecretOpts{
+	testOwnership(t, c, func(ctr *sdkcore.Container, name string, owner string) *sdkcore.Container {
+		return ctr.WithMountedSecret(name, secret, sdkcore.ContainerWithMountedSecretOpts{
 			Owner: owner,
 		})
 	})
-	testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
-		return ctr.WithMountedSecret(name, secret, dagger.ContainerWithMountedSecretOpts{
+	testInheritOwnership(ctx, t, c, func(ctr *sdkcore.Container, name string) *sdkcore.Container {
+		return ctr.WithMountedSecret(name, secret, sdkcore.ContainerWithMountedSecretOpts{
 			InheritOwner: true,
 		})
 	})
@@ -4932,23 +4931,23 @@ func (ContainerSuite) TestParallelMutation(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
-		compression          dagger.ImageLayerCompression
+		compression          sdkcore.ImageLayerCompression
 		expectedOCIMediaType string
 	}{
 		{
-			dagger.ImageLayerCompressionGzip,
+			sdkcore.ImageLayerCompressionGzip,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.ImageLayerCompressionZstd,
+			sdkcore.ImageLayerCompressionZstd,
 			"application/vnd.oci.image.layer.v1.tar+zstd",
 		},
 		{
-			dagger.ImageLayerCompressionUncompressed,
+			sdkcore.ImageLayerCompressionUncompressed,
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			dagger.ImageLayerCompressionEstarGz,
+			sdkcore.ImageLayerCompressionEstarGz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -4956,9 +4955,9 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
-			_, err := c.Container().
+			_, err := sdkcore.NewQuery(c).Container().
 				From(alpineImage).
-				Publish(ctx, ref, dagger.ContainerPublishOpts{
+				Publish(ctx, ref, core.ContainerPublishOpts{
 					ForcedCompression: tc.compression,
 				})
 			require.NoError(t, err)
@@ -4979,9 +4978,9 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			}
 
 			tarPath := filepath.Join(t.TempDir(), "export.tar")
-			_, err = c.Container().
+			_, err = sdkcore.NewQuery(c).Container().
 				From(alpineImage).
-				Export(ctx, tarPath, dagger.ContainerExportOpts{
+				Export(ctx, tarPath, sdkcore.ContainerExportOpts{
 					ForcedCompression: tc.compression,
 				})
 			require.NoError(t, err)
@@ -5007,7 +5006,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
-		mediaTypes           dagger.ImageMediaTypes
+		mediaTypes           sdkcore.ImageMediaTypes
 		expectedOCIMediaType string
 	}{
 		{
@@ -5015,11 +5014,11 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.ImageMediaTypesOcimediaTypes,
+			sdkcore.ImageMediaTypesOcimediaTypes,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.ImageMediaTypesDockerMediaTypes,
+			sdkcore.ImageMediaTypesDockerMediaTypes,
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
@@ -5027,9 +5026,9 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			ref := registryRef("testcontainerpublishmediatypes" + strings.ToLower(string(tc.mediaTypes)))
-			_, err := c.Container().
+			_, err := sdkcore.NewQuery(c).Container().
 				From(alpineImage).
-				Publish(ctx, ref, dagger.ContainerPublishOpts{
+				Publish(ctx, ref, core.ContainerPublishOpts{
 					MediaTypes: tc.mediaTypes,
 				})
 			require.NoError(t, err)
@@ -5053,17 +5052,17 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 				t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
 					tarPath := filepath.Join(t.TempDir(), "export.tar")
 					if useAsTarball {
-						_, err := c.Container().
+						_, err := sdkcore.NewQuery(c).Container().
 							From(alpineImage).
-							AsTarball(dagger.ContainerAsTarballOpts{
+							AsTarball(sdkcore.ContainerAsTarballOpts{
 								MediaTypes: tc.mediaTypes,
 							}).
 							Export(ctx, tarPath)
 						require.NoError(t, err)
 					} else {
-						_, err := c.Container().
+						_, err := sdkcore.NewQuery(c).Container().
 							From(alpineImage).
-							Export(ctx, tarPath, dagger.ContainerExportOpts{
+							Export(ctx, tarPath, sdkcore.ContainerExportOpts{
 								MediaTypes: tc.mediaTypes,
 							})
 						require.NoError(t, err)
@@ -5094,7 +5093,7 @@ func (ContainerSuite) TestFromMergesWithParent(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 
 	// Create a container with envs and pull alpine image on it
-	testCtr := c.Container().
+	testCtr := sdkcore.NewQuery(c).Container().
 		WithEnvVariable("FOO", "BAR").
 		WithEnvVariable("PATH", "/replace/me").
 		WithLabel("moby.buildkit.frontend.caps", "replace-me").
@@ -5135,26 +5134,26 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
-		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
-			for _, compression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionGzip, dagger.ImageLayerCompressionZstd, dagger.ImageLayerCompressionUncompressed} {
+		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOcimediaTypes, sdkcore.ImageMediaTypesDockerMediaTypes} {
+			for _, compression := range []sdkcore.ImageLayerCompression{sdkcore.ImageLayerCompressionGzip, sdkcore.ImageLayerCompressionZstd, sdkcore.ImageLayerCompressionUncompressed} {
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()
 					tmpfile := filepath.Join(tmpdir, fmt.Sprintf("test-%s-%s-%s.tar", dockerVersion, mediaType, compression))
-					_, err := c.Container().From(alpineImage).
+					_, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 						// we need a unique image, otherwise docker load skips it after the first tar load
 						WithExec([]string{"sh", "-c", "echo '" + string(compression) + string(mediaType) + "' > /foo"}).
-						Export(ctx, tmpfile, dagger.ContainerExportOpts{
+						Export(ctx, tmpfile, sdkcore.ContainerExportOpts{
 							MediaTypes:        mediaType,
 							ForcedCompression: compression,
 						})
 					require.NoError(t, err)
 
 					ctr := dockerc.
-						WithMountedFile(path.Join("/", path.Base(tmpfile)), c.Host().File(tmpfile)).
+						WithMountedFile(path.Join("/", path.Base(tmpfile)), sdkcore.NewQuery(c).Host().File(tmpfile)).
 						WithExec([]string{"docker", "load", "-i", "/" + path.Base(tmpfile)})
 
 					output, err := ctr.Stdout(ctx)
-					if dockerVersion == "20.10" && compression == dagger.ImageLayerCompressionZstd {
+					if dockerVersion == "20.10" && compression == sdkcore.ImageLayerCompressionZstd {
 						// zstd support in docker wasn't added until 23, so sanity check that it fails
 						require.Error(t, err)
 					} else {
@@ -5168,8 +5167,8 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 					}
 
 					// also check that buildkit can load+run it too
-					_, err = c.Container().
-						Import(c.Host().File(tmpfile)).
+					_, err = sdkcore.NewQuery(c).Container().
+						Import(sdkcore.NewQuery(c).Host().File(tmpfile)).
 						WithExec([]string{"echo", "hello"}).
 						Sync(ctx)
 					require.NoError(t, err)
@@ -5183,9 +5182,9 @@ func (ContainerSuite) TestWithMountedSecretMode(ctx context.Context, t *testctx.
 	c := connect(ctx, t)
 	t.Cleanup(func() { c.Close() })
 
-	secret := c.SetSecret("test", "secret")
+	secret := sdkcore.NewQuery(c).SetSecret("test", "secret")
 
-	ctr := c.Container().From(alpineImage).WithMountedSecret("/secret", secret, dagger.ContainerWithMountedSecretOpts{
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithMountedSecret("/secret", secret, sdkcore.ContainerWithMountedSecretOpts{
 		Mode:  0o666,
 		Owner: "root:root",
 	})
@@ -5201,7 +5200,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 	t.Run("legacy", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		// Open a CLI session against the legacy API and assert the selected version.
-		cli := c.Container().From(alpineImage).
+		cli := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v0.21.0")
 		const query = `query($image: String!, $command: String!, $enabled: Boolean) {
@@ -5229,7 +5228,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 					Enabled bool   `json:"enabled,omitempty"`
 				}{alpineImage, nestingStatus, tc.enabled})
 				require.NoError(t, err)
-				out, err := cli.WithExec([]string{"dagger", "query", "--var-json", string(variables)}, dagger.ContainerWithExecOpts{Stdin: query}).Stdout(ctx)
+				out, err := cli.WithExec([]string{"dagger", "query", "--var-json", string(variables)}, sdkcore.ContainerWithExecOpts{Stdin: query}).Stdout(ctx)
 				require.NoError(t, err)
 				var res struct {
 					Version   string `json:"__schemaVersion"`
@@ -5254,8 +5253,8 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			out, err := c.Container().From(alpineImage).
-				WithExec([]string{"sh", "-c", nestingStatus}, dagger.ContainerWithExecOpts{
+			out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+				WithExec([]string{"sh", "-c", nestingStatus}, sdkcore.ContainerWithExecOpts{
 					DisableDaggerInDagger: tc.disableDaggerInDagger,
 				}).Stdout(ctx)
 			require.NoError(t, err)
@@ -5266,7 +5265,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		_, err := c.Container().From(alpineImage).
+		_, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithNewFile("/query.graphql", `{ defaultPlatform }`). // arbitrary valid query
 			WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).
@@ -5290,9 +5289,9 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		require.NoError(t, os.Mkdir(filepath.Join(tmpDir, subdirB), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("1"), 0o644))
 
-		runCtrs := func(c *dagger.Client, dir *dagger.Directory, subdir string) string {
+		runCtrs := func(c *dagger.Client, dir *sdkcore.Directory, subdir string) string {
 			t.Helper()
-			out, err := c.Container().From(alpineImage).
+			out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 				WithDirectory("/mnt", dir.Directory(subdir)).
 				WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
 				Stdout(ctx)
@@ -5300,7 +5299,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 			return out
 		}
 
-		hostDir1 := c1.Host().Directory(tmpDir)
+		hostDir1 := sdkcore.NewQuery(c1).Host().Directory(tmpDir)
 		// run an exec that has /tmpdir/a/f included
 		output1a := runCtrs(c1, hostDir1, subdirA)
 		// run an exec that has /tmpdir/b/f included
@@ -5312,7 +5311,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		// change /tmpdir/b/f
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("2"), 0o644))
 
-		hostDir2 := c2.Host().Directory(tmpDir)
+		hostDir2 := sdkcore.NewQuery(c2).Host().Directory(tmpDir)
 		// run an exec that has /tmpdir/a/f included
 		output2a := runCtrs(c2, hostDir2, subdirA)
 		// run an exec that has /tmpdir/b/f included
@@ -5401,7 +5400,7 @@ func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	base := c.Container().From(alpineImage)
+	base := sdkcore.NewQuery(c).Container().From(alpineImage)
 	ents, err := base.Rootfs().Diff(base.WithExec([]string{"true"}).Rootfs()).Entries(ctx)
 	require.NoError(t, err)
 	require.Len(t, ents, 0)
@@ -5549,10 +5548,10 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("env variable is expanded in WithNewFile", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
-			WithNewFile("${foo}.txt", "contents in foo file", dagger.ContainerWithNewFileOpts{Expand: true}).
+			WithNewFile("${foo}.txt", "contents in foo file", sdkcore.ContainerWithNewFileOpts{Expand: true}).
 			File("bar.txt").Contents(ctx)
 
 		require.NoError(t, err)
@@ -5560,13 +5559,11 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithFile", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithFile(
-				"${foo}.txt",
-				c.Directory().WithNewFile("/foo.txt", "contents in foo file").File("/foo.txt"),
-				dagger.ContainerWithFileOpts{Expand: true},
+				"${foo}.txt", sdkcore.NewQuery(c).Directory().WithNewFile("/foo.txt", "contents in foo file").File("/foo.txt"), sdkcore.ContainerWithFileOpts{Expand: true},
 			).
 			File("bar.txt").Contents(ctx)
 
@@ -5575,15 +5572,13 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithDirectory", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithDirectory(
-				"/some-path/${foo}",
-				c.Directory().WithNewFile("/some-file.txt", "contents in foo file"),
-				dagger.ContainerWithDirectoryOpts{Expand: true},
+				"/some-path/${foo}", sdkcore.NewQuery(c).Directory().WithNewFile("/some-file.txt", "contents in foo file"), sdkcore.ContainerWithDirectoryOpts{Expand: true},
 			).
-			Directory("/some-path/bar", dagger.ContainerDirectoryOpts{Expand: true}).
+			Directory("/some-path/bar", sdkcore.ContainerDirectoryOpts{Expand: true}).
 			File("some-file.txt").
 			Contents(ctx)
 
@@ -5592,14 +5587,13 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in Directory", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithDirectory(
-				"/some-path/bar",
-				c.Directory().WithNewFile("/some-file.txt", "contents in foo file"),
+				"/some-path/bar", sdkcore.NewQuery(c).Directory().WithNewFile("/some-file.txt", "contents in foo file"),
 			).
-			Directory("/some-path/${foo}", dagger.ContainerDirectoryOpts{Expand: true}).
+			Directory("/some-path/${foo}", sdkcore.ContainerDirectoryOpts{Expand: true}).
 			File("some-file.txt").
 			Contents(ctx)
 
@@ -5608,15 +5602,14 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in File", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithDirectory(
-				"/some-path/bar",
-				c.Directory().WithNewFile("/some-file.txt", "contents in foo file"),
-				dagger.ContainerWithDirectoryOpts{Expand: true},
+				"/some-path/bar", sdkcore.NewQuery(c).Directory().WithNewFile("/some-file.txt", "contents in foo file"),
+				sdkcore.ContainerWithDirectoryOpts{Expand: true},
 			).
-			File("/some-path/${foo}/some-file.txt", dagger.ContainerFileOpts{Expand: true}).
+			File("/some-path/${foo}/some-file.txt", sdkcore.ContainerFileOpts{Expand: true}).
 			Contents(ctx)
 
 		require.NoError(t, err)
@@ -5624,15 +5617,13 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithMountedDirectory", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithMountedDirectory(
-				"/some-path/${foo}",
-				c.Directory().WithNewFile("/some-file.txt", "contents in foo file"),
-				dagger.ContainerWithMountedDirectoryOpts{Expand: true},
+				"/some-path/${foo}", sdkcore.NewQuery(c).Directory().WithNewFile("/some-file.txt", "contents in foo file"), sdkcore.ContainerWithMountedDirectoryOpts{Expand: true},
 			).
-			File("/some-path/bar/some-file.txt", dagger.ContainerFileOpts{Expand: true}).
+			File("/some-path/bar/some-file.txt", sdkcore.ContainerFileOpts{Expand: true}).
 			Contents(ctx)
 
 		require.NoError(t, err)
@@ -5640,13 +5631,11 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithMountedFile", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithMountedFile(
-				"/some-path/${foo}/some-file.txt",
-				c.Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"),
-				dagger.ContainerWithMountedFileOpts{Expand: true},
+				"/some-path/${foo}/some-file.txt", sdkcore.NewQuery(c).Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"), sdkcore.ContainerWithMountedFileOpts{Expand: true},
 			).
 			File("/some-path/bar/some-file.txt").Contents(ctx)
 
@@ -5655,13 +5644,13 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithoutDirectory", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithExec([]string{"mkdir", "-p", "/some-path/bar"}).
 			WithoutDirectory(
 				"/some-path/${foo}",
-				dagger.ContainerWithoutDirectoryOpts{Expand: true},
+				sdkcore.ContainerWithoutDirectoryOpts{Expand: true},
 			).
 			WithExec([]string{"ls", "/some-path/bar"}).Stdout(ctx)
 
@@ -5669,38 +5658,36 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithoutFile", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithFile(
-				"/some-path/bar/some-file.txt",
-				c.Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"),
+				"/some-path/bar/some-file.txt", sdkcore.NewQuery(c).Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"),
 			).
-			WithoutFile("/some-path/${foo}/some-file.txt", dagger.ContainerWithoutFileOpts{Expand: true}).
+			WithoutFile("/some-path/${foo}/some-file.txt", sdkcore.ContainerWithoutFileOpts{Expand: true}).
 			WithExec([]string{"ls", "/some-path/bar/some-file.txt"}).Stdout(ctx)
 
 		requireErrOut(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithoutFiles", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithFile(
-				"/some-path/bar/some-file.txt",
-				c.Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"),
+				"/some-path/bar/some-file.txt", sdkcore.NewQuery(c).Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"),
 			).
-			WithoutFiles([]string{"/some-path/${foo}/some-file.txt"}, dagger.ContainerWithoutFilesOpts{Expand: true}).
+			WithoutFiles([]string{"/some-path/${foo}/some-file.txt"}, sdkcore.ContainerWithoutFilesOpts{Expand: true}).
 			WithExec([]string{"ls", "/some-path/bar/some-file.txt"}).Stdout(ctx)
 
 		requireErrOut(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithExec", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
-			WithExec([]string{"echo", `/some-arg/${foo}`}, dagger.ContainerWithExecOpts{Expand: true}).
+			WithExec([]string{"echo", `/some-arg/${foo}`}, sdkcore.ContainerWithExecOpts{Expand: true}).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -5708,11 +5695,11 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithExec RedirectStdout", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("OUT", "/tmp/out").
 			WithEnvVariable("ERR", "/tmp/err").
-			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, sdkcore.ContainerWithExecOpts{
 				Expand:         true,
 				RedirectStdout: "${OUT}",
 				RedirectStderr: "${ERR}",
@@ -5728,11 +5715,11 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithExec RedirectStdin", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("IN", "/tmp/input.txt").
 			WithNewFile("/tmp/input.txt", "hello from stdin\n").
-			WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"cat"}, sdkcore.ContainerWithExecOpts{
 				Expand:         true,
 				RedirectStdin:  "${IN}",
 				RedirectStdout: "/tmp/out",
@@ -5744,11 +5731,11 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithoutMount", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
-			WithMountedDirectory("/mnt/bar", c.Directory().WithNewDirectory("/foo")).
-			WithoutMount("/mnt/${foo}", dagger.ContainerWithoutMountOpts{Expand: true}).
+			WithMountedDirectory("/mnt/bar", sdkcore.NewQuery(c).Directory().WithNewDirectory("/foo")).
+			WithoutMount("/mnt/${foo}", sdkcore.ContainerWithoutMountOpts{Expand: true}).
 			WithExec([]string{"ls", `/mnt/bar`}).
 			Stdout(ctx)
 
@@ -5765,10 +5752,10 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 
 		defer l.Close()
 
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
-			WithUnixSocket("/opt/${foo}.sock", c.Host().UnixSocket(sock), dagger.ContainerWithUnixSocketOpts{Expand: true}).
+			WithUnixSocket("/opt/${foo}.sock", sdkcore.NewQuery(c).Host().UnixSocket(sock), sdkcore.ContainerWithUnixSocketOpts{Expand: true}).
 			WithExec([]string{"ls", `/opt/bar.sock`}).
 			Stdout(ctx)
 
@@ -5785,11 +5772,11 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 
 		defer l.Close()
 
-		_, err = c.Container().
+		_, err = sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
-			WithUnixSocket("/opt/bar.sock", c.Host().UnixSocket(sock)).
-			WithoutUnixSocket("/opt/${foo}.sock", dagger.ContainerWithoutUnixSocketOpts{Expand: true}).
+			WithUnixSocket("/opt/bar.sock", sdkcore.NewQuery(c).Host().UnixSocket(sock)).
+			WithoutUnixSocket("/opt/${foo}.sock", sdkcore.ContainerWithoutUnixSocketOpts{Expand: true}).
 			WithExec([]string{"ls", `/opt/bar.sock`}).
 			Stdout(ctx)
 
@@ -5813,15 +5800,15 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), data, 0o600))
 
-		secret := c.Secret("file://" + filepath.Join(dir, "some-file"))
-		output, err := c.Container().
+		secret := sdkcore.NewQuery(c).Secret("file://" + filepath.Join(dir, "some-file"))
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
 			WithEnvVariable("CACHEBUST", identity.NewID()).
 			WithMountedSecret(
 				"/${foo}.mysecret",
 				secret,
-				dagger.ContainerWithMountedSecretOpts{Expand: true},
+				sdkcore.ContainerWithMountedSecretOpts{Expand: true},
 			).
 			WithExec([]string{"md5sum", "/bar.mysecret"}).
 			Stdout(ctx)
@@ -5833,12 +5820,12 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("using secret variable with expand returns error", func(ctx context.Context, t *testctx.T) {
-		secret := c.SetSecret("gitea-token", "password2")
-		_, err := c.Container().
+		secret := sdkcore.NewQuery(c).SetSecret("gitea-token", "password2")
+		_, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("CACHEBUST", identity.NewID()).
 			WithSecretVariable("GITEA_TOKEN", secret).
-			WithExec([]string{"sh", "-c", "test ${GITEA_TOKEN} = \"password\""}, dagger.ContainerWithExecOpts{Expand: true}).
+			WithExec([]string{"sh", "-c", "test ${GITEA_TOKEN} = \"password\""}, sdkcore.ContainerWithExecOpts{Expand: true}).
 			Sync(ctx)
 
 		requireErrOut(t, err, "expand cannot be used with secret env variable \"GITEA_TOKEN\"")
@@ -5850,12 +5837,12 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 		entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
-		ctr := c.Container().From(alpineImage).
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithEntrypoint(entrypoint)
 
 		actual, err := ctr.
 			WithEnvVariable("foo", "bar").
-			Export(ctx, "./${foo}.tar", dagger.ContainerExportOpts{Expand: true})
+			Export(ctx, "./${foo}.tar", sdkcore.ContainerExportOpts{Expand: true})
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(wd, "./bar.tar"), actual)
 
@@ -5871,12 +5858,12 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in WithSymlink", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("a", "alpha").
 			WithEnvVariable("b", "bravo").
 			WithNewFile("bravo.txt", "phonetic data").
-			WithSymlink("${b}.txt", "${a}.txt", dagger.ContainerWithSymlinkOpts{Expand: true}).
+			WithSymlink("${b}.txt", "${a}.txt", sdkcore.ContainerWithSymlinkOpts{Expand: true}).
 			File("alpha.txt").Contents(ctx)
 
 		require.NoError(t, err)
@@ -5884,16 +5871,16 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("env variable is expanded in Exists", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithEnvVariable("foo", "bar").
 			WithNewFile("/bar.txt", "contents")
 
-		exists, err := ctr.Exists(ctx, "/${foo}.txt", dagger.ContainerExistsOpts{Expand: true})
+		exists, err := ctr.Exists(ctx, "/${foo}.txt", sdkcore.ContainerExistsOpts{Expand: true})
 		require.NoError(t, err)
 		require.True(t, exists)
 
-		notExists, err := ctr.Exists(ctx, "/${foo}-missing.txt", dagger.ContainerExistsOpts{Expand: true})
+		notExists, err := ctr.Exists(ctx, "/${foo}-missing.txt", sdkcore.ContainerExistsOpts{Expand: true})
 		require.NoError(t, err)
 		require.False(t, notExists)
 	})
@@ -5902,7 +5889,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
 	t.Run("automatic init", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := c.Container().From(alpineImage).
+		out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"ps", "-o", "pid,comm"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -5911,7 +5898,7 @@ func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
 
 	t.Run("automatic init in dockerfile build", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("Dockerfile",
 				`FROM `+alpineImage+`
 RUN sh -c 'ps -o pid,comm > /output.txt'
@@ -5923,8 +5910,8 @@ RUN sh -c 'ps -o pid,comm > /output.txt'
 
 	t.Run("disable automatic init", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := c.Container().From(alpineImage).
-			WithExec([]string{"ps", "-o", "pid,comm"}, dagger.ContainerWithExecOpts{
+		out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"ps", "-o", "pid,comm"}, sdkcore.ContainerWithExecOpts{
 				NoInit: true,
 			}).
 			Stdout(ctx)
@@ -5934,12 +5921,12 @@ RUN sh -c 'ps -o pid,comm > /output.txt'
 
 	t.Run("disable automatic init in dockerfile build", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("Dockerfile",
 				`FROM `+alpineImage+`
 RUN sh -c 'ps -o pid,comm > /output.txt'
 `)
-		out, err := dir.DockerBuild(dagger.DirectoryDockerBuildOpts{
+		out, err := dir.DockerBuild(sdkcore.DirectoryDockerBuildOpts{
 			NoInit: true,
 		}).File("output.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -5965,26 +5952,26 @@ func main() {
 
 	fmt.Println(http.ListenAndServe(":8080", nil))
 }`
-	buildctr := c.Container().
+	buildctr := sdkcore.NewQuery(c).Container().
 		From(golangImage).
 		WithWorkdir("/work").
 		WithNewFile("/work/main.go", maingo).
 		WithExec([]string{"go", "build", "-o=app", "main.go"})
 
-	binctr := c.Container().
+	binctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithFile("/bin/app", buildctr.File("/work/app")).
 		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
 		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
 		WithExposedPort(8080)
 
-	curlctr := c.Container().
+	curlctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "apk add curl"})
 
 	t.Run("use default args and entrypoint by default", func(ctx context.Context, t *testctx.T) {
 		// create new container with default values
-		defaultBin := c.Container().Import(binctr.AsTarball())
+		defaultBin := sdkcore.NewQuery(c).Container().Import(binctr.AsTarball())
 
 		// NOTE: when doing an Import (or container.From), the ports show up under the image config; but
 		// do not _actually_ get setup under the container -- this is similar to a Dockerfile's EXPOSE keyword
@@ -6014,7 +6001,7 @@ func main() {
 
 	t.Run("can override default args", func(ctx context.Context, t *testctx.T) {
 		withargsOverwritten := binctr.
-			AsService(dagger.ContainerAsServiceOpts{Args: []string{"sh", "-c", "/bin/app via-service-override"}})
+			AsService(sdkcore.ContainerAsServiceOpts{Args: []string{"sh", "-c", "/bin/app via-service-override"}})
 
 		output, err := curlctr.
 			WithServiceBinding("myapp", withargsOverwritten).
@@ -6026,7 +6013,7 @@ func main() {
 
 	t.Run("can enable entrypoint", func(ctx context.Context, t *testctx.T) {
 		withargsOverwritten := binctr.
-			AsService(dagger.ContainerAsServiceOpts{
+			AsService(sdkcore.ContainerAsServiceOpts{
 				UseEntrypoint: true,
 			})
 
@@ -6040,7 +6027,7 @@ func main() {
 
 	t.Run("use both args and entrypoint", func(ctx context.Context, t *testctx.T) {
 		withargsOverwritten := binctr.
-			AsService(dagger.ContainerAsServiceOpts{
+			AsService(sdkcore.ContainerAsServiceOpts{
 				UseEntrypoint: true,
 				Args:          []string{"/bin/app via-service-override"},
 			})
@@ -6084,7 +6071,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("symlink can be created", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithWorkdir("/test").
 			WithNewFile("f", "data").
@@ -6095,7 +6082,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink can be created above working dir", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithNewFile("f", "data").
 			WithWorkdir("/test").
@@ -6106,7 +6093,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink can be created to root", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithNewFile("f", "data").
 			WithSymlink("/", "/sub/my-symlink")
@@ -6117,7 +6104,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink can be created to directory above working dir", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithNewFile("other-dir/sub/f", "data").
 			WithWorkdir("/test").
@@ -6129,7 +6116,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink can be used to read data", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithWorkdir("/test").
 			WithNewFile("f", "data").
@@ -6141,10 +6128,10 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink work with mounted directory", func(ctx context.Context, t *testctx.T) {
-		d := c.Directory().WithNewFile("f", "data")
-		d2 := c.Directory().WithNewFile("f", "otherdata")
+		d := sdkcore.NewQuery(c).Directory().WithNewFile("f", "data")
+		d2 := sdkcore.NewQuery(c).Directory().WithNewFile("f", "otherdata")
 
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/mnt", d).
 			WithMountedDirectory("/mnt-to-other-dir", d2).
@@ -6163,9 +6150,9 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink work with mounted directory with workdir set", func(ctx context.Context, t *testctx.T) {
-		d := c.Directory().WithNewFile("sub/submarine/f", "data")
+		d := sdkcore.NewQuery(c).Directory().WithNewFile("sub/submarine/f", "data")
 
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/mnt", d).
 			WithWorkdir("/mnt/sub").
@@ -6177,7 +6164,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink cant escape root fs", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithNewFile("some-file", "data").
 			WithSymlink("some-file", "../../../../../../../../../../../../../../../this-should-be-in-the-root-fs")
@@ -6192,7 +6179,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink cant target above root fs", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithSymlink("../../../../../../../../../../../../../../..", "escape").
 			WithNewFile("escape/some-file", "data")
@@ -6203,7 +6190,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink cant follow other symlink above root fs", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithSymlink("/root", "escape").
 			WithSymlink("_", "escape/foo/bar")
@@ -6214,7 +6201,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink works with scratch container", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().
+		_, err := sdkcore.NewQuery(c).Container().
 			WithSymlink("doesnt-matter", "symlink").
 			Sync(ctx)
 		require.NoError(t, err)
@@ -6223,7 +6210,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	out1, err := c.Container().
+	out1, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithSymlink("bar", "foo").
 		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
@@ -6232,7 +6219,7 @@ func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Len(t, out1, 132) // test that 99 chars were randomly produced, this accounts for 4/3 times base64 bloat
 
-	out2, err := c.Container().
+	out2, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithSymlink("bar", "foo").
 		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
@@ -6240,7 +6227,7 @@ func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, out1, out2)
 
-	out3, err := c.Container().
+	out3, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithSymlink("barf", "oo"). // Note the args here are different, and should bust the cache
 		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
@@ -6259,11 +6246,11 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 	dockerc = dockerc.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+		WithExec([]string{"dagger", "core", "version"}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:" + identity.NewID()
-		_, err := dockerc.WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = dockerc.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
@@ -6279,7 +6266,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://dagger.test")
 
 		imageName := "foobar:" + identity.NewID()
-		_, err := alt.WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
+		_, err := alt.WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = alt.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
@@ -6297,7 +6284,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:" + identity.NewID()
 		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
-			WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 			Sync(ctx)
 		require.NoError(t, err)
 
@@ -6335,7 +6322,7 @@ EOF`})
 	nerdctl = nerdctl.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "image+nerdctl://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true, InsecureRootCapabilities: true})
+		WithExec([]string{"dagger", "core", "version"}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true, InsecureRootCapabilities: true})
 
 	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
 		alt := nerdctl.
@@ -6344,14 +6331,14 @@ EOF`})
 		imageName := "foobar:" + identity.NewID()
 		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
-			WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 			Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = alt.WithExec([]string{"nerdctl", "inspect", imageName}).Sync(ctx)
 		require.NoError(t, err)
 
-		out, err := alt.WithExec([]string{"nerdctl", "run", imageName, "ls", "/foo"}, dagger.ContainerWithExecOpts{
+		out, err := alt.WithExec([]string{"nerdctl", "run", imageName, "ls", "/foo"}, sdkcore.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).Stdout(ctx)
 		require.NoError(t, err)
@@ -6368,14 +6355,14 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 	dockerc = dockerc.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+		WithExec([]string{"dagger", "core", "version"}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:" + identity.NewID()
-		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, sdkcore.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
-		out, err := dockerc.WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).Stdout(ctx)
+		out, err := dockerc.WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
 	})
@@ -6385,10 +6372,10 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://dagger.test")
 
 		imageName := "foobar:" + identity.NewID()
-		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, sdkcore.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
-		out, err := alt.WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).Stdout(ctx)
+		out, err := alt.WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
 	})
@@ -6398,12 +6385,12 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
 
 		imageName := "foobar:" + identity.NewID()
-		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, sdkcore.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
 		out, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
-			WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
@@ -6420,7 +6407,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithSymlink("/usr/local/bin/nerdctl", "/usr/local/bin/docker").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true, InsecureRootCapabilities: true}).
+		WithExec([]string{"dagger", "core", "version"}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true, InsecureRootCapabilities: true}).
 		WithoutFile("/usr/local/bin/docker")
 
 	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
@@ -6434,7 +6421,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 		_, err = alt.
 			// HACK: buildkit isn't distributed in the nerdctl image we use, so
 			// just tag the image instead of building it
-			// WithExec([]string{"nerdctl", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).
+			// WithExec([]string{"nerdctl", "build", "-t", imageName, "-"}, core.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).
 			WithExec([]string{"nerdctl", "pull", "alpine"}).
 			WithExec([]string{"nerdctl", "tag", "alpine", imageName}).
 			Sync(ctx)
@@ -6442,7 +6429,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 
 		out, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
-			WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/etc/fstab | stdout`}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/etc/fstab | stdout`}, sdkcore.ContainerWithExecOpts{
 				DisableDaggerInDagger:    true,
 				InsecureRootCapabilities: true,
 			}).Stdout(ctx)
@@ -6460,7 +6447,7 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 	dockerc = dockerc.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+		WithExec([]string{"dagger", "core", "version"}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	alt := dockerc.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
@@ -6469,19 +6456,19 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 	out, err := alt.WithExec([]string{
 		"dagger", "script", "-c",
 		`container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`,
-	}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true, Expect: dagger.ReturnTypeFailure}).
+	}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true, Expect: sdkcore.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "client has no supported api for loading image")
 
-	out, err = dockerc.WithExec([]string{"docker", "inspect", imageName}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).Stderr(ctx)
+	out, err = dockerc.WithExec([]string{"docker", "inspect", imageName}, sdkcore.ContainerWithExecOpts{Expect: sdkcore.ReturnTypeFailure}).Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, strings.ToLower(out), "no such object")
 
 	out, err = alt.WithExec([]string{
 		"dagger", "script", "-c",
 		`host | container-image ` + imageName + ` | with-exec echo,foo | stdout`,
-	}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true, Expect: dagger.ReturnTypeFailure}).
+	}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true, Expect: sdkcore.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "client has no supported api for loading image")
@@ -6501,19 +6488,19 @@ func (ContainerSuite) TestSaveInNested(ctx context.Context, t *testctx.T) {
 	out, err := dockerc.
 		With(withModuleFixture(t, c, "/src/test", "go/container-save-nested")).
 		WithWorkdir("/src/test").
-		WithExec([]string{"dagger", "call", "-m", ".", "try"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true, Expect: dagger.ReturnTypeFailure}).
+		WithExec([]string{"dagger", "call", "-m", ".", "try"}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true, Expect: sdkcore.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "client has no supported api for loading image")
 
-	out, err = dockerc.WithExec([]string{"docker", "inspect", "foobar:latest"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).Stderr(ctx)
+	out, err = dockerc.WithExec([]string{"docker", "inspect", "foobar:latest"}, sdkcore.ContainerWithExecOpts{Expect: sdkcore.ReturnTypeFailure}).Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, strings.ToLower(out), "no such object")
 }
 
 func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/sub").
 		WithNewFile("subdir/data", "contents")
@@ -6524,7 +6511,7 @@ func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestStat(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/sub").
 		WithNewFile("subdir/data", "contents")
@@ -6534,7 +6521,7 @@ func (ContainerSuite) TestStat(ctx context.Context, t *testctx.T) {
 
 	fileType, err := stat.FileType(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.FileTypeRegularType, fileType)
+	require.Equal(t, sdkcore.FileTypeRegularType, fileType)
 
 	fileSize, err := stat.Size(ctx)
 	require.NoError(t, err)
@@ -6543,8 +6530,8 @@ func (ContainerSuite) TestStat(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestStatWithMountedDir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	d := c.Directory().WithNewFile("the-file", "the data")
-	ctr := c.Container().
+	d := sdkcore.NewQuery(c).Directory().WithNewFile("the-file", "the data")
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/mnt", d)
 	stat, err := ctr.Stat(ctx, "/mnt/the-file")
@@ -6553,7 +6540,7 @@ func (ContainerSuite) TestStatWithMountedDir(ctx context.Context, t *testctx.T) 
 
 	fileType, err := stat.FileType(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.FileTypeRegularType, fileType)
+	require.Equal(t, sdkcore.FileTypeRegularType, fileType)
 
 	fileSize, err := stat.Size(ctx)
 	require.NoError(t, err)
@@ -6562,8 +6549,8 @@ func (ContainerSuite) TestStatWithMountedDir(ctx context.Context, t *testctx.T) 
 
 func (ContainerSuite) TestStatWithMountedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	f := c.Directory().WithNewFile("the-file", "the data").File("the-file")
-	ctr := c.Container().
+	f := sdkcore.NewQuery(c).Directory().WithNewFile("the-file", "the data").File("the-file")
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedFile("/mnt-file", f)
 	stat, err := ctr.Stat(ctx, "/mnt-file")
@@ -6572,7 +6559,7 @@ func (ContainerSuite) TestStatWithMountedFile(ctx context.Context, t *testctx.T)
 
 	fileType, err := stat.FileType(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.FileTypeRegularType, fileType)
+	require.Equal(t, sdkcore.FileTypeRegularType, fileType)
 
 	fileSize, err := stat.Size(ctx)
 	require.NoError(t, err)
@@ -6581,9 +6568,9 @@ func (ContainerSuite) TestStatWithMountedFile(ctx context.Context, t *testctx.T)
 
 func (ContainerSuite) TestWithoutFileOnMountedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	f1 := c.File("f", "1")
-	f2 := c.File("f", "2")
-	ents, err := c.Container().
+	f1 := sdkcore.NewQuery(c).File("f", "1")
+	f2 := sdkcore.NewQuery(c).File("f", "2")
+	ents, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithFile("/mnt/f", f1).
 		WithMountedFile("/mnt/f", f2).
@@ -6596,9 +6583,9 @@ func (ContainerSuite) TestWithoutFileOnMountedFile(ctx context.Context, t *testc
 
 func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	d := c.Directory().WithNewFile("f1", "1").WithNewFile("f2", "2")
-	f3 := c.File("f3", "3")
-	ctr := c.Container().
+	d := sdkcore.NewQuery(c).Directory().WithNewFile("f1", "1").WithNewFile("f2", "2")
+	f3 := sdkcore.NewQuery(c).File("f3", "3")
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/mnt", d).
 		WithMountedFile("/mnt/f2", f3)
@@ -6611,7 +6598,7 @@ func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	require.Equal(t, "3", f2Contents)
 
-	f4 := c.File("f4", "4")
+	f4 := sdkcore.NewQuery(c).File("f4", "4")
 
 	f2Contents, err = ctr.WithFile("/mnt/f2", f4).File("/mnt/f2").Contents(ctx)
 	require.NoError(t, err)
@@ -6619,7 +6606,7 @@ func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.
 }
 
 func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
-	theTest := func(ctx context.Context, t *testctx.T, fileSelector func(*dagger.Client, string) *dagger.File) {
+	theTest := func(ctx context.Context, t *testctx.T, fileSelector func(*dagger.Client, string) *sdkcore.File) {
 		t.Helper()
 
 		dir := t.TempDir()
@@ -6639,7 +6626,7 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 			// has no effect on the expected caching behavior
 			f := fileSelector(c, dir)
 
-			out, err := c.Container().
+			out, err := sdkcore.NewQuery(c).Container().
 				From(alpineImage).
 				WithFile("the-file", f).
 				WithExec([]string{"sh", "-c", "cat the-file && echo -n : && head -c 99 /dev/random | base64 -w0"}).
@@ -6679,18 +6666,18 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 	}
 
 	t.Run("use file directly", func(ctx context.Context, t *testctx.T) {
-		theTest(ctx, t, func(c *dagger.Client, dir string) *dagger.File {
-			return c.Host().File(filepath.Join(dir, "rand1"))
+		theTest(ctx, t, func(c *dagger.Client, dir string) *sdkcore.File {
+			return sdkcore.NewQuery(c).Host().File(filepath.Join(dir, "rand1"))
 		})
 	})
 	t.Run("use file via directory", func(ctx context.Context, t *testctx.T) {
-		theTest(ctx, t, func(c *dagger.Client, dir string) *dagger.File {
-			return c.Host().Directory(dir).File("rand1")
+		theTest(ctx, t, func(c *dagger.Client, dir string) *sdkcore.File {
+			return sdkcore.NewQuery(c).Host().Directory(dir).File("rand1")
 		})
 	})
 	t.Run("use file via filter", func(ctx context.Context, t *testctx.T) {
-		theTest(ctx, t, func(c *dagger.Client, dir string) *dagger.File {
-			return c.Host().Directory(dir).Filter(dagger.DirectoryFilterOpts{
+		theTest(ctx, t, func(c *dagger.Client, dir string) *sdkcore.File {
+			return sdkcore.NewQuery(c).Host().Directory(dir).Filter(sdkcore.DirectoryFilterOpts{
 				Exclude: []string{"this-shouldnt-change-anything"},
 			}).File("rand1")
 		})
@@ -6701,13 +6688,13 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 // See https://github.com/dagger/dagger/issues/14283.
 func (ContainerSuite) TestFileAndServiceDoNotRunExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().From(alpineImage).WithExec([]string{"sh", "-c", "exit 1"})
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithExec([]string{"sh", "-c", "exit 1"})
 
 	file := ctr.Rootfs().File("etc/os-release")
 	_, err := file.ID(ctx)
 	require.NoError(t, err)
 
-	svc := ctr.AsService(dagger.ContainerAsServiceOpts{Args: []string{"sleep", "infinity"}})
+	svc := ctr.AsService(sdkcore.ContainerAsServiceOpts{Args: []string{"sleep", "infinity"}})
 	_, err = svc.ID(ctx)
 	require.NoError(t, err)
 
@@ -6719,7 +6706,7 @@ func (ContainerSuite) TestFileAndServiceDoNotRunExec(ctx context.Context, t *tes
 func (ContainerSuite) TestContainerCaching(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().From(alpineImage).WithNewFile("file", "data")
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithNewFile("file", "data")
 
 	var err error
 	testRefs := make([]string, 2)
@@ -6735,7 +6722,7 @@ func (ContainerSuite) TestContainerCaching(ctx context.Context, t *testctx.T) {
 
 	output := make([]string, 2)
 	for i := 0; i < 2; i++ {
-		output[i], err = c.Container().From(testRefs[i]).
+		output[i], err = sdkcore.NewQuery(c).Container().From(testRefs[i]).
 			WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -6773,10 +6760,10 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	// This single buster value is shared between the two clients
 	buster := identity.NewID()
 
-	getContainer := func(c *dagger.Client) *dagger.Container {
-		return c.Container().From(alpineImage).
-			WithUnixSocket("testsock", c.Host().UnixSocket(sock)).
-			WithMountedDirectory("/src", c.Host().Directory(".")).
+	getContainer := func(c *dagger.Client) *sdkcore.Container {
+		return sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithUnixSocket("testsock", sdkcore.NewQuery(c).Host().UnixSocket(sock)).
+			WithMountedDirectory("/src", sdkcore.NewQuery(c).Host().Directory(".")).
 			WithExec([]string{"sh", "-c", fmt.Sprintf("echo %s | nc local:/testsock", buster)})
 	}
 
@@ -6798,9 +6785,9 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 func (ContainerSuite) TestHealthcheckIsPublished(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
-		WithDockerHealthcheck([]string{"sh", "-c", "date --iso-8601=seconds > /tmp/healthcheck.log"}, dagger.ContainerWithDockerHealthcheckOpts{
+		WithDockerHealthcheck([]string{"sh", "-c", "date --iso-8601=seconds > /tmp/healthcheck.log"}, sdkcore.ContainerWithDockerHealthcheckOpts{
 			Interval:      "25s",
 			Timeout:       "31s",
 			StartPeriod:   "1m",
@@ -6814,7 +6801,7 @@ func (ContainerSuite) TestHealthcheckIsPublished(ctx context.Context, t *testctx
 	require.NotEqual(t, testRef, pushedRef)
 	require.Contains(t, pushedRef, "@sha256:")
 
-	pulledCtr := c.Container().From(pushedRef)
+	pulledCtr := sdkcore.NewQuery(c).Container().From(pushedRef)
 	configuredHealthcheck, err := pulledCtr.DockerHealthcheck(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, configuredHealthcheck)
@@ -6847,7 +6834,7 @@ func (ContainerSuite) TestHealthcheckIsPublished(ctx context.Context, t *testctx
 func (ContainerSuite) TestHealthcheckDefaults(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithDockerHealthcheck([]string{"/this-will-fail-and-thats-ok"})
 
@@ -6888,7 +6875,7 @@ func (ContainerSuite) TestHealthcheckIsExported(ctx context.Context, t *testctx.
 	c := connect(ctx, t)
 
 	imagePath := filepath.Join(t.TempDir(), identity.NewID()+".tar")
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithDockerHealthcheck([]string{"sh", "-c", "echo ok"})
 
@@ -6919,7 +6906,7 @@ func (ContainerSuite) TestHealthcheckIsExported(ctx context.Context, t *testctx.
 func (ContainerSuite) TestWithoutHealthcheck(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithDockerHealthcheck([]string{"/waiter-check-please"}).
 		WithoutDockerHealthcheck()
@@ -6932,7 +6919,7 @@ func (ContainerSuite) TestWithoutHealthcheck(ctx context.Context, t *testctx.T) 
 func (ContainerSuite) TestManifest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage)
 
 	// Assert that the manifest can be exported.
@@ -6971,18 +6958,18 @@ func (ContainerSuite) TestManifest(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage)
 
 	// Note that the manifest's ForcedCompression must match the layer's,
 	// else the layer will not be found in the Container nor in its export.
-	for _, forcedCompression := range []dagger.ImageLayerCompression{
-		dagger.ImageLayerCompressionUncompressed,
-		dagger.ImageLayerCompressionGzip,
-		dagger.ImageLayerCompressionZstd,
+	for _, forcedCompression := range []sdkcore.ImageLayerCompression{
+		sdkcore.ImageLayerCompressionUncompressed,
+		sdkcore.ImageLayerCompressionGzip,
+		sdkcore.ImageLayerCompressionZstd,
 	} {
 		t.Run(fmt.Sprintf("forcedCompression=%q", forcedCompression), func(ctx context.Context, t *testctx.T) {
-			manifestFile := ctr.Manifest(dagger.ContainerManifestOpts{
+			manifestFile := ctr.Manifest(sdkcore.ContainerManifestOpts{
 				ForcedCompression: forcedCompression,
 			})
 			require.NotEmpty(t, manifestFile)
@@ -7019,18 +7006,18 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 			require.NotEmpty(t, manifest.Layers)
 			layer := manifest.Layers[0]
 			require.NotEmpty(t, layer.Digest)
-			layerFile := ctr.Layer(layer.Digest.String(), dagger.ContainerLayerOpts{
+			layerFile := ctr.Layer(layer.Digest.String(), sdkcore.ContainerLayerOpts{
 				ForcedCompression: forcedCompression,
 			})
 			require.NotEmpty(t, layerFile)
 			layerName, err := layerFile.Name(ctx)
 			require.NoError(t, err)
 			switch forcedCompression {
-			case dagger.ImageLayerCompressionUncompressed:
+			case sdkcore.ImageLayerCompressionUncompressed:
 				require.Equal(t, layer.Digest.Encoded()+".tar", layerName)
-			case dagger.ImageLayerCompressionGzip:
+			case sdkcore.ImageLayerCompressionGzip:
 				require.Equal(t, layer.Digest.Encoded()+".tar.gz", layerName)
-			case dagger.ImageLayerCompressionZstd:
+			case sdkcore.ImageLayerCompressionZstd:
 				require.Equal(t, layer.Digest.Encoded()+".tar.zst", layerName)
 			}
 
@@ -7041,10 +7028,10 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 
 			// Assert that the layer has some of the expected contents.
 			// Only do this for Uncompressed for compatibility with the existing [tarEntries] helper.
-			if forcedCompression == dagger.ImageLayerCompressionUncompressed {
+			if forcedCompression == sdkcore.ImageLayerCompressionUncompressed {
 				base, err := layerFile.Name(ctx)
 				require.NoError(t, err)
-				layerFileDir, err := layerFile.Export(ctx, t.TempDir(), dagger.FileExportOpts{
+				layerFileDir, err := layerFile.Export(ctx, t.TempDir(), sdkcore.FileExportOpts{
 					AllowParentDirPath: true,
 				})
 				layerFilePath := filepath.Join(layerFileDir, base)
@@ -7060,7 +7047,7 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 
 			// Assert that the layer also appears in the full export, indicating parity.
 			tarPath := filepath.Join(t.TempDir(), "export.tar")
-			_, err = ctr.Export(ctx, tarPath, dagger.ContainerExportOpts{
+			_, err = ctr.Export(ctx, tarPath, sdkcore.ContainerExportOpts{
 				ForcedCompression: forcedCompression,
 			})
 			require.NoError(t, err)
@@ -7092,7 +7079,7 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestLayerLargerThanFileContentsLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{
 			"sh",
@@ -7100,8 +7087,8 @@ func (ContainerSuite) TestLayerLargerThanFileContentsLimit(ctx context.Context, 
 			fmt.Sprintf("head -c %d /dev/zero > /large.bin", engineutil.MaxFileContentsSize+1),
 		})
 
-	manifestContents, err := ctr.Manifest(dagger.ContainerManifestOpts{
-		ForcedCompression: dagger.ImageLayerCompressionUncompressed,
+	manifestContents, err := ctr.Manifest(sdkcore.ContainerManifestOpts{
+		ForcedCompression: sdkcore.ImageLayerCompressionUncompressed,
 	}).Contents(ctx)
 	require.NoError(t, err)
 
@@ -7111,8 +7098,8 @@ func (ContainerSuite) TestLayerLargerThanFileContentsLimit(ctx context.Context, 
 	layer := manifest.Layers[len(manifest.Layers)-1]
 	require.Greater(t, layer.Size, int64(engineutil.MaxFileContentsSize))
 
-	layerFile := ctr.Layer(layer.Digest.String(), dagger.ContainerLayerOpts{
-		ForcedCompression: dagger.ImageLayerCompressionUncompressed,
+	layerFile := ctr.Layer(layer.Digest.String(), sdkcore.ContainerLayerOpts{
+		ForcedCompression: sdkcore.ImageLayerCompressionUncompressed,
 	})
 	layerFileSize, err := layerFile.Size(ctx)
 	require.NoError(t, err)
@@ -7135,13 +7122,13 @@ func (ContainerSuite) TestLayerLargerThanFileContentsLimit(ctx context.Context, 
 func (ContainerSuite) TestLayersConcurrent(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "echo one > /one"}).
 		WithExec([]string{"sh", "-c", "echo two > /two"})
 
-	manifestContents, err := ctr.Manifest(dagger.ContainerManifestOpts{
-		ForcedCompression: dagger.ImageLayerCompressionGzip,
+	manifestContents, err := ctr.Manifest(sdkcore.ContainerManifestOpts{
+		ForcedCompression: sdkcore.ImageLayerCompressionGzip,
 	}).Contents(ctx)
 	require.NoError(t, err)
 
@@ -7158,8 +7145,8 @@ func (ContainerSuite) TestLayersConcurrent(ctx context.Context, t *testctx.T) {
 		i, desc := i, desc
 		eg.Go(func() error {
 			var err error
-			sizes[i], err = ctr.Layer(desc.Digest.String(), dagger.ContainerLayerOpts{
-				ForcedCompression: dagger.ImageLayerCompressionGzip,
+			sizes[i], err = ctr.Layer(desc.Digest.String(), sdkcore.ContainerLayerOpts{
+				ForcedCompression: sdkcore.ImageLayerCompressionGzip,
 			}).Size(egctx)
 			return err
 		})
