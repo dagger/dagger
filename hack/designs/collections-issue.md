@@ -27,11 +27,11 @@ Mark an object type with `+collection` in Go, `@collection` in Dang and Python, 
 ```go
 // +collection
 type GoTests struct {
-	Keys []string
+ Keys []string
 }
 
 func (tests *GoTests) Get(name string) *GoTest {
-	return &GoTest{Name: name}
+ return &GoTest{Name: name}
 }
 ```
 
@@ -400,7 +400,7 @@ Keep `/` as the path separator. In a relative address, accept `:` as a path sepa
 `dagger call`, the shell, and generated clients use the standard collection API directly:
 
 ```console
-$ dagger call golang modules get --key=sdk/go tests subset --keys=TestConnect --keys=TestQuery batch run sync
+dagger call golang modules get --key=sdk/go tests subset --keys=TestConnect --keys=TestQuery batch run sync
 ```
 
 ### 6. Select checks and generators
