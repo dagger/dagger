@@ -28,15 +28,6 @@ pub fn format_struct_name(s: &str) -> String {
     }
 }
 
-// Parameters must not shadow the generated selection or options variables.
-pub fn format_parameter_name(s: &str) -> String {
-    let name = format_struct_name(s);
-    match name.as_str() {
-        "query" | "opts" | "self" => format!("{name}_arg"),
-        _ => name,
-    }
-}
-
 pub fn field_options_struct_name(field: &FullTypeFields) -> Option<String> {
     field
         .parent_type
@@ -140,7 +131,7 @@ pub(crate) fn render_required_args(
                         return None;
                     }
 
-                    let n = format_parameter_name(&s.input_value.name);
+                    let n = format_struct_name(&s.input_value.name);
                     let name = &s.input_value.name;
 
                     if s.input_value.type_.is_scalar() {
@@ -382,7 +373,7 @@ fn format_function_args(
 
                     let t = funcs.format_input_type(&s.input_value.type_);
 
-                    let n = format_parameter_name(&s.input_value.name);
+                    let n = format_struct_name(&s.input_value.name);
                     if let Some(desc) = s.input_value.description.as_ref().and_then(|d| {
                         if !d.is_empty() {
                             Some(write_comment_line(&format!("* `{n}` - {}", d)))
@@ -475,7 +466,7 @@ fn format_required_function_args(
                     }
 
                     let t = funcs.format_input_type(&s.input_value.type_);
-                    let n = format_parameter_name(&s.input_value.name);
+                    let n = format_struct_name(&s.input_value.name);
 
                     if s.input_value.type_.is_id() {
                         let into_id = rust::import("crate::id", "IntoID");

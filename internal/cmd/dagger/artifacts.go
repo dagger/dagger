@@ -3,7 +3,6 @@ package daggercmd
 import (
 	"context"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -80,21 +79,12 @@ func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {
 	}
 }
 
-// artifactSelection is the selection a command line describes: include
-// patterns from the addresses' paths, and the type and dimension filters from
-// the addresses and flags.
-type artifactSelection struct {
-	include []string
-	types   []string
-	// keys maps a dimension to its alternatives; nil selects any key.
-	keys map[string][]string
-}
-
-// parseArtifactAddresses reads the positional addresses. Each path is an
-// include pattern, so it selects that path and its children; the scheme's
-// types and the query's dimension keys become filters.
-func parseArtifactAddresses(addresses []string) (*artifactSelection, error) {
-	sel := &artifactSelection{keys: map[string][]string{}}
+// Keep each address intact: its type and dimension filters apply only to its path.
+func parseArtifactAddresses(addresses []string) ([]*dagaddress.Address, error) {
+	if len(addresses) == 0 {
+		addresses = []string{""}
+	}
+	var parsed []*dagaddress.Address
 	for _, address := range addresses {
 		addr, err := dagaddress.Parse(address)
 		if err != nil {
@@ -103,64 +93,68 @@ func parseArtifactAddresses(addresses []string) (*artifactSelection, error) {
 		if addr.Absolute {
 			return nil, fmt.Errorf("absolute addresses are not supported yet: %s", address)
 		}
-		if addr.Path != "" {
-			sel.include = append(sel.include, addr.Path)
-		}
-		for _, typ := range addr.Types {
-			if !slices.Contains(sel.types, typ) {
-				sel.types = append(sel.types, typ)
-			}
-		}
-		for _, filter := range addr.DimensionFilters() {
-			sel.addKeys(filter.Dimension, filter.Keys)
-		}
+		parsed = append(parsed, addr)
 	}
-	return sel, nil
+	return parsed, nil
 }
 
-func (sel *artifactSelection) addKeys(dimension string, keys []string) {
-	existing, seen := sel.keys[dimension]
-	if seen && existing == nil {
-		return
+func artifactPaths(addresses []*dagaddress.Address) []string {
+	var paths []string
+	for _, addr := range addresses {
+		if addr.Path == "" {
+			return nil // An unscoped address includes every path.
+		}
+		paths = append(paths, addr.Path)
 	}
-	if keys == nil {
-		sel.keys[dimension] = nil
-		return
-	}
-	sel.keys[dimension] = append(existing, keys...)
+	return paths
 }
 
-func selectArtifactFilters(cmd *cobra.Command, sel *artifactSelection, artifacts *dagger.Artifacts) (*dagger.Artifacts, error) {
+func selectArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifacts *dagger.Artifacts) (*dagger.Artifacts, error) {
 	types, _ := cmd.Flags().GetStringArray("type")
 	if cmd.Flags().Changed("type") {
 		artifacts = artifacts.FilterTypes(types)
 	}
-	if len(sel.types) > 0 {
-		// Address types are in CLI case; filterUri matches them.
-		artifacts = artifacts.FilterURI((&dagaddress.Address{Types: sel.types}).String())
-	}
+	// Workspace.artifacts(include:) already selected the path and its children.
+	// Send the remaining address and flag filters through the engine's parser.
+	filter := *addr
+	filter.Path = ""
+	filter.Query = slices.Clone(addr.Query)
 	keys, _ := cmd.Flags().GetStringArray("dimension-key")
 	for _, key := range keys {
 		dimension, value, ok := strings.Cut(key, "=")
 		if !ok || dimension == "" {
 			return nil, fmt.Errorf("invalid dimension key %q: expected DIMENSION=KEY", key)
 		}
-		sel.addKeys(dimension, []string{value})
+		filter.Query = append(filter.Query, dagaddress.Pair{Dimension: dimension, Key: value, HasKey: true})
 	}
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		if dimension := flag.Annotations[artifactDimensionFlag]; len(dimension) > 0 {
 			values, _ := cmd.Flags().GetStringArray(flag.Name)
-			sel.addKeys(dimension[0], values)
+			for _, value := range values {
+				filter.Query = append(filter.Query, dagaddress.Pair{Dimension: dimension[0], Key: value, HasKey: true})
+			}
 		}
 	})
-	for _, dimension := range slices.Sorted(maps.Keys(sel.keys)) {
-		if sel.keys[dimension] == nil {
-			artifacts = artifacts.FilterDimensions([]string{dimension})
-		} else {
-			artifacts = artifacts.FilterDimensionKeys(dimension, sel.keys[dimension])
-		}
+	return artifacts.FilterURI(filter.String()), nil
+}
+
+func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if cmd.Name() == "keys" && len(args) > 0 {
+		args = args[1:]
 	}
-	return artifacts, nil
+	addresses, err := parseArtifactAddresses(args)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	var types []string
+	err = withEngineSilent(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
+		types, err = ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}).Types(ctx)
+		return err
+	})
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	return types, cobra.ShellCompDirectiveNoFileComp
 }
 
 func runArtifacts(cmd *cobra.Command, addresses []string) error {
@@ -168,29 +162,36 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 	if cmd.Name() == "keys" {
 		dimension, addresses = addresses[0], addresses[1:]
 	}
-	sel, err := parseArtifactAddresses(addresses)
+	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
 		return err
 	}
 	return withEngine(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
-		artifacts, err := selectArtifactFilters(cmd, sel, ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: sel.include}))
-		if err != nil {
-			return err
-		}
 		var lines []string
-		switch cmd.Name() {
-		case "types":
-			lines, err = artifacts.Types(ctx)
-		case "dimensions":
-			lines, err = artifacts.Dimensions(ctx)
-		case "keys":
-			lines, err = artifacts.DimensionKeys(ctx, dimension)
-		default:
-			lines, err = artifactURIs(ctx, ec.Dagger(), artifacts)
+		for _, addr := range parsed {
+			artifacts := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})
+			artifacts, err := selectArtifactFilters(cmd, addr, artifacts)
+			if err != nil {
+				return err
+			}
+			var selected []string
+			switch cmd.Name() {
+			case "types":
+				selected, err = artifacts.Types(ctx)
+			case "dimensions":
+				selected, err = artifacts.Dimensions(ctx)
+			case "keys":
+				selected, err = artifacts.DimensionKeys(ctx, dimension)
+			default:
+				selected, err = artifactURIs(ctx, ec.Dagger(), artifacts)
+			}
+			if err != nil {
+				return err
+			}
+			lines = append(lines, selected...)
 		}
-		if err != nil {
-			return err
-		}
+		slices.Sort(lines)
+		lines = slices.Compact(lines)
 		for _, line := range lines {
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
 				return err
