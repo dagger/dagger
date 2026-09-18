@@ -222,7 +222,7 @@ func TestFetchAbortsAStalledStream(t *testing.T) {
 
 	var payloads int
 	start := time.Now()
-	err := c.consumeStream(context.Background(), otlpTraces, "stalled-trace", func([]byte) error {
+	err := c.consumeStream(context.Background(), otlpTraces, "stalled-trace", nil, func([]byte) error {
 		payloads++
 		return nil
 	})
@@ -268,7 +268,7 @@ func TestOTLPRefreshesUnauthorizedRequest(t *testing.T) {
 	}
 
 	var events int
-	err := client.consumeStream(t.Context(), otlpTraces, "trace-id", func([]byte) error {
+	err := client.consumeStream(t.Context(), otlpTraces, "trace-id", nil, func([]byte) error {
 		events++
 		return nil
 	})
@@ -358,7 +358,7 @@ func TestOTLPStaticCredentialsRemainUnauthorized(t *testing.T) {
 			require.NoError(t, err)
 			client = client.WithStallTimeout(0)
 
-			err = client.consumeStream(t.Context(), otlpTraces, "trace-id", func([]byte) error { return nil })
+			err = client.consumeStream(t.Context(), otlpTraces, "trace-id", nil, func([]byte) error { return nil })
 			require.ErrorContains(t, err, "401 Unauthorized")
 			require.ErrorContains(t, err, "Failed to validate JWT.")
 			require.EqualValues(t, 1, requests.Load())
@@ -395,7 +395,7 @@ func TestStallWatchdogCountsHeartbeatsAsProgress(t *testing.T) {
 	require.Zero(t, base.stall)
 
 	var payloads int
-	err := c.consumeStream(context.Background(), otlpTraces, "kept-alive-trace", func([]byte) error {
+	err := c.consumeStream(context.Background(), otlpTraces, "kept-alive-trace", nil, func([]byte) error {
 		payloads++
 		return nil
 	})
@@ -419,7 +419,7 @@ func TestFetchRefusesAServerSpeakingAnotherProtocol(t *testing.T) {
 
 	c := testOTLPClient(t, srv, 0)
 
-	err := c.consumeStream(context.Background(), otlpTraces, "sse-era-trace", func([]byte) error {
+	err := c.consumeStream(context.Background(), otlpTraces, "sse-era-trace", nil, func([]byte) error {
 		t.Fatal("no payload must be decoded from a mis-negotiated response")
 		return nil
 	})
@@ -445,7 +445,7 @@ func TestFetchTreatsAClosedConnectionAsTruncation(t *testing.T) {
 	c := testOTLPClient(t, srv, 0)
 
 	var payloads int
-	err := c.consumeStream(context.Background(), otlpTraces, "truncated-trace", func([]byte) error {
+	err := c.consumeStream(context.Background(), otlpTraces, "truncated-trace", nil, func([]byte) error {
 		payloads++
 		return nil
 	})
@@ -472,7 +472,7 @@ func TestFetchSurfacesAServerErrorFrame(t *testing.T) {
 	c := testOTLPClient(t, srv, 0)
 
 	var payloads int
-	err := c.consumeStream(context.Background(), otlpTraces, "erroring-trace", func([]byte) error {
+	err := c.consumeStream(context.Background(), otlpTraces, "erroring-trace", nil, func([]byte) error {
 		payloads++
 		return nil
 	})
@@ -497,9 +497,117 @@ func TestFetchRejectsACursorRegression(t *testing.T) {
 
 	c := testOTLPClient(t, srv, 0)
 
-	err := c.consumeStream(context.Background(), otlpTraces, "replayed-trace", func([]byte) error {
+	err := c.consumeStream(context.Background(), otlpTraces, "replayed-trace", nil, func([]byte) error {
 		return nil
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "cursor")
+}
+
+// The selective fetches put the selection on the wire as the server's
+// parseTraceStreamOptions / parseLogStreamOptions read it (dagger.io
+// api/otlp/stream_options.go): root spelled out, listen repeated, times as
+// RFC3339Nano in UTC, and nothing sent for the zero value that the server
+// would not default to itself.
+func TestSpanSelectionQuery(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "root=true", SpanSelection{}.query().Encode(),
+		"the zero selection is the server's default: roots, whole trace")
+
+	before := time.Date(2026, 9, 17, 12, 0, 0, 500, time.FixedZone("x", 3600))
+	after := time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC)
+	q := SpanSelection{
+		NoRoot:      true,
+		Listen:      []string{"0102030405060708", "1112131415161718"},
+		Incremental: true,
+		Before:      &before,
+		After:       &after,
+		DagUIView:   true,
+	}.query()
+	require.Equal(t, "false", q.Get("root"))
+	require.Equal(t, []string{"0102030405060708", "1112131415161718"}, q["listen"])
+	require.Equal(t, "true", q.Get("incremental"))
+	require.Equal(t, "2026-09-17T11:00:00.0000005Z", q.Get("before"), "before must be sent in UTC")
+	require.Equal(t, "2026-09-17T11:00:00Z", q.Get("after"))
+	require.Equal(t, "dagui", q.Get("view"))
+}
+
+func TestLogSelectionQuery(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, LogSelection{}.query().Encode(),
+		"the zero selection is the server's default: every record of the trace")
+
+	after := time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC)
+	q := LogSelection{
+		SpanID:      "0102030405060708",
+		Descendants: true,
+		After:       &after,
+		Records:     LogRecordsLogs,
+	}.query()
+	require.Equal(t, "0102030405060708", q.Get("span_id"))
+	require.Equal(t, "true", q.Get("descendants"))
+	require.Equal(t, "2026-09-17T11:00:00Z", q.Get("after"))
+	require.Equal(t, "logs", q.Get("records"))
+}
+
+func TestFetchSpansAndLogsSendTheSelection(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var requests []*url.URL
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests = append(requests, r.URL)
+		mu.Unlock()
+		w.Header().Set("Content-Type", otlpstream.ContentType)
+		fw := otlpstream.NewFrameWriter(w)
+		_ = fw.WriteHeartbeat()
+		_ = fw.WriteData([]byte{0x0a, 0x00}) // one empty resource group
+		_ = fw.WriteTerminal()
+	}))
+	t.Cleanup(srv.Close)
+
+	c := testOTLPClient(t, srv, 0)
+
+	var spanBatches int
+	require.NoError(t, c.FetchSpans(t.Context(), "trace-id", SpanSelection{
+		NoRoot:      true,
+		Listen:      []string{"0102030405060708"},
+		Incremental: true,
+		DagUIView:   true,
+	}, func(_ context.Context, req *coltracepb.ExportTraceServiceRequest) error {
+		require.Len(t, req.GetResourceSpans(), 1)
+		spanBatches++
+		return nil
+	}))
+	require.Equal(t, 1, spanBatches, "heartbeats must not reach the callback")
+
+	var logBatches int
+	require.NoError(t, c.FetchLogs(t.Context(), "trace-id", LogSelection{
+		SpanID:      "0102030405060708",
+		Descendants: true,
+		Records:     LogRecordsLogs,
+	}, func(_ context.Context, req *collogspb.ExportLogsServiceRequest) error {
+		require.Len(t, req.GetResourceLogs(), 1)
+		logBatches++
+		return nil
+	}))
+	require.Equal(t, 1, logBatches)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, requests, 2)
+	require.Equal(t, "/v1/traces/trace-id", requests[0].Path)
+	require.Equal(t, url.Values{
+		"root": {"false"}, "listen": {"0102030405060708"}, "incremental": {"true"}, "view": {"dagui"},
+	}, requests[0].Query())
+	require.Equal(t, "/v1/logs/trace-id", requests[1].Path)
+	require.Equal(t, url.Values{
+		"span_id": {"0102030405060708"}, "descendants": {"true"}, "records": {"logs"},
+	}, requests[1].Query())
+
+	require.Error(t, c.FetchSpans(t.Context(), "", SpanSelection{}, nil))
+	require.Error(t, c.FetchLogs(t.Context(), "", LogSelection{}, nil))
 }

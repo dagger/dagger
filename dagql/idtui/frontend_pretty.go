@@ -2156,10 +2156,10 @@ func (fe *frontendPretty) requestSubtree(id dagui.SpanID) {
 }
 
 // ImportSnapshots folds a batch of span snapshots into the DB and refreshes the
-// view. It's the snapshot-based counterpart to the OTLP ExportSpans path, used
-// by 'dagger trace' which receives spans as snapshots from Cloud (carrying
-// ChildCount and Partial, which the OTLP form drops). Mirrors the post-import
-// bookkeeping ExportSpans does so logs and test views stay in sync.
+// view. It's the snapshot-based counterpart to the OTLP ExportSpans path, for
+// callers that already hold dagui snapshots (a remote frontend, tests).
+// Mirrors the post-import bookkeeping ExportSpans does so logs and test views
+// stay in sync.
 func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 	if len(snapshots) == 0 {
 		return
