@@ -284,7 +284,7 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 	}
 	var probe *PartProbe
 	key, _ := partAddressKey(address)
-	err = walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, nil, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	err = walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		d, ok := f.Transfer.(PersistedPartDescriber)
 		if !ok {
 			return v.Payload, nil
@@ -340,6 +340,8 @@ func (c *Cache) AcquireEquivalentPartSource(ctx context.Context, receiver AnyRes
 
 // scanPartSources holds every candidate only for the metadata scan. A Ready
 // selection retains its donor; an admitted chain retains only its offer owner.
+//
+//nolint:gocyclo // Candidate ranking interleaved with the graph lock; one pass keeps the facts it checks consistent.
 func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address PersistedPartAddress, demand *PartDemandState) (source *PartSourceLease, _ []partCandidate, rerr error) {
 	if _, err := partAddressKey(address); err != nil {
 		return nil, nil, err
@@ -521,10 +523,10 @@ func partContentKey(id sharedResultID, address PersistedPartAddress, offer *Pers
 	}{id, address, offer.Value, offer.Chain.Layers, revision})
 	return string(raw)
 }
-func (s *PartDemandState) exhausted(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	_, ok := s.exhaustedContent[partContentKey(id, address, offer, revision)]
+func (d *PartDemandState) exhausted(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, ok := d.exhaustedContent[partContentKey(id, address, offer, revision)]
 	return ok
 }
 

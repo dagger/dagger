@@ -137,10 +137,10 @@ func TestPartScopeRootRekeyCost(t *testing.T) {
 
 type failedScopeScan struct{ bkcache.SnapshotManager }
 
-var scopeScanFailure = errors.New("stale owner lease scan failed")
+var errScopeScan = errors.New("stale owner lease scan failed")
 
 func (failedScopeScan) DeleteStaleDaggerOwnerLeases(context.Context, map[string]struct{}) error {
-	return scopeScanFailure
+	return errScopeScan
 }
 func TestPartScopeBootScanFailure(t *testing.T) {
 	for _, persistent := range []bool{false, true} {
@@ -150,7 +150,7 @@ func TestPartScopeBootScanFailure(t *testing.T) {
 			path = filepath.Join(t.TempDir(), "cache.db")
 		}
 		cache, err := dagql.NewCache(t.Context(), path, failedScopeScan{store.Manager}, nil)
-		require.ErrorIs(t, err, scopeScanFailure)
+		require.ErrorIs(t, err, errScopeScan)
 		require.Nil(t, cache, "a failed desired-set reconciliation must not admit lookups")
 	}
 }

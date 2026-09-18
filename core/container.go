@@ -1520,14 +1520,10 @@ func (container *Container) encodeContainerMetadata(enc *dagql.PersistEncodeCont
 	return payload, nil
 }
 
-func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
-	var envelope persistedContainerPayload
-	if err := json.Unmarshal(payload, &envelope); err != nil {
-		return nil, fmt.Errorf("decode persisted container payload: %w", err)
-	}
-	persisted := envelope.Metadata.Value
-	fs := new(LazyAccessor[*Directory, *Container])
-
+// decodePersistedContainerResources rebuilds a persisted container's mounts,
+// secrets and sockets, loading their sources by result id. Directory and file
+// mount sources stay lazy accessors until their parts are demanded.
+func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDecodeContext, persisted persistedContainerMetadataValue) (ContainerMounts, []ContainerSecret, []ContainerSocket, error) {
 	mounts := make(ContainerMounts, 0, len(persisted.Mounts))
 	for _, persistedMount := range persisted.Mounts {
 		mnt := ContainerMount{
@@ -1542,19 +1538,19 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		case persistedContainerMountKindCache:
 			cacheRes, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dec, persistedMount.CacheSourceResultID, "container mount cache")
 			if err != nil {
-				return nil, err
+				return nil, nil, nil, err
 			}
 			mnt.CacheSource = &CacheMountSource{Volume: cacheRes}
 		case persistedContainerMountKindVolume:
 			volumeRes, err := loadPersistedObjectResultByResultID[*Volume](ctx, dec, persistedMount.VolumeSourceResultID, "container mount volume")
 			if err != nil {
-				return nil, err
+				return nil, nil, nil, err
 			}
 			mnt.VolumeSource = &VolumeMountSource{Volume: volumeRes}
 		case persistedContainerMountKindTmpfs:
 			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
 		default:
-			return nil, fmt.Errorf("decode persisted container mount %q: unsupported kind %q", persistedMount.Target, persistedMount.Kind)
+			return nil, nil, nil, fmt.Errorf("decode persisted container mount %q: unsupported kind %q", persistedMount.Target, persistedMount.Kind)
 		}
 		mounts = append(mounts, mnt)
 	}
@@ -1562,7 +1558,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 	for _, persistedSecret := range persisted.Secrets {
 		secret, err := loadPersistedObjectResultByResultID[*Secret](ctx, dec, persistedSecret.SecretResultID, "container secret")
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		secrets = append(secrets, ContainerSecret{
 			Secret:    secret,
@@ -1576,13 +1572,28 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 	for _, persistedSocket := range persisted.Sockets {
 		source, err := loadPersistedObjectResultByResultID[*Socket](ctx, dec, persistedSocket.SourceResultID, "container socket")
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		sockets = append(sockets, ContainerSocket{
 			Source:        source,
 			ContainerPath: persistedSocket.ContainerPath,
 			Owner:         persistedSocket.Owner,
 		})
+	}
+	return mounts, secrets, sockets, nil
+}
+
+func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
+	var envelope persistedContainerPayload
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return nil, fmt.Errorf("decode persisted container payload: %w", err)
+	}
+	persisted := envelope.Metadata.Value
+	fs := new(LazyAccessor[*Directory, *Container])
+
+	mounts, secrets, sockets, err := decodePersistedContainerResources(ctx, dec, persisted)
+	if err != nil {
+		return nil, err
 	}
 	services, err := decodePersistedServiceBindings(ctx, dec, "container", persisted.Services)
 	if err != nil {

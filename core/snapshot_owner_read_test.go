@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/stretchr/testify/require"
 )
 
 type snapshotOwnerReadResult struct {
@@ -213,7 +215,9 @@ func TestSnapshotOwnerWaitsForBody(t *testing.T) {
 						<-allow
 						// Both must be available while the ownership reader waits.
 						_ = ctr.lazyOpForRouting()
-						op.LazyMu.Lock()
+						if !op.LazyMu.TryLock() {
+							return fmt.Errorf("LazyMu held while the ownership reader waits")
+						}
 						op.LazyMu.Unlock()
 						ctr.FS.setValue(containerPersistenceTestDirectory("owned", "/"))
 						return nil

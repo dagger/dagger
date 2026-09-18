@@ -230,7 +230,8 @@ func TestHTTPLocalBodyFailures(t *testing.T) {
 }
 
 func TestHTTPPinLockCost(t *testing.T) {
-	ctx, store, _, _, _ := executionFixture(t)
+	fixture := newExecutionFixture(t)
+	ctx, store := fixture.ctx, fixture.store
 	ref, _ := store.Build(t, nil, "contents", "saved")
 	state := &HTTPState{ContentDigest: digest.FromString("saved"), snapshotID: ref.SnapshotID()}
 	var elapsed time.Duration

@@ -646,6 +646,15 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 	}
 	require.Positive(t, mountWriters["withMountedFile"])
 	require.Positive(t, mountWriters["withMountedDirectory"])
+	assertImportedHostInputsMatched(t, report, rows)
+	t.Logf("acquisition SDK inherited-fs hops=%v; operation mount-writer rows=%v", fsFields, mountWriters)
+}
+
+// assertImportedHostInputsMatched checks that every imported Host input got
+// B's own matching capture: same content class and installed snapshot, on a
+// distinct row.
+func assertImportedHostInputsMatched(t *testctx.T, report transferFixtureReport, rows map[uint64]dagql.TransferFixtureRow) {
+	t.Helper()
 	// The exact imported Host input gets B's own matching capture. Check both
 	// the content class and the installed snapshot, while retaining distinct rows.
 	hostMatches := 0
@@ -681,7 +690,6 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 		hostMatches++
 	}
 	require.Positive(t, hostMatches)
-	t.Logf("acquisition SDK inherited-fs hops=%v; operation mount-writer rows=%v", fsFields, mountWriters)
 }
 
 func transferContextTool(ctx context.Context, t *testctx.T, client *dagger.Client, handle string) string {

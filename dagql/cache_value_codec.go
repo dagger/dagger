@@ -93,7 +93,7 @@ func walkTransferCalls(frame *ResultCall, visit func(*ResultCall) error, refVisi
 }
 
 // walkTransferPayloads visits declared envelopes, never arbitrary JSON fields.
-func walkTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink, path PersistedRefPath, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
+func walkTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
 	scopes, err := partitionSnapshotLinks(*env, links)
 	if err != nil {
 		return err
@@ -103,7 +103,7 @@ func walkTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links
 	if err != nil {
 		return err
 	}
-	if err := walkScopedTransferPayloads(&next, frame, scopes, path, visit); err != nil {
+	if err := walkScopedTransferPayloads(&next, frame, scopes, nil, visit); err != nil {
 		return err
 	}
 	*env = next
@@ -137,7 +137,7 @@ func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall,
 
 func mapTransferredOutputs(rec PersistedRecord) ([]CapturedCodecOutput, error) {
 	var outputs []CapturedCodecOutput
-	err := walkTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	err := walkTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer != nil {
 			mapped, err := family.Transfer.MapSnapshotParts(v)
 			if err != nil {
@@ -159,7 +159,7 @@ func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
 	if err := walkTransferCalls(rec.Call, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
 		return PersistedRecord{}, err
 	}
-	if err := walkTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	if err := walkTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer == nil {
 			if len(v.SnapshotLinks) != 0 {
 				return nil, fmt.Errorf("storage codec has no transfer implementation")
@@ -202,7 +202,7 @@ func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
 	}, nil); err != nil {
 		return err
 	}
-	if err := walkTransferPayloads(&rec.Envelope, rec.Call, nil, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	if err := walkTransferPayloads(&rec.Envelope, rec.Call, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer != nil {
 			if err := family.Transfer.ValidateForeign(v); err != nil {
 				return nil, err

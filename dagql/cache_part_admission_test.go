@@ -66,7 +66,7 @@ func TestPartSessionlessOwnSubset(t *testing.T) {
 			if mode != "offer-only" {
 				transferTestDependency(c, ctx, receiver, resource)
 			}
-			partTestEquivalent(t, ctx, c, receiver, donor)
+			partTestEquivalent(t, c, receiver, donor)
 			c.egraphMu.Lock()
 			_, err = c.recomputeRequiredSessionResourcesLocked(donor.cacheSharedResult())
 			require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestPartReadyRevalidationAndCanceledFinish(t *testing.T) {
 			ctx, c, srv := transferTestCache(t)
 			receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 			donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "ready"})
-			partTestEquivalent(t, ctx, c, receiver, donor)
+			partTestEquivalent(t, c, receiver, donor)
 			record, err := c.CapturePersistedRecord(ctx, receiver)
 			require.NoError(t, err)
 			row := receiver.cacheSharedResult()

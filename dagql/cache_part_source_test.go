@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/containerd/containerd/v2/core/content"
 	"sync"
 	"testing"
+
+	"github.com/containerd/containerd/v2/core/content"
 
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +34,7 @@ func (transferTestCodec) PreparePartRecord(receiver, source PersistedRecord, des
 	receiver.Envelope.ObjectJSON = append([]byte(nil), source.Envelope.ObjectJSON...)
 	return receiver, nil
 }
-func partTestEquivalent(t *testing.T, ctx context.Context, c *Cache, receiver, donor AnyResult) {
+func partTestEquivalent(t *testing.T, c *Cache, receiver, donor AnyResult) {
 	t.Helper()
 	dig, err := receiver.cacheSharedResult().loadResultCall().deriveRecipeDigest(c)
 	require.NoError(t, err)
@@ -45,7 +46,7 @@ func TestPartSourceSelection(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "ready"})
-	partTestEquivalent(t, ctx, c, receiver, donor)
+	partTestEquivalent(t, c, receiver, donor)
 	leaf := persistedListTestResult(t, ctx, c, srv, "leaf", String("owned"))
 	transferTestOffer(t, c, ctx, receiver, leaf)
 	before := receiver.cacheSharedResult().incomingOwnershipCount
@@ -92,7 +93,7 @@ func TestReadyPartReceipt(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "ready"})
-	partTestEquivalent(t, ctx, c, receiver, donor)
+	partTestEquivalent(t, c, receiver, donor)
 	record, err := c.CapturePersistedRecord(ctx, receiver)
 	require.NoError(t, err)
 	row := receiver.cacheSharedResult()
@@ -192,7 +193,7 @@ func TestPartDecisionFinalSource(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, scan.NoSource)
 		donor := persistedListTestResult(t, ctx, c, srv, "late", &transferTestValue{Text: "ready"})
-		partTestEquivalent(t, ctx, c, receiver, donor)
+		partTestEquivalent(t, c, receiver, donor)
 		_, outcome, err = c.BeginOriginal(ctx, scan.NoSource)
 		require.NoError(t, err)
 		require.Equal(t, GateReselect, outcome)
@@ -231,8 +232,8 @@ func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
 			failure := errors.New("unselected candidate final release")
 			releases := 0
 			loser := persistedListTestResult(t, ctx, c, srv, "loser", &transferTestValue{Text: "pending", release: func(context.Context) error { releases++; return failure }})
-			partTestEquivalent(t, ctx, c, receiver, winner)
-			partTestEquivalent(t, ctx, c, receiver, loser)
+			partTestEquivalent(t, c, receiver, winner)
+			partTestEquivalent(t, c, receiver, loser)
 			address := PersistedPartAddress{Part: "snapshot"}
 			var winnerOwner *offerOwner
 			c.egraphMu.Lock()
@@ -352,7 +353,7 @@ func TestPartSourceScanSkipsUnreadyDonor(t *testing.T) {
 	donor := persistedListTestResult(t, ctx, c, srv, "donor", busy)
 	leaf := persistedListTestResult(t, ctx, c, srv, "leaf", String("owned"))
 	transferTestOffer(t, c, ctx, donor, leaf)
-	partTestEquivalent(t, ctx, c, receiver, donor)
+	partTestEquivalent(t, c, receiver, donor)
 	busy.unready.Store(true)
 	source, err := c.AcquireEquivalentPartSource(ctx, receiver, PersistedPartAddress{Part: "snapshot"})
 	require.NoError(t, err)

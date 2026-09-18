@@ -274,7 +274,6 @@ func TestLazyOperationCodecs(t *testing.T) {
 		}
 		_, err = persistedContainerRecipeVisitors[call.Field](raw, newPersistedRefWalker(func(*dagql.PersistedRef) error { t.Fatal("builtin recipe declared a child"); return nil }, dagql.PersistedRefPath{}))
 		require.NoError(t, err)
-
 	})
 	t.Run("exact equivalent input", func(t *testing.T) {
 		original := f.recipes[0].(*DirectoryGitCleanedLazy).Repo

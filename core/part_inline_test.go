@@ -125,7 +125,7 @@ func TestPartInlineAddress(t *testing.T) {
 					require.Equal(t, dagql.PersistedRefPath{}.Field("items").Index(0), record.SnapshotLinks[0].OutputPath)
 					if shared {
 						observedManager.failOwner.Store(true)
-						require.ErrorIs(t, dirs[1].LazyEvalFunc()(bctx), partInjectedOwnerFailure)
+						require.ErrorIs(t, dirs[1].LazyEvalFunc()(bctx), errPartInjectedOwner)
 						_, err := b.CapturePersistedRecord(bctx, loaded)
 						require.ErrorIs(t, err, dagql.ErrPersistStateNotReady)
 						reads := sources[0].Reads.Load() + sources[1].Reads.Load()

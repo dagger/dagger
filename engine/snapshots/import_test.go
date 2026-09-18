@@ -818,7 +818,7 @@ func TestChainContentClassification(t *testing.T) {
 			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
 			ref, _ := producer.Build(t, nil, "payload", "chain bytes")
 			chain := exportChain(t, ref)
-			var provider content.InfoReaderProvider = chain.Provider
+			provider := chain.Provider
 			failure := errors.New("injected local failure")
 			switch mode {
 			case "missing":

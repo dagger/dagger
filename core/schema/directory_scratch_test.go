@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var scratchTestFailure = errors.New("injected scratch acquisition failure")
+var errScratchTest = errors.New("injected scratch acquisition failure")
 
 type scratchObservedRef struct {
 	bkcache.ImmutableRef
@@ -63,7 +63,7 @@ func (m *scratchObservedManager) Scratch(ctx context.Context) (bkcache.Immutable
 		return nil, context.Canceled
 	}
 	if m.failScratch.Swap(false) {
-		return nil, scratchTestFailure
+		return nil, errScratchTest
 	}
 	ref, err := m.observe(m.SnapshotManager.Scratch(ctx))
 	if m.afterScratch != nil {
@@ -78,7 +78,7 @@ func (m *scratchObservedManager) GetBySnapshotID(ctx context.Context, id string,
 
 func (m *scratchObservedManager) PinSnapshot(ctx context.Context, id string) (bkcache.ImmutableRef, error) {
 	if m.failPin.Swap(false) {
-		return nil, scratchTestFailure
+		return nil, errScratchTest
 	}
 	return m.observe(m.SnapshotManager.PinSnapshot(ctx, id))
 }
@@ -88,7 +88,7 @@ func (m *scratchObservedManager) AttachLease(ctx context.Context, owner, id stri
 		return err
 	}
 	if m.failSync.Swap(false) {
-		return scratchTestFailure
+		return errScratchTest
 	}
 	return nil
 }
@@ -250,12 +250,13 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "b.db")
 			ctx, b, srv := scratchTestCache(t, bStore, path, "b")
 			var donor *scratchObservedRef
-			if mode == "warm" {
+			switch mode {
+			case "warm":
 				local := scratchSelect(t, ctx, srv)
 				require.NoError(t, b.Evaluate(ctx, local))
 				ref, _ := local.Self().Snapshot.Peek()
 				donor = ref.(*scratchObservedRef)
-			} else if mode == "canonical-only" {
+			case "canonical-only":
 				ref, err := observed.Scratch(ctx)
 				require.NoError(t, err)
 				require.NoError(t, ref.Release(ctx))
@@ -303,7 +304,7 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 				if mode == "manager-canceled" {
 					require.ErrorIs(t, err, context.Canceled)
 				} else {
-					require.ErrorIs(t, err, scratchTestFailure)
+					require.ErrorIs(t, err, errScratchTest)
 				}
 				if mode == "sync-retry" {
 					_, err := b.CapturePersistedRecord(ctx, result)

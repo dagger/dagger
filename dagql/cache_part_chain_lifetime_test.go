@@ -27,14 +27,14 @@ type lifetimeFailManager struct {
 	fail atomic.Bool
 }
 
-var lifetimeSyncFailure = errors.New("owner sync acknowledgement failed")
+var errLifetimeSync = errors.New("owner sync acknowledgement failed")
 
 func (m *lifetimeFailManager) AttachLease(ctx context.Context, id, ref string) error {
 	if err := m.SnapshotManager.AttachLease(ctx, id, ref); err != nil {
 		return err
 	}
 	if m.fail.Swap(false) {
-		return lifetimeSyncFailure
+		return errLifetimeSync
 	}
 	return nil
 }
@@ -56,7 +56,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 			if mode == "owner-backref-sync-failure" || mode == "output-backref-rejected" {
 				transferTestDependency(c, ctx, dependency, receiver)
 			}
-			partTestEquivalent(t, ctx, c, receiver, donor)
+			partTestEquivalent(t, c, receiver, donor)
 			address := PersistedPartAddress{Part: "snapshot"}
 			record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}, Chain: OfferedChain{Layers: chain.Layers, RenewalKey: "in-process"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(dependency.cacheSharedResult().id)}}}
 			if mode == "output-backref-rejected" {
@@ -111,7 +111,8 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				require.NoError(t, err)
 				t.Fatal("provider not reached")
 			}
-			if mode == "slot-replaced" {
+			switch mode {
+			case "slot-replaced":
 				c.egraphMu.Lock()
 				replacement, err := c.newOfferOwnerLocked(ctx, record.Owner)
 				require.NoError(t, err)
@@ -121,7 +122,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				c.egraphMu.Unlock()
 				require.NoError(t, err)
 				require.NoError(t, runOnReleaseFuncs(ctx, callbacks))
-			} else if mode == "donor-collected" {
+			case "donor-collected":
 				require.NoError(t, c.ReleaseSession(ctx, "test-session"))
 				_, err := c.removePersistedEdge(ctx, donor.cacheSharedResult().id)
 				require.NoError(t, err)
@@ -140,7 +141,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				require.ErrorContains(t, err, "cycle")
 				require.Empty(t, row.loadSnapshotOwnerLinks())
 			case "owner-backref-sync-failure":
-				require.ErrorIs(t, err, lifetimeSyncFailure)
+				require.ErrorIs(t, err, errLifetimeSync)
 			default:
 				require.NoError(t, err)
 			}
@@ -174,7 +175,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 
 func (lifetimeChainSource) Available(PersistedPartOffer, int64) bool { return true }
 
-var lifetimeImportReleaseFailure = errors.New("ImportChain returned ref release failed")
+var errLifetimeImportRelease = errors.New("ImportChain returned ref release failed")
 
 type lifetimeImportManager struct {
 	snapshots.SnapshotManager
@@ -214,7 +215,7 @@ type lifetimeImportRef struct {
 func (r *lifetimeImportRef) Release(ctx context.Context) error {
 	r.manager.releases.Add(1)
 	if r.manager.fail.Swap(false) {
-		return lifetimeImportReleaseFailure
+		return errLifetimeImportRelease
 	}
 	return r.ImmutableRef.Release(ctx)
 }
@@ -253,7 +254,7 @@ func TestPartImportChainRefCleanupHandoff(t *testing.T) {
 				}
 				return c.installChainPart(ctx, receiver, source, permit, &PartDemandState{})
 			}})
-			require.ErrorIs(t, err, lifetimeImportReleaseFailure)
+			require.ErrorIs(t, err, errLifetimeImportRelease)
 			require.NotEmpty(t, manager.leaseID)
 			leasePresent := func() bool {
 				all, err := b.Leases.List(ctx)

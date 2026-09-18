@@ -108,43 +108,10 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 		key, _ := partAddressKey(probe.Descriptor.Address)
 		complete[key] = probe.LocalComplete
 	}
-	var descriptors []PartDescriptor
-	var refs []snapshots.ImmutableRef
 	p.next = current
-	for _, address := range original.writeSet {
-		key, _ := partAddressKey(address)
-		if complete[key] {
-			continue
-		}
-		probe, ok := producedParts[key]
-		if !ok || !probe.LocalComplete {
-			return nil, fmt.Errorf("saved operation left write-set output %s unset", address.Part)
-		}
-		d := probe.Descriptor
-		d.Address = clonePartAddress(address)
-		next, err := prepareScopedPartRecord(p.next, produced, d, address)
-		if err != nil {
-			return nil, err
-		}
-		p.next = next
-		descriptors = append(descriptors, d)
-		p.addresses = append(p.addresses, clonePartAddress(address))
-		var ref snapshots.ImmutableRef
-		if d.SnapshotID != "" {
-			pin, err := c.snapshotManager.PinSnapshot(ctx, d.SnapshotID)
-			if err != nil {
-				return nil, err
-			}
-			p.extraProtections = append(p.extraProtections, &partProtection{ref: pin})
-			if p.version.payload.hasValue {
-				ref, err = c.snapshotManager.GetBySnapshotID(ctx, d.SnapshotID, snapshots.NoUpdateLastUsed)
-				if err != nil {
-					return nil, err
-				}
-				p.extraAccessors = append(p.extraAccessors, ref)
-			}
-		}
-		refs = append(refs, ref)
+	descriptors, refs, err := p.addProducedOutputs(ctx, original.writeSet, complete, producedParts, produced)
+	if err != nil {
+		return nil, err
 	}
 	if len(descriptors) == 0 {
 		return nil, p.Release(ctx)
@@ -173,32 +140,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 		return nil, err
 	}
 	if p.version.payload.hasValue {
-		dec := c.partDecodeContext(ctx, row, p.next).atPath(demanded.OutputPath)
-		value, err := inlineValueAt(res, current.Call, demanded.OutputPath)
-		if err != nil {
-			return nil, err
-		}
-		local, err := partRecordAt(p.next, demanded.OutputPath)
-		if err != nil {
-			return nil, err
-		}
-		for i := range descriptors {
-			descriptors[i].Address.OutputPath = nil
-		}
-		if len(descriptors) > 1 {
-			store, ok := UnwrapAs[PartBatchStorePreparer](value)
-			if !ok {
-				return nil, fmt.Errorf("operation publication: no batch store")
-			}
-			p.store, err = store.PreparePartStores(ctx, dec, local, descriptors, refs)
-		} else {
-			store, ok := UnwrapAs[PartStorePreparer](value)
-			if !ok {
-				return nil, fmt.Errorf("operation publication: no store")
-			}
-			p.store, err = store.PreparePartStore(ctx, dec, local, descriptors[0], refs[0])
-		}
-		if err != nil {
+		if err := p.prepareProducedStores(ctx, res, row, current, demanded, descriptors, refs); err != nil {
 			return nil, err
 		}
 	}
@@ -206,4 +148,80 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 		return nil, err
 	}
 	return p, nil
+}
+
+// addProducedOutputs merges the saved operation's outputs for every write-set
+// address that is not complete yet into the prepared record and pins their
+// snapshots. It returns their descriptors and, for a live value, the opened
+// references in the same order.
+func (p *PreparedReadyPart) addProducedOutputs(ctx context.Context, writeSet []PersistedPartAddress, complete map[string]bool, producedParts map[string]PartProbe, produced PersistedRecord) ([]PartDescriptor, []snapshots.ImmutableRef, error) {
+	var descriptors []PartDescriptor
+	var refs []snapshots.ImmutableRef
+	for _, address := range writeSet {
+		key, _ := partAddressKey(address)
+		if complete[key] {
+			continue
+		}
+		probe, ok := producedParts[key]
+		if !ok || !probe.LocalComplete {
+			return nil, nil, fmt.Errorf("saved operation left write-set output %s unset", address.Part)
+		}
+		d := probe.Descriptor
+		d.Address = clonePartAddress(address)
+		next, err := prepareScopedPartRecord(p.next, produced, d, address)
+		if err != nil {
+			return nil, nil, err
+		}
+		p.next = next
+		descriptors = append(descriptors, d)
+		p.addresses = append(p.addresses, clonePartAddress(address))
+		var ref snapshots.ImmutableRef
+		if d.SnapshotID != "" {
+			pin, err := p.cache.snapshotManager.PinSnapshot(ctx, d.SnapshotID)
+			if err != nil {
+				return nil, nil, err
+			}
+			p.extraProtections = append(p.extraProtections, &partProtection{ref: pin})
+			if p.version.payload.hasValue {
+				ref, err = p.cache.snapshotManager.GetBySnapshotID(ctx, d.SnapshotID, snapshots.NoUpdateLastUsed)
+				if err != nil {
+					return nil, nil, err
+				}
+				p.extraAccessors = append(p.extraAccessors, ref)
+			}
+		}
+		refs = append(refs, ref)
+	}
+	return descriptors, refs, nil
+}
+
+// prepareProducedStores asks the receiver's live value for the stores that
+// publish the produced outputs: one batch store for several descriptors.
+func (p *PreparedReadyPart) prepareProducedStores(ctx context.Context, res AnyResult, row *sharedResult, current PersistedRecord, demanded PersistedPartAddress, descriptors []PartDescriptor, refs []snapshots.ImmutableRef) error {
+	dec := p.cache.partDecodeContext(ctx, row, p.next).atPath(demanded.OutputPath)
+	value, err := inlineValueAt(res, current.Call, demanded.OutputPath)
+	if err != nil {
+		return err
+	}
+	local, err := partRecordAt(p.next, demanded.OutputPath)
+	if err != nil {
+		return err
+	}
+	for i := range descriptors {
+		descriptors[i].Address.OutputPath = nil
+	}
+	if len(descriptors) > 1 {
+		store, ok := UnwrapAs[PartBatchStorePreparer](value)
+		if !ok {
+			return fmt.Errorf("operation publication: no batch store")
+		}
+		p.store, err = store.PreparePartStores(ctx, dec, local, descriptors, refs)
+		return err
+	}
+	store, ok := UnwrapAs[PartStorePreparer](value)
+	if !ok {
+		return fmt.Errorf("operation publication: no store")
+	}
+	p.store, err = store.PreparePartStore(ctx, dec, local, descriptors[0], refs[0])
+	return err
 }

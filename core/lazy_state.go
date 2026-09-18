@@ -50,6 +50,22 @@ type lazyGroupOnce struct {
 	done atomic.Bool
 }
 
+// awaitUnlocked returns once the current holder of LazyMu, if any, has
+// released it. Callers that must take LazyMu after another lock wait here
+// with nothing held and then retry their own lock sequence, instead of
+// holding LazyMu across it and inverting their lock order.
+func (lazy *LazyState) awaitUnlocked() {
+	lazy.LazyMu.Lock()
+	defer lazy.LazyMu.Unlock()
+}
+
+// awaitUnlocked returns once the group's running body, if any, has released
+// the group; see LazyState.awaitUnlocked.
+func (group *lazyGroupOnce) awaitUnlocked() {
+	group.mu.Lock()
+	defer group.mu.Unlock()
+}
+
 func NewLazyState() LazyState {
 	return LazyState{
 		LazyMu: new(sync.Mutex),

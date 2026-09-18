@@ -18,7 +18,7 @@ func TestPartDecodeBeforeExternalFinish(t *testing.T) {
 	c.snapshotManager = store.Manager
 	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: ref.SnapshotID()}}})
 	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
-	partTestEquivalent(t, ctx, c, receiver, donor)
+	partTestEquivalent(t, c, receiver, donor)
 	record, err := c.CapturePersistedRecord(ctx, receiver)
 	require.NoError(t, err)
 	row := receiver.cacheSharedResult()
@@ -98,7 +98,7 @@ func TestReadyPartDonorBackreferenceReleasedBeforeSync(t *testing.T) {
 	var released atomic.Int32
 	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "ready", release: func(context.Context) error { released.Add(1); return nil }})
 	transferTestDependency(c, ctx, donor, receiver)
-	partTestEquivalent(t, ctx, c, receiver, donor)
+	partTestEquivalent(t, c, receiver, donor)
 	partEncodedReceiver(t, ctx, c, receiver)
 	demandCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{SessionID: "demand", ClientID: "demand"})
 	barrier := make(chan struct{})
@@ -159,7 +159,7 @@ func TestPartDecodeLosesToInstalledRevision(t *testing.T) {
 	c.snapshotManager = store.Manager
 	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: ref.SnapshotID()}}})
 	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
-	partTestEquivalent(t, ctx, c, receiver, donor)
+	partTestEquivalent(t, c, receiver, donor)
 	partEncodedReceiver(t, ctx, c, receiver)
 	row := receiver.cacheSharedResult()
 	row.imported = true

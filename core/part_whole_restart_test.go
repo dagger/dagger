@@ -22,7 +22,8 @@ import (
 
 func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 	actx, _, a, asrv, aServer := executionFixture(t)
-	_, bStore, _, _, bServer := executionFixture(t)
+	bFixture := newExecutionFixture(t)
+	bStore, bServer := bFixture.store, bFixture.server
 	packaged, err := local.NewStore(t.TempDir())
 	require.NoError(t, err)
 	aServer.builtin, bServer.builtin = packaged, packaged
@@ -163,7 +164,8 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 }
 
 func TestPartNativePendingContainerRequiresRecipe(t *testing.T) {
-	ctx, _, _, srv, _ := executionFixture(t)
+	fixture := newExecutionFixture(t)
+	ctx, srv := fixture.ctx, fixture.srv
 	for _, metadataKnown := range []bool{false, true} {
 		payload := persistedContainerPayload{Metadata: persistedContainerMetadata{Consumed: metadataKnown, Value: persistedContainerMetadataValue{Platform: Platform{OS: "linux", Architecture: "amd64"}}}}
 		if metadataKnown {

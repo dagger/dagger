@@ -107,35 +107,19 @@ func (file *File) AttachDependencyResultsKinds(
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
-	if file != nil {
-		if host := file.partHost.Load(); host != nil && host.Managed() {
-			return func(ctx context.Context) error { return host.Evaluate(ctx, "snapshot") }
-		}
-	}
 	if file == nil {
 		return nil
 	}
-	file.outputMu.Lock()
-	pending, lazy := file.transferPending != nil, file.Lazy
-	file.outputMu.Unlock()
-	if pending {
-		return func(ctx context.Context) error {
-			if host := file.partHost.Load(); host != nil {
-				return host.Evaluate(ctx, "snapshot")
-			}
-			return fmt.Errorf("%w: File.snapshot", dagql.ErrUnavailablePart)
+	return file.filesystemOutput.lazyEvalFunc("File", func() (bool, *lazyEvalBody) {
+		lazy := file.Lazy
+		if lazy == nil {
+			return file.transferPending != nil, nil
 		}
-	}
-	if lazy == nil || lazy.IsEvaluated() {
-		return nil
-	}
-	raw := func(ctx context.Context) error { return lazy.Evaluate(ctx, file) }
-	return func(ctx context.Context) error {
-		if host := file.partHost.Load(); host != nil {
-			return host.RunNative(ctx, dagql.LazyGroupWhole, []dagql.PartKey{"snapshot"}, raw)
+		return file.transferPending != nil, &lazyEvalBody{
+			evaluated: lazy.IsEvaluated,
+			evaluate:  func(ctx context.Context) error { return lazy.Evaluate(ctx, file) },
 		}
-		return raw(ctx)
-	}
+	})
 }
 
 func ParseFileOwner(owner string) (*Ownership, error) {

@@ -44,15 +44,15 @@ func (m *partObservedManager) GetBySnapshotID(ctx context.Context, id string, op
 func (m *partObservedManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	m.bodies.Add(1)
 	if m.failBody.Load() {
-		return nil, partInjectedBodyFailure
+		return nil, errPartInjectedBody
 	}
 	return m.SnapshotManager.New(ctx, parent, opts...)
 }
 
-var partInjectedBodyFailure = errors.New("private operation failed")
-var partInjectedProviderFailure = errors.New("supplied blob unavailable")
+var errPartInjectedBody = errors.New("private operation failed")
+var errPartInjectedProvider = errors.New("supplied blob unavailable")
 
-var partInjectedOwnerFailure = errors.New("injected owner acknowledgement failure")
+var errPartInjectedOwner = errors.New("injected owner acknowledgement failure")
 
 func (m *partObservedManager) AttachLease(ctx context.Context, id, snapshot string) error {
 	m.ownerAttempts.Add(1)
@@ -60,7 +60,7 @@ func (m *partObservedManager) AttachLease(ctx context.Context, id, snapshot stri
 		return err
 	}
 	if m.failOwner.Swap(false) {
-		return partInjectedOwnerFailure
+		return errPartInjectedOwner
 	}
 	return nil
 }
@@ -79,12 +79,12 @@ type partObservedPin struct {
 	manager *partObservedManager
 }
 
-var partInjectedPinReleaseFailure = errors.New("injected pin release failure")
+var errPartInjectedPinRelease = errors.New("injected pin release failure")
 
 func (p *partObservedPin) Release(ctx context.Context) error {
 	p.manager.pinReleaseAttempts.Add(1)
 	if p.manager.failPinRelease.Swap(false) {
-		return partInjectedPinReleaseFailure
+		return errPartInjectedPinRelease
 	}
 	return p.ImmutableRef.Release(ctx)
 }
@@ -126,7 +126,7 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 					require.Len(t, exported.Chains.Entries, 1)
 					provider = &testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}
 					if strings.HasPrefix(mode, "chain-fallback") {
-						provider.BeforeRead = func(context.Context, ocispec.Descriptor) error { return partInjectedProviderFailure }
+						provider.BeforeRead = func(context.Context, ocispec.Descriptor) error { return errPartInjectedProvider }
 					}
 					b.SetPartContentSource(partTestContentSource{provider})
 				}
@@ -142,8 +142,8 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 				if mode == "chain-fallback-operation-failure" {
 					observed.failBody.Store(true)
 					err := b.Evaluate(bctx, result)
-					require.ErrorIs(t, err, partInjectedProviderFailure)
-					require.ErrorIs(t, err, partInjectedBodyFailure)
+					require.ErrorIs(t, err, errPartInjectedProvider)
+					require.ErrorIs(t, err, errPartInjectedBody)
 					var contentErr *bkcache.ChainContentError
 					require.ErrorAs(t, err, &contentErr)
 					require.EqualValues(t, 1, observed.bodies.Load())
@@ -152,7 +152,7 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 				}
 				if mode == "chain-pin-release-retry" {
 					observed.failPinRelease.Store(true)
-					require.ErrorIs(t, b.Evaluate(bctx, result), partInjectedPinReleaseFailure)
+					require.ErrorIs(t, b.Evaluate(bctx, result), errPartInjectedPinRelease)
 					reads, syncs := provider.Reads.Load(), observed.ownerAttempts.Load()
 					require.Positive(t, reads)
 					require.EqualValues(t, 1, observed.pinReleaseAttempts.Load())
@@ -163,7 +163,7 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 					require.EqualValues(t, 1, observed.pins.Load())
 				} else if strings.HasPrefix(mode, "chain-sync-") {
 					observed.failOwner.Store(true)
-					require.ErrorIs(t, b.Evaluate(bctx, result), partInjectedOwnerFailure)
+					require.ErrorIs(t, b.Evaluate(bctx, result), errPartInjectedOwner)
 					_, err := b.CapturePersistedRecord(bctx, result)
 					require.ErrorIs(t, err, dagql.ErrPersistStateNotReady)
 					reads := provider.Reads.Load()

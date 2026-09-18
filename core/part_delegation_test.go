@@ -150,65 +150,16 @@ func TestPartDelegationRealStore(t *testing.T) {
 				require.NoError(t, b.EvaluateParts(bctx, got, ContainerPartMetadata))
 				require.Zero(t, provider.Reads.Load())
 				if mode == "child-and-parent-failure" {
-					childFailure, parentFailure := errors.New("child chain failed"), errors.New("parent chain failed")
-					provider.BeforeRead = func(context.Context, ocispec.Descriptor) error {
-						if provider.Reads.Load() == 1 {
-							return childFailure
-						}
-						return parentFailure
-					}
-					err := b.EvaluateParts(bctx, got, ContainerPartFS)
-					require.ErrorIs(t, err, childFailure)
-					require.ErrorIs(t, err, parentFailure)
-					require.ErrorIs(t, err, dagql.ErrUnavailablePart)
-					require.EqualValues(t, 2, provider.Reads.Load())
+					testChildAndParentChainFailure(t, bctx, b, got, provider)
 					return nil
 				}
-				if mode == "late-child" {
-					started, release := make(chan struct{}), make(chan struct{})
-					var once sync.Once
-					provider.BeforeRead = func(ctx context.Context, _ ocispec.Descriptor) error {
-						once.Do(func() { close(started) })
-						select {
-						case <-release:
-							return nil
-						case <-ctx.Done():
-							return context.Cause(ctx)
-						}
-					}
-					done := make(chan error, 1)
-					go func() { done <- b.EvaluateParts(bctx, got, ContainerPartFS) }()
-					select {
-					case <-started:
-					case <-time.After(10 * time.Second):
-						t.Fatal("parent did not start")
-					}
-					addDonor()
-					require.NoError(t, b.RunLazyTask(bctx, got, "obtain:fs", dagql.LazyTaskSpec{Body: func(ctx context.Context) error {
-						address := dagql.PersistedPartAddress{Part: "fs"}
-						source, err := b.AcquireEquivalentPartSource(ctx, got, address)
-						if err != nil {
-							return err
-						}
-						require.NotNil(t, source)
-						permit, outcome, err := b.TryAcquire(ctx, got, address, dagql.PartTaskFromContext(ctx))
-						if err != nil {
-							return err
-						}
-						require.Equal(t, dagql.GateGranted, outcome)
-						return b.InstallReadyPart(ctx, got, source, permit)
-					}}))
-					select {
-					case err := <-done:
-						t.Fatalf("waiter returned before parent completed: %v", err)
-					case <-time.After(100 * time.Millisecond):
-					}
-					close(release)
-					require.NoError(t, <-done)
-				} else if mode == "sync-retry" {
+				switch mode {
+				case "late-child":
+					testLateChildDelegation(t, bctx, b, got, provider, addDonor)
+				case "sync-retry":
 					before, pins, releases := parentHolds(), observed.pins.Load(), observed.pinReleaseAttempts.Load()
 					observed.failOwner.Store(true)
-					require.ErrorIs(t, b.EvaluateParts(bctx, got, ContainerPartFS), partInjectedOwnerFailure)
+					require.ErrorIs(t, b.EvaluateParts(bctx, got, ContainerPartFS), errPartInjectedOwner)
 					require.Equal(t, before, parentHolds(), "temporary parent hold survived failed child sync")
 					require.Equal(t, pins+1, observed.pins.Load())
 					require.Equal(t, releases, observed.pinReleaseAttempts.Load(), "child pin must survive failed sync")
@@ -221,32 +172,105 @@ func TestPartDelegationRealStore(t *testing.T) {
 				snapshot, ok := dir.Snapshot.Peek()
 				require.True(t, ok)
 				testutil.CheckFile(t, snapshot, "payload", "delegated bytes")
-				report, err := b.TransferFixtureSnapshot(bctx, "b", nil)
-				require.NoError(t, err)
-				installs := 0
-				for _, event := range report.Parts {
-					if event.Kind == "installed-delegation" {
-						installs++
-						require.Equal(t, imported[0].ResultID, event.ResultID)
-						require.NotNil(t, event.Source)
-						require.Equal(t, dagql.PersistedPartAddress{Part: "fs"}, event.Source.Address)
-					} else if event.Kind != "selected-delegation" {
-						require.Nil(t, event.Source)
-					}
-				}
-				if mode == "ordinary-ready-tie" || mode == "child-chain-first" || mode == "late-child" {
-					require.Zero(t, installs)
-				} else {
-					require.Equal(t, 1, installs)
-				}
-				if mode == "pending-parent" || mode == "child-chain-first" || mode == "late-child" {
-					require.Positive(t, provider.Reads.Load())
-				} else {
-					require.Zero(t, provider.Reads.Load())
-				}
+				assertDelegationReport(t, bctx, b, provider, mode, imported[0].ResultID)
 				return nil
 			}))
 		})
+	}
+}
+
+// testLateChildDelegation starts the parent's chain download, adds an
+// ordinary donor while it is blocked, installs the child's part from that
+// donor, and checks the waiter still completes only with the parent.
+func testLateChildDelegation(t *testing.T, bctx context.Context, b *dagql.Cache, got dagql.ObjectResult[*Container], provider *testutil.Provider, addDonor func()) {
+	t.Helper()
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	provider.BeforeRead = func(ctx context.Context, _ ocispec.Descriptor) error {
+		once.Do(func() { close(started) })
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	done := make(chan error, 1)
+	go func() { done <- b.EvaluateParts(bctx, got, ContainerPartFS) }()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("parent did not start")
+	}
+	addDonor()
+	require.NoError(t, b.RunLazyTask(bctx, got, "obtain:fs", dagql.LazyTaskSpec{Body: func(ctx context.Context) error {
+		address := dagql.PersistedPartAddress{Part: "fs"}
+		source, err := b.AcquireEquivalentPartSource(ctx, got, address)
+		if err != nil {
+			return err
+		}
+		require.NotNil(t, source)
+		permit, outcome, err := b.TryAcquire(ctx, got, address, dagql.PartTaskFromContext(ctx))
+		if err != nil {
+			return err
+		}
+		require.Equal(t, dagql.GateGranted, outcome)
+		return b.InstallReadyPart(ctx, got, source, permit)
+	}}))
+	select {
+	case err := <-done:
+		t.Fatalf("waiter returned before parent completed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-done)
+}
+
+// testChildAndParentChainFailure fails both chain reads and checks that the
+// child's evaluation reports both causes as an unavailable part.
+func testChildAndParentChainFailure(t *testing.T, bctx context.Context, b *dagql.Cache, got dagql.ObjectResult[*Container], provider *testutil.Provider) {
+	t.Helper()
+	childFailure, parentFailure := errors.New("child chain failed"), errors.New("parent chain failed")
+	provider.BeforeRead = func(context.Context, ocispec.Descriptor) error {
+		if provider.Reads.Load() == 1 {
+			return childFailure
+		}
+		return parentFailure
+	}
+	err := b.EvaluateParts(bctx, got, ContainerPartFS)
+	require.ErrorIs(t, err, childFailure)
+	require.ErrorIs(t, err, parentFailure)
+	require.ErrorIs(t, err, dagql.ErrUnavailablePart)
+	require.EqualValues(t, 2, provider.Reads.Load())
+}
+
+// assertDelegationReport checks the fixture's part events for the mode: one
+// delegation installation on the child unless a donor or the child's own chain
+// served the part, and chain reads only where the parent was pending.
+func assertDelegationReport(t *testing.T, bctx context.Context, b *dagql.Cache, provider *testutil.Provider, mode string, childID uint64) {
+	t.Helper()
+	report, err := b.TransferFixtureSnapshot(bctx, "b", nil)
+	require.NoError(t, err)
+	installs := 0
+	for _, event := range report.Parts {
+		if event.Kind == "installed-delegation" {
+			installs++
+			require.Equal(t, childID, event.ResultID)
+			require.NotNil(t, event.Source)
+			require.Equal(t, dagql.PersistedPartAddress{Part: "fs"}, event.Source.Address)
+		} else if event.Kind != "selected-delegation" {
+			require.Nil(t, event.Source)
+		}
+	}
+	if mode == "ordinary-ready-tie" || mode == "child-chain-first" || mode == "late-child" {
+		require.Zero(t, installs)
+	} else {
+		require.Equal(t, 1, installs)
+	}
+	if mode == "pending-parent" || mode == "child-chain-first" || mode == "late-child" {
+		require.Positive(t, provider.Reads.Load())
+	} else {
+		require.Zero(t, provider.Reads.Load())
 	}
 }
 

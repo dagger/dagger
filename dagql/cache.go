@@ -458,19 +458,10 @@ func NewCache(
 		c.persistenceResetReason = CachePersistenceResetSchemaMismatch
 		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
 		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
-		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
-			return nil, errors.Join(fmt.Errorf("close db before schema-version wipe"), closeErr)
-		}
-		if err := wipeSQLiteFiles(dbPath); err != nil {
-			return nil, fmt.Errorf("wipe schema-mismatched persistence db: %w", err)
-		}
-
-		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
-		if err != nil {
+		if err := c.reopenWiped(ctx, dbPath, "close db before schema-version wipe", "wipe schema-mismatched persistence db"); err != nil {
 			return nil, err
 		}
-		c.sqlDB = db
-		c.pdb = persistDB
+		db = c.sqlDB
 	}
 
 	cleanShutdownVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
@@ -484,19 +475,10 @@ func NewCache(
 		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
-		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
-			return nil, errors.Join(fmt.Errorf("close db before wipe"), closeErr)
-		}
-		if err := wipeSQLiteFiles(dbPath); err != nil {
-			return nil, fmt.Errorf("wipe unclean persistence db: %w", err)
-		}
-
-		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
-		if err != nil {
+		if err := c.reopenWiped(ctx, dbPath, "close db before wipe", "wipe unclean persistence db"); err != nil {
 			return nil, err
 		}
-		c.sqlDB = db
-		c.pdb = persistDB
+		db = c.sqlDB
 	}
 	if err := c.importPersistedState(ctx); err != nil {
 		if errors.Is(err, errOwnerLeaseReconciliation) {
@@ -505,16 +487,10 @@ func NewCache(
 		c.persistenceResetReason = CachePersistenceResetImportFailure
 		c.tracePersistStoreWipedImportFailure(ctx, err)
 		slog.Warn("dagql persistence import failed; wiping and cold-starting", "err", err)
-		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
-			return nil, errors.Join(fmt.Errorf("close db before import-wipe"), closeErr)
-		}
-		if err := wipeSQLiteFiles(dbPath); err != nil {
-			return nil, fmt.Errorf("wipe persistence db after import failure: %w", err)
-		}
-		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
-		if err != nil {
+		if err := c.reopenWiped(ctx, dbPath, "close db before import-wipe", "wipe persistence db after import failure"); err != nil {
 			return nil, err
 		}
+		db, persistDB = c.sqlDB, c.pdb
 		// No caller has been admitted. Discard the failed import's graph and
 		// private decoded values before accepting the empty replacement store.
 		var releases []OnReleaseFunc
@@ -545,6 +521,25 @@ func NewCache(
 		return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
 	}
 	return c, nil
+}
+
+// reopenWiped closes the persistence databases, deletes their files and opens
+// fresh ones for a cold start after a rejected store. closeMsg and wipeMsg
+// name the stage in errors.
+func (c *Cache) reopenWiped(ctx context.Context, dbPath, closeMsg, wipeMsg string) error {
+	if closeErr := closeCacheDBs(c.sqlDB, c.pdb); closeErr != nil {
+		return errors.Join(errors.New(closeMsg), closeErr)
+	}
+	if err := wipeSQLiteFiles(dbPath); err != nil {
+		return fmt.Errorf("%s: %w", wipeMsg, err)
+	}
+	db, persistDB, err := prepareCacheDBs(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	c.sqlDB = db
+	c.pdb = persistDB
+	return nil
 }
 
 // acquireSessionResultLocked records a session edge and its ownership unit in
@@ -3314,32 +3309,8 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 		return detached, nil
 	}
 
-	childShared := detached.cacheSharedResult()
-	if childShared != nil && childShared.id != 0 {
-		srv := CurrentDagqlServer(ctx)
-		if srv == nil {
-			return nil, fmt.Errorf("load %dth value from %T: missing dagql server in context", nth, self)
-		}
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, self, err)
-		}
-		if clientMetadata.SessionID == "" {
-			return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, self)
-		}
-		cache, err := EngineCache(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
-		}
-		touchSharedResultLastUsed(childShared, time.Now().UnixNano())
-		retResAny, err := wrapSharedResultWithResolver(ctx, childShared, true, srv)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: reconstruct result: %w", nth, self, err)
-		}
-		if err := cache.trackSessionResult(ctx, clientMetadata.SessionID, retResAny, true); err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: claim cache-backed result: %w", nth, self, err)
-		}
-		return retResAny, nil
+	if childShared := detached.cacheSharedResult(); childShared != nil && childShared.id != 0 {
+		return r.claimCacheBackedNthValue(ctx, nth, self, childShared)
 	}
 
 	srv := CurrentDagqlServer(ctx)
@@ -3386,6 +3357,35 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 	return cache.GetOrInitCall(ctx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return detached, nil
 	})
+}
+
+// claimCacheBackedNthValue returns an element that already has its own cache
+// row: reconstructed through the resolver and claimed by the caller's session.
+func (r Result[T]) claimCacheBackedNthValue(ctx context.Context, nth int, self T, childShared *sharedResult) (AnyResult, error) {
+	srv := CurrentDagqlServer(ctx)
+	if srv == nil {
+		return nil, fmt.Errorf("load %dth value from %T: missing dagql server in context", nth, self)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, self, err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, self)
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
+	}
+	touchSharedResultLastUsed(childShared, time.Now().UnixNano())
+	retResAny, err := wrapSharedResultWithResolver(ctx, childShared, true, srv)
+	if err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: reconstruct result: %w", nth, self, err)
+	}
+	if err := cache.trackSessionResult(ctx, clientMetadata.SessionID, retResAny, true); err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: claim cache-backed result: %w", nth, self, err)
+	}
+	return retResAny, nil
 }
 
 func (r Result[T]) resultWithDerefView() Result[T] {
@@ -4229,6 +4229,7 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 	return c.runLazyTask(ctx, res, shared, group, partsVal, nil)
 }
 
+//nolint:gocyclo // Keep joining, cancellation, and retirement in one shared attempt loop.
 func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedResult, group LazyGroupKey, partsVal HasLazyEvaluationParts, spec *LazyTaskSpec) (rerr error) {
 	stack := lazyEvalStackFromContext(ctx)
 	if stack != nil && lazyEvalStackContains(stack, shared.id, group) {

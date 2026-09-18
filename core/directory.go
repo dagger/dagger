@@ -116,35 +116,19 @@ func (dir *Directory) AttachDependencyResultsKinds(
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
-	if dir != nil {
-		if host := dir.partHost.Load(); host != nil && host.Managed() {
-			return func(ctx context.Context) error { return host.Evaluate(ctx, "snapshot") }
-		}
-	}
 	if dir == nil {
 		return nil
 	}
-	dir.outputMu.Lock()
-	pending, lazy := dir.transferPending != nil, dir.Lazy
-	dir.outputMu.Unlock()
-	if pending {
-		return func(ctx context.Context) error {
-			if host := dir.partHost.Load(); host != nil {
-				return host.Evaluate(ctx, "snapshot")
-			}
-			return fmt.Errorf("%w: Directory.snapshot", dagql.ErrUnavailablePart)
+	return dir.filesystemOutput.lazyEvalFunc("Directory", func() (bool, *lazyEvalBody) {
+		lazy := dir.Lazy
+		if lazy == nil {
+			return dir.transferPending != nil, nil
 		}
-	}
-	if lazy == nil || lazy.IsEvaluated() {
-		return nil
-	}
-	raw := func(ctx context.Context) error { return lazy.Evaluate(ctx, dir) }
-	return func(ctx context.Context) error {
-		if host := dir.partHost.Load(); host != nil {
-			return host.RunNative(ctx, dagql.LazyGroupWhole, []dagql.PartKey{"snapshot"}, raw)
+		return dir.transferPending != nil, &lazyEvalBody{
+			evaluated: lazy.IsEvaluated,
+			evaluate:  func(ctx context.Context) error { return lazy.Evaluate(ctx, dir) },
 		}
-		return raw(ctx)
-	}
+	})
 }
 
 func (dir *Directory) snapshotIdentity() (string, bool) {

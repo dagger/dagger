@@ -176,45 +176,15 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 	if err != nil {
 		return nil, err
 	}
-	if source.descriptor.SnapshotID != "" {
-		if c.snapshotManager == nil {
-			return nil, fmt.Errorf("prepare part: no snapshot manager")
-		}
-		ref, err := c.snapshotManager.PinSnapshot(ctx, source.descriptor.SnapshotID)
-		if err != nil {
-			return nil, err
-		}
-		p.protection = &partProtection{ref: ref}
-		if version.payload.hasValue {
-			p.accessor, err = c.snapshotManager.GetBySnapshotID(ctx, source.descriptor.SnapshotID, snapshots.NoUpdateLastUsed)
-			if err != nil {
-				return nil, err
-			}
-		}
+	if err := p.pinReadySource(ctx, version.payload.hasValue); err != nil {
+		return nil, err
 	}
 	p.next, err = prepareScopedPartRecord(current, source.record, source.Descriptor(), permit.address)
 	if err != nil {
 		return nil, err
 	}
 	if version.payload.hasValue {
-		value, err := inlineValueAt(Result[Typed]{shared: row}, current.Call, permit.address.OutputPath)
-		if err != nil {
-			return nil, err
-		}
-		preparer, ok := UnwrapAs[PartStorePreparer](value)
-		if !ok {
-			return nil, fmt.Errorf("prepare part: typed value has no store")
-		}
-		dec := c.partDecodeContext(ctx, row, p.next).atPath(permit.address.OutputPath)
-		d := source.Descriptor()
-		d.Address = clonePartAddress(permit.address)
-		nextLocal, err := partRecordAt(p.next, permit.address.OutputPath)
-		if err != nil {
-			return nil, err
-		}
-		d.Address.OutputPath = nil
-		p.store, err = preparer.PreparePartStore(ctx, dec, nextLocal, d, p.accessor)
-		if err != nil {
+		if err := p.prepareValueStore(ctx, row, current); err != nil {
 			return nil, err
 		}
 	}
@@ -316,6 +286,55 @@ func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *share
 		}
 	}
 }
+
+// pinReadySource protects the source snapshot for the receiver and, when the
+// receiver holds a live value, opens it for that value's store.
+func (p *PreparedReadyPart) pinReadySource(ctx context.Context, hasValue bool) error {
+	if p.source.descriptor.SnapshotID == "" {
+		return nil
+	}
+	c := p.cache
+	if c.snapshotManager == nil {
+		return fmt.Errorf("prepare part: no snapshot manager")
+	}
+	ref, err := c.snapshotManager.PinSnapshot(ctx, p.source.descriptor.SnapshotID)
+	if err != nil {
+		return err
+	}
+	p.protection = &partProtection{ref: ref}
+	if hasValue {
+		p.accessor, err = c.snapshotManager.GetBySnapshotID(ctx, p.source.descriptor.SnapshotID, snapshots.NoUpdateLastUsed)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// prepareValueStore asks the receiver's live value for the store that will
+// publish the part.
+func (p *PreparedReadyPart) prepareValueStore(ctx context.Context, row *sharedResult, current PersistedRecord) error {
+	value, err := inlineValueAt(Result[Typed]{shared: row}, current.Call, p.permit.address.OutputPath)
+	if err != nil {
+		return err
+	}
+	preparer, ok := UnwrapAs[PartStorePreparer](value)
+	if !ok {
+		return fmt.Errorf("prepare part: typed value has no store")
+	}
+	dec := p.cache.partDecodeContext(ctx, row, p.next).atPath(p.permit.address.OutputPath)
+	d := p.source.Descriptor()
+	d.Address = clonePartAddress(p.permit.address)
+	nextLocal, err := partRecordAt(p.next, p.permit.address.OutputPath)
+	if err != nil {
+		return err
+	}
+	d.Address.OutputPath = nil
+	p.store, err = preparer.PreparePartStore(ctx, dec, nextLocal, d, p.accessor)
+	return err
+}
+
+//nolint:gocyclo // One validate-then-commit sequence under the graph, gate and payload locks; splitting it would split the lock scopes.
 func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *ReadyPartReceipt, outcome PartInstallOutcome, rerr error) {
 	if p == nil || p.cache != c || !p.consumed.CompareAndSwap(false, true) {
 		return nil, PartInstallRefused, fmt.Errorf("commit part: consumed preparation")

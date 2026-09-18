@@ -11,6 +11,114 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
+// prepareContainerPartRecord publishes one Container output into the
+// receiver's persisted payload: metadata copied from the settled source, or a
+// snapshot part mapped to its storage role. It returns the role the part's
+// snapshot link uses.
+func prepareContainerPartRecord(receiver, source dagql.PersistedRecord, d dagql.PartDescriptor, target dagql.PersistedPartAddress) (dagql.PersistedRecord, string, error) {
+	role := "snapshot"
+	var p persistedContainerPayload
+	if err := json.Unmarshal(receiver.Envelope.ObjectJSON, &p); err != nil {
+		return receiver, "", err
+	}
+	if p.OperationState == "" {
+		p.OperationState = transferOperationState(false, len(p.LazyJSON) != 0)
+	}
+	if target.Part == ContainerPartMetadata {
+		var donor persistedContainerPayload
+		if err := json.Unmarshal(source.Envelope.ObjectJSON, &donor); err != nil {
+			return receiver, "", err
+		}
+		if !donor.Metadata.Consumed {
+			return receiver, "", fmt.Errorf("source metadata is pending")
+		}
+		p.Metadata = donor.Metadata
+		// Metadata fixes the positional role mapping. Existing final outputs must
+		// have a matching target/kind in that layout.
+		shape, err := containerRoutingMetadata(p.Metadata.Value)
+		if err != nil {
+			return receiver, "", err
+		}
+		if p.Parts == nil {
+			p.Parts = map[dagql.PartKey]persistedContainerPart{}
+		}
+		expected := containerSnapshotParts(shape)
+		for key, part := range p.Parts {
+			if !slices.Contains(expected, key) && part.Kind != containerPartPending {
+				return receiver, "", fmt.Errorf("metadata removes final part %s", key)
+			}
+		}
+		for _, key := range expected {
+			if _, ok := p.Parts[key]; !ok {
+				p.Parts[key] = persistedContainerPart{Kind: containerPartPending}
+			}
+		}
+	} else {
+		if !p.Metadata.Consumed {
+			return receiver, "", fmt.Errorf("snapshot publication requires settled metadata")
+		}
+		mapped, err := mapContainerTransferParts(dagql.PersistedPayloadVisit{SnapshotLinks: receiver.SnapshotLinks}, p)
+		if err != nil {
+			return receiver, "", err
+		}
+		var want *dagql.CapturedCodecOutput
+		for i := range mapped {
+			if mapped[i].Address.Part == target.Part {
+				want = &mapped[i]
+				break
+			}
+		}
+		if want == nil {
+			return receiver, "", fmt.Errorf("unknown Container output %s", target.Part)
+		}
+		role = containerPartRole(p.Metadata.Value, target.Part, want.Role)
+		part := persistedContainerPart{Kind: containerPartAbsent}
+		if !d.Absent {
+			if d.Value == nil || d.Value.Kind != want.ValueKind {
+				return receiver, "", fmt.Errorf("incompatible Container part %s", target.Part)
+			}
+			part = persistedContainerPart{Kind: d.Value.Kind, Role: role, Path: d.Value.Path, Services: partServices(d.Value)}
+			if d.Value.Platform != nil {
+				p := Platform(*d.Value.Platform)
+				part.Platform = &p
+			}
+		}
+		p.Parts[target.Part] = part
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return receiver, "", err
+	}
+	receiver.Envelope.ObjectJSON = raw
+	return receiver, role, nil
+}
+
+// containerPartRole names the storage role of a Container snapshot part when
+// the mapped output carries none: fs, meta, or the positional mount role.
+func containerPartRole(metadata persistedContainerMetadataValue, part dagql.PartKey, mapped string) string {
+	if mapped != "" {
+		return mapped
+	}
+	switch part {
+	case ContainerPartFS:
+		return "fs"
+	case ContainerPartExecMeta:
+		return "meta"
+	}
+	for i, m := range metadata.Mounts {
+		if dagql.PartKey("mount:"+m.Target) != part {
+			continue
+		}
+		switch m.Kind {
+		case persistedContainerMountKindDirectory:
+			return fmt.Sprintf("mount_dir:%d", i)
+		case persistedContainerMountKindFile:
+			return fmt.Sprintf("mount_file:%d", i)
+		}
+	}
+	return ""
+}
+
 func (family foreignFamilyCodec) PreparePartRecord(receiver, source dagql.PersistedRecord, d dagql.PartDescriptor, target dagql.PersistedPartAddress) (dagql.PersistedRecord, error) {
 	if len(target.OutputPath) != 0 {
 		return receiver, fmt.Errorf("codec part store requires a local output address")
@@ -56,97 +164,11 @@ func (family foreignFamilyCodec) PreparePartRecord(receiver, source dagql.Persis
 		}
 		receiver.Envelope.ObjectJSON = raw
 	case "Container":
-		var p persistedContainerPayload
-		if err := json.Unmarshal(receiver.Envelope.ObjectJSON, &p); err != nil {
-			return receiver, err
-		}
-		if p.OperationState == "" {
-			p.OperationState = transferOperationState(false, len(p.LazyJSON) != 0)
-		}
-		if target.Part == ContainerPartMetadata {
-			var donor persistedContainerPayload
-			if err := json.Unmarshal(source.Envelope.ObjectJSON, &donor); err != nil {
-				return receiver, err
-			}
-			if !donor.Metadata.Consumed {
-				return receiver, fmt.Errorf("source metadata is pending")
-			}
-			p.Metadata = donor.Metadata
-			// Metadata fixes the positional role mapping. Existing final outputs must
-			// have a matching target/kind in that layout.
-			shape, err := containerRoutingMetadata(p.Metadata.Value)
-			if err != nil {
-				return receiver, err
-			}
-			if p.Parts == nil {
-				p.Parts = map[dagql.PartKey]persistedContainerPart{}
-			}
-			expected := containerSnapshotParts(shape)
-			for key, part := range p.Parts {
-				if !slices.Contains(expected, key) && part.Kind != containerPartPending {
-					return receiver, fmt.Errorf("metadata removes final part %s", key)
-				}
-			}
-			for _, key := range expected {
-				if _, ok := p.Parts[key]; !ok {
-					p.Parts[key] = persistedContainerPart{Kind: containerPartPending}
-				}
-			}
-		} else {
-			if !p.Metadata.Consumed {
-				return receiver, fmt.Errorf("snapshot publication requires settled metadata")
-			}
-			mapped, err := mapContainerTransferParts(dagql.PersistedPayloadVisit{SnapshotLinks: receiver.SnapshotLinks}, p)
-			if err != nil {
-				return receiver, err
-			}
-			var want *dagql.CapturedCodecOutput
-			for i := range mapped {
-				if mapped[i].Address.Part == target.Part {
-					want = &mapped[i]
-					break
-				}
-			}
-			if want == nil {
-				return receiver, fmt.Errorf("unknown Container output %s", target.Part)
-			}
-			role = want.Role
-			if role == "" {
-				switch target.Part {
-				case ContainerPartFS:
-					role = "fs"
-				case ContainerPartExecMeta:
-					role = "meta"
-				default:
-					for i, m := range p.Metadata.Value.Mounts {
-						if dagql.PartKey("mount:"+m.Target) == target.Part {
-							if m.Kind == persistedContainerMountKindDirectory {
-								role = fmt.Sprintf("mount_dir:%d", i)
-							} else if m.Kind == persistedContainerMountKindFile {
-								role = fmt.Sprintf("mount_file:%d", i)
-							}
-						}
-					}
-				}
-			}
-			part := persistedContainerPart{Kind: containerPartAbsent}
-			if !d.Absent {
-				if d.Value == nil || d.Value.Kind != want.ValueKind {
-					return receiver, fmt.Errorf("incompatible Container part %s", target.Part)
-				}
-				part = persistedContainerPart{Kind: d.Value.Kind, Role: role, Path: d.Value.Path, Services: partServices(d.Value)}
-				if d.Value.Platform != nil {
-					p := Platform(*d.Value.Platform)
-					part.Platform = &p
-				}
-			}
-			p.Parts[target.Part] = part
-		}
-		raw, err := json.Marshal(p)
+		var err error
+		receiver, role, err = prepareContainerPartRecord(receiver, source, d, target)
 		if err != nil {
 			return receiver, err
 		}
-		receiver.Envelope.ObjectJSON = raw
 	default:
 		return receiver, fmt.Errorf("unsupported part family %s", family)
 	}
@@ -289,78 +311,77 @@ type containerAcquiredOutput struct {
 	Revision dagql.OutputRevision
 }
 
-func (ctr *Container) PersistedOutputRevision() (dagql.OutputRevision, error) {
-	if view := ctr.acquiredOutput.Load(); view != nil {
+func (container *Container) PersistedOutputRevision() (dagql.OutputRevision, error) {
+	if view := container.acquiredOutput.Load(); view != nil {
 		return view.Revision, nil
 	}
-	unlock, err := ctr.tryPartPublicationGuard()
+	unlock, err := container.tryPartPublicationGuard()
 	if err != nil {
 		return 0, err
 	}
 	defer unlock()
-	lazy := ctr.Lazy
+	lazy := container.Lazy
 	if provider, ok := lazy.(interface{ ContainerLazyState() *LazyState }); ok {
 		return dagql.OutputRevision(provider.ContainerLazyState().outputRevision.Load()), nil
 	}
 	return 0, nil
 }
 
-func (ctr *Container) PersistedSnapshotRefLinksChecked() ([]dagql.PersistedSnapshotRefLink, error) {
-	if view := ctr.acquiredOutput.Load(); view != nil {
+func (container *Container) PersistedSnapshotRefLinksChecked() ([]dagql.PersistedSnapshotRefLink, error) {
+	if view := container.acquiredOutput.Load(); view != nil {
 		return dagql.ClonePersistedSnapshotLinks(view.Links), nil
 	}
-	unlock, err := ctr.tryPartPublicationGuard()
+	unlock, err := container.tryPartPublicationGuard()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	return ctr.PersistedSnapshotRefLinks(), nil
+	return container.PersistedSnapshotRefLinks(), nil
 }
 
-func (ctr *Container) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
-	if view := ctr.acquiredOutput.Load(); view != nil {
+func (container *Container) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
+	if view := container.acquiredOutput.Load(); view != nil {
 		return view.Revision, dagql.ClonePersistedSnapshotLinks(view.Links), nil
 	}
-	unlock, err := ctr.lockSnapshotOwnerRead()
+	unlock, err := container.lockSnapshotOwnerRead()
 	if err != nil {
 		return 0, nil, err
 	}
 	defer unlock()
-	if view := ctr.acquiredOutput.Load(); view != nil {
+	if view := container.acquiredOutput.Load(); view != nil {
 		return view.Revision, dagql.ClonePersistedSnapshotLinks(view.Links), nil
 	}
 	var revision dagql.OutputRevision
-	if provider, ok := ctr.Lazy.(interface{ ContainerLazyState() *LazyState }); ok {
+	if provider, ok := container.Lazy.(interface{ ContainerLazyState() *LazyState }); ok {
 		revision = dagql.OutputRevision(provider.ContainerLazyState().outputRevision.Load())
 	}
-	return revision, ctr.PersistedSnapshotRefLinks(), nil
+	return revision, container.PersistedSnapshotRefLinks(), nil
 }
 
 // Owner synchronization holds no graph lock. Readers may wait on one another,
 // but must drop the pointer/state latches before waiting for a group body: the
 // body can consult either latch. Each restart follows an actual body-latch wait.
-func (ctr *Container) lockSnapshotOwnerRead() (func(), error) {
+func (container *Container) lockSnapshotOwnerRead() (func(), error) {
 	for {
-		ctr.lazyOpMu.Lock()
-		if ctr.acquiredOutput.Load() != nil {
-			return ctr.lazyOpMu.Unlock, nil
+		container.lazyOpMu.Lock()
+		if container.acquiredOutput.Load() != nil {
+			return container.lazyOpMu.Unlock, nil
 		}
-		lazy := ctr.Lazy
+		lazy := container.Lazy
 		if lazy == nil {
-			return ctr.lazyOpMu.Unlock, nil
+			return container.lazyOpMu.Unlock, nil
 		}
 		provider, ok := lazy.(interface{ ContainerLazyState() *LazyState })
 		if !ok || provider.ContainerLazyState() == nil || provider.ContainerLazyState().LazyMu == nil {
-			ctr.lazyOpMu.Unlock()
+			container.lazyOpMu.Unlock()
 			return nil, fmt.Errorf("Container ownership read: missing native latch")
 		}
 		state := provider.ContainerLazyState()
 		if !state.LazyMu.TryLock() {
 			// A whole body may need the graph lock while a diagnostic or
 			// encoder needs lazyOpMu. Wait without retaining that pointer hold.
-			ctr.lazyOpMu.Unlock()
-			state.LazyMu.Lock()
-			state.LazyMu.Unlock()
+			container.lazyOpMu.Unlock()
+			state.awaitUnlocked()
 			continue
 		}
 		var held []*lazyGroupOnce
@@ -369,7 +390,7 @@ func (ctr *Container) lockSnapshotOwnerRead() (func(), error) {
 				group.mu.Unlock()
 			}
 			state.LazyMu.Unlock()
-			ctr.lazyOpMu.Unlock()
+			container.lazyOpMu.Unlock()
 		}
 		if state.IsEvaluated() {
 			return unlock, nil
@@ -389,8 +410,7 @@ func (ctr *Container) lockSnapshotOwnerRead() (func(), error) {
 			return unlock, nil
 		}
 		unlock()
-		running.mu.Lock()
-		running.mu.Unlock()
+		running.awaitUnlocked()
 	}
 }
 
@@ -465,9 +485,9 @@ func (s *containerPartStore) Publish() {
 	}
 	r.acquiredOutput.Store(s.view)
 }
-func (ctr *Container) PreparePartStore(ctx context.Context, dec *dagql.PersistDecodeContext, record dagql.PersistedRecord, d dagql.PartDescriptor, ref bkcache.ImmutableRef) (dagql.PreparedPartStore, error) {
-	previous := ctr.acquiredOutput.Load()
-	baseRevision, err := ctr.PersistedOutputRevision()
+func (container *Container) PreparePartStore(ctx context.Context, dec *dagql.PersistDecodeContext, record dagql.PersistedRecord, d dagql.PartDescriptor, ref bkcache.ImmutableRef) (dagql.PreparedPartStore, error) {
+	previous := container.acquiredOutput.Load()
+	baseRevision, err := container.PersistedOutputRevision()
 	if err != nil {
 		return nil, err
 	}
@@ -486,14 +506,14 @@ func (ctr *Container) PreparePartStore(ctx context.Context, dec *dagql.PersistDe
 			return nil, err
 		}
 	}
-	store := &containerPartStore{receiver: ctr, next: next, view: view, previous: previous, part: d.Address.Part}
+	store := &containerPartStore{receiver: container, next: next, view: view, previous: previous, part: d.Address.Part}
 	store.prepareAssignments()
 	return store, nil
 }
 
 // assignAcquiredRef operates only on an unpublished prepared value.
-func (ctr *Container) assignAcquiredRef(ctx context.Context, dec *dagql.PersistDecodeContext, key dagql.PartKey, ref bkcache.ImmutableRef) error {
-	p := ctr.acquiredOutput.Load().Payload.Parts[key]
+func (container *Container) assignAcquiredRef(ctx context.Context, dec *dagql.PersistDecodeContext, key dagql.PartKey, ref bkcache.ImmutableRef) error {
+	p := container.acquiredOutput.Load().Payload.Parts[key]
 	services, err := decodePersistedServiceBindings(ctx, dec, "acquired Container part", p.Services)
 	if err != nil {
 		return err
@@ -521,11 +541,11 @@ func (ctr *Container) assignAcquiredRef(ctx context.Context, dec *dagql.PersistD
 	}
 	switch key {
 	case ContainerPartFS:
-		ctr.FS.setValue(dir)
+		container.FS.setValue(dir)
 	case ContainerPartExecMeta:
-		ctr.MetaSnapshot.setValue(ref)
+		container.MetaSnapshot.setValue(ref)
 	default:
-		for _, m := range ctr.Mounts {
+		for _, m := range container.Mounts {
 			if dagql.PartKey("mount:"+m.Target) == key {
 				if m.DirectorySource != nil {
 					m.DirectorySource.setValue(dir)
@@ -542,11 +562,11 @@ func (ctr *Container) assignAcquiredRef(ctx context.Context, dec *dagql.PersistD
 	return nil
 }
 
-func (ctr *Container) PreparePartStores(ctx context.Context, dec *dagql.PersistDecodeContext, record dagql.PersistedRecord, descriptors []dagql.PartDescriptor, refs []bkcache.ImmutableRef) (dagql.PreparedPartStore, error) {
+func (container *Container) PreparePartStores(ctx context.Context, dec *dagql.PersistDecodeContext, record dagql.PersistedRecord, descriptors []dagql.PartDescriptor, refs []bkcache.ImmutableRef) (dagql.PreparedPartStore, error) {
 	if len(descriptors) == 0 {
 		return nil, fmt.Errorf("empty Container publication")
 	}
-	prepared, err := ctr.PreparePartStore(ctx, dec, record, descriptors[0], refs[0])
+	prepared, err := container.PreparePartStore(ctx, dec, record, descriptors[0], refs[0])
 	if err != nil {
 		return nil, err
 	}
@@ -642,26 +662,26 @@ func (s *containerPartStore) prepareAssignments() {
 
 // Commit must never wait for native pointer, whole-body or group locks while
 // holding the cache gate. Native activation takes all of them by try-lock.
-func (ctr *Container) tryPartPublicationGuard() (func(), error) {
-	if !ctr.lazyOpMu.TryLock() {
+func (container *Container) tryPartPublicationGuard() (func(), error) {
+	if !container.lazyOpMu.TryLock() {
 		return nil, fmt.Errorf("%w: Container operation pointer busy", dagql.ErrPersistStateNotReady)
 	}
-	lazy := ctr.Lazy
+	lazy := container.Lazy
 	if lazy == nil {
-		return ctr.lazyOpMu.Unlock, nil
+		return container.lazyOpMu.Unlock, nil
 	}
 	provider, ok := lazy.(interface{ ContainerLazyState() *LazyState })
 	if !ok {
-		ctr.lazyOpMu.Unlock()
+		container.lazyOpMu.Unlock()
 		return nil, fmt.Errorf("Container publication: missing native guard")
 	}
 	state := provider.ContainerLazyState()
 	if state == nil || state.LazyMu == nil {
-		ctr.lazyOpMu.Unlock()
+		container.lazyOpMu.Unlock()
 		return nil, fmt.Errorf("Container publication: missing native latch")
 	}
 	if !state.LazyMu.TryLock() {
-		ctr.lazyOpMu.Unlock()
+		container.lazyOpMu.Unlock()
 		return nil, fmt.Errorf("%w: Container %T state busy (evaluated=%t)", dagql.ErrPersistStateNotReady, lazy, state.IsEvaluated())
 	}
 	var held []*lazyGroupOnce
@@ -670,7 +690,7 @@ func (ctr *Container) tryPartPublicationGuard() (func(), error) {
 			group.mu.Unlock()
 		}
 		state.LazyMu.Unlock()
-		ctr.lazyOpMu.Unlock()
+		container.lazyOpMu.Unlock()
 	}
 	for key, group := range state.groups {
 		if group.done.Load() {

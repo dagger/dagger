@@ -141,6 +141,8 @@ func (c *Cache) joinPartInstallation(ctx context.Context, res AnyResult, token *
 	parts, _ := UnwrapAs[HasLazyEvaluationParts](res)
 	return c.evaluateGroup(ctx, res, token.row, token.key, parts)
 }
+
+//nolint:gocyclo // Intrinsically long demand state machine: probe, route, select, obtain, delegate, run.
 func (c *Cache) demandPart(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
 	var err error
 	ctx, err = enterPartDemand(ctx, res.cacheSharedResult(), address)
@@ -280,7 +282,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 func routePartRecord(record PersistedRecord, address PersistedPartAddress) (LazyOperationRoute, error) {
 	var route LazyOperationRoute
 	found := false
-	err := walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, nil, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	err := walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if !slices.Equal(v.Path, address.OutputPath) {
 			return v.Payload, nil
 		}

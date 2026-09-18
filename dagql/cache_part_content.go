@@ -297,7 +297,6 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			return partRefused("chain: reacquire not granted")
 		}
 	}
-
 }
 
 // Only the owning installation can settle. Detachment uses the current slot,

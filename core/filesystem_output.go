@@ -21,6 +21,62 @@ type filesystemOutput struct {
 	persistenceBody *LazyState
 }
 
+// lazyEvalBody is a value's unevaluated lazy body as seen by lazyEvalFunc.
+type lazyEvalBody struct {
+	evaluated func() bool
+	evaluate  func(context.Context) error
+}
+
+// lazyEvalFunc is the LazyEvalFunc shared by Directory and File. kind names
+// the type in errors. lazyLocked runs under outputMu and reports whether a
+// transfer is pending and the value's lazy body, nil when it has none.
+func (out *filesystemOutput) lazyEvalFunc(kind string, lazyLocked func() (pending bool, body *lazyEvalBody)) dagql.LazyEvalFunc {
+	if host := out.partHost.Load(); host != nil && host.Managed() {
+		return func(ctx context.Context) error { return host.Evaluate(ctx, "snapshot") }
+	}
+	out.outputMu.Lock()
+	pending, body := lazyLocked()
+	out.outputMu.Unlock()
+	if pending {
+		return func(ctx context.Context) error {
+			if host := out.partHost.Load(); host != nil {
+				return host.Evaluate(ctx, "snapshot")
+			}
+			return fmt.Errorf("%w: %s.snapshot", dagql.ErrUnavailablePart, kind)
+		}
+	}
+	if body == nil || body.evaluated() {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		if host := out.partHost.Load(); host != nil {
+			return host.RunNative(ctx, dagql.LazyGroupWhole, []dagql.PartKey{"snapshot"}, body.evaluate)
+		}
+		return body.evaluate(ctx)
+	}
+}
+
+// evaluateLazy validates output and reports completion under the winning body
+// latch. Repeated or concurrent calls do not advance the output revision.
+// published runs under outputMu and reports an unset accessor as an error.
+func (out *filesystemOutput) evaluateLazy(ctx context.Context, state *LazyState, name string, run func(context.Context) error, published func() error) error {
+	return state.Evaluate(ctx, name, func(ctx context.Context) error {
+		if run != nil {
+			if err := run(ctx); err != nil {
+				return err
+			}
+		}
+		out.outputMu.Lock()
+		defer out.outputMu.Unlock()
+		if err := published(); err != nil {
+			return err
+		}
+		out.persistenceBody = state
+		out.OutputRev++
+		return nil
+	})
+}
+
 func (out *filesystemOutput) rememberBodyLocked(lazy any) {
 	if provider, ok := lazy.(interface{ ContainerLazyState() *LazyState }); ok {
 		out.persistenceBody = provider.ContainerLazyState()
@@ -70,8 +126,7 @@ func (out *filesystemOutput) lockSnapshotOwnerRead(lazy func() any) (func(), err
 			return func() { state.LazyMu.Unlock(); out.outputMu.Unlock() }, nil
 		}
 		out.outputMu.Unlock()
-		state.LazyMu.Lock()
-		state.LazyMu.Unlock()
+		state.awaitUnlocked()
 	}
 }
 
@@ -138,14 +193,7 @@ func (file *File) SetSnapshot(value bkcache.ImmutableRef) {
 // evaluateLazy validates output and reports completion under the winning body
 // latch. Repeated or concurrent calls do not advance the output revision.
 func (file *File) evaluateLazy(ctx context.Context, state *LazyState, name string, run func(context.Context) error) error {
-	return state.Evaluate(ctx, name, func(ctx context.Context) error {
-		if run != nil {
-			if err := run(ctx); err != nil {
-				return err
-			}
-		}
-		file.outputMu.Lock()
-		defer file.outputMu.Unlock()
+	return file.filesystemOutput.evaluateLazy(ctx, state, name, run, func() error {
 		if file.File == nil || file.Snapshot == nil {
 			return fmt.Errorf("evaluate %s: missing File accessors", name)
 		}
@@ -155,8 +203,6 @@ func (file *File) evaluateLazy(ctx context.Context, state *LazyState, name strin
 		if _, ok := file.Snapshot.Peek(); !ok {
 			return fmt.Errorf("evaluate %s: File snapshot is unset", name)
 		}
-		file.persistenceBody = state
-		file.OutputRev++
 		return nil
 	})
 }
@@ -198,14 +244,7 @@ func (dir *Directory) SetSnapshot(value bkcache.ImmutableRef) {
 // evaluateLazy validates output and reports completion under the winning body
 // latch. Repeated or concurrent calls do not advance the output revision.
 func (dir *Directory) evaluateLazy(ctx context.Context, state *LazyState, name string, run func(context.Context) error) error {
-	return state.Evaluate(ctx, name, func(ctx context.Context) error {
-		if run != nil {
-			if err := run(ctx); err != nil {
-				return err
-			}
-		}
-		dir.outputMu.Lock()
-		defer dir.outputMu.Unlock()
+	return dir.filesystemOutput.evaluateLazy(ctx, state, name, run, func() error {
 		if dir.Dir == nil || dir.Snapshot == nil {
 			return fmt.Errorf("evaluate %s: missing Directory accessors", name)
 		}
@@ -215,8 +254,6 @@ func (dir *Directory) evaluateLazy(ctx context.Context, state *LazyState, name s
 		if _, ok := dir.Snapshot.Peek(); !ok {
 			return fmt.Errorf("evaluate %s: Directory snapshot is unset", name)
 		}
-		dir.persistenceBody = state
-		dir.OutputRev++
 		return nil
 	})
 }

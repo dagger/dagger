@@ -96,7 +96,7 @@ func TestPartReadyPreparationBoundaries(t *testing.T) {
 				value.rev.Add(1)
 			}
 			receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
-			partTestEquivalent(t, ctx, c, receiver, donor)
+			partTestEquivalent(t, c, receiver, donor)
 			partEncodedReceiver(t, ctx, c, receiver)
 			before := receiver.cacheSharedResult().incomingOwnershipCount
 			donorBefore := donor.cacheSharedResult().incomingOwnershipCount
@@ -166,7 +166,7 @@ func TestPartDecisionPreparationArrival(t *testing.T) {
 				} else {
 					local, _ := b.Build(t, nil, "payload", "late source bytes")
 					donor := persistedListTestResult(t, ctx, c, srv, "late-donor", &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: local.SnapshotID()}}})
-					partTestEquivalent(t, ctx, c, receiver, donor)
+					partTestEquivalent(t, c, receiver, donor)
 					if mode == "second-refusal" {
 						manager = &boundaryPinManager{SnapshotManager: b.Manager, afterPin: func() {
 							row.payloadMu.Lock()
@@ -204,7 +204,7 @@ func TestPartDecisionInlineAdmissionAndPendingSync(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "ready"})
-	partTestEquivalent(t, ctx, c, receiver, donor)
+	partTestEquivalent(t, c, receiver, donor)
 	partEncodedReceiver(t, ctx, c, receiver)
 	fs, meta := PersistedPartAddress{Part: "snapshot"}, PersistedPartAddress{Part: "execMeta"}
 	entered, leave, syncReady := make(chan struct{}), make(chan struct{}), make(chan struct{})
