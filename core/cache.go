@@ -24,6 +24,8 @@ type CacheVolume struct {
 	Sharing              CacheSharingMode
 	Owner                string
 
+	// backingMu is EnsureBackingSnapshot's lock; see backingSnapshotMu.
+	backingMu       sync.Mutex
 	mu              sync.Mutex
 	snapshot        bkcache.MutableRef
 	snapshotID      string

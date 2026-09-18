@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -18,6 +19,11 @@ type lateBackingSnapshot interface {
 	// the snapshot, how to drop it again and return the value to the state it
 	// had before the call.
 	ensureBackingSnapshot(ctx context.Context) (syncOwed bool, discard func(context.Context) error, err error)
+	// backingSnapshotMu serializes EnsureBackingSnapshot per value. It is the
+	// helper's own lock, not the value's state lock: the lease sync reads the
+	// value's links through the state lock, and the encoder takes the state
+	// lock too, so neither ever waits on a lease-manager call.
+	backingSnapshotMu() *sync.Mutex
 }
 
 // EnsureBackingSnapshot makes row's snapshot exist and owned by row. Every use
@@ -32,7 +38,14 @@ type lateBackingSnapshot interface {
 // snapshot, reports no link, and the next use creates and syncs again. Keeping
 // the snapshot would leave it protected by the session alone while the value
 // already reports its link, which is the fault this helper exists to prevent.
+//
+// Creation, sync and discard are one step per value: concurrent first uses
+// queue on the value's backing lock, so a second caller never sees a snapshot
+// that the first is about to drop, and never syncs a snapshot half made.
 func EnsureBackingSnapshot[T lateBackingSnapshot](ctx context.Context, row dagql.ObjectResult[T]) error {
+	mu := row.Self().backingSnapshotMu()
+	mu.Lock()
+	defer mu.Unlock()
 	syncOwed, discard, err := row.Self().ensureBackingSnapshot(ctx)
 	if err != nil || !syncOwed {
 		return err
@@ -140,3 +153,7 @@ func (m *ClientFilesyncMirror) ensureBackingSnapshot(ctx context.Context) (bool,
 	}
 	return created || m.foreignUninitialized, discard, nil
 }
+
+func (cache *CacheVolume) backingSnapshotMu() *sync.Mutex      { return &cache.backingMu }
+func (mirror *RemoteGitMirror) backingSnapshotMu() *sync.Mutex { return &mirror.backingMu }
+func (m *ClientFilesyncMirror) backingSnapshotMu() *sync.Mutex { return &m.backingMu }

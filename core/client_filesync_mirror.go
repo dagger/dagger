@@ -23,7 +23,9 @@ type ClientFilesyncMirror struct {
 	Drive                string
 	EphemeralID          string
 
-	mu sync.Mutex
+	// backingMu is EnsureBackingSnapshot's lock; see backingSnapshotMu.
+	backingMu sync.Mutex
+	mu        sync.Mutex
 
 	snapshot bkcache.MutableRef
 

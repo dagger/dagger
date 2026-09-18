@@ -17,8 +17,10 @@ type RemoteGitMirror struct {
 	foreignUninitialized bool
 	RemoteURL            string
 
-	mu       sync.Mutex
-	snapshot bkcache.MutableRef
+	// backingMu is EnsureBackingSnapshot's lock; see backingSnapshotMu.
+	backingMu sync.Mutex
+	mu        sync.Mutex
+	snapshot  bkcache.MutableRef
 }
 
 var _ dagql.PersistedObject = (*RemoteGitMirror)(nil)

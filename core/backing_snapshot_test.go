@@ -98,9 +98,13 @@ func (ib *importedBacking) ensure(ctx context.Context, row dagql.AnyResult) (bkc
 		return row.Self().getSnapshot(), err
 	case dagql.ObjectResult[*RemoteGitMirror]:
 		err := EnsureBackingSnapshot(ctx, row)
+		row.Self().mu.Lock()
+		defer row.Self().mu.Unlock()
 		return row.Self().snapshot, err
 	case dagql.ObjectResult[*ClientFilesyncMirror]:
 		err := EnsureBackingSnapshot(ctx, row)
+		row.Self().mu.Lock()
+		defer row.Self().mu.Unlock()
 		return row.Self().snapshot, err
 	}
 	panic("unexpected row")
