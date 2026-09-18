@@ -585,20 +585,6 @@ func TestRootAnchoredSDKScopeIsMatched(t *testing.T) {
 		}
 	}
 
-	t.Run("uninstall removes the module scope", func(t *testing.T) {
-		c := cfg()
-		path, del, err := removeSDKManagedModuleReference(c, "common", "mymod", c.Modules["mymod"])
-		require.NoError(t, err)
-		require.True(t, del)
-		require.Equal(t, "common/.dagger/modules/mymod", path)
-		moduleScope, ok := c.SDKs["go"].Scopes["/common/.dagger/modules/mymod"]
-		require.True(t, ok)
-		require.False(t, moduleScope.IsModule)
-		require.Empty(t, moduleScope.Name)
-		require.Equal(t, []string{"/common/sdk/shared"}, moduleScope.Clients)
-		require.Contains(t, c.SDKs["go"].Scopes, "/common/clients/one")
-	})
-
 	t.Run("sdk listing resolves it", func(t *testing.T) {
 		config := cfg()
 		sdk, err := workspaceSDKFromEntry(&core.Workspace{}, config, "common", "go", config.Modules["go-sdk"])

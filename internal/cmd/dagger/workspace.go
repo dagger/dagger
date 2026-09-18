@@ -586,7 +586,8 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 	return name, nil
 }
 
-func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
+func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, selection workspacepkg.ModuleSelection, here bool) error {
+	name := selection.Name
 	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutModule(name, dagger.WorkspaceWithoutModuleOpts{Here: here}))
 	if err != nil {
 		return err
@@ -602,7 +603,13 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 		_, err = fmt.Fprintf(out, "Uninstalled module %q from env %q in %s\n", name, workspaceEnv, configPath)
 		return err
 	}
-	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)
+	if _, err := fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath); err != nil {
+		return err
+	}
+	if !workspacepkg.IsLocalRef(selection.Entry.Source, selection.Entry.Pin) {
+		return nil
+	}
+	_, err = fmt.Fprintf(out, "Module files remain at %s\n", filepath.Clean(filepath.FromSlash(selection.Entry.Source)))
 	return err
 }
 

@@ -43,9 +43,24 @@ func SetEntrypoint(cfg *Config, configDir, name string) error {
 	if cfg == nil {
 		return nil
 	}
-	// Unnamed module scopes inherit the local entrypoint's installed name.
-	// Record that name before removing the association, so regeneration cannot
-	// fall back to the directory basename and rename an existing module.
+	if err := PreserveInferredScopeNames(cfg, configDir, func(installed string) bool {
+		return installed != name
+	}); err != nil {
+		return err
+	}
+	for installed, entry := range cfg.Modules {
+		entry.Entrypoint = name != "" && installed == name
+		cfg.Modules[installed] = entry
+	}
+	return nil
+}
+
+// PreserveInferredScopeNames records on unnamed module scopes the name inferred
+// from a local entrypoint that detached reports as about to lose that role.
+func PreserveInferredScopeNames(cfg *Config, configDir string, detached func(installed string) bool) error {
+	if cfg == nil {
+		return nil
+	}
 	names := map[string][]string{}
 	for installed, entry := range cfg.Modules {
 		if !entry.Entrypoint || !IsLocalRef(entry.Source, entry.Pin) {
@@ -68,8 +83,7 @@ func SetEntrypoint(cfg *Config, configDir, name string) error {
 			if err != nil {
 				return err
 			}
-			// Ambiguous entrypoints have no unique inferred name to preserve.
-			if previous := names[path]; len(previous) == 1 && previous[0] != name {
+			if previous := names[path]; len(previous) == 1 && detached(previous[0]) {
 				scope.Name = previous[0]
 				sdk.Scopes[key] = scope
 			}
@@ -77,9 +91,5 @@ func SetEntrypoint(cfg *Config, configDir, name string) error {
 		sdks[sdkName] = sdk
 	}
 	cfg.SDKs = sdks
-	for installed, entry := range cfg.Modules {
-		entry.Entrypoint = name != "" && installed == name
-		cfg.Modules[installed] = entry
-	}
 	return nil
 }
