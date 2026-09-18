@@ -21,6 +21,7 @@ func TestCollections(t *testing.T) {
 const collectionGoSource = `package main
 import (
   "context"
+  "fmt"
   "dagger/collections/internal/dagger"
 )
 type Collections struct{}
@@ -56,6 +57,17 @@ func (items *Items) Copy() *Items { return items }
 func (items Items) Change(names []string) Items { items.Names = names; items.Selection = nil; return items }
 func (items *Items) Fresh() *Items { return &Items{Names: []string{"z"}, Selection: items.Selection} }
 func (items *Items) Added(ctx context.Context) ([]string, error) { return items.Selection.AddedKeys(ctx) }
+// +check
+func (items *Items) DeltaCheck(ctx context.Context) error {
+  added, err := items.Selection.AddedKeys(ctx)
+  if err != nil { return err }
+  removed, err := items.Selection.RemovedKeys(ctx)
+  if err != nil { return err }
+  if fmt.Sprint(added) != "[d]" || fmt.Sprint(removed) != "[b a]" {
+    return fmt.Errorf("unexpected delta: added=%v removed=%v", added, removed)
+  }
+  return nil
+}
 type Item struct { Name string }
 func (item *Item) File() *dagger.File { return dag.Directory().WithNewFile("value", item.Name).File("value") }
 func (*Item) Broken() *dagger.Container { panic("leaf must stay deferred") }
@@ -110,6 +122,9 @@ func (CollectionsSuite) TestGoAPI(ctx context.Context, t *testctx.T) {
 	out, err = ctr.With(daggerQueryAt("./collections", collectionDeltaQuery)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, collectionDeltaExpected, out)
+	out, err = ctr.With(daggerQueryAt("./collections", `{ items { batch { change(names: ["c", "d"]) { batch { deltaCheck { pass } } } } } }`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"items":{"batch":{"change":{"batch":{"deltaCheck":{"pass":true}}}}}}`, out)
 }
 
 const collectionDeltaQuery = `{ items {
