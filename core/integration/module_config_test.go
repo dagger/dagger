@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
@@ -31,7 +32,7 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 	t.Run("out-of-root config", func(ctx context.Context, t *testctx.T) {
 		// Verify dagger.json paths outside the module root are handled correctly.
 
-		baseCtr := func(t *testctx.T, c *dagger.Client) *dagger.Container {
+		baseCtr := func(t *testctx.T, c *dagger.Client) *core.Container {
 			return goGitBase(t, c).
 				With(withModuleFixture(t, c, "/tmp/foo", "go/config-out-of-root-dep")).
 				With(withModuleFixture(t, c, "/work/dep", "go/config-out-of-root-dep")).
@@ -171,14 +172,14 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 func (ModuleConfigSuite) TestEngineVersionLatestPinsOnConfigWrite(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	moduleSource := func(engineVersion string) *dagger.ModuleSource {
-		return c.Directory().
+	moduleSource := func(engineVersion string) *core.ModuleSource {
+		return core.NewQuery(c).Directory().
 			WithNewFile("dagger.json", fmt.Sprintf(`{"name":"foo","engineVersion":%q,"sdk":{"source":"dang"}}`, engineVersion)).
 			WithNewFile("main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
 			AsModuleSource()
 	}
 
-	writtenEngineVersion := func(ctx context.Context, t *testctx.T, src *dagger.ModuleSource) string {
+	writtenEngineVersion := func(ctx context.Context, t *testctx.T, src *core.ModuleSource) string {
 		t.Helper()
 		contents, err := src.GeneratedContextChangeset().Layer().File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
@@ -302,7 +303,7 @@ func (ModuleConfigSuite) TestSDKConfig(ctx context.Context, t *testctx.T) {
 				output, err := ctr.With(daggerCall("check-env")).Stdout(ctx)
 				if tc.expectedError != "" {
 					require.NotNil(t, err)
-					execerror := err.(*dagger.ExecError)
+					execerror := err.(*core.ExecError)
 					require.Contains(t, execerror.Stderr, tc.expectedError)
 				} else {
 					require.Nil(t, err)
@@ -410,7 +411,7 @@ func (ModuleConfigSuite) TestSDKConfig(ctx context.Context, t *testctx.T) {
 				output, err := ctr.With(daggerCall("get-cool-name")).Stdout(ctx)
 				if tc.expectedError != "" {
 					require.NotNil(t, err)
-					execerror := err.(*dagger.ExecError)
+					execerror := err.(*core.ExecError)
 					require.Contains(t, execerror.Stderr, tc.expectedError)
 				} else {
 					require.Nil(t, err)
@@ -434,12 +435,12 @@ func (ModuleConfigSuite) TestIncludeExclude(ctx context.Context, t *testctx.T) {
 			fixture: "go/config-include-exclude",
 			mainSource: `package main
 import (
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct {}
 
-func (m *Test) Fn() *dagger.Directory {
+func (m *Test) Fn() *core.Directory {
 	return dag.CurrentModule().Source()
 }
 			`,
@@ -476,12 +477,12 @@ export class Test {
 			fixture: "go/config-include-exclude-coolsdk",
 			mainSource: `package main
 import (
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct {}
 
-func (m *Test) Fn() *dagger.Directory {
+func (m *Test) Fn() *core.Directory {
 	return dag.CurrentModule().Source()
 }
 `,
@@ -492,12 +493,12 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger/coolsdk/internal/dagger"
+	"dagger/coolsdk/internal/dagger/core"
 )
 
 type Coolsdk struct {}
 
-func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *core.ModuleSource, introspectionJSON *core.File, outputFilePath string) (*core.Container, error) {
 	mod := modSource.WithSDK("go").AsModule()
 	modID, err := mod.ID(ctx)
 	if err != nil {
@@ -515,7 +516,7 @@ func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSourc
 		}), nil
 }
 
-func (m *Coolsdk) ModuleRuntime(ctx context.Context, modSource *dagger.ModuleSource, introspectionJson *dagger.File) (*dagger.Container, error) {
+func (m *Coolsdk) ModuleRuntime(ctx context.Context, modSource *core.ModuleSource, introspectionJson *core.File) (*core.Container, error) {
 	runtime, err := modSource.WithSDK("go").AsModule().Runtime(ctx)
 	if err != nil || runtime == nil {
 		return runtime, err
@@ -523,7 +524,7 @@ func (m *Coolsdk) ModuleRuntime(ctx context.Context, modSource *dagger.ModuleSou
 	return runtime.WithEnvVariable("COOL", "true"), nil
 }
 
-func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
+func (m *Coolsdk) Codegen(modSource *core.ModuleSource, introspectionJson *core.File) *core.GeneratedCode {
 	modSource = modSource.WithSDK("go")
 	return dag.GeneratedCode(
 		// apply generated diff over context directory
@@ -550,7 +551,7 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 					Include: []string{"dagger/subdir/keepdir", "!dagger/subdir/keepdir/rmdir"},
 					Source:  "dagger",
 				})).
-				WithDirectory("dagger/subdir/keepdir/rmdir", c.Directory()).
+				WithDirectory("dagger/subdir/keepdir/rmdir", core.NewQuery(c).Directory()).
 				// materialize generated files first: toml modules don't regenerate at runtime
 				With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`))
 
@@ -611,7 +612,7 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 func (ModuleConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().From(golangImage).
+	ctr := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		With(withModuleFixture(t, c, "/work", "go/config-context-defaults-source-root")).
 		WithWorkdir("/work").
@@ -989,11 +990,11 @@ func (ModuleConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 func (ModuleConfigSuite) TestGeneratedContextChangesetPreservesUnrelatedContext(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	src := c.Directory().
+	src := core.NewQuery(c).Directory().
 		WithNewFile("outside.txt", "keep me").
 		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"dang"}}`).
 		WithNewFile("mod/main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
-		AsModuleSource(dagger.DirectoryAsModuleSourceOpts{SourceRootPath: "mod"})
+		AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "mod"})
 
 	removed, err := src.GeneratedContextChangeset().RemovedPaths(ctx)
 	require.NoError(t, err)
@@ -1006,7 +1007,7 @@ func (ModuleConfigSuite) TestGeneratedContextChangesetPreservesUnrelatedContext(
 func (ModuleConfigSuite) TestModuleSourceGenerateWorkspace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("outside.txt", "keep me").
 		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("mod/main.go", "package main\n\ntype Foo struct{}\n").
@@ -1022,7 +1023,7 @@ func (ModuleConfigSuite) TestModuleSourceGenerateWorkspace(ctx context.Context, 
 	require.NoError(t, err)
 	require.Equal(t, "keep me", contents)
 
-	added, err := generated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+	added, err := generated.Changes(core.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
 	require.NoError(t, err)
 	require.Contains(t, added, "extra.txt")
 	require.NotContains(t, added, "outside.txt")

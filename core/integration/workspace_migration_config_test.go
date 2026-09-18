@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -91,7 +91,7 @@ package = 'bindings'
 	repeated, err := again.File("dagger.toml").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, updated, repeated)
-	empty, err := again.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
+	empty, err := again.WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
 		Stdin: `{currentWorkspace { migrate { changes { isEmpty } } }}`,
 	}).Stdout(ctx)
 	require.NoError(t, err)
@@ -146,7 +146,7 @@ path = './app'
 		WithNewFile("app/dagger.json", `{"name":"app","sdk":"../sdk"}`).
 		WithEnvVariable("CODEX_CI", "1")
 
-	requireUnchanged := func(t *testctx.T, ctr *dagger.Container) {
+	requireUnchanged := func(t *testctx.T, ctr *core.Container) {
 		data, err := ctr.File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, original, data)

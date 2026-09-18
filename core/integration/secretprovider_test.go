@@ -8,6 +8,7 @@ package core
 // - secret_gcp_test.go: GCP-backed secret provider integration.
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -33,7 +34,7 @@ func TestSecretProvider(t *testing.T) {
 
 func (SecretProvider) TestUnknown(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
@@ -54,7 +55,7 @@ func (SecretProvider) TestUnknown(ctx context.Context, t *testctx.T) {
 
 func (SecretProvider) TestEnv(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
@@ -77,7 +78,7 @@ func (SecretProvider) TestEnv(ctx context.Context, t *testctx.T) {
 
 func (SecretProvider) TestFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
@@ -100,7 +101,7 @@ func (SecretProvider) TestFile(ctx context.Context, t *testctx.T) {
 
 func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
@@ -151,15 +152,15 @@ printf '%s' "$count" > "$count_file"
 printf 'secret%s' "$count"
 `
 
-	baseContainer := func(c *dagger.Client) *dagger.Container {
-		return c.Container().
+	baseContainer := func(c *dagger.Client) *core.Container {
+		return core.NewQuery(c).Container().
 			From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithNewFile("/usr/local/bin/op", fakeOp, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+			WithNewFile("/usr/local/bin/op", fakeOp, core.ContainerWithNewFileOpts{Permissions: 0o755}).
 			WithEnvVariable("OP_SERVICE_ACCOUNT_TOKEN", "")
 	}
 
-	verifySecretFromOnePassword := func(ctx context.Context, base *dagger.Container, secretURL string) (string, error) {
+	verifySecretFromOnePassword := func(ctx context.Context, base *core.Container, secretURL string) (string, error) {
 		return base.
 			WithWorkdir("/work").
 			WithNewFile("dagger.json", `{"name":"foo","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
@@ -167,14 +168,14 @@ printf 'secret%s' "$count"
 
 import (
 	"context"
-	"dagger/foo/internal/dagger"
+	"dagger/foo/internal/dagger/core"
 	"fmt"
 	"time"
 )
 
 type Foo struct{}
 
-func (m *Foo) VerifySecret(ctx context.Context, secret *dagger.Secret) (string, error) {
+func (m *Foo) VerifySecret(ctx context.Context, secret *core.Secret) (string, error) {
 	original, err := secret.Plaintext(ctx)
 	if err != nil {
 		return "", err
@@ -246,21 +247,21 @@ func (m *Foo) VerifySecret(ctx context.Context, secret *dagger.Secret) (string, 
 func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vaultImage := c.Container().From("hashicorp/vault:1.18")
+	vaultImage := core.NewQuery(c).Container().From("hashicorp/vault:1.18")
 
 	// Configure a Vault server
 	vaultServer, err := vaultImage.
 		WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "myroot").
 		WithEnvVariable("VAULT_DEV_LISTEN_ADDRESS", "0.0.0.0:8200").
 		WithEnvVariable("SKIP_SETCAP", "1").
-		WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, dagger.ContainerWithDockerHealthcheckOpts{
+		WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, core.ContainerWithDockerHealthcheckOpts{
 			Interval:      "1s",
 			Timeout:       "5s",
 			StartPeriod:   "30s",
 			StartInterval: "1s",
 			Retries:       30,
 		}).
-		AsService(dagger.ContainerAsServiceOpts{
+		AsService(core.ContainerAsServiceOpts{
 			Args: []string{"vault", "server", "-dev"},
 		}).Start(ctx)
 	require.NoError(t, err)
@@ -271,7 +272,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	// Test Vault provider with token auth
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
@@ -323,7 +324,7 @@ func (SecretProvider) TestVaultOIDCFallbackError(ctx context.Context, t *testctx
 
 func (SecretProvider) TestVaultOIDCMissingVaultAddr(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
@@ -400,12 +401,12 @@ func (SecretProvider) TestVaultOIDCEndToEnd(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	dex := startDexOIDCProvider(ctx, t, c)
-	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, map[string]*dagger.Service{"dex": dex})
+	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, map[string]*core.Service{"dex": dex})
 
 	secretValue := "secret" + identity.NewID()
 	configureVaultOIDC(ctx, t, vaultImage, vaultServer, dex, secretValue)
 
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From("alpine:3.20").
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		With(nonNestedDevEngine(c)).
@@ -431,15 +432,15 @@ func (SecretProvider) TestVaultOIDCEndToEnd(ctx context.Context, t *testctx.T) {
 func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 	const vaultImage = "hashicorp/vault:1.18"
 
-	baseContainer := func(c *dagger.Client, vault *dagger.Service) *dagger.Container {
+	baseContainer := func(c *dagger.Client, vault *core.Service) *core.Container {
 		return goGitBase(t, c).
-			WithFile("/bin/vault", c.Container().From(vaultImage).File("/bin/vault")).
+			WithFile("/bin/vault", core.NewQuery(c).Container().From(vaultImage).File("/bin/vault")).
 			WithEnvVariable("VAULT_ADDR", "http://vault:8200").
 			WithEnvVariable("VAULT_TOKEN", "vault-root-token").
 			WithServiceBinding("vault", vault)
 	}
 
-	verifySecretFromVault := func(ctx context.Context, c *dagger.Client, base *dagger.Container, secretURL string, tcname string) (string, error) {
+	verifySecretFromVault := func(ctx context.Context, c *dagger.Client, base *core.Container, secretURL string, tcname string) (string, error) {
 		return base.
 			WithWorkdir("/work").
 			With(withModuleEntrypointFixture(t, c, ".", "foo", "go/vault-ttl")).
@@ -467,11 +468,11 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			vault, err := c.Container().
+			vault, err := core.NewQuery(c).Container().
 				From(vaultImage).
 				WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "vault-root-token").
 				WithEnvVariable("VAULT_LOG_LEVEL", "debug").
-				WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, dagger.ContainerWithDockerHealthcheckOpts{
+				WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, core.ContainerWithDockerHealthcheckOpts{
 					Interval:      "1s",
 					Timeout:       "5s",
 					StartPeriod:   "30s",
@@ -479,7 +480,7 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 					Retries:       30,
 				}).
 				WithExposedPort(8200).
-				AsService(dagger.ContainerAsServiceOpts{
+				AsService(core.ContainerAsServiceOpts{
 					UseEntrypoint:            true,
 					InsecureRootCapabilities: true,
 				}).Start(ctx)
@@ -508,13 +509,13 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 "$@"
 `
 
-	opts := dagger.ContainerWithExecOpts{
+	opts := core.ContainerWithExecOpts{
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
 		DisableDaggerInDagger:    true,
 	}
 
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From("alpine").
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		// use a non-nested dev engine, so that the `dagger query` later starts
@@ -525,7 +526,7 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 		WithExec([]string{"apk", "add", "libsecret", "gnome-keyring", "dbus-x11", "libcap-setcap"}).
 		// HACK: for some reason, looks like this cap needs to be set manually now?
 		WithExec([]string{"setcap", "cap_ipc_lock=+ep", "/usr/bin/gnome-keyring-daemon"}).
-		WithNewFile("/rest_keyring.sh", keyringScript, dagger.ContainerWithNewFileOpts{
+		WithNewFile("/rest_keyring.sh", keyringScript, core.ContainerWithNewFileOpts{
 			Permissions: 0755,
 		}).
 		WithEntrypoint([]string{"dbus-run-session", "--", "/rest_keyring.sh"}).
@@ -546,7 +547,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Start floci container for testing AWS services
-	fakeAws, err := c.Container().
+	fakeAws, err := core.NewQuery(c).Container().
 		From("hectorvent/floci:1.0.4@sha256:70733770e91ea387a4812fa2e9526df02d934aeb5057a760296fc4fb05345a9a").
 		WithNewFile("src/main/resources/application.yml", `
 floci:
@@ -595,7 +596,7 @@ floci:
 	require.NoError(t, err)
 
 	// Wait for the fake AWS to be ready and set up AWS CLI base container
-	awsCLI := c.Container().
+	awsCLI := core.NewQuery(c).Container().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "--no-cache", "aws-cli", "curl"}).
 		WithServiceBinding("fakeaws", fakeAws).
@@ -639,7 +640,7 @@ floci:
 	require.NoError(t, err)
 
 	// Container for running Dagger queries
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithServiceBinding("fakeaws", fakeAws).
@@ -716,9 +717,9 @@ floci:
 	require.Equal(t, out1, out2)
 }
 
-func fetchSecret(ctx context.Context, ctr *dagger.Container, url string, opts ...dagger.ContainerWithExecOpts) (string, error) {
+func fetchSecret(ctx context.Context, ctr *core.Container, url string, opts ...core.ContainerWithExecOpts) (string, error) {
 	query := fmt.Sprintf(`{secret(uri: %q) {plaintext}}`, url)
-	opts = append([]dagger.ContainerWithExecOpts{{Stdin: query}}, opts...)
+	opts = append([]core.ContainerWithExecOpts{{Stdin: query}}, opts...)
 
 	out, err := ctr.WithExec([]string{"dagger", "query"}, opts...).Stdout(ctx)
 	if err != nil {
@@ -737,8 +738,8 @@ func fetchSecret(ctx context.Context, ctr *dagger.Container, url string, opts ..
 	return result.Secret.Plaintext, nil
 }
 
-func startVaultDevServer(ctx context.Context, t *testctx.T, c *dagger.Client, bindings map[string]*dagger.Service) (*dagger.Container, *dagger.Service) {
-	vaultImage := c.Container().From("hashicorp/vault:1.18")
+func startVaultDevServer(ctx context.Context, t *testctx.T, c *dagger.Client, bindings map[string]*core.Service) (*core.Container, *core.Service) {
+	vaultImage := core.NewQuery(c).Container().From("hashicorp/vault:1.18")
 	for alias, svc := range bindings {
 		vaultImage = vaultImage.WithServiceBinding(alias, svc)
 	}
@@ -750,7 +751,7 @@ func startVaultDevServer(ctx context.Context, t *testctx.T, c *dagger.Client, bi
 		// Image EXPOSE metadata is introspection-only; services need an explicit
 		// exposed port to get Dagger's port healthcheck.
 		WithExposedPort(8200).
-		AsService(dagger.ContainerAsServiceOpts{
+		AsService(core.ContainerAsServiceOpts{
 			Args: []string{"vault", "server", "-dev"},
 		}).Start(ctx)
 	require.NoError(t, err)
@@ -758,7 +759,7 @@ func startVaultDevServer(ctx context.Context, t *testctx.T, c *dagger.Client, bi
 	return vaultImage, vaultServer
 }
 
-func seedVaultSecret(ctx context.Context, t *testctx.T, vaultImage *dagger.Container, vaultServer *dagger.Service, path string, field string, value string) {
+func seedVaultSecret(ctx context.Context, t *testctx.T, vaultImage *core.Container, vaultServer *core.Service, path string, field string, value string) {
 	_, err := vaultImage.
 		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
 		WithServiceBinding("vault", vaultServer).
@@ -770,8 +771,8 @@ func seedVaultSecret(ctx context.Context, t *testctx.T, vaultImage *dagger.Conta
 	require.NoError(t, err)
 }
 
-func newVaultQueryContainer(c *dagger.Client, t *testctx.T, vaultServer *dagger.Service) *dagger.Container {
-	return c.Container().
+func newVaultQueryContainer(c *dagger.Client, t *testctx.T, vaultServer *core.Service) *core.Container {
+	return core.NewQuery(c).Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
@@ -779,12 +780,12 @@ func newVaultQueryContainer(c *dagger.Client, t *testctx.T, vaultServer *dagger.
 		WithEnvVariable("VAULT_SKIP_VERIFY", "1")
 }
 
-func withCachedVaultToken(ctr *dagger.Container, token string, expiresAt time.Time) *dagger.Container {
+func withCachedVaultToken(ctr *core.Container, token string, expiresAt time.Time) *core.Container {
 	payload := fmt.Sprintf(`{"token":%q,"expires_at":%q}`, token, expiresAt.UTC().Format(time.RFC3339Nano))
-	return ctr.WithNewFile("/root/.config/dagger/vault-token", payload, dagger.ContainerWithNewFileOpts{Permissions: 0o600})
+	return ctr.WithNewFile("/root/.config/dagger/vault-token", payload, core.ContainerWithNewFileOpts{Permissions: 0o600})
 }
 
-func startDexOIDCProvider(ctx context.Context, t *testctx.T, c *dagger.Client) *dagger.Service {
+func startDexOIDCProvider(ctx context.Context, t *testctx.T, c *dagger.Client) *core.Service {
 	const dexConfig = `issuer: http://dex:5556/dex
 storage:
   type: memory
@@ -807,18 +808,18 @@ staticPasswords:
   userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
 `
 
-	dex, err := c.Container().
+	dex, err := core.NewQuery(c).Container().
 		From("dexidp/dex:v2.37.0").
 		WithNewFile("/etc/dex/config.yaml", dexConfig).
 		WithExposedPort(5556).
-		WithDockerHealthcheck([]string{"wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"}, dagger.ContainerWithDockerHealthcheckOpts{
+		WithDockerHealthcheck([]string{"wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"}, core.ContainerWithDockerHealthcheckOpts{
 			Interval:      "1s",
 			Timeout:       "5s",
 			StartPeriod:   "30s",
 			StartInterval: "1s",
 			Retries:       30,
 		}).
-		AsService(dagger.ContainerAsServiceOpts{
+		AsService(core.ContainerAsServiceOpts{
 			Args: []string{"dex", "serve", "/etc/dex/config.yaml"},
 		}).Start(ctx)
 	require.NoError(t, err)
@@ -826,7 +827,7 @@ staticPasswords:
 	return dex
 }
 
-func configureVaultOIDC(ctx context.Context, t *testctx.T, vaultImage *dagger.Container, vaultServer *dagger.Service, dex *dagger.Service, secretValue string) {
+func configureVaultOIDC(ctx context.Context, t *testctx.T, vaultImage *core.Container, vaultServer *core.Service, dex *core.Service, secretValue string) {
 	_, err := vaultImage.
 		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
 		WithEnvVariable("VAULT_TOKEN", "myroot").
@@ -859,7 +860,7 @@ vault policy write oidc-read /tmp/oidc-read.hcl`}).
 	require.NoError(t, err)
 }
 
-func querySecretWithOIDCBrowserSimulation(ctx context.Context, ctr *dagger.Container, url string) (string, error) {
+func querySecretWithOIDCBrowserSimulation(ctx context.Context, ctr *core.Container, url string) (string, error) {
 	script := fmt.Sprintf(`set -eu
 
 query=%q
@@ -991,11 +992,11 @@ cat "$secret_out"
 `, fmt.Sprintf(`{secret(uri: %q) {plaintext}}`, url))
 
 	out, err := ctr.
-		WithNewFile("/tmp/run-vault-oidc-flow.sh", script, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+		WithNewFile("/tmp/run-vault-oidc-flow.sh", script, core.ContainerWithNewFileOpts{Permissions: 0o755}).
 		WithExec([]string{"sh", "/tmp/run-vault-oidc-flow.sh"}).
 		Stdout(ctx)
 	if err != nil {
-		var execErr *dagger.ExecError
+		var execErr *core.ExecError
 		if errors.As(err, &execErr) {
 			return "", fmt.Errorf("oidc browser simulation failed: %w\nstdout:\n%s\nstderr:\n%s", err, execErr.Stdout, execErr.Stderr)
 		}

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/koron-go/prefixw"
 	"github.com/stretchr/testify/require"
@@ -43,7 +44,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+	code := core.NewQuery(c).Host().Directory(thisRepoPath, core.HostDirectoryOpts{
 		Include: []string{
 			"core/integration/testdata/telemetry/",
 			"core/integration/testdata/basic-container/",
@@ -53,8 +54,8 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		},
 	})
 
-	eventsVol := c.CacheVolume("dagger-silent-session-events-" + identity.NewID())
-	base := c.Container().
+	eventsVol := core.NewQuery(c).CacheVolume("dagger-silent-session-events-" + identity.NewID())
+	base := core.NewQuery(c).Container().
 		From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(goCache(c)).
@@ -116,11 +117,11 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 
 	// try to insulate from network flakiness by resolving and using a fully
 	// qualified ref beforehand.
-	fqRef, err := c1.Container().From(alpineImage).ImageRef(ctx1)
+	fqRef, err := core.NewQuery(c1).Container().From(alpineImage).ImageRef(ctx1)
 	require.NoError(t, err)
 
 	echo := func(ctx context.Context, c *dagger.Client, msg string) {
-		_, err := c.Container().
+		_, err := core.NewQuery(c).Container().
 			From(fqRef).
 			// FIXME: have to echo first, then wait, then echo again, because we only
 			// wait for logs once we see them the first time, and we only show spans
@@ -226,7 +227,7 @@ func (ClientSuite) TestQuerySchemaVersion(ctx context.Context, t *testctx.T) {
 func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainer(c, func(c *core.Container) *core.Container {
 		return c.
 			WithNewFile(
 				"/usr/local/bin/slow-entrypoint.sh",
@@ -237,7 +238,7 @@ func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 					`echo my hostname is $(hostname)`,
 					`exec /usr/local/bin/dagger-entrypoint.sh "$@"`,
 				}, "\n"),
-				dagger.ContainerWithNewFileOpts{Permissions: 0o700},
+				core.ContainerWithNewFileOpts{Permissions: 0o700},
 			).
 			WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"})
 	})
@@ -256,7 +257,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+	code := core.NewQuery(c).Host().Directory(thisRepoPath, core.HostDirectoryOpts{
 		Include: []string{
 			"core/integration/testdata/telemetry/",
 			"core/integration/testdata/basic-container/",
@@ -266,9 +267,9 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		},
 	})
 
-	eventsVol := c.CacheVolume("dagger-dev-engine-events-" + identity.NewID())
+	eventsVol := core.NewQuery(c).CacheVolume("dagger-dev-engine-events-" + identity.NewID())
 
-	withCode := c.Container().
+	withCode := core.NewQuery(c).Container().
 		From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(goCache(c)).

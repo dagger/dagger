@@ -10,6 +10,7 @@ package core
 // - engine_persistence_test.go: engine state across restarts.
 
 import (
+	"dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -57,19 +58,19 @@ func TestLocalCache(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(LocalCacheSuite{})
 }
 
-func devEngineContainerAsService(ctr *dagger.Container) *dagger.Service {
-	return ctr.AsService(dagger.ContainerAsServiceOpts{
+func devEngineContainerAsService(ctr *core.Container) *core.Service {
+	return ctr.AsService(core.ContainerAsServiceOpts{
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
 	})
 }
 
 // devEngineContainer returns a nested dev engine.
-func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagger.Container) *dagger.Container {
+func devEngineContainer(c *dagger.Client, withs ...func(*core.Container) *core.Container) *core.Container {
 	return devEngineContainerWithStateKey(c, "dagger-dev-engine-state-"+identity.NewID(), withs...)
 }
 
-func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, withs ...func(*dagger.Container) *dagger.Container) *dagger.Container {
+func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, withs ...func(*core.Container) *core.Container) *core.Container {
 	// This loads the engine.tar file from the host into the container, that
 	// was set up by the test caller. This is used to spin up additional dev
 	// engines.
@@ -79,17 +80,17 @@ func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, with
 	} else {
 		tarPath = "./bin/engine.tar"
 	}
-	devEngineTar := c.Host().File(tarPath)
+	devEngineTar := core.NewQuery(c).Host().File(tarPath)
 
-	ctr := c.Container().Import(devEngineTar)
+	ctr := core.NewQuery(c).Container().Import(devEngineTar)
 	for _, with := range withs {
 		ctr = with(ctr)
 	}
 
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
-		WithMountedCache("/var/lib/dagger", c.CacheVolume(stateCacheKey)).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithMountedCache("/var/lib/dagger", core.NewQuery(c).CacheVolume(stateCacheKey)).
+		WithExposedPort(1234, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			// avoid network conflicts with other tests
@@ -103,8 +104,8 @@ func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, with
 		})
 }
 
-func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, config.Config) config.Config) func(*dagger.Container) *dagger.Container {
-	return func(ctr *dagger.Container) *dagger.Container {
+func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, config.Config) config.Config) func(*core.Container) *core.Container {
+	return func(ctr *core.Container) *core.Container {
 		t.Helper()
 
 		var cfg config.Config
@@ -128,8 +129,8 @@ func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.
 	}
 }
 
-func engineWithBkConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config) func(*dagger.Container) *dagger.Container {
-	return func(ctr *dagger.Container) *dagger.Container {
+func engineWithBkConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config) func(*core.Container) *core.Container {
+	return func(ctr *core.Container) *core.Container {
 		t.Helper()
 
 		var cfg bkconfig.Config
@@ -156,13 +157,13 @@ func engineWithBkConfig(ctx context.Context, t *testctx.T, cfgFns ...func(contex
 }
 
 // CLI execs on this container must disable nesting to connect to devEngine.
-func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *dagger.Service) *dagger.Container {
+func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *core.Service) *core.Container {
 	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/bin/dagger"
-	endpoint, err := devEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := devEngine.Endpoint(ctx, core.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	require.NoError(t, err)
-	return c.Container().From(alpineImage).
+	return core.NewQuery(c).Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngine).
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
@@ -175,10 +176,10 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 // can't use nested execs.
 // It works because our integ test setup code in the dagger-dev module mount
 // in the engine service's unix sock to the test container.
-func nonNestedDevEngine(c *dagger.Client) func(*dagger.Container) *dagger.Container {
-	return func(ctr *dagger.Container) *dagger.Container {
+func nonNestedDevEngine(c *dagger.Client) func(*core.Container) *core.Container {
+	return func(ctr *core.Container) *core.Container {
 		return ctr.
-			WithUnixSocket("/run/dagger-engine.sock", c.Host().UnixSocket("/run/dagger-engine.sock")).
+			WithUnixSocket("/run/dagger-engine.sock", core.NewQuery(c).Host().UnixSocket("/run/dagger-engine.sock")).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///run/dagger-engine.sock")
 	}
 }
@@ -187,7 +188,7 @@ func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// engine should shutdown with exit code 0 when receiving SIGTERM
-	ctr := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+	ctr := devEngineContainer(c, func(c *core.Container) *core.Container {
 		t.Helper()
 
 		c = c.WithNewFile(
@@ -202,7 +203,7 @@ kill -TERM $engine_pid
 wait $engine_pid
 exit $?
 `,
-			dagger.ContainerWithNewFileOpts{Permissions: 0o700},
+			core.ContainerWithNewFileOpts{Permissions: 0o700},
 		)
 
 		// do a sync here so our timeout doesn't include overhead of importing the engine itself
@@ -224,7 +225,7 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	engineName := "my-special-engine"
 	engineVersion := engine.Version + "-special"
-	devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+	devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(c *core.Container) *core.Container {
 		return c.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", engineVersion)
@@ -237,7 +238,7 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	// non-TTY default, doesn't render passing-span logs).
 	clientCtr = clientCtr.
 		WithEnvVariable("DAGGER_PROGRESS", "plain").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+		WithExec([]string{"dagger", "core", "version"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	// version call
 	stdout, err := clientCtr.Stdout(ctx)
@@ -250,7 +251,7 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	require.Contains(t, stderr, engineName)
 	require.Contains(t, stderr, engineVersion)
 
-	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "engine", "name"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "engine", "name"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	// name call
 	stdout, err = clientCtr.Stdout(ctx)
@@ -293,7 +294,7 @@ func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 				// call-chain naming instead.
 				WithEnvVariable("DAGGER_PROGRESS", "plain").
 				WithExec([]string{"apk", "add", "jq", "curl"}).
-				WithExec([]string{"sh", "-c", command}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+				WithExec([]string{"sh", "-c", command}, core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 			stdout, err := clientCtr.Stdout(ctx)
 			require.NoError(t, err)
@@ -312,7 +313,7 @@ func (EngineSuite) TestCurrentTimestamp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	before := time.Now().UTC().Truncate(time.Second)
-	first, err := c.CurrentTimestamp(ctx)
+	first, err := core.NewQuery(c).CurrentTimestamp(ctx)
 	require.NoError(t, err)
 	firstTime, err := time.Parse(time.RFC3339, first)
 	require.NoError(t, err)
@@ -323,7 +324,7 @@ func (EngineSuite) TestCurrentTimestamp(ctx context.Context, t *testctx.T) {
 	// RFC3339 timestamps have second precision. Cross a second boundary to
 	// verify that repeated calls through the same client are not cached.
 	time.Sleep(time.Second)
-	second, err := c.CurrentTimestamp(ctx)
+	second, err := core.NewQuery(c).CurrentTimestamp(ctx)
 	require.NoError(t, err)
 	secondTime, err := time.Parse(time.RFC3339, second)
 	require.NoError(t, err)
@@ -468,7 +469,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 		},
 	}
 
-	engines := map[string]*dagger.Service{}
+	engines := map[string]*core.Service{}
 	enginesMu := sync.Mutex{}
 
 	for _, tc := range tcs {
@@ -478,7 +479,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			enginesMu.Lock()
 			devEngineSvc, ok := engines[devEngineSvcKey]
 			if !ok {
-				devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+				devEngine := devEngineContainer(c, func(c *core.Container) *core.Container {
 					return c.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.engineVersion).
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.clientMinVersion)
@@ -496,11 +497,11 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			if tc.errs == nil {
 				clientCtr = clientCtr.
 					WithNewFile("/query.graphql", `{ version }`).
-					WithExec([]string{"sh", "-c", "dagger version && dagger query --doc /query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+					WithExec([]string{"sh", "-c", "dagger version && dagger query --doc /query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 			} else {
 				clientCtr = clientCtr.
 					WithNewFile("/query.graphql", `{ version }`).
-					WithExec([]string{"sh", "-c", "! dagger query --doc /query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+					WithExec([]string{"sh", "-c", "! dagger query --doc /query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 			}
 
 			if tc.errs == nil {
@@ -579,7 +580,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 		},
 	}
 
-	engines := map[string]*dagger.Service{}
+	engines := map[string]*core.Service{}
 	enginesMu := sync.Mutex{}
 
 	for _, tc := range tcs {
@@ -589,7 +590,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 			enginesMu.Lock()
 			devEngineSvc, ok := engines[devEngineSvcKey]
 			if !ok {
-				devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+				devEngine := devEngineContainer(c, func(c *core.Container) *core.Container {
 					return c.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.engineVersion).
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion)
@@ -614,10 +615,10 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 			if tc.errs == nil {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "dagger query -m . --doc /query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+					WithExec([]string{"sh", "-c", "dagger query -m . --doc /query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 			} else {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "! dagger query -m . --doc /query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+					WithExec([]string{"sh", "-c", "! dagger query -m . --doc /query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 			}
 
 			stderr, err := clientCtr.Stderr(ctx)
@@ -677,12 +678,12 @@ func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *tes
 	}
 	go httpSrv.Serve(l)
 
-	httpSvc := c.Host().Service([]dagger.PortForward{{
+	httpSvc := core.NewQuery(c).Host().Service([]core.PortForward{{
 		Backend:  port,
 		Frontend: port,
 	}})
 
-	ctr, err := c.Container().From(alpineImage).
+	ctr, err := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("srv", httpSvc).
 		WithEnvVariable("PORT", fmt.Sprintf("%d", port)).
@@ -754,12 +755,12 @@ func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *tes
 func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngineCtr := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+	devEngineCtr := devEngineContainer(c, func(c *core.Container) *core.Container {
 		return c.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "3s").
-			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
-				Protocol: dagger.NetworkProtocolTcp,
+			WithExposedPort(9090, core.ContainerWithExposedPortOpts{
+				Protocol: core.NetworkProtocolTcp,
 			})
 	})
 	devEngine := devEngineContainerAsService(devEngineCtr)
@@ -770,7 +771,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 	out, err := clientCtr.WithExec([]string{
 		"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN",
 		"dagger", "-m", "core", "api", "query",
-	}, dagger.ContainerWithExecOpts{
+	}, core.ContainerWithExecOpts{
 		Stdin: `{directory{withNewFile(path: "metrics-fixture", contents: "cached"){sync}}}`,
 	}).Stdout(ctx)
 	require.NoError(t, err, out)
@@ -901,9 +902,9 @@ func (EngineSuite) TestSessionTeardownSurvivesNestedClientStartup(ctx context.Co
 			cfg.GRPC.DebugAddress = "0.0.0.0:6060"
 			return cfg
 		}),
-		func(ctr *dagger.Container) *dagger.Container {
-			return ctr.WithExposedPort(6060, dagger.ContainerWithExposedPortOpts{
-				Protocol: dagger.NetworkProtocolTcp,
+		func(ctr *core.Container) *core.Container {
+			return ctr.WithExposedPort(6060, core.ContainerWithExposedPortOpts{
+				Protocol: core.NetworkProtocolTcp,
 			})
 		},
 	))
@@ -911,7 +912,7 @@ func (EngineSuite) TestSessionTeardownSurvivesNestedClientStartup(ctx context.Co
 	// The function runs an uncached exec that outlives every kill delay below,
 	// so a kill lands while the nested SDK client is starting, registering, or
 	// running rather than after the call has already completed.
-	workloadDir := c.Directory().
+	workloadDir := core.NewQuery(c).Directory().
 		WithNewFile("dagger.json", `{"name":"main","engineVersion":"latest","sdk":{"source":"go"}}`).
 		WithNewFile("main.go", `package main
 
@@ -972,7 +973,7 @@ done
 			State     string `json:"state"`
 		} `json:"sessions"`
 	}
-	debugCtr := c.Container().From(alpineImage).WithServiceBinding("dev-engine", devEngine)
+	debugCtr := core.NewQuery(c).Container().From(alpineImage).WithServiceBinding("dev-engine", devEngine)
 	var lastSnapshot string
 	settled := false
 	for attempt := 0; attempt < 60; attempt++ {
@@ -1016,16 +1017,16 @@ done
 func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngine := devEngineContainerAsService(devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(c *core.Container) *core.Container {
 		return c.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "1s").
-			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
-				Protocol: dagger.NetworkProtocolTcp,
+			WithExposedPort(9090, core.ContainerWithExposedPortOpts{
+				Protocol: core.NetworkProtocolTcp,
 			})
 	}))
 
-	metricsCtr := c.Container().From(alpineImage).
+	metricsCtr := core.NewQuery(c).Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngine).
 		WithExec([]string{"apk", "add", "curl"})
 
@@ -1074,7 +1075,7 @@ func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T
 	// Write the workload's Go module, its Python dependency and the dep
 	// wiring directly with the Go API so the WithExec measures only repeated
 	// schema loads via dagger api functions.
-	workloadDir := c.Directory().
+	workloadDir := core.NewQuery(c).Directory().
 		WithNewFile("dagger.json", `{"name":"main","engineVersion":"latest","sdk":{"source":"go"},"dependencies":[{"name":"dep","source":"./dep"}]}`).
 		WithNewFile("main.go", `package main
 
@@ -1112,7 +1113,7 @@ set -eu
 for i in $(seq 1 4); do
   dagger api functions >/dev/null
 done
-			`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
+			`}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
 		return err
 	}
 
@@ -1190,12 +1191,12 @@ func (EngineSuite) TestClientMetadataReuse(ctx context.Context, t *testctx.T) {
 
 	rando := rand.Text()
 
-	base1, err := c1.Container().
+	base1, err := core.NewQuery(c1).Container().
 		From(alpineImage).
 		WithEnvVariable("CACHEBUSTER", rando).
 		Sync(ctx)
 	require.NoError(t, err)
-	base2, err := c2.Container().
+	base2, err := core.NewQuery(c2).Container().
 		From(alpineImage).
 		WithEnvVariable("CACHEBUSTER", rando).
 		Sync(ctx)

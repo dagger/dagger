@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type InterfaceSuite struct{}
@@ -39,9 +40,9 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			_, err := c.Container().From(golangImage).
+			_, err := core.NewQuery(c).Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithMountedDirectory("/work", c.Host().Directory(tc.path)).
+				WithMountedDirectory("/work", core.NewQuery(c).Host().Directory(tc.path)).
 				WithWorkdir("/work").
 				With(daggerCallAt(".", "test")).
 				Sync(ctx)
@@ -112,7 +113,7 @@ func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
 			t.Run(fmt.Sprintf("%s implementation defined in %s", tc.sdk, rtc.sdk), func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				out, err := c.Container().From(golangImage).
+				out, err := core.NewQuery(c).Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
 					With(withModuleFixture(t, c, ".", rtc.testFixture)).

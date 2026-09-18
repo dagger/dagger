@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -31,25 +31,25 @@ func TestShell(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ShellSuite{})
 }
 
-func daggerShell(script string) dagger.WithContainerFunc {
+func daggerShell(script string) core.WithContainerFunc {
 	return daggerShellAt("", script)
 }
 
-func daggerShellAt(modPath, script string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerShellAt(modPath, script string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		execArgs := []string{"dagger", "script"}
 		if modPath != "" {
 			execArgs = append(execArgs, "-m", modPath)
 		}
-		return c.WithExec(execArgs, dagger.ContainerWithExecOpts{
+		return c.WithExec(execArgs, core.ContainerWithExecOpts{
 			Stdin: script,
 		})
 	}
 }
 
-func daggerShellNoMod(script string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "script", "-M"}, dagger.ContainerWithExecOpts{
+func daggerShellNoMod(script string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec([]string{"dagger", "script", "-M"}, core.ContainerWithExecOpts{
 			Stdin: script,
 		})
 	}
@@ -97,7 +97,7 @@ func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testc
 
 		{
 			out, err := goGitBase(t, c1).
-				WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
+				WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "1").
 				With(daggerExecRaw("-s", "-c", "fn-2 env://FOO | stdout")).
@@ -109,7 +109,7 @@ func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testc
 		}
 		{
 			out, err := goGitBase(t, c2).
-				WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
+				WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "2").
 				With(daggerExecRaw("-s", "-c", "fn-2 env://FOO | stdout")).
@@ -129,7 +129,7 @@ func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testc
 		plaintext := identity.NewID()
 		{
 			out, err := goGitBase(t, c1).
-				WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
+				WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", plaintext).
 				With(daggerExecRaw("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
@@ -141,7 +141,7 @@ func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testc
 		}
 		{
 			out, err := goGitBase(t, c2).
-				WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
+				WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", identity.NewID()).
 				With(daggerExecRaw("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
@@ -179,7 +179,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 		script := fmt.Sprintf("#!%s script\n\n.echo foobar", testCLIBinPath)
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
-			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
+			WithNewFile("script.sh", script, core.ContainerWithNewFileOpts{
 				Permissions: 0750,
 			}).
 			WithExec([]string{"./script.sh"}).
@@ -192,7 +192,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 		script := fmt.Sprintf("#!%s\n\n.echo foobar", testCLIBinPath)
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
-			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
+			WithNewFile("script.sh", script, core.ContainerWithNewFileOpts{
 				Permissions: 0750,
 			}).
 			WithExec([]string{"./script.sh"}).
@@ -835,7 +835,7 @@ func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
 		t.Run("builtin argument with "+prefix, func(ctx context.Context, t *testctx.T) {
 			script := prefix + "exit $(directory | with-new-file exit_code 5 | file exit_code | contents)"
 			_, err := modGen.With(daggerShellNoMod(script)).Sync(ctx)
-			var execErr *dagger.ExecError
+			var execErr *core.ExecError
 			require.ErrorAs(t, err, &execErr)
 			require.Equal(t, 5, execErr.ExitCode)
 		})
@@ -887,7 +887,7 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
-		var execErr *dagger.ExecError
+		var execErr *core.ExecError
 		require.ErrorAs(t, err, &execErr)
 		require.Equal(t, 5, execErr.ExitCode)
 		require.Contains(t, execErr.Stdout, "foo")
@@ -922,7 +922,7 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
-		var execErr *dagger.ExecError
+		var execErr *core.ExecError
 		require.ErrorAs(t, err, &execErr)
 		require.Equal(t, 1, execErr.ExitCode)
 		require.NotContains(t, execErr.Stdout, "ok")
@@ -948,7 +948,7 @@ func (ShellSuite) TestExecExit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
-	var execErr *dagger.ExecError
+	var execErr *core.ExecError
 	require.ErrorAs(t, err, &execErr)
 	require.Equal(t, 5, execErr.ExitCode)
 	require.Contains(t, execErr.Stderr, msg)
@@ -1021,7 +1021,7 @@ job3=$!
 		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
 		// should exit with the same exit code as the first failed command
-		var ex *dagger.ExecError
+		var ex *core.ExecError
 		require.ErrorAs(t, err, &ex)
 		require.Equal(t, 5, ex.ExitCode)
 	})

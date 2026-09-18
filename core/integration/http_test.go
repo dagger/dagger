@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type HTTPSuite struct{}
@@ -38,12 +39,12 @@ func (HTTPSuite) TestHTTP(ctx context.Context, t *testctx.T) {
 
 	// do two in a row to ensure each gets downloaded correctly
 	url := "https://raw.githubusercontent.com/dagger/dagger/main/LICENSE"
-	contents, err := c.HTTP(url).Contents(ctx)
+	contents, err := core.NewQuery(c).HTTP(url).Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, contents, "copyright")
 
 	url = "https://raw.githubusercontent.com/dagger/dagger/main/README.md"
-	contents, err = c.HTTP(url).Contents(ctx)
+	contents, err = core.NewQuery(c).HTTP(url).Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, contents, "Dagger")
 }
@@ -53,15 +54,15 @@ func (HTTPSuite) TestHTTPName(ctx context.Context, t *testctx.T) {
 
 	url := "https://raw.githubusercontent.com/dagger/dagger/main/README.md"
 
-	filename, err := c.HTTP(url).Name(ctx)
+	filename, err := core.NewQuery(c).HTTP(url).Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "README.md", filename)
 
-	filename, err = c.HTTP(url, dagger.HTTPOpts{Name: "FooBar.md"}).Name(ctx)
+	filename, err = core.NewQuery(c).HTTP(url, core.HTTPOpts{Name: "FooBar.md"}).Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "FooBar.md", filename)
 
-	filename, err = c.HTTP(url, dagger.HTTPOpts{Name: "FooBar.md.x"}).Name(ctx)
+	filename, err = core.NewQuery(c).HTTP(url, core.HTTPOpts{Name: "FooBar.md.x"}).Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "FooBar.md.x", filename)
 }
@@ -71,8 +72,8 @@ func (HTTPSuite) TestHTTPPermissions(ctx context.Context, t *testctx.T) {
 
 	url := "https://raw.githubusercontent.com/dagger/dagger/main/README.md"
 
-	f := c.HTTP(url, dagger.HTTPOpts{Permissions: 0765})
-	stat, err := c.Container().From(alpineImage).
+	f := core.NewQuery(c).HTTP(url, core.HTTPOpts{Permissions: 0765})
+	stat, err := core.NewQuery(c).Container().From(alpineImage).
 		WithFile("/target", f).
 		WithExec([]string{"stat", "-c", "%a", "/target"}).
 		Stdout(ctx)
@@ -80,8 +81,8 @@ func (HTTPSuite) TestHTTPPermissions(ctx context.Context, t *testctx.T) {
 	stat = strings.TrimSpace(stat)
 	require.Equal(t, "765", stat)
 
-	f2 := c.HTTP(url, dagger.HTTPOpts{Permissions: 0764})
-	stat, err = c.Container().From(alpineImage).
+	f2 := core.NewQuery(c).HTTP(url, core.HTTPOpts{Permissions: 0764})
+	stat, err = core.NewQuery(c).Container().From(alpineImage).
 		WithFile("/target", f2).
 		WithExec([]string{"stat", "-c", "%a", "/target"}).
 		Stdout(ctx)
@@ -97,7 +98,7 @@ func (HTTPSuite) TestHTTPChecksum(ctx context.Context, t *testctx.T) {
 	svc, url := httpService(ctx, t, c, content)
 	expected := digest.FromString(content).String()
 
-	contents, err := c.HTTP(url, dagger.HTTPOpts{
+	contents, err := core.NewQuery(c).HTTP(url, core.HTTPOpts{
 		ExperimentalServiceHost: svc,
 		Checksum:                expected,
 	}).Contents(ctx)
@@ -112,7 +113,7 @@ func (HTTPSuite) TestHTTPChecksumMismatch(ctx context.Context, t *testctx.T) {
 	svc, url := httpService(ctx, t, c, content)
 	wrong := digest.FromString("something-else").String()
 
-	_, err := c.HTTP(url, dagger.HTTPOpts{
+	_, err := core.NewQuery(c).HTTP(url, core.HTTPOpts{
 		ExperimentalServiceHost: svc,
 		Checksum:                wrong,
 	}).Contents(ctx)
@@ -122,7 +123,7 @@ func (HTTPSuite) TestHTTPChecksumMismatch(ctx context.Context, t *testctx.T) {
 
 func (HTTPSuite) TestHTTPChecksumInvalid(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	_, err := c.HTTP("https://example.com", dagger.HTTPOpts{
+	_, err := core.NewQuery(c).HTTP("https://example.com", core.HTTPOpts{
 		Checksum: "not-a-digest",
 	}).Contents(ctx)
 	require.ErrorContains(t, err, `invalid checksum "not-a-digest"`)
@@ -133,7 +134,7 @@ func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {
 
 	svc, url := httpService(ctx, t, c, "Hello, world!")
 
-	contents, err := c.HTTP(url, dagger.HTTPOpts{
+	contents, err := core.NewQuery(c).HTTP(url, core.HTTPOpts{
 		ExperimentalServiceHost: svc,
 	}).Contents(ctx)
 	require.NoError(t, err)
@@ -143,15 +144,15 @@ func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {
 func (HTTPSuite) TestHTTPAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	svc, svcURL := httpServiceAuth(ctx, t, c, "Hello, secret world!", "", c.SetSecret("SECRET", "personalsecret"))
-	_, err := c.HTTP(svcURL, dagger.HTTPOpts{
+	svc, svcURL := httpServiceAuth(ctx, t, c, "Hello, secret world!", "", core.NewQuery(c).SetSecret("SECRET", "personalsecret"))
+	_, err := core.NewQuery(c).HTTP(svcURL, core.HTTPOpts{
 		ExperimentalServiceHost: svc,
 	}).Contents(ctx)
 	require.ErrorContains(t, err, "401 Unauthorized")
 
-	contents, err := c.HTTP(svcURL, dagger.HTTPOpts{
+	contents, err := core.NewQuery(c).HTTP(svcURL, core.HTTPOpts{
 		ExperimentalServiceHost: svc,
-		AuthHeader:              c.SetSecret("AUTH_TOKEN", basicAuthHeader(url.UserPassword("x-access-token", "personalsecret"))),
+		AuthHeader:              core.NewQuery(c).SetSecret("AUTH_TOKEN", basicAuthHeader(url.UserPassword("x-access-token", "personalsecret"))),
 	}).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "Hello, secret world!")
@@ -168,7 +169,7 @@ func (HTTPSuite) TestHTTPTimestamp(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	dir := c.Container().
+	dir := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/src").
 		WithNewFile("index.html", "Hello, world!").
@@ -176,7 +177,7 @@ func (HTTPSuite) TestHTTPTimestamp(ctx context.Context, t *testctx.T) {
 		Directory(".")
 	svc, url := httpServiceDir(ctx, t, c, dir)
 
-	file := c.HTTP(url, dagger.HTTPOpts{ExperimentalServiceHost: svc})
+	file := core.NewQuery(c).HTTP(url, core.HTTPOpts{ExperimentalServiceHost: svc})
 	require.Equal(t, 0, getFileTimestamp(ctx, t, c, file)) // httpService sets mtime to the unix epoch
 }
 
@@ -184,7 +185,7 @@ func (HTTPSuite) TestHTTPCachePerSessions(ctx context.Context, t *testctx.T) {
 	port := counterService(ctx, t, false)
 
 	c := connect(ctx, t)
-	svc := c.Host().Service([]dagger.PortForward{{
+	svc := core.NewQuery(c).Host().Service([]core.PortForward{{
 		Backend:  port,
 		Frontend: port,
 	}})
@@ -192,14 +193,14 @@ func (HTTPSuite) TestHTTPCachePerSessions(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	url := fmt.Sprintf("http://%s:%d?add=true", hostname, port)
 
-	f := c.HTTP(url, dagger.HTTPOpts{ExperimentalServiceHost: svc})
+	f := core.NewQuery(c).HTTP(url, core.HTTPOpts{ExperimentalServiceHost: svc})
 	contents, err := f.Contents(ctx)
 	baseTimestamp := getFileTimestamp(ctx, t, c, f)
 	require.NoError(t, err)
 	require.Equal(t, contents, "count: 1")
 
 	// avoid making requests more than once per session
-	f = c.HTTP(url, dagger.HTTPOpts{ExperimentalServiceHost: svc})
+	f = core.NewQuery(c).HTTP(url, core.HTTPOpts{ExperimentalServiceHost: svc})
 	contents, err = f.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "count: 1")
@@ -209,7 +210,7 @@ func (HTTPSuite) TestHTTPCachePerSessions(ctx context.Context, t *testctx.T) {
 
 	// but if we create a new session, then we should be making another request
 	c2 := connect(ctx, t)
-	svc2 := c2.Host().Service([]dagger.PortForward{{
+	svc2 := core.NewQuery(c2).Host().Service([]core.PortForward{{
 		Backend:  port,
 		Frontend: port,
 	}})
@@ -217,7 +218,7 @@ func (HTTPSuite) TestHTTPCachePerSessions(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	url2 := fmt.Sprintf("http://%s:%d?add=true", hostname2, port)
 
-	f2 := c2.HTTP(url2, dagger.HTTPOpts{ExperimentalServiceHost: svc2})
+	f2 := core.NewQuery(c2).HTTP(url2, core.HTTPOpts{ExperimentalServiceHost: svc2})
 	contents, err = f2.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "count: 2")
@@ -229,7 +230,7 @@ func (HTTPSuite) TestHTTPUsedInCache(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	port := counterService(ctx, t, false)
-	svc := c.Host().Service([]dagger.PortForward{{
+	svc := core.NewQuery(c).Host().Service([]core.PortForward{{
 		Backend:  port,
 		Frontend: port,
 	}})
@@ -239,26 +240,26 @@ func (HTTPSuite) TestHTTPUsedInCache(ctx context.Context, t *testctx.T) {
 
 	// request two different urls, but with the same content + timestamp
 
-	out, err := c.Container().
+	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithMountedFile("/index.html", c.HTTP(url+"/test?query=1", dagger.HTTPOpts{ExperimentalServiceHost: svc})).
+		WithMountedFile("/index.html", core.NewQuery(c).HTTP(url+"/test?query=1", core.HTTPOpts{ExperimentalServiceHost: svc})).
 		WithExec([]string{"sh", "-c", "cat /index.html && head -c 128 /dev/random | sha256sum"}).
 		Stdout(ctx)
 	require.Contains(t, out, "count: 0")
 	require.NoError(t, err)
 
-	out2, err := c.Container().
+	out2, err := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithMountedFile("/index.html", c.HTTP(url+"/test?query=2", dagger.HTTPOpts{ExperimentalServiceHost: svc})).
+		WithMountedFile("/index.html", core.NewQuery(c).HTTP(url+"/test?query=2", core.HTTPOpts{ExperimentalServiceHost: svc})).
 		WithExec([]string{"sh", "-c", "cat /index.html && head -c 128 /dev/random | sha256sum"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out2, "count: 0")
 	require.Equal(t, out, out2)
 
-	out3, err := c.Container().
+	out3, err := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithMountedFile("/index.html", c.HTTP(url+"/test?add=3", dagger.HTTPOpts{ExperimentalServiceHost: svc})).
+		WithMountedFile("/index.html", core.NewQuery(c).HTTP(url+"/test?add=3", core.HTTPOpts{ExperimentalServiceHost: svc})).
 		WithExec([]string{"sh", "-c", "cat /index.html && head -c 128 /dev/random | sha256sum"}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -271,19 +272,19 @@ func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 
 	const hostname = "testhttpetag"
 	port := counterService(ctx, t, true)
-	svc := c.Host().Service([]dagger.PortForward{{
+	svc := core.NewQuery(c).Host().Service([]core.PortForward{{
 		Backend:  port,
 		Frontend: port,
 	}}).WithHostname(hostname)
 
-	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding(hostname, svc)
 	})
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	c1, err := dagger.Connect(
@@ -304,37 +305,37 @@ func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 
 	url := fmt.Sprintf("http://%s:%d", hostname, port)
 
-	f := c1.HTTP(url + "?query=1")
+	f := core.NewQuery(c1).HTTP(url + "?query=1")
 	contents, err := f.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "count: 0", contents)
 
 	// query in second session, the http client should present If-None-Match using the etag
-	f2 := c2.HTTP(url + "?query=1")
+	f2 := core.NewQuery(c2).HTTP(url + "?query=1")
 	contents, err = f2.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "count: 0", contents)
 
 	// check that we did actually hit the cache!
-	cacheF := c1.HTTP(url + "?cache=1")
+	cacheF := core.NewQuery(c1).HTTP(url + "?cache=1")
 	contents, err = cacheF.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "cache: 1", contents)
 
 	// part2! we bump now
-	bumpF := c1.HTTP(url + "?add=2")
+	bumpF := core.NewQuery(c1).HTTP(url + "?add=2")
 	contents, err = bumpF.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "count: 1", contents)
 
 	// query in second session, the http client should present, but there shouldn't be an ETag match
-	f2 = c2.HTTP(url + "?query=2")
+	f2 = core.NewQuery(c2).HTTP(url + "?query=2")
 	contents, err = f2.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "count: 1", contents)
 
 	// check that the cache wasn't hit
-	cacheF = c1.HTTP(url + "?cache=2")
+	cacheF = core.NewQuery(c1).HTTP(url + "?cache=2")
 	contents, err = cacheF.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "cache: 1", contents)
@@ -345,9 +346,9 @@ func (HTTPSuite) TestHTTPServiceStableDigest(ctx context.Context, t *testctx.T) 
 	hostname := func(c *dagger.Client) string {
 		svc, url := httpService(ctx, t, c, content)
 
-		hn, err := c.Container().
+		hn, err := core.NewQuery(c).Container().
 			From(alpineImage).
-			WithMountedFile("/index.html", c.HTTP(url, dagger.HTTPOpts{
+			WithMountedFile("/index.html", core.NewQuery(c).HTTP(url, core.HTTPOpts{
 				ExperimentalServiceHost: svc,
 			})).
 			WithDefaultArgs([]string{"sleep"}).
@@ -362,10 +363,10 @@ func (HTTPSuite) TestHTTPServiceStableDigest(ctx context.Context, t *testctx.T) 
 	require.Equal(t, hostname(c1), hostname(c2))
 }
 
-func getFileTimestamp(ctx context.Context, t *testctx.T, c *dagger.Client, f *dagger.File) int {
+func getFileTimestamp(ctx context.Context, t *testctx.T, c *dagger.Client, f *core.File) int {
 	t.Helper()
 
-	out, err := c.Container().From(alpineImage).
+	out, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile("/index.html", f).
 		WithExec([]string{"stat", "/index.html", "-c", "%Y"}).
 		Stdout(ctx)

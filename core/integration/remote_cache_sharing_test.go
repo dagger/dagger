@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -30,30 +31,30 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		return dir
 	}
 	type running struct {
-		upstream, tunnel *dagger.Service
+		upstream, tunnel *core.Service
 		client           *dagger.Client
 	}
 	stop := func(e *running) {
 		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
 	}
-	start := func(state string, volume *dagger.CacheVolume, workdir string) *running {
-		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
+	start := func(state string, volume *core.CacheVolume, workdir string) *running {
+		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		e := &running{upstream: devEngineContainerAsService(ctr)}
-		tunnel, err := outer.Host().Tunnel(e.upstream).Start(ctx)
+		tunnel, err := core.NewQuery(outer).Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
 		e.tunnel = tunnel
-		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(workdir), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
 		return e
 	}
 
-	aVolume := outer.CacheVolume("b6-share-a-" + identity.NewID())
-	bVolume := outer.CacheVolume("b6-share-b-" + identity.NewID())
+	aVolume := core.NewQuery(outer).CacheVolume("b6-share-a-" + identity.NewID())
+	bVolume := core.NewQuery(outer).CacheVolume("b6-share-b-" + identity.NewID())
 	aDir, bDir := checkout(), checkout()
 	a := start("b6-share-a-state-"+identity.NewID(), aVolume, aDir)
 	defer stop(a)
@@ -62,7 +63,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	defer func() { stop(b) }()
 
 	// A captures its host directory and exports it.
-	aDirectory, err := a.client.Host().Directory(".").Sync(ctx)
+	aDirectory, err := core.NewQuery(a.client).Host().Directory(".").Sync(ctx)
 	require.NoError(t, err)
 	aID, err := aDirectory.ID(ctx)
 	require.NoError(t, err)
@@ -71,7 +72,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.NotEmpty(t, exported)
 
 	// B captures the same content locally first: this is the donor.
-	bDirectory, err := b.client.Host().Directory(".").Sync(ctx)
+	bDirectory, err := core.NewQuery(b.client).Host().Directory(".").Sync(ctx)
 	require.NoError(t, err)
 	var donorReport transferFixtureReport
 	bID, err := bDirectory.ID(ctx)
@@ -84,7 +85,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	donorRef := donorRow.SnapshotLinks[0].RefKey
 	require.NotEmpty(t, donorRef)
 
-	_, err = outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
+	_, err = core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
 		WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/share.json /destination/bundles/; cp -a /source/blobs /destination/"}).Sync(ctx)
 	require.NoError(t, err)
 	var imported []transferFixtureMapping
@@ -98,7 +99,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	var evaluated bool
 	require.NoError(t, transferFixture(ctx, b.client, "evaluate", "", []string{handle}, &evaluated))
 	require.True(t, evaluated)
-	entries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(handle)).Entries(ctx)
+	entries, err := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(handle)).Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, entries, "notes.txt")
 
@@ -155,7 +156,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 
 	require.NoError(t, transferFixture(ctx, b.client, "evaluate", "", []string{handle}, &evaluated))
 	require.True(t, evaluated)
-	restoredEntries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(handle)).Entries(ctx)
+	restoredEntries, err := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(handle)).Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, restoredEntries, "notes.txt")
 	var afterRead transferFixtureReport

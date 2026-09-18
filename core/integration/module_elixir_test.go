@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -295,7 +296,7 @@ func (ElixirSuite) TestCheck(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
+func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *core.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))
 	require.NoError(t, err)
@@ -304,7 +305,7 @@ func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Con
 	require.NoError(t, err)
 
 	return goGitBase(t, c).
-		WithDirectory("modules/"+moduleName, c.Host().Directory(modSrc)).
-		WithDirectory("sdk/elixir", c.Host().Directory(sdkSrc)).
+		WithDirectory("modules/"+moduleName, core.NewQuery(c).Host().Directory(modSrc)).
+		WithDirectory("sdk/elixir", core.NewQuery(c).Host().Directory(sdkSrc)).
 		WithWorkdir("/work/modules/" + moduleName)
 }

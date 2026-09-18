@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -25,7 +26,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 	customCACertTests(ctx, t, c, "",
 		caCertsTest{"alpine basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(alpineImage).
+			ctr := core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -47,7 +48,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"alpine empty diff", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(alpineImage)
+			ctr := core.NewQuery(c).Container().From(alpineImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
 			require.NoError(t, err)
@@ -61,7 +62,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"alpine non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(alpineImage).
+			ctr := core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -84,7 +85,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"alpine install ca-certificates and curl at once", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr, err := c.Container().From(alpineImage).
+			ctr, err := core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"sh", "-c", "apk add ca-certificates curl && curl https://server"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -101,7 +102,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"alpine ca-certificates not installed", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(golangImage).
+			ctr := core.NewQuery(c).Container().From(golangImage).
 				WithExec([]string{"apk", "update"}).
 				WithExec([]string{"apk", "del", "ca-certificates"})
 
@@ -158,7 +159,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"wolfi basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(wolfiImage).
+			ctr := core.NewQuery(c).Container().From(wolfiImage).
 				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -180,7 +181,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"debian basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(debianImage).
+			ctr := core.NewQuery(c).Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
@@ -203,7 +204,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"debian empty diff", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(debianImage)
+			ctr := core.NewQuery(c).Container().From(debianImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
 			require.NoError(t, err)
@@ -217,7 +218,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"debian non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(debianImage).
+			ctr := core.NewQuery(c).Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
@@ -241,7 +242,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"debian install ca-certificates and curl at once", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr, err := c.Container().From(debianImage).
+			ctr, err := core.NewQuery(c).Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"sh", "-c", "apt install -y curl && curl https://server"}).
 				Sync(ctx)
@@ -259,7 +260,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"debian ca-certificates not installed", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr, err := c.Container().From(debianImage).
+			ctr, err := core.NewQuery(c).Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "golang"}).
 				WithNewFile("/src/main.go", `package main
@@ -303,7 +304,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"rhel basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(rhelImage)
+			ctr := core.NewQuery(c).Container().From(rhelImage)
 			initialBundleContents, err := ctr.File("/etc/pki/tls/certs/ca-bundle.crt").Contents(ctx)
 			require.NoError(t, err)
 
@@ -324,7 +325,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"rhel empty diff", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(rhelImage)
+			ctr := core.NewQuery(c).Container().From(rhelImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
 			require.NoError(t, err)
@@ -332,7 +333,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"rhel non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := c.Container().From(rhelImage)
+			ctr := core.NewQuery(c).Container().From(rhelImage)
 			initialBundleContents, err := ctr.File("/etc/pki/tls/certs/ca-bundle.crt").Contents(ctx)
 			require.NoError(t, err)
 
@@ -354,7 +355,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"nixos-like basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := nixosLikeContainer(c, c.Container().From(alpineImage).
+			ctr := nixosLikeContainer(c, core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "ca-certificates", "curl"}))
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -380,7 +381,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			// golangImage is alpine-based — strip its ca-certificates+update-ca-certificates so
 			// the no-update-cmd fallback path is the only one available, mirroring "alpine
 			// ca-certificates not installed".
-			ctr := nixosLikeContainer(c, c.Container().From(golangImage).
+			ctr := nixosLikeContainer(c, core.NewQuery(c).Container().From(golangImage).
 				WithExec([]string{"apk", "update"}).
 				WithExec([]string{"apk", "del", "ca-certificates"}))
 
@@ -438,7 +439,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"nixos-like non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			ctr := nixosLikeContainer(c, c.Container().From(alpineImage).
+			ctr := nixosLikeContainer(c, core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "ca-certificates", "curl"}))
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -462,11 +463,11 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			// writes to its own hard-coded output path. So this test deliberately
 			// uses an image without `ca-certificates` installed, putting the bundle
 			// at a non-canonical path the image points at via SSL_CERT_FILE.
-			bundleSrc := c.Container().From(alpineImage).
+			bundleSrc := core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "ca-certificates"}).
 				File("/etc/ssl/certs/ca-certificates.crt")
 
-			ctr := c.Container().From(alpineImage).
+			ctr := core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "curl"}).
 				WithoutFile("/etc/alpine-release").
 				WithNewFile("/etc/NIXOS", "").
@@ -582,7 +583,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 	)
 	customCACertTests(ctx, t, c, "orbstack-root.crt",
 		caCertsTest{"orbstack ignored", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			_, err := c.Container().From(alpineImage).
+			_, err := core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"stat", "/usr/local/share/ca-certificates/orbstack-root.crt"}).
 				Sync(ctx)
 			requireErrOut(t, err, "No such file or directory")
@@ -607,8 +608,8 @@ type caCertsTestFixtures struct {
 // WithFile (not WithMountedFile) for the bundle target — mounts aren't
 // visible to client-side File reads or to the engine-side cacerts
 // installer's rootfs view, so a mounted target makes the symlink unresolvable.
-func nixosLikeContainer(c *dagger.Client, base *dagger.Container) *dagger.Container {
-	bundleSrc := c.Container().From(alpineImage).
+func nixosLikeContainer(c *dagger.Client, base *core.Container) *core.Container {
+	bundleSrc := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "ca-certificates"}).
 		File("/etc/ssl/certs/ca-certificates.crt")
 	return base.
@@ -643,15 +644,15 @@ func customCACertTests(
 	if caCertFileName == "" {
 		caCertFileName = "dagger-test-custom-ca.crt"
 	}
-	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.
 			WithMountedFile("/usr/local/share/ca-certificates/"+caCertFileName, certGen.caRootCert).
 			WithServiceBinding("server", serverCtr.AsService())
 	})
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 	c2, err := dagger.Connect(
 		ctx,
@@ -676,20 +677,20 @@ func customCACertTests(
 
 type generatedCerts struct {
 	c   *dagger.Client
-	ctr *dagger.Container
+	ctr *core.Container
 
-	caRootCert *dagger.File
-	caRootKey  *dagger.File
+	caRootCert *core.File
+	caRootKey  *core.File
 
 	password string
 	// executable shell script that just prints password, needed for
 	// squid currently
-	printPasswordScript *dagger.File
+	printPasswordScript *core.File
 }
 
 func newGeneratedCerts(c *dagger.Client, caHostname string) *generatedCerts {
 	const password = "hunter4"
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "openssl"}).
 		WithExec([]string{
 			"openssl", "genrsa",
@@ -734,14 +735,14 @@ DNS.1 = %s
 		caRootCert: ctr.File("/ca.pem"),
 		caRootKey:  ctr.File("/ca.key"),
 		password:   password,
-		printPasswordScript: c.Directory().WithNewFile("printpass", fmt.Sprintf(`#!/bin/sh
+		printPasswordScript: core.NewQuery(c).Directory().WithNewFile("printpass", fmt.Sprintf(`#!/bin/sh
 echo -n %s
-`, password), dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).File("printpass"),
+`, password), core.DirectoryWithNewFileOpts{Permissions: 0o755}).File("printpass"),
 	}
 }
 
 // returns Files for cert and key
-func (g *generatedCerts) newServerCerts(serverHostname string) (*dagger.File, *dagger.File) {
+func (g *generatedCerts) newServerCerts(serverHostname string) (*core.File, *core.File) {
 	ctr := g.ctr.
 		WithExec([]string{
 			"openssl", "genrsa",
@@ -783,16 +784,16 @@ DNS.1 = %s
 }
 
 type nginxWithCertsOpts struct {
-	serverCert          *dagger.File
-	serverKey           *dagger.File
+	serverCert          *core.File
+	serverKey           *core.File
 	dnsName             string
 	msg                 string
 	redirectHTTPToHTTPS bool
 }
 
-func nginxWithCerts(c *dagger.Client, opts nginxWithCertsOpts) *dagger.Container {
+func nginxWithCerts(c *dagger.Client, opts nginxWithCertsOpts) *core.Container {
 	// TODO: pin image
-	ctr := c.Container().From("nginx:latest").
+	ctr := core.NewQuery(c).Container().From("nginx:latest").
 		WithMountedFile("/etc/ssl/certs/server.crt", opts.serverCert).
 		WithMountedFile("/etc/ssl/private/server.key", opts.serverKey).
 		WithNewFile("/etc/nginx/snippets/self-signed.conf", `ssl_certificate /etc/ssl/certs/server.crt;

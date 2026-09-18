@@ -9,7 +9,7 @@ import (
 	_ "embed"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 )
 
@@ -24,10 +24,10 @@ func TestFuture(t *testing.T) {
 }
 
 //nolint:unused
-func futureClient(ctx context.Context, t *testctx.T, futureVersion string) *dagger.Container {
+func futureClient(ctx context.Context, t *testctx.T, futureVersion string) *core.Container {
 	c := connect(ctx, t)
 
-	devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainer(c, func(c *core.Container) *core.Container {
 		return c.WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", futureVersion)
 	})
 	devClient := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngine))

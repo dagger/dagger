@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -118,9 +119,9 @@ func (SecretSuite) TestSet(ctx context.Context, t *testctx.T) {
 	secretName := "aws_key"
 	secretValue := "very-secret-text"
 
-	s := c.SetSecret(secretName, secretValue)
+	s := core.NewQuery(c).SetSecret(secretName, secretValue)
 
-	ctr, err := c.Container().From(alpineImage).
+	ctr, err := core.NewQuery(c).Container().From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
 		WithEnvVariable("word1", "very").
 		WithEnvVariable("word2", "secret").
@@ -147,9 +148,9 @@ func (SecretSuite) TestSet(ctx context.Context, t *testctx.T) {
 func (SecretSuite) TestSetWithEmptyName(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	s := c.SetSecret("", "very-secret-text")
+	s := core.NewQuery(c).SetSecret("", "very-secret-text")
 
-	_, err := c.Container().From(alpineImage).
+	_, err := core.NewQuery(c).Container().From(alpineImage).
 		WithSecretVariable("SECRET", s).
 		WithExec([]string{"sh", "-ec", `test "$SECRET" = "very-secret-text"`}).
 		Sync(ctx)
@@ -159,9 +160,9 @@ func (SecretSuite) TestSetWithEmptyName(ctx context.Context, t *testctx.T) {
 func (SecretSuite) TestUnsetVariable(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	s := c.SetSecret("aws_key", "very-secret-text")
+	s := core.NewQuery(c).SetSecret("aws_key", "very-secret-text")
 
-	out, err := c.Container().
+	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
 		WithoutSecretVariable("AWS_KEY").
@@ -175,11 +176,11 @@ func (SecretSuite) TestUnsetVariable(ctx context.Context, t *testctx.T) {
 func (SecretSuite) TestSecretVariableOverride(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	short := c.SetSecret("short", "AA")
-	long := c.SetSecret("long", "BBBBBBBBB")
+	short := core.NewQuery(c).SetSecret("short", "AA")
+	long := core.NewQuery(c).SetSecret("long", "BBBBBBBBB")
 	cmd := []string{"sh", "-c", `printf '%d' "${#T}"`}
 
-	out, err := c.Container().
+	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithSecretVariable("T", short).
 		WithSecretVariable("T", long).
@@ -195,9 +196,9 @@ func (SecretSuite) TestWhitespaceScrubbed(ctx context.Context, t *testctx.T) {
 
 	secretValue := "very\nsecret\ntext\n"
 
-	s := c.SetSecret("aws_key", secretValue)
+	s := core.NewQuery(c).SetSecret("aws_key", secretValue)
 
-	stdout, err := c.Container().From(alpineImage).
+	stdout, err := core.NewQuery(c).Container().From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
 		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\n\""}).
 		WithExec([]string{"sh", "-c", "echo -n \"$AWS_KEY\""}).
@@ -212,9 +213,9 @@ func (SecretSuite) TestBigScrubbed(ctx context.Context, t *testctx.T) {
 	secretValue, err := io.ReadAll(secretKeyReader)
 	require.NoError(t, err)
 
-	s := c.SetSecret("key", string(secretValue))
+	s := core.NewQuery(c).SetSecret("key", string(secretValue))
 
-	sec := c.Container().From(alpineImage).
+	sec := core.NewQuery(c).Container().From(alpineImage).
 		WithSecretVariable("KEY", s).
 		WithExec([]string{"sh", "-c", "echo  -n \"$KEY\""})
 

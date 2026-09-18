@@ -1,6 +1,7 @@
 package core
 
 import (
+	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"os"
@@ -30,7 +31,7 @@ source = "entrypoint"
 `).
 		WithDirectory(
 			".dagger/modules/tiny/entrypoint",
-			c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+			core.NewQuery(c).Host().Directory("./testdata/modules/dang/module-entrypoint"),
 		).
 		With(daggerCallAt("tiny", "hello"))
 
@@ -54,7 +55,7 @@ source = "./entrypoint"
 `).
 		WithDirectory(
 			".dagger/modules/tiny/entrypoint",
-			c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+			core.NewQuery(c).Host().Directory("./testdata/modules/dang/module-entrypoint"),
 		).
 		WithNewFile("sub/dir/.keep", "").
 		WithWorkdir("sub/dir").
@@ -83,7 +84,7 @@ source = "./entrypoint"
 `).
 		WithDirectory(
 			".dagger/modules/app/entrypoint",
-			c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+			core.NewQuery(c).Host().Directory("./testdata/modules/dang/module-entrypoint"),
 		).
 		With(daggerCallAt("app", "hello")).
 		Stdout(ctx)
@@ -103,9 +104,9 @@ func (ModuleSuite) TestDangModuleEntrypointFromModuleRef(ctx context.Context, t 
 
 	// The served repository holds only Dang files under entrypoint/: an
 	// entrypoint directory is not a module and carries no manifest.
-	served := c.Directory().WithDirectory(
+	served := core.NewQuery(c).Directory().WithDirectory(
 		"entrypoint",
-		c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+		core.NewQuery(c).Host().Directory("./testdata/modules/dang/module-entrypoint"),
 	)
 	gitDaemon, repoURL := gitService(ctx, t, c, served)
 	gitHost, err := gitDaemon.Hostname(ctx)
@@ -138,7 +139,7 @@ func (ModuleSuite) TestDangModuleEntrypointFromModuleRefInsideModule(ctx context
 	// The root module's Dang file does not type check on its own. Evaluating it
 	// as the entrypoint fails, so the test passes only when the engine reads
 	// entrypoint/ and nothing above it.
-	served := c.Directory().
+	served := core.NewQuery(c).Directory().
 		WithNewFile("dagger-module.toml", `name = "owner"
 
 [runtime]
@@ -152,7 +153,7 @@ source = "dang"
 `).
 		WithDirectory(
 			"entrypoint",
-			c.Host().Directory("./testdata/modules/dang/module-entrypoint"),
+			core.NewQuery(c).Host().Directory("./testdata/modules/dang/module-entrypoint"),
 		)
 	gitDaemon, repoURL := gitService(ctx, t, c, served)
 	gitHost, err := gitDaemon.Hostname(ctx)
@@ -178,14 +179,14 @@ source = "`+repoURL+`#main:entrypoint"
 func (ModuleSuite) TestDangModuleEntrypointAtGitRoot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	mod := c.Directory().
+	mod := core.NewQuery(c).Directory().
 		WithNewFile("dagger-module.toml", `name = "tiny"
 
 [entrypoint]
 kind = "dang"
 source = "./entrypoint"
 `).
-		WithDirectory("entrypoint", c.Host().Directory("./testdata/modules/dang/module-entrypoint")).
+		WithDirectory("entrypoint", core.NewQuery(c).Host().Directory("./testdata/modules/dang/module-entrypoint")).
 		WithNewFile("marker.txt", "marker\n")
 	gitDaemon, repoURL := gitService(ctx, t, c, mod.WithDirectory("sub/tiny", mod))
 	gitHost, err := gitDaemon.Hostname(ctx)
@@ -215,7 +216,7 @@ func (ModuleSuite) TestModuleAtLocalRepoRoot(ctx context.Context, t *testctx.T) 
 		WithNewFile(".gitignore", "ignored.txt\n").
 		WithNewFile("ignored.txt", "ignored\n").
 		WithNewFile("marker.txt", "marker\n")
-	contextFiles := func(ctx context.Context, t *testctx.T, ctr *dagger.Container) string {
+	contextFiles := func(ctx context.Context, t *testctx.T, ctr *core.Container) string {
 		t.Helper()
 		out, err := ctr.
 			With(daggerExec("core", "module-source", "--ref-string", ".", "context-directory", "glob", "--pattern", "**")).
@@ -232,7 +233,7 @@ func (ModuleSuite) TestModuleAtLocalRepoRoot(ctx context.Context, t *testctx.T) 
 kind = "dang"
 source = "./entrypoint"
 `).
-			WithDirectory("entrypoint", c.Host().Directory("./testdata/modules/dang/module-entrypoint"))
+			WithDirectory("entrypoint", core.NewQuery(c).Host().Directory("./testdata/modules/dang/module-entrypoint"))
 
 		files := contextFiles(ctx, t, ctr)
 		require.Contains(t, files, "entrypoint/main.dang")
@@ -279,7 +280,7 @@ source = "./entrypoint"
 `).
 		WithDirectory(
 			".dagger/modules/tiny/entrypoint",
-			c.Host().Directory("./testdata/modules/dang/module-entrypoint-cwd"),
+			core.NewQuery(c).Host().Directory("./testdata/modules/dang/module-entrypoint-cwd"),
 		).
 		With(daggerCallAt("tiny", "where")).
 		Stdout(ctx)
