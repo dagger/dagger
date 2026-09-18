@@ -383,9 +383,11 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Try workspace references before external resolution.
+     * Resolve an address in this workspace.
      *
-     * Local errors stop resolution; only absence permits fallback.
+     * A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+     *
+     * A value without the dag:// scheme keeps its external meaning, such as a container image reference.
      *
      * The Address retains this workspace across module calls and ID reloads.
      */

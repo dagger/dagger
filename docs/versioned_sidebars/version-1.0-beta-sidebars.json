@@ -167,7 +167,7 @@
                 "reference/api/agent-middleware",
                 "reference/api/agent-middleware-group",
                 "reference/api/artifact",
-                "reference/api/artifact-collection-key",
+                "reference/api/artifact-dimension-key",
                 "reference/api/artifacts",
                 "reference/api/check",
                 "reference/api/check-group",
