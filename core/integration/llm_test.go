@@ -590,6 +590,62 @@ func (LLMSuite) TestToolFindSpans(ctx context.Context, t *testctx.T) {
 	require.Regexp(t, `[0-9a-f]{16}  ok     [^\n]*ReportAgent\.report`, out)
 }
 
+// TestToolInspectCall exercises the FindCalls and InspectCall builtins end
+// to end against the session's real trace: a call is found by a literal
+// deep in its arguments, listed with its digest; a digest nothing delivered
+// is refused with the gap named rather than a truncated chain.
+//
+// The happy path of InspectCall (a real digest) can't be canned: digests
+// depend on the module's own source digest and aren't known when the
+// conversation is recorded. The rebuild and every view are covered by the
+// unit tests in core against a real store.
+func (LLMSuite) TestToolInspectCall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/report-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	buster := identity.NewID()
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that writes a report.\n"+
+			"Use the report tool to do the work and write the report.\n"+
+			"\n"+
+			"Assignment: do the work and write the report\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
+				Arguments: dagger.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, buster))},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Looking for the call."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "FindCalls",
+				Arguments: dagger.JSON(fmt.Sprintf(`{"query":%q}`, buster))},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "InspectCall",
+				Arguments: dagger.JSON(`{"digest":"xxh3:0000000000000000"}`)},
+		}).
+		WithToolResult("call_3", "", true).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "do the work and write the report" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// The module function call the first tool call made, found by its
+	// argument literal and listed with its digest.
+	require.Regexp(t, `xxh3:[0-9a-f]+  report\(cacheBuster: "`+regexp.QuoteMeta(buster)+`"\)`, out)
+	require.Contains(t, out, "call xxh3:0000000000000000 never reached this client")
+}
+
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
