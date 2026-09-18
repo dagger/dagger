@@ -110,6 +110,7 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	"EngineCacheEntry(*core.EngineCacheEntry encode=false decode=false family=false)",
 	"EngineCacheEntrySet(*core.EngineCacheEntrySet encode=false decode=false family=false)",
 	// These conversation values have no persisted representation.
+	"GitPushResult(*core.GitPushResult encode=false decode=false family=false)",
 	"LLM(*core.LLM encode=false decode=false family=false)",
 	"LLMContentBlock(*core.LLMContentBlock encode=false decode=false family=false)",
 	"LLMMessage(*core.LLMMessage encode=false decode=false family=false)",
@@ -119,6 +120,7 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	"Query(*core.Query encode=false decode=false family=false)",
 	// Introspection reflection helpers returned by the TypeDef directive
 	// fields describe schema, not values, and have no retained route.
+	"WorkspaceCommitPick(*core.WorkspaceCommitPick encode=false decode=false family=false)",
 	"_DirectiveApplication(*introspection.DirectiveApplication encode=false decode=false family=false)",
 	"_DirectiveApplicationArg(*introspection.DirectiveApplicationArg encode=false decode=false family=false)",
 }
