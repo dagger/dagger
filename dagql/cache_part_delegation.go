@@ -119,7 +119,7 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	}
 	mapping := current.Delegation
 	if mapping == nil || mapping.ParentResultID != route.Delegation.ParentResultID || !containsPart([]PersistedPartAddress{mapping.Address}, route.Delegation.Address) {
-		return nil, nil, ErrPartReselect
+		return nil, nil, partRefused("delegation: mapping changed")
 	}
 	c.egraphMu.Lock()
 	parent := c.resultsByID[sharedResultID(mapping.ParentResultID)]
@@ -170,7 +170,7 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	}
 	c.egraphMu.Unlock()
 	if !valid {
-		return nil, nil, ErrPartReselect
+		return nil, nil, partRefused("delegation: proof or parent facts changed")
 	}
 	if ready {
 		if ordinary != nil {
@@ -215,7 +215,7 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 	allowed := proof.currentLocked(c, pending, proof.child)
 	c.egraphMu.RUnlock()
 	if !allowed {
-		return ErrPartReselect
+		return partRefused("delegation: proof not current after loading the parent")
 	}
 	// demandPart creates the parent's task and exhaustion state. The copied
 	// active path is retained, but no child permit or task generation is reused.

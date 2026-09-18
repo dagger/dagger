@@ -410,7 +410,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		}
 		if p != nil && candidate.row == row && p.LocalComplete {
 			if p.Busy {
-				return nil, candidates, ErrPartReselect
+				return nil, candidates, partRefused("scan: own part complete but busy")
 			}
 			best = i
 			rank = PartReady
@@ -425,7 +425,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		candidate := &candidates[i]
 		if candidate.probe != nil {
 			if err := candidate.version.check(candidate.row); err != nil {
-				return nil, candidates, ErrPartReselect
+				return nil, candidates, partRefused("scan: candidate version")
 			}
 		}
 	}
@@ -434,7 +434,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		candidate := &candidates[i]
 		if candidate.facts != c.partFactsLocked(candidate.row) || !c.sessionSatisfiesResourceRequirementsLocked(session, candidate.row) {
 			c.egraphMu.Unlock()
-			return nil, candidates, ErrPartReselect
+			return nil, candidates, partRefused("scan: candidate facts or session")
 		}
 	}
 	if best < 0 {
@@ -451,7 +451,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 	}
 	if !eligible {
 		c.egraphMu.Unlock()
-		return nil, candidates, ErrPartReselect
+		return nil, candidates, partRefused("scan: selected row no longer a candidate")
 	}
 	source = &PartSourceLease{cache: c, sourceID: uint64(selected.row.id), target: clonePartAddress(address), readiness: rank, route: selected.route, record: selected.record, version: selected.version, facts: selected.facts, lookup: lookup, sessionID: session, offerRev: selected.facts.offers}
 	if rank == PartReady {
@@ -464,7 +464,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 	} else {
 		if !c.offerAllowedLocked(session, selected.owner) {
 			c.egraphMu.Unlock()
-			return nil, candidates, ErrPartReselect
+			return nil, candidates, partRefused("scan: offer owner not allowed")
 		}
 		source.offerOwner = selected.owner
 		selected.owner = nil
@@ -570,7 +570,7 @@ func (c *Cache) newSessionlessPartSourceLease(ctx context.Context, receiver, don
 		return nil, err
 	}
 	if probe.captured == nil {
-		return nil, ErrPartReselect
+		return nil, partRefused("sessionless source: probe without capture")
 	}
 	if err := probe.captured.version.check(donor); err != nil {
 		return nil, err
@@ -595,14 +595,14 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 	}
 	probedKey, err := partAddressKey(probe.Descriptor.Address)
 	if err != nil || key != probedKey || !probe.LocalComplete || probe.Busy || probe.captured == nil || probe.captured.row != donor {
-		return nil, ErrPartReselect
+		return nil, partRefused("sessionless source: probe not usable")
 	}
 
 	// Resource filtering is performed below using only the receiver's current
 	// own set. The normal collector and foreground session filter stay intact.
 	route, eligible := c.sessionlessPartEquivalentLocked(receiver, donor, lookup)
 	if !eligible || !c.ownPartRequirementsFitLocked(receiver, donor) {
-		return nil, ErrPartReselect
+		return nil, partRefused("sessionless source: donor not eligible")
 	}
 	source := &PartSourceLease{cache: c, source: donor, sourceID: uint64(donor.id), descriptor: probe.Descriptor, target: clonePartAddress(target), readiness: PartReady, route: route, sessionlessShare: true, record: probe.captured.record, version: probe.captured.version, lookup: lookup, facts: c.partFactsLocked(donor)}
 	source.descriptor = source.Descriptor()
@@ -611,7 +611,7 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 	source.descriptor.DependencyIDs = slices.Compact(source.descriptor.DependencyIDs)
 	for _, id := range source.descriptor.DependencyIDs {
 		if !c.ownPartRequirementsFitLocked(receiver, c.resultsByID[sharedResultID(id)]) {
-			return nil, ErrPartReselect
+			return nil, partRefused("sessionless source: dependency exceeds receiver requirements")
 		}
 	}
 	source.offerRev = source.facts.offers

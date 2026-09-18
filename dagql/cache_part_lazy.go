@@ -77,7 +77,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 	if group == nil || group.phase != LazyEvaluationRunning || group.task != original.task {
 		original.gate.mu.Unlock()
 		c.egraphMu.Unlock()
-		return nil, ErrPartReselect
+		return nil, partRefused("publish: own group not running")
 	}
 	p.permit = original.gate.newPermit(original.task, demanded, true)
 	original.gate.mu.Unlock()

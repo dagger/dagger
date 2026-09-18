@@ -232,7 +232,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		var contentErr *snapshots.ChainContentError
 		if errors.As(err, &contentErr) {
 			demand.exhaust(source, err)
-			return ErrPartReselect
+			return partRefused("chain: content failed, source exhausted")
 		}
 		return err
 	}
@@ -248,7 +248,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		c.egraphMu.Lock()
 		if !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
 			c.egraphMu.Unlock()
-			return ErrPartReselect
+			return partRefused("chain: offer owner not allowed")
 		}
 		c.retainOfferOwnerLocked(source.offerOwner)
 		selected := &PartSourceLease{cache: c, sourceID: source.sourceID, offerOwner: source.offerOwner, descriptor: source.Descriptor(), target: clonePartAddress(source.target), offer: source.offer, readiness: PartDownloadable, route: source.route, offerRev: source.offerRev, sessionID: source.sessionID, record: source.record}
@@ -264,7 +264,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 				return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
 			}
 			if outcome == PartInstallRefused && err == nil {
-				err = ErrPartReselect
+				err = partRefused("chain: commit refused")
 			}
 		}
 		if !partCanReselect(err) {
@@ -294,7 +294,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			return nil
 		}
 		if outcome != GateGranted {
-			return ErrPartReselect
+			return partRefused("chain: reacquire not granted")
 		}
 	}
 

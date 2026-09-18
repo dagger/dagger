@@ -126,7 +126,7 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 	c.egraphMu.Lock()
 	row, err := c.validatePartTaskLocked(receiver, permit.task)
 	if err == nil && source.delegation != nil && !source.delegation.currentLocked(c, source, row) {
-		err = ErrPartReselect
+		err = partRefused("prepare: delegation proof not current")
 	}
 	if err == nil {
 		c.incrementIncomingOwnershipLocked(ctx, row)
@@ -145,7 +145,7 @@ func (c *Cache) PrepareReadyPart(ctx context.Context, receiver AnyResult, source
 		return nil, fmt.Errorf("prepare part: undeclared output")
 	}
 	if probe.LocalComplete {
-		return nil, ErrPartReselect
+		return nil, partRefused("prepare: receiver part already complete")
 	}
 	local, err := partRecordAt(current, permit.address.OutputPath)
 	if err != nil {
@@ -340,28 +340,28 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 		return nil, PartInstallRefused, err
 	}
 	if err := p.version.check(p.receiver); err != nil {
-		return nil, PartInstallRefused, ErrPartReselect
+		return nil, PartInstallRefused, partRefused("commit: receiver version")
 	}
 	source := p.source
 	if source.delegation != nil {
 		if err := source.delegation.childVersion.check(p.receiver); err != nil {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: delegation child version")
 		}
 	}
 	if p.original == nil && source.readiness == PartReady {
 		if err := source.version.check(source.source); err != nil {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: donor version")
 		}
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	row := p.receiver
 	if c.resultsByID[row.id] != row || !p.permit.task.active.Load() {
-		return nil, PartInstallRefused, ErrPartReselect
+		return nil, PartInstallRefused, partRefused("commit: receiver unregistered or task inactive")
 	}
 	if p.original == nil && source.readiness == PartReady {
 		if source.source == nil || c.resultsByID[source.source.id] != source.source || source.facts != c.partFactsLocked(source.source) {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: donor unregistered or facts changed")
 		}
 		found := false
 		if source.delegation != nil {
@@ -378,14 +378,14 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 			}
 		}
 		if !found {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: donor no longer eligible")
 		}
 	} else if p.original == nil && !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
-		return nil, PartInstallRefused, ErrPartReselect
+		return nil, PartInstallRefused, partRefused("commit: offer owner not allowed")
 	}
 	for _, dep := range p.deps {
 		if !c.partSourceReferenceAllowedLocked(row, source, dep) {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: dependency not allowed")
 		}
 	}
 	if p.original == nil {
@@ -398,7 +398,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 				}
 			}
 			if !found {
-				return nil, PartInstallRefused, ErrPartReselect
+				return nil, PartInstallRefused, partRefused("commit: donated facts changed")
 			}
 		}
 	}
@@ -422,22 +422,22 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if p.original != nil {
 		group := gate.groups[lazyGroupAddressKey(p.original.group)]
 		if group == nil || group.phase != LazyEvaluationRunning || group.task != p.permit.task {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: own group not running")
 		}
 	}
 	if gate.writers[p.permit.ticket] != p.permit {
-		return nil, PartInstallRefused, ErrPartReselect
+		return nil, PartInstallRefused, partRefused("commit: own permit gone")
 	}
 	if p.store != nil {
 		if !p.store.TryLock() {
-			return nil, PartInstallRefused, ErrPartReselect
+			return nil, PartInstallRefused, partRefused("commit: part store busy")
 		}
 		defer p.store.Unlock()
 	}
 	row.payloadMu.Lock()
 	defer row.payloadMu.Unlock()
 	if row.payloadRevision != p.version.payload.payloadRevision || row.hasValue != p.version.payload.hasValue || row.persistedEnvelope != p.version.payload.persistedEnvelope {
-		return nil, PartInstallRefused, ErrPartReselect
+		return nil, PartInstallRefused, partRefused("commit: receiver representation")
 	}
 	// No fallible work after this point. Protection cleanup belongs to the row,
 	// independently of the receipt and the continuation's temporary row hold.
@@ -526,7 +526,7 @@ func (c *Cache) InstallReadyPart(ctx context.Context, receiver AnyResult, source
 		return err
 	}
 	if outcome == PartInstallRefused {
-		return ErrPartReselect
+		return partRefused("install: commit refused")
 	}
 	return nil
 }

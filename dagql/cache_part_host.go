@@ -93,7 +93,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	if gate.managed {
 		gate.mu.Unlock()
 		c.egraphMu.Unlock()
-		return ErrPartReselect
+		return partRefused("native: gate is managed")
 	}
 	writes := make([]PersistedPartAddress, len(parts))
 	for i, part := range parts {
