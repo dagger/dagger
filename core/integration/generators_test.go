@@ -889,6 +889,21 @@ source = "dang"
 			require.NoError(t, err)
 		})
 	}
+	t.Run("one-off module replaces the SDK entrypoint", func(ctx context.Context, t *testctx.T) {
+		const cwd = "/work/app/generated/demo/sub"
+		config := strings.Replace(config, `source = "../sdk"`, `source = "../sdk"
+entrypoint = true`, 1)
+		generated := mixed.WithNewFile("/work/app/dagger.toml", config).
+			WithWorkdir(cwd).
+			With(daggerNonNestedExec("-m", "/work/regular", "generate", "-y"))
+		out, err := generated.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		contents, err := generated.File(cwd + "/regular.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "regular output", contents)
+		_, err = generated.File("/work/app/go.mod").Contents(ctx)
+		require.NoError(t, err)
+	})
 	t.Run("mixed generator conflict", func(ctx context.Context, t *testctx.T) {
 		failed := mixed.WithNewFile("/work/app/dagger.toml", config+`
 [modules.regular]

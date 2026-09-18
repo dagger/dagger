@@ -149,14 +149,21 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 		}
 		// Installed SDK generators produce workspace-root changesets. Module
 		// generators produce changesets relative to the invocation directory.
-		sdkGenerators := map[string]bool{}
+		var sdkPaths []string
 		for _, sdk := range cfg.SDKs {
-			generatorPath := cliName(sdk.Module) + "/generate"
-			if cfg.Modules[sdk.Module].Entrypoint {
-				generatorPath = "generate"
+			sdkPaths = append(sdkPaths, cliName(sdk.Module)+"/generate")
+		}
+		sdkGenerators := map[string]bool{}
+		if len(sdkPaths) > 0 {
+			// Discovery resolves the active entrypoint, including -m overrides.
+			selected := dag.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterDirectives([]string{"generate"})
+			uris, err := artifactURIs(ctx, dag, selected)
+			if err != nil {
+				return err
 			}
-			uri := (&dagaddress.Address{HasScheme: true, Path: generatorPath}).String()
-			sdkGenerators[uri] = true
+			for _, uri := range uris {
+				sdkGenerators[uri] = true
+			}
 		}
 		for i, changeset := range changes {
 			if sdkGenerators[results[i].Artifact.URI] {
