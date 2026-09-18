@@ -9,9 +9,10 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-// clientStats accumulates how much data a Client has fetched from Cloud, broken
-// down by GraphQL operation, for --debug diagnostics. All streaming fetches
-// funnel through streamGraphQL, so counting there captures every span/log pull.
+// clientStats accumulates how much data a client has fetched from Cloud, broken
+// down by operation (an OTLP stream kind, or a GraphQL operation name), for
+// --debug diagnostics. Every streaming fetch funnels through
+// OTLPClient.consumeStream, so counting there captures every span/log pull.
 type clientStats struct {
 	mu  sync.Mutex
 	ops map[string]*opStat
