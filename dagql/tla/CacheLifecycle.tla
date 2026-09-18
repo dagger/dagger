@@ -976,7 +976,7 @@ FnComplete(o) ==
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                 ![o].fnErr = TRUE, ![o].fnErrRefusal = TRUE,
                                 ![o].sharedLease = FALSE]
-    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1029,7 +1029,7 @@ FnWindDown(o) ==
     \* the canceled executor returns with no waiter left, so it releases
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "exited",
                                             ![o].sharedLease = FALSE]
-    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* Commit aggregate persistence intent and release the publication handoff
