@@ -385,6 +385,7 @@ Examples:
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -412,6 +413,7 @@ dagger artifact dimensions [address...]
   -d, --debug                       Enable engine and trace diagnostics
       --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
       --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string                  Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
   -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
   -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
@@ -436,6 +438,7 @@ dagger artifact keys DIMENSION [address...]
   -d, --debug                       Enable engine and trace diagnostics
       --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
       --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string                  Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
   -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
   -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
@@ -460,6 +463,7 @@ dagger artifact list [address...]
   -d, --debug                       Enable engine and trace diagnostics
       --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
       --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string                  Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
   -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
   -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
@@ -484,6 +488,7 @@ dagger artifact types [address...]
   -d, --debug                       Enable engine and trace diagnostics
       --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
       --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string                  Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
   -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
   -v, --verbose count               Increase verbosity (use -vv or -vvv for more)

@@ -32,13 +32,13 @@ public class Field
     /// Get optional arguments from Args.
     /// </summary>
     public ImmutableArray<InputValue> OptionalArgs() =>
-        Args.Where(arg => arg.Type.Kind != "NON_NULL").ToImmutableArray();
+        Args.Where(arg => arg.Type.Kind != "NON_NULL" || arg.DefaultValue != null).ToImmutableArray();
 
     /// <summary>
     /// Get required arguments from Args.
     /// </summary>
     public ImmutableArray<InputValue> RequiredArgs() =>
-        Args.Where(arg => arg.Type.Kind == "NON_NULL").ToImmutableArray();
+        Args.Where(arg => arg.Type.Kind == "NON_NULL" && arg.DefaultValue == null).ToImmutableArray();
 
     /// <summary>
     /// Get the @expectedType name from this field's directives, if present.

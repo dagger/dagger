@@ -326,8 +326,8 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 					With(daggerExec("generate", "-l")).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Contains(t, out, tc.path+":generate-files")
-				require.Contains(t, out, tc.path+":generate-other-files")
+				require.Contains(t, out, "dag://"+tc.path+"/generate-files")
+				require.Contains(t, out, "dag://"+tc.path+"/generate-other-files")
 			})
 
 			t.Run("generate", func(ctx context.Context, t *testctx.T) {
@@ -1701,7 +1701,7 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 
 	t.Run("baseline reads input.txt from the workspace", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerQuery(`{currentWorkspace{artifacts(include:["repro/gen"]){one{value{... on Changeset {layer{file(path:"output.txt"){contents}}}}}}}}`)).
+			With(daggerQuery(`{currentWorkspace{artifacts(include:["repro/gen"]){filterTypes(types:["Changeset"]){one{value{... on Changeset {layer{file(path:"output.txt"){contents}}}}}}}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: A")
@@ -1709,12 +1709,11 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 
 	t.Run("generator sees an overlay edit applied to the workspace", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){artifacts(include:["repro/gen"]){one{value{... on Changeset {layer{file(path:"output.txt"){contents}}}}}}}}}`)).
+			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){artifacts(include:["repro/gen"]){filterTypes(types:["Changeset"]){one{value{... on Changeset {layer{file(path:"output.txt"){contents}}}}}}}}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: B-OVERLAY")
 	})
-
 }
 
 func (GeneratorsSuite) TestGenerateFromModuleDirectoryExportPaths(ctx context.Context, t *testctx.T) {

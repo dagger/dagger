@@ -561,6 +561,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger api query",
 		"dagger api session",
 		"dagger api with-session",
+		"dagger artifact",
 		"dagger call",
 		"dagger check",
 		"dagger core",

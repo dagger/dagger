@@ -132,7 +132,7 @@ func runServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.Artifa
 				return err
 			}
 			for _, port := range response.Node.Ports {
-				claimed = append(claimed, fmt.Sprintf("%d/%s", port.Port, strings.ToLower(string(port.Protocol))))
+				claimed = append(claimed, fmt.Sprintf("%d/%s", port.Port, strings.ToLower(port.Protocol)))
 			}
 		}
 		for _, port := range claimed {

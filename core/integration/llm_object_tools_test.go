@@ -1096,7 +1096,7 @@ type Swapper {
   reload(llm: LLM!): LLM! {
     let ws = llm.workspace.withNewFile("` + modulePath + `", llm.workspace.file("next-source.txt").contents)
     ws.artifacts.filterDirectives(["agent"]).one.value(
-      arguments: JSON.encode({{base: llm.withWorkspace(ws).id}}) :: JSON
+      arguments: JSON.encode({{base: llm.withWorkspace(ws).id}}) :: Dagger.JSON!
     ).{{... on LLM!}}
   }
 

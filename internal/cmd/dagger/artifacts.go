@@ -64,7 +64,7 @@ Examples:
 			ValidArgsFunction: cobra.NoFileCompletions,
 		})
 	}
-	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace)
+	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	return cmd
 }
 
