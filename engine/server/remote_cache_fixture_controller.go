@@ -79,7 +79,7 @@ func (f *remoteCacheFixtureController) retire(request *dagql.RenewalRequest) {
 	}
 }
 
-var errRemoteCacheFixtureDisabled = errors.New("remote cache fixture is not enabled")
+var errRemoteCacheFixtureDisabled = core.ErrRemoteCacheFixtureNoController
 
 func remoteCacheFixtureEnabled() bool {
 	return os.Getenv(core.RemoteCacheFixtureRootEnv) != ""

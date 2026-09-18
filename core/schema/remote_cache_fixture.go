@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -404,9 +405,15 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 			report.Transport = &transport
 		}
 		if controls, controlsErr := fixtureControls(q); controlsErr == nil && err == nil {
-			var storage core.RemoteCacheFixtureStorage
-			if storage, err = controls.RemoteCacheFixtureStorage(ctx); err == nil {
+			// An engine whose server has the controls but no controller (a
+			// real integration is configured beside the gate) reports without
+			// the storage and renewal groups; any other storage error fails.
+			storage, storageErr := controls.RemoteCacheFixtureStorage(ctx)
+			switch {
+			case storageErr == nil:
 				report.Storage = &storage
+			case !errors.Is(storageErr, core.ErrRemoteCacheFixtureNoController):
+				err = storageErr
 			}
 			if renewals, renewalErr := controls.RemoteCacheFixtureRenewals(); renewalErr == nil {
 				report.Renewal = &renewals
