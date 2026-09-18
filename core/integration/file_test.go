@@ -26,6 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -42,7 +43,7 @@ func TestFile(t *testing.T) {
 func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.Directory().
+	file := core.NewQuery(c).Directory().
 		WithNewFile("some-file", "some-content").
 		File("some-file")
 
@@ -58,7 +59,7 @@ func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestContentsLines(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.Directory().
+	file := core.NewQuery(c).Directory().
 		WithNewFile("some-file", "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n").
 		File("some-file")
 
@@ -66,20 +67,20 @@ func (FileSuite) TestContentsLines(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
 
-	contents, err := file.Contents(ctx, dagger.FileContentsOpts{
+	contents, err := file.Contents(ctx, core.FileContentsOpts{
 		OffsetLines: 5,
 		LimitLines:  5,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "6\n7\n8\n9\n10\n", contents)
 
-	contents, err = file.Contents(ctx, dagger.FileContentsOpts{
+	contents, err = file.Contents(ctx, core.FileContentsOpts{
 		OffsetLines: 5,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "6\n7\n8\n9\n10\n11\n12\n", contents)
 
-	contents, err = file.Contents(ctx, dagger.FileContentsOpts{
+	contents, err = file.Contents(ctx, core.FileContentsOpts{
 		LimitLines: 10,
 	})
 	require.NoError(t, err)
@@ -89,7 +90,7 @@ func (FileSuite) TestContentsLines(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestNewFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.File("some-file", "some-content")
+	file := core.NewQuery(c).File("some-file", "some-content")
 
 	id, err := file.ID(ctx)
 	require.NoError(t, err)
@@ -209,7 +210,7 @@ func (FileSuite) TestBlobBinaryRoundTripAndReload(ctx context.Context, t *testct
 func (FileSuite) TestChownLookup(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	f := c.Container().
+	f := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
 		Rootfs().
@@ -217,7 +218,7 @@ func (FileSuite) TestChownLookup(ctx context.Context, t *testctx.T) {
 		File("owned.txt").
 		Chown("auser:agroup")
 
-	out, err := c.Container().
+	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
 		WithMountedFile("/mnt/owned.txt", f).
@@ -230,7 +231,7 @@ func (FileSuite) TestChownLookup(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestNewFileInvalid(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.File("dir/some-file", "some-content")
+	file := core.NewQuery(c).File("dir/some-file", "some-content")
 
 	_, err := file.Sync(ctx)
 	require.ErrorContains(t, err, "not contain a directory")
@@ -239,7 +240,7 @@ func (FileSuite) TestNewFileInvalid(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.Directory().
+	file := core.NewQuery(c).Directory().
 		WithNewFile("some-dir/some-file", "some-content").
 		Directory("some-dir").
 		File("some-file")
@@ -256,7 +257,7 @@ func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.Directory().WithNewFile("some-file", "some-content").File("some-file")
+	file := core.NewQuery(c).Directory().WithNewFile("some-file", "some-content").File("some-file")
 
 	id, err := file.ID(ctx)
 	require.NoError(t, err)
@@ -273,7 +274,7 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 	t.Run("new file", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().WithNewFile("/foo/bar", "content1").File("foo/bar")
+		file := core.NewQuery(c).Directory().WithNewFile("/foo/bar", "content1").File("foo/bar")
 
 		name, err := file.Name(ctx)
 		require.NoError(t, err)
@@ -281,7 +282,7 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("container file", func(ctx context.Context, t *testctx.T) {
-		file := c.Container().From(alpineImage).File("/etc/alpine-release")
+		file := core.NewQuery(c).Container().From(alpineImage).File("/etc/alpine-release")
 
 		name, err := file.Name(ctx)
 		require.NoError(t, err)
@@ -289,7 +290,7 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("container file in dir", func(ctx context.Context, t *testctx.T) {
-		file := c.Container().From(alpineImage).Directory("/etc").File("/alpine-release")
+		file := core.NewQuery(c).Container().From(alpineImage).Directory("/etc").File("/alpine-release")
 
 		name, err := file.Name(ctx)
 		require.NoError(t, err)
@@ -300,7 +301,7 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 		err := os.WriteFile(filepath.Join(wd, "file.txt"), []byte{}, 0o600)
 		require.NoError(t, err)
 
-		name, err := c.Host().File("file.txt").Name(ctx)
+		name, err := core.NewQuery(c).Host().File("file.txt").Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file.txt", name)
 	})
@@ -311,18 +312,18 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 		err = os.WriteFile(filepath.Join(wd, "path/to/file.txt"), []byte{}, 0o600)
 		require.NoError(t, err)
 
-		name, err := c.Host().Directory("path").File("to/file.txt").Name(ctx)
+		name, err := core.NewQuery(c).Host().Directory("path").File("to/file.txt").Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file.txt", name)
 	})
 
 	t.Run("not found file", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().File("to/file.txt").Name(ctx)
+		_, err := core.NewQuery(c).Directory().File("to/file.txt").Name(ctx)
 		requireErrOut(t, err, "to/file.txt: no such file or directory")
 	})
 
 	t.Run("not found file displays full path in error", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().File("keep/../this").Name(ctx)
+		_, err := core.NewQuery(c).Directory().File("keep/../this").Name(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "keep/../this: no such file or directory")
 	})
@@ -332,7 +333,7 @@ func (FileSuite) TestWithName(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("new file with new name", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().WithNewFile("/foo/bar", "content").File("foo/bar")
+		file := core.NewQuery(c).Directory().WithNewFile("/foo/bar", "content").File("foo/bar")
 
 		newFile := file.WithName("baz")
 
@@ -342,11 +343,11 @@ func (FileSuite) TestWithName(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("mounted file with new name", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().WithNewFile("/foo/bar", "content").File("foo/bar")
+		file := core.NewQuery(c).Directory().WithNewFile("/foo/bar", "content").File("foo/bar")
 
 		newFile := file.WithName("baz")
 
-		mountedFile := c.Directory().WithFile("", newFile).File("baz")
+		mountedFile := core.NewQuery(c).Directory().WithFile("", newFile).File("baz")
 
 		mountedFileName, err := mountedFile.Name(ctx)
 		require.NoError(t, err)
@@ -359,7 +360,7 @@ func (FileSuite) TestWithName(ctx context.Context, t *testctx.T) {
 
 	// regression test for https://github.com/dagger/dagger/issues/11660
 	t.Run("contents", func(ctx context.Context, t *testctx.T) {
-		f := c.File("test", "hello").WithName("tset")
+		f := core.NewQuery(c).File("test", "hello").WithName("tset")
 		s, err := f.Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello", s)
@@ -367,8 +368,8 @@ func (FileSuite) TestWithName(ctx context.Context, t *testctx.T) {
 }
 
 func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
-	file := func(c *dagger.Client) *dagger.File {
-		return c.Container().From(alpineImage).File("/etc/alpine-release")
+	file := func(c *dagger.Client) *core.File {
+		return core.NewQuery(c).Container().From(alpineImage).File("/etc/alpine-release")
 	}
 
 	t.Run("to absolute path", func(ctx context.Context, t *testctx.T) {
@@ -433,7 +434,7 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	t.Run("file under subdir", func(ctx context.Context, t *testctx.T) {
 		targetDir := t.TempDir()
 		c := connect(ctx, t)
-		dir := c.Directory().
+		dir := core.NewQuery(c).Directory().
 			WithNewFile("/file", "content1").
 			WithNewFile("/subdir/file", "content2")
 		file := dir.File("/subdir/file")
@@ -462,7 +463,7 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 		maxChunkSize := engineutil.MaxFileContentsChunkSize
 		fileSizeBytes := maxChunkSize*4 + 1 // +1 so it's not an exact number of chunks, to ensure we cover that case
 
-		file := c.Container().
+		file := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", fmt.Sprintf("dd if=/dev/zero of=/file bs=%d count=1", fileSizeBytes)}).
 			File("/file")
@@ -482,7 +483,7 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	t.Run("file permissions are retained", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 		c := connect(ctx, t, dagger.WithWorkdir(wd))
-		_, err := c.Directory().WithNewFile("/file", "#!/bin/sh\necho hello", dagger.DirectoryWithNewFileOpts{
+		_, err := core.NewQuery(c).Directory().WithNewFile("/file", "#!/bin/sh\necho hello", core.DirectoryWithNewFileOpts{
 			Permissions: 0o744,
 		}).File("/file").Export(ctx, "some-executable-file")
 		require.NoError(t, err)
@@ -497,12 +498,12 @@ func (FileSuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 
 	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
 
-	file := c.Directory().
+	file := core.NewQuery(c).Directory().
 		WithNewFile("sub-dir/sub-file", "sub-content").
 		File("sub-dir/sub-file").
 		WithTimestamps(int(reallyImportantTime.Unix()))
 
-	ls, err := c.Container().
+	ls, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedFile("/file", file).
 		WithEnvVariable("RANDOM", identity.NewID()).
@@ -539,8 +540,8 @@ func (FileSuite) TestContents(ctx context.Context, t *testctx.T) {
 		testFiles[i].hash = computeMD5FromReader(bytes.NewReader(buf))
 	}
 
-	hostDir := c.Host().Directory(tempDir)
-	alpine := c.Container().
+	hostDir := core.NewQuery(c).Host().Directory(tempDir)
+	alpine := core.NewQuery(c).Container().
 		From(alpineImage).WithDirectory(".", hostDir)
 
 	// Grab file contents and compare hashes to validate integrity:
@@ -564,7 +565,7 @@ func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("compute file digest", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().WithNewFile("/foo.txt", "Hello, World!")
+		file := core.NewQuery(c).Directory().WithNewFile("/foo.txt", "Hello, World!")
 
 		digest, err := file.File("/foo.txt").Digest(ctx)
 		require.NoError(t, err)
@@ -572,18 +573,18 @@ func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("compute file digest without metadata", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().WithNewFile("/foo.txt", "Hello, World!")
+		file := core.NewQuery(c).Directory().WithNewFile("/foo.txt", "Hello, World!")
 
-		digest, err := file.File("/foo.txt").Digest(ctx, dagger.FileDigestOpts{ExcludeMetadata: true})
+		digest, err := file.File("/foo.txt").Digest(ctx, core.FileDigestOpts{ExcludeMetadata: true})
 		require.NoError(t, err)
 		require.Equal(t, "sha256:042a7d64a581ef2ee983f21058801cc35663b705e6c55f62fa8e0f18ecc70989", digest)
 	})
 
 	t.Run("file digest with different metadata should be different", func(ctx context.Context, t *testctx.T) {
-		fileWithOverwrittenMetadata := c.Directory().WithNewFile("foo.txt", "Hello, World!", dagger.DirectoryWithNewFileOpts{
+		fileWithOverwrittenMetadata := core.NewQuery(c).Directory().WithNewFile("foo.txt", "Hello, World!", core.DirectoryWithNewFileOpts{
 			Permissions: 0777,
 		}).File("foo.txt")
-		fileWithDefaultMetadata := c.Directory().WithNewFile("foo.txt", "Hello, World!").File("foo.txt")
+		fileWithDefaultMetadata := core.NewQuery(c).Directory().WithNewFile("foo.txt", "Hello, World!").File("foo.txt")
 
 		digestFileWithOverwrittenMetadata, err := fileWithOverwrittenMetadata.Digest(ctx)
 		require.NoError(t, err)
@@ -594,10 +595,10 @@ func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
 		require.NotEqual(t, digestFileWithOverwrittenMetadata, digestFileWithDefaultMetadata)
 
 		t.Run("except if we exclude them from computation", func(ctx context.Context, t *testctx.T) {
-			digestFileWithOverwrittenMetadata, err := fileWithOverwrittenMetadata.Digest(ctx, dagger.FileDigestOpts{ExcludeMetadata: true})
+			digestFileWithOverwrittenMetadata, err := fileWithOverwrittenMetadata.Digest(ctx, core.FileDigestOpts{ExcludeMetadata: true})
 			require.NoError(t, err)
 
-			digestFileWithDefaultMetadata, err := fileWithDefaultMetadata.Digest(ctx, dagger.FileDigestOpts{ExcludeMetadata: true})
+			digestFileWithDefaultMetadata, err := fileWithDefaultMetadata.Digest(ctx, core.FileDigestOpts{ExcludeMetadata: true})
 			require.NoError(t, err)
 
 			require.Equal(t, digestFileWithOverwrittenMetadata, digestFileWithDefaultMetadata)
@@ -609,7 +610,7 @@ func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
 	t.Run("literal search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello, World!\nThis is a test file.\nWorld is great.\nGoodbye, World!").
 			File("test.txt")
 
@@ -667,7 +668,7 @@ func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
 		require.NotEmpty(t, submatches2)
 
 		// Verify submatch structure for all results
-		for i, submatches := range [][]dagger.SearchSubmatch{submatches0, submatches1, submatches2} {
+		for i, submatches := range [][]core.SearchSubmatch{submatches0, submatches1, submatches2} {
 			for _, submatch := range submatches {
 				submatchText, err := submatch.Text(ctx)
 				require.NoError(t, err, "result %d submatch text", i)
@@ -687,7 +688,7 @@ func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
 	t.Run("regex search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("code.go", `package main
 
 import "fmt"
@@ -750,7 +751,7 @@ func main() {
 	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("dir/code.go", `package main
 
 import "fmt"
@@ -769,7 +770,7 @@ func another() {
 			File("dir/code.go")
 
 		// Search for variable assignments
-		results, err := file.Search(ctx, ":= \"Alice\"\n\tage", dagger.FileSearchOpts{
+		results, err := file.Search(ctx, ":= \"Alice\"\n\tage", core.FileSearchOpts{
 			Multiline: true,
 			Literal:   true,
 		})
@@ -823,7 +824,7 @@ func another() {
 	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := core.NewQuery(c).Directory().
 			WithNewFile("dir/code.go", `package main
 
 import "fmt"
@@ -842,7 +843,7 @@ func another() {
 			File("dir/code.go")
 
 		// Search for variable assignments
-		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, dagger.FileSearchOpts{
+		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, core.FileSearchOpts{
 			Multiline: true,
 		})
 		require.NoError(t, err)
@@ -868,7 +869,7 @@ func another() {
 	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello, World!").
 			File("test.txt")
 
@@ -880,7 +881,7 @@ func another() {
 	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello\nhello\nHELLO\nHeLLo").
 			File("test.txt")
 
@@ -895,11 +896,11 @@ func another() {
 	t.Run("case insensitive search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello\nhello\nHELLO\nHeLLo").
 			File("test.txt")
 
-		results, err := file.Search(ctx, "hello", dagger.FileSearchOpts{
+		results, err := file.Search(ctx, "hello", core.FileSearchOpts{
 			Insensitive: true,
 		})
 		require.NoError(t, err)
@@ -918,7 +919,7 @@ func another() {
 	t.Run("multiline patterns", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.py", `def hello():
     print("Hello")
 
@@ -969,7 +970,7 @@ def hello_world():
 
 		c := connect(ctx, t)
 
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("large.txt", content.String()).
 			File("large.txt")
 
@@ -992,7 +993,7 @@ def hello_world():
 	t.Run("file from container", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		file := c.Container().
+		file := core.NewQuery(c).Container().
 			From(alpineImage).
 			File("/etc/alpine-release")
 
@@ -1009,17 +1010,17 @@ func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().File("baz").Sync(ctx)
+		_, err := core.NewQuery(c).Directory().File("baz").Sync(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "baz: no such file or directory")
 
-		_, err = c.Container().From(alpineImage).File("/bar").Sync(ctx)
+		_, err = core.NewQuery(c).Container().From(alpineImage).File("/bar").Sync(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "bar: no such file or directory")
 	})
 
 	t.Run("allows chaining", func(ctx context.Context, t *testctx.T) {
-		file, err := c.Directory().WithNewFile("foo", "bar").File("foo").Sync(ctx)
+		file, err := core.NewQuery(c).Directory().WithNewFile("foo", "bar").File("foo").Sync(ctx)
 		require.NoError(t, err)
 
 		contents, err := file.Contents(ctx)
@@ -1032,7 +1033,7 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("single replacement", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello, World!").
 			File("test.txt")
 
@@ -1044,12 +1045,12 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("single replacement on specified line with multiple matches", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello, World!\nGoodbye, World!\n").
 			File("test.txt")
 
 		// Replace only the first occurrence
-		replaced := file.WithReplaced("World", "Universe", dagger.FileWithReplacedOpts{
+		replaced := file.WithReplaced("World", "Universe", core.FileWithReplacedOpts{
 			FirstFrom: 1,
 		})
 
@@ -1059,12 +1060,12 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("replace all occurrences", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello, World!\nGoodbye, World!\nAnother World here.").
 			File("test.txt")
 
 		// Replace all occurrences
-		replaced := file.WithReplaced("World", "Universe", dagger.FileWithReplacedOpts{
+		replaced := file.WithReplaced("World", "Universe", core.FileWithReplacedOpts{
 			All: true,
 		})
 
@@ -1075,12 +1076,12 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 
 	t.Run("replace first occurrence after specified line", func(ctx context.Context, t *testctx.T) {
 		content := "line 1: World\nline 2: text\nline 3: World\nline 4: World\nline 5: text"
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", content).
 			File("test.txt")
 
 		// Replace first occurrence after line 2
-		replaced := file.WithReplaced("World", "Universe", dagger.FileWithReplacedOpts{
+		replaced := file.WithReplaced("World", "Universe", core.FileWithReplacedOpts{
 			FirstFrom: 2,
 		})
 
@@ -1090,7 +1091,7 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("multiline replacement", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Start\nOld line 1\nOld line 2\nEnd").
 			File("test.txt")
 
@@ -1103,7 +1104,7 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("special characters and regex patterns", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Price: $50.99\nTotal: $100.50").
 			File("test.txt")
 
@@ -1116,7 +1117,7 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("empty replacement", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Remove this text and keep the rest").
 			File("test.txt")
 
@@ -1129,7 +1130,7 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("error on no matches", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello, World!").
 			File("test.txt")
 
@@ -1141,7 +1142,7 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("error on multiple matches without all flag", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "World appears here and World appears there").
 			File("test.txt")
 
@@ -1153,12 +1154,12 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("first occurrence after non-existent line", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "line 1\nline 2").
 			File("test.txt")
 
 		// Should error when firstAfter points beyond file length - error will surface on Contents() call
-		replaced := file.WithReplaced("line", "LINE", dagger.FileWithReplacedOpts{
+		replaced := file.WithReplaced("line", "LINE", core.FileWithReplacedOpts{
 			FirstFrom: 10,
 		})
 		_, err := replaced.Contents(ctx)
@@ -1166,7 +1167,7 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("preserve file attributes", func(ctx context.Context, t *testctx.T) {
-		originalFile := c.Directory().
+		originalFile := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Original content").
 			File("test.txt")
 
@@ -1187,7 +1188,7 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("chaining with other operations", func(ctx context.Context, t *testctx.T) {
-		replaced := c.Directory().
+		replaced := core.NewQuery(c).Directory().
 			WithNewFile("chain.txt", "Step 1: initial").
 			File("chain.txt").
 			WithReplaced("initial", "replaced").
@@ -1199,12 +1200,12 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("all=true with no matches is no-op", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
+		file := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", "Hello, World!").
 			File("test.txt")
 
 		// Should not error when no matches found with all=true (should be a no-op)
-		replaced := file.WithReplaced("NotFound", "Replacement", dagger.FileWithReplacedOpts{
+		replaced := file.WithReplaced("NotFound", "Replacement", core.FileWithReplacedOpts{
 			All: true,
 		})
 
@@ -1222,7 +1223,7 @@ func (FileSuite) TestFileAsJSON(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("it converts json file contents to JSON", func(ctx context.Context, t *testctx.T) {
-		jsonValue, err := c.Directory().
+		jsonValue, err := core.NewQuery(c).Directory().
 			WithNewFile("test.json", `{ "somekey": "somevalue" }`).
 			File("test.json").
 			AsJSON().
@@ -1234,7 +1235,7 @@ func (FileSuite) TestFileAsJSON(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("it returns error with non-json", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().
+		_, err := core.NewQuery(c).Directory().
 			WithNewFile("test.txt", `this is not json`).
 			File("test.txt").
 			AsJSON().
@@ -1249,7 +1250,7 @@ func (FileSuite) TestFileAsJSON(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("root-level", func(ctx context.Context, t *testctx.T) {
-		s, err := c.Container().
+		s, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", "echo -n 'important' > data && ln -s data d"}).
 			File("d").
@@ -1259,7 +1260,7 @@ func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "important", s)
 	})
 	t.Run("target-in-subdir", func(ctx context.Context, t *testctx.T) {
-		s, err := c.Container().
+		s, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", "mkdir data-store && echo -n 'important' > data-store/data && ln -s data-store/data d"}).
 			File("d").
@@ -1269,7 +1270,7 @@ func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "important", s)
 	})
 	t.Run("target-in-parent-dir", func(ctx context.Context, t *testctx.T) {
-		d := c.Container().
+		d := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", "mkdir subdir && echo -n 'important' > data && cd subdir && ln -s ../data d"})
 
@@ -1305,9 +1306,9 @@ func (FileSuite) TestFileCachingContents(ctx context.Context, t *testctx.T) {
 
 		eg.Go(func() error {
 			<-startCh
-			file := c.Host().Directory(".").File(filename)
+			file := core.NewQuery(c).Host().Directory(".").File(filename)
 
-			actualContents, err := c.Directory().
+			actualContents, err := core.NewQuery(c).Directory().
 				WithFile("the-file", file).
 				File("the-file").
 				Contents(ctx)

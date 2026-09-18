@@ -50,6 +50,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	sdkcore "dagger.io/dagger/core"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -93,13 +94,13 @@ type spawnOpts struct {
 	name string
 	// toolIDs optionally binds objects' methods as tools (one llm.withTools
 	// per object, in order), for the recordings that contain tool calls.
-	toolIDs []dagger.ID
+	toolIDs []sdkcore.ID
 	// wsID optionally binds a workspace (llm.withWorkspace) ahead of the
 	// tool bindings, so tools that auto-inject a Workspace! argument resolve
 	// it from the LLM instead of the session's ambient currentWorkspace —
 	// which under the test harness is whatever the session inherited, not
 	// something the test controls.
-	wsID dagger.ID
+	wsID sdkcore.ID
 }
 
 // trySpawnAgent evaluates llm[.withWorkspace][.withTools…].spawn(name:) once
@@ -440,8 +441,8 @@ func unmintedAgent(ctx context.Context, t *testctx.T, c *dagger.Client, handle, 
 // cache buster keeps the exec out of the cache so the dwell really happens on
 // every dispatch — in particular a canceled exec is not cached, so an
 // interrupted run re-dwells when resume re-steps it.
-func slowToolContainer(c *dagger.Client, vol *dagger.CacheVolume, sleepSecs int) *dagger.Container {
-	return c.Container().From(alpineImage).
+func slowToolContainer(c *dagger.Client, vol *sdkcore.CacheVolume, sleepSecs int) *sdkcore.Container {
+	return sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/sync", vol).
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"sh", "-c",
@@ -451,9 +452,9 @@ func slowToolContainer(c *dagger.Client, vol *dagger.CacheVolume, sleepSecs int)
 // waitForSlowTool blocks until the slow tool's marker file appears on the
 // shared cache volume: from then on, and until the tool's sleep elapses, the
 // agent's turn is provably dwelling inside the tool call.
-func waitForSlowTool(ctx context.Context, t *testctx.T, c *dagger.Client, vol *dagger.CacheVolume) {
+func waitForSlowTool(ctx context.Context, t *testctx.T, c *dagger.Client, vol *sdkcore.CacheVolume) {
 	t.Helper()
-	_, err := c.Container().From(alpineImage).
+	_, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/sync", vol).
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"sh", "-c",
@@ -472,12 +473,12 @@ const (
 	steerPrompt    = "steer the running turn"
 )
 
-func slowToolConversation(c *dagger.Client, withSteer bool) *dagger.LLM {
-	llm := c.LLM().
+func slowToolConversation(c *dagger.Client, withSteer bool) *sdkcore.LLM {
+	llm := sdkcore.NewQuery(c).LLM().
 		WithPrompt(slowToolPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Dispatching the slow tool."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "stdout"},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: "Dispatching the slow tool."},
+			{Kind: sdkcore.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "stdout"},
 		}).
 		// Placeholder result: the real exec runs during replay and its live
 		// output flows through (tool results are excluded from the
@@ -486,8 +487,8 @@ func slowToolConversation(c *dagger.Client, withSteer bool) *dagger.LLM {
 	if withSteer {
 		llm = llm.WithPrompt(steerPrompt)
 	}
-	return llm.WithResponse([]dagger.LLMContentBlockInput{
-		{Kind: dagger.LLMContentBlockKindText, Text: slowToolReply},
+	return llm.WithResponse([]sdkcore.LLMContentBlockInput{
+		{Kind: sdkcore.LLMContentBlockKindText, Text: slowToolReply},
 	})
 }
 
@@ -500,14 +501,14 @@ func (AgentRuntimeSuite) TestLifecycle(ctx context.Context, t *testctx.T) {
 	// the seed conversation's recipe digest. The typed SDK path: spawn
 	// executes eagerly (ID-returning in GraphQL), and the SDK loads the ID
 	// as the agent handle.
-	named, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).
-		Spawn(ctx, dagger.LLMSpawnOpts{Name: "bob"})
+	named, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: emptyReplayModel}).
+		Spawn(ctx, sdkcore.LLMSpawnOpts{Name: "bob"})
 	require.NoError(t, err)
 	name, err := named.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bob", name)
 
-	derivedAgent, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).Spawn(ctx)
+	derivedAgent, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: emptyReplayModel}).Spawn(ctx)
 	require.NoError(t, err)
 	derived, err := derivedAgent.Name(ctx)
 	require.NoError(t, err)
@@ -565,14 +566,14 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 		secondPrompt = "second prompt for the agent"
 		secondReply  = "the second recorded reply"
 	)
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 		WithPrompt(firstPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: firstReply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: firstReply},
 		}).
 		WithPrompt(secondPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: secondReply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: secondReply},
 		}))
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "conversationalist"})
@@ -615,7 +616,7 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := c.CacheVolume("agent-spawn-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-spawn-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
@@ -624,7 +625,7 @@ func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 	// binding, same display name. Under the old identity model these
 	// resolved to one runtime entry by content digest; spawn mints a
 	// unique runtime handle into each pinned chain, so they are two agents.
-	opts := spawnOpts{model: model, name: "twin", toolIDs: []dagger.ID{ctrID}}
+	opts := spawnOpts{model: model, name: "twin", toolIDs: []sdkcore.ID{ctrID}}
 	first := spawnAgent(ctx, t, c, opts)
 	second := spawnAgent(ctx, t, c, opts)
 	require.NotEqual(t, first.agentID, second.agentID,
@@ -702,14 +703,14 @@ func (AgentRuntimeSuite) TestSpawnAfterStop(ctx context.Context, t *testctx.T) {
 		restartPrompt = "prompt after the phoenix restarts"
 		restartReply  = "the restarted phoenix reply"
 	)
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 		WithPrompt(prompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: reply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: reply},
 		}).
 		WithPrompt(restartPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: restartReply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: restartReply},
 		}))
 	opts := spawnOpts{model: model, name: "phoenix"}
 
@@ -777,10 +778,10 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 			nextPrompt = "prompt sent after the reseed"
 			nextReply  = "the post-reseed reply"
 		)
-		oldModel := cannedRecordingModel(ctx, t, c, c.LLM().
+		oldModel := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 			WithPrompt(oldPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: oldReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: oldReply},
 			}))
 		h := spawnAgent(ctx, t, c, spawnOpts{model: oldModel, name: "continuous"})
 
@@ -791,19 +792,19 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 
 		// The replacement conversation: a different recording whose history
 		// already holds one exchange, with the follow-up turn recorded.
-		newModel := cannedRecordingModel(ctx, t, c, c.LLM().
+		newModel := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 			WithPrompt(newPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: newReply},
 			}).
 			WithPrompt(nextPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: nextReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: nextReply},
 			}))
-		newConvo, err := c.LLM(dagger.LLMOpts{Model: newModel}).
+		newConvo, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: newModel}).
 			WithPrompt(newPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: newReply},
 			}).
 			ID(ctx)
 		require.NoError(t, err)
@@ -851,19 +852,19 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "QUEUED", out.Get("delivery").String())
 
-		newModel := cannedRecordingModel(ctx, t, c, c.LLM().
+		newModel := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 			WithPrompt(newPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: newReply},
 			}).
 			WithPrompt(queuedPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: queuedReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: queuedReply},
 			}))
-		newConvo, err := c.LLM(dagger.LLMOpts{Model: newModel}).
+		newConvo, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: newModel}).
 			WithPrompt(newPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: newReply},
 			}).
 			ID(ctx)
 		require.NoError(t, err)
@@ -890,10 +891,10 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 			nextPrompt = "prompt after the recovery"
 			nextReply  = "the recovered reply"
 		)
-		model := cannedRecordingModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 			WithPrompt("the recorded prompt").
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: "the recorded reply"},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: "the recorded reply"},
 			}))
 		h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "recoverable"})
 
@@ -908,19 +909,19 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		// Reseed swaps the conversation and nothing else: the tombstone
 		// keeps its error, so the projection still says FAILED — reseed and
 		// resume compose instead of overlapping.
-		newModel := cannedRecordingModel(ctx, t, c, c.LLM().
+		newModel := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 			WithPrompt(newPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: newReply},
 			}).
 			WithPrompt(nextPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: nextReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: nextReply},
 			}))
-		newConvo, err := c.LLM(dagger.LLMOpts{Model: newModel}).
+		newConvo, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: newModel}).
 			WithPrompt(newPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: newReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: newReply},
 			}).
 			ID(ctx)
 		require.NoError(t, err)
@@ -944,29 +945,29 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 
 	t.Run("refuses an instance with no runtime", func(ctx context.Context, t *testctx.T) {
 		h := unmintedAgent(ctx, t, c, identity.NewID(), "ghost")
-		convo, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).ID(ctx)
+		convo, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: emptyReplayModel}).ID(ctx)
 		require.NoError(t, err)
 		err = h.reseedAgent(ctx, t, string(convo))
 		require.ErrorContains(t, err, "no runtime in this session")
 	})
 
 	t.Run("refuses an in-flight step and rewinds a suspended turn", func(ctx context.Context, t *testctx.T) {
-		vol := c.CacheVolume("agent-reseed-" + identity.NewID())
+		vol := sdkcore.NewQuery(c).CacheVolume("agent-reseed-" + identity.NewID())
 		ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 		require.NoError(t, err)
 		const (
 			editedPrompt = "start the corrected work"
 			editedReply  = "the corrected turn is done"
 		)
-		rewoundConversation := c.LLM().
+		rewoundConversation := sdkcore.NewQuery(c).LLM().
 			WithPrompt(editedPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{{
-				Kind: dagger.LLMContentBlockKindText,
+			WithResponse([]sdkcore.LLMContentBlockInput{{
+				Kind: sdkcore.LLMContentBlockKindText,
 				Text: editedReply,
 			}})
 		model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
-		h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "busy", toolIDs: []dagger.ID{ctrID}})
-		convo, err := c.LLM(dagger.LLMOpts{
+		h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "busy", toolIDs: []sdkcore.ID{ctrID}})
+		convo, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{
 			Model: cannedRecordingModel(ctx, t, c, rewoundConversation),
 		}).ID(ctx)
 		require.NoError(t, err)
@@ -1027,7 +1028,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 	t.Run("refuses a stopped agent", func(ctx context.Context, t *testctx.T) {
 		h := spawnAgent(ctx, t, c, spawnOpts{model: emptyReplayModel, name: "sealed"})
 		require.Equal(t, "STOPPED", h.mustVerb(ctx, t, "stop"))
-		convo, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).ID(ctx)
+		convo, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: emptyReplayModel}).ID(ctx)
 		require.NoError(t, err)
 		err = h.reseedAgent(ctx, t, string(convo))
 		require.ErrorContains(t, err, "stopped")
@@ -1046,10 +1047,10 @@ func (AgentRuntimeSuite) TestPauseQueueResume(ctx context.Context, t *testctx.T)
 		reply  = "the resumed reply"
 	)
 	newModel := func() string {
-		return cannedRecordingModel(ctx, t, c, c.LLM().
+		return cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 			WithPrompt(prompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: reply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: reply},
 			}))
 	}
 
@@ -1125,10 +1126,10 @@ func (AgentRuntimeSuite) TestFailedAndRetry(ctx context.Context, t *testctx.T) {
 	// The recording only knows this exchange; the test sends something
 	// else, so the replayer reports a history divergence and the loop
 	// fails.
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 		WithPrompt("the recorded prompt").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "the recorded reply"},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: "the recorded reply"},
 		}))
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "failer"})
@@ -1191,12 +1192,12 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 	// result, which is exactly where the loop drains a mid-turn message
 	// (the step boundary), so the replayed history matches by
 	// construction.
-	vol := c.CacheVolume("agent-steer-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-steer-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, true))
 
-	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "steerable", toolIDs: []dagger.ID{ctrID}})
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "steerable", toolIDs: []sdkcore.ID{ctrID}})
 
 	// Open the turn; the response blocks until the whole (steered) turn ends.
 	var goDelivery, goReply string
@@ -1238,12 +1239,12 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := c.CacheVolume("agent-interrupt-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-interrupt-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "interruptible", toolIDs: []dagger.ID{ctrID}})
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "interruptible", toolIDs: []sdkcore.ID{ctrID}})
 
 	var goDelivery, goReply string
 	eg := errgroup.Group{}
@@ -1334,7 +1335,7 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "dang", "blocker")
-	require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+	require.NoError(t, sdkcore.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx))
 
 	blockerID := queryID(ctx, t, c, `{ blocker { id } }`, "blocker.id")
 
@@ -1349,20 +1350,20 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 		"bust":   identity.NewID(),
 	})
 	require.NoError(t, err)
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 		WithPrompt(blockPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Dispatching the module tool."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "block", Arguments: dagger.JSON(args)},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: "Dispatching the module tool."},
+			{Kind: sdkcore.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "block", Arguments: sdkcore.JSON(args)},
 		}).
 		// Placeholder result: the real module call runs during replay (tool
 		// results are excluded from the replayer's history matching).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: blockReply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: blockReply},
 		}))
 
-	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "modtool", toolIDs: []dagger.ID{blockerID}})
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "modtool", toolIDs: []sdkcore.ID{blockerID}})
 
 	// Open the turn without awaiting the reply: the turn is about to be
 	// suspended indefinitely, so there is no reply to wait for.
@@ -1437,12 +1438,12 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 func (AgentRuntimeSuite) TestResponseIdempotency(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := c.CacheVolume("agent-response-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-response-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 3).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "sharedawait", toolIDs: []dagger.ID{ctrID}})
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "sharedawait", toolIDs: []sdkcore.ID{ctrID}})
 
 	msgID, err := h.sendID(ctx, t, slowToolPrompt)
 	require.NoError(t, err)
@@ -1463,12 +1464,12 @@ func (AgentRuntimeSuite) TestResponseIdempotency(ctx context.Context, t *testctx
 func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := c.CacheVolume("agent-msgid-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-msgid-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "readdressable", toolIDs: []dagger.ID{ctrID}})
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "readdressable", toolIDs: []sdkcore.ID{ctrID}})
 
 	// Request 1: send returns immediately (it never blocks) with the pinned
 	// message ID — the addressable identity-only handle a detached DoNotCache
@@ -1779,7 +1780,7 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "go", "agent-hirer")
-	require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+	require.NoError(t, sdkcore.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx))
 
 	// The client composes a seed and binds the module's own object as its
 	// toolset — a chief's shape, and what puts a MODULE-defined call in the
@@ -1928,7 +1929,7 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "dang", "agent-hirer")
-	require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+	require.NoError(t, sdkcore.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx))
 
 	const (
 		firstReply   = "the first recorded reply"
@@ -1945,14 +1946,14 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 	// replayer drops one leading SYSTEM message from the live history
 	// before matching (core/llm_replay.go), and with no synthesized default
 	// prompt in play the dropped message is hire's WithSystemPrompt itself.
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 		WithPrompt(task).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: firstReply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: firstReply},
 		}).
 		WithPrompt(secondPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: secondReply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: secondReply},
 		}))
 
 	seed, err := testutil.QueryWithClient[struct {
@@ -2053,7 +2054,7 @@ func (AgentRuntimeSuite) TestAgentArgumentAfterSpawnerReleased(ctx context.Conte
 
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "dang", "agent-hirer")
-	require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+	require.NoError(t, sdkcore.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx))
 
 	const (
 		firstReply   = "the first recorded reply"
@@ -2062,14 +2063,14 @@ func (AgentRuntimeSuite) TestAgentArgumentAfterSpawnerReleased(ctx context.Conte
 	)
 	task := "hire task " + identity.NewID()
 
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 		WithPrompt(task).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: firstReply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: firstReply},
 		}).
 		WithPrompt(secondPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: secondReply},
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: secondReply},
 		}))
 
 	seed, err := testutil.QueryWithClient[struct {
@@ -2151,7 +2152,7 @@ func newHostWorkspaceRoot(t *testctx.T) string {
 // queryID runs a query with no variables and returns the ID at the given
 // gjson path. Raw rather than typed because the three workspace shapes below
 // differ only in their selection.
-func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path string) dagger.ID {
+func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path string) sdkcore.ID {
 	t.Helper()
 	res := map[string]any{}
 	require.NoError(t, c.Do(ctx,
@@ -2163,7 +2164,7 @@ func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path st
 	out := gjson.Get(string(raw), path)
 	require.True(t, out.Exists() && out.String() != "",
 		"no ID at %s in response: %s", path, raw)
-	return dagger.ID(out.String())
+	return sdkcore.ID(out.String())
 }
 
 // TestRosterAddressingHostWorkspace is TestRosterAddressing with a workspace
@@ -2512,7 +2513,7 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 // session failed to restore, and focusing one and typing at it must say so.
 func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	snapshot, err := c.LLM().ID(ctx)
+	snapshot, err := sdkcore.NewQuery(c).LLM().ID(ctx)
 	require.NoError(t, err)
 
 	tests := map[string]func(context.Context, *testctx.T, *agentHandle) error{

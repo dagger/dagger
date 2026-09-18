@@ -13,7 +13,7 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type ReturnCodesSuite struct{}
@@ -26,24 +26,24 @@ func (ReturnCodesSuite) TestLargeExitCode(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("ExpectAny", func(ctx context.Context, t *testctx.T) {
-		exit, err := c.Container().From(alpineImage).
-			WithExec([]string{"sh", "-c", "exit 254"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+		exit, err := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", "exit 254"}, core.ContainerWithExecOpts{Expect: core.ReturnTypeAny}).
 			ExitCode(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 254, exit)
 	})
 
 	t.Run("ExpectFailure", func(ctx context.Context, t *testctx.T) {
-		exit, err := c.Container().From(alpineImage).
-			WithExec([]string{"sh", "-c", "exit 254"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
+		exit, err := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", "exit 254"}, core.ContainerWithExecOpts{Expect: core.ReturnTypeFailure}).
 			ExitCode(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 254, exit)
 	})
 
 	t.Run("ExpectSuccessShouldError", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().From(alpineImage).
-			WithExec([]string{"sh", "-c", "exit 254"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeSuccess}).
+		_, err := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", "exit 254"}, core.ContainerWithExecOpts{Expect: core.ReturnTypeSuccess}).
 			ExitCode(ctx)
 		require.Error(t, err)
 	})

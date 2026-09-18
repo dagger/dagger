@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -840,7 +841,7 @@ retries = 0
 func (WorkspaceSuite) TestWorkspaceSettingsRemoteWorkspace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := c.Directory().
+	content := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.greeter]
 source = ".dagger/modules/greeter"
 
@@ -860,7 +861,7 @@ type Greeter {
 `)
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, content)
 
-	out, err := c.Container().From(alpineImage).
+	out, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/empty").
 		With(workspaceSelectionDaggerExec("-W", remoteRef, "module", "settings")).
@@ -1017,7 +1018,7 @@ func workspaceSettingsResourcesModule(relDir, name string) workspaceSettingsModu
 		name:   name,
 		main: `package main
 
-import "dagger/resources/internal/dagger"
+import "dagger/resources/internal/dagger/core"
 
 type Resources struct{}
 
@@ -1026,16 +1027,16 @@ func New(
 	name string,
 	// Secret reference.
 	// +optional
-	secret *dagger.Secret,
+	secret *core.Secret,
 	// Source directory.
 	// +optional
-	dir *dagger.Directory,
+	dir *core.Directory,
 	// Resource labels.
 	labels []string,
 	// Workspace is injected by Dagger.
-	workspace *dagger.Workspace,
+	workspace *core.Workspace,
 	// Cache volume cannot be resolved from workspace settings.
-	cache *dagger.CacheVolume,
+	cache *core.CacheVolume,
 ) *Resources {
 	return &Resources{}
 }

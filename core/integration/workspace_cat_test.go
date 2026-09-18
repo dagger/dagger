@@ -4,21 +4,21 @@ import (
 	"context"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 func (WorkspaceSuite) TestCatCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.broken]\nsource = \"does-not-exist\"\n").
 		WithNewFile("root.txt", "from the workspace root\n").
 		WithNewFile("items/message.txt", "hello\r\nworld\r\n").
 		WithNewFile("items/no-newline.txt", "no final newline").
 		WithNewFile("items/empty.txt", "").
 		WithNewFile("items/file with spaces.txt", "こんにちは\n")
-	base := c.Container().From(alpineImage).
+	base := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithNewFile("/caller/message.txt", "from the caller").
 		WithWorkdir("/caller")
@@ -56,9 +56,9 @@ func (WorkspaceSuite) TestCatCLI(ctx context.Context, t *testctx.T) {
 
 			for _, target := range []string{"missing", "."} {
 				t.Run("invalid file "+target, func(ctx context.Context, t *testctx.T) {
-					result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "cat", target}, dagger.ContainerWithExecOpts{
+					result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "cat", target}, core.ContainerWithExecOpts{
 						ExperimentalPrivilegedNesting: true,
-						Expect:                        dagger.ReturnTypeFailure,
+						Expect:                        core.ReturnTypeFailure,
 					})
 					out, err := result.Stdout(ctx)
 					require.NoError(t, err)
@@ -80,9 +80,9 @@ func (WorkspaceSuite) TestCatCLI(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("continue after missing file", func(ctx context.Context, t *testctx.T) {
-				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "cat", "no-newline.txt", "missing", "/root.txt"}, dagger.ContainerWithExecOpts{
+				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "cat", "no-newline.txt", "missing", "/root.txt"}, core.ContainerWithExecOpts{
 					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect:                        core.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)

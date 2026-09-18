@@ -15,18 +15,19 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
-func customSDKRuntimeFixture(t *testctx.T, c *dagger.Client, sdkDir string) *dagger.Container {
+func customSDKRuntimeFixture(t *testctx.T, c *dagger.Client, sdkDir string) *core.Container {
 	t.Helper()
 
 	return workspaceFixture(t, c, "custom-sdk/runtime").
 		With(withTestdataFixture(t, c, "sdk", "sdks", sdkDir))
 }
 
-func customSDKLocalFixture(t *testctx.T, c *dagger.Client) *dagger.Container {
+func customSDKLocalFixture(t *testctx.T, c *dagger.Client) *core.Container {
 	t.Helper()
 
 	return goGitBase(t, c).
@@ -34,7 +35,7 @@ func customSDKLocalFixture(t *testctx.T, c *dagger.Client) *dagger.Container {
 		With(withModuleFixture(t, c, "coolsdk", "go/custom-sdk-cool-sdk"))
 }
 
-func customSDKInitFixture(t *testctx.T, c *dagger.Client) *dagger.Container {
+func customSDKInitFixture(t *testctx.T, c *dagger.Client) *core.Container {
 	t.Helper()
 
 	return goGitBase(t, c).
@@ -42,7 +43,7 @@ func customSDKInitFixture(t *testctx.T, c *dagger.Client) *dagger.Container {
 		With(withModuleFixture(t, c, "coolsdk", "go/custom-sdk-init-sdk"))
 }
 
-func customSDKGitFixture(t *testctx.T, c *dagger.Client, sdkSource string) *dagger.Container {
+func customSDKGitFixture(t *testctx.T, c *dagger.Client, sdkSource string) *core.Container {
 	t.Helper()
 
 	cfg := fmt.Sprintf(`{

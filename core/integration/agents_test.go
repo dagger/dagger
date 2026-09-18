@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +34,7 @@ func TestAgents(t *testing.T) {
 
 // installAgents mounts the agents testdata and installs the named modules into a
 // fresh /work/modules/app workspace.
-func installAgents(t *testctx.T, c *dagger.Client, names ...string) (*dagger.Container, error) {
+func installAgents(t *testctx.T, c *dagger.Client, names ...string) (*core.Container, error) {
 	env, err := specificTestEnv(t, c, "agents")
 	if err != nil {
 		return nil, err
@@ -364,7 +365,7 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 	))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLoadWorkspaceModules())
-	composed := c.CurrentWorkspace().Agents().Compose()
+	composed := core.NewQuery(c).CurrentWorkspace().Agents().Compose()
 	baseline, err := composed.Tools(ctx)
 	require.NoError(t, err)
 	require.Contains(t, baseline, "## readFile")
@@ -373,7 +374,7 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 	// A tool edit advances the bound Workspace without recomposing the LLM. An
 	// invalid edit must not be compiled by ordinary tool listing, so all tools
 	// from the composed schema remain available for repair.
-	broken := c.CurrentWorkspace().WithNewFile("modules/editor/main.dang", "type Editor {")
+	broken := core.NewQuery(c).CurrentWorkspace().WithNewFile("modules/editor/main.dang", "type Editor {")
 	tools, err := composed.WithWorkspace(broken).Tools(ctx)
 	require.NoError(t, err)
 	require.Equal(t, baseline, tools)

@@ -417,19 +417,19 @@ func (TypeSuite) TestReturnCompositeCore(ctx context.Context, t *testctx.T) {
 			source: `package main
 
 import (
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct{}
 
-func (m *Test) MySlice() []*dagger.Container {
-	return []*dagger.Container{dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"})}
+func (m *Test) MySlice() []*core.Container {
+	return []*core.Container{dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"})}
 }
 
 type Foo struct {
-	Con *dagger.Container
+	Con *core.Container
 	// verify fields can remain nil w/out error too
-	UnsetFile *dagger.File
+	UnsetFile *core.File
 }
 
 func (m *Test) MyStruct() *Foo {
@@ -528,13 +528,13 @@ func (TypeSuite) TestReturnComplexThing(ctx context.Context, t *testctx.T) {
 			source: `package main
 
 import (
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct{}
 
 type ScanResult struct {
-	Containers	[]*dagger.Container ` + "`json:\"targets\"`" + `
+	Containers	[]*core.Container ` + "`json:\"targets\"`" + `
 	Report		ScanReport
 }
 
@@ -545,7 +545,7 @@ type ScanReport struct {
 
 func (m *Test) Scan() ScanResult {
 	return ScanResult{
-		Containers: []*dagger.Container{
+		Containers: []*core.Container{
 			dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"}),
 		},
 		Report: ScanReport{
@@ -896,19 +896,19 @@ func (TypeSuite) TestScalarType(ctx context.Context, t *testctx.T) {
 			fixture: "go/type-scalar-type-01",
 			source: `package main
 
-import "dagger/test/internal/dagger"
+import "dagger/test/internal/dagger/core"
 
 type Test struct{}
 
-func (m *Test) FromPlatform(platform dagger.Platform) string {
+func (m *Test) FromPlatform(platform core.Platform) string {
 	return string(platform)
 }
 
-func (m *Test) ToPlatform(platform string) dagger.Platform {
-	return dagger.Platform(platform)
+func (m *Test) ToPlatform(platform string) core.Platform {
+	return core.Platform(platform)
 }
 
-func (m *Test) FromPlatforms(platform []dagger.Platform) []string {
+func (m *Test) FromPlatforms(platform []core.Platform) []string {
 	result := []string{}
 	for _, p := range platform {
 		result = append(result, string(p))
@@ -916,10 +916,10 @@ func (m *Test) FromPlatforms(platform []dagger.Platform) []string {
 	return result
 }
 
-func (m *Test) ToPlatforms(platform []string) []dagger.Platform {
-	result := []dagger.Platform{}
+func (m *Test) ToPlatforms(platform []string) []core.Platform {
+	result := []core.Platform{}
 	for _, p := range platform {
-		result = append(result, dagger.Platform(p))
+		result = append(result, core.Platform(p))
 	}
 	return result
 }
@@ -1026,23 +1026,23 @@ func (TypeSuite) TestEnumType(ctx context.Context, t *testctx.T) {
 				fixture: "go/type-enum-type-01",
 				source: `package main
 
-import "dagger/test/internal/dagger"
+import "dagger/test/internal/dagger/core"
 
 type Test struct{}
 
-func (m *Test) FromProto(proto dagger.NetworkProtocol) string {
+func (m *Test) FromProto(proto core.NetworkProtocol) string {
 	return string(proto)
 }
 
 func (m *Test) FromProtoDefault(
 	// +default="UDP"
-	proto dagger.NetworkProtocol,
+	proto core.NetworkProtocol,
 ) string {
 	return string(proto)
 }
 
-func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
-	return dagger.NetworkProtocol(proto)
+func (m *Test) ToProto(proto string) core.NetworkProtocol {
+	return core.NetworkProtocol(proto)
 }
 `,
 			},
@@ -1139,17 +1139,17 @@ export class Test {
 				source: `package main
 
 import (
-  "dagger/test/internal/dagger"
+  "dagger/test/internal/dagger/core"
 )
 
 type Test struct{}
 
-func (m *Test) FromImageLayerCompression(imageLayerCompression dagger.ImageLayerCompression) string {
+func (m *Test) FromImageLayerCompression(imageLayerCompression core.ImageLayerCompression) string {
   return string(imageLayerCompression)
 }
 
-func (m *Test) ToImageLayerCompression(imageLayerCompression string) dagger.ImageLayerCompression {
-  return dagger.ImageLayerCompression(imageLayerCompression)
+func (m *Test) ToImageLayerCompression(imageLayerCompression string) core.ImageLayerCompression {
+  return core.ImageLayerCompression(imageLayerCompression)
 }
 			`,
 			},

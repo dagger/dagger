@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ func (JSONSuite) TestInteger(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Test creating a JSON integer and retrieving its value
-	jsonInt := c.JSON().NewInteger(42)
+	jsonInt := core.NewQuery(c).JSON().NewInteger(42)
 
 	// Test AsInteger method
 	value, err := jsonInt.AsInteger(ctx)
@@ -30,13 +30,13 @@ func (JSONSuite) TestInteger(ctx context.Context, t *testctx.T) {
 	require.Equal(t, 42, value)
 
 	// Test with negative integer
-	jsonNegInt := c.JSON().NewInteger(-123)
+	jsonNegInt := core.NewQuery(c).JSON().NewInteger(-123)
 	negValue, err := jsonNegInt.AsInteger(ctx)
 	require.NoError(t, err)
 	require.Equal(t, -123, negValue)
 
 	// Test with zero
-	jsonZero := c.JSON().NewInteger(0)
+	jsonZero := core.NewQuery(c).JSON().NewInteger(0)
 	zeroValue, err := jsonZero.AsInteger(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 0, zeroValue)
@@ -46,19 +46,19 @@ func (JSONSuite) TestString(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Test creating a JSON string and retrieving its value
-	jsonStr := c.JSON().NewString("hello world")
+	jsonStr := core.NewQuery(c).JSON().NewString("hello world")
 	value, err := jsonStr.AsString(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", value)
 
 	// Test with empty string
-	jsonEmpty := c.JSON().NewString("")
+	jsonEmpty := core.NewQuery(c).JSON().NewString("")
 	emptyValue, err := jsonEmpty.AsString(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", emptyValue)
 
 	// Test with special characters
-	jsonSpecial := c.JSON().NewString("hello\nworld\t\"quotes\"")
+	jsonSpecial := core.NewQuery(c).JSON().NewString("hello\nworld\t\"quotes\"")
 	specialValue, err := jsonSpecial.AsString(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello\nworld\t\"quotes\"", specialValue)
@@ -68,13 +68,13 @@ func (JSONSuite) TestBoolean(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Test creating a JSON boolean true and retrieving its value
-	jsonTrue := c.JSON().NewBoolean(true)
+	jsonTrue := core.NewQuery(c).JSON().NewBoolean(true)
 	trueValue, err := jsonTrue.AsBoolean(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, trueValue)
 
 	// Test creating a JSON boolean false and retrieving its value
-	jsonFalse := c.JSON().NewBoolean(false)
+	jsonFalse := core.NewQuery(c).JSON().NewBoolean(false)
 	falseValue, err := jsonFalse.AsBoolean(ctx)
 	require.NoError(t, err)
 	require.Equal(t, false, falseValue)
@@ -85,7 +85,7 @@ func (JSONSuite) TestArray(ctx context.Context, t *testctx.T) {
 
 	// Create a JSON array using WithContents
 	jsonArrayBytes := `[1, "hello", true, null]`
-	jsonArray := c.JSON().WithContents(dagger.JSON(jsonArrayBytes))
+	jsonArray := core.NewQuery(c).JSON().WithContents(core.JSON(jsonArrayBytes))
 
 	// Test AsArray method
 	arrayValues, err := jsonArray.AsArray(ctx)
@@ -113,7 +113,7 @@ func (JSONSuite) TestNestedPaths(ctx context.Context, t *testctx.T) {
 
 	// Create a nested JSON object
 	nestedJSON := `{"user": {"name": "John", "age": 30, "profile": {"email": "john@example.com", "active": true}}}`
-	jsonObj := c.JSON().WithContents(dagger.JSON(nestedJSON))
+	jsonObj := core.NewQuery(c).JSON().WithContents(core.JSON(nestedJSON))
 
 	// Test accessing nested string field
 	nameField := jsonObj.Field([]string{"user", "name"})
@@ -144,7 +144,7 @@ func (JSONSuite) TestEmptyPathError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Create a JSON object
-	jsonObj := c.JSON().WithContents(`{"key": "value"}`)
+	jsonObj := core.NewQuery(c).JSON().WithContents(`{"key": "value"}`)
 
 	// Test that accessing with empty path returns an error
 	_, err := jsonObj.Field([]string{}).AsString(ctx)
@@ -155,7 +155,7 @@ func (JSONSuite) TestFields(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Create a JSON object
-	jsonObj := c.JSON().WithContents(`{"name": "Alice", "age": 25, "active": true}`)
+	jsonObj := core.NewQuery(c).JSON().WithContents(`{"name": "Alice", "age": 25, "active": true}`)
 
 	// Test fields method
 	fields, err := jsonObj.Fields(ctx)
@@ -174,10 +174,10 @@ func (JSONSuite) TestWithField(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Start with an empty JSON object
-	jsonObj := c.JSON()
+	jsonObj := core.NewQuery(c).JSON()
 
 	// Add a field
-	updatedObj := jsonObj.WithField([]string{"name"}, c.JSON().NewString("Bob"))
+	updatedObj := jsonObj.WithField([]string{"name"}, core.NewQuery(c).JSON().NewString("Bob"))
 
 	// Verify the field was added
 	nameField := updatedObj.Field([]string{"name"})
@@ -186,7 +186,7 @@ func (JSONSuite) TestWithField(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "Bob", nameValue)
 
 	// Add a nested field
-	finalObj := updatedObj.WithField([]string{"profile", "email"}, c.JSON().NewString("bob@example.com"))
+	finalObj := updatedObj.WithField([]string{"profile", "email"}, core.NewQuery(c).JSON().NewString("bob@example.com"))
 
 	// Verify the nested field was added
 	emailField := finalObj.Field([]string{"profile", "email"})
@@ -199,10 +199,10 @@ func (JSONSuite) TestBytes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Create a complex JSON object
-	complexObj := c.JSON().
-		WithField([]string{"name"}, c.JSON().NewString("Alice")).
-		WithField([]string{"age"}, c.JSON().NewInteger(30)).
-		WithField([]string{"active"}, c.JSON().NewBoolean(true))
+	complexObj := core.NewQuery(c).JSON().
+		WithField([]string{"name"}, core.NewQuery(c).JSON().NewString("Alice")).
+		WithField([]string{"age"}, core.NewQuery(c).JSON().NewInteger(30)).
+		WithField([]string{"active"}, core.NewQuery(c).JSON().NewBoolean(true))
 
 	// Test normal bytes output
 	bytes, err := complexObj.Contents(ctx)
@@ -212,7 +212,7 @@ func (JSONSuite) TestBytes(ctx context.Context, t *testctx.T) {
 	require.Contains(t, string(bytes), "true")
 
 	// Test pretty-printed bytes output
-	prettyBytes, err := complexObj.Contents(ctx, dagger.JSONValueContentsOpts{Pretty: true})
+	prettyBytes, err := complexObj.Contents(ctx, core.JSONValueContentsOpts{Pretty: true})
 	require.NoError(t, err)
 	prettyStr := string(prettyBytes)
 	require.Contains(t, prettyStr, "Alice")

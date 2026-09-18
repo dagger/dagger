@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	sdkcore "dagger.io/dagger/core"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -54,7 +55,7 @@ func (DirectorySuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	// It creates a directory on the host, but we just load it as a Directory
 	dirPath := findupTestDir(t)
 	c := connect(ctx, t)
-	dir := c.Host().Directory(dirPath)
+	dir := sdkcore.NewQuery(c).Host().Directory(dirPath)
 	start := "a/b"
 
 	t.Run("find file in current directory", func(ctx context.Context, t *testctx.T) {
@@ -109,7 +110,7 @@ func (DirectorySuite) TestFindUp(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestScratch(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	_, err := c.Container().Directory("/").Entries(ctx)
+	_, err := sdkcore.NewQuery(c).Container().Directory("/").Entries(ctx)
 	require.NoError(t, err)
 	// require.ErrorContains(t, err, "no such file or directory")
 }
@@ -245,35 +246,35 @@ func (DirectorySuite) TestDirectoryWithNewFile(ctx context.Context, t *testctx.T
 func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir := c.Directory().
+	dir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("some-file", "some-content").
 		WithNewFile("some-dir/sub-file", "sub-content").
 		Directory("some-dir")
 
-	entries, err := c.Directory().WithDirectory("with-dir", dir).Entries(ctx, dagger.DirectoryEntriesOpts{
+	entries, err := sdkcore.NewQuery(c).Directory().WithDirectory("with-dir", dir).Entries(ctx, sdkcore.DirectoryEntriesOpts{
 		Path: "with-dir",
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
 
-	entries, err = c.Directory().WithDirectory("sub-dir/sub-sub-dir/with-dir", dir).Entries(ctx, dagger.DirectoryEntriesOpts{
+	entries, err = sdkcore.NewQuery(c).Directory().WithDirectory("sub-dir/sub-sub-dir/with-dir", dir).Entries(ctx, sdkcore.DirectoryEntriesOpts{
 		Path: "sub-dir/sub-sub-dir/with-dir",
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
 
 	t.Run("copies directory contents to .", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithDirectory(".", dir).Entries(ctx)
+		entries, err := sdkcore.NewQuery(c).Directory().WithDirectory(".", dir).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"sub-file"}, entries)
 	})
 
 	t.Run("respects permissions", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
-			WithNewFile("some-file", "some content", dagger.DirectoryWithNewFileOpts{Permissions: 0o444}).
-			WithNewDirectory("some-dir", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o444}).
-			WithNewFile("some-dir/sub-file", "sub-content", dagger.DirectoryWithNewFileOpts{Permissions: 0o444})
-		ctr := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir)
+		dir := sdkcore.NewQuery(c).Directory().
+			WithNewFile("some-file", "some content", sdkcore.DirectoryWithNewFileOpts{Permissions: 0o444}).
+			WithNewDirectory("some-dir", sdkcore.DirectoryWithNewDirectoryOpts{Permissions: 0o444}).
+			WithNewFile("some-dir/sub-file", "sub-content", sdkcore.DirectoryWithNewFileOpts{Permissions: 0o444})
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-ld", "/permissions-test"}).Stdout(ctx)
 
@@ -297,26 +298,26 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("scratch into scratch", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().WithDirectory("/", c.Directory()).Sync(ctx)
+		_, err := sdkcore.NewQuery(c).Directory().WithDirectory("/", sdkcore.NewQuery(c).Directory()).Sync(ctx)
 		require.NoError(t, err)
 	})
 
 	t.Run("chains preserve layered semantics", func(ctx context.Context, t *testctx.T) {
-		base := c.Directory().
+		base := sdkcore.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "base").
 			WithNewFile("conflict.txt", "base")
-		srcA := c.Directory().
+		srcA := sdkcore.NewQuery(c).Directory().
 			WithNewFile("a.txt", "a").
 			WithNewFile("conflict.txt", "a").
 			WithNewFile("skip.txt", "skip")
-		srcB := c.Directory().
+		srcB := sdkcore.NewQuery(c).Directory().
 			WithNewFile("b.txt", "b")
-		srcC := c.Directory().
+		srcC := sdkcore.NewQuery(c).Directory().
 			WithNewFile("c.txt", "c").
 			WithNewFile("conflict.txt", "c")
 
 		dir := base.
-			WithDirectory("/", srcA, dagger.DirectoryWithDirectoryOpts{Exclude: []string{"skip.txt"}}).
+			WithDirectory("/", srcA, sdkcore.DirectoryWithDirectoryOpts{Exclude: []string{"skip.txt"}}).
 			WithDirectory("nested", srcB).
 			WithDirectory("/", srcC)
 
@@ -345,16 +346,16 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("directory replacing file hides older lower directory contents", func(ctx context.Context, t *testctx.T) {
-		seed := c.Container().
-			WithDirectory("/node", c.Directory().WithNewFile("hidden.txt", "hidden")).
+		seed := sdkcore.NewQuery(c).Container().
+			WithDirectory("/node", sdkcore.NewQuery(c).Directory().WithNewFile("hidden.txt", "hidden")).
 			WithoutDirectory("/node").
 			WithNewFile("/node", "file")
 
 		seedRef, err := seed.Publish(ctx, registryRef("with-directory-file-to-dir-opaque-seed"))
 		require.NoError(t, err)
 
-		baseDir := c.Container().From(seedRef).Rootfs()
-		resultDir := baseDir.WithDirectory("/node", c.Directory().WithNewFile("new.txt", "new"))
+		baseDir := sdkcore.NewQuery(c).Container().From(seedRef).Rootfs()
+		resultDir := baseDir.WithDirectory("/node", sdkcore.NewQuery(c).Directory().WithNewFile("new.txt", "new"))
 
 		nodeEntries, err := resultDir.Directory("node").Entries(ctx)
 		require.NoError(t, err)
@@ -365,15 +366,15 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestWithDirectoryOpaqueSourceAncestor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	source := c.Container().
+	source := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
-		WithDirectory("/data", c.Directory().
+		WithDirectory("/data", sdkcore.NewQuery(c).Directory().
 			WithNewFile("a/x.txt", "old").
 			WithNewFile("a/b/y.txt", "old")).
 		WithExec([]string{"sh", "-c", "rm -rf /data/a && mkdir -p /data/a/b && echo new > /data/a/b/new.txt"}).
 		Directory("/data")
 
-	mountedFiles, err := c.Container().
+	mountedFiles, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/view", source).
 		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
@@ -388,7 +389,7 @@ func (DirectorySuite) TestWithDirectoryOpaqueSourceAncestor(ctx context.Context,
 	require.NoFileExists(t, filepath.Join(exportPath, "a", "x.txt"))
 	require.NoFileExists(t, filepath.Join(exportPath, "a", "b", "y.txt"))
 
-	copiedFiles, err := c.Container().
+	copiedFiles, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithDirectory("/view", source).
 		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
@@ -396,7 +397,7 @@ func (DirectorySuite) TestWithDirectoryOpaqueSourceAncestor(ctx context.Context,
 	require.NoError(t, err)
 	require.Equal(t, "a/b/new.txt\n", copiedFiles)
 
-	copiedSubdirFiles, err := c.Container().
+	copiedSubdirFiles, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithDirectory("/view", source.Directory("a/b")).
 		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
@@ -408,9 +409,9 @@ func (DirectorySuite) TestWithDirectoryOpaqueSourceAncestor(ctx context.Context,
 func (DirectorySuite) TestWithDirectoryWhiteoutSourceAncestor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	source := c.Container().
+	source := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
-		WithDirectory("/data", c.Directory().
+		WithDirectory("/data", sdkcore.NewQuery(c).Directory().
 			WithNewFile("a/x.txt", "old").
 			WithNewFile("a/b/y.txt", "old").
 			WithNewFile("a/b/keep.txt", "old")).
@@ -418,7 +419,7 @@ func (DirectorySuite) TestWithDirectoryWhiteoutSourceAncestor(ctx context.Contex
 		WithExec([]string{"sh", "-c", "mkdir -p /data/a/b && echo new > /data/a/b/new.txt"}).
 		Directory("/data")
 
-	mountedFiles, err := c.Container().
+	mountedFiles, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/view", source).
 		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
@@ -426,8 +427,8 @@ func (DirectorySuite) TestWithDirectoryWhiteoutSourceAncestor(ctx context.Contex
 	require.NoError(t, err)
 	require.Equal(t, "a/b/new.txt\na/x.txt\n", mountedFiles)
 
-	copied := c.Directory().WithDirectory("view", source)
-	copiedFiles, err := c.Container().
+	copied := sdkcore.NewQuery(c).Directory().WithDirectory("view", source)
+	copiedFiles, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/result", copied).
 		WithExec([]string{"sh", "-c", "find /result/view -type f | sed 's#^/result/view/##' | sort"}).
@@ -439,8 +440,8 @@ func (DirectorySuite) TestWithDirectoryWhiteoutSourceAncestor(ctx context.Contex
 	require.NoError(t, err)
 	require.Equal(t, "new\n", contents)
 
-	copiedSubdir := c.Directory().WithDirectory("view", source.Directory("a/b"))
-	copiedSubdirFiles, err := c.Container().
+	copiedSubdir := sdkcore.NewQuery(c).Directory().WithDirectory("view", source.Directory("a/b"))
+	copiedSubdirFiles, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/result", copiedSubdir).
 		WithExec([]string{"sh", "-c", "find /result/view -type f | sed 's#^/result/view/##' | sort"}).
@@ -452,16 +453,16 @@ func (DirectorySuite) TestWithDirectoryWhiteoutSourceAncestor(ctx context.Contex
 func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	src := c.Directory().
-		WithNewDirectory("nested", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700}).
-		WithNewFile("nested/file.txt", "nested", dagger.DirectoryWithNewFileOpts{Permissions: 0o600}).
-		WithNewFile("root.txt", "root", dagger.DirectoryWithNewFileOpts{Permissions: 0o640})
+	src := sdkcore.NewQuery(c).Directory().
+		WithNewDirectory("nested", sdkcore.DirectoryWithNewDirectoryOpts{Permissions: 0o700}).
+		WithNewFile("nested/file.txt", "nested", sdkcore.DirectoryWithNewFileOpts{Permissions: 0o600}).
+		WithNewFile("root.txt", "root", sdkcore.DirectoryWithNewFileOpts{Permissions: 0o640})
 
-	dir := c.Directory().WithDirectory("out", src, dagger.DirectoryWithDirectoryOpts{
+	dir := sdkcore.NewQuery(c).Directory().WithDirectory("out", src, sdkcore.DirectoryWithDirectoryOpts{
 		Permissions: 0o751,
 	})
 
-	ctr := c.Container().From(alpineImage).WithDirectory("/", dir)
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/", dir)
 	stdout, err := ctr.WithExec([]string{"sh", "-lc", "stat -c '%a %n' /out /out/nested /out/nested/file.txt /out/root.txt"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stdout, "751 /out")
@@ -469,11 +470,11 @@ func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, 
 	require.Contains(t, stdout, "751 /out/nested/file.txt")
 	require.Contains(t, stdout, "751 /out/root.txt")
 
-	dir = c.Directory().WithDirectory("/", src, dagger.DirectoryWithDirectoryOpts{
+	dir = sdkcore.NewQuery(c).Directory().WithDirectory("/", src, sdkcore.DirectoryWithDirectoryOpts{
 		Permissions: 0o751,
 	})
 
-	ctr = c.Container().From(alpineImage).WithDirectory("/", dir)
+	ctr = sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/", dir)
 	stdout, err = ctr.WithExec([]string{"sh", "-lc", "stat -c '%a %n' /nested /nested/file.txt /root.txt"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stdout, "751 /nested")
@@ -484,14 +485,14 @@ func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, 
 func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir1 := c.Container().From(alpineImage).
-		WithMountedDirectory("/working", c.Directory()).
+	dir1 := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithMountedDirectory("/working", sdkcore.NewQuery(c).Directory()).
 		WithWorkdir("/working").
 		WithNewFile("data/some-file", "some-content").
 		Directory("/working")
 
-	dir2 := c.Container().From(alpineImage).
-		WithMountedDirectory("/working", c.Directory()).
+	dir2 := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithMountedDirectory("/working", sdkcore.NewQuery(c).Directory()).
 		WithWorkdir("/working").
 		WithNewFile("data/some-other-file", "some-other-content").
 		Directory("/working")
@@ -502,7 +503,7 @@ func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) 
 	dir2 = dir2.WithDirectory("/d", dir2.Directory("/data")).
 		WithoutDirectory("/data")
 
-	ctr := c.Container().From(alpineImage)
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage)
 
 	ctr = ctr.WithDirectory("/", dir1)
 	ctr = ctr.WithDirectory("/", dir2)
@@ -519,7 +520,7 @@ func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) 
 func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir := c.Directory().
+	dir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("a.txt", "").
 		WithNewFile("b.txt", "").
 		WithNewFile("c.txt.rar", "").
@@ -528,7 +529,7 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 		WithNewFile("subdir/f.txt.rar", "")
 
 	t.Run("exclude", func(ctx context.Context, t *testctx.T) {
-		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+		entries, err := dir.Filter(sdkcore.DirectoryFilterOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -536,7 +537,7 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {
-		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+		entries, err := dir.Filter(sdkcore.DirectoryFilterOpts{
 			Include: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -544,7 +545,7 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 	})
 
 	t.Run("exclude overrides include", func(ctx context.Context, t *testctx.T) {
-		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+		entries, err := dir.Filter(sdkcore.DirectoryFilterOpts{
 			Include: []string{"*.txt"},
 			Exclude: []string{"b.txt"},
 		}).Entries(ctx)
@@ -553,7 +554,7 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 	})
 
 	t.Run("include does not override exclude", func(ctx context.Context, t *testctx.T) {
-		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+		entries, err := dir.Filter(sdkcore.DirectoryFilterOpts{
 			Include: []string{"a.txt"},
 			Exclude: []string{"*.txt"},
 		}).Entries(ctx)
@@ -562,7 +563,7 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 	})
 
 	t.Run("exclude works on directory", func(ctx context.Context, t *testctx.T) {
-		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+		entries, err := dir.Filter(sdkcore.DirectoryFilterOpts{
 			Exclude: []string{"subdir"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -571,7 +572,7 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 
 	t.Run("exclude respects subdir", func(ctx context.Context, t *testctx.T) {
 		subdir := dir.Directory("subdir")
-		entries, err := subdir.Filter(dagger.DirectoryFilterOpts{
+		entries, err := subdir.Filter(sdkcore.DirectoryFilterOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -580,7 +581,7 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 
 	t.Run("gitignore works", func(ctx context.Context, t *testctx.T) {
 		dir := dir.WithNewFile(".gitignore", "b.txt\nsubdir/\n")
-		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+		entries, err := dir.Filter(sdkcore.DirectoryFilterOpts{
 			Gitignore: true,
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -591,7 +592,7 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir := c.Directory().
+	dir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("a.txt", "").
 		WithNewFile("b.txt", "").
 		WithNewFile("c.txt.rar", "").
@@ -600,7 +601,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 		WithNewFile("subdir/f.txt.rar", "")
 
 	t.Run("exclude", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
+		entries, err := sdkcore.NewQuery(c).Directory().WithDirectory(".", dir, sdkcore.DirectoryWithDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -608,7 +609,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
+		entries, err := sdkcore.NewQuery(c).Directory().WithDirectory(".", dir, sdkcore.DirectoryWithDirectoryOpts{
 			Include: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -616,7 +617,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 	})
 
 	t.Run("exclude overrides include", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
+		entries, err := sdkcore.NewQuery(c).Directory().WithDirectory(".", dir, sdkcore.DirectoryWithDirectoryOpts{
 			Include: []string{"*.txt"},
 			Exclude: []string{"b.txt"},
 		}).Entries(ctx)
@@ -625,7 +626,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 	})
 
 	t.Run("include does not override exclude", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
+		entries, err := sdkcore.NewQuery(c).Directory().WithDirectory(".", dir, sdkcore.DirectoryWithDirectoryOpts{
 			Include: []string{"a.txt"},
 			Exclude: []string{"*.txt"},
 		}).Entries(ctx)
@@ -634,7 +635,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 	})
 
 	t.Run("exclude works on directory", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
+		entries, err := sdkcore.NewQuery(c).Directory().WithDirectory(".", dir, sdkcore.DirectoryWithDirectoryOpts{
 			Exclude: []string{"subdir"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -644,7 +645,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 	subdir := dir.Directory("subdir")
 
 	t.Run("exclude respects subdir", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithDirectory(".", subdir, dagger.DirectoryWithDirectoryOpts{
+		entries, err := sdkcore.NewQuery(c).Directory().WithDirectory(".", subdir, sdkcore.DirectoryWithDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -653,7 +654,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 
 	t.Run("gitignore works", func(ctx context.Context, t *testctx.T) {
 		dir := dir.WithNewFile(".gitignore", "b.txt\nsubdir/\n")
-		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+		entries, err := dir.Filter(sdkcore.DirectoryFilterOpts{
 			Gitignore: true,
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -664,7 +665,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 func (DirectorySuite) TestWithNewDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir := c.Directory().
+	dir := sdkcore.NewQuery(c).Directory().
 		WithNewDirectory("a").
 		WithNewDirectory("b/c")
 
@@ -672,7 +673,7 @@ func (DirectorySuite) TestWithNewDirectory(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"a/", "b/"}, entries)
 
-	entries, err = dir.Entries(ctx, dagger.DirectoryEntriesOpts{
+	entries, err = dir.Entries(ctx, sdkcore.DirectoryEntriesOpts{
 		Path: "b",
 	})
 	require.NoError(t, err)
@@ -687,12 +688,12 @@ func (DirectorySuite) TestWithNewDirectory(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestWithFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.Directory().
+	file := sdkcore.NewQuery(c).Directory().
 		WithNewFile("some-file", "some-content").
 		WithNewFile("some-other-file", "some-other-content").
 		File("some-file")
 
-	dirWithFile := c.Directory().WithFile("target-file", file)
+	dirWithFile := sdkcore.NewQuery(c).Directory().WithFile("target-file", file)
 	content, err := dirWithFile.
 		File("target-file").Contents(ctx)
 	require.NoError(t, err)
@@ -702,7 +703,7 @@ func (DirectorySuite) TestWithFile(ctx context.Context, t *testctx.T) {
 
 	// Same as above, but use the same name for the file rather than changing it.
 	// Needed for testing merge-op corner cases.
-	dirWithFile = c.Directory().WithFile("some-file", file)
+	dirWithFile = sdkcore.NewQuery(c).Directory().WithFile("some-file", file)
 	content, err = dirWithFile.
 		File("some-file").Contents(ctx)
 	require.NoError(t, err)
@@ -710,39 +711,39 @@ func (DirectorySuite) TestWithFile(ctx context.Context, t *testctx.T) {
 	_, err = dirWithFile.File("some-other-file").Contents(ctx)
 	require.Error(t, err)
 
-	content, err = c.Directory().
+	content, err = sdkcore.NewQuery(c).Directory().
 		WithFile("sub-dir/target-file", file).
 		File("sub-dir/target-file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", content)
 
 	t.Run("respects permissions", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile(
 				"file-with-permissions",
 				"this should have rwxrwxrwx permissions",
-				dagger.DirectoryWithNewFileOpts{Permissions: 0o777})
+				sdkcore.DirectoryWithNewFileOpts{Permissions: 0o777})
 
-		ctr := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir)
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-l", "/permissions-test/file-with-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout, "rwxrwxrwx")
 
-		dir2 := c.Directory().
+		dir2 := sdkcore.NewQuery(c).Directory().
 			WithNewFile(
 				"file-with-permissions",
 				"this should have rw-r--r-- permissions")
-		ctr2 := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir2)
+		ctr2 := sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/permissions-test", dir2)
 		stdout2, err := ctr2.WithExec([]string{"ls", "-l", "/permissions-test/file-with-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout2, "rw-r--r--")
 	})
 
 	t.Run("dir reference is kept", func(ctx context.Context, t *testctx.T) {
-		f := c.Directory().WithNewFile("some-file", "data").File("some-file")
+		f := sdkcore.NewQuery(c).Directory().WithNewFile("some-file", "data").File("some-file")
 
-		d2 := c.Directory().
+		d2 := sdkcore.NewQuery(c).Directory().
 			WithNewFile("some-other-file", "other-data").
 			WithNewDirectory("some-dir").
 			Directory("/some-dir").
@@ -759,8 +760,8 @@ func (DirectorySuite) TestWithFile(ctx context.Context, t *testctx.T) {
 
 	for _, dst := range []string{".", "", "/"} {
 		t.Run(fmt.Sprintf("src filename is used dst is a directory referenced by %s", dst), func(ctx context.Context, t *testctx.T) {
-			f := c.Directory().WithNewFile("some-file", "data").File("some-file")
-			d := c.Directory().WithFile(dst, f)
+			f := sdkcore.NewQuery(c).Directory().WithNewFile("some-file", "data").File("some-file")
+			d := sdkcore.NewQuery(c).Directory().WithFile(dst, f)
 			s, err := d.File("some-file").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "data", s)
@@ -768,8 +769,8 @@ func (DirectorySuite) TestWithFile(ctx context.Context, t *testctx.T) {
 	}
 
 	t.Run("src filename (and not directory names) is used dst is empty", func(ctx context.Context, t *testctx.T) {
-		f := c.Directory().WithNewFile("sub/subterrain/some-file", "data").File("sub/subterrain/some-file")
-		d := c.Directory().WithFile("", f)
+		f := sdkcore.NewQuery(c).Directory().WithNewFile("sub/subterrain/some-file", "data").File("sub/subterrain/some-file")
+		d := sdkcore.NewQuery(c).Directory().WithFile("", f)
 		s, err := d.File("some-file").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "data", s)
@@ -779,15 +780,15 @@ func (DirectorySuite) TestWithFile(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file1 := c.Directory().
+	file1 := sdkcore.NewQuery(c).Directory().
 		WithNewFile("first-file", "file1 content").
 		File("first-file")
-	file2 := c.Directory().
+	file2 := sdkcore.NewQuery(c).Directory().
 		WithNewFile("second-file", "file2 content").
 		File("second-file")
-	files := []*dagger.File{file1, file2}
+	files := []*sdkcore.File{file1, file2}
 
-	check := func(ctx context.Context, t *testctx.T, dir *dagger.Directory, path string) {
+	check := func(ctx context.Context, t *testctx.T, dir *sdkcore.Directory, path string) {
 		contents, err := dir.File(filepath.Join(path, "first-file")).Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file1 content", contents)
@@ -799,40 +800,40 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 
 	t.Run("root", func(ctx context.Context, t *testctx.T) {
 		path := "/"
-		dir := c.Directory().WithFiles(path, files)
+		dir := sdkcore.NewQuery(c).Directory().WithFiles(path, files)
 		check(ctx, t, dir, path)
 	})
 
 	t.Run("sub", func(ctx context.Context, t *testctx.T) {
 		path := "/a/b/c"
-		dir := c.Directory().WithFiles(path, files)
+		dir := sdkcore.NewQuery(c).Directory().WithFiles(path, files)
 		check(ctx, t, dir, path)
 	})
 
 	t.Run("sub trailing", func(ctx context.Context, t *testctx.T) {
 		path := "/a/b/c/"
-		dir := c.Directory().WithFiles(path, files)
+		dir := sdkcore.NewQuery(c).Directory().WithFiles(path, files)
 		check(ctx, t, dir, path)
 	})
 
 	t.Run("respects permissions", func(ctx context.Context, t *testctx.T) {
-		file1 := c.Directory().
-			WithNewFile("file-set-permissions", "this should have rwxrwxrwx permissions", dagger.DirectoryWithNewFileOpts{Permissions: 0o777}).
+		file1 := sdkcore.NewQuery(c).Directory().
+			WithNewFile("file-set-permissions", "this should have rwxrwxrwx permissions", sdkcore.DirectoryWithNewFileOpts{Permissions: 0o777}).
 			File("file-set-permissions")
-		file2 := c.Directory().
+		file2 := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file-default-permissions", "this should have rw-r--r-- permissions").
 			File("file-default-permissions")
-		files := []*dagger.File{file1, file2}
-		dir := c.Directory().
+		files := []*sdkcore.File{file1, file2}
+		dir := sdkcore.NewQuery(c).Directory().
 			WithFiles("/", files)
 
-		ctr := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir)
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-l", "/permissions-test/file-set-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout, "rwxrwxrwx")
 
-		ctr2 := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir)
+		ctr2 := sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/permissions-test", dir)
 		stdout2, err := ctr2.WithExec([]string{"ls", "-l", "/permissions-test/file-default-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout2, "rw-r--r--")
@@ -844,7 +845,7 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 
 	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
 
-	dir := c.Container().
+	dir := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", `
 		  mkdir output
@@ -856,7 +857,7 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 		WithTimestamps(int(reallyImportantTime.Unix()))
 
 	t.Run("changes file and directory timestamps recursively", func(ctx context.Context, t *testctx.T) {
-		ls, err := c.Container().
+		ls, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/dir", dir).
 			WithEnvVariable("RANDOM", identity.NewID()).
@@ -869,7 +870,7 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("results in stable tar archiving", func(ctx context.Context, t *testctx.T) {
-		content, err := c.Container().
+		content, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/dir", dir).
 			WithEnvVariable("RANDOM", identity.NewID()).
@@ -885,7 +886,7 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir1 := c.Directory().
+	dir1 := sdkcore.NewQuery(c).Directory().
 		WithNewFile("some-file", "some-content").
 		WithNewFile("some-dir/sub-file", "sub-content")
 
@@ -903,7 +904,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"some-dir/", "some-file"}, entries)
 
-	dir := c.Directory().
+	dir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("foo.txt", "foo").
 		WithNewFile("a/bar.txt", "bar").
 		WithNewFile("a/data.json", "{\"datum\": 10}").
@@ -927,19 +928,19 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = dir.
 		WithoutFile("b/*.txt").
-		Entries(ctx, dagger.DirectoryEntriesOpts{Path: "b"})
+		Entries(ctx, sdkcore.DirectoryEntriesOpts{Path: "b"})
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"data.json"}, entries)
 
 	entries, err = dir.
 		WithoutFile("c/*a1*").
-		Entries(ctx, dagger.DirectoryEntriesOpts{Path: "c"})
+		Entries(ctx, sdkcore.DirectoryEntriesOpts{Path: "c"})
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"file-b1.json", "file-b1.txt"}, entries)
 
-	dirDir := c.Directory().
+	dirDir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("foo.txt", "foo").
 		WithNewFile("a1/a1-file", "a1-file").
 		WithNewFile("a2/a2-file", "a2-file").
@@ -950,7 +951,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 	require.Equal(t, []string{"b1/", "foo.txt"}, entries)
 
 	// Test WithoutFile
-	filesDir := c.Directory().
+	filesDir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("some-file", "some-content").
 		WithNewFile("some-dir/sub-file", "sub-content").
 		WithoutFile("some-file")
@@ -960,7 +961,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 	require.Equal(t, []string{"some-dir/"}, entries)
 
 	// Test WithoutFiles
-	filesDir = c.Directory().
+	filesDir = sdkcore.NewQuery(c).Directory().
 		WithNewFile("some-file", "some-content").
 		WithNewFile("some-file-2", "some-content").
 		WithNewFile("some-dir/sub-file", "sub-content").
@@ -971,8 +972,8 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 	require.Equal(t, []string{"some-dir/"}, entries)
 
 	// verify WithoutFile works when dir has be selected to a subdir
-	subdirWithout := c.Directory().
-		WithDirectory("subdir", c.Directory().
+	subdirWithout := sdkcore.NewQuery(c).Directory().
+		WithDirectory("subdir", sdkcore.NewQuery(c).Directory().
 			WithNewFile("some-file", "delete me").
 			WithNewFile("some-other-file", "keep me"),
 		).
@@ -1035,8 +1036,8 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 	t.Run("equivalent", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		// This diff checks source content equivalence; .git checkout metadata is not stable enough for it.
-		a := c.Git("github.com/dagger/dagger").Ref("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
-		b := c.Directory().WithDirectory("", a)
+		a := sdkcore.NewQuery(c).Git("github.com/dagger/dagger").Ref("main").Tree(sdkcore.GitRefTreeOpts{DiscardGitDir: true})
+		b := sdkcore.NewQuery(c).Directory().WithDirectory("", a)
 		ents, err := a.Diff(b).Entries(ctx)
 		require.NoError(t, err)
 		require.Len(t, ents, 0)
@@ -1045,8 +1046,8 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 	// this is a regression test for: https://github.com/dagger/dagger/pull/11107
 	t.Run("equivalent subdirs", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		a := c.Git("github.com/dagger/dagger").Ref("main").Tree().Directory("engine")
-		b := c.Directory().WithDirectory("engine", a).Directory("engine")
+		a := sdkcore.NewQuery(c).Git("github.com/dagger/dagger").Ref("main").Tree().Directory("engine")
+		b := sdkcore.NewQuery(c).Directory().WithDirectory("engine", a).Directory("engine")
 		_, err := a.Diff(b).Sync(ctx)
 		require.NoError(t, err)
 		ents, err := a.Diff(b).Entries(ctx)
@@ -1056,7 +1057,7 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 
 	t.Run("different subdirs", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		d := c.Directory().
+		d := sdkcore.NewQuery(c).Directory().
 			WithNewDirectory("sub").
 			WithNewDirectory("submarine").
 			WithNewFile("sub/file1", "data1").
@@ -1071,8 +1072,8 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 
 	t.Run("lower scratch", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		upper := c.Directory().WithNewFile("file", "content")
-		lower := c.Directory()
+		upper := sdkcore.NewQuery(c).Directory().WithNewFile("file", "content")
+		lower := sdkcore.NewQuery(c).Directory()
 
 		ents, err := lower.Diff(upper).Entries(ctx)
 		require.NoError(t, err)
@@ -1101,7 +1102,7 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestChown(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	_, err := c.Directory().
+	_, err := sdkcore.NewQuery(c).Directory().
 		WithNewDirectory("dir").
 		Chown("dir", "555:556").
 		Sync(ctx)
@@ -1111,7 +1112,7 @@ func (DirectorySuite) TestChown(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestChownLookup(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	d := c.Container().
+	d := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
 		Rootfs().
@@ -1119,7 +1120,7 @@ func (DirectorySuite) TestChownLookup(ctx context.Context, t *testctx.T) {
 		WithNewFile("dir/file.txt", "hello").
 		Chown("dir", "auser:agroup")
 
-	out, err := c.Container().
+	out, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser"}).
 		WithMountedDirectory("/mnt", d.Directory("dir")).
@@ -1135,7 +1136,7 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
-	dir := c.Container().From(alpineImage).Directory("/etc/profile.d")
+	dir := sdkcore.NewQuery(c).Container().From(alpineImage).Directory("/etc/profile.d")
 
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
 		actual, err := dir.Export(ctx, dest)
@@ -1168,7 +1169,7 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 			require.Equal(t, []string{"20locale.sh", "README", "color_prompt.sh.disabled"}, entries)
 
 			// wipe results in the destination being replaced with the source entirely, including deletes
-			actual, err = dir.Export(ctx, ".", dagger.DirectoryExportOpts{Wipe: true})
+			actual, err = dir.Export(ctx, ".", sdkcore.DirectoryExportOpts{Wipe: true})
 			require.NoError(t, err)
 			require.Equal(t, wd, actual)
 			entries, err = ls(wd)
@@ -1227,9 +1228,9 @@ func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testct
 }
 
 func (DirectorySuite) TestHardlinkCopy(ctx context.Context, t *testctx.T) {
-	getDirInodes := func(c *dagger.Client, t *testctx.T, dir *dagger.Directory, fileNames ...string) []string {
+	getDirInodes := func(c *dagger.Client, t *testctx.T, dir *sdkcore.Directory, fileNames ...string) []string {
 		t.Helper()
-		ctr := c.Container().From(alpineImage).
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithMountedDirectory("/src", dir).
 			WithWorkdir("/src")
 
@@ -1244,9 +1245,9 @@ func (DirectorySuite) TestHardlinkCopy(ctx context.Context, t *testctx.T) {
 		return inodes
 	}
 
-	getFileInode := func(c *dagger.Client, t *testctx.T, f *dagger.File) string {
+	getFileInode := func(c *dagger.Client, t *testctx.T, f *sdkcore.File) string {
 		t.Helper()
-		ctr := c.Container().From(alpineImage).
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile("/src/file", f).
 			WithWorkdir("/src")
 
@@ -1260,7 +1261,7 @@ func (DirectorySuite) TestHardlinkCopy(ctx context.Context, t *testctx.T) {
 	t.Run("with directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dirA := c.Directory().
+		dirA := sdkcore.NewQuery(c).Directory().
 			WithNewFile("fileA1", "contentA1").
 			WithNewFile("fileA2", "contentA2").
 			WithNewFile("common/f", "f").
@@ -1268,7 +1269,7 @@ func (DirectorySuite) TestHardlinkCopy(ctx context.Context, t *testctx.T) {
 		aRootInodes := getDirInodes(c, t, dirA, "fileA1", "fileA2")
 		aCommonInodes := getDirInodes(c, t, dirA, "common/a")
 
-		dirB := c.Directory().
+		dirB := sdkcore.NewQuery(c).Directory().
 			WithNewFile("fileB1", "contentB1").
 			WithNewFile("fileB2", "contentB2").
 			WithNewFile("subdir/fileB3", "contentB3").
@@ -1281,7 +1282,7 @@ func (DirectorySuite) TestHardlinkCopy(ctx context.Context, t *testctx.T) {
 		bCommonInodes := getDirInodes(c, t, dirB, "common/b")
 		bCommonFInodes := getDirInodes(c, t, dirB, "common/f")
 
-		dirC := c.Directory().
+		dirC := sdkcore.NewQuery(c).Directory().
 			WithNewFile("fileC1", "contentC1").
 			WithNewFile("fileC2", "contentC2").
 			WithNewFile("subdir/fileC3", "contentC3")
@@ -1327,14 +1328,14 @@ func (DirectorySuite) TestHardlinkCopy(ctx context.Context, t *testctx.T) {
 	t.Run("with file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dirA := c.Directory().
+		dirA := sdkcore.NewQuery(c).Directory().
 			WithNewFile("fileA1", "contentA1")
 		aInodes := getDirInodes(c, t, dirA, "fileA1")
 
-		f1 := c.File("f1", "contentF1")
+		f1 := sdkcore.NewQuery(c).File("f1", "contentF1")
 		f1Inode := getFileInode(c, t, f1)
 
-		f2 := c.File("f2", "contentF2")
+		f2 := sdkcore.NewQuery(c).File("f2", "contentF2")
 		f2Inode := getFileInode(c, t, f2)
 
 		combinedDir := dirA.
@@ -1357,12 +1358,12 @@ func (DirectorySuite) TestFallbackMerge(ctx context.Context, t *testctx.T) {
 
 	t.Run("dest path same as src selector", func(ctx context.Context, t *testctx.T) {
 		// corner case where we need to use the fallback rather than direct merge
-		srcDir := c.Directory().
+		srcDir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("/toplevel", "").
 			WithNewFile("/dir/lowerlevel", "")
 		srcSubdir := srcDir.Directory("/dir")
 
-		mergedDir := c.Directory().WithDirectory("/dir", srcSubdir)
+		mergedDir := sdkcore.NewQuery(c).Directory().WithDirectory("/dir", srcSubdir)
 		_, err := mergedDir.File("/dir/lowerlevel").Contents(ctx)
 		require.NoError(t, err)
 		_, err = mergedDir.File("/toplevel").Contents(ctx)
@@ -1374,7 +1375,7 @@ func (DirectorySuite) TestSync(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("empty", func(ctx context.Context, t *testctx.T) {
-		dir, err := c.Directory().Sync(ctx)
+		dir, err := sdkcore.NewQuery(c).Directory().Sync(ctx)
 		require.NoError(t, err)
 
 		entries, err := dir.Entries(ctx)
@@ -1383,17 +1384,17 @@ func (DirectorySuite) TestSync(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().Directory("/foo").Sync(ctx)
+		_, err := sdkcore.NewQuery(c).Directory().Directory("/foo").Sync(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "foo: no such file or directory")
 
-		_, err = c.Container().From(alpineImage).Directory("/bar").Sync(ctx)
+		_, err = sdkcore.NewQuery(c).Container().From(alpineImage).Directory("/bar").Sync(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "bar: no such file or directory")
 	})
 
 	t.Run("allows chaining", func(ctx context.Context, t *testctx.T) {
-		dir, err := c.Directory().WithNewFile("foo", "bar").Sync(ctx)
+		dir, err := sdkcore.NewQuery(c).Directory().WithNewFile("foo", "bar").Sync(ctx)
 		require.NoError(t, err)
 
 		entries, err := dir.Entries(ctx)
@@ -1405,7 +1406,7 @@ func (DirectorySuite) TestSync(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srcDir := c.Directory().
+	srcDir := sdkcore.NewQuery(c).Directory().
 		WithNewFile("main.go", "").
 		WithNewFile("func.go", "").
 		WithNewFile("test.md", "").
@@ -1422,17 +1423,17 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 		WithNewFile("/subdir/subsubdir/index.mts", "").
 		WithNewFile("/subdir/subsubdir/JS.md", "")
 
-	srcSubDir := c.Directory().
+	srcSubDir := sdkcore.NewQuery(c).Directory().
 		WithDirectory("foobar", srcDir).
 		Directory("foobar")
 
-	srcAbsDir := c.Directory().
+	srcAbsDir := sdkcore.NewQuery(c).Directory().
 		WithDirectory("/foo/bar", srcDir).
 		Directory("/foo/bar")
 
 	testCases := []struct {
 		name string
-		src  *dagger.Directory
+		src  *sdkcore.Directory
 	}{
 		{
 			name: "current directory",
@@ -1492,7 +1493,7 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 	}
 
 	t.Run("recursive with directories in the pattern", func(ctx context.Context, t *testctx.T) {
-		srcDir := c.Directory().
+		srcDir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("foo/bar.md/w.md", "").
 			WithNewFile("foo/bar.md/x.go", "").
 			WithNewFile("foo/baz.go/y.md", "").
@@ -1509,7 +1510,7 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("sub directory in path", func(ctx context.Context, t *testctx.T) {
-		srcDir := c.Directory().
+		srcDir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("foo/bar/x.md", "").
 			WithNewFile("foo/bar/y.go", "")
 
@@ -1520,19 +1521,19 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("empty sub directory", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithNewDirectory("foo").Glob(ctx, "**/*.md")
+		entries, err := sdkcore.NewQuery(c).Directory().WithNewDirectory("foo").Glob(ctx, "**/*.md")
 		require.NoError(t, err)
 		require.Empty(t, entries)
 	})
 
 	t.Run("empty directory", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().Glob(ctx, "**/*")
+		entries, err := sdkcore.NewQuery(c).Directory().Glob(ctx, "**/*")
 		require.NoError(t, err)
 		require.Empty(t, entries)
 	})
 
 	t.Run("directory doesn't exist", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().Directory("foo").Glob(ctx, "**/*")
+		_, err := sdkcore.NewQuery(c).Directory().Directory("foo").Glob(ctx, "**/*")
 		requireErrOut(t, err, "foo: no such file or directory")
 	})
 }
@@ -1541,7 +1542,7 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("compute directory digest", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("/foo.txt", "Hello, World!")
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("/foo.txt", "Hello, World!")
 
 		digest, err := dir.Directory("/").Digest(ctx)
 		require.NoError(t, err)
@@ -1549,8 +1550,8 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("directory digest with same contents should be same", func(ctx context.Context, t *testctx.T) {
-		a := c.Directory().WithNewDirectory("a").WithNewFile("a/foo.txt", "Hello, World!")
-		b := c.Directory().WithNewDirectory("b").WithNewFile("b/foo.txt", "Hello, World!")
+		a := sdkcore.NewQuery(c).Directory().WithNewDirectory("a").WithNewFile("a/foo.txt", "Hello, World!")
+		b := sdkcore.NewQuery(c).Directory().WithNewDirectory("b").WithNewFile("b/foo.txt", "Hello, World!")
 
 		aDigest, err := a.Directory("a").Digest(ctx)
 		require.NoError(t, err)
@@ -1560,10 +1561,10 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("directory digest with different metadata should be different", func(ctx context.Context, t *testctx.T) {
-		fileWithOverwrittenMetadata := c.Directory().WithNewFile("foo.txt", "Hello, World!", dagger.DirectoryWithNewFileOpts{
+		fileWithOverwrittenMetadata := sdkcore.NewQuery(c).Directory().WithNewFile("foo.txt", "Hello, World!", sdkcore.DirectoryWithNewFileOpts{
 			Permissions: 0777,
 		}).File("foo.txt")
-		fileWithDefaultMetadata := c.Directory().WithNewFile("foo.txt", "Hello, World!").File("foo.txt")
+		fileWithDefaultMetadata := sdkcore.NewQuery(c).Directory().WithNewFile("foo.txt", "Hello, World!").File("foo.txt")
 
 		digestFileWithOverwrittenMetadata, err := fileWithOverwrittenMetadata.Digest(ctx)
 		require.NoError(t, err)
@@ -1575,7 +1576,7 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("scratch directory", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory()
+		dir := sdkcore.NewQuery(c).Directory()
 
 		digest, err := dir.Digest(ctx)
 		require.NoError(t, err)
@@ -1587,23 +1588,23 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("empty directory name", func(ctx context.Context, t *testctx.T) {
-		name, err := c.Directory().Name(ctx)
+		name, err := sdkcore.NewQuery(c).Directory().Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/", name)
 	})
 
 	t.Run("not found directory", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().Directory("foo").Name(ctx)
+		_, err := sdkcore.NewQuery(c).Directory().Directory("foo").Name(ctx)
 		requireErrOut(t, err, "foo: no such file or directory")
 	})
 
 	t.Run("not found file displays full path in error", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().Directory("keep/../this").Name(ctx)
+		_, err := sdkcore.NewQuery(c).Directory().Directory("keep/../this").Name(ctx)
 		requireErrOut(t, err, "keep/../this: no such file or directory")
 	})
 
 	t.Run("structured directory", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithDirectory("nested", c.Directory()).WithDirectory("very/nested", c.Directory())
+		dir := sdkcore.NewQuery(c).Directory().WithDirectory("nested", sdkcore.NewQuery(c).Directory()).WithDirectory("very/nested", sdkcore.NewQuery(c).Directory())
 
 		t.Run("root directory", func(ctx context.Context, t *testctx.T) {
 			rootName, err := dir.Name(ctx)
@@ -1627,7 +1628,7 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 	t.Run("git directory", func(ctx context.Context, t *testctx.T) {
 		// Pin the commit explicitly: a git URL fragment is not honored by .Head()
 		// (which tracks the live default branch), and .dagger no longer exists there.
-		dir := c.Git("https://github.com/dagger/dagger").Commit("ee32df913f57c876e067bd5ecc159561510b6f50").Tree()
+		dir := sdkcore.NewQuery(c).Git("https://github.com/dagger/dagger").Commit("ee32df913f57c876e067bd5ecc159561510b6f50").Tree()
 
 		t.Run("root directory", func(ctx context.Context, t *testctx.T) {
 			rootName, err := dir.Name(ctx)
@@ -1656,7 +1657,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 		// The patch expects "Hello, World!" in hello.txt, but the content has
 		// drifted; other.txt still matches. This is the session-resume shape:
 		// a recorded patch reapplied against files that moved on.
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("hello.txt", "Hello, Drifted!\n").
 			WithNewFile("other.txt", "unchanged\n")
 
@@ -1677,8 +1678,8 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 		require.Error(t, err)
 
 		// LEAVE_CONFLICT_MARKERS applies what fits and marks what doesn't.
-		patched := dir.WithPatch(patch, dagger.DirectoryWithPatchOpts{
-			OnConflict: dagger.PatchConflictLeaveConflictMarkers,
+		patched := dir.WithPatch(patch, sdkcore.DirectoryWithPatchOpts{
+			OnConflict: sdkcore.PatchConflictLeaveConflictMarkers,
 		})
 		content, err := patched.File("hello.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -1694,7 +1695,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 
 	t.Run("basic patch application", func(ctx context.Context, t *testctx.T) {
 		// Create a directory with a simple file
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("hello.txt", "Hello, World!\n")
 
 		// Create a patch that modifies the file
@@ -1716,7 +1717,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 
 	t.Run("patching a subdirectory", func(ctx context.Context, t *testctx.T) {
 		// Create a directory with a simple file
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("sub/hello.txt", "Hello, World!\n").
 			Directory("sub")
 
@@ -1739,7 +1740,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 
 	t.Run("patch adding new file", func(ctx context.Context, t *testctx.T) {
 		// Start with an empty directory
-		dir := c.Directory()
+		dir := sdkcore.NewQuery(c).Directory()
 
 		// Create a patch that adds a new file
 		patch := `--- /dev/null
@@ -1759,7 +1760,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 
 	t.Run("patch deleting file", func(ctx context.Context, t *testctx.T) {
 		// Create a directory with a file to delete
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("delete-me.txt", "This file will be deleted\n").
 			WithNewFile("keep-me.txt", "This file will be kept\n")
 
@@ -1781,7 +1782,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 
 	t.Run("multiple file patch", func(ctx context.Context, t *testctx.T) {
 		// Create a directory with multiple files
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "Content 1\n").
 			WithNewFile("file2.txt", "Content 2\n")
 
@@ -1812,7 +1813,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("empty patch", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("test.txt", "test content")
 
 		// Create an empty patch
@@ -1825,7 +1826,7 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 
 	t.Run("bad patch application", func(ctx context.Context, t *testctx.T) {
 		// Create a directory with a simple file
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("hello.txt", "Hello, World!\n")
 
 		// Create a patch that is looking for the wrong content
@@ -1846,7 +1847,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 	// Regression: WithPatchFile should not require loading patch contents into memory.
 	// A patch larger than MaxFileContentsSize must still apply successfully.
 	c := connect(ctx, t)
-	largeFile := c.Container().
+	largeFile := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{
 			"sh",
@@ -1855,9 +1856,9 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 		}).
 		File("/large.txt")
 
-	patchFile := c.Directory().
+	patchFile := sdkcore.NewQuery(c).Directory().
 		WithFile("large.txt", largeFile).
-		Changes(c.Directory()).
+		Changes(sdkcore.NewQuery(c).Directory()).
 		AsPatch()
 
 	patchSize, err := patchFile.Size(ctx)
@@ -1867,7 +1868,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 	patchID, err := patchFile.ID(ctx)
 	require.NoError(t, err)
 
-	loadedPatch := dagger.Ref[*dagger.File](c, patchID)
+	loadedPatch := sdkcore.Ref[*sdkcore.File](sdkcore.NewQuery(c), patchID)
 	loadedPatchID, err := loadedPatch.ID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, patchID, loadedPatchID)
@@ -1876,7 +1877,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 	require.NoError(t, err)
 	require.Equal(t, patchSize, loadedPatchSize)
 
-	patchedDir := c.Directory().WithPatchFile(loadedPatch)
+	patchedDir := sdkcore.NewQuery(c).Directory().WithPatchFile(loadedPatch)
 	_, err = patchedDir.Sync(ctx)
 	require.NoError(t, err)
 
@@ -1889,7 +1890,7 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 	t.Run("literal search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
 			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
 			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
@@ -1944,7 +1945,7 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 	t.Run("search beginning with hyphen", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "Hello, World!\nThis is a --test-- file.\nWorld is great.").
 			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
 			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
@@ -1997,12 +1998,12 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 	t.Run("files-only search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
 			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
 			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
 
-		results, err := dir.Search(ctx, "World", dagger.DirectorySearchOpts{
+		results, err := dir.Search(ctx, "World", sdkcore.DirectorySearchOpts{
 			FilesOnly: true,
 		})
 		require.NoError(t, err)
@@ -2028,7 +2029,7 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 	t.Run("limiting results", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
 			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
 			WithNewFile("file3.txt", "Hello, Dagger!\nThis is another test file.").
@@ -2038,7 +2039,7 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 			WithNewFile("file7.txt", "Hello, Dagger!\nThis is another test file.").
 			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
 
-		results, err := dir.Search(ctx, "another", dagger.DirectorySearchOpts{
+		results, err := dir.Search(ctx, "another", sdkcore.DirectorySearchOpts{
 			Limit: 3,
 		})
 		require.NoError(t, err)
@@ -2107,7 +2108,7 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 	t.Run("regex search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("main.go", "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}").
 			WithNewFile("test.go", "package main\n\nfunc TestSomething() {\n\t// test code\n}").
 			WithNewFile("lib/helper.go", "package lib\n\nfunc Helper() string {\n\treturn \"help\"\n}")
@@ -2165,7 +2166,7 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("dir/code.go", `package main
 
 import "fmt"
@@ -2183,7 +2184,7 @@ func another() {
 }`)
 
 		// Search for variable assignments
-		results, err := dir.Search(ctx, ":= \"Alice\"\n\tage", dagger.DirectorySearchOpts{Multiline: true})
+		results, err := dir.Search(ctx, ":= \"Alice\"\n\tage", sdkcore.DirectorySearchOpts{Multiline: true})
 		require.NoError(t, err)
 		require.NotEmpty(t, results)
 
@@ -2207,7 +2208,7 @@ func another() {
 	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("dir/code.go", `package main
 
 import "fmt"
@@ -2225,7 +2226,7 @@ func another() {
 }`)
 
 		// Search for variable assignments
-		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, dagger.DirectorySearchOpts{
+		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, sdkcore.DirectorySearchOpts{
 			Multiline: true,
 		})
 		require.NoError(t, err)
@@ -2251,7 +2252,7 @@ func another() {
 	t.Run("empty directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory()
+		dir := sdkcore.NewQuery(c).Directory()
 
 		results, err := dir.Search(ctx, "anything")
 		require.NoError(t, err)
@@ -2261,7 +2262,7 @@ func another() {
 	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file.txt", "Hello, World!")
 
 		results, err := dir.Search(ctx, "nonexistent")
@@ -2272,7 +2273,7 @@ func another() {
 	t.Run("search in subdirectory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("root.txt", "Root content").
 			WithNewFile("sub/file.txt", "Subdirectory content").
 			WithNewFile("sub/deep/file.txt", "Deep subdirectory content")
@@ -2298,7 +2299,7 @@ func another() {
 	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file.txt", "Hello\nhello\nHELLO")
 
 		results, err := dir.Search(ctx, "Hello")
@@ -2312,10 +2313,10 @@ func another() {
 	t.Run("case insensitive search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("file.txt", "Hello\nhello\nHELLO")
 
-		results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+		results, err := dir.Search(ctx, "hello", sdkcore.DirectorySearchOpts{
 			Insensitive: true,
 		})
 		require.NoError(t, err)
@@ -2334,7 +2335,7 @@ func another() {
 	t.Run("multiple matches in one file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("code.go", `package main
 
 import "fmt"
@@ -2362,7 +2363,7 @@ func main() {
 	t.Run("binary files are skipped", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Container().
+		dir := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", "mkdir -p /testdir && echo 'text content' > /testdir/text.txt && dd if=/dev/urandom of=/testdir/binary.bin bs=1024 count=1 && echo 'text content' >> /testdir/binary.bin"}).
 			Directory("/testdir")
@@ -2382,7 +2383,7 @@ func main() {
 	t.Run("skip hidden files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("visible.txt", "content with target").
 			WithNewFile(".hidden.txt", "content with target").
 			WithNewFile("subdir/.hidden2.txt", "content with target")
@@ -2404,7 +2405,7 @@ func main() {
 		})
 
 		t.Run("skipHidden excludes hidden files", func(ctx context.Context, t *testctx.T) {
-			results, err := dir.Search(ctx, "target", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "target", sdkcore.DirectorySearchOpts{
 				SkipHidden: true,
 			})
 			require.NoError(t, err)
@@ -2425,7 +2426,7 @@ func main() {
 	t.Run("skip ignored files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("tracked.txt", "content with target").
 			WithNewFile("ignored.log", "content with target").
 			WithNewFile("build/output.bin", "content with target").
@@ -2448,7 +2449,7 @@ func main() {
 		})
 
 		t.Run("skipIgnored respects rgignore", func(ctx context.Context, t *testctx.T) {
-			results, err := dir.Search(ctx, "target", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "target", sdkcore.DirectorySearchOpts{
 				SkipIgnored: true,
 			})
 			require.NoError(t, err)
@@ -2469,7 +2470,7 @@ func main() {
 	t.Run("globs option", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("main.go", "package main\nfunc main() { fmt.Println(\"hello\") }").
 			WithNewFile("test.go", "package main\nfunc TestSomething() { /* test code */ }").
 			WithNewFile("README.md", "# Project\nThis is a documentation file").
@@ -2478,7 +2479,7 @@ func main() {
 
 		t.Run("single glob pattern", func(ctx context.Context, t *testctx.T) {
 			// Search for "func" only in .go files
-			results, err := dir.Search(ctx, "func", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "func", sdkcore.DirectorySearchOpts{
 				Globs: []string{"*.go"},
 			})
 			require.NoError(t, err)
@@ -2494,7 +2495,7 @@ func main() {
 
 		t.Run("multiple glob patterns", func(ctx context.Context, t *testctx.T) {
 			// Search for "test" in both .go and .md files
-			results, err := dir.Search(ctx, "test", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "test", sdkcore.DirectorySearchOpts{
 				Globs: []string{"*.go", "*.md"},
 			})
 			require.NoError(t, err)
@@ -2509,7 +2510,7 @@ func main() {
 
 		t.Run("glob with subdirectories", func(ctx context.Context, t *testctx.T) {
 			// Search for "func" in all .go files, including subdirectories
-			results, err := dir.Search(ctx, "func", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "func", sdkcore.DirectorySearchOpts{
 				Globs: []string{"**/*.go"},
 			})
 			require.NoError(t, err)
@@ -2528,7 +2529,7 @@ func main() {
 
 		t.Run("glob with no matches", func(ctx context.Context, t *testctx.T) {
 			// Search for a pattern that exists in files but not in the files matching the glob
-			results, err := dir.Search(ctx, "main", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "main", sdkcore.DirectorySearchOpts{
 				Globs: []string{"*.md", "*.yaml"}, // Only search in markdown and yaml files where "main" doesn't appear
 			})
 			require.NoError(t, err)
@@ -2539,7 +2540,7 @@ func main() {
 	t.Run("paths option", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("src/main.go", "package main\nfunc main() { fmt.Println(\"hello world\") }").
 			WithNewFile("src/helper.go", "package main\nfunc Helper() { return \"world peace\" }").
 			WithNewFile("tests/main_test.go", "package main\nfunc TestMain() { /* world testing */ }").
@@ -2550,7 +2551,7 @@ func main() {
 
 		t.Run("single path", func(ctx context.Context, t *testctx.T) {
 			// Search for "world" only in src directory
-			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "world", sdkcore.DirectorySearchOpts{
 				Paths: []string{"src"},
 			})
 			require.NoError(t, err)
@@ -2566,7 +2567,7 @@ func main() {
 
 		t.Run("multiple paths", func(ctx context.Context, t *testctx.T) {
 			// Search for "world" in both src and docs directories
-			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "world", sdkcore.DirectorySearchOpts{
 				Paths: []string{"src", "docs"},
 			})
 			require.NoError(t, err)
@@ -2591,7 +2592,7 @@ func main() {
 
 		t.Run("specific file path", func(ctx context.Context, t *testctx.T) {
 			// Search for "main" in a specific file
-			results, err := dir.Search(ctx, "main", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "main", sdkcore.DirectorySearchOpts{
 				Paths: []string{"src/main.go"},
 			})
 			require.NoError(t, err)
@@ -2607,7 +2608,7 @@ func main() {
 
 		t.Run("path with no matches", func(ctx context.Context, t *testctx.T) {
 			// Search for non-existent pattern in existing directory
-			results, err := dir.Search(ctx, "nonexistent-pattern", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "nonexistent-pattern", sdkcore.DirectorySearchOpts{
 				Paths: []string{"src"},
 			})
 			require.NoError(t, err)
@@ -2616,7 +2617,7 @@ func main() {
 
 		t.Run("normalizes absolute paths", func(ctx context.Context, t *testctx.T) {
 			// Test that absolute paths are treated as relative to the directory
-			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "world", sdkcore.DirectorySearchOpts{
 				Paths: []string{"/src"},
 			})
 			require.NoError(t, err)
@@ -2632,7 +2633,7 @@ func main() {
 
 		t.Run("keeps symlinks within the directory", func(ctx context.Context, t *testctx.T) {
 			// Test that symlinks are resolved within the directory
-			results, err := dir.Search(ctx, "root", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "root", sdkcore.DirectorySearchOpts{
 				Paths: []string{"symlink"},
 			})
 			require.NoError(t, err)
@@ -2643,7 +2644,7 @@ func main() {
 
 			// Test that we don't allow naively evaluating symlinks by following them
 			// first (e.g. symlink/passwd => /etc/passwd)
-			results, err = dir.Search(ctx, "root", dagger.DirectorySearchOpts{
+			results, err = dir.Search(ctx, "root", sdkcore.DirectorySearchOpts{
 				Paths: []string{"symlink/passwd"},
 			})
 			require.NoError(t, err)
@@ -2654,12 +2655,12 @@ func main() {
 		})
 
 		t.Run("resolves symlinks within a scoped dir", func(ctx context.Context, t *testctx.T) {
-			dir := c.Directory().
+			dir := sdkcore.NewQuery(c).Directory().
 				WithNewFile("symlink", "im innocent").
 				WithNewFile("subdir/etc/passwd", "root:world passwd").
 				WithSymlink("/etc/passwd", "subdir/symlink")
 
-			results, err := dir.Directory("subdir").Search(ctx, "root", dagger.DirectorySearchOpts{
+			results, err := dir.Directory("subdir").Search(ctx, "root", sdkcore.DirectorySearchOpts{
 				Paths: []string{"symlink"},
 			})
 			require.NoError(t, err)
@@ -2673,7 +2674,7 @@ func main() {
 
 		t.Run("rejects paths that escape directory", func(ctx context.Context, t *testctx.T) {
 			// Test that paths trying to escape via .. are rejected
-			_, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+			_, err := dir.Search(ctx, "world", sdkcore.DirectorySearchOpts{
 				Paths: []string{"../../etc/passwd"},
 			})
 			require.Error(t, err)
@@ -2682,7 +2683,7 @@ func main() {
 
 		t.Run("rejects nested directory escape attempts", func(ctx context.Context, t *testctx.T) {
 			// Test that paths containing ".." anywhere that would escape are rejected
-			_, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+			_, err := dir.Search(ctx, "world", sdkcore.DirectorySearchOpts{
 				Paths: []string{"some/../../etc/passwd"},
 			})
 			require.Error(t, err)
@@ -2691,7 +2692,7 @@ func main() {
 
 		t.Run("allows valid relative paths with double dots", func(ctx context.Context, t *testctx.T) {
 			// Test that valid relative paths that don't escape still work
-			results, err := dir.Search(ctx, "package main", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "package main", sdkcore.DirectorySearchOpts{
 				Paths: []string{"/src/../"},
 			})
 			require.NoError(t, err)
@@ -2702,7 +2703,7 @@ func main() {
 	t.Run("combined globs and paths", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("src/main.go", "package main\nfunc main() { fmt.Println(\"hello\") }").
 			WithNewFile("src/helper.js", "function helper() { console.log('hello'); }").
 			WithNewFile("tests/main_test.go", "package main\nfunc TestMain() { /* hello testing */ }").
@@ -2710,7 +2711,7 @@ func main() {
 
 		t.Run("globs and paths together", func(ctx context.Context, t *testctx.T) {
 			// Search for "hello" in .go files within src directory only
-			results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "hello", sdkcore.DirectorySearchOpts{
 				Globs: []string{"*.go"},
 				Paths: []string{"src"},
 			})
@@ -2725,7 +2726,7 @@ func main() {
 
 		t.Run("globs and paths with multiple patterns", func(ctx context.Context, t *testctx.T) {
 			// Search for "hello" in both .go and .js files within tests directory
-			results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+			results, err := dir.Search(ctx, "hello", sdkcore.DirectorySearchOpts{
 				Globs: []string{"*.go", "*.js"},
 				Paths: []string{"tests"},
 			})
@@ -2749,11 +2750,11 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("symlink in same directory", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("some-file", "some-content").
 			WithSymlink("some-file", "symlink-to-some-file")
 
-		ctr := c.Container().From(alpineImage).WithDirectory("/test-dir", dir)
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).WithDirectory("/test-dir", dir)
 
 		// test the symlink is an actual symlink
 		_, err := ctr.WithExec([]string{"test", "-L", "/test-dir/symlink-to-some-file"}).Stdout(ctx)
@@ -2769,9 +2770,9 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink to parent directory", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithSymlink("../root", "its-root")
-		f := c.Container().From(alpineImage).
+		f := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithDirectory("/test-dir", dir).
 			WithNewFile("/test-dir/its-root/f", "data").
 			File("/root/f")
@@ -2781,7 +2782,7 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink with abs path", func(ctx context.Context, t *testctx.T) {
-		s, err := c.Directory().
+		s, err := sdkcore.NewQuery(c).Directory().
 			WithNewFile("/some-file", "some-content").
 			WithSymlink("/some-file", "/symlink-to-some-file").
 			File("symlink-to-some-file").
@@ -2791,11 +2792,11 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink with abs path mounted as a subdir", func(ctx context.Context, t *testctx.T) {
-		d := c.Directory().
+		d := sdkcore.NewQuery(c).Directory().
 			WithNewFile("/some-file", "some-content").
 			WithSymlink("/some-file", "/symlink-to-some-file")
 
-		d2 := c.Directory().
+		d2 := sdkcore.NewQuery(c).Directory().
 			WithNewFile("/some-file", "other-content").
 			WithDirectory("/sub-dir", d)
 
@@ -2807,7 +2808,7 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink creates parent dirs", func(ctx context.Context, t *testctx.T) {
-		s, err := c.Directory().
+		s, err := sdkcore.NewQuery(c).Directory().
 			WithNewFile("/some-file", "some-content").
 			WithSymlink("../../some-file", "/sub/subdir/symlink").
 			File("/sub/subdir/symlink").
@@ -2817,9 +2818,9 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink correctly passes dir path", func(ctx context.Context, t *testctx.T) {
-		d := c.Directory().WithNewFile("some-file", "data")
+		d := sdkcore.NewQuery(c).Directory().WithNewFile("some-file", "data")
 
-		d2 := c.Directory().
+		d2 := sdkcore.NewQuery(c).Directory().
 			WithNewFile("some-other-file", "other-data").
 			WithNewDirectory("dir1").
 			Directory("/dir1").
@@ -2836,7 +2837,7 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink follows symlinks in dir path but not basename", func(ctx context.Context, t *testctx.T) {
-		s, err := c.Directory().
+		s, err := sdkcore.NewQuery(c).Directory().
 			WithNewDirectory("dir1").
 			WithSymlink("dir1", "dir2").
 			WithSymlink("file", "dir2/symlink").
@@ -2850,7 +2851,7 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("symlink errors rather when symlink already exists", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Directory().
+		_, err := sdkcore.NewQuery(c).Directory().
 			WithSymlink("target", "symlink").
 			WithSymlink("newtarget", "symlink").
 			Sync(ctx)
@@ -2864,7 +2865,7 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		Description         string
 		Path                string
-		Type                dagger.ExistsType
+		Type                sdkcore.ExistsType
 		Expected            bool
 		DoNotFollowSymlinks bool
 		ErrorContains       string
@@ -2884,37 +2885,37 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 		{
 			Description: "test is a directory",
 			Path:        "quotes",
-			Type:        dagger.ExistsTypeDirectoryType,
+			Type:        sdkcore.ExistsTypeDirectoryType,
 			Expected:    true,
 		},
 		{
 			Description: "test is a directory fails when referencing a file that exists",
 			Path:        "quotes/descartes",
-			Type:        dagger.ExistsTypeDirectoryType,
+			Type:        sdkcore.ExistsTypeDirectoryType,
 			Expected:    false,
 		},
 		{
 			Description: "test is a file works",
 			Path:        "quotes/descartes",
-			Type:        dagger.ExistsTypeRegularType,
+			Type:        sdkcore.ExistsTypeRegularType,
 			Expected:    true,
 		},
 		{
 			Description: "test is a file fails when referencing a directory that exists",
 			Path:        "quotes",
-			Type:        dagger.ExistsTypeRegularType,
+			Type:        sdkcore.ExistsTypeRegularType,
 			Expected:    false,
 		},
 		{
 			Description: "test is a symlink works",
 			Path:        "i-am",
-			Type:        dagger.ExistsTypeSymlinkType,
+			Type:        sdkcore.ExistsTypeSymlinkType,
 			Expected:    true,
 		},
 		{
 			Description: "test symlink fails",
 			Path:        "quotes/descartes",
-			Type:        dagger.ExistsTypeSymlinkType,
+			Type:        sdkcore.ExistsTypeSymlinkType,
 			Expected:    false,
 		},
 
@@ -2924,7 +2925,7 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 		{
 			Description: "test is a file works on a symlink",
 			Path:        "i-am",
-			Type:        dagger.ExistsTypeRegularType,
+			Type:        sdkcore.ExistsTypeRegularType,
 			Expected:    true,
 		},
 		{
@@ -2936,15 +2937,15 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 		{
 			Description:         "test DoNotFollowSymlinks prevents regular file type from being true when referencing a symlink",
 			Path:                "i-am",
-			Type:                dagger.ExistsTypeRegularType,
+			Type:                sdkcore.ExistsTypeRegularType,
 			DoNotFollowSymlinks: true,
 			Expected:            false,
 		},
 	} {
 		t.Run(tc.Description, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			quotesDir := c.Directory().WithNewFile("quotes/descartes", "Cogito, ergo sum").WithSymlink("quotes/descartes", "i-am").WithSymlink("quotes/does-not-exist", "nothing")
-			exists, err := quotesDir.Exists(ctx, tc.Path, dagger.DirectoryExistsOpts{
+			quotesDir := sdkcore.NewQuery(c).Directory().WithNewFile("quotes/descartes", "Cogito, ergo sum").WithSymlink("quotes/descartes", "i-am").WithSymlink("quotes/does-not-exist", "nothing")
+			exists, err := quotesDir.Exists(ctx, tc.Path, sdkcore.DirectoryExistsOpts{
 				ExpectedType:        tc.Type,
 				DoNotFollowSymlinks: tc.DoNotFollowSymlinks,
 			})
@@ -2961,8 +2962,8 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	t.Run("file-exists", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stat, err := c.Directory().
-			WithNewFile("f", "data", dagger.DirectoryWithNewFileOpts{Permissions: 0o444}).
+		stat, err := sdkcore.NewQuery(c).Directory().
+			WithNewFile("f", "data", sdkcore.DirectoryWithNewFileOpts{Permissions: 0o444}).
 			Stat(ctx, "f")
 		require.NoError(t, err)
 		require.NotNil(t, stat)
@@ -2977,7 +2978,7 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 
 		fileType, err := stat.FileType(ctx)
 		require.NoError(t, err)
-		require.Equal(t, dagger.FileTypeRegularType, fileType)
+		require.Equal(t, sdkcore.FileTypeRegularType, fileType)
 
 		permissions, err := stat.Permissions(ctx)
 		require.NoError(t, err)
@@ -2985,8 +2986,8 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	})
 	t.Run("file-dir-exists", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stat, err := c.Directory().
-			WithNewDirectory("d", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o750}).
+		stat, err := sdkcore.NewQuery(c).Directory().
+			WithNewDirectory("d", sdkcore.DirectoryWithNewDirectoryOpts{Permissions: 0o750}).
 			Stat(ctx, "d")
 		require.NoError(t, err)
 		require.NotNil(t, stat)
@@ -3001,7 +3002,7 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 
 		fileType, err := stat.FileType(ctx)
 		require.NoError(t, err)
-		require.Equal(t, dagger.FileTypeDirectoryType, fileType)
+		require.Equal(t, sdkcore.FileTypeDirectoryType, fileType)
 
 		permissions, err := stat.Permissions(ctx)
 		require.NoError(t, err)
@@ -3009,18 +3010,18 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	})
 	t.Run("empty-path-fails", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		_, err := c.Directory().Stat(ctx, "")
+		_, err := sdkcore.NewQuery(c).Directory().Stat(ctx, "")
 		require.ErrorContains(t, err, ": no such file or directory")
 	})
 }
 
 func (DirectorySuite) TestExistsUsingAbsoluteSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ok, err := c.Directory().
+	ok, err := sdkcore.NewQuery(c).Directory().
 		WithNewFile("/some-file", "some-content").
 		WithSymlink("/some-file", "/symlink-to-some-file").
-		Exists(ctx, "symlink-to-some-file", dagger.DirectoryExistsOpts{
-			ExpectedType: dagger.ExistsTypeRegularType,
+		Exists(ctx, "symlink-to-some-file", sdkcore.DirectoryExistsOpts{
+			ExpectedType: sdkcore.ExistsTypeRegularType,
 		})
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -3034,19 +3035,19 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 	randID := rand.Text()
 
 	c := connect(ctx, t)
-	d1, err := c.Directory().
+	d1, err := sdkcore.NewQuery(c).Directory().
 		WithoutFile("non-existent").
 		WithNewFile("file", randID).
 		Sync(ctx)
 	require.NoError(t, err)
 
-	d2, err := c.Directory().
+	d2, err := sdkcore.NewQuery(c).Directory().
 		WithoutFile("also-non-existent").
 		WithNewFile("file", randID).
 		Sync(ctx)
 	require.NoError(t, err)
 
-	out, err := c.Container().
+	out, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/d1", d1).
 		WithMountedDirectory("/d2", d2).
@@ -3055,11 +3056,11 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, out, "")
 
-	d3 := c.Directory().
+	d3 := sdkcore.NewQuery(c).Directory().
 		WithNewFile("not", "used").
 		WithNewFile("file", "data")
 
-	out, err = c.Container().
+	out, err = sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedDirectory("/d1", d1).
 		WithMountedDirectory("/d3", d3).

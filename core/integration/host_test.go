@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type HostSuite struct{}
@@ -36,9 +37,9 @@ func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
 
 		c := connect(ctx, t, dagger.WithWorkdir(dir))
 
-		contents, err := c.Container().
+		contents, err := core.NewQuery(c).Container().
 			From(alpineImage).
-			WithMountedDirectory("/host", c.Host().Directory(".")).
+			WithMountedDirectory("/host", core.NewQuery(c).Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -52,9 +53,9 @@ func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
 
 		c := connect(ctx, t, dagger.WithWorkdir(dir))
 
-		contents, err := c.Container().
+		contents, err := core.NewQuery(c).Container().
 			From(alpineImage).
-			WithMountedDirectory("/host", c.Host().Directory(".")).
+			WithMountedDirectory("/host", core.NewQuery(c).Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -63,9 +64,9 @@ func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
 		err = os.WriteFile(filepath.Join(dir, "fizz"), []byte("buzz"), 0o600)
 		require.NoError(t, err)
 
-		contents, err = c.Container().
+		contents, err = core.NewQuery(c).Container().
 			From(alpineImage).
-			WithMountedDirectory("/host", c.Host().Directory(".")).
+			WithMountedDirectory("/host", core.NewQuery(c).Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -84,11 +85,11 @@ func (HostSuite) TestWorkdirExcludeInclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 	t.Run("exclude", func(ctx context.Context, t *testctx.T) {
-		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
+		wd := core.NewQuery(c).Host().Directory(".", core.HostDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		})
 
-		contents, err := c.Container().
+		contents, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
@@ -98,11 +99,11 @@ func (HostSuite) TestWorkdirExcludeInclude(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("exclude directory", func(ctx context.Context, t *testctx.T) {
-		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
+		wd := core.NewQuery(c).Host().Directory(".", core.HostDirectoryOpts{
 			Exclude: []string{"subdir"},
 		})
 
-		contents, err := c.Container().
+		contents, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
@@ -112,11 +113,11 @@ func (HostSuite) TestWorkdirExcludeInclude(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {
-		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
+		wd := core.NewQuery(c).Host().Directory(".", core.HostDirectoryOpts{
 			Include: []string{"*.rar"},
 		})
 
-		contents, err := c.Container().
+		contents, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
@@ -126,12 +127,12 @@ func (HostSuite) TestWorkdirExcludeInclude(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("exclude overrides include", func(ctx context.Context, t *testctx.T) {
-		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
+		wd := core.NewQuery(c).Host().Directory(".", core.HostDirectoryOpts{
 			Include: []string{"*.txt"},
 			Exclude: []string{"b.txt"},
 		})
 
-		contents, err := c.Container().
+		contents, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
@@ -141,12 +142,12 @@ func (HostSuite) TestWorkdirExcludeInclude(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("include does not override exclude", func(ctx context.Context, t *testctx.T) {
-		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
+		wd := core.NewQuery(c).Host().Directory(".", core.HostDirectoryOpts{
 			Include: []string{"a.txt"},
 			Exclude: []string{"*.txt"},
 		})
 
-		contents, err := c.Container().
+		contents, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
@@ -165,23 +166,23 @@ func (HostSuite) TestDirectoryRelative(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 	t.Run(". is same as workdir", func(ctx context.Context, t *testctx.T) {
-		wdID1, err := c.Host().Directory(".").ID(ctx)
+		wdID1, err := core.NewQuery(c).Host().Directory(".").ID(ctx)
 		require.NoError(t, err)
 
-		wdID2, err := c.Host().Directory(".").ID(ctx)
+		wdID2, err := core.NewQuery(c).Host().Directory(".").ID(ctx)
 		require.NoError(t, err)
 
 		require.Equal(t, wdID1, wdID2)
 	})
 
 	t.Run("./foo is relative to workdir", func(ctx context.Context, t *testctx.T) {
-		contents, err := c.Host().Directory("some-dir").Entries(ctx)
+		contents, err := core.NewQuery(c).Host().Directory("some-dir").Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"sub-file"}, contents)
 	})
 
 	t.Run("../ allows escaping", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Host().Directory("../").ID(ctx)
+		_, err := core.NewQuery(c).Host().Directory("../").ID(ctx)
 		require.NoError(t, err)
 	})
 }
@@ -194,7 +195,7 @@ func (HostSuite) TestDirectoryAbsolute(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t, dagger.WithWorkdir(dir))
 
-	entries, err := c.Host().Directory(filepath.Join(dir, "some-dir")).Entries(ctx)
+	entries, err := core.NewQuery(c).Host().Directory(filepath.Join(dir, "some-dir")).Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
 }
@@ -212,7 +213,7 @@ func (HostSuite) TestDirectoryHome(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t, dagger.WithWorkdir("/tmp"))
 
-	entries, err := c.Host().Directory(filepath.Join("~", subdir, "some-dir")).Entries(ctx)
+	entries, err := core.NewQuery(c).Host().Directory(filepath.Join("~", subdir, "some-dir")).Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
 }
@@ -230,7 +231,7 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 	c := connect(ctx, t)
 
 	t.Run("exclude", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+		entries, err := core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -238,7 +239,7 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+		entries, err := core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{
 			Include: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -246,7 +247,7 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 	})
 
 	t.Run("exclude overrides include", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+		entries, err := core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{
 			Include: []string{"*.txt"},
 			Exclude: []string{"b.txt"},
 		}).Entries(ctx)
@@ -255,7 +256,7 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 	})
 
 	t.Run("include does not override exclude", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+		entries, err := core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{
 			Include: []string{"a.txt"},
 			Exclude: []string{"*.txt"},
 		}).Entries(ctx)
@@ -295,21 +296,21 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("no git ignore by default", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Host().Directory(dir).Entries(ctx)
+		entries, err := core.NewQuery(c).Host().Directory(dir).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".git/", ".gitignore", "b.md", "c.txt.rar", "subdir/", "subdir2/"}, entries)
 
-		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir")).Entries(ctx)
+		subDirEntries, err := core.NewQuery(c).Host().Directory(filepath.Join(dir, "subdir")).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"b.md", "e.txt", "g.txt", "h.yaml"}, subDirEntries)
 
-		subDir2Entries, err := c.Host().Directory(filepath.Join(dir, "subdir2")).Entries(ctx)
+		subDir2Entries, err := core.NewQuery(c).Host().Directory(filepath.Join(dir, "subdir2")).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".gitignore", "bar.txt", "baz.md", "bool.yaml", "foo.go"}, subDir2Entries)
 	})
 
 	t.Run("apply git ignore", func(ctx context.Context, t *testctx.T) {
-		hostDir := c.Host().Directory(dir, dagger.HostDirectoryOpts{Gitignore: true})
+		hostDir := core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{Gitignore: true})
 
 		rootHostDir, err := hostDir.Entries(ctx)
 		require.NoError(t, err)
@@ -325,7 +326,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("correctly apply parent .gitignore when children path is given", func(ctx context.Context, t *testctx.T) {
-		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		subDirEntries, err := core.NewQuery(c).Host().Directory(filepath.Join(dir, "subdir"), core.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"e.txt", "h.yaml"}, subDirEntries)
 	})
@@ -337,7 +338,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "bar.txt"), []byte("1"), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "foo.go"), []byte("1"), 0o600))
 
-		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		entries, err := core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".gitignore", "bar.txt", "foo.go"}, entries)
 	})
@@ -354,21 +355,21 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(hostDir, "baz.txt"), []byte("1"), 0o600))
 
 		// sanity check!
-		rootEntries, err := c.Host().Directory(hostDir, dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		rootEntries, err := core.NewQuery(c).Host().Directory(hostDir, core.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".git/", ".gitignore", "foo/"}, rootEntries)
 
-		fooEntries, err := c.Host().Directory(filepath.Join(hostDir, "foo/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		fooEntries, err := core.NewQuery(c).Host().Directory(filepath.Join(hostDir, "foo/"), core.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo.txt"}, fooEntries)
 
-		barEntries, err := c.Host().Directory(filepath.Join(hostDir, "bar/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		barEntries, err := core.NewQuery(c).Host().Directory(filepath.Join(hostDir, "bar/"), core.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.Error(t, err, fmt.Errorf("expected error, got: %#v (root entries: %#v)", barEntries, rootEntries))
 		requireErrOut(t, err, "bar: no such file or directory")
 	})
 
 	t.Run("correctly handle excluded gitignore", func(ctx context.Context, t *testctx.T) {
-		hostDir := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+		hostDir := core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{
 			Gitignore: true,
 			Exclude:   []string{".gitignore"},
 		})
@@ -396,11 +397,11 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("2"), 0o600))
 
-		entries, err := c.Host().Directory(dir).Entries(ctx)
+		entries, err := core.NewQuery(c).Host().Directory(dir).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".git/", ".gitignore", "a.txt", "b.txt"}, entries)
 
-		entries, err = c.Host().Directory(dir, dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		entries, err = core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".git/", ".gitignore", "b.txt"}, entries)
 	})
@@ -412,37 +413,37 @@ func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
 
 	tests := []struct {
 		name            string
-		opts            dagger.HostDirectoryOpts
+		opts            core.HostDirectoryOpts
 		expectedEntries []string
 		expectedContent string
 	}{
 		{
 			name:            "default aka cache",
-			opts:            dagger.HostDirectoryOpts{},
+			opts:            core.HostDirectoryOpts{},
 			expectedEntries: []string{"file1.txt"},
 			expectedContent: "1",
 		},
 		{
 			name:            "explicit cache",
-			opts:            dagger.HostDirectoryOpts{NoCache: false},
+			opts:            core.HostDirectoryOpts{NoCache: false},
 			expectedEntries: []string{"file1.txt"},
 			expectedContent: "1",
 		},
 		{
 			name:            "explicit no cache",
-			opts:            dagger.HostDirectoryOpts{NoCache: true},
+			opts:            core.HostDirectoryOpts{NoCache: true},
 			expectedEntries: []string{"file1.txt", "file2.txt"},
 			expectedContent: "12",
 		},
 	}
 
 	for _, test := range tests {
-		setup := func() (string, *dagger.Directory) {
+		setup := func() (string, *core.Directory) {
 			dir := filepath.Join(baseDir, identity.NewID())
 			require.NoError(t, os.MkdirAll(dir, 0o755))
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("1"), 0o600))
 
-			directory := c.Host().Directory(dir, test.opts)
+			directory := core.NewQuery(c).Host().Directory(dir, test.opts)
 			return dir, directory
 		}
 
@@ -473,7 +474,7 @@ func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "file2.txt"), []byte("1"), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("12"), 0o600))
 
-			directory = c.Host().Directory(dir, test.opts)
+			directory = core.NewQuery(c).Host().Directory(dir, test.opts)
 			entries, err = directory.Entries(ctx)
 			require.NoError(t, err)
 			require.Equal(t, test.expectedEntries, entries)
@@ -541,49 +542,49 @@ func (HostSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(dir, "a", "b")))
 
 	t.Run("find file in current directory", func(ctx context.Context, t *testctx.T) {
-		found, err := c.Host().FindUp(ctx, "other.txt")
+		found, err := core.NewQuery(c).Host().FindUp(ctx, "other.txt")
 		require.NoError(t, err)
 		require.Equal(t, "other.txt", found)
-		content, err := c.Host().File(found).Contents(ctx)
+		content, err := core.NewQuery(c).Host().File(found).Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "this is a/b/other.txt", content)
 	})
 
 	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
-		found, err := c.Host().FindUp(ctx, "target.txt")
+		found, err := core.NewQuery(c).Host().FindUp(ctx, "target.txt")
 		require.NoError(t, err)
 		require.Equal(t, "../target.txt", found)
-		content, err := c.Host().File(found).Contents(ctx)
+		content, err := core.NewQuery(c).Host().File(found).Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "this is a/target.txt", content)
 	})
 
 	t.Run("find file in root", func(ctx context.Context, t *testctx.T) {
-		found, err := c.Host().FindUp(ctx, "root.txt")
+		found, err := core.NewQuery(c).Host().FindUp(ctx, "root.txt")
 		require.NoError(t, err)
 		require.Equal(t, "../../root.txt", found)
-		content, err := c.Host().File(found).Contents(ctx)
+		content, err := core.NewQuery(c).Host().File(found).Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "this is root.txt", content)
 	})
 
 	t.Run("find directory in parent directory", func(ctx context.Context, t *testctx.T) {
-		found, err := c.Host().FindUp(ctx, "somedir")
+		found, err := core.NewQuery(c).Host().FindUp(ctx, "somedir")
 		require.NoError(t, err)
 		require.Equal(t, "../somedir", found)
-		entries, err := c.Host().Directory(found).Entries(ctx)
+		entries, err := core.NewQuery(c).Host().Directory(found).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"hi.txt"}, entries)
 	})
 
 	t.Run("DO NOT find file in child directory", func(ctx context.Context, t *testctx.T) {
-		found, err := c.Host().FindUp(ctx, "leaf.txt")
+		found, err := core.NewQuery(c).Host().FindUp(ctx, "leaf.txt")
 		require.NoError(t, err)
 		require.Equal(t, "", found)
 	})
 
 	t.Run("DO NOT find non-existent file", func(ctx context.Context, t *testctx.T) {
-		found, err := c.Host().FindUp(ctx, "nonexistent.txt")
+		found, err := core.NewQuery(c).Host().FindUp(ctx, "nonexistent.txt")
 		require.NoError(t, err)
 		require.Equal(t, "", found)
 	})
@@ -598,14 +599,14 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("get simple file", func(ctx context.Context, t *testctx.T) {
-		content, err := c.Host().File(filepath.Join(dir, "a.txt")).Contents(ctx)
+		content, err := core.NewQuery(c).Host().File(filepath.Join(dir, "a.txt")).Contents(ctx)
 
 		require.NoError(t, err)
 		require.Equal(t, "1", content)
 	})
 
 	t.Run("get nested file", func(ctx context.Context, t *testctx.T) {
-		content, err := c.Host().File(filepath.Join(dir, "subdir", "d.txt")).Contents(ctx)
+		content, err := core.NewQuery(c).Host().File(filepath.Join(dir, "subdir", "d.txt")).Contents(ctx)
 
 		require.NoError(t, err)
 		require.Equal(t, "hello world", content)
@@ -618,32 +619,32 @@ func (HostSuite) TestFileCacheBehavior(ctx context.Context, t *testctx.T) {
 
 	tests := []struct {
 		name     string
-		opts     []dagger.HostFileOpts
+		opts     []core.HostFileOpts
 		expected string
 	}{
 		{
 			name:     "default aka cache",
-			opts:     []dagger.HostFileOpts{},
+			opts:     []core.HostFileOpts{},
 			expected: "1",
 		},
 		{
 			name:     "explicit cache",
-			opts:     []dagger.HostFileOpts{{NoCache: false}},
+			opts:     []core.HostFileOpts{{NoCache: false}},
 			expected: "1",
 		},
 		{
 			name:     "explicit no cache",
-			opts:     []dagger.HostFileOpts{{NoCache: true}},
+			opts:     []core.HostFileOpts{{NoCache: true}},
 			expected: "12",
 		},
 	}
 
 	for _, test := range tests {
-		setup := func() (string, *dagger.File) {
+		setup := func() (string, *core.File) {
 			bPath := filepath.Join(dir, rand.Text())
 			require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
 
-			file := c.Host().File(bPath, test.opts...)
+			file := core.NewQuery(c).Host().File(bPath, test.opts...)
 			return bPath, file
 		}
 
@@ -668,7 +669,7 @@ func (HostSuite) TestFileCacheBehavior(ctx context.Context, t *testctx.T) {
 
 			require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
 
-			file = c.Host().File(bPath, test.opts...)
+			file = core.NewQuery(c).Host().File(bPath, test.opts...)
 			content, err = file.Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, test.expected, content)

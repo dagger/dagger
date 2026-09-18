@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -166,13 +167,13 @@ entrypoint = true
 	})
 }
 
-func newWorkspaceModuleSettingsCtr(t *testctx.T, c *dagger.Client, configTOML string) *dagger.Container {
+func newWorkspaceModuleSettingsCtr(t *testctx.T, c *dagger.Client, configTOML string) *core.Container {
 	t.Helper()
 	return nestedDaggerContainer(t, c, "go", "defaults/superconstructor").
 		WithNewFile("dagger.toml", configTOML).
 		WithNewFile("/foo/hello.txt", "hello there!").
 		WithEnvVariable("PASSWORD", "topsecret").
-		WithServiceBinding("www", c.Container().From("nginx").AsService())
+		WithServiceBinding("www", core.NewQuery(c).Container().From("nginx").AsService())
 }
 
 func (WorkspaceSuite) TestWorkspaceModuleSettingsRuntime(ctx context.Context, t *testctx.T) {
@@ -259,8 +260,8 @@ password = "env://PASSWORD"
 service = "tcp://www:80"
 `).WithNewFile(".env", "SUPERCONSTRUCTOR_greeting=from-env")
 
-		stderr, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}, dagger.ContainerWithExecOpts{
-			Expect:                        dagger.ReturnTypeFailure,
+		stderr, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}, core.ContainerWithExecOpts{
+			Expect:                        core.ReturnTypeFailure,
 			ExperimentalPrivilegedNesting: true,
 		}).Stderr(ctx)
 		require.NoError(t, err)
@@ -416,8 +417,8 @@ password = "env://PASSWORD"
 service = "tcp://www:80"
 `)
 
-		errOut, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "count"}, dagger.ContainerWithExecOpts{
-			Expect:                        dagger.ReturnTypeFailure,
+		errOut, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "count"}, core.ContainerWithExecOpts{
+			Expect:                        core.ReturnTypeFailure,
 			ExperimentalPrivilegedNesting: true,
 		}).CombinedOutput(ctx)
 		require.NoError(t, err)
@@ -546,8 +547,8 @@ service = %s
 `, settings["greeting"], settings["count"], settings["dir"], settings["file"], settings["password"], settings["service"]))
 
 				args := append([]string{"dagger", "--progress=report", "call"}, tc.call...)
-				errOut, err := ctr.WithExec(args, dagger.ContainerWithExecOpts{
-					Expect:                        dagger.ReturnTypeFailure,
+				errOut, err := ctr.WithExec(args, core.ContainerWithExecOpts{
+					Expect:                        core.ReturnTypeFailure,
 					ExperimentalPrivilegedNesting: true,
 				}).CombinedOutput(ctx)
 				require.NoError(t, err)
@@ -564,12 +565,12 @@ func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		current := c.CurrentWorkspace()
+		current := core.NewQuery(c).CurrentWorkspace()
 		updated := current.WithConfigValue(
 			"modules.example.source",
 			"github.com/dagger/example",
 		)
-		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
+		added, err := updated.Changes(core.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{workspace.ConfigFileName}, added)
 		require.NoError(t, updated.Export(ctx))

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +16,7 @@ func (WorkspaceSuite) TestGitCLI(ctx context.Context, t *testctx.T) {
 
 	// Keep main behind feature so remote selections must use the requested ref.
 	// A broken module also proves that metadata commands skip module loading.
-	repo := c.Container().From(alpineImage).
+	repo := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithEnvVariable("GIT_AUTHOR_NAME", "Workspace Author").
 		WithEnvVariable("GIT_AUTHOR_EMAIL", "author@example.com").
@@ -54,7 +54,7 @@ done
 	remote := workspaceSelectionRemoteRef(ctx, t, c, repo.
 		WithExec([]string{"git", "checkout", "main"}).Directory("/repo"))
 	remoteURL := strings.TrimSuffix(remote, "@main")
-	base := c.Container().From(alpineImage).
+	base := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithNewFile("/caller/local-only.txt", "caller\n").
@@ -158,7 +158,7 @@ done
 				require.NoError(t, err)
 				require.Equal(t, "nested\n", out)
 
-				out, err = c.Address(address).Directory().File("nested.txt").Contents(ctx)
+				out, err = core.NewQuery(c).Address(address).Directory().File("nested.txt").Contents(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "nested\n", out)
 			})
@@ -175,7 +175,7 @@ done
 				)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, remoteURL+"#refs/heads/feature:items/deep\n", out)
-				out, err = c.Address(strings.TrimSpace(out)).Directory().File("nested.txt").Contents(ctx)
+				out, err = core.NewQuery(c).Address(strings.TrimSpace(out)).Directory().File("nested.txt").Contents(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "deep\n", out)
 			})
@@ -242,9 +242,9 @@ done
 			}
 
 			t.Run("URL without origin", func(ctx context.Context, t *testctx.T) {
-				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "git", "url"}, dagger.ContainerWithExecOpts{
+				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "git", "url"}, core.ContainerWithExecOpts{
 					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect:                        core.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)
@@ -256,20 +256,20 @@ done
 
 			for _, tc := range []struct {
 				name   string
-				change func(*dagger.Container) *dagger.Container
+				change func(*core.Container) *core.Container
 				want   string
 			}{
-				{"tracked change outside cwd", func(ctr *dagger.Container) *dagger.Container {
+				{"tracked change outside cwd", func(ctr *core.Container) *core.Container {
 					return ctr.WithNewFile("/selected/tracked.txt", "changed\n")
 				}, "true\n"},
-				{"staged change", func(ctr *dagger.Container) *dagger.Container {
+				{"staged change", func(ctr *core.Container) *core.Container {
 					return ctr.WithNewFile("/selected/tracked.txt", "staged\n").
 						WithExec([]string{"git", "-C", "/selected", "add", "tracked.txt"})
 				}, "true\n"},
-				{"untracked file", func(ctr *dagger.Container) *dagger.Container {
+				{"untracked file", func(ctr *core.Container) *core.Container {
 					return ctr.WithNewFile("/selected/untracked.txt", "untracked\n")
 				}, "true\n"},
-				{"ignored untracked file", func(ctr *dagger.Container) *dagger.Container {
+				{"ignored untracked file", func(ctr *core.Container) *core.Container {
 					return ctr.WithNewFile("/selected/generated.ignored", "ignored\n")
 				}, "false\n"},
 			} {
@@ -288,9 +288,9 @@ done
 		ctr := base.WithNewFile("/plain/dagger.toml", "[modules]\n")
 		for _, command := range []string{"ref", "sha", "dirty", "log", "url"} {
 			t.Run(command, func(ctx context.Context, t *testctx.T) {
-				result := ctr.WithExec([]string{"dagger", "-W", "/plain", "ws", "git", command}, dagger.ContainerWithExecOpts{
+				result := ctr.WithExec([]string{"dagger", "-W", "/plain", "ws", "git", command}, core.ContainerWithExecOpts{
 					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect:                        core.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)

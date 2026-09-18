@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 )
 
@@ -31,15 +32,15 @@ func TestCache(t *testing.T) {
 func (CacheSuite) TestVolume(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	volID1, err := c.CacheVolume("ab").ID(ctx)
+	volID1, err := core.NewQuery(c).CacheVolume("ab").ID(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, volID1)
 
-	volID2, err := c.CacheVolume("ab").ID(ctx)
+	volID2, err := core.NewQuery(c).CacheVolume("ab").ID(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, volID2)
 
-	volID3, err := c.CacheVolume("ac").ID(ctx)
+	volID3, err := core.NewQuery(c).CacheVolume("ac").ID(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, volID3)
 
@@ -51,9 +52,9 @@ func (CacheSuite) TestVolumeWithSubmount(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("file mount", func(ctx context.Context, t *testctx.T) {
-		subfile := c.Directory().WithNewFile("foo", "bar").File("foo")
-		ctr := c.Container().From(alpineImage).
-			WithMountedCache("/cache", c.CacheVolume(identity.NewID())).
+		subfile := core.NewQuery(c).Directory().WithNewFile("foo", "bar").File("foo")
+		ctr := core.NewQuery(c).Container().From(alpineImage).
+			WithMountedCache("/cache", core.NewQuery(c).CacheVolume(identity.NewID())).
 			WithMountedFile("/cache/subfile", subfile)
 
 		out, err := ctr.WithExec([]string{"cat", "/cache/subfile"}).Stdout(ctx)
@@ -66,9 +67,9 @@ func (CacheSuite) TestVolumeWithSubmount(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("dir mount", func(ctx context.Context, t *testctx.T) {
-		subdir := c.Directory().WithNewFile("foo", "bar").WithNewFile("baz", "qux")
-		ctr := c.Container().From(alpineImage).
-			WithMountedCache("/cache", c.CacheVolume(identity.NewID())).
+		subdir := core.NewQuery(c).Directory().WithNewFile("foo", "bar").WithNewFile("baz", "qux")
+		ctr := core.NewQuery(c).Container().From(alpineImage).
+			WithMountedCache("/cache", core.NewQuery(c).CacheVolume(identity.NewID())).
 			WithMountedDirectory("/cache/subdir", subdir)
 
 		for fileName, expectedContents := range map[string]string{
@@ -107,13 +108,13 @@ func (CacheSuite) TestLockedCacheVolumeSerializesWriters(ctx context.Context, t 
 		i := i
 		eg.Go(func() error {
 			<-start
-			_, err := clients[i].
+			_, err := core.NewQuery(clients[i]).
 				Container().
 				From(alpineImage).
 				WithEnvVariable("RUN_ID", fmt.Sprint(i)).
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				WithMountedCache("/cache", clients[i].CacheVolume(cacheKey, dagger.CacheVolumeOpts{
-					Sharing: dagger.CacheSharingModeLocked,
+				WithMountedCache("/cache", core.NewQuery(clients[i]).CacheVolume(cacheKey, core.CacheVolumeOpts{
+					Sharing: core.CacheSharingModeLocked,
 				})).
 				WithExec([]string{
 					"sh",
@@ -131,11 +132,11 @@ rmdir /cache/in-use`,
 	close(start)
 	require.NoError(t, eg.Wait())
 
-	out, err := clients[0].
+	out, err := core.NewQuery(clients[0]).
 		Container().
 		From(alpineImage).
-		WithMountedCache("/cache", clients[0].CacheVolume(cacheKey, dagger.CacheVolumeOpts{
-			Sharing: dagger.CacheSharingModeLocked,
+		WithMountedCache("/cache", core.NewQuery(clients[0]).CacheVolume(cacheKey, core.CacheVolumeOpts{
+			Sharing: core.CacheSharingModeLocked,
 		})).
 		WithExec([]string{"cat", "/cache/order"}).
 		Stdout(ctx)
@@ -149,8 +150,8 @@ func (CacheSuite) TestLocalImportCacheReuse(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	runExec := func(c *dagger.Client) string {
-		out, err := c.Container().From(alpineImage).
-			WithDirectory("/fromhost", c.Host().Directory(hostDirPath)).
+		out, err := core.NewQuery(c).Container().From(alpineImage).
+			WithDirectory("/fromhost", core.NewQuery(c).Host().Directory(hostDirPath)).
 			WithExec([]string{"stat", "/fromhost/foo"}).
 			WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
 			Stdout(ctx)

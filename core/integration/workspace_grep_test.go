@@ -4,14 +4,14 @@ import (
 	"context"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 func (WorkspaceSuite) TestGrepCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.broken]\nsource = \"does-not-exist\"\n").
 		WithNewFile("root.txt", "needle at root\n").
 		WithNewFile("items/a.txt", "before\n  needle one\nneedle two\nafter\n").
@@ -23,7 +23,7 @@ func (WorkspaceSuite) TestGrepCLI(ctx context.Context, t *testctx.T) {
 		WithNewFile("items/case.txt", "CaseNeedle\n").
 		WithNewFile("items/.ignore", "ignored.txt\n").
 		WithNewFile("items/ignored.txt", "needle ignored\n")
-	base := c.Container().From(alpineImage).
+	base := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "ripgrep"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithNewFile("/caller/local-only.txt", "needle from caller\n").
@@ -157,9 +157,9 @@ func (WorkspaceSuite) TestGrepCLI(ctx context.Context, t *testctx.T) {
 			} {
 				t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 					args := append([]string{"dagger", "-W", workspace, "ws", "grep"}, tc.args...)
-					result := ctr.WithExec(args, dagger.ContainerWithExecOpts{
+					result := ctr.WithExec(args, core.ContainerWithExecOpts{
 						ExperimentalPrivilegedNesting: true,
-						Expect:                        dagger.ReturnTypeFailure,
+						Expect:                        core.ReturnTypeFailure,
 					})
 					status, err := result.ExitCode(ctx)
 					require.NoError(t, err)

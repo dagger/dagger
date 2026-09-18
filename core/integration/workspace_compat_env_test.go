@@ -12,7 +12,7 @@ import (
 	"context"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/dag"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -51,7 +51,7 @@ func (WorkspaceCompatSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 func (WorkspaceCompatSuite) TestLocalDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
-		WithDirectory("data", dag.Directory().WithNewFile("hello.txt", "well hello!")).
+		WithDirectory("data", core.NewDirectory().WithNewFile("hello.txt", "well hello!")).
 		WithWorkdir("defaults").
 		WithNewFile(".env", `DEFAULTS_DIR=../data`).
 		WithExec(daggerCallCmd(".", "dir", "file", "--path=hello.txt", "contents"), nestedExec).
@@ -83,7 +83,7 @@ func (WorkspaceCompatSuite) TestCompatBlueprintDefaults(ctx context.Context, t *
 		dotEnvContents string
 		workdir        string
 		command        []string
-		expect         dagger.ReturnType
+		expect         core.ReturnType
 		stdout         string
 	}{
 		{
@@ -95,7 +95,7 @@ func (WorkspaceCompatSuite) TestCompatBlueprintDefaults(ctx context.Context, t *
 		`,
 			"./app",
 			[]string{"dagger", "call", "message"},
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"salut-inner, monde-inner!",
 		},
 		{
@@ -107,7 +107,7 @@ func (WorkspaceCompatSuite) TestCompatBlueprintDefaults(ctx context.Context, t *
 		`,
 			"./app",
 			[]string{"dagger", "call", "message"},
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"bonjour-outer, monde-outer!",
 		},
 		{
@@ -123,20 +123,20 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 			// Direct `-m ./app` loading is covered by the legacy direct-load
 			// error tests.
 			[]string{"dagger", "-W", "./app", "call", "message"},
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"salutations-outer, planete-outer!",
 		},
 	} {
 		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
 			stdout, err := ctr.
 				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
-				With(func(c *dagger.Container) *dagger.Container {
+				With(func(c *core.Container) *core.Container {
 					if tc.workdir != "" {
 						return c.WithWorkdir(tc.workdir)
 					}
 					return c
 				}).
-				WithExec(tc.command, dagger.ContainerWithExecOpts{
+				WithExec(tc.command, core.ContainerWithExecOpts{
 					Expect:                        tc.expect,
 					ExperimentalPrivilegedNesting: true,
 				}).
@@ -159,7 +159,7 @@ func (WorkspaceCompatSuite) TestCompatToolchainDefaults(ctx context.Context, t *
 		dotEnvContents string
 		workdir        string
 		command        []string
-		expect         dagger.ReturnType
+		expect         core.ReturnType
 		stdout         string
 	}{
 		{
@@ -171,7 +171,7 @@ func (WorkspaceCompatSuite) TestCompatToolchainDefaults(ctx context.Context, t *
 		`,
 			"./app",
 			[]string{"dagger", "call", "defaults", "message"},
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"salut-inner, monde-inner!",
 		},
 		{
@@ -183,7 +183,7 @@ func (WorkspaceCompatSuite) TestCompatToolchainDefaults(ctx context.Context, t *
 		`,
 			"./app",
 			[]string{"dagger", "call", "defaults", "message"},
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"bonjour-outer, monde-outer!",
 		},
 		{
@@ -199,20 +199,20 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 			// Direct `-m ./app` loading is covered by the legacy direct-load
 			// error tests.
 			[]string{"dagger", "-W", "./app", "call", "defaults", "message"},
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"salutations-outer, planete-outer!",
 		},
 	} {
 		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
 			stdout, err := ctr.
 				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
-				With(func(c *dagger.Container) *dagger.Container {
+				With(func(c *core.Container) *core.Container {
 					if tc.workdir != "" {
 						return c.WithWorkdir(tc.workdir)
 					}
 					return c
 				}).
-				WithExec(tc.command, dagger.ContainerWithExecOpts{
+				WithExec(tc.command, core.ContainerWithExecOpts{
 					Expect:                        tc.expect,
 					ExperimentalPrivilegedNesting: true,
 				}).
@@ -254,7 +254,7 @@ func (WorkspaceCompatSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) 
 		`UNRELATED=yo`,
 	)
 	c := connect(ctx, t, dagger.WithWorkdir(tmp))
-	src := c.Host().
+	src := core.NewQuery(c).Host().
 		Directory(testModule(t, "go", "defaults")).
 		AsModuleSource()
 	t.Run("ModuleSource UserDefaults", func(ctx context.Context, t *testctx.T) {
@@ -343,8 +343,8 @@ ECHO_httpUrl=function-url
 			WithNewFile(".env", `simple_value=constructor-simple
 http_url=constructor-url
 `).
-			WithExec(daggerCallCmd(".", "constructor-values"), dagger.ContainerWithExecOpts{
-				Expect:                        dagger.ReturnTypeFailure,
+			WithExec(daggerCallCmd(".", "constructor-values"), core.ContainerWithExecOpts{
+				Expect:                        core.ReturnTypeFailure,
 				ExperimentalPrivilegedNesting: true,
 			}).
 			CombinedOutput(ctx)
@@ -357,8 +357,8 @@ httpUrl=constructor-url
 ECHO_snake_case=function-snake
 ECHO_http_url=function-url
 `).
-			WithExec(daggerCallCmd(".", "echo"), dagger.ContainerWithExecOpts{
-				Expect:                        dagger.ReturnTypeFailure,
+			WithExec(daggerCallCmd(".", "echo"), core.ContainerWithExecOpts{
+				Expect:                        core.ReturnTypeFailure,
 				ExperimentalPrivilegedNesting: true,
 			}).
 			CombinedOutput(ctx)
@@ -381,7 +381,7 @@ func (WorkspaceCompatSuite) TestDependencies(ctx context.Context, t *testctx.T) 
 
 func (WorkspaceCompatSuite) TestOptionalDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	docs := dag.Directory().
+	docs := core.NewDirectory().
 		WithNewFile("README.md", "Thank you for reading me. The end.").
 		WithNewFile("Makefile", "lol")
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
@@ -396,7 +396,7 @@ func (WorkspaceCompatSuite) TestOptionalDirectoryWithIgnore(ctx context.Context,
 
 func (WorkspaceCompatSuite) TestRequiredDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	docs := dag.Directory().
+	docs := core.NewDirectory().
 		WithNewFile("README.md", "Thank you for reading me. The end.").
 		WithNewFile("Makefile", "lol")
 	controlOutput, err := nestedDaggerContainer(t, c, "go", "defaults").
@@ -420,17 +420,17 @@ func (WorkspaceCompatSuite) TestRequiredDirectoryWithIgnore(ctx context.Context,
 func (WorkspaceCompatSuite) TestModuleWithDash(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nestedDaggerContainer(t, c, "go", "defaults/super-dash-dash")
-	outerEnv := c.EnvFile().
+	outerEnv := core.NewQuery(c).EnvFile().
 		WithVariable("SUPERDASHDASH_GREETING", "yay").
 		WithVariable("SUPERDASHDASH_MESSAGE_NAME", "bob").
 		AsFile()
-	innerEnv := c.EnvFile().
+	innerEnv := core.NewQuery(c).EnvFile().
 		WithVariable("GREETING", "yay").
 		WithVariable("MESSAGE_NAME", "bob").
 		AsFile()
 	for _, tc := range []struct {
 		name    string
-		ctr     *dagger.Container
+		ctr     *core.Container
 		modPath string
 	}{
 		{
@@ -479,13 +479,13 @@ func (WorkspaceCompatSuite) TestConstructorOptional(ctx context.Context, t *test
 	base := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile("/foo/hello.txt", "hello there!").
 		WithEnvVariable("PASSWORD", "topsecret")
-	outerEnv := c.EnvFile().
+	outerEnv := core.NewQuery(c).EnvFile().
 		WithVariable("DEFAULTS_DIR", "/foo").
 		WithVariable("DEFAULTS_FILE", "/foo/hello.txt").
 		WithVariable("DEFAULTS_GREETING", "yay").
 		WithVariable("DEFAULTS_password", "env://PASSWORD").
 		AsFile()
-	innerEnv := c.EnvFile().
+	innerEnv := core.NewQuery(c).EnvFile().
 		WithVariable("DIR", "/foo").
 		WithVariable("FILE", "/foo/hello.txt").
 		WithVariable("GREETING", "yay").
@@ -493,7 +493,7 @@ func (WorkspaceCompatSuite) TestConstructorOptional(ctx context.Context, t *test
 		AsFile()
 	for _, tc := range []struct {
 		name    string
-		ctr     *dagger.Container
+		ctr     *core.Container
 		modPath string
 	}{
 		{
@@ -577,10 +577,10 @@ func (WorkspaceCompatSuite) TestConstructorPlaintextSecretDefault(ctx context.Co
 		WithNewFile("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("main.go", `package main
 
-import "dagger/test/internal/dagger"
+import "dagger/test/internal/dagger/core"
 
 func New(
-	password *dagger.Secret,
+	password *core.Secret,
 	somekey string,
 ) *Test {
 	return &Test{}
@@ -635,8 +635,8 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 	base := nestedDaggerContainer(t, c, "go", "defaults/superconstructor").
 		WithNewFile("/foo/hello.txt", "hello there!").
 		WithEnvVariable("PASSWORD", "topsecret").
-		WithServiceBinding("www", c.Container().From("nginx").AsService())
-	outerEnv := c.EnvFile().
+		WithServiceBinding("www", core.NewQuery(c).Container().From("nginx").AsService())
+	outerEnv := core.NewQuery(c).EnvFile().
 		WithVariable("SUPERCONSTRUCTOR_DIR", "/foo").
 		WithVariable("SUPERCONSTRUCTOR_FILE", "/foo/hello.txt").
 		WithVariable("SUPERCONSTRUCTOR_COUNT", "42").
@@ -644,7 +644,7 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 		WithVariable("SUPERCONSTRUCTOR_password", "env://PASSWORD").
 		WithVariable("SUPERCONSTRUCTOR_service", "tcp://www:80").
 		AsFile()
-	innerEnv := c.EnvFile().
+	innerEnv := core.NewQuery(c).EnvFile().
 		WithVariable("DIR", "/foo").
 		WithVariable("FILE", "/foo/hello.txt").
 		WithVariable("COUNT", "42").
@@ -654,7 +654,7 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 		AsFile()
 	for _, tc := range []struct {
 		name    string
-		ctr     *dagger.Container
+		ctr     *core.Container
 		modPath string
 	}{
 		{
@@ -832,9 +832,9 @@ func (WorkspaceCompatSuite) TestSimple(ctx context.Context, t *testctx.T) {
 		dotEnvContents string
 		workdir        string
 		command        []string
-		expect         dagger.ReturnType
+		expect         core.ReturnType
 		stdout         string
-		prepare        func(ctr *dagger.Container) *dagger.Container
+		prepare        func(ctr *core.Container) *core.Container
 	}{
 		{
 			"inner envfile",
@@ -845,7 +845,7 @@ MESSAGE_NAME=monde
 			`,
 			"./defaults",
 			daggerCallCmd(".", "message"),
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"salut, monde!",
 			nil,
 		},
@@ -857,7 +857,7 @@ LIST=1,2,3
 			`,
 			"./defaults",
 			daggerCallCmd(".", "list-string"),
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"1\n2\n3\n",
 			nil,
 		},
@@ -869,9 +869,9 @@ SECRETS=env://FOO,env://BAR,env://BAZ
 			`,
 			"./defaults",
 			daggerCallCmd(".", "list-secrets"),
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"1\n2\n3\n",
-			func(c *dagger.Container) *dagger.Container {
+			func(c *core.Container) *core.Container {
 				c = c.WithEnvVariable("FOO", "1").
 					WithEnvVariable("BAR", "2").
 					WithEnvVariable("BAZ", "3")
@@ -886,7 +886,7 @@ GREETING="one,two"
 			`,
 			"./defaults",
 			daggerCallCmd(".", "message"),
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"one,two, world!",
 			nil,
 		},
@@ -899,7 +899,7 @@ DEFAULTS_MESSAGE_NAME=monde
 			`,
 			"./defaults",
 			daggerCallCmd(".", "message"),
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"bonjour, monde!",
 			nil,
 		},
@@ -912,7 +912,7 @@ DEFAULTS_MESSAGE_NAME=monde
 `,
 			"",
 			[]string{"dagger", "-m", "./defaults", "call", "message"},
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			"bonjour, monde!",
 			nil,
 		},
@@ -924,7 +924,7 @@ DEFAULTS_GREETING='{"foo":"bar"}'
 `,
 			"",
 			[]string{"dagger", "-m", "./defaults", "call", "greeting"},
-			dagger.ReturnTypeSuccess,
+			core.ReturnTypeSuccess,
 			`{"foo":"bar"}`,
 			nil,
 		},
@@ -936,13 +936,13 @@ DEFAULTS_GREETING='{"foo":"bar"}'
 			}
 			stdout, err := ctr.
 				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
-				With(func(c *dagger.Container) *dagger.Container {
+				With(func(c *core.Container) *core.Container {
 					if tc.workdir != "" {
 						return c.WithWorkdir(tc.workdir)
 					}
 					return c
 				}).
-				WithExec(tc.command, dagger.ContainerWithExecOpts{
+				WithExec(tc.command, core.ContainerWithExecOpts{
 					Expect:                        tc.expect,
 					ExperimentalPrivilegedNesting: true,
 				}).

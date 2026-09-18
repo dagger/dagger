@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,7 @@ import (
 
 func (WorkspaceSuite) TestExecCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.tool]
 source = ".dagger/modules/tool"
 `).
@@ -30,9 +31,9 @@ type Tool {
 		WithNewFile("root.txt", "root\n").
 		WithNewFile("excluded.txt", "keep excluded\n").
 		WithNewFile("remove.txt", "remove me\n").
-		WithNewFile("assert-args", "#!/bin/sh\nprintf '%s\\n' \"$@\" > /ws/sub/args.txt\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
+		WithNewFile("assert-args", "#!/bin/sh\nprintf '%s\\n' \"$@\" > /ws/sub/args.txt\n", core.DirectoryWithNewFileOpts{Permissions: 0o755}).
 		WithNewFile("sub/original.txt", "before\n")
-	base := c.Container().From(alpineImage).
+	base := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithDirectory("/selected", source).
@@ -59,9 +60,9 @@ type Tool {
 	t.Run("command output uses progress telemetry", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
 		outputClient := connect(ctx, t, dagger.WithLogOutput(&logs))
-		outputBase := outputClient.Container().From(alpineImage).
+		outputBase := core.NewQuery(outputClient).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, outputClient)).
-			WithDirectory("/output", outputClient.Directory()).
+			WithDirectory("/output", core.NewQuery(outputClient).Directory()).
 			WithWorkdir("/caller")
 		result := outputBase.With(workspaceSelectionDaggerExec(
 			"--progress=report", "-W", "/output", "ws", "exec",
@@ -133,9 +134,9 @@ type Tool {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "exec", "--auto-apply",
 			"sh", "-c", `printf 'partial\n' > partial.txt; exit 23`,
-		}, dagger.ContainerWithExecOpts{
+		}, core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 		status, err := result.ExitCode(ctx)
 		require.NoError(t, err)
@@ -158,9 +159,9 @@ type Tool {
 	})
 
 	t.Run("rootless local checks export only when applying changes", func(ctx context.Context, t *testctx.T) {
-		rootless := c.Container().From(alpineImage).
+		rootless := core.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory("/rootless", c.Directory()).
+			WithDirectory("/rootless", core.NewQuery(c).Directory()).
 			WithWorkdir("/caller")
 		_, err := rootless.With(workspaceSelectionDaggerExec(
 			"-W", "/rootless", "ws", "exec", "true",
@@ -180,9 +181,9 @@ type Tool {
 	t.Run("conflicting apply flags", func(ctx context.Context, t *testctx.T) {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "exec", "--auto-apply", "--no-apply", "true",
-		}, dagger.ContainerWithExecOpts{
+		}, core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 		stderr, err := result.Stderr(ctx)
 		require.NoError(t, err)
@@ -207,9 +208,9 @@ type Tool {
 
 		apply := base.WithExec([]string{
 			"dagger", "-W", remote, "ws", "exec", "--auto-apply", "sh", "-c", `printf 'remote\n' > remote.txt`,
-		}, dagger.ContainerWithExecOpts{
+		}, core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 		stderr, err = apply.Stderr(ctx)
 		require.NoError(t, err)

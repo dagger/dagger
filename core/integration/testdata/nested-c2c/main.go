@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -19,6 +20,7 @@ func main() {
 		fatal(err)
 	}
 	defer c.Close()
+	q := core.NewQuery(c)
 
 	mode, depthStr, svcURLs := os.Args[1], os.Args[2], os.Args[3:]
 
@@ -28,7 +30,7 @@ func main() {
 	}
 
 	if depth > 1 {
-		weHaveToGoDeeper(ctx, c, depth, mode, svcURLs)
+		weHaveToGoDeeper(ctx, q, depth, mode, svcURLs)
 		return
 	}
 
@@ -37,7 +39,7 @@ func main() {
 	eg := new(errgroup.Group)
 	for _, u := range svcURLs {
 		eg.Go(func() error {
-			out, err := fetch(ctx, c, mode, u)
+			out, err := fetch(ctx, q, mode, u)
 			if err != nil {
 				return err
 			}
@@ -68,13 +70,13 @@ func main() {
 	fmt.Print(last)
 }
 
-func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode string, svcURLs []string) {
-	code := c.Host().Directory(".", dagger.HostDirectoryOpts{
+func weHaveToGoDeeper(ctx context.Context, q *core.Query, depth int, mode string, svcURLs []string) {
+	code := q.Host().Directory(".", core.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
 	previous := svcURLs[len(svcURLs)-1]
-	mirrorSvc, mirrorURL := mirror(ctx, c, mode, previous)
+	mirrorSvc, mirrorURL := mirror(ctx, q, mode, previous)
 
 	args := []string{
 		"go", "run", "./core/integration/testdata/nested-c2c/",
@@ -83,18 +85,18 @@ func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode str
 	args = append(args, svcURLs...)
 	args = append(args, mirrorURL)
 
-	out, err := c.Container().
+	out, err := q.Container().
 		From("golang:1.26-alpine").
-		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithMountedCache("/go/pkg/mod", q.CacheVolume("go-mod")).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+		WithMountedCache("/go/build-cache", q.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithEnvVariable("NOW", rand.Text()).
 		WithExec([]string{"cat", "/etc/resolv.conf"}).
 		WithServiceBinding("mirror", mirrorSvc).
-		WithExec(args, dagger.ContainerWithExecOpts{
+		WithExec(args, core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		Stdout(ctx)
@@ -105,39 +107,39 @@ func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode str
 	fmt.Print(out)
 }
 
-func mirror(ctx context.Context, c *dagger.Client, mode, svcURL string) (*dagger.Service, string) {
+func mirror(ctx context.Context, q *core.Query, mode, svcURL string) (*core.Service, string) {
 	switch mode {
 	case "exec":
-		return httpService(ctx, c,
-			c.Container().
+		return httpService(ctx, q,
+			q.Container().
 				From("alpine:3.16.2").
 				WithWorkdir("/srv/www").
 				WithExec([]string{"wget", svcURL}).
 				Directory("."))
 	case "http":
-		return httpService(ctx, c,
-			c.Directory().WithFile("index.html", c.HTTP(svcURL)))
+		return httpService(ctx, q,
+			q.Directory().WithFile("index.html", q.HTTP(svcURL)))
 	case "git":
-		return gitService(ctx, c, c.Git(svcURL).Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}))
+		return gitService(ctx, q, q.Git(svcURL).Branch("main").Tree(core.GitRefTreeOpts{DiscardGitDir: true}))
 	default:
 		fatal(fmt.Errorf("unknown mode: %q", mode))
 		return nil, ""
 	}
 }
 
-func fetch(ctx context.Context, c *dagger.Client, mode, svcURL string) (string, error) {
+func fetch(ctx context.Context, q *core.Query, mode, svcURL string) (string, error) {
 	switch mode {
 	case "exec":
-		return c.Container().
+		return q.Container().
 			From("alpine:3.16.2").
 			WithEnvVariable("NOW", rand.Text()).
 			WithExec([]string{"cat", "/etc/resolv.conf"}).
 			WithExec([]string{"wget", "-O-", svcURL}).
 			Stdout(ctx)
 	case "http":
-		return c.HTTP(svcURL).Contents(ctx)
+		return q.HTTP(svcURL).Contents(ctx)
 	case "git":
-		return c.Git(svcURL).Branch("main").Tree().File("index.html").Contents(ctx)
+		return q.Git(svcURL).Branch("main").Tree().File("index.html").Contents(ctx)
 	default:
 		return "", fmt.Errorf("unknown mode: %q", mode)
 	}
@@ -148,8 +150,8 @@ func fatal(err any) {
 	os.Exit(1)
 }
 
-func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (*dagger.Service, string) {
-	srv := c.Container().
+func httpService(ctx context.Context, q *core.Query, dir *core.Directory) (*core.Service, string) {
+	srv := q.Container().
 		From("python").
 		WithMountedDirectory("/srv/www", dir).
 		WithWorkdir("/srv/www").
@@ -157,7 +159,7 @@ func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (
 		WithDefaultArgs([]string{"python", "-m", "http.server"}).
 		AsService()
 
-	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
+	httpURL, err := srv.Endpoint(ctx, core.ServiceEndpointOpts{
 		Scheme: "http",
 	})
 	if err != nil {
@@ -167,14 +169,14 @@ func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (
 	return srv, httpURL
 }
 
-func gitService(ctx context.Context, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
+func gitService(ctx context.Context, q *core.Query, content *core.Directory) (*core.Service, string) {
 	const gitPort = 9418
-	gitDaemon := c.Container().
+	gitDaemon := q.Container().
 		From("alpine:3.16.2").
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithDirectory("/root/repo", content).
 		WithMountedFile("/root/start.sh",
-			c.Directory().
+			q.Directory().
 				WithNewFile("start.sh", `#!/bin/sh
 
 set -e -u -x

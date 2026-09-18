@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -32,57 +32,57 @@ func TestModuleLoading(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ModuleLoadingSuite{})
 }
 
-func moduleLoadingDaggerExecFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+func moduleLoadingDaggerExecFail(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 	}
 }
 
-func moduleLoadingDaggerCall(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+func moduleLoadingDaggerCall(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func moduleLoadingDaggerCallFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+func moduleLoadingDaggerCallFail(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 	}
 }
 
-func moduleLoadingDaggerFunctions(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
+func moduleLoadingDaggerFunctions(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func moduleLoadingDaggerQuery(query string, args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
+func moduleLoadingDaggerQuery(query string, args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), core.ContainerWithExecOpts{
 			Stdin:                         query,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func moduleLoadingDaggerQueryFail(query string, args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
+func moduleLoadingDaggerQueryFail(query string, args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), core.ContainerWithExecOpts{
 			Stdin:                         query,
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 	}
 }
@@ -208,7 +208,7 @@ func (ModuleLoadingSuite) TestModuleSourceResolution(ctx context.Context, t *tes
 		filePath := filepath.Join(tmpDir, "foo")
 		require.NoError(t, os.WriteFile(filePath, []byte("foo"), 0o644))
 
-		ents, err := c.ModuleSource(tmpDir).ContextDirectory().Entries(ctx)
+		ents, err := core.NewQuery(c).ModuleSource(tmpDir).ContextDirectory().Entries(ctx)
 		require.NoError(t, err)
 		require.Empty(t, ents)
 	})
@@ -354,7 +354,7 @@ type App {
 }
 
 func (ModuleLoadingSuite) TestModuleSourceAddressValidation(ctx context.Context, t *testctx.T) {
-	validModule := func(ctr *dagger.Container) *dagger.Container {
+	validModule := func(ctr *core.Container) *core.Container {
 		return ctr.WithNewFile("main.dang", `
 type App {
   pub hello: String! {

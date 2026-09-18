@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -237,28 +238,28 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// point: it is only reachable from the first turn's history. A restore
 	// that opened an empty conversation would hand the replayer [prompt2]
 	// where it expects [prompt1] and fail the turn outright.
-	chiefModel := cannedRecordingModel(ctx, t, source, source.LLM().
+	chiefModel := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(chiefPrompt1).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: chiefReply1},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: chiefReply1},
 		}).
 		WithPrompt(chiefPrompt2).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: chiefReply2},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: chiefReply2},
 		}))
-	scoutModel := cannedRecordingModel(ctx, t, source, source.LLM().
+	scoutModel := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(scoutPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: scoutReply},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: scoutReply},
 		}))
-	testsModel := cannedRecordingModel(ctx, t, source, source.LLM().
+	testsModel := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(testsPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: testsReply},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: testsReply},
 		}).
 		WithPrompt(testsPrompt2).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: testsReply2},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: testsReply2},
 		}))
 
 	chief := spawnAgent(ctx, t, source, spawnOpts{model: chiefModel, name: "chief"})
@@ -271,12 +272,12 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// affected" as a question for this test. This is the shape that answers
 	// it: a chief's own conversation has exactly this frame, since binding a
 	// module object as its toolset is what makes it a chief.
-	toolID, err := source.Directory().
+	toolID, err := core.NewQuery(source).Directory().
 		WithNewFile("notes.md", "restore me "+run).
 		ID(ctx)
 	require.NoError(t, err)
 	tests := spawnAgent(ctx, t, source, spawnOpts{
-		model: testsModel, name: "tests", toolIDs: []dagger.ID{toolID},
+		model: testsModel, name: "tests", toolIDs: []core.ID{toolID},
 	})
 
 	for _, turn := range []struct {
@@ -397,10 +398,10 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	sink := newAgentTraceSink(t)
 	source := connect(ctx, t, sink.clientOpts()...)
 
-	model := cannedRecordingModel(ctx, t, source, source.LLM().
+	model := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(prompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: answer},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: answer},
 		}))
 	h := spawnAgent(ctx, t, source, spawnOpts{model: model, name: "solo"})
 	_, reply, err := h.sendAndWait(ctx, t, prompt)

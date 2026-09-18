@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,7 @@ func TestUp(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(UpSuite{})
 }
 
-func upTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
+func upTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 	return specificTestEnv(t, c, "services")
 }
 
@@ -36,8 +37,8 @@ func upTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
 // polls the given URL until it responds, verifies the body matches the
 // expected content (case-insensitive grep), then stops the process.
 // Returns a WithContainerFunc suitable for use with Container.WithExec.
-func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		return c.WithExec([]string{"sh", "-c", fmt.Sprintf(`
 			dagger up %s &
 			DAGGER_PID=$!
@@ -66,7 +67,7 @@ func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs i
 			wait $DAGGER_PID 2>/dev/null
 			exit 0
 		`, upArgs, timeoutSecs, url, url, expectBodyContains, expectBodyContains, okMsg,
-		)}, dagger.ContainerWithExecOpts{
+		)}, core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -450,7 +451,7 @@ settings.base = "workspace-container-provider:`+fn+`"
 	})
 
 	t.Run("service ref via CLI flag", func(ctx context.Context, t *testctx.T) {
-		// The consumer's constructor arg (app *dagger.Service) is settable as a
+		// The consumer's constructor arg (app *core.Service) is settable as a
 		// flag on the call; the flag value routes through the same Address
 		// decoders as settings strings.
 		out, err := modGen.
@@ -591,7 +592,7 @@ settings.base = "git:2.40"
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Sync(ctx)
 		require.Error(t, err)
-		var execErr *dagger.ExecError
+		var execErr *core.ExecError
 		combined := err.Error()
 		if errors.As(err, &execErr) {
 			combined = fmt.Sprintf("%s\n%s\n%s", err, execErr.Stdout, execErr.Stderr)

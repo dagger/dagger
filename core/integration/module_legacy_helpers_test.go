@@ -13,41 +13,41 @@ import (
 
 	"github.com/dagger/dagger/internal/testutil"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
-func daggerExec(args ...string) dagger.WithContainerFunc {
+func daggerExec(args ...string) core.WithContainerFunc {
 	return daggerExecRaw(args...)
 }
 
-func daggerExecFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+func daggerExecFail(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 	}
 }
 
-func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerNonNestedExec(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		return c.
 			WithEnvVariable("XDG_STATE_HOME", "/tmp").
 			WithMountedTemp("/tmp").
-			WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+			WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: false,
 			})
 	}
 }
 
-func daggerNonNestedExecFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerNonNestedExecFail(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		return c.
 			WithEnvVariable("XDG_STATE_HOME", "/tmp").
 			WithMountedTemp("/tmp").
-			WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+			WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: false,
-				Expect:                        dagger.ReturnTypeFailure,
+				Expect:                        core.ReturnTypeFailure,
 			})
 	}
 }

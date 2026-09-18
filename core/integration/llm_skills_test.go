@@ -9,13 +9,13 @@ package core
 import (
 	"context"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 // skillIndex returns the LLM's skill discovery index as name → description.
-func skillIndex(ctx context.Context, t *testctx.T, llm *dagger.LLM) map[string]string {
+func skillIndex(ctx context.Context, t *testctx.T, llm *core.LLM) map[string]string {
 	t.Helper()
 	skills, err := llm.Skills(ctx)
 	require.NoError(t, err)
@@ -33,7 +33,7 @@ func skillIndex(ctx context.Context, t *testctx.T, llm *dagger.LLM) map[string]s
 func (LLMSuite) TestSkillsEngineEmbedded(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	skills := skillIndex(ctx, t, c.LLM())
+	skills := skillIndex(ctx, t, core.NewQuery(c).LLM())
 	require.Contains(t, skills, "dang-language")
 	require.NotEmpty(t, skills["dang-language"])
 	require.Contains(t, skills, "dang-dagger-modules")
@@ -43,7 +43,7 @@ func (LLMSuite) TestSkillsEngineEmbedded(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestSkillsWorkspaceDiscovery(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		// named by frontmatter, discoverable anywhere in the tree
 		WithNewFile("docs/skills/publish/SKILL.md",
 			"---\nname: publish\ndescription: How to publish this project.\n---\n\n# Publishing\n").
@@ -54,7 +54,7 @@ func (LLMSuite) TestSkillsWorkspaceDiscovery(ctx context.Context, t *testctx.T) 
 		WithNewFile("junk/SKILL.md", "# no frontmatter here\n").
 		AsWorkspace()
 
-	skills := skillIndex(ctx, t, c.LLM().WithWorkspace(ws))
+	skills := skillIndex(ctx, t, core.NewQuery(c).LLM().WithWorkspace(ws))
 	require.Equal(t, "How to publish this project.", skills["publish"])
 	require.Equal(t, "How to write release notes.", skills["release-notes"])
 	require.NotContains(t, skills, "junk")
@@ -65,15 +65,15 @@ func (LLMSuite) TestSkillsWorkspaceDiscovery(ctx context.Context, t *testctx.T) 
 func (LLMSuite) TestSkillsInstallDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	skillsDir := c.Directory().
+	skillsDir := core.NewQuery(c).Directory().
 		WithNewFile("deploy/SKILL.md",
 			"---\ndescription: Installed deploy guidance.\n---\n\n# Deploy\n")
 	// a directory that is itself a single skill, named by its frontmatter
-	standalone := c.Directory().
+	standalone := core.NewQuery(c).Directory().
 		WithNewFile("SKILL.md",
 			"---\nname: standalone\ndescription: A single skill at the directory root.\n---\n\n# Standalone\n")
 
-	skills := skillIndex(ctx, t, c.LLM().WithSkills(skillsDir).WithSkills(standalone))
+	skills := skillIndex(ctx, t, core.NewQuery(c).LLM().WithSkills(skillsDir).WithSkills(standalone))
 	require.Equal(t, "Installed deploy guidance.", skills["deploy"])
 	require.Equal(t, "A single skill at the directory root.", skills["standalone"])
 	require.Contains(t, skills, "dang-language")
@@ -82,18 +82,18 @@ func (LLMSuite) TestSkillsInstallDirectory(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestSkillsPrecedence(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("skills/deploy/SKILL.md",
 			"---\ndescription: From the workspace.\n---\nworkspace body").
 		AsWorkspace()
-	installed := c.Directory().
+	installed := core.NewQuery(c).Directory().
 		WithNewFile("deploy/SKILL.md",
 			"---\ndescription: From withSkills.\n---\ninstalled body").
 		// engine-embedded skills cannot be shadowed
 		WithNewFile("dang-language/SKILL.md",
 			"---\ndescription: An impostor.\n---\nimpostor body")
 
-	skills := skillIndex(ctx, t, c.LLM().WithWorkspace(ws).WithSkills(installed))
+	skills := skillIndex(ctx, t, core.NewQuery(c).LLM().WithWorkspace(ws).WithSkills(installed))
 	require.Equal(t, "From withSkills.", skills["deploy"],
 		"an installed skill should win a name collision with a workspace skill")
 	require.NotEqual(t, "An impostor.", skills["dang-language"],
@@ -106,17 +106,17 @@ func (LLMSuite) TestSkillsPrecedence(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestSkillsSurviveWorkspaceReset(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	installed := c.Directory().
+	installed := core.NewQuery(c).Directory().
 		WithNewFile("deploy/SKILL.md",
 			"---\ndescription: Installed deploy guidance.\n---\nbody")
-	withSkills := c.LLM().WithSkills(installed)
+	withSkills := core.NewQuery(c).LLM().WithSkills(installed)
 
 	skills := skillIndex(ctx, t, withSkills)
 	require.Equal(t, "Installed deploy guidance.", skills["deploy"])
 
 	portableID, err := withSkills.PortableID(ctx)
 	require.NoError(t, err)
-	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(c), portableID)
 	skills = skillIndex(ctx, t, reloaded)
 	require.Equal(t, "Installed deploy guidance.", skills["deploy"])
 }
@@ -128,35 +128,35 @@ func (LLMSuite) TestSkillsSurviveWorkspaceReset(ctx context.Context, t *testctx.
 func (LLMSuite) TestSkillTools(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	skillsDir := c.Directory().
+	skillsDir := core.NewQuery(c).Directory().
 		WithNewFile("deploy/SKILL.md",
 			"---\nname: deploy\ndescription: How to deploy this project.\n---\n\n# Deploying\nFollow reference/checklist.md before shipping.\n").
 		WithNewFile("deploy/reference/checklist.md",
 			"# Checklist\n- run the tests\n- ship it\n")
 
 	prompt := "How do I deploy this project?"
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt(prompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Let me see what skills are available."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "ListSkills", Arguments: dagger.JSON(`{}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Let me see what skills are available."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "ListSkills", Arguments: core.JSON(`{}`)},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "There is a deploy skill. Let me read it."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "ReadSkill", Arguments: dagger.JSON(`{"name":"deploy"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "There is a deploy skill. Let me read it."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "ReadSkill", Arguments: core.JSON(`{"name":"deploy"}`)},
 		}).
 		WithToolResult("call_2", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "It points to a checklist."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "ReadSkill", Arguments: dagger.JSON(`{"name":"deploy","file":"reference/checklist.md"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "It points to a checklist."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "ReadSkill", Arguments: core.JSON(`{"name":"deploy","file":"reference/checklist.md"}`)},
 		}).
 		WithToolResult("call_3", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Run the tests, then ship it."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Run the tests, then ship it."},
 		}))
 
-	llm := c.LLM().
+	llm := core.NewQuery(c).LLM().
 		WithModel(model).
 		WithSkills(skillsDir).
 		WithPrompt(prompt).

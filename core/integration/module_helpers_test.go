@@ -26,80 +26,81 @@ import (
 	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
-func daggerExecRaw(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+func daggerExecRaw(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
+func daggerQuery(query string, args ...any) core.WithContainerFunc {
 	return daggerQueryAt("", query, args...)
 }
 
-func daggerQueryAt(modPath string, query string, args ...any) dagger.WithContainerFunc {
+func daggerQueryAt(modPath string, query string, args ...any) core.WithContainerFunc {
 	query = fmt.Sprintf(query, args...)
-	return func(c *dagger.Container) *dagger.Container {
+	return func(c *core.Container) *core.Container {
 		execArgs := []string{"dagger", "query"}
 		if modPath != "" {
 			execArgs = append(execArgs, "-m", modPath)
 		}
-		return c.WithExec(execArgs, dagger.ContainerWithExecOpts{
+		return c.WithExec(execArgs, core.ContainerWithExecOpts{
 			Stdin:                         query,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func daggerCall(args ...string) dagger.WithContainerFunc {
+func daggerCall(args ...string) core.WithContainerFunc {
 	return daggerCallAt("", args...)
 }
 
-func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerCallAt(modPath string, args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		execArgs := []string{"dagger", "call"}
 		if modPath != "" {
 			execArgs = append(execArgs, "-m", modPath)
 		}
-		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append(execArgs, args...), core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func daggerCallFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerCallFail(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		return c.WithExec(
 			append([]string{"dagger", "--progress=report", "call"}, args...),
-			dagger.ContainerWithExecOpts{
+			core.ContainerWithExecOpts{
 				UseEntrypoint:                 true,
 				ExperimentalPrivilegedNesting: true,
-				Expect:                        dagger.ReturnTypeFailure,
+				Expect:                        core.ReturnTypeFailure,
 			},
 		)
 	}
 }
 
-func daggerFunctions(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
+func daggerFunctions(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
 // fileContents is syntax sugar for Container.WithNewFile.
-func fileContents(path, contents string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func fileContents(path, contents string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		return c.WithNewFile(path, heredoc.Doc(contents))
 	}
 }
 
-func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerFunc {
+func configFile(dirPath string, cfg *modules.ModuleConfig) core.WithContainerFunc {
 	cfgPath := filepath.Join(dirPath, modules.Filename)
 	cfgBytes, err := modules.MarshalModuleConfigForFilename(&modules.ModuleConfigWithUserFields{
 		ModuleConfig: *cfg,
@@ -118,28 +119,28 @@ func testDataPath(t testing.TB, elems ...string) string {
 	return absPath
 }
 
-func moduleFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Container {
+func moduleFixture(t testing.TB, c *dagger.Client, fixture string) *core.Container {
 	t.Helper()
 	return goGitBase(t, c).
 		With(withModuleFixture(t, c, ".", fixture))
 }
 
-func moduleEntrypointFixture(t testing.TB, c *dagger.Client, name, fixture string) *dagger.Container {
+func moduleEntrypointFixture(t testing.TB, c *dagger.Client, name, fixture string) *core.Container {
 	t.Helper()
 	return goGitBase(t, c).
 		With(withModuleEntrypointFixture(t, c, ".", name, fixture))
 }
 
-func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc {
+func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) core.WithContainerFunc {
 	t.Helper()
 	return withTestdataFixture(t, c, dst, "modules", fixture)
 }
 
-func withModuleEntrypointFixture(t testing.TB, c *dagger.Client, dst, name, fixture string) dagger.WithContainerFunc {
+func withModuleEntrypointFixture(t testing.TB, c *dagger.Client, dst, name, fixture string) core.WithContainerFunc {
 	t.Helper()
 	moduleDir := fixtureJoin(dst, ".dagger/modules/"+name)
 	configPath := fixtureJoin(dst, "dagger.toml")
-	return func(ctr *dagger.Container) *dagger.Container {
+	return func(ctr *core.Container) *core.Container {
 		return ctr.
 			With(withModuleFixture(t, c, moduleDir, fixture)).
 			WithNewFile(configPath, fmt.Sprintf(`[modules.%s]
@@ -149,7 +150,7 @@ entrypoint = true
 	}
 }
 
-func withWorkspaceFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc {
+func withWorkspaceFixture(t testing.TB, c *dagger.Client, dst, fixture string) core.WithContainerFunc {
 	t.Helper()
 	return withTestdataFixture(t, c, dst, fixture)
 }
@@ -161,19 +162,19 @@ func fixtureJoin(dst, elem string) string {
 	return strings.TrimRight(dst, "/") + "/" + elem
 }
 
-func withTestdataFixture(t testing.TB, c *dagger.Client, dst string, elems ...string) dagger.WithContainerFunc {
+func withTestdataFixture(t testing.TB, c *dagger.Client, dst string, elems ...string) core.WithContainerFunc {
 	t.Helper()
 	fixturePath := testDataPath(t, elems...)
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithDirectory(dst, c.Host().Directory(fixturePath))
+	return func(ctr *core.Container) *core.Container {
+		return ctr.WithDirectory(dst, core.NewQuery(c).Host().Directory(fixturePath))
 	}
 }
 
-func withTestdataFile(t testing.TB, c *dagger.Client, dst string, elems ...string) dagger.WithContainerFunc {
+func withTestdataFile(t testing.TB, c *dagger.Client, dst string, elems ...string) core.WithContainerFunc {
 	t.Helper()
 	fixturePath := testDataPath(t, elems...)
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithFile(dst, c.Host().Directory(filepath.Dir(fixturePath)).File(filepath.Base(fixturePath)))
+	return func(ctr *core.Container) *core.Container {
+		return ctr.WithFile(dst, core.NewQuery(c).Host().Directory(filepath.Dir(fixturePath)).File(filepath.Base(fixturePath)))
 	}
 }
 
@@ -183,16 +184,16 @@ func copyTestdataFixture(ctx context.Context, t testing.TB, dst string, elems ..
 	require.NoError(t, err)
 }
 
-func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.WithContainerFunc, func()) {
-	var socket *dagger.Socket
+func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (core.WithContainerFunc, func()) {
+	var socket *core.Socket
 	cleanup := func() {}
 	if tc.sshKey {
 		var sockPath string
 		sockPath, cleanup = setupPrivateRepoSSHAgent(t)
-		socket = c.Host().UnixSocket(sockPath)
+		socket = core.NewQuery(c).Host().UnixSocket(sockPath)
 	}
 
-	return func(ctr *dagger.Container) *dagger.Container {
+	return func(ctr *core.Container) *core.Container {
 		if socket != nil {
 			ctr = ctr.
 				WithUnixSocket("/sock/unix-socket", socket).
@@ -280,11 +281,11 @@ func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 	})
 }
 
-func sdkSource(sdk, contents string) dagger.WithContainerFunc {
+func sdkSource(sdk, contents string) core.WithContainerFunc {
 	return fileContents(sdkSourceFile(sdk), contents)
 }
 
-func sdkSourceAt(dir, sdk, contents string) dagger.WithContainerFunc {
+func sdkSourceAt(dir, sdk, contents string) core.WithContainerFunc {
 	path := sdkSourceFile(sdk)
 	if sdk == "python" && dir != "." && dir != "test" {
 		path = strings.ReplaceAll(path, "test", dir)
@@ -309,7 +310,7 @@ func sdkSourceFile(sdk string) string {
 	}
 }
 
-func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *introspection.Schema {
+func currentSchema(ctx context.Context, t *testctx.T, ctr *core.Container) *introspection.Schema {
 	t.Helper()
 	out, err := ctr.With(daggerQueryAt(".", introspection.Query)).Stdout(ctx)
 	require.NoError(t, err)
@@ -377,7 +378,7 @@ query { host { directory(path: ".") { asModule {
 } } } }
 `)
 
-func inspectModule(ctx context.Context, t *testctx.T, ctr *dagger.Container) gjson.Result {
+func inspectModule(ctx context.Context, t *testctx.T, ctr *core.Container) gjson.Result {
 	t.Helper()
 	out, err := ctr.With(moduleIntrospection).Stdout(ctx)
 	require.NoError(t, err)
@@ -386,19 +387,19 @@ func inspectModule(ctx context.Context, t *testctx.T, ctr *dagger.Container) gjs
 	return result
 }
 
-func inspectModuleObjects(ctx context.Context, t *testctx.T, ctr *dagger.Container) gjson.Result {
+func inspectModuleObjects(ctx context.Context, t *testctx.T, ctr *core.Container) gjson.Result {
 	t.Helper()
 	return inspectModule(ctx, t, ctr).Get("objects.#.asObject")
 }
 
-func inspectModuleInterfaces(ctx context.Context, t *testctx.T, ctr *dagger.Container) gjson.Result {
+func inspectModuleInterfaces(ctx context.Context, t *testctx.T, ctr *core.Container) gjson.Result {
 	t.Helper()
 	return inspectModule(ctx, t, ctr).Get("interfaces.#.asInterface")
 }
 
-func goGitBase(t testing.TB, c *dagger.Client) *dagger.Container {
+func goGitBase(t testing.TB, c *dagger.Client) *core.Container {
 	t.Helper()
-	return c.Container().From(golangImage).
+	return core.NewQuery(c).Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
 		WithExec([]string{"git", "config", "--global", "user.name", "Dagger Tests"}).

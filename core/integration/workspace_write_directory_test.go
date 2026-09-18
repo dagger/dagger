@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -20,37 +21,37 @@ import (
 // in-engine tree (see overlayEdit).
 type workspaceWriteKind struct {
 	name  string
-	setup func(ctx context.Context, t *testctx.T) (*dagger.Client, *dagger.Workspace)
+	setup func(ctx context.Context, t *testctx.T) (*dagger.Client, *core.Workspace)
 }
 
 func workspaceWriteKinds() []workspaceWriteKind {
 	return []workspaceWriteKind{
 		{
 			name: "host-backed",
-			setup: func(ctx context.Context, t *testctx.T) (*dagger.Client, *dagger.Workspace) {
+			setup: func(ctx context.Context, t *testctx.T) (*dagger.Client, *core.Workspace) {
 				workdir := t.TempDir()
 				initGitRepo(ctx, t, workdir)
 				require.NoError(t, os.MkdirAll(filepath.Join(workdir, "target"), 0o755))
 				require.NoError(t, os.WriteFile(
 					filepath.Join(workdir, "target", "keep.txt"), []byte("keep"), 0o644))
 				c := connect(ctx, t, dagger.WithWorkdir(workdir))
-				return c, c.CurrentWorkspace()
+				return c, core.NewQuery(c).CurrentWorkspace()
 			},
 		},
 		{
 			name: "value",
-			setup: func(ctx context.Context, t *testctx.T) (*dagger.Client, *dagger.Workspace) {
+			setup: func(ctx context.Context, t *testctx.T) (*dagger.Client, *core.Workspace) {
 				c := connect(ctx, t)
-				return c, c.Directory().WithNewFile("target/keep.txt", "keep").AsWorkspace()
+				return c, core.NewQuery(c).Directory().WithNewFile("target/keep.txt", "keep").AsWorkspace()
 			},
 		},
 		{
 			name: "git",
-			setup: func(ctx context.Context, t *testctx.T) (*dagger.Client, *dagger.Workspace) {
+			setup: func(ctx context.Context, t *testctx.T) (*dagger.Client, *core.Workspace) {
 				c := connect(ctx, t)
-				content := c.Directory().WithNewFile("target/keep.txt", "keep")
+				content := core.NewQuery(c).Directory().WithNewFile("target/keep.txt", "keep")
 				gitDaemon, repoURL := gitService(ctx, t, c, content)
-				return c, c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+				return c, core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 					Head().AsWorkspace()
 			},
 		},
@@ -67,7 +68,7 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *t
 	for _, kind := range workspaceWriteKinds() {
 		t.Run(kind.name, func(ctx context.Context, t *testctx.T) {
 			c, ws := kind.setup(ctx, t)
-			source := c.Directory().WithNewFile("new.txt", "new")
+			source := core.NewQuery(c).Directory().WithNewFile("new.txt", "new")
 
 			t.Run("layers onto what the path already holds", func(ctx context.Context, t *testctx.T) {
 				written := ws.WithDirectory("target", source)
@@ -76,7 +77,7 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *t
 				require.NoError(t, err)
 				require.Equal(t, []string{"keep.txt", "new.txt"}, entries)
 
-				changes := written.Changes(dagger.WorkspaceChangesOpts{From: ws})
+				changes := written.Changes(core.WorkspaceChangesOpts{From: ws})
 				removed, err := changes.RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Empty(t, removed)
@@ -107,7 +108,7 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *t
 				require.NoError(t, err)
 				require.Equal(t, "keep", keep)
 
-				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				removed, err := written.Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Empty(t, removed)
 			})
@@ -119,7 +120,7 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *t
 				require.NoError(t, err)
 				require.Equal(t, "new", contents)
 
-				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				removed, err := written.Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Empty(t, removed)
 			})
@@ -136,7 +137,7 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *t
 				require.NoError(t, err)
 				require.Equal(t, []string{"keep.txt", "new.txt", "staged.txt"}, entries)
 
-				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				removed, err := written.Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Empty(t, removed)
 			})
@@ -148,7 +149,7 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *t
 				require.NoError(t, err)
 				require.Equal(t, []string{"new.txt"}, entries)
 
-				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				removed, err := written.Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Equal(t, []string{"target/keep.txt"}, removed)
 			})
@@ -163,8 +164,8 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryExportPreservesExistingFiles(ctx
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "target", "keep.txt"), []byte("keep"), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	source := c.Directory().WithNewFile("new.txt", "new")
-	require.NoError(t, c.CurrentWorkspace().WithDirectory("target", source).Export(ctx))
+	source := core.NewQuery(c).Directory().WithNewFile("new.txt", "new")
+	require.NoError(t, core.NewQuery(c).CurrentWorkspace().WithDirectory("target", source).Export(ctx))
 
 	keep, err := os.ReadFile(filepath.Join(workdir, "target", "keep.txt"))
 	require.NoError(t, err)
@@ -180,7 +181,7 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryExportPreservesExistingFiles(ctx
 // config the engine writes in the same init. dagger/go-sdk#30 pinned that
 // guarantee from the SDK side by reading the destination back and layering onto
 // it by hand; withDirectory is that read-back moved into the API.
-func workspaceInitOverExistingFixture(t testing.TB, c *dagger.Client) *dagger.Container {
+func workspaceInitOverExistingFixture(t testing.TB, c *dagger.Client) *core.Container {
 	t.Helper()
 	return goGitBase(t, c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
@@ -202,19 +203,19 @@ module = "init-fixture"
 import (
 	"encoding/json"
 
-	"dagger/init-fixture/internal/dagger"
+	"dagger/init-fixture/internal/dagger/core"
 )
 
 type InitFixture struct{}
 
-func (m *InitFixture) FindClientRoot(ws *dagger.Workspace) *string {
+func (m *InitFixture) FindClientRoot(ws *core.Workspace) *string {
 	_ = ws
 	return nil
 }
 
 // GenerateScope scaffolds the SDK-owned files onto the module config that it
 // writes in the same workspace update.
-func (m *InitFixture) GenerateScope(ws *dagger.Workspace, isModule bool, name string, clients []*dagger.ModuleSource) *dagger.Workspace {
+func (m *InitFixture) GenerateScope(ws *core.Workspace, isModule bool, name string, clients []*core.ModuleSource) *core.Workspace {
 	_ = clients
 	if !isModule {
 		return ws
@@ -268,16 +269,16 @@ func (WorkspaceSuite) TestWorkspaceWithNewDirectoryAgreesWithSyntheticCopy(ctx c
 		filepath.Join(workdir, "target", "keep.txt"), []byte("do not delete me\n"), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	source := c.Directory().WithNewFile("new.txt", "written by withNewDirectory")
+	source := core.NewQuery(c).Directory().WithNewFile("new.txt", "written by withNewDirectory")
 
-	hostBacked := c.CurrentWorkspace()
+	hostBacked := core.NewQuery(c).CurrentWorkspace()
 	synthetic := hostBacked.Directory("/").AsWorkspace()
 
 	hostRemoved, err := hostBacked.WithNewDirectory("/target", source).
-		Changes(dagger.WorkspaceChangesOpts{From: hostBacked}).RemovedPaths(ctx)
+		Changes(core.WorkspaceChangesOpts{From: hostBacked}).RemovedPaths(ctx)
 	require.NoError(t, err)
 	syntheticRemoved, err := synthetic.WithNewDirectory("/target", source).
-		Changes(dagger.WorkspaceChangesOpts{From: synthetic}).RemovedPaths(ctx)
+		Changes(core.WorkspaceChangesOpts{From: synthetic}).RemovedPaths(ctx)
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"target/keep.txt"}, hostRemoved)
@@ -292,7 +293,7 @@ func (WorkspaceSuite) TestWorkspaceWithNewDirectoryReplaces(ctx context.Context,
 	for _, kind := range workspaceWriteKinds() {
 		t.Run(kind.name, func(ctx context.Context, t *testctx.T) {
 			c, ws := kind.setup(ctx, t)
-			source := c.Directory().WithNewFile("new.txt", "new")
+			source := core.NewQuery(c).Directory().WithNewFile("new.txt", "new")
 
 			t.Run("replaces what the path already holds", func(ctx context.Context, t *testctx.T) {
 				written := ws.WithNewDirectory("target", source)
@@ -301,7 +302,7 @@ func (WorkspaceSuite) TestWorkspaceWithNewDirectoryReplaces(ctx context.Context,
 				require.NoError(t, err)
 				require.Equal(t, []string{"new.txt"}, entries)
 
-				changes := written.Changes(dagger.WorkspaceChangesOpts{From: ws})
+				changes := written.Changes(core.WorkspaceChangesOpts{From: ws})
 				removed, err := changes.RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Equal(t, []string{"target/keep.txt"}, removed)
@@ -320,7 +321,7 @@ func (WorkspaceSuite) TestWorkspaceWithNewDirectoryReplaces(ctx context.Context,
 
 				// The whole directory goes, so it is reported as the directory
 				// rather than file by file.
-				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				removed, err := written.Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Contains(t, removed, "target/")
 			})
@@ -332,7 +333,7 @@ func (WorkspaceSuite) TestWorkspaceWithNewDirectoryReplaces(ctx context.Context,
 				require.NoError(t, err)
 				require.Equal(t, "new", contents)
 
-				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				removed, err := written.Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Empty(t, removed)
 			})
@@ -348,7 +349,7 @@ func (WorkspaceSuite) TestWorkspaceWithNewDirectoryReplaces(ctx context.Context,
 				require.NoError(t, err)
 				require.Equal(t, []string{"new.txt"}, entries)
 
-				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				removed, err := written.Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 				require.NoError(t, err)
 				require.Equal(t, []string{"target/keep.txt"}, removed)
 			})
@@ -369,18 +370,18 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryDoesNotPinHostContent(ctx contex
 	require.NoError(t, os.WriteFile(keepPath, []byte("keep"), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	ws := c.CurrentWorkspace()
-	source := c.Directory().WithNewFile("new.txt", "new")
+	ws := core.NewQuery(c).CurrentWorkspace()
+	source := core.NewQuery(c).Directory().WithNewFile("new.txt", "new")
 
 	merged := ws.WithDirectory("target", source)
-	_, err := merged.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+	_, err := merged.Changes(core.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(keepPath, []byte("edited on disk"), 0o644))
 
 	t.Run("a later edit", func(ctx context.Context, t *testctx.T) {
 		changes := merged.WithNewFile("elsewhere.txt", "x").
-			Changes(dagger.WorkspaceChangesOpts{From: ws})
+			Changes(core.WorkspaceChangesOpts{From: ws})
 		modified, err := changes.ModifiedPaths(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, modified, "target/keep.txt")

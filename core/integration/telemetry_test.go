@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type TelemetrySuite struct{}
@@ -32,10 +33,10 @@ func (TelemetrySuite) TestInternalVertexes(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-		dirA := c.Directory().WithNewFile("/foo", "foo")
-		dirB := c.Directory().WithNewFile("/bar", "bar")
+		dirA := core.NewQuery(c).Directory().WithNewFile("/foo", "foo")
+		dirB := core.NewQuery(c).Directory().WithNewFile("/bar", "bar")
 
-		_, err := c.
+		_, err := core.NewQuery(c).
 			Container().
 			From(alpineImage).
 			WithDirectory("/foo", dirA).

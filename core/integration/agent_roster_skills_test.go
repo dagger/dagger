@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -41,7 +42,7 @@ Say hello.
 // spawnAgentWithSkills spawns one agent from a seed carrying a skills
 // directory, and returns its handle. Raw GraphQL, like the other roster
 // tests: the point is the exact chain the agent's ID records.
-func spawnAgentWithSkills(ctx context.Context, t *testctx.T, c *dagger.Client, name string, dirID dagger.ID) *agentHandle {
+func spawnAgentWithSkills(ctx context.Context, t *testctx.T, c *dagger.Client, name string, dirID core.ID) *agentHandle {
 	t.Helper()
 	res := map[string]any{}
 	require.NoError(t, c.Do(ctx,
@@ -110,7 +111,7 @@ func (AgentRuntimeSuite) TestRosterAddressingWithSkills(ctx context.Context, t *
 		name string
 		// skills returns the ID of the skills directory to bind into the
 		// seed. c is the sink-connected client.
-		skills func(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID
+		skills func(ctx context.Context, t *testctx.T, c *dagger.Client) core.ID
 	}{
 		{
 			name:   "client directory",
@@ -118,16 +119,16 @@ func (AgentRuntimeSuite) TestRosterAddressingWithSkills(ctx context.Context, t *
 		},
 		{
 			name: "module directory",
-			skills: func(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID {
+			skills: func(ctx context.Context, t *testctx.T, c *dagger.Client) core.ID {
 				modDir := t.TempDir()
 				copyTestdataFixture(ctx, t, modDir, "modules", "go", "agent-skiller")
-				require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+				require.NoError(t, core.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx))
 				return queryID(ctx, t, c, `{ skiller { skills { id } } }`, "skiller.skills.id")
 			},
 		},
 		{
 			name: "directory from another session",
-			skills: func(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID {
+			skills: func(ctx context.Context, t *testctx.T, c *dagger.Client) core.ID {
 				// A second CLI session, whose telemetry goes nowhere near
 				// this test's sink. It stays open for the duration of the
 				// test, so the value it built stays addressable.
@@ -198,7 +199,7 @@ func (AgentRuntimeSuite) TestRosterAddressingWithSkills(ctx context.Context, t *
 
 // newSkillsDir builds the skills directory through the given client and
 // returns its ID.
-func newSkillsDir(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID {
+func newSkillsDir(ctx context.Context, t *testctx.T, c *dagger.Client) core.ID {
 	t.Helper()
 	res := map[string]any{}
 	require.NoError(t, c.Do(ctx,
@@ -217,13 +218,13 @@ func newSkillsDir(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID
 	out := gjson.Get(string(raw), "directory.withNewFile.id")
 	require.True(t, out.Exists() && out.String() != "",
 		"skills directory ID missing in response: %s", raw)
-	return dagger.ID(out.String())
+	return core.ID(out.String())
 }
 
 // requireSkillInstalled checks that binding the directory really does install
 // the skill, so a case cannot pass or fail on a directory that was never a
 // skills directory in the first place.
-func requireSkillInstalled(ctx context.Context, t *testctx.T, c *dagger.Client, dirID dagger.ID, skill string) {
+func requireSkillInstalled(ctx context.Context, t *testctx.T, c *dagger.Client, dirID core.ID, skill string) {
 	t.Helper()
 	res := map[string]any{}
 	require.NoError(t, c.Do(ctx,

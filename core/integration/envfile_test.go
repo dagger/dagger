@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -120,7 +121,7 @@ func (EnvFileSuite) TestNamespace(ctx context.Context, t *testctx.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			input := c.EnvFile()
+			input := core.NewQuery(c).EnvFile()
 			for k, v := range tc.input {
 				input = input.WithVariable(k, v)
 			}
@@ -131,7 +132,7 @@ func (EnvFileSuite) TestNamespace(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func envFileMap(t *testctx.T, env *dagger.EnvFile) map[string]string {
+func envFileMap(t *testctx.T, env *core.EnvFile) map[string]string {
 	ctx := t.Context()
 	result := map[string]string{}
 	vars, err := env.Variables(ctx)
@@ -302,7 +303,7 @@ func (EnvFileSuite) TestEvalMatch(ctx context.Context, t *testctx.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			env := c.EnvFile()
+			env := core.NewQuery(c).EnvFile()
 			var environ []string
 			for name, inputValue := range tt.vars {
 				environ = append(environ, name+"="+inputValue)
@@ -330,7 +331,7 @@ func (EnvFileSuite) TestEvalMatch(ctx context.Context, t *testctx.T) {
 
 func (EnvFileSuite) TestFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	inputFile := c.File(".env", `animal=dog
+	inputFile := core.NewQuery(c).File(".env", `animal=dog
 message=hello, nice ${animal}
 message2="hello, nice $animal"
 story=once upon a time, there was a man who said $message
@@ -349,7 +350,7 @@ single_quoted_var="hello, nice '$animal'"
 func (EnvFileSuite) TestAsFileDoesNotAliasSelectedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	env := c.EnvFile().
+	env := core.NewQuery(c).EnvFile().
 		WithVariable("animal", "dog").
 		WithVariable("message", "hello")
 
@@ -368,7 +369,7 @@ func (EnvFileSuite) TestAsFileDoesNotAliasSelectedFile(ctx context.Context, t *t
 
 func (EnvFileSuite) TestRemoveReferencedVariable(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	env := c.EnvFile().
+	env := core.NewQuery(c).EnvFile().
 		WithVariable("GREETING", "bonjour").
 		WithVariable("NAME", "monde").
 		WithVariable("message", `$GREETING, $NAME!`)
@@ -382,7 +383,7 @@ func (EnvFileSuite) TestRemoveReferencedVariable(ctx context.Context, t *testctx
 	_, err = env.Get(ctx, "message")
 	require.Error(t, err)
 
-	afterRaw, err := env.Get(ctx, "message", dagger.EnvFileGetOpts{Raw: true})
+	afterRaw, err := env.Get(ctx, "message", core.EnvFileGetOpts{Raw: true})
 	require.NoError(t, err)
 	require.Equal(t, `$GREETING, $NAME!`, afterRaw)
 }
@@ -391,7 +392,7 @@ func (EnvFileSuite) TestRemoveReferencedVariable(ctx context.Context, t *testctx
 func (EnvFileSuite) TestOverride(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	envFile := c.EnvFile().
+	envFile := core.NewQuery(c).EnvFile().
 		WithVariable("FOO", "bar").
 		WithVariable("FOO", "newbar")
 
@@ -429,7 +430,7 @@ func (EnvFileSuite) TestSystemVariableCachePolicy(ctx context.Context, t *testct
 	)
 	for _, userName := range []string{"user1", "user2"} {
 		c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
-		s, err := c.Host().File(".env").AsEnvFile().Get(ctx, "NAME")
+		s, err := core.NewQuery(c).Host().File(".env").AsEnvFile().Get(ctx, "NAME")
 		require.NoError(t, err)
 		require.Equal(t, userName, s)
 	}
@@ -443,8 +444,8 @@ func (EnvFileSuite) TestCaching(ctx context.Context, t *testctx.T) {
 	for i := 0; i < 2; i++ {
 		for _, userName := range []string{"user1", "user2"} {
 			c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
-			ef := c.Host().File(".env").AsEnvFile()
-			s, err := c.Container().From(alpineImage).WithEnvFileVariables(ef).
+			ef := core.NewQuery(c).Host().File(".env").AsEnvFile()
+			s, err := core.NewQuery(c).Container().From(alpineImage).WithEnvFileVariables(ef).
 				WithExec([]string{"sh", "-c", "echo -n \"Hello $NAME here is some random data: \" && cat /dev/urandom | head -c 15 | base64 -w0"}).Stdout(ctx)
 			require.NoError(t, err)
 			expectedPrefix := fmt.Sprintf("Hello %s here is some random data: ", userName)
@@ -470,8 +471,8 @@ func (EnvFileSuite) TestCachingWithIndirectVar(ctx context.Context, t *testctx.T
 	for i := 0; i < 2; i++ {
 		for _, userName := range []string{"user1", "user2"} {
 			c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
-			ef := c.Host().File(".env").AsEnvFile().WithVariable("NAME", "$MYNAME")
-			s, err := c.Container().From(alpineImage).WithEnvFileVariables(ef).
+			ef := core.NewQuery(c).Host().File(".env").AsEnvFile().WithVariable("NAME", "$MYNAME")
+			s, err := core.NewQuery(c).Container().From(alpineImage).WithEnvFileVariables(ef).
 				WithExec([]string{"sh", "-c", "echo -n \"Hello $NAME here is some random data: \" && cat /dev/urandom | head -c 15 | base64 -w0"}).Stdout(ctx)
 			require.NoError(t, err)
 			expectedPrefix := fmt.Sprintf("Hello %s here is some random data: ", userName)
@@ -528,7 +529,7 @@ func (EnvFileSuite) TestSecretFile(ctx context.Context, t *testctx.T) {
 // loading.
 func (EnvFileSuite) TestExportPrefix(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ef := c.File(".env", `export FOO=bar
+	ef := core.NewQuery(c).File(".env", `export FOO=bar
 export BAZ="qux quux"
 export REF=$FOO-suffix
 PLAIN=plain
@@ -553,11 +554,11 @@ PLAIN=plain
 
 func (EnvFileSuite) TestUpdateVariableWithTheSameValue(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ef := c.File(".env", "FOO=bar").AsEnvFile().
+	ef := core.NewQuery(c).File(".env", "FOO=bar").AsEnvFile().
 		WithVariable("FOO", "bar"). // updating this with the same value, causes infinte recursion
 		AsFile()
 
 	// Note that ef.Contents() does not trigger the bug, we must load it into a Directory
-	_, err := c.Directory().WithFile(".env", ef).Sync(ctx)
+	_, err := core.NewQuery(c).Directory().WithFile(".env", ef).Sync(ctx)
 	require.NoError(t, err)
 }

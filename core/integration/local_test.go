@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -38,9 +38,9 @@ func (LocalDirSuite) TestLocalImportsAcrossSessions(ctx context.Context, t *test
 	err := os.WriteFile(filepath.Join(tmpdir, fileName), []byte("1"), 0o644)
 	require.NoError(t, err)
 
-	hostDir1 := c1.Host().Directory(tmpdir)
+	hostDir1 := core.NewQuery(c1).Host().Directory(tmpdir)
 
-	out1, err := c1.Container().From(alpineImage).
+	out1, err := core.NewQuery(c1).Container().From(alpineImage).
 		WithMountedDirectory("/mnt", hostDir1).
 		WithExec([]string{"cat", "/mnt/" + fileName}).
 		Stdout(ctx)
@@ -59,9 +59,9 @@ func (LocalDirSuite) TestLocalImportsAcrossSessions(ctx context.Context, t *test
 
 	c2 := connect(ctx, t)
 
-	hostDir2 := c2.Host().Directory(tmpdir)
+	hostDir2 := core.NewQuery(c2).Host().Directory(tmpdir)
 
-	out2, err := c2.Container().From(alpineImage).
+	out2, err := core.NewQuery(c2).Container().From(alpineImage).
 		WithMountedDirectory("/mnt", hostDir2).
 		WithExec([]string{"cat", "/mnt/" + fileName}).
 		Stdout(ctx)
@@ -109,7 +109,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c1.Host().Directory(root)
+		inDir := core.NewQuery(c1).Host().Directory(root)
 
 		var err error
 		dgst1A, err = inDir.Digest(ctx)
@@ -148,7 +148,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c1.Host().Directory(root, dagger.HostDirectoryOpts{
+		inDir := core.NewQuery(c1).Host().Directory(root, core.HostDirectoryOpts{
 			Include: []string{"**.txt"},
 		})
 
@@ -174,7 +174,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c1.Host().Directory(filepath.Join(root, "a1/b1"))
+		inDir := core.NewQuery(c1).Host().Directory(filepath.Join(root, "a1/b1"))
 
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
@@ -191,7 +191,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c1.Host().Directory(filepath.Join(root, "a2"))
+		inDir := core.NewQuery(c1).Host().Directory(filepath.Join(root, "a2"))
 
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
@@ -214,7 +214,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c1.Host().Directory(filepath.Join(root, "a1"), dagger.HostDirectoryOpts{
+		inDir := core.NewQuery(c1).Host().Directory(filepath.Join(root, "a1"), core.HostDirectoryOpts{
 			Include: []string{"**.rar"},
 		})
 
@@ -236,7 +236,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c2.Host().Directory(root)
+		inDir := core.NewQuery(c2).Host().Directory(root)
 
 		var err error
 		dgst2A, err = inDir.Digest(ctx)
@@ -275,7 +275,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c2.Host().Directory(root, dagger.HostDirectoryOpts{
+		inDir := core.NewQuery(c2).Host().Directory(root, core.HostDirectoryOpts{
 			Include: []string{"**.zip"},
 		})
 
@@ -302,7 +302,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c2.Host().Directory(filepath.Join(root, "a2/b1"))
+		inDir := core.NewQuery(c2).Host().Directory(filepath.Join(root, "a2/b1"))
 
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
@@ -318,7 +318,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c2.Host().Directory(filepath.Join(root, "a1"))
+		inDir := core.NewQuery(c2).Host().Directory(filepath.Join(root, "a1"))
 
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
@@ -341,7 +341,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c2.Host().Directory(filepath.Join(root, "a2"), dagger.HostDirectoryOpts{
+		inDir := core.NewQuery(c2).Host().Directory(filepath.Join(root, "a2"), core.HostDirectoryOpts{
 			Include: []string{"**.zip"},
 		})
 
@@ -390,7 +390,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c3.Host().Directory(root)
+		inDir := core.NewQuery(c3).Host().Directory(root)
 
 		var err error
 		dgst3A, err = inDir.Digest(ctx)
@@ -425,7 +425,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c3.Host().Directory(root, dagger.HostDirectoryOpts{
+		inDir := core.NewQuery(c3).Host().Directory(root, core.HostDirectoryOpts{
 			Include: []string{"**.txt"},
 		})
 
@@ -451,7 +451,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c3.Host().Directory(filepath.Join(root, "a1/b1"))
+		inDir := core.NewQuery(c3).Host().Directory(filepath.Join(root, "a1/b1"))
 
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
@@ -468,7 +468,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c3.Host().Directory(filepath.Join(root, "a2"))
+		inDir := core.NewQuery(c3).Host().Directory(filepath.Join(root, "a2"))
 
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
@@ -487,7 +487,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c3.Host().Directory(filepath.Join(root, "a1"), dagger.HostDirectoryOpts{
+		inDir := core.NewQuery(c3).Host().Directory(filepath.Join(root, "a1"), core.HostDirectoryOpts{
 			Include: []string{"**.rar"},
 		})
 
@@ -509,7 +509,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c4.Host().Directory(root)
+		inDir := core.NewQuery(c4).Host().Directory(root)
 
 		var err error
 		dgst4A, err = inDir.Digest(ctx)
@@ -544,7 +544,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c4.Host().Directory(root, dagger.HostDirectoryOpts{
+		inDir := core.NewQuery(c4).Host().Directory(root, core.HostDirectoryOpts{
 			Include: []string{"**.zip"},
 		})
 
@@ -569,7 +569,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c4.Host().Directory(filepath.Join(root, "a2/b1"))
+		inDir := core.NewQuery(c4).Host().Directory(filepath.Join(root, "a2/b1"))
 
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
@@ -585,7 +585,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c4.Host().Directory(filepath.Join(root, "a1"))
+		inDir := core.NewQuery(c4).Host().Directory(filepath.Join(root, "a1"))
 
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
@@ -608,7 +608,7 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	eg.Go(func() error {
 		<-startCh
 
-		inDir := c4.Host().Directory(filepath.Join(root, "a2"), dagger.HostDirectoryOpts{
+		inDir := core.NewQuery(c4).Host().Directory(filepath.Join(root, "a2"), core.HostDirectoryOpts{
 			Include: []string{"**.zip"},
 		})
 
@@ -672,7 +672,7 @@ func (LocalDirSuite) TestLocalImportParallelFilteredOutMutableEntries(ctx contex
 
 	c := connect(ctx, t)
 	require.NoError(t, writeVolatile(0))
-	_, err := c.Host().Directory(root, dagger.HostDirectoryOpts{NoCache: true}).Digest(ctx)
+	_, err := core.NewQuery(c).Host().Directory(root, core.HostDirectoryOpts{NoCache: true}).Digest(ctx)
 	require.NoError(t, err)
 
 	eg, egCtx := errgroup.WithContext(ctx)
@@ -685,13 +685,13 @@ func (LocalDirSuite) TestLocalImportParallelFilteredOutMutableEntries(ctx contex
 			if err := writeVolatile(round); err != nil {
 				return fmt.Errorf("write volatile files round %d: %w", round, err)
 			}
-			if _, err := c.Host().Directory(root, dagger.HostDirectoryOpts{NoCache: true}).Digest(egCtx); err != nil {
+			if _, err := core.NewQuery(c).Host().Directory(root, core.HostDirectoryOpts{NoCache: true}).Digest(egCtx); err != nil {
 				return fmt.Errorf("populate mirror round %d: %w", round, err)
 			}
 			if err := removeVolatile(); err != nil {
 				return fmt.Errorf("remove volatile files round %d: %w", round, err)
 			}
-			if _, err := c.Host().Directory(root, dagger.HostDirectoryOpts{NoCache: true}).Digest(egCtx); err != nil {
+			if _, err := core.NewQuery(c).Host().Directory(root, core.HostDirectoryOpts{NoCache: true}).Digest(egCtx); err != nil {
 				return fmt.Errorf("delete from mirror round %d: %w", round, err)
 			}
 		}
@@ -717,12 +717,12 @@ func (LocalDirSuite) TestLocalImportParallelFilteredOutMutableEntries(ctx contex
 				keepFile := fmt.Sprintf("needle-%04d.txt", idx)
 				keepPath := keepDir + "/" + keepFile
 				keepContents := fmt.Sprintf("stable contents %d\n", idx)
-				filteredOpts := dagger.HostDirectoryOpts{
+				filteredOpts := core.HostDirectoryOpts{
 					Include: []string{keepPath},
 					NoCache: true,
 				}
 
-				got, err := c.Host().Directory(root, filteredOpts).File(keepPath).Contents(egCtx)
+				got, err := core.NewQuery(c).Host().Directory(root, filteredOpts).File(keepPath).Contents(egCtx)
 				if err != nil {
 					return fmt.Errorf("filtered import worker %d: %w", worker, err)
 				}
@@ -754,7 +754,7 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 	require.NoError(t, fullDir.Apply(root1))
 	c1 := connect(ctx, t)
 
-	inDir1Root := c1.Host().Directory(root1)
+	inDir1Root := core.NewQuery(c1).Host().Directory(root1)
 	dgst1Root, err := inDir1Root.Digest(ctx)
 	require.NoError(t, err)
 	outDir1Root := t.TempDir()
@@ -768,7 +768,7 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 	require.NoError(t, fullDir.Apply(root2))
 	c2 := connect(ctx, t)
 
-	inDir2A := c2.Host().Directory(filepath.Join(root2, "dirA"))
+	inDir2A := core.NewQuery(c2).Host().Directory(filepath.Join(root2, "dirA"))
 	outDir2A := t.TempDir()
 	_, err = inDir2A.Export(ctx, outDir2A)
 	require.NoError(t, err)
@@ -776,7 +776,7 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 		fstest.CreateFile("a", []byte("a"), 0o644),
 	)))
 
-	inDir2B := c2.Host().Directory(filepath.Join(root2, "dirB"))
+	inDir2B := core.NewQuery(c2).Host().Directory(filepath.Join(root2, "dirB"))
 	outDir2B := t.TempDir()
 	_, err = inDir2B.Export(ctx, outDir2B)
 	require.NoError(t, err)
@@ -784,7 +784,7 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 		fstest.CreateFile("b", []byte("a"), 0o644),
 	)))
 
-	inDir2Root := c2.Host().Directory(root2)
+	inDir2Root := core.NewQuery(c2).Host().Directory(root2)
 	dgst2Root, err := inDir2Root.Digest(ctx)
 	require.NoError(t, err)
 	outDir2Root := t.TempDir()
@@ -811,7 +811,7 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 	require.NoError(t, fullDirChanges.Apply(root1))
 	c3 := connect(ctx, t)
 
-	inDir3Root := c3.Host().Directory(root1)
+	inDir3Root := core.NewQuery(c3).Host().Directory(root1)
 	dgst3Root, err := inDir3Root.Digest(ctx)
 	require.NoError(t, err)
 	outDir3Root := t.TempDir()
@@ -838,7 +838,7 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 	require.NoError(t, fullDirChanges.Apply(root1))
 	c4 := connect(ctx, t)
 
-	inDir4Root := c4.Host().Directory(root1)
+	inDir4Root := core.NewQuery(c4).Host().Directory(root1)
 	dgst4Root, err := inDir4Root.Digest(ctx)
 	require.NoError(t, err)
 	outDir4Root := t.TempDir()
@@ -884,7 +884,7 @@ func (LocalDirSuite) TestLocalParentSymlinks(ctx context.Context, t *testctx.T) 
 		require.NoError(t, fullDir.Apply(root))
 		c := connect(ctx, t)
 
-		inDir := c.Host().Directory(filepath.Join(root, "dirALink/dirBLink"))
+		inDir := core.NewQuery(c).Host().Directory(filepath.Join(root, "dirALink/dirBLink"))
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
 		require.NoError(t, err)
@@ -908,7 +908,7 @@ func (LocalDirSuite) TestLocalParentSymlinks(ctx context.Context, t *testctx.T) 
 		require.NoError(t, fullDir.Apply(root))
 		c := connect(ctx, t)
 
-		inDir := c.Host().Directory(filepath.Join(root, "dirALink/dirBLink"))
+		inDir := core.NewQuery(c).Host().Directory(filepath.Join(root, "dirALink/dirBLink"))
 		outDir := t.TempDir()
 		_, err := inDir.Export(ctx, outDir)
 		require.NoError(t, err)

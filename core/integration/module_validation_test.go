@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -64,16 +65,19 @@ func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 	moduleSrcPath, err := filepath.Abs("./testdata/modules/go/namespacing")
 	require.NoError(t, err)
 
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithMountedDirectory("/work", c.Host().Directory(moduleSrcPath)).
+		WithMountedDirectory("/work", core.NewQuery(c).Host().Directory(moduleSrcPath)).
 		WithWorkdir("/work")
 
 	out, err := ctr.
 		With(daggerQueryAt(".", `{fn(s:"yo")}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"fn":["*dagger.Sub1Obj made 1:yo", "*dagger.Sub2Obj made 2:yo"]}`, out)
+	// Sub1Obj/Sub2Obj are dependency-contributed types; dagger.Sub1Obj is now
+	// an alias to core.Sub1Obj, and %T always prints a type's true
+	// underlying name, not the alias it was reached through.
+	require.JSONEq(t, `{"fn":["*core.Sub1Obj made 1:yo", "*core.Sub2Obj made 2:yo"]}`, out)
 }
 
 func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {

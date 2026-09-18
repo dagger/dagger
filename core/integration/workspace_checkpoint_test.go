@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -20,10 +21,10 @@ import (
 // CLI installed, then adds unpushed local history and tracked dirt on top: the
 // shape capture is for, where the remote supplies the base objects and only the
 // local commits and worktree delta have to travel.
-func checkpointCheckoutBase(ctx context.Context, t *testctx.T, c *dagger.Client) *dagger.Container {
+func checkpointCheckoutBase(ctx context.Context, t *testctx.T, c *dagger.Client) *core.Container {
 	t.Helper()
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("tracked.txt", "base\n"))
-	return c.Container().From(golangImage).
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("tracked.txt", "base\n"))
+	return core.NewQuery(c).Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.email", "checkpoint@example.com"}).
 		WithExec([]string{"git", "config", "--global", "user.name", "Checkpoint"}).
@@ -38,19 +39,19 @@ func checkpointCheckoutBase(ctx context.Context, t *testctx.T, c *dagger.Client)
 }
 
 // snapshotWorkspace captures once and returns the SDK object rooted at the resulting ID.
-func snapshotWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace) *dagger.Workspace {
+func snapshotWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, ws *core.Workspace) *core.Workspace {
 	t.Helper()
 	id, err := ws.Snapshot().ID(ctx)
 	require.NoError(t, err)
-	return dagger.Ref[*dagger.Workspace](c, id)
+	return core.Ref[*core.Workspace](core.NewQuery(c), id)
 }
 
 // workspaceRecipeFields inspects the persisted composition for client-bound
 // inputs that cannot be restored without the originating checkout.
 func workspaceRecipeFields(ctx context.Context, t *testctx.T, c *dagger.Client, workspaceID string) []string {
 	t.Helper()
-	ws := dagger.Ref[*dagger.Workspace](c, dagger.ID(workspaceID))
-	recipe, err := c.LLM().WithWorkspace(ws).PortableID(ctx)
+	ws := core.Ref[*core.Workspace](core.NewQuery(c), core.ID(workspaceID))
+	recipe, err := core.NewQuery(c).LLM().WithWorkspace(ws).PortableID(ctx)
 	require.NoError(t, err)
 	var id call.ID
 	require.NoError(t, id.Decode(string(recipe)))
@@ -91,7 +92,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotContentOnlyTreesPreserveHistory(ctx c
 	git("add", "staged.txt")
 	inputStatus := git("status", "--porcelain")
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	frozen := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	frozen := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 	assertWorkspaceFullCheckout(ctx, t, c, frozen, history)
 	out, err := workspaceGitDirectoryContainer(c, frozen).
 		WithExec([]string{"sh", "-ec", "git add -A; git write-tree"}).Stdout(ctx)
@@ -135,7 +136,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	git("commit", "-m", "base")
 	require.NoError(t, os.WriteFile(filename, []byte("dirty"), 0o644))
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	live := c.CurrentWorkspace()
+	live := core.NewQuery(c).CurrentWorkspace()
 	// Prime a live read before capture. Later snapshots must bypass this cache.
 	contents, err := live.File("tracked.txt").Contents(ctx)
 	require.NoError(t, err)
@@ -170,14 +171,14 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	// Untracked files still require approval, without exposing their contents.
 	loose := filepath.Join(workdir, "loose.txt")
 	require.NoError(t, os.WriteFile(loose, []byte("untracked bytes"), 0o644))
-	_, err = c.LLM().WithWorkspace(live).ID(ctx)
+	_, err = core.NewQuery(c).LLM().WithWorkspace(live).ID(ctx)
 	require.NoError(t, err, "binding a workspace must not implicitly capture it")
 	_, err = live.Snapshot().ID(ctx)
 	require.ErrorContains(t, err, "loose.txt")
 	require.NotContains(t, err.Error(), "untracked bytes")
 	// Stage it instead of using the removed per-call include override.
 	git("add", "loose.txt")
-	mounted := snapshotWorkspace(ctx, t, c, live.WithMountedDirectory("/deps", c.Directory().WithNewFile("readme.txt", "mounted")))
+	mounted := snapshotWorkspace(ctx, t, c, live.WithMountedDirectory("/deps", core.NewQuery(c).Directory().WithNewFile("readme.txt", "mounted")))
 	contents, err = mounted.File("/deps/readme.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "mounted", contents)
@@ -211,20 +212,20 @@ func (WorkspaceSuite) TestWorkspaceSnapshotWithoutGitBaseline(ctx context.Contex
 				require.NoError(t, err, "%s", out)
 			}
 			c := connect(ctx, t, dagger.WithWorkdir(workdir))
-			liveID, err := c.CurrentWorkspace().ID(ctx)
+			liveID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 			require.NoError(t, err)
 			if name == "removed-repository" {
 				require.NoError(t, os.RemoveAll(filepath.Join(workdir, ".git")))
 			}
 			for _, overlay := range []bool{false, true} {
-				ws := dagger.Ref[*dagger.Workspace](c, liveID).WithConfigEnvironment("dev").
-					WithMountedDirectory("/deps", c.Directory().WithNewFile("dep.txt", "dependency"))
+				ws := core.Ref[*core.Workspace](core.NewQuery(c), liveID).WithConfigEnvironment("dev").
+					WithMountedDirectory("/deps", core.NewQuery(c).Directory().WithNewFile("dep.txt", "dependency"))
 				if overlay {
 					ws = ws.WithNewFile("overlay.txt", "overlay")
 				}
 				originalID, err := ws.ID(ctx)
 				require.NoError(t, err)
-				ws = dagger.Ref[*dagger.Workspace](c, originalID)
+				ws = core.Ref[*core.Workspace](core.NewQuery(c), originalID)
 				snapshot := snapshotWorkspace(ctx, t, c, ws)
 				id, err := snapshot.ID(ctx)
 				require.NoError(t, err)
@@ -261,7 +262,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPortableCapture(ctx context.Context, 
 
 	initialRecipe, err := base.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | snapshot) | portable-id`)).Stdout(ctx)
 	require.NoError(t, err)
-	initial := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(initialRecipe))).Workspace()
+	initial := core.Ref[*core.LLM](core.NewQuery(c), core.ID(strings.TrimSpace(initialRecipe))).Workspace()
 	initialHead, err := initial.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	initialContents, err := initial.File("tracked.txt").Contents(ctx)
@@ -290,7 +291,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPortableCapture(ctx context.Context, 
 		WithExec([]string{"git", "commit", "-m", "advance remote"}).
 		WithExec([]string{"git", "push", "origin", "HEAD:main"}).Sync(ctx)
 	require.NoError(t, err)
-	restored := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(recipe))).Workspace()
+	restored := core.Ref[*core.LLM](core.NewQuery(c), core.ID(strings.TrimSpace(recipe))).Workspace()
 	contents, err := restored.File("tracked.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "base\ndirty\n", contents)
@@ -314,7 +315,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPortableCapture(ctx context.Context, 
 
 func (WorkspaceSuite) TestWorkspaceSnapshotLoadsFrozenModules(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	root := c.Directory().
+	root := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"modules/probe\"\n").
 		WithNewFile("modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("modules/probe/main.go", `package main
@@ -343,21 +344,21 @@ func (*Probe) Frozen() error { return nil }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotPinsGitOverlayRecipe(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "original"))
-	branch := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main")
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "original"))
+	branch := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main")
 	// Prime the equivalent commit tree through a mutable ref before checkpoint
 	// requests the SHA-pinned tree. Cache sharing must not unpin its recipe.
-	_, err := branch.TargetCommit().Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).Sync(ctx)
+	_, err := branch.TargetCommit().Tree(core.GitCommitTreeOpts{DiscardGitDir: true}).Sync(ctx)
 	require.NoError(t, err)
 	source := branch.AsWorkspace().
 		WithNewFile("base.txt", "overlay")
 	frozenID, err := snapshotWorkspace(ctx, t, c, source).ID(ctx)
 	require.NoError(t, err)
-	frozen := dagger.Ref[*dagger.Workspace](c, frozenID)
+	frozen := core.Ref[*core.Workspace](core.NewQuery(c), frozenID)
 	contents, err := frozen.File("base.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "overlay", contents)
-	recipe, err := c.LLM().WithWorkspace(frozen).PortableID(ctx)
+	recipe, err := core.NewQuery(c).LLM().WithWorkspace(frozen).PortableID(ctx)
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(string(recipe)))
@@ -371,11 +372,11 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPinsGitOverlayRecipe(ctx context.Cont
 
 func (WorkspaceSuite) TestWorkspaceSnapshotPreservesDirectories(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	tree := c.Directory().WithNewFile("last/file", "remove me")
+	tree := core.NewQuery(c).Directory().WithNewFile("last/file", "remove me")
 	daemon, url := gitService(ctx, t, c, tree)
-	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
-	dirs := c.Directory().WithNewDirectory("empty", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700}).WithNewDirectory("gone")
-	source := base.WithChanges(dirs.Changes(c.Directory())).
+	base := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	dirs := core.NewQuery(c).Directory().WithNewDirectory("empty", core.DirectoryWithNewDirectoryOpts{Permissions: 0o700}).WithNewDirectory("gone")
+	source := base.WithChanges(dirs.Changes(core.NewQuery(c).Directory())).
 		WithChanges(tree.WithoutFile("last/file").WithNewDirectory("last").Changes(tree))
 	frozen := snapshotWorkspace(ctx, t, c, source)
 	for _, name := range []string{"empty", "gone", "last"} {
@@ -389,7 +390,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPreservesDirectories(ctx context.Cont
 	require.NoError(t, err)
 	require.Equal(t, 0o700, permissions)
 	// Directory-only removals and a directory-to-file replacement survive too.
-	replacement := c.Directory().WithNewFile("empty", "replacement")
+	replacement := core.NewQuery(c).Directory().WithNewFile("empty", "replacement")
 	updated := snapshotWorkspace(ctx, t, c, frozen.WithChanges(replacement.Changes(dirs)))
 	exists, err := updated.Directory("/").Exists(ctx, "gone")
 	require.NoError(t, err)
@@ -397,7 +398,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPreservesDirectories(ctx context.Cont
 	text, err := updated.File("empty").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "replacement", text)
-	recipe, err := c.LLM().WithWorkspace(updated).PortableID(ctx)
+	recipe, err := core.NewQuery(c).LLM().WithWorkspace(updated).PortableID(ctx)
 	require.NoError(t, err)
 	var id call.ID
 	require.NoError(t, id.Decode(string(recipe)))
@@ -412,10 +413,10 @@ func (WorkspaceSuite) TestWorkspaceSnapshotRejectsNestedClientCapture(ctx contex
 		WithNewFile("modules/probe/main.go", `package main
 import (
  "context"
- "dagger/probe/internal/dagger"
+ "dagger/probe/internal/dagger/core"
 )
 type Probe struct{}
-func (*Probe) Capture(ctx context.Context, source *dagger.Workspace) (string, error) {
+func (*Probe) Capture(ctx context.Context, source *core.Workspace) (string, error) {
  return source.Snapshot().File("tracked.txt").Contents(ctx)
 }
 `)
@@ -426,7 +427,7 @@ func (*Probe) Capture(ctx context.Context, source *dagger.Workspace) (string, er
 
 func (WorkspaceSuite) TestWorkspaceSnapshotHostDirectoryIsSessionOnly(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := snapshotWorkspace(ctx, t, c, c.Host().Directory(t.TempDir()).AsWorkspace())
+	ws := snapshotWorkspace(ctx, t, c, core.NewQuery(c).Host().Directory(t.TempDir()).AsWorkspace())
 	id, err := ws.ID(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
@@ -435,7 +436,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotHostDirectoryIsSessionOnly(ctx contex
 
 func (WorkspaceSuite) TestWorkspaceSnapshotReplayableValuePassesThrough(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := c.Directory().AsWorkspace().WithNewFile("overlay.txt", "portable")
+	ws := core.NewQuery(c).Directory().AsWorkspace().WithNewFile("overlay.txt", "portable")
 	original, err := ws.ID(ctx)
 	require.NoError(t, err)
 	frozen := snapshotWorkspace(ctx, t, c, ws)
@@ -449,13 +450,13 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPreservesRootlessEffectiveTree(ctx co
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "host-only.txt"), []byte("must not be captured"), 0o644))
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
 	for _, edited := range []bool{false, true} {
-		ws := c.CurrentWorkspace()
+		ws := core.NewQuery(c).CurrentWorkspace()
 		if edited {
 			ws = ws.WithNewFile("overlay.txt", "in engine")
 		}
 		originalID, err := ws.ID(ctx)
 		require.NoError(t, err)
-		ws = dagger.Ref[*dagger.Workspace](c, originalID)
+		ws = core.Ref[*core.Workspace](core.NewQuery(c), originalID)
 		originalCwd, err := ws.Cwd(ctx)
 		require.NoError(t, err)
 		frozen := snapshotWorkspace(ctx, t, c, ws)
@@ -472,7 +473,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPreservesRootlessEffectiveTree(ctx co
 		replayID, err := replay.ID(ctx)
 		require.NoError(t, err)
 		require.Equal(t, id, replayID)
-		for _, value := range []*dagger.Workspace{frozen, replay} {
+		for _, value := range []*core.Workspace{frozen, replay} {
 			entries, err := value.Directory("/").Entries(ctx)
 			require.NoError(t, err)
 			if edited {
@@ -495,7 +496,7 @@ func (WorkspaceSuite) TestWorkspaceOverlayWithoutSync(ctx context.Context, t *te
 	loose := filepath.Join(workdir, "loose.txt")
 	require.NoError(t, os.WriteFile(loose, []byte("local only"), 0o644))
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	ws := c.CurrentWorkspace().WithNewFile("first.txt", "first").WithNewFile("second.txt", "second")
+	ws := core.NewQuery(c).CurrentWorkspace().WithNewFile("first.txt", "first").WithNewFile("second.txt", "second")
 	require.NoError(t, ws.Export(ctx))
 	for name, want := range map[string]string{"loose.txt": "local only", "first.txt": "first", "second.txt": "second"} {
 		contents, err := os.ReadFile(filepath.Join(workdir, name))

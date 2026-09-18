@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -189,7 +190,7 @@ func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
 		defer cleanup()
 
-		socket := c.Host().UnixSocket(sockPath)
+		socket := core.NewQuery(c).Host().UnixSocket(sockPath)
 
 		modGen := goGitBase(t, c).
 			WithExec([]string{"apk", "add", "openssh", "openssl"}).
@@ -213,7 +214,7 @@ func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
 		defer cleanup()
 
-		socket := c.Host().UnixSocket(sockPath)
+		socket := core.NewQuery(c).Host().UnixSocket(sockPath)
 
 		const (
 			privateDep        = "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git/privatewrapper"
