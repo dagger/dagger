@@ -56,9 +56,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Workspace]{
 		dagql.NodeFunc("resolve", s.resolve).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Try workspace references before external resolution.",
-				"Local errors stop resolution; only absence permits fallback.",
-				"The Address retains this workspace across module calls and ID reloads."),
+			Doc("Resolve an address in this workspace.",
+				"A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.",
+				"A value without the dag:// scheme keeps its external meaning, such as a container image reference.",
+				"The Address retains this workspace across module calls and ID reloads.").
+			Args(dagql.Arg("value").Doc("A DAG address, or an external reference.")),
 		dagql.NodeFunc("withInitialized", s.withInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
@@ -565,7 +567,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("artifacts", s.artifacts).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Discover static object artifacts from workspace modules without evaluating their values.").
-			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with checks and services.")),
+			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.")),
 		migrateField,
 	}.Install(srv)
 
