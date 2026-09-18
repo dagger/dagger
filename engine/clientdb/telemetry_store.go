@@ -340,6 +340,36 @@ func (l *spanLookup) hasSpan(spanID string) bool {
 	return found
 }
 
+// allSpanIDs snapshots every span ID the index has seen a snapshot of.
+func (l *spanLookup) allSpanIDs() map[string]struct{} {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	ids := make(map[string]struct{}, len(l.lastRow))
+	for id := range l.lastRow {
+		ids[id] = struct{}{}
+	}
+	return ids
+}
+
+// directChildren returns the spans one edge beneath spanID over the same
+// downward edges logScope walks: child edges and cause-purpose link edges.
+func (l *spanLookup) directChildren(spanID string) map[string]struct{} {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	kids := make(map[string]struct{}, len(l.children[spanID])+len(l.causalChildren[spanID]))
+	for _, kid := range l.children[spanID] {
+		if kid != spanID {
+			kids[kid] = struct{}{}
+		}
+	}
+	for _, kid := range l.causalChildren[spanID] {
+		if kid != spanID {
+			kids[kid] = struct{}{}
+		}
+	}
+	return kids
+}
+
 // markedSpanIDs snapshots the check- and test-marked span ID sets.
 func (l *spanLookup) markedSpanIDs() (checks, tests map[string]struct{}) {
 	l.mu.RLock()
@@ -572,6 +602,22 @@ func (s *DB) HasDescendants(spanID string) bool {
 // HasSpan reports whether the store has seen any snapshot of spanID.
 func (s *DB) HasSpan(spanID string) bool {
 	return s.lookup.hasSpan(spanID)
+}
+
+// SpanIDs returns every span ID the store has seen a snapshot of -- the seed
+// for a session-wide scoped load (e.g. a name search), sized by the span
+// count rather than by the snapshot stream. The returned map is a fresh
+// snapshot the caller owns.
+func (s *DB) SpanIDs() map[string]struct{} {
+	return s.lookup.allSpanIDs()
+}
+
+// ChildSpanIDs returns the spans one edge beneath spanID, over the same edges
+// as the log queries: parent→child plus cause-purpose links. Answered from the
+// index alone, so a caller can load a span's immediate surroundings without
+// materializing its whole subtree.
+func (s *DB) ChildSpanIDs(spanID string) map[string]struct{} {
+	return s.lookup.directChildren(spanID)
 }
 
 // AncestorClosure returns ids plus every member's ancestor chain up to its
