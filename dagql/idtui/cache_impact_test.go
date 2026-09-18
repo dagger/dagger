@@ -22,7 +22,7 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 
 	cold := cacheImpactTestDB(t, 10*time.Second, 8*time.Second,
 		telemetryattrs.CacheOutcomeExecuted, telemetryattrs.CacheOutcomeExecuted)
-	cold.MetricsByCall = cacheImpactTestMetrics(90*time.Second, 1_200_000_000)
+	cold.MetricsByCall = cacheImpactTestMetrics(90*time.Second, 900_000_000, 300_000_000)
 	addMemoryTestSeries(cold.MetricsByCall, "branch-a", 2, startForCacheImpactTest(), 10*time.Second, 4_000_000_000)
 	addMemoryTestSeries(cold.MetricsByCall, "branch-b", 3, startForCacheImpactTest(), 8*time.Second, 2_000_000_000)
 	coldFE := NewWithDB(io.Discard, cold)
@@ -35,7 +35,7 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 	// wall time is therefore 2s, not the cold branch's full 10s duration.
 	warm := cacheImpactTestDB(t, 100*time.Millisecond, 8*time.Second,
 		telemetryattrs.CacheOutcomeHit, telemetryattrs.CacheOutcomeExecuted)
-	warm.MetricsByCall = cacheImpactTestMetrics(30*time.Second, 200_000_000)
+	warm.MetricsByCall = cacheImpactTestMetrics(30*time.Second, 100_000_000, 100_000_000)
 	addMemoryTestSeries(warm.MetricsByCall, "branch-b", 3, startForCacheImpactTest(), 8*time.Second, 2_000_000_000)
 	warmFE := NewWithDB(io.Discard, warm)
 	warmFE.prepareCacheImpact()
@@ -50,25 +50,20 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 	if impact.CPU != 60*time.Second {
 		t.Fatalf("CPU saved = %s, want 1m", impact.CPU)
 	}
-	if impact.NetworkBytes != 1_000_000_000 {
-		t.Fatalf("network saved = %d, want 1000000000", impact.NetworkBytes)
+	if impact.NetworkRxBytes != 800_000_000 {
+		t.Fatalf("network rx saved = %d, want 800000000", impact.NetworkRxBytes)
+	}
+	if impact.NetworkTxBytes != 200_000_000 {
+		t.Fatalf("network tx saved = %d, want 200000000", impact.NetworkTxBytes)
 	}
 	if impact.MemoryBytes != 4_000_000_000 || impact.MemoryPeriod != 10*time.Second {
 		t.Fatalf("memory saved = %g bytes for %s, want 4000000000 bytes for 10s", impact.MemoryBytes, impact.MemoryPeriod)
 	}
 
 	got := strings.Join(warmFE.cacheReport(false), "\n")
-	for _, want := range []string{
-		"ESTIMATED CACHE SAVINGS",
-		"Compared with a colder run (0% cache hit rate)",
-		"Finished ~2s faster (20%)",
-		"Compute avoided: ~1m of CPU work",
-		"Network transfer avoided: ~1.0 GB",
-		"Memory occupancy avoided: equivalent to ~4.0 GB held for 10s",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("cache report missing %q:\n%s", want, got)
-		}
+	want := "Cache hits 1/2 (50%) · Saved ~2s wall | ~1m CPU | ~4.0 GB memory for 10s | ~800 MB net rx | ~200 MB net tx"
+	if got != want {
+		t.Fatalf("cache report = %q, want %q", got, want)
 	}
 }
 
@@ -141,12 +136,12 @@ func startForCacheImpactTest() time.Time {
 	return time.Unix(100, 0)
 }
 
-func cacheImpactTestMetrics(cpu time.Duration, network int64) map[string]map[string][]metricdata.DataPoint[int64] {
+func cacheImpactTestMetrics(cpu time.Duration, networkRx, networkTx int64) map[string]map[string][]metricdata.DataPoint[int64] {
 	return map[string]map[string][]metricdata.DataPoint[int64]{
 		"call": {
 			telemetry.CPUStatUsage:   {{Value: cpu.Microseconds()}},
-			telemetry.NetstatRxBytes: {{Value: network / 2}},
-			telemetry.NetstatTxBytes: {{Value: network - network/2}},
+			telemetry.NetstatRxBytes: {{Value: networkRx}},
+			telemetry.NetstatTxBytes: {{Value: networkTx}},
 		},
 	}
 }

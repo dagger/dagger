@@ -19,51 +19,39 @@ func (fe *frontendPretty) cacheReport(zoomed bool) []string {
 		scope = fe.rowsView.Zoomed
 	}
 	stats := fe.db.CacheStats(scope)
-	if stats.Lookups() == 0 && stats.Uncached == 0 && stats.Unsupported == 0 {
+	if stats.Lookups() == 0 {
 		return nil
 	}
 
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
-	lines := []string{reportHeadingLine(out, fe.agentStyle(), "CACHE")}
-	if lookups := stats.Lookups(); lookups > 0 {
-		rate := float64(stats.Hits) / float64(lookups) * 100
-		lines = append(lines, fmt.Sprintf("Cache hit rate: %.0f%% (%d/%d)", rate, stats.Hits, lookups))
-	}
-	lines = append(lines, fmt.Sprintf("Mutualized jobs: %d", stats.Joined))
+	lookups := stats.Lookups()
+	rate := float64(stats.Hits) / float64(lookups) * 100
+	line := fmt.Sprintf("Cache hits %d/%d (%.0f%%)", stats.Hits, lookups, rate)
 	if impact := fe.cacheImpact; impact != nil && !zoomed {
-		lines = append(lines, "", reportHeadingLine(out, fe.agentStyle(), "ESTIMATED CACHE SAVINGS"))
-		lines = append(lines, fmt.Sprintf("Compared with a colder run (%.0f%% cache hit rate)", impact.BaselineRate))
+		var savings []string
 		if impact.Elapsed > 0 {
-			lines = append(lines, fmt.Sprintf("Finished ~%s faster (%.0f%%)", humanDuration(impact.Elapsed), impact.Percent))
+			savings = append(savings, fmt.Sprintf("~%s wall", humanDuration(impact.Elapsed)))
 		}
 		if impact.HasCPU && impact.CPU > 0 {
-			lines = append(lines, fmt.Sprintf("Compute avoided: ~%s of CPU work", humanDuration(impact.CPU)))
-		}
-		if impact.HasNetwork && impact.NetworkBytes > 0 {
-			lines = append(lines, fmt.Sprintf("Network transfer avoided: ~%s", humanize.Bytes(uint64(impact.NetworkBytes))))
+			savings = append(savings, fmt.Sprintf("~%s CPU", humanDuration(impact.CPU)))
 		}
 		if impact.HasMemory && impact.MemoryBytes > 0 {
-			lines = append(lines, fmt.Sprintf(
-				"Memory occupancy avoided: equivalent to ~%s held for %s",
+			savings = append(savings, fmt.Sprintf(
+				"~%s memory for %s",
 				humanize.Bytes(uint64(impact.MemoryBytes)), humanDuration(impact.MemoryPeriod),
 			))
 		}
+		if impact.HasNetworkRx && impact.NetworkRxBytes > 0 {
+			savings = append(savings, fmt.Sprintf("~%s net rx", humanize.Bytes(uint64(impact.NetworkRxBytes))))
+		}
+		if impact.HasNetworkTx && impact.NetworkTxBytes > 0 {
+			savings = append(savings, fmt.Sprintf("~%s net tx", humanize.Bytes(uint64(impact.NetworkTxBytes))))
+		}
+		if len(savings) > 0 {
+			line += " · Saved " + strings.Join(savings, " | ")
+		}
 	}
-
-	var details []string
-	// Executed is intentionally not rendered: it is the complement of hits and
-	// mutualized jobs, and exposing the engine term made the report harder to
-	// understand without adding useful information.
-	if stats.Uncached > 0 {
-		details = append(details, fmt.Sprintf("Cache bypassed: %d", stats.Uncached))
-	}
-	if stats.Unsupported > 0 {
-		details = append(details, fmt.Sprintf("Unsupported records: %d", stats.Unsupported))
-	}
-	if len(details) > 0 {
-		lines = append(lines, strings.Join(details, " · "))
-	}
-	return lines
+	return []string{out.String(line).Foreground(termenv.ANSIBrightBlack).String()}
 }
 
 func humanDuration(d time.Duration) string {

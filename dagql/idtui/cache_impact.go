@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	cacheImpactStoreVersion = 4
+	cacheImpactStoreVersion = 5
 	maxCacheImpactProfiles  = 100
 )
 
@@ -39,17 +39,19 @@ func xdgCacheHome() string {
 }
 
 type cacheRunProfile struct {
-	Key              string        `json:"key"`
-	Elapsed          time.Duration `json:"elapsed"`
-	CPU              time.Duration `json:"cpu,omitempty"`
-	NetworkBytes     int64         `json:"networkBytes,omitempty"`
-	MemoryByteSecs   float64       `json:"memoryByteSeconds,omitempty"`
-	CPUAvailable     bool          `json:"cpuAvailable,omitempty"`
-	NetworkAvailable bool          `json:"networkAvailable,omitempty"`
-	MemoryAvailable  bool          `json:"memoryAvailable,omitempty"`
-	Hits             int           `json:"hits"`
-	Lookups          int           `json:"lookups"`
-	RecordedAt       time.Time     `json:"recordedAt"`
+	Key                string        `json:"key"`
+	Elapsed            time.Duration `json:"elapsed"`
+	CPU                time.Duration `json:"cpu,omitempty"`
+	NetworkRxBytes     int64         `json:"networkRxBytes,omitempty"`
+	NetworkTxBytes     int64         `json:"networkTxBytes,omitempty"`
+	MemoryByteSecs     float64       `json:"memoryByteSeconds,omitempty"`
+	CPUAvailable       bool          `json:"cpuAvailable,omitempty"`
+	NetworkRxAvailable bool          `json:"networkRxAvailable,omitempty"`
+	NetworkTxAvailable bool          `json:"networkTxAvailable,omitempty"`
+	MemoryAvailable    bool          `json:"memoryAvailable,omitempty"`
+	Hits               int           `json:"hits"`
+	Lookups            int           `json:"lookups"`
+	RecordedAt         time.Time     `json:"recordedAt"`
 }
 
 type cacheImpactStore struct {
@@ -58,16 +60,16 @@ type cacheImpactStore struct {
 }
 
 type cacheImpact struct {
-	Elapsed      time.Duration
-	Percent      float64
-	CPU          time.Duration
-	NetworkBytes int64
-	MemoryBytes  float64
-	MemoryPeriod time.Duration
-	HasCPU       bool
-	HasNetwork   bool
-	HasMemory    bool
-	BaselineRate float64
+	Elapsed        time.Duration
+	CPU            time.Duration
+	NetworkRxBytes int64
+	NetworkTxBytes int64
+	MemoryBytes    float64
+	MemoryPeriod   time.Duration
+	HasCPU         bool
+	HasNetworkRx   bool
+	HasNetworkTx   bool
+	HasMemory      bool
 }
 
 // prepareCacheImpact compares this run with a prior cache-cold run of the same
@@ -88,20 +90,18 @@ func (fe *frontendPretty) prepareCacheImpact() {
 	current.Lookups = stats.Lookups()
 	baseline, found, err := loadCacheImpactProfile(cacheImpactFile, current.Key)
 	if err == nil && found && cacheHitRate(current) > cacheHitRate(baseline) {
-		impact := cacheImpact{
-			Elapsed:      max(0, baseline.Elapsed-current.Elapsed),
-			BaselineRate: cacheHitRate(baseline) * 100,
-		}
-		if baseline.Elapsed > 0 {
-			impact.Percent = float64(impact.Elapsed) / float64(baseline.Elapsed) * 100
-		}
+		impact := cacheImpact{Elapsed: max(0, baseline.Elapsed-current.Elapsed)}
 		if baseline.CPUAvailable && current.CPUAvailable {
 			impact.HasCPU = true
 			impact.CPU = max(0, baseline.CPU-current.CPU)
 		}
-		if baseline.NetworkAvailable && current.NetworkAvailable {
-			impact.HasNetwork = true
-			impact.NetworkBytes = max(0, baseline.NetworkBytes-current.NetworkBytes)
+		if baseline.NetworkRxAvailable && current.NetworkRxAvailable {
+			impact.HasNetworkRx = true
+			impact.NetworkRxBytes = max(0, baseline.NetworkRxBytes-current.NetworkRxBytes)
+		}
+		if baseline.NetworkTxAvailable && current.NetworkTxAvailable {
+			impact.HasNetworkTx = true
+			impact.NetworkTxBytes = max(0, baseline.NetworkTxBytes-current.NetworkTxBytes)
 		}
 		if baseline.MemoryAvailable && current.MemoryAvailable && baseline.Elapsed > 0 {
 			memoryByteSecs := max(0, baseline.MemoryByteSecs-current.MemoryByteSecs)
@@ -109,16 +109,15 @@ func (fe *frontendPretty) prepareCacheImpact() {
 			impact.MemoryPeriod = baseline.Elapsed
 			impact.MemoryBytes = memoryByteSecs / baseline.Elapsed.Seconds()
 		}
-		if impact.Elapsed > 0 || impact.CPU > 0 || impact.NetworkBytes > 0 || impact.MemoryBytes > 0 {
+		if impact.Elapsed > 0 || impact.CPU > 0 || impact.NetworkRxBytes > 0 || impact.NetworkTxBytes > 0 || impact.MemoryBytes > 0 {
 			fe.cacheImpact = &impact
 		}
 	}
 
 	// Keep the coldest compatible run observed locally. Real workflows include
 	// bootstrap calls which may already be cached, so requiring a literal zero
-	// hit run would make a baseline practically unobtainable. The report calls
-	// this a "colder run" and only attributes the measured difference between
-	// the two observations.
+	// hit run would make a baseline practically unobtainable. Savings only
+	// attribute the measured difference between the two observations.
 	if stats.Executed > 0 && (!found || cacheHitRate(current) < cacheHitRate(baseline)) {
 		_ = saveCacheImpactProfile(cacheImpactFile, current)
 	}
@@ -174,19 +173,13 @@ func cacheProfile(db *dagui.DB) (cacheRunProfile, bool) {
 			profile.CPUAvailable = true
 			profile.CPU += time.Duration(value) * time.Microsecond
 		}
-		var callNetwork int64
-		var networkAvailable bool
 		if value, ok := lastMetric(metrics[telemetry.NetstatRxBytes]); ok {
-			networkAvailable = true
-			callNetwork += value
+			profile.NetworkRxAvailable = true
+			profile.NetworkRxBytes += value
 		}
 		if value, ok := lastMetric(metrics[telemetry.NetstatTxBytes]); ok {
-			networkAvailable = true
-			callNetwork += value
-		}
-		if networkAvailable {
-			profile.NetworkAvailable = true
-			profile.NetworkBytes += callNetwork
+			profile.NetworkTxAvailable = true
+			profile.NetworkTxBytes += value
 		}
 	}
 	profile.MemoryByteSecs, profile.MemoryAvailable = memoryByteSeconds(db)
