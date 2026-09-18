@@ -69,7 +69,6 @@ func TestValueTransferPersistenceFinalOfferRestart(t *testing.T) {
 	loaded, err = b.LoadResultByResultID(bCtx, "restarted", bServer, values[0].ResultID)
 	require.NoError(t, err)
 	restored := loaded.(dagql.ObjectResult[*File])
-	contents, err := restored.Self().Contents(bCtx, restored, nil, nil)
-	require.NoError(t, err)
+	contents := demandedFileContents(t, bCtx, restored)
 	require.Equal(t, "durable bytes", string(contents))
 }
