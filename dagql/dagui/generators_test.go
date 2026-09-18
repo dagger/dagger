@@ -148,3 +148,83 @@ func TestPromoteGeneratorsTo(t *testing.T) {
 		t.Fatalf("re-promotion duplicated revealed spans: %d", len(host.RevealedSpans.Order))
 	}
 }
+
+func TestSDKGeneratorScopeProgress(t *testing.T) {
+	db := NewDB()
+	root := generatorSnapshot(1, "generate", SpanID{}, "")
+	root.Passthrough = true
+	generator := generatorSnapshot(2, "go-sdk:generate", root.ID, "go-sdk:generate")
+	input := generatorSnapshot(3, "changed: ./left", generator.ID, "")
+	otherInput := generatorSnapshot(4, "changed: ./right", generator.ID, "")
+	app := generatorSnapshot(5, "re-generate ./app", input.ID, "")
+	otherApp := generatorSnapshot(6, "re-generate ./app", otherInput.ID, "")
+	internal := generatorSnapshot(7, "Host.directory", app.ID, "")
+	spans := []SpanSnapshot{root, generator, input, otherInput, app, otherApp}
+	for i := range spans {
+		spans[i].Reveal = true
+		spans[i].EndTime = time.Time{}
+	}
+	internal.EndTime = time.Time{}
+	db.ImportSnapshots(append(spans, internal))
+	db.PromoteGeneratorsTo(db.RootSpan)
+	opts := FrontendOpts{ZoomedSpan: root.ID}
+	rows := db.RowsView(opts).Rows(opts).Order
+	want := []SpanID{generator.ID, input.ID, app.ID, otherInput.ID, otherApp.ID}
+	depths := []int{0, 1, 2, 1, 2}
+	if len(rows) != len(want) {
+		t.Fatalf("expected two input groups with the same target, got %d rows", len(rows))
+	}
+	for i, id := range want {
+		if rows[i].Span.ID != id || rows[i].Depth != depths[i] {
+			t.Fatalf("row %d: got %s at depth %d", i, rows[i].Span.Name, rows[i].Depth)
+		}
+	}
+	if rows[2].Expanded || rows[4].Expanded {
+		t.Fatal("target internals must stay collapsed")
+	}
+	opts.SpanExpanded = map[SpanID]bool{input.ID: false}
+	if rows := db.RowsView(opts).Rows(opts).Order; len(rows) != 4 {
+		t.Fatalf("expected one input collapsed, got %d rows", len(rows))
+	}
+	opts.SpanExpanded = map[SpanID]bool{app.ID: true}
+	rows = db.RowsView(opts).Rows(opts).Order
+	if len(rows) != 6 || rows[3].Span.ID != internal.ID {
+		t.Fatalf("expected expanded target internals, got %+v", rows)
+	}
+}
+
+func TestUpdateRegenerationProgress(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "running", true: "failed"}[failed], func(t *testing.T) {
+			db := NewDB()
+			root := generatorSnapshot(1, "updates", SpanID{}, "")
+			root.Passthrough = true
+			operation := generatorSnapshot(2, "update: api", root.ID, "")
+			operation.Reveal = true
+			regeneration := generatorSnapshot(3, "re-generate", operation.ID, "")
+			regeneration.Reveal = true
+			group := generatorSnapshot(4, "changed: ./api", regeneration.ID, "")
+			group.Reveal = true
+			scope := generatorSnapshot(5, "re-generate ./web", group.ID, "")
+			scope.Reveal = true
+			spans := []SpanSnapshot{root, operation, regeneration, group, scope}
+			for i := range spans {
+				if failed {
+					spans[i].Status = sdktrace.Status{Code: codes.Error, Description: "broken client"}
+				} else {
+					spans[i].EndTime = time.Time{}
+				}
+			}
+			db.ImportSnapshots(spans)
+			opts := FrontendOpts{ZoomedSpan: root.ID}
+			rows := db.RowsView(opts).Rows(opts).Order
+			if len(rows) != 4 || rows[0].Span.Name != "update: api" || rows[1].Span.Name != "re-generate" || rows[3].Span.Name != "re-generate ./web" {
+				t.Fatalf("expected regeneration group and scope, got %+v", rows)
+			}
+			opts.SpanExpanded = map[SpanID]bool{regeneration.ID: false}
+			if rows := db.RowsView(opts).Rows(opts).Order; len(rows) != 2 {
+				t.Fatalf("expected command and collapsed regeneration rows, got %d", len(rows))
+			}
+		})
+	}
+}

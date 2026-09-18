@@ -1,7 +1,15 @@
 package schema
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
+
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -525,6 +533,104 @@ func TestPlanSDKModuleScopes(t *testing.T) {
 			require.Equal(t, test.want, paths)
 		})
 	}
+}
+
+func TestSDKModuleScopeGenerationProgress(t *testing.T) {
+	t.Parallel()
+
+	cfg := &workspace.Config{SDKs: map[string]workspace.SDKEntry{
+		"go": {Module: "go-sdk", Scopes: map[string]workspace.SDKScope{
+			"app":   {Clients: []string{"./left", "./right"}},
+			"left":  {IsModule: true, Clients: []string{"./shared"}},
+			"right": {IsModule: true, Clients: []string{"./shared"}},
+			"other": {Clients: []string{"./shared"}},
+		}},
+		"python": {Module: "python-sdk", Scopes: map[string]workspace.SDKScope{
+			"shared": {IsModule: true},
+		}},
+	}}
+	plan, err := planSDKModuleScopes("app", cfg, ".", map[string]bool{"go": true})
+	require.NoError(t, err)
+
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+	ctx, root := provider.Tracer("test").Start(context.Background(), "go-sdk:generate")
+	defer root.End()
+	progress := &sdkModuleGeneratorProgress{plan: plan, scopes: map[string]*sdkModuleScopeProgress{}}
+	for i, node := range plan.ordered {
+		require.Equal(t, "go", plan.owner[node.key])
+		scopeCtx := progress.start(ctx, node)
+		require.True(t, trace.SpanFromContext(scopeCtx).SpanContext().IsValid())
+		progress.finish(i, nil)
+	}
+	require.Empty(t, progress.scopes)
+	spans := recorder.Ended()
+	byID := map[trace.SpanID]sdktrace.ReadOnlySpan{}
+	for _, span := range spans {
+		byID[span.SpanContext().SpanID()] = span
+	}
+	var paths []string
+	for _, span := range spans {
+		path := span.Name()
+		for parent := byID[span.Parent().SpanID()]; parent != nil; parent = byID[parent.Parent().SpanID()] {
+			require.False(t, parent.EndTime().Before(span.EndTime()), "parent must stay open for child")
+			path = parent.Name() + " > " + path
+		}
+		paths = append(paths, path)
+	}
+	require.Empty(t, progress.inputs)
+	require.ElementsMatch(t, []string{
+		"re-generate ./shared",
+		"changed: ./shared",
+		"changed: ./shared > re-generate ./left",
+		"changed: ./shared > re-generate ./right",
+		"changed: ./left",
+		"changed: ./left > re-generate ./app",
+		"changed: ./right",
+		"changed: ./right > re-generate ./app",
+	}, paths)
+	var appSpans []sdktrace.ReadOnlySpan
+	for _, span := range spans {
+		if span.Name() == "re-generate ./app" {
+			appSpans = append(appSpans, span)
+		}
+	}
+	require.Len(t, appSpans, 2)
+	require.Len(t, appSpans[1].Links(), 1)
+	require.Equal(t, appSpans[0].SpanContext(), appSpans[1].Links()[0].SpanContext)
+	require.WithinDuration(t, appSpans[0].StartTime(), appSpans[1].StartTime(), time.Second)
+	require.WithinDuration(t, appSpans[0].EndTime(), appSpans[1].EndTime(), time.Second)
+}
+
+func TestSDKModuleScopeGenerationProgressFailure(t *testing.T) {
+	cfg := &workspace.Config{SDKs: map[string]workspace.SDKEntry{
+		"go": {Scopes: map[string]workspace.SDKScope{
+			".":   {IsModule: true},
+			"app": {Clients: []string{"."}},
+		}},
+	}}
+	plan, err := planSDKModuleScopes(".", cfg, ".", map[string]bool{"go": true})
+	require.NoError(t, err)
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+	ctx, root := provider.Tracer("test").Start(context.Background(), "go-sdk:generate")
+	defer root.End()
+	progress := &sdkModuleGeneratorProgress{plan: plan, scopes: map[string]*sdkModuleScopeProgress{}}
+	progress.start(ctx, plan.ordered[0])
+	progress.finish(0, nil)
+	require.Len(t, recorder.Ended(), 1, "completed scope must end before its client starts")
+	require.Equal(t, codes.Ok, recorder.Ended()[0].Status().Code)
+	progress.start(ctx, plan.ordered[1])
+	progress.finish(1, errors.New("generation failed"))
+	require.Empty(t, progress.scopes)
+	require.Len(t, recorder.Ended(), 3)
+	for _, span := range recorder.Ended()[1:] {
+		require.Equal(t, codes.Error, span.Status().Code)
+	}
+	require.Equal(t, "changed: ./", recorder.Ended()[2].Name())
+	require.Empty(t, progress.inputs)
 }
 
 func mustModuleEntrySourceWithPinRelativeTo(t *testing.T, configDir, targetDir string, entry workspace.ModuleEntry) string {
