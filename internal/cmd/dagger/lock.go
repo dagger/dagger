@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
@@ -48,7 +49,7 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 		var result struct {
 			CurrentWorkspace struct {
 				Result struct {
-					ID dagger.ID
+					ID core.ID
 				}
 			}
 		}
@@ -65,8 +66,8 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 		if result.CurrentWorkspace.Result.ID == "" {
 			return fmt.Errorf("module update returned no workspace")
 		}
-		current := dag.CurrentWorkspace().WithWorkdir(".")
-		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID).WithWorkdir(".")
+		current := core.NewQuery(dag).CurrentWorkspace().WithWorkdir(".")
+		updated := core.Ref[*core.Workspace](core.NewQuery(dag), result.CurrentWorkspace.Result.ID).WithWorkdir(".")
 		return updateMaterializedWorkspace(ctx, cmd.OutOrStdout(), dag, current, updated)
 	})
 }
@@ -80,17 +81,17 @@ func runWorkspaceUpdate(cmd *cobra.Command, _ []string, noGenerate bool) error {
 }
 
 func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client, noGenerate bool) error {
-	current := dag.CurrentWorkspace()
-	updated := current.WithUpdatedLock(dagger.WorkspaceWithUpdatedLockOpts{NoGenerate: noGenerate})
+	current := core.NewQuery(dag).CurrentWorkspace()
+	updated := current.WithUpdatedLock(core.WorkspaceWithUpdatedLockOpts{NoGenerate: noGenerate})
 	return updateMaterializedWorkspace(ctx, outWriter, dag, current, updated)
 }
 
-func updateMaterializedWorkspace(ctx context.Context, outWriter io.Writer, dag *dagger.Client, current, updated *dagger.Workspace) error {
+func updateMaterializedWorkspace(ctx context.Context, outWriter io.Writer, dag *dagger.Client, current, updated *core.Workspace) error {
 	updated, err := materializeWorkspace(ctx, dag, updated)
 	if err != nil {
 		return err
 	}
-	isEmpty, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
+	isEmpty, err := updated.Changes(core.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	if err != nil {
 		return err
 	}

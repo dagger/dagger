@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -234,8 +235,8 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 
 // Attempt the effectful capture once before binding or composing tools. Capture
 // is best effort: startup and reload can use the live workspace if it fails.
-func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
-	workspace := dag.CurrentWorkspace()
+func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*core.Workspace, error) {
+	workspace := core.NewQuery(dag).CurrentWorkspace()
 	id, err := workspace.Snapshot().ID(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -244,7 +245,7 @@ func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspa
 		slog.WarnContext(ctx, "could not snapshot workspace; continuing with the live workspace", "error", err)
 		return workspace, nil
 	}
-	return dagger.Ref[*dagger.Workspace](dag, id), nil
+	return core.Ref[*core.Workspace](core.NewQuery(dag), id), nil
 }
 
 const listAgentsQuery = `query ListAgents($include: [String!]) {

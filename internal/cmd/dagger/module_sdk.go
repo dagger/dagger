@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -174,10 +175,10 @@ query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON, $
 		"sdk":        sdk,
 		"name":       moduleInitName,
 		"path":       moduleInitPath,
-		"settings":   dagger.JSON(settings),
+		"settings":   core.JSON(settings),
 		"install":    install,
 		"entrypoint": entrypoint,
-	}, disposition, func(ctx context.Context, current *dagger.Workspace) error {
+	}, disposition, func(ctx context.Context, current *core.Workspace) error {
 		name, err := moduleInitResultName(ctx, current)
 		if err != nil {
 			return err
@@ -195,7 +196,7 @@ func moduleInitControl(flags *pflag.FlagSet, name string) *bool {
 	return &value
 }
 
-func moduleInitResultName(ctx context.Context, current *dagger.Workspace) (string, error) {
+func moduleInitResultName(ctx context.Context, current *core.Workspace) (string, error) {
 	if moduleInitName != "" {
 		return moduleInitName, nil
 	}
@@ -322,7 +323,7 @@ func mutateSDKModuleWorkspace(
 	cmd *cobra.Command,
 	query string,
 	variables map[string]any,
-	afterApply func(context.Context, *dagger.Workspace) error,
+	afterApply func(context.Context, *core.Workspace) error,
 ) error {
 	disposition, err := sdkModuleDisposition(cmd, autoApply, false, false, idtui.RunningInAgent())
 	if err != nil {
@@ -353,7 +354,7 @@ func mutateSDKModuleWorkspaceWithDisposition(
 	query string,
 	variables map[string]any,
 	disposition changesetDisposition,
-	afterApply func(context.Context, *dagger.Workspace) error,
+	afterApply func(context.Context, *core.Workspace) error,
 ) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
@@ -363,7 +364,7 @@ func mutateSDKModuleWorkspaceWithDisposition(
 		var result struct {
 			CurrentWorkspace struct {
 				Result struct {
-					ID dagger.ID
+					ID core.ID
 				}
 			}
 		}
@@ -374,8 +375,8 @@ func mutateSDKModuleWorkspaceWithDisposition(
 			return fmt.Errorf("SDK-module workspace operation returned no workspace")
 		}
 
-		current := dag.CurrentWorkspace()
-		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID)
+		current := core.NewQuery(dag).CurrentWorkspace()
+		updated := core.Ref[*core.Workspace](core.NewQuery(dag), result.CurrentWorkspace.Result.ID)
 		applied, err := handleWorkspaceResponseWithDisposition(ctx, dag, current, updated, disposition, cmd.OutOrStdout())
 		if err != nil || !applied || afterApply == nil {
 			return err
@@ -413,7 +414,7 @@ func runSDKModuleClientList(cmd *cobra.Command) error {
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		state, err := loadSDKWorkspaceConfig(ctx, ec.Dagger().CurrentWorkspace(), false)
+		state, err := loadSDKWorkspaceConfig(ctx, core.NewQuery(ec.Dagger()).CurrentWorkspace(), false)
 		if err != nil || state == nil {
 			return err
 		}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
@@ -369,9 +370,9 @@ func (a *sessionAgent) attachReferences(ctx context.Context, input string) strin
 		}
 		ws := llm.Workspace()
 		if fi.IsDir() {
-			ws = ws.WithMountedDirectory(mount, a.session.dag.Host().Directory(abs))
+			ws = ws.WithMountedDirectory(mount, core.NewQuery(a.session.dag).Host().Directory(abs))
 		} else {
-			ws = ws.WithMountedFile(mount, a.session.dag.Host().File(abs))
+			ws = ws.WithMountedFile(mount, core.NewQuery(a.session.dag).Host().File(abs))
 		}
 		llm = llm.WithWorkspace(ws)
 		a.references = append(a.references, info)
@@ -429,13 +430,13 @@ func (a *sessionAgent) attachTunnel(ctx context.Context, tok string, u *url.URL,
 	// the upstream address resolves exactly as it does for the user:
 	// localhost is the user's localhost. The frontend port mirrors the
 	// backend, so the engine-side address keeps the port the user typed.
-	svc := a.session.dag.Host().Service(
-		[]dagger.PortForward{{
+	svc := core.NewQuery(a.session.dag).Host().Service(
+		[]core.PortForward{{
 			Backend:  port,
 			Frontend: port,
-			Protocol: dagger.NetworkProtocolTcp,
+			Protocol: core.NetworkProtocolTcp,
 		}},
-		dagger.HostServiceOpts{Host: u.Hostname()},
+		core.HostServiceOpts{Host: u.Hostname()},
 	)
 	ctx, cancel := context.WithTimeout(ctx, tunnelStartTimeout)
 	defer cancel()
@@ -507,7 +508,7 @@ func (s *LLMSession) workspaceHostPaths(ctx context.Context) (root, cwd string, 
 // cwd and maps them back to host paths. Both are empty when the workspace isn't
 // local.
 func resolveWorkspaceHostPaths(ctx context.Context, dag *dagger.Client) (root, cwd string) {
-	ws := dag.CurrentWorkspace()
+	ws := core.NewQuery(dag).CurrentWorkspace()
 	address, err := ws.Address(ctx)
 	if err != nil {
 		return "", ""

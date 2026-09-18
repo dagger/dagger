@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
@@ -41,7 +42,7 @@ const changesHistoryQuery = `query ChangesHistory($workspace: ID!, $baseline: ID
   } }
 }`
 
-func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseline *dagger.Workspace) (workspaceChangesPreview, error) {
+func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseline *core.Workspace) (workspaceChangesPreview, error) {
 	var preview workspaceChangesPreview
 	workspaceID, err := ws.ID(ctx)
 	if err != nil {
@@ -54,7 +55,7 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 	if workspaceID == baselineID {
 		return preview, nil
 	}
-	changes := ws.Changes(dagger.WorkspaceChangesOpts{From: baseline})
+	changes := ws.Changes(core.WorkspaceChangesOpts{From: baseline})
 	if err := preview.loadHistory(ctx, dag, ws, baseline); err != nil {
 		// A non-Git/unborn checkout still has useful pending edits to display.
 		// Also avoid silently hiding commits on a failed history query.
@@ -69,7 +70,7 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 		// gitignore, but an ignored file the agent wrote is still an edit
 		// the user will save, so the sidebar shows it like the checkpoint
 		// comparison does.
-		changes = ws.Changes(dagger.WorkspaceChangesOpts{From: ws.Git().Head().AsWorkspace()})
+		changes = ws.Changes(core.WorkspaceChangesOpts{From: ws.Git().Head().AsWorkspace()})
 	}
 	entries, err := idtui.PreviewPatch(ctx, dag, changes)
 	if err != nil {
@@ -79,7 +80,7 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 	return preview, nil
 }
 
-func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.Client, ws, baseline *dagger.Workspace) error {
+func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.Client, ws, baseline *core.Workspace) error {
 	workspace, err := ws.Git().Head().ID(ctx)
 	if err != nil {
 		return err

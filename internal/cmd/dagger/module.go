@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	telemetry "github.com/dagger/otel-go"
@@ -292,7 +292,7 @@ func getModuleSourceRefWithDefault() (string, error) {
 // it will try the current directory as a module but provide a nil module if it's not found, not
 // erroring out.
 func optionalModCmdWrapper(
-	fn func(context.Context, *client.Client, *dagger.Module, *cobra.Command, []string) error,
+	fn func(context.Context, *client.Client, *core.Module, *cobra.Command, []string) error,
 	presetSecretToken string,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
@@ -311,7 +311,7 @@ func optionalModCmdWrapper(
 			if err != nil {
 				return err
 			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+			modSrc := core.NewQuery(dag).ModuleSource(modRef, core.ModuleSourceOpts{
 				AllowNotExists: true,
 			})
 			configExists, err := modSrc.ConfigExists(ctx)
@@ -322,7 +322,7 @@ func optionalModCmdWrapper(
 			case configExists:
 				serveCtx, span := Tracer().Start(ctx, "load module: "+modRef)
 				mod := modSrc.AsModule()
-				serveErr := mod.Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
+				serveErr := mod.Serve(serveCtx, core.ModuleServeOpts{IncludeDependencies: true})
 				telemetry.EndWithCause(span, &serveErr)
 				if serveErr != nil {
 					return fmt.Errorf("failed to serve module: %w", serveErr)
