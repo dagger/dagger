@@ -4,22 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dagger/dagger/core/dagaddress"
-	"github.com/dagger/dagger/core/workspace"
-	"github.com/dagger/dagger/engine/telemetryattrs"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	"path"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/dagaddress"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -40,10 +39,10 @@ var generateCmd = &cobra.Command{
 	Long: `Generate derived files for your project — code, SDKs, types, docs, etc.
 
 Examples:
-  dagger generate                            # Generate all assets
-  dagger generate -l                         # List all available generators
-  dagger generate --no-apply                 # Show generated changes without applying them
-  dagger generate dag://go/bin                     # Generate by selecting the generator function
+  dagger generate                                     # Generate all assets
+  dagger generate -l                                  # List all available generators
+  dagger generate --no-apply                          # Show generated changes without applying them
+  dagger generate dag://go/bin                        # Generate by selecting the generator function
   dagger -W github.com/acme/ws generate dag://go/bin  # Generate against explicit workspace
 `,
 	Args: cobra.ArbitraryArgs,
@@ -54,7 +53,7 @@ Examples:
 		}
 
 		params := client.Params{
-			LoadWorkspaceModules: true,
+			SkipWorkspaceModules: true,
 		}
 		params, err = artifactClientParams(params, args)
 		if err != nil {
@@ -64,6 +63,9 @@ Examples:
 			cmd.Context(),
 			params,
 			func(ctx context.Context, engineClient *client.Client) error {
+				ctx, span := Tracer().Start(ctx, "generators", telemetry.Passthrough())
+				defer span.End()
+				slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 				dag := engineClient.Dagger()
 				ws := dag.CurrentWorkspace()
 				all, err := commandArtifacts(ctx, dag, ws, args, generateRequireLoad)
@@ -74,6 +76,7 @@ Examples:
 				if generateListMode {
 					return listArtifactSelection(ctx, dag, generators, cmd.OutOrStdout())
 				}
+				Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
 				failures, err := artifactLoadFailures(ctx, dag, all)
 				if err != nil {
 					return err
@@ -107,15 +110,10 @@ For an up-to-date check that fails on pending changes, use dagger check --genera
 	return changesetDispositionPrompt, nil
 }
 
-// 'dagger generators' (runs by default)
-func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.Artifacts, failures []artifactLoadFailure, cmd *cobra.Command, disposition changesetDisposition) (rerr error) {
-	ctx, zoomSpan := Tracer().Start(ctx, "generators", telemetry.Passthrough())
-	defer zoomSpan.End()
-	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
-	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.Artifacts, failures []artifactLoadFailure, cmd *cobra.Command, disposition changesetDisposition) (rerr error) {
 	previewOut := cmd.ErrOrStderr()
 	if disposition == changesetDispositionNoApply {
-		// SetPrimary above focuses rendering on the generators span. Attach the
+		// The primary span focuses rendering on generators. Attach the
 		// preview to that span too; command stderr is attached to the root span
 		// and would otherwise be hidden by plain/report progress frontends.
 		previewStdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
@@ -125,7 +123,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagg
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	results, err := evaluateArtifacts(ctx, dag, generatorGroup, false)
+	results, err := evaluateArtifacts(ctx, dag, generators, false)
 	if err != nil {
 		return err
 	}
@@ -170,7 +168,7 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 		return nil
 	}
 	ws := dag.CurrentWorkspace()
-	cfg, err := artifactWorkspaceConfig(ctx, dag, ws)
+	cfg, err := artifactWorkspaceConfig(ctx, ws)
 	if err != nil {
 		return err
 	}
@@ -191,7 +189,7 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 		return err
 	}
 	touched := append(append(added, modified...), removed...)
-	root := ws.Directory("/").WithChanges(changes)
+	generated := ws.WithChanges(changes)
 	for _, failure := range failures {
 		address, err := dagaddress.Parse(failure.URI)
 		if err != nil {
@@ -202,7 +200,7 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 		if !ok || !workspace.IsLocalRef(entry.Source, "") {
 			continue
 		}
-		dir := workspace.ResolveModuleEntrySource(path.Dir(configFile), entry.Source)
+		dir := workspace.ResolveModuleEntrySource(path.Dir(strings.TrimPrefix(configFile, "/")), entry.Source)
 		changed := false
 		for _, file := range touched {
 			changed = changed || dir == "." || file == dir || strings.HasPrefix(file, dir+"/")
@@ -215,7 +213,15 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 		))
-		_, loadErr := root.AsModuleSource(dagger.DirectoryAsModuleSourceOpts{SourceRootPath: dir}).AsModule().Name(loadCtx)
+		remaining, loadErr := artifactLoadFailures(loadCtx, dag, generated.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{name}}))
+		if loadErr == nil {
+			for _, failure := range remaining {
+				if failure.URI == "dag://"+name+"/load" {
+					loadErr = fmt.Errorf("still fails to load with this run's changes: %s", strings.TrimSuffix(failure.LoadError, "; run `dagger generate` and commit the generated files"))
+					break
+				}
+			}
+		}
 		telemetry.EndWithCause(span, &loadErr)
 	}
 	return nil

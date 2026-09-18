@@ -4573,6 +4573,41 @@ func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	assert.Equal(t, 1, c.Size())
 }
 
+func TestCacheDoNotCachePreservesConcreteObjectType(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	srv := cacheTestServer(t)
+	Fields[cacheTestQuery]{
+		Func("value", func(context.Context, cacheTestQuery, struct{}) (Int, error) {
+			return NewInt(17), nil
+		}),
+	}.Install(srv)
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(&ast.Type{NamedType: "Node", NonNull: true}),
+		Field: "uncached-node",
+	}
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{
+		ResultCall: frame,
+		DoNotCache: true,
+	}, func(ctx context.Context) (AnyResult, error) {
+		return NewObjectResultForCurrentCall(ctx, srv, cacheTestQuery{})
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, "Node", frame.Type.NamedType)
+	resultCall, err := res.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, "Query", resultCall.Type.NamedType)
+	obj, ok := res.(ObjectResult[cacheTestQuery])
+	assert.Assert(t, ok)
+	value, err := obj.Select(ctx, srv, Selector{Field: "value"})
+	assert.NilError(t, err)
+	assert.Equal(t, 17, cacheTestUnwrapInt(t, value))
+}
+
 func TestCacheDoNotCachePreservesAttachedReturnedObject(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())

@@ -6,6 +6,8 @@ import (
 	"sort"
 
 	"dagger/hello-with-services/internal/dagger"
+
+	"dagger.io/dagger/dag"
 )
 
 type HelloWithServices struct{}

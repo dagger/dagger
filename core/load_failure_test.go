@@ -64,7 +64,7 @@ func TestDescribeLoadFailure(t *testing.T) {
 		got := DescribeLoadFailure(err, ModuleLoadRepairing)
 		require.Equal(t,
 			"loading module \"modules/ungenerated\": failed to get module runtime: "+
-				"module \"ungenerated\": generated file \"dagger.gen.go\" is missing (skipped until it is generated)",
+				"module \"ungenerated\": generated file \"dagger.gen.go\" is missing",
 			got)
 		require.NotContains(t, got, "run `dagger generate`")
 		// The strict-load error the module records is untouched: `dagger call`

@@ -5238,6 +5238,8 @@ func (c *Cache) getOrInitCallInner(
 			return nil, fmt.Errorf("classify do-not-cache result: %w", err)
 		}
 		if detached.isObject {
+			// An interface field can return a concrete object without a cache entry.
+			detached.resultCall.Type = NewResultCallType(val.Type())
 			normalized, err := wrapSharedResultWithResolver(ctx, detached, false, resolver)
 			if err != nil {
 				return nil, fmt.Errorf("normalize do-not-cache object result: %w", err)

@@ -57,7 +57,7 @@ func (s *workspaceSchema) workspacePrimaryModules(
 // workspace detection) are a snapshot of the on-disk workspace: an agent that
 // edits a module's source, or installs a module by staging a dagger.toml edit,
 // cannot see its own work when the conversation is recomposed
-// (Workspace.agents). This resolves the affected entries from
+// through artifact agent functions. This resolves the affected entries from
 // workspaceOverlayRootfs, which is host + the overlay's changeset, so the
 // self-repair loop (edit module -> reload -> new behavior) closes fully
 // in-session. The resulting module identity is keyed on the overlay directory's
@@ -176,7 +176,7 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 			if !mode.BestEffort() {
 				return nil, nil, err
 			}
-			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, mode)}
+			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort)}
 			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
 				failure.Dir = filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 			}

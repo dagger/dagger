@@ -121,7 +121,7 @@ func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
 	// Nested.tools; the rollup recurses through functions, so it is discoverable.
 	out, err := modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "nested:tools:agent")
+	require.Contains(t, out, "dag://nested/tools/agent")
 }
 
 func (AgentsSuite) TestValidationRejectsExtraRequiredArg(ctx context.Context, t *testctx.T) {
@@ -308,7 +308,7 @@ func (AgentsSuite) TestOverlayModuleSourceIsResolvedThroughOverlay(ctx context.C
 // with nothing exported to disk. The edit is staged and the toolset selected in
 // a single query, off the Workspace returned by withNewFile.
 // workspaceOverlayModules re-resolves the module through the overlay for
-// composition (Workspace.agents), and the resulting binding pins that module's
+// composition (Workspace.artifacts), and the resulting binding pins that module's
 // schema (boundTool.definingSchema), so LLM.tools renders from the
 // overlay-loaded definition rather than the served (on-disk) one.
 func (AgentsSuite) TestOverlayModuleSourceEdit(ctx context.Context, t *testctx.T) {

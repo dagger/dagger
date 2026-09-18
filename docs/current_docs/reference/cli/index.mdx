@@ -23,7 +23,7 @@ dagger [options] [subcommand | file...]
 
 * [dagger agent](#dagger-agent)	 - Compose your installed agent modules and drop into an interactive prompt.
 * [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
-* [dagger artifacts](#dagger-artifacts)	 - List and filter workspace artifacts
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
 * [dagger check](#dagger-check)	 - Verify your project — tests, linters, type checks, security scans, etc.
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
 * [dagger generate](#dagger-generate)	 - Generate derived files for your project — code, SDKs, types, docs, etc.
@@ -62,16 +62,16 @@ enqueued but never consumed are not in the trace at all, so they are not
 restored; anything a turn actually consumed is part of its conversation and is.
 
 Examples:
-  dagger agent                    # Compose all installed agents and start the prompt
-  dagger agent -l                 # List all available agents
-  dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=&lt;session&gt;       # Resume a specific saved session
-  dagger agent --trace &lt;id&gt;       # Restore a past session from its Dagger Cloud trace
+  dagger agent                               # Compose all installed agents and start the prompt
+  dagger agent -l                            # List all available agents
+  dagger agent dag://editor dag://dagger-go  # Compose only the 'editor' and 'dagger-go' agents
+  dagger agent -r                            # Resume a saved session (interactive picker)
+  dagger agent -r=&lt;session&gt;                  # Resume a specific saved session
+  dagger agent --trace &lt;id&gt;                  # Restore a past session from its Dagger Cloud trace
 
 
 ```
-dagger agent [options] [name...]
+dagger agent [options] [address...]
 ```
 
 ### Options
@@ -346,7 +346,7 @@ dagger api with-session python main.py
 
 * [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
 
-## dagger artifacts
+## dagger artifact
 
 List and filter workspace artifacts
 
@@ -365,13 +365,13 @@ conflicts with an existing flag. A query in the address has the same meaning
 as these flags: dag://&lt;path&gt;?&lt;dimension&gt;=&lt;key&gt;.
 
 Examples:
-  dagger artifacts list
-  dagger artifacts list engine-dev --type Container
-  dagger artifacts list 'go*/**' --type Container --type Directory
-  dagger artifacts list 'dag://golang/modules/tests/container?go-module=sdk/go'
-  dagger artifacts types
-  dagger artifacts dimensions
-  dagger artifacts keys go-test --go-module=sdk/go
+  dagger artifact list
+  dagger artifact list engine-dev --type Container
+  dagger artifact list 'go*/**' --type Container --type Directory
+  dagger artifact list 'dag://golang/modules/tests/container?go-module=sdk/go'
+  dagger artifact types
+  dagger artifact dimensions
+  dagger artifact keys go-test --go-module=sdk/go
 
 ### Options
 
@@ -393,17 +393,17 @@ Examples:
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
-* [dagger artifacts dimensions](#dagger-artifacts-dimensions)	 - List dimensions of matching artifacts
-* [dagger artifacts keys](#dagger-artifacts-keys)	 - List keys in a dimension of matching artifacts
-* [dagger artifacts list](#dagger-artifacts-list)	 - List matching artifact addresses
-* [dagger artifacts types](#dagger-artifacts-types)	 - List types of matching artifacts
+* [dagger artifact dimensions](#dagger-artifact-dimensions)	 - List dimensions of matching artifacts
+* [dagger artifact keys](#dagger-artifact-keys)	 - List keys in a dimension of matching artifacts
+* [dagger artifact list](#dagger-artifact-list)	 - List matching artifact addresses
+* [dagger artifact types](#dagger-artifact-types)	 - List types of matching artifacts
 
-## dagger artifacts dimensions
+## dagger artifact dimensions
 
 List dimensions of matching artifacts
 
 ```
-dagger artifacts dimensions [address...]
+dagger artifact dimensions [address...]
 ```
 
 ### Options inherited from parent commands
@@ -420,14 +420,14 @@ dagger artifacts dimensions [address...]
 
 ### SEE ALSO
 
-* [dagger artifacts](#dagger-artifacts)	 - List and filter workspace artifacts
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
 
-## dagger artifacts keys
+## dagger artifact keys
 
 List keys in a dimension of matching artifacts
 
 ```
-dagger artifacts keys DIMENSION [address...]
+dagger artifact keys DIMENSION [address...]
 ```
 
 ### Options inherited from parent commands
@@ -444,14 +444,14 @@ dagger artifacts keys DIMENSION [address...]
 
 ### SEE ALSO
 
-* [dagger artifacts](#dagger-artifacts)	 - List and filter workspace artifacts
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
 
-## dagger artifacts list
+## dagger artifact list
 
 List matching artifact addresses
 
 ```
-dagger artifacts list [address...]
+dagger artifact list [address...]
 ```
 
 ### Options inherited from parent commands
@@ -468,14 +468,14 @@ dagger artifacts list [address...]
 
 ### SEE ALSO
 
-* [dagger artifacts](#dagger-artifacts)	 - List and filter workspace artifacts
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
 
-## dagger artifacts types
+## dagger artifact types
 
 List types of matching artifacts
 
 ```
-dagger artifacts types [address...]
+dagger artifact types [address...]
 ```
 
 ### Options inherited from parent commands
@@ -492,7 +492,7 @@ dagger artifacts types [address...]
 
 ### SEE ALSO
 
-* [dagger artifacts](#dagger-artifacts)	 - List and filter workspace artifacts
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
 
 ## dagger check
 
@@ -503,15 +503,15 @@ Verify your project — tests, linters, type checks, security scans, etc.
 Verify your project — tests, linters, type checks, security scans, etc.
 
 Examples:
-  dagger check                    # Run all checks
-  dagger check -l                 # List all available checks
-  dagger check go:lint            # Run the go:lint check and any subchecks
-  dagger check --skip '**e2e'     # Run all checks except those matching '**e2e'
-  dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
+  dagger check                                      # Run all checks
+  dagger check -l                                   # List all available checks
+  dagger check dag://go/lint                        # Run the dag://go/lint check and any subchecks
+  dagger check --skip '**e2e'                       # Run all checks except those matching '**e2e'
+  dagger -W github.com/acme/ws check dag://go/lint  # Run check(s) against explicit workspace
 
 
 ```
-dagger check [options] [pattern...]
+dagger check [options] [address...]
 ```
 
 ### Options
@@ -1214,15 +1214,15 @@ Generate derived files for your project — code, SDKs, types, docs, etc.
 Generate derived files for your project — code, SDKs, types, docs, etc.
 
 Examples:
-  dagger generate                            # Generate all assets
-  dagger generate -l                         # List all available generators
-  dagger generate --no-apply                 # Show generated changes without applying them
-  dagger generate go:bin                     # Generate by selecting the generator function
-  dagger -W github.com/acme/ws generate go:bin  # Generate against explicit workspace
+  dagger generate                                     # Generate all assets
+  dagger generate -l                                  # List all available generators
+  dagger generate --no-apply                          # Show generated changes without applying them
+  dagger generate dag://go/bin                        # Generate by selecting the generator function
+  dagger -W github.com/acme/ws generate dag://go/bin  # Generate against explicit workspace
 
 
 ```
-dagger generate [options] [pattern...]
+dagger generate [options] [address...]
 ```
 
 ### Options
@@ -2390,17 +2390,13 @@ As with sh: with -c, the command reads standard input. Without -c, if standard
 input is a pipe or a file, run it as a script.
 
 Examples:
-  dagger shell                                    # Open the default shell
-  dagger shell -l                                 # List all available shells
-  dagger shell go:dev                             # Open the go:dev shell
-  dagger sh go:dev                                # Use the short command alias
-  dagger shell go:dev -c 'go test ./...'          # Run a command in the go:dev shell
-  echo 'go test ./...' | dagger shell go:dev      # Read the script from stdin
-  dagger shell --copy . --init 'go mod download'  # Set up the shell first
+  dagger shell -l            # List all available shells
+  dagger shell dag://go/dev  # Open the dag://go/dev shell
+  dagger sh dag://go/dev     # Use the short command alias
 
 
 ```
-dagger shell [options] [pattern]
+dagger shell [options] [address]
 ```
 
 ### Options
@@ -2485,13 +2481,13 @@ Run your project's services for local development — databases, APIs, dev serve
 Run your project's services for local development — databases, APIs, dev servers, etc.
 
 Examples:
-  dagger up                       # Start all services
-  dagger up -l                    # List all available services
-  dagger up web                   # Start only the 'web' service
+  dagger up            # Start all services
+  dagger up -l         # List all available services
+  dagger up dag://web  # Start only the 'web' service
 
 
 ```
-dagger up [options] [pattern...]
+dagger up [options] [address...]
 ```
 
 ### Options

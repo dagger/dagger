@@ -1596,6 +1596,10 @@ func (r *Artifacts) URI(ctx context.Context) (string, error) {
 type ArtifactsValuesOpts struct {
 	// Cancel remaining work after the first failure.
 	FailFast bool
+	// Field arguments applied to each artifact, as a JSON object.
+	//
+	// Default: "{}"
+	Arguments JSON
 }
 
 // Evaluate the selection in parallel, retaining each result and error.
@@ -1605,6 +1609,10 @@ func (r *Artifacts) Values(ctx context.Context, opts ...ArtifactsValuesOpts) ([]
 		// `failFast` optional argument
 		if !querybuilder.IsZeroValue(opts[i].FailFast) {
 			q = q.Arg("failFast", opts[i].FailFast)
+		}
+		// `arguments` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Arguments) {
+			q = q.Arg("arguments", opts[i].Arguments)
 		}
 	}
 
@@ -15851,9 +15859,21 @@ func (r *Service) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// ServicePortsOpts contains options for Service.Ports
+type ServicePortsOpts struct {
+	// Return only container ports declared before startup. Other service types return an empty list.
+	Declared bool
+}
+
 // Retrieves the list of ports provided by the service.
-func (r *Service) Ports(ctx context.Context) ([]Port, error) {
+func (r *Service) Ports(ctx context.Context, opts ...ServicePortsOpts) ([]Port, error) {
 	q := r.query.Select("ports")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `declared` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Declared) {
+			q = q.Arg("declared", opts[i].Declared)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -17120,6 +17140,8 @@ func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
 type WorkspaceConfigReadOpts struct {
 	// Dotted key path (e.g. modules.greeter.source). Empty for full config.
 	Key string
+	// Include the selected environment, user overrides, and legacy workspace settings.
+	Effective bool
 }
 
 // Read a configuration value from dagger.toml.
@@ -17138,6 +17160,10 @@ func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadO
 		// `key` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Key) {
 			q = q.Arg("key", opts[i].Key)
+		}
+		// `effective` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Effective) {
+			q = q.Arg("effective", opts[i].Effective)
 		}
 	}
 

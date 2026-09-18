@@ -77,7 +77,7 @@ func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	modGen = modGen.WithWorkdir("hello-with-services")
 
 	// Call the module's WorkspaceServices function, which lists
-	// Workspace.services via an auto-injected Workspace arg, to verify
+	// Workspace.artifacts via an auto-injected Workspace arg, to verify
 	// services are visible from within the module execution context.
 	out, err := modGen.
 		With(daggerExec("call", "workspace-services")).

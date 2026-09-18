@@ -126,9 +126,10 @@ type Params struct {
 
 	ImageLoaderBackend imageload.Backend
 
-	Module   string
-	Function string
-	ExecCmd  []string
+	Module       string
+	ExtraModules []engine.ExtraModule
+	Function     string
+	ExecCmd      []string
 
 	EagerRuntime bool
 
@@ -1711,6 +1712,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Profile:                        c.Profile,
 	}
 
+	md.ExtraModules = slices.Clone(c.ExtraModules)
 	if c.Module != "" {
 		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
 	}

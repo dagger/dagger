@@ -14,6 +14,24 @@ namespace Dagger;
 class Artifact extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * The arguments accepted by the artifact field.
+     */
+    public function arguments(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('arguments');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'arguments');
+    }
+
+    /**
+     * The description of the field that supplies this artifact.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+    }
+
+    /**
      * One key per dimension along the path. Unordered; empty for static artifacts.
      */
     public function dimensionKeys(): array
@@ -23,12 +41,30 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The directives carried by this artifact.
+     */
+    public function directives(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('directives');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'directives');
+    }
+
+    /**
      * A unique identifier for this Artifact.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * A module load failure, or an empty string if discovery succeeded.
+     */
+    public function loadError(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('loadError');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'loadError');
     }
 
     /**
@@ -61,9 +97,12 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Evaluate the target in the workspace that supplied this artifact.
      */
-    public function value(): Node
+    public function value(?Json $arguments = null): Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('value');
+        if (null !== $arguments) {
+        $innerQueryBuilder->setArgument('arguments', $arguments);
+        }
         return new \Dagger\NodeClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

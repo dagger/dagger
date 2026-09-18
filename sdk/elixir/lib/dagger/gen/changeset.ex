@@ -180,6 +180,20 @@ defmodule Dagger.Changeset do
   end
 
   @doc """
+  A check that passes when the changeset is empty.
+  """
+  @spec stale(t()) :: Dagger.Check.t()
+  def stale(%__MODULE__{} = changeset) do
+    query_builder =
+      changeset.query_builder |> QB.select("stale")
+
+    %Dagger.Check{
+      query_builder: query_builder,
+      client: changeset.client
+    }
+  end
+
+  @doc """
   Force evaluation in the engine.
   """
   @spec sync(t()) :: {:ok, Dagger.Changeset.t()} | {:error, term()}

@@ -27,28 +27,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return all agent middlewares from modules loaded in the workspace.
-
-  > #### Experimental {: .warning}
-  >
-  > "Agent APIs are likely to change."
-  """
-  @spec agents(t(), [{:include, [String.t()]}, {:exclude, [String.t()]}]) ::
-          Dagger.AgentMiddlewareGroup.t()
-  def agents(%__MODULE__{} = workspace, optional_args \\ []) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("agents")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
-
-    %Dagger.AgentMiddlewareGroup{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
   Discover static object artifacts from workspace modules without evaluating their values.
   """
   @spec artifacts(t(), [{:include, [String.t()]}]) :: Dagger.Artifacts.t()
@@ -80,30 +58,6 @@ defmodule Dagger.Workspace do
       )
 
     %Dagger.Changeset{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
-  Return all checks from modules loaded in the workspace.
-  """
-  @spec checks(t(), [
-          {:include, [String.t()]},
-          {:skip, [String.t()]},
-          {:no_generate, boolean() | nil},
-          {:only_generate, boolean() | nil}
-        ]) :: Dagger.CheckGroup.t()
-  def checks(%__MODULE__{} = workspace, optional_args \\ []) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("checks")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-      |> QB.maybe_put_arg("skip", optional_args[:skip])
-      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
-      |> QB.maybe_put_arg("onlyGenerate", optional_args[:only_generate])
-
-    %Dagger.CheckGroup{
       query_builder: query_builder,
       client: workspace.client
     }
@@ -164,12 +118,14 @@ defmodule Dagger.Workspace do
 
   If key points to a table, returns flattened dotted-key output.
   """
-  @spec config_read(t(), [{:key, String.t() | nil}]) :: {:ok, String.t()} | {:error, term()}
+  @spec config_read(t(), [{:key, String.t() | nil}, {:effective, boolean() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
   def config_read(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("configRead")
       |> QB.maybe_put_arg("key", optional_args[:key])
+      |> QB.maybe_put_arg("effective", optional_args[:effective])
 
     Client.execute(workspace.client, query_builder)
   end
@@ -331,22 +287,6 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("from", optional_args[:from])
 
     Client.execute(workspace.client, query_builder)
-  end
-
-  @doc """
-  Return all generators from modules loaded in the workspace.
-  """
-  @spec generators(t(), [{:include, [String.t()]}]) :: Dagger.GeneratorGroup.t()
-  def generators(%__MODULE__{} = workspace, optional_args \\ []) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("generators")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-
-    %Dagger.GeneratorGroup{
-      query_builder: query_builder,
-      client: workspace.client
-    }
   end
 
   @doc """
@@ -593,22 +533,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return all services from modules loaded in the workspace.
-  """
-  @spec services(t(), [{:include, [String.t()]}]) :: Dagger.UpGroup.t()
-  def services(%__MODULE__{} = workspace, optional_args \\ []) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("services")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-
-    %Dagger.UpGroup{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
   Return a snapshot of this workspace as a stable value.
 
   Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
@@ -629,22 +553,6 @@ defmodule Dagger.Workspace do
       workspace.query_builder |> QB.select("snapshot")
 
     %Dagger.Workspace{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
-  Return all terminal targets from modules loaded in the workspace.
-  """
-  @spec terminals(t(), [{:include, [String.t()]}]) :: Dagger.TerminalGroup.t()
-  def terminals(%__MODULE__{} = workspace, optional_args \\ []) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("terminals")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-
-    %Dagger.TerminalGroup{
       query_builder: query_builder,
       client: workspace.client
     }

@@ -34,9 +34,9 @@ var shellCmd = &cobra.Command{
 	Long: `Open a terminal for a container or directory in your project.
 
 Examples:
-  dagger shell -l                   # List all available shells
-  dagger shell dag://go/dev               # Open the dag://go/dev shell
-  dagger sh dag://go/dev                  # Use the short command alias
+  dagger shell -l            # List all available shells
+  dagger shell dag://go/dev  # Open the dag://go/dev shell
+  dagger sh dag://go/dev     # Use the short command alias
 `,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("command") {
@@ -53,11 +53,11 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), `Choose a shell to open.
 
   dagger shell -l       List available shells
-  dagger shell <NAME>   Open a shell from that list`)
+  dagger shell <ADDRESS>   Open a shell from that list`)
 		return err
 	}
 
-	params, err := artifactClientParams(client.Params{LoadWorkspaceModules: true}, args)
+	params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, args)
 	if err != nil {
 		return err
 	}
