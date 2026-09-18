@@ -12,10 +12,16 @@ it models. Each `CacheLifecycle_*.cfg` checks one scenario; the comment
 at the top of each config says what the scenario is and whether the run
 is expected to pass or to violate one named invariant. Expected
 violations are reserved for deliberate mutations that prove a gate can
-fail: `CacheLifecycle_orphaned_lease.cfg` restores the release rule under
+fail, and for deliberately accepted model findings.
+`CacheLifecycle_orphaned_lease.cfg` restores the release rule under
 which a completed call's operation and client leases were orphaned when
 its last waiter left through cancellation, and must violate
-`SharedLeaseReleasedWhenRetired`.
+`SharedLeaseReleasedWhenRetired`. No accepted finding is tracked today:
+every other configuration is a green regression gate. (The last one,
+`decode_cancel` — a decode leader's own cancellation failing its parked
+joiners — was fixed by making the joiners retry a departed leader's
+cancellation and by retrying the post-install lease sync on the next
+demand; the configuration now holds that contract green.)
 
 Run the check:
 

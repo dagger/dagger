@@ -133,9 +133,6 @@ legacy-default-path = true
 source = ".dagger/modules/test-split"
 legacy-default-path = true
 
-[modules.tla-check]
-source = ".dagger/modules/tla-check"
-
 [modules.typescript-client]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
@@ -145,6 +142,10 @@ source = "dagger.io/sdk/dang@main"
 
 [modules.go-sdk]
 source = "dagger.io/sdk/go@main"
+
+# Run model checks explicitly in the dev environment.
+[env.dev.modules.tla-check]
+source = ".dagger/modules/tla-check"
 
 [env.dev.modules.engine-lab]
 source = ".dagger/modules/engine-lab"
