@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -31,48 +32,48 @@ func TestWorkspaceSelection(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceSelectionSuite{})
 }
 
-func workspaceSelectionDaggerExec(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+func workspaceSelectionDaggerExec(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func workspaceSelectionDaggerCall(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+func workspaceSelectionDaggerCall(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func workspaceSelectionDaggerCallFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+func workspaceSelectionDaggerCallFail(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 	}
 }
 
-func workspaceSelectionDaggerQuery(query string, args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
+func workspaceSelectionDaggerQuery(query string, args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), core.ContainerWithExecOpts{
 			Stdin:                         query,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func workspaceSelectionDaggerQueryFail(query string, args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
+func workspaceSelectionDaggerQueryFail(query string, args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), core.ContainerWithExecOpts{
 			Stdin:                         query,
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 	}
 }
@@ -87,8 +88,8 @@ type ` + typeName + ` {
 `
 }
 
-func workspaceSelectionSimpleWorkspace(dir, name, typeName, result string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
+func workspaceSelectionSimpleWorkspace(dir, name, typeName, result string) core.WithContainerFunc {
+	return func(ctr *core.Container) *core.Container {
 		moduleDir := dir + "/.dagger/modules/" + name
 		return ctr.
 			WithNewFile(dir+"/dagger.toml", `[modules.`+name+`]
@@ -100,9 +101,9 @@ entrypoint = true
 	}
 }
 
-func workspaceSelectionSimpleWorkspaceDir(c *dagger.Client, name, typeName, result string) *dagger.Directory {
+func workspaceSelectionSimpleWorkspaceDir(c *dagger.Client, name, typeName, result string) *core.Directory {
 	moduleDir := ".dagger/modules/" + name
-	return c.Directory().
+	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.`+name+`]
 source = ".dagger/modules/`+name+`"
 entrypoint = true
@@ -111,8 +112,8 @@ entrypoint = true
 		WithNewFile(moduleDir+"/main.dang", workspaceSelectionDangSource(typeName, "identify", result))
 }
 
-func workspaceSelectionEnvWorkspace(dir, base, ci string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
+func workspaceSelectionEnvWorkspace(dir, base, ci string) core.WithContainerFunc {
+	return func(ctr *core.Container) *core.Container {
 		moduleDir := dir + "/.dagger/modules/greeter"
 		return ctr.
 			WithNewFile(dir+"/dagger.toml", `[modules.greeter]
@@ -152,46 +153,46 @@ import (
 	"os"
 	"path/filepath"
 
-	"dagger/files/internal/dagger"
+	"dagger/files/internal/dagger/core"
 )
 
 type Files struct{}
 
-func (m *Files) ReadWorkspaceArg(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+func (m *Files) ReadWorkspaceArg(ctx context.Context, workspace *core.Workspace) (string, error) {
 	return workspace.File("marker.txt").Contents(ctx)
 }
 
-func (m *Files) ReadDeclaredWorkspace(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+func (m *Files) ReadDeclaredWorkspace(ctx context.Context, workspace *core.Workspace) (string, error) {
 	return workspace.File("marker.txt").Contents(ctx)
 }
 
-func (m *Files) ChangeWorkspaceArg(workspace *dagger.Workspace) *dagger.Changeset {
+func (m *Files) ChangeWorkspaceArg(workspace *core.Workspace) *core.Changeset {
 	before := workspace.Directory(".")
 	after := before.WithNewFile("workspace-arg.txt", "changed through workspace arg")
 	return after.Changes(before)
 }
 
-func (m *Files) ChangeDeclaredWorkspace(workspace *dagger.Workspace) *dagger.Changeset {
+func (m *Files) ChangeDeclaredWorkspace(workspace *core.Workspace) *core.Changeset {
 	before := workspace.Directory(".")
 	after := before.WithNewFile("declared-workspace.txt", "changed through declared workspace")
 	return after.Changes(before)
 }
 
-func (m *Files) ChangeStandalone() *dagger.Changeset {
+func (m *Files) ChangeStandalone() *core.Changeset {
 	before := dag.Directory()
 	after := before.WithNewFile("standalone.txt", "changed without workspace")
 	return after.Changes(before)
 }
 
-func (m *Files) ReturnedDirectory() *dagger.Directory {
+func (m *Files) ReturnedDirectory() *core.Directory {
 	return dag.Directory().WithNewFile("returned-dir.txt", "returned directory")
 }
 
-func (m *Files) ReturnedFile() *dagger.File {
+func (m *Files) ReturnedFile() *core.File {
 	return dag.Directory().WithNewFile("returned-file.txt", "returned file").File("returned-file.txt")
 }
 
-func (m *Files) ReturnedContainer() *dagger.Container {
+func (m *Files) ReturnedContainer() *core.Container {
 	return dag.Container().
 		From("` + alpineImage + `").
 		WithExec([]string{"sh", "-c", "printf 'returned container' > /returned-container.txt"})
@@ -219,7 +220,7 @@ func (m *Files) ExportFromModule(ctx context.Context) (string, error) {
 }
 `
 
-func workspaceSelectionRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) string {
+func workspaceSelectionRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, content *core.Directory) string {
 	t.Helper()
 
 	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, content, "main"), "", nil)
@@ -230,7 +231,7 @@ func workspaceSelectionRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Cl
 	shortHost, err := gitSrv.Hostname(ctx)
 	require.NoError(t, err)
 
-	getentOut, err := c.Container().From(alpineImage).
+	getentOut, err := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"getent", "hosts", shortHost}).
 		Stdout(ctx)
 	require.NoError(t, err, "could not resolve git service hostname %q", shortHost)
@@ -264,7 +265,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 		c := connect(ctx, t)
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceSelectionSimpleWorkspaceDir(c, "remote", "Remote", "remote workspace"))
 
-		ctr := c.Container().From(alpineImage).
+		ctr := core.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/empty")
 
@@ -290,7 +291,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 
 	t.Run("remote -W loads SDK settings for module help", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		workspaceDir := c.Directory().WithNewFile("dagger.toml", `[modules.go-sdk]
+		workspaceDir := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.go-sdk]
 source = "github.com/dagger/go-sdk"
 
 [sdks.go]
@@ -298,7 +299,7 @@ module = "go-sdk"
 `)
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceDir)
 
-		ctr := c.Container().From(alpineImage).
+		ctr := core.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/empty")
 
@@ -397,7 +398,7 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 			},
 		} {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-				out, err := c.Container().From(alpineImage).
+				out, err := core.NewQuery(c).Container().From(alpineImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/empty").
 					With(workspaceSelectionDaggerQueryFail(tc.query, "-W", remoteRef)).
@@ -429,7 +430,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceMetadataQueries(ctx context.
 		c := connect(ctx, t)
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceSelectionSimpleWorkspaceDir(c, "remote", "Remote", "remote workspace"))
 
-		out, err := c.Container().From(alpineImage).
+		out, err := core.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/empty").
 			With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", remoteRef)).
@@ -474,7 +475,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 
 		c := connect(ctx, t)
 		moduleDir := ".dagger/modules/files"
-		return workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+		return workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Directory().
 			WithNewFile("marker.txt", "remote marker").
 			WithNewFile("dagger.toml", workspaceSelectionFilesConfig).
 			WithNewFile(moduleDir+"/dagger.json", `{"name":"files","sdk":{"source":"go"}}`).
@@ -777,7 +778,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 
 	t.Run("selected remote workspace without config injects workspace args", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Directory().
 			WithNewFile("marker.txt", "remote marker"))
 		workdir, moduleSelection := newNoWorkspaceFixture(ctx, t)
 		selection := append([]string{"-W", remoteRef}, moduleSelection...)

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
@@ -178,13 +179,13 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 		require.NoError(t, err)
 
 		c1 := connect(ctx, t)
-		mod1, err := c1.ModuleSource(tmpdir1).AsModule().Sync(ctx)
+		mod1, err := core.NewQuery(c1).ModuleSource(tmpdir1).AsModule().Sync(ctx)
 		require.NoError(t, err)
 		modID1, err := mod1.ID(ctx)
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)
-		mod2, err := c2.ModuleSource(tmpdir2).AsModule().Sync(ctx)
+		mod2, err := core.NewQuery(c2).ModuleSource(tmpdir2).AsModule().Sync(ctx)
 		require.NoError(t, err)
 		modID2, err := mod2.ID(ctx)
 		require.NoError(t, err)
@@ -331,7 +332,7 @@ func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Conte
 	copyTestdataFixture(ctx, t, modDir, "modules", "go", "cross-session-context-directory-default")
 
 	callEntries := func(c *dagger.Client, cacheBust string) []string {
-		mod, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		mod, err := core.NewQuery(c).ModuleSource(modDir).AsModule().Sync(ctx)
 		require.NoError(t, err)
 		require.NoError(t, mod.Serve(ctx))
 
@@ -550,11 +551,11 @@ func (GitSuite) TestCrossSessionGitRepositoryIdentity(ctx context.Context, t *te
 		return connect(ctx, t, dagger.WithWorkdir(workdir))
 	}
 	c1 := newPinnedClient(lockTestGitBranchCommit)
-	id1, err := c1.Git(repoURL).ID(ctx)
+	id1, err := core.NewQuery(c1).Git(repoURL).ID(ctx)
 	require.NoError(t, err)
 
 	c2 := newPinnedClient(lockTestGitStaleCommit)
-	id2, err := c2.Git(repoURL).ID(ctx)
+	id2, err := core.NewQuery(c2).Git(repoURL).ID(ctx)
 	require.NoError(t, err)
 
 	// Clients receive handle-form IDs that reference one engine-local cached
@@ -564,24 +565,24 @@ func (GitSuite) TestCrossSessionGitRepositoryIdentity(ctx context.Context, t *te
 	// A ref pinned by full SHA never consults a workspace lock, so it is
 	// shared too: workspace snapshots pin their refs this way.
 	const sha = "0b46ea3c49b5d67509f67747742e5d8b24be9ef7"
-	ref1, err := c1.Git(repoURL).Ref(sha).ID(ctx)
+	ref1, err := core.NewQuery(c1).Git(repoURL).Ref(sha).ID(ctx)
 	require.NoError(t, err)
-	ref2, err := c2.Git(repoURL).Ref(sha).ID(ctx)
+	ref2, err := core.NewQuery(c2).Git(repoURL).Ref(sha).ID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref2)
 
 	// Named refs must consult each client's workspace lock. Equal pins may
 	// share a result, but these different pins must resolve to different commits.
-	commit1, err := c1.Git(repoURL).Ref("main").CommitSHA(ctx)
+	commit1, err := core.NewQuery(c1).Git(repoURL).Ref("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockTestGitBranchCommit, commit1)
-	commit2, err := c2.Git(repoURL).Ref("main").CommitSHA(ctx)
+	commit2, err := core.NewQuery(c2).Git(repoURL).Ref("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockTestGitStaleCommit, commit2)
 	require.NotEqual(t, commit1, commit2)
-	main1, err := c1.Git(repoURL).Ref("main").ID(ctx)
+	main1, err := core.NewQuery(c1).Git(repoURL).Ref("main").ID(ctx)
 	require.NoError(t, err)
-	main2, err := c2.Git(repoURL).Ref("main").ID(ctx)
+	main2, err := core.NewQuery(c2).Git(repoURL).Ref("main").ID(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, main1, main2)
 }
@@ -626,9 +627,9 @@ func (ModuleSuite) TestCrossSessionSockets(ctx context.Context, t *testctx.T) {
 	copyTestdataFixture(ctx, t, modTmpdir, "modules", "go", "cross-session-socket")
 
 	c1 := connect(ctx, t)
-	err = c1.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	err = core.NewQuery(c1).ModuleSource(modTmpdir).AsModule().Serve(ctx)
 	require.NoError(t, err)
-	sockID1, err := c1.Host().UnixSocket(sock).ID(ctx)
+	sockID1, err := core.NewQuery(c1).Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
 	res1, err := testutil.QueryWithClient[struct {
 		Test struct {
@@ -639,9 +640,9 @@ func (ModuleSuite) TestCrossSessionSockets(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "blah", res1.Test.Fn)
 
 	c2 := connect(ctx, t)
-	err = c2.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	err = core.NewQuery(c2).ModuleSource(modTmpdir).AsModule().Serve(ctx)
 	require.NoError(t, err)
-	sockID2, err := c2.Host().UnixSocket(sock).ID(ctx)
+	sockID2, err := core.NewQuery(c2).Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
 	res2, err := testutil.QueryWithClient[struct {
 		Test struct {
@@ -722,23 +723,23 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 		copyTestdataFixture(ctx, t, tmpdir, "modules", "go", "cross-session-secret-uri-container")
 
 		c1 := connect(ctx, t)
-		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		err := core.NewQuery(c1).ModuleSource(tmpdir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		secretID1, err := c1.Secret("cmd://echo -n foo").ID(ctx)
+		secretID1, err := core.NewQuery(c1).Secret("cmd://echo -n foo").ID(ctx)
 		require.NoError(t, err)
 
 		res1, err := testutil.QueryWithClient[struct {
 			Test struct {
 				Fn struct {
-					ID dagger.ID
+					ID core.ID
 				}
 			}
 		}](c1, t, `{test{fn(secret:"`+string(secretID1)+`"){id}}}`, nil)
 		require.NoError(t, err)
 		ctrID1 := res1.Test.Fn.ID
 		require.NotEmpty(t, ctrID1)
-		ctr1, err := dagger.Load[*dagger.Container](ctx, c1, ctrID1)
+		ctr1, err := core.Load[*core.Container](ctx, core.NewQuery(c1), ctrID1)
 		require.NoError(t, err)
 		_, err = ctr1.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
@@ -747,16 +748,16 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)
-		err = c2.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		err = core.NewQuery(c2).ModuleSource(tmpdir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		secretID2, err := c2.Secret("cmd://echo -n foo").ID(ctx)
+		secretID2, err := core.NewQuery(c2).Secret("cmd://echo -n foo").ID(ctx)
 		require.NoError(t, err)
 
 		res2, err := testutil.QueryWithClient[struct {
 			Test struct {
 				Fn struct {
-					ID dagger.ID
+					ID core.ID
 				}
 			}
 		}](c2, t, `{test{fn(secret:"`+string(secretID2)+`"){id}}}`, nil)
@@ -766,7 +767,7 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, c1.Close())
 
-		ctr2, err := dagger.Load[*dagger.Container](ctx, c2, ctrID2)
+		ctr2, err := core.Load[*core.Container](ctx, core.NewQuery(c2), ctrID2)
 		require.NoError(t, err)
 		_, err = ctr2.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
@@ -854,13 +855,13 @@ func (ModuleSuite) TestCrossSessionContextualDirWithPrivate(ctx context.Context,
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
 
 	c1 := connect(ctx, t)
-	mod1, err := c1.ModuleSource(modDir).AsModule().Sync(ctx)
+	mod1, err := core.NewQuery(c1).ModuleSource(modDir).AsModule().Sync(ctx)
 	require.NoError(t, err)
 	err = mod1.Serve(ctx)
 	require.NoError(t, err)
 
 	c2 := connect(ctx, t)
-	mod2, err := c2.ModuleSource(modDir).AsModule().Sync(ctx)
+	mod2, err := core.NewQuery(c2).ModuleSource(modDir).AsModule().Sync(ctx)
 	require.NoError(t, err)
 	err = mod2.Serve(ctx)
 	require.NoError(t, err)
@@ -905,7 +906,7 @@ func (ModuleSuite) TestCrossSessionContextualDirChange(ctx context.Context, t *t
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand1), 0644))
 
 	c1 := connect(ctx, t)
-	mod1, err := c1.ModuleSource(modDir).AsModule().Sync(ctx)
+	mod1, err := core.NewQuery(c1).ModuleSource(modDir).AsModule().Sync(ctx)
 	require.NoError(t, err)
 	err = mod1.Serve(ctx)
 	require.NoError(t, err)
@@ -924,7 +925,7 @@ func (ModuleSuite) TestCrossSessionContextualDirChange(ctx context.Context, t *t
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand2), 0644))
 
 	c2 := connect(ctx, t)
-	mod2, err := c2.ModuleSource(modDir).AsModule().Sync(ctx)
+	mod2, err := core.NewQuery(c2).ModuleSource(modDir).AsModule().Sync(ctx)
 	require.NoError(t, err)
 	err = mod2.Serve(ctx)
 	require.NoError(t, err)
@@ -949,7 +950,7 @@ func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t 
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
 
 	c1 := connect(ctx, t)
-	mod1, err := c1.ModuleSource(modDir).AsModule().Sync(ctx)
+	mod1, err := core.NewQuery(c1).ModuleSource(modDir).AsModule().Sync(ctx)
 	require.NoError(t, err)
 	err = mod1.Serve(ctx)
 	require.NoError(t, err)
@@ -963,7 +964,7 @@ func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t 
 	require.NotEmpty(t, res1.Test.Rand)
 
 	c2 := connect(ctx, t)
-	mod2, err := c2.ModuleSource(modDir).AsModule().Sync(ctx)
+	mod2, err := core.NewQuery(c2).ModuleSource(modDir).AsModule().Sync(ctx)
 	require.NoError(t, err)
 	err = mod2.Serve(ctx)
 	require.NoError(t, err)
@@ -981,7 +982,7 @@ func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t 
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
 
 	c3 := connect(ctx, t)
-	mod3, err := c3.ModuleSource(modDir).AsModule().Sync(ctx)
+	mod3, err := core.NewQuery(c3).ModuleSource(modDir).AsModule().Sync(ctx)
 	require.NoError(t, err)
 	err = mod3.Serve(ctx)
 	require.NoError(t, err)
@@ -1006,13 +1007,13 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
 		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
 
-		err := c1.ModuleSource(modDir).AsModule().Serve(ctx)
+		err := core.NewQuery(c1).ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		err = c2.ModuleSource(modDir).AsModule().Serve(ctx)
+		err = core.NewQuery(c2).ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		s1 := c1.Secret("env://FOO")
+		s1 := core.NewQuery(c1).Secret("env://FOO")
 		s1id, err := s1.ID(ctx)
 		require.NoError(t, err)
 		{
@@ -1038,7 +1039,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			require.Equal(t, "1", string(out1))
 		}
 
-		s2 := c2.Secret("env://FOO")
+		s2 := core.NewQuery(c2).Secret("env://FOO")
 		s2id, err := s2.ID(ctx)
 		require.NoError(t, err)
 		{
@@ -1069,15 +1070,15 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
 		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
 
-		err := c1.ModuleSource(modDir).AsModule().Serve(ctx)
+		err := core.NewQuery(c1).ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		err = c2.ModuleSource(modDir).AsModule().Serve(ctx)
+		err = core.NewQuery(c2).ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
 		cacheKey := identity.NewID()
 
-		s1 := c1.Secret("env://FOO", dagger.SecretOpts{CacheKey: cacheKey})
+		s1 := core.NewQuery(c1).Secret("env://FOO", core.SecretOpts{CacheKey: cacheKey})
 		s1id, err := s1.ID(ctx)
 		require.NoError(t, err)
 		{
@@ -1103,7 +1104,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			require.Equal(t, "1", string(out1))
 		}
 
-		s2 := c2.Secret("env://FOO", dagger.SecretOpts{CacheKey: cacheKey})
+		s2 := core.NewQuery(c2).Secret("env://FOO", core.SecretOpts{CacheKey: cacheKey})
 		s2id, err := s2.ID(ctx)
 		require.NoError(t, err)
 		{
@@ -1136,7 +1137,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 
 		{
 			out, err := goGitBase(t, c1).
-				WithMountedDirectory("/src", c1.Host().Directory(modDir)).
+				WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(modDir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "1").
 				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO", "stdout")).
@@ -1148,7 +1149,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 		}
 		{
 			out, err := goGitBase(t, c2).
-				WithMountedDirectory("/src", c2.Host().Directory(modDir)).
+				WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "2").
 				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO", "stdout")).
@@ -1169,7 +1170,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			plaintext := identity.NewID()
 			{
 				out, err := goGitBase(t, c1).
-					WithMountedDirectory("/src", c1.Host().Directory(modDir)).
+					WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(modDir)).
 					WithWorkdir("/src").
 					WithEnvVariable("FOO", plaintext).
 					With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+cacheKey, "stdout")).
@@ -1181,7 +1182,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			}
 			{
 				out, err := goGitBase(t, c2).
-					WithMountedDirectory("/src", c2.Host().Directory(modDir)).
+					WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 					WithWorkdir("/src").
 					WithEnvVariable("FOO", identity.NewID()).
 					With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+cacheKey, "stdout")).
@@ -1203,7 +1204,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			plaintext := identity.NewID()
 			{
 				out, err := goGitBase(t, c1).
-					WithMountedDirectory("/src", c1.Host().Directory(modDir)).
+					WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(modDir)).
 					WithWorkdir("/src").
 					WithNewFile("/foo.txt", plaintext).
 					With(daggerCallAt(".", "fn-2", "--secret", "file:///foo.txt?cacheKey="+cacheKey, "stdout")).
@@ -1215,7 +1216,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			}
 			{
 				out, err := goGitBase(t, c2).
-					WithMountedDirectory("/src", c2.Host().Directory(modDir)).
+					WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 					WithWorkdir("/src").
 					WithNewFile("/bar.txt", identity.NewID()).
 					With(daggerCallAt(".", "fn-2", "--secret", "file:///bar.txt?cacheKey="+cacheKey, "stdout")).
@@ -1236,7 +1237,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			{
 				secretCommand := "echo -n " + plaintext
 				out, err := goGitBase(t, c1).
-					WithMountedDirectory("/src", c1.Host().Directory(modDir)).
+					WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(modDir)).
 					WithWorkdir("/src").
 					With(daggerCallAt(".", "fn-2", "--secret", "cmd://"+secretCommand+"?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
@@ -1248,7 +1249,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			{
 				secretCommand := "echo -n " + identity.NewID()
 				out, err := goGitBase(t, c2).
-					WithMountedDirectory("/src", c2.Host().Directory(modDir)).
+					WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 					WithWorkdir("/src").
 					With(daggerCallAt(".", "fn-2", "--secret", "cmd://"+secretCommand+"?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
@@ -1266,7 +1267,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 
 		{
 			out, err := goGitBase(t, c1).
-				WithMountedDirectory("/src", c1.Host().Directory(modDir)).
+				WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(modDir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "1").
 				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(), "stdout")).
@@ -1278,7 +1279,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 		}
 		{
 			out, err := goGitBase(t, c2).
-				WithMountedDirectory("/src", c2.Host().Directory(modDir)).
+				WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "2").
 				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(), "stdout")).
@@ -1316,10 +1317,10 @@ func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile1))
 
-	err = c1.ModuleSource(modDir).AsModule().Serve(ctx)
+	err = core.NewQuery(c1).ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
 
-	gitRepoID1, err := c1.Address(tc.gitTestRepoRef).Directory().ID(ctx)
+	gitRepoID1, err := core.NewQuery(c1).Address(tc.gitTestRepoRef).Directory().ID(ctx)
 	require.NoError(t, err)
 
 	rand1 := rand.Text()
@@ -1340,10 +1341,10 @@ func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile2))
 
-	err = c2.ModuleSource(modDir).AsModule().Serve(ctx)
+	err = core.NewQuery(c2).ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
 
-	gitRepoID2, err := c2.Address(tc.gitTestRepoRef).Directory().ID(ctx)
+	gitRepoID2, err := core.NewQuery(c2).Address(tc.gitTestRepoRef).Directory().ID(ctx)
 	require.NoError(t, err)
 
 	rand2 := rand.Text()
@@ -1389,14 +1390,14 @@ func (DirectorySuite) TestContentHashedDirectoryFile(ctx context.Context, t *tes
 	c2 := connect(ctx, t)
 
 	// populate engine with cache entry from dir A
-	_, err := c1.Host().Directory(rootA).Directory("subdirA").Entries(ctx)
+	_, err := core.NewQuery(c1).Host().Directory(rootA).Directory("subdirA").Entries(ctx)
 	require.NoError(t, err)
 
 	// Try to load the subdir from B and read the file, it should succeed.
 	// The error case the engine needs to avoid is:
 	// 1. cache hit between rootB/subdirB + rootA/subdirA, using rootA/subdirA because it came first
 	// 2. try to read "subdirB/rando" from rootA, which doesn't exist
-	contents, err := c2.Host().Directory(rootB).Directory("subdirB").File(rando).Contents(ctx)
+	contents, err := core.NewQuery(c2).Host().Directory(rootB).Directory("subdirB").File(rando).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, rando, contents)
 }
@@ -1441,9 +1442,9 @@ func (DockerfileSuite) TestCrossSessionDockerbuildSockets(ctx context.Context, t
 	copyTestdataFixture(ctx, t, modTmpdir, "modules", "go", "cross-session-dockerbuild-socket")
 
 	c1 := connect(ctx, t)
-	err = c1.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	err = core.NewQuery(c1).ModuleSource(modTmpdir).AsModule().Serve(ctx)
 	require.NoError(t, err)
-	sockID1, err := c1.Host().UnixSocket(sock).ID(ctx)
+	sockID1, err := core.NewQuery(c1).Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
 	res1, err := testutil.QueryWithClient[struct {
 		Test struct {
@@ -1454,9 +1455,9 @@ func (DockerfileSuite) TestCrossSessionDockerbuildSockets(ctx context.Context, t
 	require.Equal(t, "blah", res1.Test.Fn)
 
 	c2 := connect(ctx, t)
-	err = c2.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	err = core.NewQuery(c2).ModuleSource(modTmpdir).AsModule().Serve(ctx)
 	require.NoError(t, err)
-	sockID2, err := c2.Host().UnixSocket(sock).ID(ctx)
+	sockID2, err := core.NewQuery(c2).Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
 	res2, err := testutil.QueryWithClient[struct {
 		Test struct {
@@ -1484,7 +1485,7 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 
 	agentSockPath1, cleanup1 := setupPrivateRepoSSHAgent(t)
 	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath1))
-	ref1ID, err := c1.Git(url).Ref(ref).ID(ctx)
+	ref1ID, err := core.NewQuery(c1).Git(url).Ref(ref).ID(ctx)
 	require.NoError(t, err)
 	var id1 call.ID
 	err = id1.Decode(string(ref1ID))
@@ -1492,7 +1493,7 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 
 	agentSockPath2, _ := setupPrivateRepoSSHAgent(t)
 	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath2))
-	ref2ID, err := c2.Git(url).Ref(ref).ID(ctx)
+	ref2ID, err := core.NewQuery(c2).Git(url).Ref(ref).ID(ctx)
 	require.NoError(t, err)
 	var id2 call.ID
 	err = id2.Decode(string(ref2ID))
@@ -1501,7 +1502,7 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 	cleanup1()
 	require.NoError(t, c1.Close())
 
-	gitRef, err := dagger.Load[*dagger.GitRef](ctx, c2, ref2ID)
+	gitRef, err := core.Load[*core.GitRef](ctx, core.NewQuery(c2), ref2ID)
 	require.NoError(t, err)
 	_, err = gitRef.Tree().Sync(ctx)
 	require.NoError(t, err)

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 func main() {
@@ -14,7 +15,7 @@ func main() {
 	}
 	defer c.Close()
 
-	_, err = c.Container().
+	_, err = core.NewQuery(c).Container().
 		From("alpine:3.16.2").
 		WithExec([]string{"echo", "Hello, world!"}).
 		Sync(ctx)

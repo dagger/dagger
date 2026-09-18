@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -28,16 +29,16 @@ func TestUp(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(UpSuite{})
 }
 
-func upTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
+func upTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 	return specificTestEnv(t, c, "services")
 }
 
 // daggerUpVerify prepares module definitions before timing service readiness.
-func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		return c.WithExec([]string{"sh", "-c", upVerifyScript(upArgs, url, expectBodyContains, okMsg, upVerifyBounds{
 			prepare: 300, ready: timeoutSecs, probe: 5, shutdown: 30,
-		})}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+		})}, core.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	}
 }
 

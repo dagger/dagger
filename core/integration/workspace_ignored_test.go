@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -15,10 +15,10 @@ import (
 // match a rule.
 func (WorkspaceSuite) TestWorkspaceGitUncommittedHonorsGitignore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base").WithNewFile("tracked.log", "tracked"))
-	origin := snapshotWorkspace(ctx, t, c, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base").WithNewFile("tracked.log", "tracked"))
+	origin := snapshotWorkspace(ctx, t, c, core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
 	// Ignore rules committed after tracked.log, so it is tracked and ignored.
-	base := origin.WithNewFile(".gitignore", ".env\n*.log\nbuild/\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	base := origin.WithNewFile(".gitignore", ".env\n*.log\nbuild/\n").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "ignore rules", workspaceCommitDate)
 	})
 
@@ -42,7 +42,7 @@ func (WorkspaceSuite) TestWorkspaceGitUncommittedHonorsGitignore(ctx context.Con
 		require.Equal(t, "SECRET=1", contents)
 
 		committed := ws.WithCommit(ws.Git().Uncommitted(), "commit", workspaceCommitDate)
-		tree := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		tree := committed.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 		entries, err := tree.Entries(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{".gitignore", "base.txt", "src.txt", "tracked.log"}, entries)

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -33,11 +34,11 @@ func (LocalCacheSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
 		return config.Config{GC: config.GCConfig{Enabled: &f}}
 	}))
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { engineSvc.Stop(ctx) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	c2, err := dagger.Connect(
@@ -48,7 +49,7 @@ func (LocalCacheSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
-	cache := c2.Engine().LocalCache()
+	cache := core.NewQuery(c2).Engine().LocalCache()
 
 	mus, err := cache.MaxUsedSpace(ctx)
 	assert.NoError(t, err)
@@ -94,12 +95,12 @@ func (LocalCacheSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *t
 			minFreeSpace:  "10%",
 		},
 	} {
-		f := func(ctx context.Context, t *testctx.T, engine *dagger.Container) {
-			engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+		f := func(ctx context.Context, t *testctx.T, engine *core.Container) {
+			engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 			require.NoError(t, err)
 			t.Cleanup(func() { engineSvc.Stop(ctx) })
 
-			endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+			endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 			require.NoError(t, err)
 
 			c2, err := dagger.Connect(
@@ -110,7 +111,7 @@ func (LocalCacheSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *t
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
 
-			cache := c2.Engine().LocalCache()
+			cache := core.NewQuery(c2).Engine().LocalCache()
 
 			if tc.maxUsedSpace != "" {
 				expectedMaxUsedSpace := getEngineBytesFromSpec(ctx, t, c2, tc.maxUsedSpace)
@@ -133,7 +134,7 @@ func (LocalCacheSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *t
 		}
 
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			var opts []func(*dagger.Container) *dagger.Container
+			var opts []func(*core.Container) *core.Container
 			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
 				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace, "")))
 			}
@@ -141,7 +142,7 @@ func (LocalCacheSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *t
 		})
 
 		t.Run(tc.name+" (bk opts)", func(ctx context.Context, t *testctx.T) {
-			var opts []func(*dagger.Container) *dagger.Container
+			var opts []func(*core.Container) *core.Container
 			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
 				opts = append(opts, engineWithBkConfig(ctx, t, bkConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
 			}
@@ -208,12 +209,12 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			target:       fmt.Sprint(1024 * 1024 * 1024), // 1GB
 		},
 	} {
-		f := func(ctx context.Context, t *testctx.T, engine *dagger.Container, automaticGCEnabled bool) {
-			engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+		f := func(ctx context.Context, t *testctx.T, engine *core.Container, automaticGCEnabled bool) {
+			engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 			require.NoError(t, err)
 			t.Cleanup(func() { engineSvc.Stop(ctx) })
 
-			endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+			endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 			require.NoError(t, err)
 
 			c2, err := dagger.Connect(
@@ -224,22 +225,22 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
 
-			reservedSpace, err := c2.Engine().LocalCache().ReservedSpace(ctx)
+			reservedSpace, err := core.NewQuery(c2).Engine().LocalCache().ReservedSpace(ctx)
 			require.NoError(t, err)
 			fmt.Printf("reserved space: %d\n", reservedSpace)
-			targetSpace, err := c2.Engine().LocalCache().TargetSpace(ctx)
+			targetSpace, err := core.NewQuery(c2).Engine().LocalCache().TargetSpace(ctx)
 			require.NoError(t, err)
 			fmt.Printf("target space: %d\n", targetSpace)
-			maxUsedSpace, err := c2.Engine().LocalCache().MaxUsedSpace(ctx)
+			maxUsedSpace, err := core.NewQuery(c2).Engine().LocalCache().MaxUsedSpace(ctx)
 			require.NoError(t, err)
 			fmt.Printf("max used space: %d\n", maxUsedSpace)
-			minFreeSpace, err := c2.Engine().LocalCache().MinFreeSpace(ctx)
+			minFreeSpace, err := core.NewQuery(c2).Engine().LocalCache().MinFreeSpace(ctx)
 			require.NoError(t, err)
 			fmt.Printf("min free space: %d\n", minFreeSpace)
 
 			target := getEngineBytesFromSpec(ctx, t, c2, tc.target)
 
-			cacheEnts := c2.Engine().LocalCache().EntrySet()
+			cacheEnts := core.NewQuery(c2).Engine().LocalCache().EntrySet()
 			previousUsedBytes, err := cacheEnts.DiskSpaceBytes(ctx)
 			require.NoError(t, err)
 			newUsedBytes := previousUsedBytes
@@ -251,12 +252,12 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 				dagger.WithLogOutput(testutil.NewTWriter(t)),
 			)
 			require.NoError(t, err)
-			_, err = c3.Directory().WithNewFile("/tmp/foo", "foo").Sync(ctx)
+			_, err = core.NewQuery(c3).Directory().WithNewFile("/tmp/foo", "foo").Sync(ctx)
 			require.NoError(t, err)
 
 			tryCount := 10
 			for i := range tryCount {
-				cacheEnts = c2.Engine().LocalCache().EntrySet()
+				cacheEnts = core.NewQuery(c2).Engine().LocalCache().EntrySet()
 				newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 				require.NoError(t, err)
 				if newUsedBytes > previousUsedBytes {
@@ -283,11 +284,11 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			)
 			require.NoError(t, err)
 			for i := range tc.blocks {
-				_, err = c4.Container().From(alpineImage).WithExec([]string{"dd", "if=/dev/zero", "of=/bigfile" + fmt.Sprint(i), "bs=1M", "count=2048"}).Sync(ctx)
+				_, err = core.NewQuery(c4).Container().From(alpineImage).WithExec([]string{"dd", "if=/dev/zero", "of=/bigfile" + fmt.Sprint(i), "bs=1M", "count=2048"}).Sync(ctx)
 				require.NoError(t, err)
 			}
 
-			cacheEnts = c2.Engine().LocalCache().EntrySet()
+			cacheEnts = core.NewQuery(c2).Engine().LocalCache().EntrySet()
 			newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 			require.NoError(t, err)
 			require.Greater(t, newUsedBytes, previousUsedBytes)
@@ -299,7 +300,7 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 				// automatic gc is time based (currently kicks in 1sec after a session ends but throttled to run at most once a min) so no choice but to sleep and retry
 				tryCount := 300
 				for i := range tryCount {
-					cacheEnts = c2.Engine().LocalCache().EntrySet()
+					cacheEnts = core.NewQuery(c2).Engine().LocalCache().EntrySet()
 					newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 					require.NoError(t, err)
 
@@ -332,12 +333,12 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 				tryCount := 10
 				for i := range tryCount {
 					// run an explicit prune using the default prune policy, verify it prunes as expected
-					err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+					err := core.NewQuery(c2).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 						UseDefaultPolicy: true,
 					})
 					require.NoError(t, err)
 
-					cacheEnts = c2.Engine().LocalCache().EntrySet()
+					cacheEnts = core.NewQuery(c2).Engine().LocalCache().EntrySet()
 					newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 					require.NoError(t, err)
 
@@ -358,7 +359,7 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 
 		for _, automaticGCEnabled := range []bool{true, false} {
 			t.Run(tc.name+fmt.Sprintf(" automaticGC=%t", automaticGCEnabled), func(ctx context.Context, t *testctx.T) {
-				var opts []func(*dagger.Container) *dagger.Container
+				var opts []func(*core.Container) *core.Container
 				if !automaticGCEnabled {
 					opts = append(opts, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
 				}
@@ -375,7 +376,7 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 				return
 			}
 
-			var opts []func(*dagger.Container) *dagger.Container
+			var opts []func(*core.Container) *core.Container
 			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
 				opts = append(opts, engineWithBkConfig(ctx, t, bkConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
 			}
@@ -403,15 +404,15 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 			"4GB",
 			"",
 		)),
-	).WithMountedTemp("/var/lib/dagger", dagger.ContainerWithMountedTempOpts{
+	).WithMountedTemp("/var/lib/dagger", core.ContainerWithMountedTempOpts{
 		Size: engineRootSizeBytes,
 	})
 
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, core.ServiceStopOpts{Kill: true}) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	newNestedClient := func() *dagger.Client {
@@ -432,7 +433,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 	getUsedBytes := func() int {
 		t.Helper()
 
-		usedBytes, err := observer.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		usedBytes, err := core.NewQuery(observer).Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
 		require.NoError(t, err)
 		return usedBytes
 	}
@@ -440,7 +441,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 	dumpCacheSummary := func() {
 		t.Helper()
 
-		entryCount, err := observer.Engine().LocalCache().EntrySet().EntryCount(ctx)
+		entryCount, err := core.NewQuery(observer).Engine().LocalCache().EntrySet().EntryCount(ctx)
 		if err != nil {
 			t.Logf("failed to get cache entry count for debugging: %v", err)
 			return
@@ -489,7 +490,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 	baselineUsedBytes := getUsedBytes()
 
 	seedClient := newNestedClient()
-	_, err = seedClient.
+	_, err = core.NewQuery(seedClient).
 		Container().
 		From(alpineImage).
 		WithEnvVariable("GC_PRESSURE_SEED", identity.NewID()).
@@ -511,7 +512,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 	activeClient := newNestedClient()
 	t.Cleanup(func() { _ = activeClient.Close() })
 
-	activePressure, err := activeClient.
+	activePressure, err := core.NewQuery(activeClient).
 		Container().
 		From(alpineImage).
 		WithEnvVariable("GC_PRESSURE_ACTIVE", identity.NewID()).
@@ -578,18 +579,18 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 			}}
 			return cfg
 		}),
-		func(ctr *dagger.Container) *dagger.Container {
+		func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "1s").
-				WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
-					Protocol: dagger.NetworkProtocolTcp,
+				WithExposedPort(9090, core.ContainerWithExposedPortOpts{
+					Protocol: core.NetworkProtocolTcp,
 				})
 		},
 	)
 	devEngine := devEngineContainerAsService(engine)
 
-	metricsCtr := c.Container().From(alpineImage).
+	metricsCtr := core.NewQuery(c).Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngine).
 		WithExec([]string{"apk", "add", "curl"})
 
@@ -783,11 +784,11 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 		t.Helper()
 
 		engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
-		engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+		engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 		require.NoError(t, err)
 		t.Cleanup(func() { engineSvc.Stop(ctx) })
 
-		endpoint, err = engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		endpoint, err = engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 
 		c2, err = dagger.Connect(
@@ -807,7 +808,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 				dagger.WithLogOutput(testutil.NewTWriter(t)),
 			)
 			require.NoError(t, err)
-			_, err = c3.Container().From(alpineImage).WithExec([]string{
+			_, err = core.NewQuery(c3).Container().From(alpineImage).WithExec([]string{
 				"dd",
 				"if=" + inputDevice,
 				"of=/bigfile" + fmt.Sprint(nextBlockID),
@@ -820,7 +821,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 		}
 		getUsedBytes = func(t *testctx.T) int {
 			t.Helper()
-			cacheEnts := c2.Engine().LocalCache().EntrySet()
+			cacheEnts := core.NewQuery(c2).Engine().LocalCache().EntrySet()
 			used, err := cacheEnts.DiskSpaceBytes(ctx)
 			require.NoError(t, err)
 			return used
@@ -832,14 +833,14 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 	t.Run("invalidValues", func(ctx context.Context, t *testctx.T) {
 		_, c2, _, _ := setup(ctx, t)
 
-		err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		err := core.NewQuery(c2).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 			UseDefaultPolicy: false,
 			ReservedSpace:    "not-a-size",
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid reservedSpace value")
 
-		err = c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		err = core.NewQuery(c2).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 			UseDefaultPolicy: false,
 			MinFreeSpace:     "not-a-size",
 		})
@@ -856,7 +857,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 		require.Greater(t, usedBeforeMaxPrune, baselineUsedBytes)
 
 		highMaxUsedSpace := usedBeforeMaxPrune + 1024*1024*1024
-		err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		err := core.NewQuery(c2).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 			UseDefaultPolicy: false,
 			MaxUsedSpace:     fmt.Sprint(highMaxUsedSpace),
 			ReservedSpace:    "0",
@@ -871,7 +872,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 		require.Greater(t, usedBeforeMaxPrune, lowMaxUsedSpace)
 		tryCount := 10
 		for i := range tryCount {
-			err = c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+			err = core.NewQuery(c2).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 				UseDefaultPolicy: false,
 				MaxUsedSpace:     fmt.Sprint(lowMaxUsedSpace),
 				ReservedSpace:    "0",
@@ -902,7 +903,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 		usedBeforeMinFreePrune := getUsedBytes(t)
 		highMaxForMinFree := usedBeforeMinFreePrune + 1024*1024*1024
 
-		err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		err := core.NewQuery(c2).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 			UseDefaultPolicy: false,
 			MaxUsedSpace:     fmt.Sprint(highMaxForMinFree),
 			ReservedSpace:    "0",
@@ -914,7 +915,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 
 		tryCount := 10
 		for i := range tryCount {
-			err = c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+			err = core.NewQuery(c2).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 				UseDefaultPolicy: false,
 				MaxUsedSpace:     fmt.Sprint(highMaxForMinFree),
 				ReservedSpace:    "0",
@@ -953,7 +954,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 
 			tryCount := 10
 			for i := range tryCount {
-				err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+				err := core.NewQuery(c2).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 					UseDefaultPolicy: false,
 					MaxUsedSpace:     fmt.Sprint(maxUsed),
 					ReservedSpace:    reservedSpace,
@@ -991,11 +992,11 @@ func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context,
 	c := connect(ctx, t)
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { engineSvc.Stop(ctx) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	newNestedClient := func() *dagger.Client {
@@ -1017,7 +1018,7 @@ func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context,
 	fetchReadme := func(c2 *dagger.Client) string {
 		t.Helper()
 
-		content, err := c2.Git(repoURL).Commit(commit).Tree().File("README.md").Contents(ctx)
+		content, err := core.NewQuery(c2).Git(repoURL).Commit(commit).Tree().File("README.md").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, content, "Dagger")
 		return content
@@ -1030,7 +1031,7 @@ func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context,
 	pruneClient := newNestedClient()
 	var usedBeforePrune int
 	for i := range 10 {
-		usedBeforePrune, err = pruneClient.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		usedBeforePrune, err = core.NewQuery(pruneClient).Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
 		require.NoError(t, err)
 		if usedBeforePrune > 0 {
 			break
@@ -1042,10 +1043,10 @@ func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context,
 
 	var usedAfterPrune int
 	for i := range 10 {
-		err := pruneClient.Engine().LocalCache().Prune(ctx)
+		err := core.NewQuery(pruneClient).Engine().LocalCache().Prune(ctx)
 		require.NoError(t, err)
 
-		usedAfterPrune, err = pruneClient.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		usedAfterPrune, err = core.NewQuery(pruneClient).Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
 		require.NoError(t, err)
 		if usedAfterPrune < usedBeforePrune {
 			break
@@ -1068,11 +1069,11 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx
 	c := connect(ctx, t)
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, core.ServiceStopOpts{Kill: true}) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	newNestedClient := func() *dagger.Client {
@@ -1087,11 +1088,11 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx
 		return client
 	}
 
-	tarballDigest := func(t *testctx.T, ctr *dagger.Container) string {
+	tarballDigest := func(t *testctx.T, ctr *core.Container) string {
 		t.Helper()
 
-		dgst, err := ctr.AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.ImageLayerCompressionZstd,
+		dgst, err := ctr.AsTarball(core.ContainerAsTarballOpts{
+			ForcedCompression: core.ImageLayerCompressionZstd,
 		}).Digest(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, dgst)
@@ -1099,7 +1100,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx
 	}
 
 	producer := newNestedClient()
-	source := producer.
+	source := core.NewQuery(producer).
 		Container().
 		From(golangImage).
 		WithExec([]string{
@@ -1118,12 +1119,12 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx
 	pinnedClient := newNestedClient()
 	t.Cleanup(func() { _ = pinnedClient.Close() })
 
-	pinned := dagger.Ref[*dagger.Container](pinnedClient, sourceID)
+	pinned := core.Ref[*core.Container](core.NewQuery(pinnedClient), sourceID)
 	pinned, err = pinned.Sync(ctx)
 	require.NoError(t, err)
 
 	ballastClient := newNestedClient()
-	_, err = ballastClient.
+	_, err = core.NewQuery(ballastClient).
 		Container().
 		From(alpineImage).
 		WithEnvVariable("ZSTD_PRUNE_BALLAST", identity.NewID()).
@@ -1137,7 +1138,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx
 	require.NoError(t, ballastClient.Close())
 
 	pruneClient := newNestedClient()
-	err = pruneClient.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+	err = core.NewQuery(pruneClient).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 		UseDefaultPolicy: false,
 		MaxUsedSpace:     "1",
 		ReservedSpace:    "0",
@@ -1159,11 +1160,11 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetad
 	c := connect(ctx, t)
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, core.ServiceStopOpts{Kill: true}) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	newNestedClient := func() *dagger.Client {
@@ -1182,14 +1183,14 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetad
 	t.Cleanup(func() { _ = producer.Close() })
 
 	metadataValue := identity.NewID()
-	ctr := producer.
+	ctr := core.NewQuery(producer).
 		Container().
 		From(alpineImage).
 		WithEnvVariable("PREPARED_IMAGE_METADATA", metadataValue).
 		WithExec([]string{"sh", "-c", "echo prepared > /prepared"})
 
-	manifestContents, err := ctr.Manifest(dagger.ContainerManifestOpts{
-		ForcedCompression: dagger.ImageLayerCompressionGzip,
+	manifestContents, err := ctr.Manifest(core.ContainerManifestOpts{
+		ForcedCompression: core.ImageLayerCompressionGzip,
 	}).Contents(ctx)
 	require.NoError(t, err)
 
@@ -1198,7 +1199,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetad
 	require.NotEmpty(t, manifest.Config.Digest)
 
 	ballastClient := newNestedClient()
-	_, err = ballastClient.
+	_, err = core.NewQuery(ballastClient).
 		Container().
 		From(alpineImage).
 		WithEnvVariable("PREPARED_IMAGE_PRUNE_BALLAST", identity.NewID()).
@@ -1208,7 +1209,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetad
 	require.NoError(t, ballastClient.Close())
 
 	pruneClient := newNestedClient()
-	err = pruneClient.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+	err = core.NewQuery(pruneClient).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 		UseDefaultPolicy: false,
 		MaxUsedSpace:     "1",
 		ReservedSpace:    "0",
@@ -1218,8 +1219,8 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetad
 	require.NoError(t, err)
 	require.NoError(t, pruneClient.Close())
 
-	configContents, err := ctr.Layer(manifest.Config.Digest.String(), dagger.ContainerLayerOpts{
-		ForcedCompression: dagger.ImageLayerCompressionGzip,
+	configContents, err := ctr.Layer(manifest.Config.Digest.String(), core.ContainerLayerOpts{
+		ForcedCompression: core.ImageLayerCompressionGzip,
 	}).Contents(ctx)
 	require.NoError(t, err)
 
@@ -1234,20 +1235,20 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService
 	nestedEngine := devEngineContainer(c)
 	upstreamSvc := devEngineContainerAsService(nestedEngine)
 	t.Cleanup(func() {
-		_, _ = upstreamSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		_, _ = upstreamSvc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 	})
 
-	engineSvc, err := c.Host().Tunnel(upstreamSvc).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(upstreamSvc).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		_, _ = engineSvc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 	})
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	runNestedTmpProbe := func(ctx context.Context, client *dagger.Client, worker, iter int) error {
-		_, err := client.
+		_, err := core.NewQuery(client).
 			Container().
 			From(alpineImage).
 			WithEnvVariable("PRUNE_PROBE", fmt.Sprintf("%d-%d", worker, iter)).
@@ -1310,7 +1311,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService
 		require.NoError(t, err)
 		defer seedClient.Close()
 
-		_, err = seedClient.
+		_, err = core.NewQuery(seedClient).
 			Container().
 			From(alpineImage).
 			WithEnvVariable("OUTER_PRUNE_SEED", fmt.Sprint(iter)).
@@ -1325,7 +1326,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService
 	for i := range 3 {
 		seedOuterPrunableCache(i)
 
-		err := c.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		err := core.NewQuery(c).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 			UseDefaultPolicy: false,
 			MaxUsedSpace:     "1",
 			ReservedSpace:    "0",
@@ -1348,11 +1349,11 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 	c := connect(ctx, t)
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, core.ServiceStopOpts{Kill: true}) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	cacheClient, err := dagger.Connect(
@@ -1366,7 +1367,7 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 	pruneAll := func() {
 		t.Helper()
 
-		err := cacheClient.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		err := core.NewQuery(cacheClient).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 			UseDefaultPolicy: false,
 			MaxUsedSpace:     "1",
 			ReservedSpace:    "0",
@@ -1379,7 +1380,7 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 	getUsedBytes := func() int {
 		t.Helper()
 
-		usedBytes, err := cacheClient.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		usedBytes, err := core.NewQuery(cacheClient).Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
 		require.NoError(t, err)
 		return usedBytes
 	}
@@ -1400,7 +1401,7 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 		}
 	})
 
-	svc := seedClient.
+	svc := core.NewQuery(seedClient).
 		Container().
 		From(alpineImage).
 		WithExec([]string{
@@ -1416,11 +1417,11 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 	serviceRunning := true
 	t.Cleanup(func() {
 		if serviceRunning {
-			_, _ = runningSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+			_, _ = runningSvc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 		}
 	})
 
-	out, err := seedClient.
+	out, err := core.NewQuery(seedClient).
 		Container().
 		From(alpineImage).
 		WithServiceBinding("svc", runningSvc).
@@ -1433,7 +1434,7 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 	const servicePayloadSignalBytes = 128 * 1024 * 1024
 	require.GreaterOrEqual(t, serviceUsedBytes, baselineUsedBytes+servicePayloadSignalBytes, "service payload should contribute enough engine local cache usage to make pruning observable")
 
-	_, err = runningSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+	_, err = runningSvc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 	require.NoError(t, err)
 	serviceRunning = false
 
@@ -1460,15 +1461,15 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 func (LocalCacheSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	_, err := c.Container().
+	_, err := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithMountedCache("/cache", c.CacheVolume("record-type-"+identity.NewID())).
+		WithMountedCache("/cache", core.NewQuery(c).CacheVolume("record-type-"+identity.NewID())).
 		WithExec([]string{"sh", "-c", "echo cache mount > /cache/output.txt"}).
 		Sync(ctx)
 	require.NoError(t, err)
 
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "git source"))
-	gitContent, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "git source"))
+	gitContent, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		File("README.md").
@@ -1476,7 +1477,7 @@ func (LocalCacheSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *tes
 	require.NoError(t, err)
 	require.Equal(t, "git source", gitContent)
 
-	ents, err := c.Engine().LocalCache().EntrySet().Entries(ctx)
+	ents, err := core.NewQuery(c).Engine().LocalCache().EntrySet().Entries(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, ents)
 
@@ -1533,7 +1534,7 @@ func getEngineBytesFromSpec(ctx context.Context, t *testctx.T, c *dagger.Client,
 	if amount, ok := strings.CutSuffix(amount, "%"); ok {
 		percent, err := strconv.Atoi(amount)
 		require.NoError(t, err)
-		dfOut, err := c.Container().From(alpineImage).WithExec([]string{"df", "-B", "1", "/"}).Stdout(ctx)
+		dfOut, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"df", "-B", "1", "/"}).Stdout(ctx)
 		require.NoError(t, err)
 		dfLines := strings.Split(strings.TrimSpace(dfOut), "\n")
 		require.Len(t, dfLines, 2)
@@ -1564,7 +1565,7 @@ type cacheEntryVals struct {
 	DagqlCall                 string
 }
 
-func getCacheEntryVals(ctx context.Context, t *testctx.T, ent dagger.EngineCacheEntry) *cacheEntryVals {
+func getCacheEntryVals(ctx context.Context, t *testctx.T, ent core.EngineCacheEntry) *cacheEntryVals {
 	t.Helper()
 
 	vals := &cacheEntryVals{}

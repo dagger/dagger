@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -54,7 +54,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitConfigIdentity(ctx context.Conte
 				selection = fmt.Sprintf(`git(url: %q) { head { asWorkspace { %%s } } }`, repoURL)
 				resultPath = "git.head.asWorkspace"
 			}
-			changes, err := c.Directory().WithNewFile("authored.txt", "authored").Changes(c.Directory()).ID(ctx)
+			changes, err := core.NewQuery(c).Directory().WithNewFile("authored.txt", "authored").Changes(core.NewQuery(c).Directory()).ID(ctx)
 			require.NoError(t, err)
 			query := "{" + fmt.Sprintf(selection, `withNewFile(path: "authored.txt", contents: "authored") {
 				withCommit(changes: __CHANGES__, message: "authored", date: "2026-09-05T12:00:00Z" __AUTHOR_ARGS__) {
@@ -125,7 +125,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.
 			recipe = strings.TrimSpace(recipe)
 			// The original client is gone. Replaying the commit retains its
 			// resolved identity, including explicit fallbacks for missing config.
-			restored := dagger.Ref[*dagger.LLM](c, dagger.ID(recipe)).Workspace()
+			restored := core.Ref[*core.LLM](core.NewQuery(c), core.ID(recipe)).Workspace()
 			name, err := restored.Git().Head().TargetCommit().AuthorName(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.wantName, name)

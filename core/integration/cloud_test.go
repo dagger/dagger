@@ -11,6 +11,7 @@ import (
 	"context"
 	"testing"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func (CloudSuite) TestTraceURL(ctx context.Context, t *testctx.T) {
 	// depends on where the test runs - in an already nested test, we're *not* logged in
 	org, _ := auth.CurrentOrgName()
 
-	url, err := c.Cloud().TraceURL(ctx)
+	url, err := core.NewQuery(c).Cloud().TraceURL(ctx)
 	if org == "" {
 		requireErrOut(t, err, "no cloud organization configured")
 	} else {

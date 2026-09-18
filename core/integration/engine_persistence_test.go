@@ -33,6 +33,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -40,7 +41,7 @@ import (
 func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *testctx.T) {
 	const persistenceTestGCThresholdBytes = "1000000000000000"
 
-	engineWithPersistenceTestGC := func(ctx context.Context, t *testctx.T) func(*dagger.Container) *dagger.Container {
+	engineWithPersistenceTestGC := func(ctx context.Context, t *testctx.T) func(*core.Container) *core.Container {
 		t.Helper()
 		return engineWithConfig(
 			ctx,
@@ -61,16 +62,16 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		t *testctx.T,
 		stateKey string,
 		clientOpts []dagger.ClientOpt,
-		opts ...func(*dagger.Container) *dagger.Container,
-	) (*dagger.Service, *dagger.Service, *dagger.Client) {
+		opts ...func(*core.Container) *core.Container,
+	) (*core.Service, *core.Service, *dagger.Client) {
 		t.Helper()
 
 		engineCtr := devEngineContainerWithStateKey(client, stateKey, opts...)
 		upstreamSvc := devEngineContainerAsService(engineCtr)
-		engineSvc, err := client.Host().Tunnel(upstreamSvc).Start(ctx)
+		engineSvc, err := core.NewQuery(client).Host().Tunnel(upstreamSvc).Start(ctx)
 		require.NoError(t, err)
 
-		endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 
 		connectOpts := []dagger.ClientOpt{
@@ -88,8 +89,8 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		ctx context.Context,
 		t *testctx.T,
 		stateKey string,
-		opts ...func(*dagger.Container) *dagger.Container,
-	) (*dagger.Service, *dagger.Service, *dagger.Client) {
+		opts ...func(*core.Container) *core.Container,
+	) (*core.Service, *core.Service, *dagger.Client) {
 		t.Helper()
 		return startEngineWithClientOpts(client, ctx, t, stateKey, nil, opts...)
 	}
@@ -97,8 +98,8 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 	stopEngine := func(
 		ctx context.Context,
 		t *testctx.T,
-		upstreamSvc *dagger.Service,
-		engineSvc *dagger.Service,
+		upstreamSvc *core.Service,
+		engineSvc *core.Service,
 		engineClient *dagger.Client,
 	) {
 		t.Helper()
@@ -110,7 +111,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			require.NoError(t, err)
 		}
 		if engineSvc != nil {
-			_, err := engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+			_, err := engineSvc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 			require.NoError(t, err)
 		}
 	}
@@ -126,21 +127,21 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			Counts           map[string]uint64 `json:"counts"`
 		} `json:"value_state"`
 	}
-	snapshotTestOptions := func(ctx context.Context, t *testctx.T) []func(*dagger.Container) *dagger.Container {
-		return []func(*dagger.Container) *dagger.Container{
+	snapshotTestOptions := func(ctx context.Context, t *testctx.T) []func(*core.Container) *core.Container {
+		return []func(*core.Container) *core.Container{
 			engineWithPersistenceTestGC(ctx, t),
 			engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
 				cfg.GRPC.DebugAddress = "0.0.0.0:6060"
 				return cfg
 			}),
-			func(ctr *dagger.Container) *dagger.Container {
+			func(ctr *core.Container) *core.Container {
 				return ctr.WithEnvVariable("_DAGGER_TEST_CONTAINER_PART_DIAGNOSTICS", "1")
 			},
 		}
 	}
-	readSnapshotRows := func(ctx context.Context, t *testctx.T, c *dagger.Client, svc *dagger.Service) map[uint64]savedSnapshotRow {
+	readSnapshotRows := func(ctx context.Context, t *testctx.T, c *dagger.Client, svc *core.Service) map[uint64]savedSnapshotRow {
 		t.Helper()
-		raw, err := c.Container().From(alpineImage).WithServiceBinding("snapshot-engine", svc).
+		raw, err := core.NewQuery(c).Container().From(alpineImage).WithServiceBinding("snapshot-engine", svc).
 			WithEnvVariable("READ_NUMBER", identity.NewID()).
 			WithExec([]string{"wget", "-qO-", "http://snapshot-engine:6060/debug/dagql/cache"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -182,13 +183,13 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		defer origin.Close()
 		port := origin.Listener.Addr().(*net.TCPAddr).Port
 		const hostname = "saved-operation-origin"
-		source := c.Host().Service([]dagger.PortForward{{Backend: port, Frontend: port}}).WithHostname(hostname)
+		source := core.NewQuery(c).Host().Service([]core.PortForward{{Backend: port, Frontend: port}}).WithHostname(hostname)
 		opts := snapshotTestOptions(ctx, t)
-		opts = append(opts, func(ctr *dagger.Container) *dagger.Container { return ctr.WithServiceBinding(hostname, source) })
+		opts = append(opts, func(ctr *core.Container) *core.Container { return ctr.WithServiceBinding(hostname, source) })
 		stateKey := "lazy-operations-" + identity.NewID()
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
-		file := a.HTTP(fmt.Sprintf("http://%s:%d/data", hostname, port))
+		file := core.NewQuery(a).HTTP(fmt.Sprintf("http://%s:%d/data", hostname, port))
 		body, err := file.Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "saved HTTP body\n", body)
@@ -199,11 +200,11 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NotEmpty(t, manifest)
 		var sdk struct {
 			Builtin struct {
-				ID dagger.ID `json:"id"`
+				ID core.ID `json:"id"`
 			} `json:"_builtinContainer"`
 			Schema struct {
-				ID       dagger.ID `json:"id"`
-				Contents string    `json:"contents"`
+				ID       core.ID `json:"id"`
+				Contents string  `json:"contents"`
 			} `json:"__schemaJSONFile"`
 		}
 		require.NoError(t, a.Do(ctx, &dagger.Request{Query: `query($digest: String!) { _builtinContainer(digest: $digest) { id } __schemaJSONFile { id contents } }`, Variables: map[string]any{"digest": manifest}}, &dagger.Response{Data: &sdk}))
@@ -223,15 +224,15 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		a = nil
 		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
-		fileB := dagger.Ref[*dagger.File](b, fileID)
-		body, err = fileB.Contents(ctx, dagger.FileContentsOpts{LimitLines: 1})
+		fileB := core.Ref[*core.File](core.NewQuery(b), fileID)
+		body, err = fileB.Contents(ctx, core.FileContentsOpts{LimitLines: 1})
 		require.NoError(t, err)
 		require.Equal(t, "saved HTTP body\n", body)
-		schemaB := dagger.Ref[*dagger.File](b, sdk.Schema.ID)
-		body, err = schemaB.Contents(ctx, dagger.FileContentsOpts{LimitLines: 1})
+		schemaB := core.Ref[*core.File](core.NewQuery(b), sdk.Schema.ID)
+		body, err = schemaB.Contents(ctx, core.FileContentsOpts{LimitLines: 1})
 		require.NoError(t, err)
 		require.Equal(t, sdk.Schema.Contents, body)
-		entries, err := dagger.Ref[*dagger.Container](b, sdk.Builtin.ID).Rootfs().Entries(ctx)
+		entries, err := core.Ref[*core.Container](core.NewQuery(b), sdk.Builtin.ID).Rootfs().Entries(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, entries)
 		require.Equal(t, requestsBefore, requests.Load(), "ready HTTP snapshot contacted its origin")
@@ -248,7 +249,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		opts := snapshotTestOptions(ctx, t)
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
-		base := a.Directory().WithNewFile("base.txt", "base")
+		base := core.NewQuery(a).Directory().WithNewFile("base.txt", "base")
 		ours := base.WithNewFile("ours.txt", "ours").Changes(base)
 		theirs := base.WithNewFile("theirs.txt", "theirs").Changes(base)
 		third := base.WithNewFile("third.txt", "third").Changes(base)
@@ -261,15 +262,15 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NoError(t, err)
 		cases := []struct {
 			field  string
-			value  *dagger.Changeset
-			inputs []dagger.ID
+			value  *core.Changeset
+			inputs []core.ID
 		}{
-			{"__mergeWithChangeset", ours.WithChangeset(theirs, dagger.ChangesetWithChangesetOpts{OnConflict: dagger.ChangesetMergeConflictFail}), []dagger.ID{theirsID}},
-			{"__mergeWithChangesets", ours.WithChangesets([]*dagger.Changeset{empty, theirs, empty, third}, dagger.ChangesetWithChangesetsOpts{OnConflict: dagger.ChangesetsMergeConflictFail}), []dagger.ID{theirsID, thirdID}},
+			{"__mergeWithChangeset", ours.WithChangeset(theirs, core.ChangesetWithChangesetOpts{OnConflict: core.ChangesetMergeConflictFail}), []core.ID{theirsID}},
+			{"__mergeWithChangesets", ours.WithChangesets([]*core.Changeset{empty, theirs, empty, third}, core.ChangesetWithChangesetsOpts{OnConflict: core.ChangesetsMergeConflictFail}), []core.ID{theirsID, thirdID}},
 		}
-		var savedIDs []dagger.ID
-		var afterIDs []dagger.ID
-		var beforeIDs []dagger.ID
+		var savedIDs []core.ID
+		var afterIDs []core.ID
+		var beforeIDs []core.ID
 		for _, tc := range cases {
 			contents, err := tc.value.After().File("ours.txt").Contents(ctx)
 			require.NoError(t, err)
@@ -319,7 +320,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
 		for i, id := range savedIDs {
-			restored := dagger.Ref[*dagger.Changeset](b, id)
+			restored := core.Ref[*core.Changeset](core.NewQuery(b), id)
 			afterID, err := restored.After().ID(ctx)
 			require.NoError(t, err)
 			require.Equal(t, afterIDs[i], afterID)
@@ -338,16 +339,16 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		opts := snapshotTestOptions(ctx, t)
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
-		d := a.Directory().WithNewFile("a.txt", "hello")
+		d := core.NewQuery(a).Directory().WithNewFile("a.txt", "hello")
 		g := d.File("a.txt").WithName("b.txt")
 		h := d.File("a.txt").WithName("c.txt")
-		p1 := a.Directory().WithNewFile("sub/base", "one").Directory("sub").WithNewFile("probe", "p1")
-		p2 := a.Directory().WithNewFile("sub/base", "two").Directory("sub").WithNewFile("probe", "p2")
-		for _, dir := range []*dagger.Directory{d, p1, p2} {
+		p1 := core.NewQuery(a).Directory().WithNewFile("sub/base", "one").Directory("sub").WithNewFile("probe", "p1")
+		p2 := core.NewQuery(a).Directory().WithNewFile("sub/base", "two").Directory("sub").WithNewFile("probe", "p2")
+		for _, dir := range []*core.Directory{d, p1, p2} {
 			_, err := dir.Sync(ctx)
 			require.NoError(t, err)
 		}
-		for _, file := range []*dagger.File{g, h} {
+		for _, file := range []*core.File{g, h} {
 			_, err := file.Sync(ctx)
 			require.NoError(t, err)
 		}
@@ -361,7 +362,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NoError(t, err)
 		p2ID, err := p2.ID(ctx)
 		require.NoError(t, err)
-		m, err := a.Container().From(alpineImage).Sync(ctx)
+		m, err := core.NewQuery(a).Container().From(alpineImage).Sync(ctx)
 		require.NoError(t, err)
 		mID, err := m.ID(ctx)
 		require.NoError(t, err)
@@ -384,7 +385,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
-		dB, gB := dagger.Ref[*dagger.Directory](b, dID), dagger.Ref[*dagger.File](b, gID)
+		dB, gB := core.Ref[*core.Directory](core.NewQuery(b), dID), core.Ref[*core.File](core.NewQuery(b), gID)
 		name, err := dB.Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/", name)
@@ -395,24 +396,24 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		for _, name := range []string{"d", "g"} {
 			checkSnapshotClosed(t, rows[ids[name]], saved[name])
 		}
-		_, err = dagger.Ref[*dagger.Directory](b, p1ID).Diff(dagger.Ref[*dagger.Directory](b, p2ID)).ID(ctx)
+		_, err = core.Ref[*core.Directory](core.NewQuery(b), p1ID).Diff(core.Ref[*core.Directory](core.NewQuery(b), p2ID)).ID(ctx)
 		require.NoError(t, err)
-		hB := dagger.Ref[*dagger.File](b, hID)
-		fresh := b.Directory().WithNewFile("seed", "fresh").File("seed").WithName("fresh.txt")
-		_, err = b.Directory().WithFiles("/copy", []*dagger.File{hB, fresh}).ID(ctx)
+		hB := core.Ref[*core.File](core.NewQuery(b), hID)
+		fresh := core.NewQuery(b).Directory().WithNewFile("seed", "fresh").File("seed").WithName("fresh.txt")
+		_, err = core.NewQuery(b).Directory().WithFiles("/copy", []*core.File{hB, fresh}).ID(ctx)
 		require.NoError(t, err)
 		freshID, err := fresh.ID(ctx)
 		require.NoError(t, err)
-		_, err = dagger.Ref[*dagger.Container](b, qID).WithFiles("/copy", []*dagger.File{hB}).ID(ctx)
+		_, err = core.Ref[*core.Container](core.NewQuery(b), qID).WithFiles("/copy", []*core.File{hB}).ID(ctx)
 		require.NoError(t, err)
 		rows = readSnapshotRows(ctx, t, c, upB)
 		for name, id := range ids {
 			checkSnapshotClosed(t, rows[id], saved[name])
 		}
 		require.NotEmpty(t, rows[snapshotResultID(t, string(freshID))].Value.OpenSnapshotID, "fresh source still evaluates during name collection")
-		mB, err := dagger.Ref[*dagger.Container](b, mID).Sync(ctx)
+		mB, err := core.Ref[*core.Container](core.NewQuery(b), mID).Sync(ctx)
 		require.NoError(t, err)
-		_, err = mB.WithFiles("/copy", []*dagger.File{hB}).ID(ctx)
+		_, err = mB.WithFiles("/copy", []*core.File{hB}).ID(ctx)
 		require.NoError(t, err)
 		rows = readSnapshotRows(ctx, t, c, upB)
 		require.EqualValues(t, 1, rows[ids["h"]].Value.Counts["storedOpen"], "materialized container copies eagerly")
@@ -425,7 +426,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 		upC, tunnelC, last := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upC, tunnelC, last) })
-		dC, gC := dagger.Ref[*dagger.Directory](last, dID), dagger.Ref[*dagger.File](last, gID)
+		dC, gC := core.Ref[*core.Directory](core.NewQuery(last), dID), core.Ref[*core.File](core.NewQuery(last), gID)
 		_, err = dC.ID(ctx)
 		require.NoError(t, err)
 		_, err = gC.ID(ctx)
@@ -525,7 +526,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		for i, id := range lastIDs {
 			require.Equal(t, snapshotResultID(t, ids[i]), snapshotResultID(t, id))
 		}
-		contents, err := dagger.Ref[*dagger.Directory](last, dagger.ID(lastIDs[0])).File("one.txt").Contents(ctx)
+		contents, err := core.Ref[*core.Directory](core.NewQuery(last), core.ID(lastIDs[0])).File("one.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "first", contents)
 		rows = readSnapshotRows(ctx, t, c, upC)
@@ -595,19 +596,19 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		}
 		checkByID := func(client *dagger.Client, res response) {
 			t.Helper()
-			value, err := dagger.Ref[*dagger.EnvVariable](client, dagger.ID(res.EnvVar.ID)).Value(ctx)
+			value, err := core.Ref[*core.EnvVariable](core.NewQuery(client), core.ID(res.EnvVar.ID)).Value(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "true", value)
-			description, err := dagger.Ref[*dagger.Port](client, dagger.ID(res.Ports[0].ID)).Description(ctx)
+			description, err := core.Ref[*core.Port](core.NewQuery(client), core.ID(res.Ports[0].ID)).Description(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "web", description)
-			port, err := dagger.Ref[*dagger.Port](client, dagger.ID(res.Ports[1].ID)).Port(ctx)
+			port, err := core.Ref[*core.Port](core.NewQuery(client), core.ID(res.Ports[1].ID)).Port(ctx)
 			require.NoError(t, err)
 			require.Equal(t, 9090, port)
-			contents, err := dagger.Ref[*dagger.Schema](client, dagger.ID(res.Schema.ID)).Contents(ctx)
+			contents, err := core.Ref[*core.Schema](core.NewQuery(client), core.ID(res.Schema.ID)).Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, string(contents), `"sourceMap"`)
-			generator, err := dagger.Ref[*dagger.ModuleConfigClient](client, dagger.ID(res.Clients[0].ID)).Generator(ctx)
+			generator, err := core.Ref[*core.ModuleConfigClient](core.NewQuery(client), core.ID(res.Clients[0].ID)).Generator(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "go", generator)
 		}
@@ -653,13 +654,13 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 	t.Run("container parts preserve mutations and unopened snapshots", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "container-parts-" + identity.NewID()
-		opts := []func(*dagger.Container) *dagger.Container{
+		opts := []func(*core.Container) *core.Container{
 			engineWithPersistenceTestGC(ctx, t),
 			engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
 				cfg.GRPC.DebugAddress = "0.0.0.0:6060"
 				return cfg
 			}),
-			func(ctr *dagger.Container) *dagger.Container {
+			func(ctr *core.Container) *core.Container {
 				return ctr.WithEnvVariable("_DAGGER_TEST_CONTAINER_PART_DIAGNOSTICS", "1")
 			},
 		}
@@ -680,9 +681,9 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 				Counts map[string]uint64    `json:"counts"`
 			} `json:"value_state"`
 		}
-		readRows := func(svc *dagger.Service) map[uint64]rowState {
+		readRows := func(svc *core.Service) map[uint64]rowState {
 			t.Helper()
-			raw, err := c.Container().From(alpineImage).
+			raw, err := core.NewQuery(c).Container().From(alpineImage).
 				WithServiceBinding("part-engine", svc).
 				WithEnvVariable("READ_NUMBER", identity.NewID()).
 				WithExec([]string{"wget", "-qO-", "http://part-engine:6060/debug/dagql/cache"}).Stdout(ctx)
@@ -697,7 +698,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			}
 			return rows
 		}
-		resultID := func(id dagger.ID) uint64 {
+		resultID := func(id core.ID) uint64 {
 			t.Helper()
 			var decoded call.ID
 			require.NoError(t, decoded.Decode(string(id)))
@@ -722,9 +723,9 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 		upstreamA, tunnelA, clientA := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamA, tunnelA, clientA) })
-		parent := clientA.Container().From(alpineImage).WithExec([]string{"sh", "-ec", "printf ancestor > /exec-ran"})
-		base := clientA.Directory().WithNewFile("base.txt", "base")
-		payload := clientA.Directory()
+		parent := core.NewQuery(clientA).Container().From(alpineImage).WithExec([]string{"sh", "-ec", "printf ancestor > /exec-ran"})
+		base := core.NewQuery(clientA).Directory().WithNewFile("base.txt", "base")
+		payload := core.NewQuery(clientA).Directory()
 		for i := range 32 {
 			payload = payload.WithNewFile(fmt.Sprintf("file-%02d.txt", i), strings.Repeat(fmt.Sprintf("payload-%02d\n", i), 512))
 		}
@@ -737,7 +738,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NoError(t, err)
 		envelopeID, err := envelope.ID(ctx)
 		require.NoError(t, err)
-		for _, ctr := range []*dagger.Container{typed, envelope} {
+		for _, ctr := range []*core.Container{typed, envelope} {
 			path := "/work/typed/file-00.txt"
 			if ctr == envelope {
 				path = "/work/envelope/file-00.txt"
@@ -746,7 +747,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			require.NoError(t, err)
 			require.Equal(t, strings.Repeat("payload-00\n", 512), contents)
 		}
-		joint, err := clientA.Container().From(alpineImage).WithMountedDirectory("/joint", base).
+		joint, err := core.NewQuery(clientA).Container().From(alpineImage).WithMountedDirectory("/joint", base).
 			WithExec([]string{"sh", "-ec", "printf joint > /joint/output; printf completed"}).Sync(ctx)
 		require.NoError(t, err)
 		jointID, err := joint.ID(ctx)
@@ -778,9 +779,9 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 		upstreamB, tunnelB, clientB := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamB, tunnelB, clientB) })
-		_, err = dagger.Ref[*dagger.Container](clientB, typedID).User(ctx)
+		_, err = core.Ref[*core.Container](core.NewQuery(clientB), typedID).User(ctx)
 		require.NoError(t, err)
-		stdout, err := dagger.Ref[*dagger.Container](clientB, jointID).Stdout(ctx)
+		stdout, err := core.Ref[*core.Container](core.NewQuery(clientB), jointID).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "completed", stdout)
 		rowsB := readRows(upstreamB)
@@ -800,9 +801,9 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 		upstreamC, tunnelC, clientC := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamC, tunnelC, clientC) })
-		typedC := dagger.Ref[*dagger.Container](clientC, typedID)
-		envelopeC := dagger.Ref[*dagger.Container](clientC, envelopeID)
-		for _, ctr := range []*dagger.Container{typedC, envelopeC} {
+		typedC := core.Ref[*core.Container](core.NewQuery(clientC), typedID)
+		envelopeC := core.Ref[*core.Container](core.NewQuery(clientC), envelopeID)
+		for _, ctr := range []*core.Container{typedC, envelopeC} {
 			_, err := ctr.User(ctx)
 			require.NoError(t, err)
 		}
@@ -811,7 +812,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			checkClosed(rowsC[id], "mount:/work", mountIDs[id])
 		}
 		for _, item := range []struct {
-			ctr  *dagger.Container
+			ctr  *core.Container
 			path string
 		}{{typedC, "/work/typed"}, {envelopeC, "/work/envelope"}} {
 			// This selector was never queried on either earlier engine.
@@ -819,7 +820,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			require.NoError(t, err)
 			require.Equal(t, strings.Repeat("payload-31\n", 512), contents)
 		}
-		jointC := dagger.Ref[*dagger.Container](clientC, jointID)
+		jointC := core.Ref[*core.Container](core.NewQuery(clientC), jointID)
 		contents, err := jointC.File("/joint/output").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "joint", contents)
@@ -839,19 +840,19 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		// Construct schema children while the completed parent's rootfs is closed.
 		// Their fresh selectors must route through that parent and open its output.
 		metadataChild := jointC.WithLabel("restored-child", "yes")
-		mountChild := jointC.WithMountedDirectory("/extra", clientC.Directory().WithNewFile("child", "extra"))
+		mountChild := jointC.WithMountedDirectory("/extra", core.NewQuery(clientC).Directory().WithNewFile("child", "extra"))
 		_, err = metadataChild.ID(ctx)
 		require.NoError(t, err)
 		_, err = mountChild.ID(ctx)
 		require.NoError(t, err)
 		checkClosed(readRows(upstreamC)[jid], "fs", jointParts["fs"].OpenSnapshotID)
-		for _, child := range []*dagger.Container{metadataChild, mountChild} {
+		for _, child := range []*core.Container{metadataChild, mountChild} {
 			contents, err := child.File("/etc/alpine-release").Contents(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, contents)
 		}
 		require.EqualValues(t, 1, readRows(upstreamC)[jid].Value.Counts["storedOpen:fs"])
-		for _, ctr := range []*dagger.Container{typedC, envelopeC} {
+		for _, ctr := range []*core.Container{typedC, envelopeC} {
 			contents, err := ctr.File("/exec-ran").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "ancestor", contents)
@@ -875,14 +876,14 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
-		_, err := engineClientA.
+		_, err := core.NewQuery(engineClientA).
 			Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-ec", "echo phase7-local-cache > /tmp/phase7.txt"}).
 			Sync(ctx)
 		require.NoError(t, err)
 
-		entryCountA, err := engineClientA.Engine().LocalCache().EntrySet().EntryCount(ctx)
+		entryCountA, err := core.NewQuery(engineClientA).Engine().LocalCache().EntrySet().EntryCount(ctx)
 		require.NoError(t, err)
 		require.Greater(t, entryCountA, 0)
 
@@ -894,7 +895,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		entryCount, err := engineClientB.Engine().LocalCache().EntrySet().EntryCount(ctx)
+		entryCount, err := core.NewQuery(engineClientB).Engine().LocalCache().EntrySet().EntryCount(ctx)
 		require.NoError(t, err)
 		require.Greater(t, entryCount, 0)
 	})
@@ -905,7 +906,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 		runWorkload := func(ctx context.Context, t *testctx.T, client *dagger.Client) string {
 			t.Helper()
-			out, err := client.
+			out, err := core.NewQuery(client).
 				Container().
 				From(alpineImage).
 				WithExec([]string{
@@ -922,7 +923,7 @@ printf "%s" "$token"`,
 
 		localCacheDiskBytes := func(ctx context.Context, t *testctx.T, client *dagger.Client) int {
 			t.Helper()
-			used, err := client.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+			used, err := core.NewQuery(client).Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
 			require.NoError(t, err)
 			return used
 		}
@@ -953,7 +954,7 @@ printf "%s" "$token"`,
 		upstreamSvcC, engineSvcC, engineClientC := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcC, engineSvcC, engineClientC) })
 
-		err := engineClientC.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		err := core.NewQuery(engineClientC).Engine().LocalCache().Prune(ctx, core.EngineCachePruneOpts{
 			UseDefaultPolicy: false,
 			MaxUsedSpace:     "1",
 			ReservedSpace:    "0",
@@ -979,7 +980,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
 			t.Helper()
 
-			randomContents, err := engineClient.
+			randomContents, err := core.NewQuery(engineClient).
 				Container().
 				From(alpineImage).
 				WithExec([]string{"sh", "-ec", randomScript}).
@@ -997,10 +998,10 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 		randomA := runRandom(ctx, t, engineClientA)
 
-		_, err := upstreamSvcA.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		_, err := upstreamSvcA.Stop(ctx, core.ServiceStopOpts{Kill: true})
 		require.NoError(t, err)
 		upstreamSvcA = nil
-		_, err = engineSvcA.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		_, err = engineSvcA.Stop(ctx, core.ServiceStopOpts{Kill: true})
 		require.NoError(t, err)
 		engineSvcA = nil
 		// The engine is gone, so this close cannot succeed. It still has to
@@ -1009,10 +1010,10 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		_ = engineClientA.Close()
 		engineClientA = nil
 
-		_, err = c.
+		_, err = core.NewQuery(c).
 			Container().
 			From(alpineImage).
-			WithMountedCache("/state", c.CacheVolume(stateKey)).
+			WithMountedCache("/state", core.NewQuery(c).CacheVolume(stateKey)).
 			WithExec([]string{"sh", "-ec", "test -d /state/worker && touch " + sentinelPath}).
 			Sync(ctx)
 		require.NoError(t, err)
@@ -1028,10 +1029,10 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		// state volume until the trash is swept, so discarded state cannot
 		// leak across resets.
 		require.Eventually(t, func() bool {
-			out, err := c.
+			out, err := core.NewQuery(c).
 				Container().
 				From(alpineImage).
-				WithMountedCache("/state", c.CacheVolume(stateKey)).
+				WithMountedCache("/state", core.NewQuery(c).CacheVolume(stateKey)).
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
 				WithExec([]string{"sh", "-ec", "ls -d /state/worker-trash-* 2>/dev/null | wc -l"}).
 				Stdout(ctx)
@@ -1046,10 +1047,10 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		engineSvcB = nil
 		engineClientB = nil
 
-		_, err = c.
+		_, err = core.NewQuery(c).
 			Container().
 			From(alpineImage).
-			WithMountedCache("/state", c.CacheVolume(stateKey)).
+			WithMountedCache("/state", core.NewQuery(c).CacheVolume(stateKey)).
 			WithExec([]string{"sh", "-ec", "test ! -e " + sentinelPath}).
 			Sync(ctx)
 		require.NoError(t, err)
@@ -1070,7 +1071,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
-		ctrID, err := engineClientA.
+		ctrID, err := core.NewQuery(engineClientA).
 			Container().
 			From(alpineImage).
 			WithNewFile(newFilePath, newFileContents).
@@ -1085,7 +1086,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		contents, err := dagger.Ref[*dagger.Container](engineClientB, ctrID).
+		contents, err := core.Ref[*core.Container](core.NewQuery(engineClientB), ctrID).
 			File(newFilePath).
 			Contents(ctx)
 		require.NoError(t, err)
@@ -1097,15 +1098,15 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		stateKey := "phase7-container-selector-lazy-state-" + identity.NewID()
 		const fileContents = "selector lazy persisted\n"
 
-		buildRetainedGraph := func(engineClient *dagger.Client) *dagger.Directory {
-			source := engineClient.
+		buildRetainedGraph := func(engineClient *dagger.Client) *core.Directory {
+			source := core.NewQuery(engineClient).
 				Directory().
 				WithNewFile("file.txt", fileContents)
-			ctr := engineClient.
+			ctr := core.NewQuery(engineClient).
 				Container().
 				WithDirectory("/work", source)
 
-			return engineClient.
+			return core.NewQuery(engineClient).
 				Directory().
 				WithDirectory("rootfs", ctr.Rootfs()).
 				WithDirectory("selected-dir", ctr.Directory("/work")).
@@ -1126,7 +1127,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		loaded := dagger.Ref[*dagger.Directory](engineClientB, dirID)
+		loaded := core.Ref[*core.Directory](core.NewQuery(engineClientB), dirID)
 
 		selectedFile, err := loaded.File("selected-file.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -1149,11 +1150,11 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		runSearch := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
 			t.Helper()
 
-			results, err := engineClient.
+			results, err := core.NewQuery(engineClient).
 				Directory().
 				WithNewFile("one.go", "package main\n// workspace:include ./one\n").
 				WithNewFile("two.go", "package main\n// workspace:include ./two\n").
-				Search(ctx, pattern, dagger.DirectorySearchOpts{
+				Search(ctx, pattern, core.DirectorySearchOpts{
 					Paths: []string{"one.go", "two.go"},
 				})
 			require.NoError(t, err)
@@ -1207,12 +1208,12 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		runDiffStats := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
 			t.Helper()
 
-			before := engineClient.
+			before := core.NewQuery(engineClient).
 				Directory().
 				WithNewFile("same.txt", "same\n").
 				WithNewFile("changed.txt", "old\n").
 				WithNewFile("removed.txt", "gone\n")
-			after := engineClient.
+			after := core.NewQuery(engineClient).
 				Directory().
 				WithNewFile("same.txt", "same\n").
 				WithNewFile("changed.txt", "new\n").
@@ -1283,16 +1284,16 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 		runServiceBound := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client, clientBust string) serviceBoundOutput {
 			t.Helper()
 
-			service := engineClient.
+			service := core.NewQuery(engineClient).
 				Container().
 				From(alpineImage).
 				WithExec([]string{"sh", "-ec", serviceSetupScript}).
-				WithNewFile("/bin/app", serviceScript, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+				WithNewFile("/bin/app", serviceScript, core.ContainerWithNewFileOpts{Permissions: 0o755}).
 				WithExposedPort(8080).
 				WithDefaultArgs([]string{"/bin/app"}).
 				AsService()
 
-			clientCtr := engineClient.
+			clientCtr := core.NewQuery(engineClient).
 				Container().
 				From(alpineImage).
 				WithServiceBinding("sidecar", service)
@@ -1365,7 +1366,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
 			t.Helper()
 
-			randomContents, err := engineClient.
+			randomContents, err := core.NewQuery(engineClient).
 				Container().
 				From(alpineImage).
 				WithExec([]string{"sh", "-ec", randomScript}).
@@ -1379,9 +1380,9 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		runGeneratorGroup := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
 			t.Helper()
 
-			run := engineClient.
+			run := core.NewQuery(engineClient).
 				CurrentWorkspace().
-				Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"generate-files"}}).
+				Generators(core.WorkspaceGeneratorsOpts{Include: []string{"generate-files"}}).
 				Run()
 
 			empty, err := run.IsEmpty(ctx)
@@ -1509,7 +1510,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		c := connect(ctx, t)
 		stateKey := "phase7-contextual-function-cache-state-" + identity.NewID()
 
-		getMod := func(client *dagger.Client) *dagger.Container {
+		getMod := func(client *dagger.Client) *core.Container {
 			return moduleFixture(t, client, "go/contextual-cache").
 				WithEnvVariable("GIT_AUTHOR_DATE", "2000-01-01T00:00:00Z").
 				WithEnvVariable("GIT_COMMITTER_DATE", "2000-01-01T00:00:00Z").
@@ -1562,10 +1563,10 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 		runChain := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client, hostPath string) string {
 			t.Helper()
-			workDir := engineClient.
+			workDir := core.NewQuery(engineClient).
 				Container().
 				From(alpineImage).
-				WithMountedDirectory("/src", engineClient.Host().Directory(hostPath)).
+				WithMountedDirectory("/src", core.NewQuery(engineClient).Host().Directory(hostPath)).
 				WithExec([]string{"sh", "-ec", "mkdir -p /work && cp /src/input.txt /work/input.txt && head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt"}).
 				Directory("/work")
 
@@ -1608,10 +1609,10 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 		runChain := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client, hostPath string) string {
 			t.Helper()
-			workDir := engineClient.
+			workDir := core.NewQuery(engineClient).
 				Container().
 				From(alpineImage).
-				WithMountedFile("/src/input.txt", engineClient.Host().File(hostPath)).
+				WithMountedFile("/src/input.txt", core.NewQuery(engineClient).Host().File(hostPath)).
 				WithExec([]string{"sh", "-ec", "mkdir -p /work && cp /src/input.txt /work/input.txt && head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt"}).
 				Directory("/work")
 
@@ -1653,22 +1654,22 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		upstreamSvc, engineSvc, engineClient := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvc, engineSvc, engineClient) })
 
-		base := engineClient.Container().From(alpineImage)
+		base := core.NewQuery(engineClient).Container().From(alpineImage)
 		for i := range 24 {
-			src := engineClient.Directory().WithNewFile("file.txt", fmt.Sprintf("slow-clone-%d\n", i))
+			src := core.NewQuery(engineClient).Directory().WithNewFile("file.txt", fmt.Sprintf("slow-clone-%d\n", i))
 			base = base.WithMountedDirectory(fmt.Sprintf("/slow/%02d", i), src)
 		}
 		var err error
 		base, err = base.Sync(ctx)
 		require.NoError(t, err)
 
-		secret := engineClient.SetSecret("mounted-dir-parent-eval-race-"+identity.NewID(), "secret")
-		source := engineClient.Host().Directory(gitDir)
+		secret := core.NewQuery(engineClient).SetSecret("mounted-dir-parent-eval-race-"+identity.NewID(), "secret")
+		source := core.NewQuery(engineClient).Host().Directory(gitDir)
 
 		for attempt := range 50 {
 			parent := base.
-				WithMountedCache("/root/.cache/uv", engineClient.CacheVolume("phase7-race-uv-"+identity.NewID())).
-				WithMountedCache("/var/cache/foobar/plugins", engineClient.CacheVolume("phase7-race-foobar-"+identity.NewID())).
+				WithMountedCache("/root/.cache/uv", core.NewQuery(engineClient).CacheVolume("phase7-race-uv-"+identity.NewID())).
+				WithMountedCache("/var/cache/foobar/plugins", core.NewQuery(engineClient).CacheVolume("phase7-race-foobar-"+identity.NewID())).
 				WithWorkdir("/work").
 				WithMountedDirectory(".git", source).
 				WithSecretVariable("FOOBAR_TOKEN", secret)
@@ -1680,7 +1681,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 			var eg errgroup.Group
 			eg.Go(func() error {
 				<-start
-				_, err := dagger.Ref[*dagger.Container](engineClient, parentID).Sync(ctx)
+				_, err := core.Ref[*core.Container](core.NewQuery(engineClient), parentID).Sync(ctx)
 				return err
 			})
 			for worker := range 8 {
@@ -1690,7 +1691,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 					if worker > 0 {
 						time.Sleep(time.Duration(worker) * time.Millisecond)
 					}
-					out, err := dagger.Ref[*dagger.Container](engineClient, parentID).
+					out, err := core.Ref[*core.Container](core.NewQuery(engineClient), parentID).
 						WithEnvVariable("CACHE_BUSTER", fmt.Sprintf("%d-%d", attempt, worker)).
 						WithExec([]string{"sh", "-ec", "cat .git/HEAD"}).
 						Stdout(ctx)
@@ -1740,12 +1741,12 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		runChain := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client, layerExtra bool) gitRunOutput {
 			t.Helper()
 
-			repo := engineClient.Host().Directory(repoDir).AsGit()
+			repo := core.NewQuery(engineClient).Host().Directory(repoDir).AsGit()
 			ref := repo.Head()
 			commitFromRef, err := ref.CommitSHA(ctx)
 			require.NoError(t, err)
 
-			ctr := engineClient.
+			ctr := core.NewQuery(engineClient).
 				Container().
 				From(alpineImage).
 				WithExec([]string{"apk", "add", "git"}).
@@ -1828,7 +1829,7 @@ printf 'layered\n' > /work/layered.txt
 		upstreamA, serviceA, clientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamA, serviceA, clientA) })
 
-		repo := clientA.Container().From(alpineImage).
+		repo := core.NewQuery(clientA).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).WithWorkdir("/repo").
 			WithExec([]string{"sh", "-ec", `
 git init
@@ -1841,13 +1842,13 @@ git commit -am next
 `}).Directory("/repo").AsGit()
 		root := repo.Tag("root").TargetCommit()
 		head := repo.Head().TargetCommit()
-		changesets := []*dagger.Changeset{
+		changesets := []*core.Changeset{
 			root.Changes(),
 			head.Changes(),
-			root.Changes(dagger.GitCommitChangesOpts{Against: head}),
-			head.Changes(dagger.GitCommitChangesOpts{Against: head}),
+			root.Changes(core.GitCommitChangesOpts{Against: head}),
+			head.Changes(core.GitCommitChangesOpts{Against: head}),
 		}
-		ids := make([]dagger.ID, len(changesets))
+		ids := make([]core.ID, len(changesets))
 		for i, changes := range changesets {
 			_, err := changes.Sync(ctx)
 			require.NoError(t, err)
@@ -1860,7 +1861,7 @@ git commit -am next
 		upstreamB, serviceB, clientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamB, serviceB, clientB) })
 		for i, id := range ids {
-			changes := dagger.Ref[*dagger.Changeset](clientB, id)
+			changes := core.Ref[*core.Changeset](core.NewQuery(clientB), id)
 			// Traverse the persisted tree dependencies for the first time after restart.
 			contents, err := changes.After().File("file").Contents(ctx)
 			require.NoError(t, err)
@@ -1898,14 +1899,14 @@ git commit -am next
 		// which workspace detection accepts as the boundary while `go build`'s
 		// buildvcs stamping ignores it (a broken .git directory would be a hard
 		// error there).
-		repoDir := c.Host().Directory("/app", dagger.HostDirectoryOpts{Exclude: []string{".git"}}).
+		repoDir := core.NewQuery(c).Host().Directory("/app", core.HostDirectoryOpts{Exclude: []string{".git"}}).
 			WithNewFile(".git", "gitdir: /nonexistent\n")
 		engineDevVersion := "v0.0.0-test"
 		writeRandomScript := "set -eu\nhead -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /tmp/random\n"
 		writeSummaryScript := "set -eu\ntest -x /usr/local/bin/dagger-engine\nprintf '%s|layered\\n' \"$(cat /tmp/random)\" > /tmp/summary\n"
 
 		type startedDevEngine struct {
-			service  *dagger.Service
+			service  *core.Service
 			endpoint string
 		}
 
@@ -1916,13 +1917,13 @@ git commit -am next
 				c,
 				stateKey,
 				engineWithPersistenceTestGC(ctx, t),
-				func(ctr *dagger.Container) *dagger.Container {
+				func(ctr *core.Container) *core.Container {
 					return ctr.WithEnvVariable("_DAGGER_EGRAPH_BOOT_ID", bootID)
 				},
 			)
 			service := devEngineContainerAsService(engineCtr)
 
-			endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+			endpoint, err := service.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 			require.NoError(t, err)
 
 			return &startedDevEngine{
@@ -1947,7 +1948,7 @@ git commit -am next
 
 			daggerCli := daggerCliFile(t, c)
 			execArgs := append([]string{"/bin/dagger"}, args...)
-			ctr := c.Container().From(alpineImage).
+			ctr := core.NewQuery(c).Container().From(alpineImage).
 				WithServiceBinding("dev-engine", engine.service).
 				WithMountedFile("/bin/dagger", daggerCli).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
@@ -2060,8 +2061,8 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
-		cacheA := engineClientA.CacheVolume(cacheKey)
-		outA, err := engineClientA.
+		cacheA := core.NewQuery(engineClientA).CacheVolume(cacheKey)
+		outA, err := core.NewQuery(engineClientA).
 			Container().
 			From(alpineImage).
 			WithEnvVariable("CACHE_VALUE", cacheValue).
@@ -2079,8 +2080,8 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		cacheB := engineClientB.CacheVolume(cacheKey)
-		outB, err := engineClientB.
+		cacheB := core.NewQuery(engineClientB).CacheVolume(cacheKey)
+		outB, err := core.NewQuery(engineClientB).
 			Container().
 			From(alpineImage).
 			WithMountedCache("/mnt/cache", cacheB).
@@ -2095,22 +2096,22 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 		stateKey := "phase7-source-cache-volume-state-" + identity.NewID()
 		cacheKey := "phase7-source-cache-volume-data-" + identity.NewID()
 
-		cacheSource := func(client *dagger.Client) *dagger.Directory {
-			return client.
+		cacheSource := func(client *dagger.Client) *core.Directory {
+			return core.NewQuery(client).
 				Container().
 				From(alpineImage).
 				WithNewFile("/cache-source/seed.txt", "seed\n").
 				Directory("/cache-source")
 		}
 
-		mountSourceCache := func(client *dagger.Client) *dagger.Container {
-			return client.
+		mountSourceCache := func(client *dagger.Client) *core.Container {
+			return core.NewQuery(client).
 				Container().
 				From(alpineImage).
 				WithMountedCache(
 					"/mnt/cache",
-					client.CacheVolume(cacheKey),
-					dagger.ContainerWithMountedCacheOpts{Source: cacheSource(client)},
+					core.NewQuery(client).CacheVolume(cacheKey),
+					core.ContainerWithMountedCacheOpts{Source: cacheSource(client)},
 				)
 		}
 

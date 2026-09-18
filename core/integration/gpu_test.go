@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type GPUSuite struct{}
@@ -111,7 +112,7 @@ func (GPUSuite) TestGPUAccess(ctx context.Context, t *testctx.T) {
 	for _, cudaImage := range cudaImageMatrix {
 		t.Run(cudaImage, func(ctx context.Context, t *testctx.T) {
 			// Query the same on the Dagger container and compare output:
-			ctr := c.Container().From(cudaImage)
+			ctr := core.NewQuery(c).Container().From(cudaImage)
 			contents, err := ctr.
 				// WithGPU(dagger.ContainerWithGPUOpts{Devices: "GPU-5d8950fe-17a6-2fa7-9baa-afa83bba0e2b"}).
 				ExperimentalWithAllGPUs().
@@ -137,7 +138,7 @@ func (GPUSuite) TestGPUAccess(ctx context.Context, t *testctx.T) {
 				}
 
 				// Pick first GPU and initialize a Dagger container for it:
-				ctr := c.Container().From(cudaImage)
+				ctr := core.NewQuery(c).Container().From(cudaImage)
 				contents, err := ctr.
 					ExperimentalWithGPU([]string{gpus[0]}).
 					WithExec([]string{"nvidia-smi", "-L"}).
@@ -164,7 +165,7 @@ func (GPUSuite) TestGPUAccessWithPython(ctx context.Context, t *testctx.T) {
 	defer c.Close()
 
 	t.Run("pytorch CUDA availability check", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().From("pytorch/pytorch:latest")
+		ctr := core.NewQuery(c).Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
 			ExperimentalWithAllGPUs().
 			WithExec([]string{"python3", "-c", "import torch; print(torch.cuda.is_available())"}).
@@ -174,7 +175,7 @@ func (GPUSuite) TestGPUAccessWithPython(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("pytorch tensors sample", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().From("pytorch/pytorch:latest")
+		ctr := core.NewQuery(c).Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
 			ExperimentalWithAllGPUs().
 			WithNewFile("/tmp/tensors.py", torchTensorsSample).

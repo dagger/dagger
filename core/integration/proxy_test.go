@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type proxyTest struct {
@@ -36,7 +37,7 @@ type proxyTest struct {
 type getProxyLogsFunc func(context.Context) (string, error)
 
 type proxyTestFixtures struct {
-	caCert *dagger.File
+	caCert *core.File
 
 	httpProxyURL  url.URL
 	httpsProxyURL url.URL
@@ -157,8 +158,8 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 	`
 
 	squidCert, squidKey := certGen.newServerCerts(squidAlias)
-	squidLogsVolume := c.CacheVolume("squid-logs-" + identity.NewID())
-	squid := c.Container().From(alpineImage).
+	squidLogsVolume := core.NewQuery(c).CacheVolume("squid-logs-" + identity.NewID())
+	squid := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "squid", "ca-certificates", "go"}).
 		WithExec([]string{"go", "install", "github.com/rchunping/squid-urlrewrite@latest"}).
 		WithExec([]string{"mv", "/root/go/bin/squid-urlrewrite", "/usr/local/bin/"}).
@@ -184,7 +185,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 	if useAuth {
 		const username = "cooluser"
 		const password = "hunter2"
-		squid = squid.WithExec([]string{"adduser", username}, dagger.ContainerWithExecOpts{
+		squid = squid.WithExec([]string{"adduser", username}, core.ContainerWithExecOpts{
 			Stdin: password + "\n" + password + "\n",
 		})
 
@@ -213,10 +214,10 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 		require.NoError(t, err)
 		stopCtx := context.WithoutCancel(ctx)
 		t.Cleanup(func() {
-			squidSvc.Stop(stopCtx, dagger.ServiceStopOpts{Kill: true})
+			squidSvc.Stop(stopCtx, core.ServiceStopOpts{Kill: true})
 		})
 
-		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithMountedFile("/usr/local/share/ca-certificates/myCA.pem", certGen.caRootCert).
 				WithExec([]string{"update-ca-certificates"}).
@@ -230,7 +231,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 
 		thisRepoPath, err := filepath.Abs("../..")
 		require.NoError(t, err)
-		thisRepo := c.Host().Directory(thisRepoPath)
+		thisRepo := core.NewQuery(c).Host().Directory(thisRepoPath)
 
 		nameParts := strings.Split(t.Name(), "/")
 		for i, namePart := range nameParts {
@@ -238,7 +239,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 		}
 		exactName := strings.Join(nameParts, "/")
 
-		_, err = c.Container().From(golangImage).
+		_, err = core.NewQuery(c).Container().From(golangImage).
 			With(goCache(c)).
 			WithMountedDirectory("/src", thisRepo).
 			WithWorkdir("/src").
@@ -268,7 +269,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 			if test.proxyLogTest != nil {
 				t.Run(test.name+"-proxy-logs", func(ctx context.Context, t *testctx.T) {
 					test.proxyLogTest(t, c, func(ctx context.Context) (string, error) {
-						return c.Container().From(alpineImage).
+						return core.NewQuery(c).Container().From(alpineImage).
 							WithMountedCache("/var/log/squidaccess", squidLogsVolume).
 							WithEnvVariable("CACHEBUSTER", identity.NewID()).
 							WithExec([]string{"cat", "/var/log/squidaccess/access.log"}).
@@ -286,7 +287,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 	for _, test := range tests {
 		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
 			test.run(t, c, proxyTestFixtures{
-				caCert: c.Host().File("/ca.pem"),
+				caCert: core.NewQuery(c).Host().File("/ca.pem"),
 
 				httpProxyURL:  squidHTTPURL,
 				httpsProxyURL: squidHTTPSURL,
@@ -306,7 +307,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 
 		customProxyTests(ctx, t, c, false,
 			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
-				out, err := c.Container().From(alpineImage).
+				out, err := core.NewQuery(c).Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
 					WithExec([]string{"curl", "-v", f.httpServerURL.String()}).
 					Stderr(ctx)
@@ -316,7 +317,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 			}},
 
 			proxyTest{name: "https", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
-				out, err := c.Container().From(alpineImage).
+				out, err := core.NewQuery(c).Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
 					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
 					WithExec([]string{"update-ca-certificates"}).
@@ -328,7 +329,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 			}},
 
 			proxyTest{name: "noproxy http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
-				out, err := c.Container().From(alpineImage).
+				out, err := core.NewQuery(c).Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
 					WithExec([]string{"curl", "-v", f.noproxyHTTPServerURL.String()}).
 					Stderr(ctx)
@@ -344,7 +345,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 
 		customProxyTests(ctx, t, c, true,
 			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
-				base := c.Container().From(alpineImage).
+				base := core.NewQuery(c).Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"})
 
 				out, err := base.
@@ -367,7 +368,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 			}},
 
 			proxyTest{name: "https", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
-				base := c.Container().From(alpineImage).
+				base := core.NewQuery(c).Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
 					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
 					WithExec([]string{"update-ca-certificates"})
@@ -405,13 +406,13 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 				proxyTest{
 					name: "git",
 					run: func(t *testctx.T, c *dagger.Client, _ proxyTestFixtures) {
-						opts := dagger.GitOpts{}
+						opts := core.GitOpts{}
 						if token := tc.token(); token != "" {
 							opts.HTTPAuthUsername = tc.httpAuthUsername
-							opts.HTTPAuthToken = c.SetSecret("TOKEN", token)
+							opts.HTTPAuthToken = core.NewQuery(c).SetSecret("TOKEN", token)
 						}
 						gitURL := "https://" + strings.TrimPrefix(tc.gitTestRepoRef, "https://")
-						git := c.Git(gitURL, opts)
+						git := core.NewQuery(c).Git(gitURL, opts)
 						_, err := git.Ref(tc.gitTestRepoCommit).Tree().Sync(ctx)
 						require.NoError(t, err)
 					},
@@ -447,10 +448,10 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 				proxyTest{
 					name: "git",
 					run: func(t *testctx.T, c *dagger.Client, _ proxyTestFixtures) {
-						opts := dagger.GitOpts{}
+						opts := core.GitOpts{}
 						if token := tc.token(); token != "" {
 							opts.HTTPAuthUsername = tc.httpAuthUsername
-							opts.HTTPAuthToken = c.SetSecret("TOKEN", token)
+							opts.HTTPAuthToken = core.NewQuery(c).SetSecret("TOKEN", token)
 						}
 
 						// HACK: squid won't redirect a https url
@@ -461,7 +462,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 							u.Host += ".example"
 							gitURL = u.String()
 						}
-						git := c.Git(gitURL, opts)
+						git := core.NewQuery(c).Git(gitURL, opts)
 						_, err := git.Ref(tc.gitTestRepoCommit).Tree().Sync(ctx)
 						require.NoError(t, err)
 					},
@@ -534,12 +535,12 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 			goProxyDone <- srv.Serve(l)
 		}()
 
-		goProxySvc := c.Host().Service([]dagger.PortForward{{
+		goProxySvc := core.NewQuery(c).Host().Service([]core.PortForward{{
 			Backend:  port,
 			Frontend: goProxyPort,
 		}})
 
-		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithServiceBinding(goProxyAlias, goProxySvc).
 				WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
@@ -547,9 +548,9 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 
 		thisRepoPath, err := filepath.Abs("../..")
 		require.NoError(t, err)
-		thisRepo := c.Host().Directory(thisRepoPath)
+		thisRepo := core.NewQuery(c).Host().Directory(thisRepoPath)
 
-		_, err = c.Container().From(golangImage).
+		_, err = core.NewQuery(c).Container().From(golangImage).
 			With(goCache(c)).
 			WithMountedDirectory("/src", thisRepo).
 			WithWorkdir("/src").

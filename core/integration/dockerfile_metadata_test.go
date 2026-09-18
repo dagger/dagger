@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/testctx"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
@@ -26,7 +27,7 @@ import (
 func (DockerfileSuite) TestDockerBuildContainerMetadata(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Directory().WithNewFile("Dockerfile", `FROM `+alpineImage+`
+	ctr := core.NewQuery(c).Directory().WithNewFile("Dockerfile", `FROM `+alpineImage+`
 WORKDIR /final
 USER root
 ENV RESULT=success
@@ -77,7 +78,7 @@ RUN echo ok >/final/out.txt
 func (DockerfileSuite) TestDockerBuildExportConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Directory().WithNewFile("Dockerfile", `FROM `+alpineImage+`
+	ctr := core.NewQuery(c).Directory().WithNewFile("Dockerfile", `FROM `+alpineImage+`
 RUN echo hi > /out.txt
 HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --retries=5 CMD ["sh","-c","test -f /out.txt"]
 ONBUILD RUN echo child-build
@@ -129,13 +130,13 @@ func (DockerfileSuite) TestDockerBuildSecurityPolicy(ctx context.Context, t *tes
 		}
 		return cfg
 	}))
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = engineSvc.Stop(ctx)
 	})
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	c2, err := dagger.Connect(
@@ -146,7 +147,7 @@ func (DockerfileSuite) TestDockerBuildSecurityPolicy(ctx context.Context, t *tes
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c2.Close() })
 
-	_, err = c2.Directory().WithNewFile("Dockerfile", `FROM `+alpineImage+`
+	_, err = core.NewQuery(c2).Directory().WithNewFile("Dockerfile", `FROM `+alpineImage+`
 RUN --network=host sh -c 'echo denied > /status'
 CMD ["cat", "/status"]
 `).DockerBuild().Sync(ctx)

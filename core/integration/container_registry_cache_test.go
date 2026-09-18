@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -24,7 +25,7 @@ func (ContainerSuite) TestFromTagCachesManifestMetadataAcrossSessions(ctx contex
 
 	registrySvc := countingOCIRegistryService(c)
 	devEngine := devEngineContainer(c,
-		func(ctr *dagger.Container) *dagger.Container {
+		func(ctr *core.Container) *core.Container {
 			return ctr.WithServiceBinding(countingRegistryHost, registrySvc)
 		},
 		engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
@@ -35,11 +36,11 @@ func (ContainerSuite) TestFromTagCachesManifestMetadataAcrossSessions(ctx contex
 		}),
 	)
 
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	resetCountingOCIRegistry(ctx, t, c, registrySvc)
@@ -52,7 +53,7 @@ func (ContainerSuite) TestFromTagCachesManifestMetadataAcrossSessions(ctx contex
 		require.NoError(t, err)
 		defer nestedClient.Close()
 
-		contents, err := nestedClient.Container().
+		contents, err := core.NewQuery(nestedClient).Container().
 			From(countingRegistryRef).
 			File("/marker.txt").
 			Contents(ctx)
@@ -88,20 +89,20 @@ type countingOCIRegistryCounts struct {
 	LayerGETs     int64 `json:"layer_gets"`
 }
 
-func countingOCIRegistryService(c *dagger.Client) *dagger.Service {
-	return c.Container().
+func countingOCIRegistryService(c *dagger.Client) *core.Service {
+	return core.NewQuery(c).Container().
 		From(golangImage).
 		WithNewFile("/src/main.go", countingOCIRegistrySource).
-		WithMountedCache("/tmp/go-cache", c.CacheVolume("counting-oci-registry-go-cache")).
+		WithMountedCache("/tmp/go-cache", core.NewQuery(c).CacheVolume("counting-oci-registry-go-cache")).
 		WithEnvVariable("GOCACHE", "/tmp/go-cache").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 }
 
-func resetCountingOCIRegistry(ctx context.Context, t *testctx.T, c *dagger.Client, registrySvc *dagger.Service) {
+func resetCountingOCIRegistry(ctx context.Context, t *testctx.T, c *dagger.Client, registrySvc *core.Service) {
 	t.Helper()
-	_, err := c.Container().
+	_, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding(countingRegistryHost, registrySvc).
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
@@ -110,13 +111,13 @@ func resetCountingOCIRegistry(ctx context.Context, t *testctx.T, c *dagger.Clien
 	require.NoError(t, err)
 }
 
-func pushCountingOCIRegistryImage(ctx context.Context, t *testctx.T, c *dagger.Client, registrySvc *dagger.Service, marker string) {
+func pushCountingOCIRegistryImage(ctx context.Context, t *testctx.T, c *dagger.Client, registrySvc *core.Service, marker string) {
 	t.Helper()
-	_, err := c.Container().
+	_, err := core.NewQuery(c).Container().
 		From(golangImage).
 		WithServiceBinding(countingRegistryHost, registrySvc).
 		WithNewFile("/src/main.go", countingOCIRegistryPusherSource).
-		WithMountedCache("/tmp/go-cache", c.CacheVolume("counting-oci-registry-pusher-go-cache")).
+		WithMountedCache("/tmp/go-cache", core.NewQuery(c).CacheVolume("counting-oci-registry-pusher-go-cache")).
 		WithEnvVariable("GOCACHE", "/tmp/go-cache").
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"go", "run", "/src/main.go", marker}).
@@ -124,9 +125,9 @@ func pushCountingOCIRegistryImage(ctx context.Context, t *testctx.T, c *dagger.C
 	require.NoError(t, err)
 }
 
-func readCountingOCIRegistryCounts(ctx context.Context, t *testctx.T, c *dagger.Client, registrySvc *dagger.Service) countingOCIRegistryCounts {
+func readCountingOCIRegistryCounts(ctx context.Context, t *testctx.T, c *dagger.Client, registrySvc *core.Service) countingOCIRegistryCounts {
 	t.Helper()
-	out, err := c.Container().
+	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding(countingRegistryHost, registrySvc).
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).

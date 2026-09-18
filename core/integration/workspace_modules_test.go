@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -41,9 +42,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
 
-		current := c.CurrentWorkspace()
-		updated := current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
-		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
+		current := core.NewQuery(c).CurrentWorkspace()
+		updated := current.WithModule(ref, core.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		added, err := updated.Changes(core.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{workspacecfg.ConfigFileName, workspacecfg.LockFileName}, added)
 		require.NoError(t, updated.Export(ctx))
@@ -67,9 +68,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Contains(t, string(lockBytes), `"git-sha"`)
 
 		c = connect(ctx, t, dagger.WithWorkdir(workdir))
-		current = c.CurrentWorkspace()
-		updated = current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
-		empty, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
+		current = core.NewQuery(c).CurrentWorkspace()
+		updated = current.WithModule(ref, core.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		empty, err := updated.Changes(core.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, empty)
 	})
@@ -84,9 +85,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		current := c.CurrentWorkspace()
+		current := core.NewQuery(c).CurrentWorkspace()
 		updated := current.WithModule("./dep")
-		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
+		added, err := updated.Changes(core.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{workspacecfg.ConfigFileName}, added)
 		require.NoError(t, updated.Export(ctx))

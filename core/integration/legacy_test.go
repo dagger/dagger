@@ -24,6 +24,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 // LegacySuite contains tests for module versioning compatibility
@@ -33,29 +34,29 @@ func TestLegacy(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(LegacySuite{})
 }
 
-func withLegacyGoModule(t testing.TB, c *dagger.Client, dst, name, engineVersion string) dagger.WithContainerFunc {
+func withLegacyGoModule(t testing.TB, c *dagger.Client, dst, name, engineVersion string) core.WithContainerFunc {
 	t.Helper()
 	return withLegacyModuleFixture(t, c, dst, "go/base-test", name, "go", engineVersion)
 }
 
-func withLegacyPythonModule(t testing.TB, c *dagger.Client, dst, name, engineVersion string) dagger.WithContainerFunc {
+func withLegacyPythonModule(t testing.TB, c *dagger.Client, dst, name, engineVersion string) core.WithContainerFunc {
 	t.Helper()
 	return withLegacyModuleFixture(t, c, dst, "python/base-test", name, "python", engineVersion)
 }
 
-func withLegacyPythonDepModule(t testing.TB, c *dagger.Client, dst, name, engineVersion string) dagger.WithContainerFunc {
+func withLegacyPythonDepModule(t testing.TB, c *dagger.Client, dst, name, engineVersion string) core.WithContainerFunc {
 	t.Helper()
 	return withLegacyModuleFixture(t, c, dst, "python/base-dep", name, "python", engineVersion)
 }
 
-func withLegacyTypescriptModule(t testing.TB, c *dagger.Client, dst, name, engineVersion string) dagger.WithContainerFunc {
+func withLegacyTypescriptModule(t testing.TB, c *dagger.Client, dst, name, engineVersion string) core.WithContainerFunc {
 	t.Helper()
 	return withLegacyModuleFixture(t, c, dst, "typescript/base-test", name, "typescript", engineVersion)
 }
 
-func withLegacyModuleFixture(t testing.TB, c *dagger.Client, dst, fixture, name, sdk, engineVersion string) dagger.WithContainerFunc {
+func withLegacyModuleFixture(t testing.TB, c *dagger.Client, dst, fixture, name, sdk, engineVersion string) core.WithContainerFunc {
 	t.Helper()
-	return func(ctr *dagger.Container) *dagger.Container {
+	return func(ctr *core.Container) *core.Container {
 		return ctr.
 			With(withModuleFixture(t, c, dst, fixture)).
 			With(fileContents(fixtureJoin(dst, "dagger.json"), legacyModuleConfig(name, sdk, engineVersion)))
@@ -75,7 +76,7 @@ func writeLegacyHostGoModule(ctx context.Context, t *testctx.T, modDir, name, en
 	require.NoError(t, err)
 }
 
-func legacySDKModule(t *testctx.T, c *dagger.Client, sdk, source, engineVersion string) *dagger.Container {
+func legacySDKModule(t *testctx.T, c *dagger.Client, sdk, source, engineVersion string) *core.Container {
 	t.Helper()
 	ctr := goGitBase(t, c)
 	switch sdk {
@@ -100,7 +101,7 @@ func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.
 
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withLegacyGoModule(t, c, ".", "bare", "v0.11.9")).
@@ -180,7 +181,7 @@ func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
 	src := fmt.Appendf(nil, `package main
 import (
 	"context"
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 func New(ctx context.Context) *Test {
@@ -193,10 +194,10 @@ func New(ctx context.Context) *Test {
 }
 
 type Test struct {
-	Ctr *dagger.Container
+	Ctr *core.Container
 }
 
-func (t *Test) Debug() *dagger.Terminal {
+func (t *Test) Debug() *core.Terminal {
 	return t.Ctr.Terminal()
 }
 `, alpineImage)
@@ -378,7 +379,7 @@ func (LegacySuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
 			With(withLegacyGoModule(t, c, ".", "test", version)).
 			WithNewFile("main.go", fmt.Sprintf(`package main
 
-import "dagger/test/internal/dagger"
+import "dagger/test/internal/dagger/core"
 
 func New() *Test {
     return &Test{
@@ -389,16 +390,16 @@ func New() *Test {
 }
 
 type Test struct {
-    Container *dagger.Container
+    Container *core.Container
 }
 
-func (m *Test) Use() *dagger.Container {
+func (m *Test) Use() *core.Container {
     return m.Container.WithExec([]string{"hello"})
 
 }
 
-func (m *Test) Skip() *dagger.Container {
-    return m.Container.WithExec([]string{"echo", "hello"}, dagger.ContainerWithExecOpts{
+func (m *Test) Skip() *core.Container {
+    return m.Container.WithExec([]string{"echo", "hello"}, core.ContainerWithExecOpts{
         SkipEntrypoint: true,
     })
 }
@@ -463,7 +464,7 @@ func (LegacySuite) TestLegacyNoExec(ctx context.Context, t *testctx.T) {
 
 import (
     "context"
-    "dagger/test/internal/dagger"
+    "dagger/test/internal/dagger/core"
 )
 
 func New() *Test {
@@ -475,7 +476,7 @@ func New() *Test {
 }
 
 type Test struct {
-    Container *dagger.Container
+    Container *core.Container
 }
 
 func (m *Test) Stdout(ctx context.Context) (string, error) {
@@ -486,7 +487,7 @@ func (m *Test) Stderr(ctx context.Context) (string, error) {
     return m.Container.Stderr(ctx)
 }
 
-func (m *Test) NoExec(ctx context.Context) *dagger.Container {
+func (m *Test) NoExec(ctx context.Context) *core.Container {
 	return m.Container.
         WithoutDefaultArgs().
         WithoutEntrypoint()
@@ -783,17 +784,17 @@ func (LegacySuite) TestGitWithKeepDir(ctx context.Context, t *testctx.T) {
 
 import (
 	"context"
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct {}
 
 func (m *Test) GetCommit(ctx context.Context, cmtID string) (string, error) {
-	return dag.Git("github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Commit(cmtID).Commit(ctx)
+	return dag.Git("github.com/dagger/dagger", core.GitOpts{KeepGitDir: true}).Commit(cmtID).Commit(ctx)
 }
 
 func (m *Test) GetContents(ctx context.Context, cmtID string) (string, error) {
-	return dag.Git("github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Commit(cmtID).Tree().File(".git/HEAD").Contents(ctx)
+	return dag.Git("github.com/dagger/dagger", core.GitOpts{KeepGitDir: true}).Commit(cmtID).Tree().File(".git/HEAD").Contents(ctx)
 }
 
 func (m *Test) GetContentsNoKeepGitDirOpt(ctx context.Context, cmtID string) (string, error) {
@@ -827,11 +828,14 @@ func (LegacySuite) TestGoUnscopedEnumValues(ctx context.Context, t *testctx.T) {
 		With(withLegacyGoModule(t, c, ".", "test", "v0.13.4")).
 		WithNewFile("main.go", `package main
 
-import "dagger/test/internal/dagger"
+import (
+	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
+)
 
 type Test struct {}
 
-func (m *Test) OldProto(proto dagger.NetworkProtocol) dagger.NetworkProtocol {
+func (m *Test) OldProto(proto core.NetworkProtocol) core.NetworkProtocol {
 	switch proto {
 	case dagger.Tcp:
 		return dagger.Udp
@@ -842,12 +846,12 @@ func (m *Test) OldProto(proto dagger.NetworkProtocol) dagger.NetworkProtocol {
 	}
 }
 
-func (m *Test) NewProto(proto dagger.NetworkProtocol) dagger.NetworkProtocol {
+func (m *Test) NewProto(proto core.NetworkProtocol) core.NetworkProtocol {
 	switch proto {
-	case dagger.NetworkProtocolTcp:
-		return dagger.NetworkProtocolUdp
-	case dagger.NetworkProtocolUdp:
-		return dagger.NetworkProtocolTcp
+	case core.NetworkProtocolTcp:
+		return core.NetworkProtocolUdp
+	case core.NetworkProtocolUdp:
+		return core.NetworkProtocolTcp
 	default:
 		panic("nope")
 	}
@@ -935,12 +939,12 @@ import (
 	"net/http"
 	"time"
 
-	"dagger/foo/internal/dagger"
+	"dagger/foo/internal/dagger/core"
 )
 
 type Foo struct{}
 
-func (f *Foo) TestServiceBindingEntrypoint(ctx context.Context, app *dagger.File) (string, error) {
+func (f *Foo) TestServiceBindingEntrypoint(ctx context.Context, app *core.File) (string, error) {
 	ctr, err := f.StartEntrypointByDefault(ctx, app)
 	if err != nil {
 		return "", err
@@ -954,15 +958,15 @@ func (f *Foo) TestServiceBindingEntrypoint(ctx context.Context, app *dagger.File
 		Stdout(ctx)
 }
 
-func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *dagger.File) (string, error) {
+func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *core.File) (string, error) {
 	ctr, err := f.StartEntrypointByDefault(ctx, app)
 	if err != nil {
 		return "", err
 	}
-	go ctr.AsService().Up(ctx, dagger.ServiceUpOpts{
-		Ports: []dagger.PortForward{
+	go ctr.AsService().Up(ctx, core.ServiceUpOpts{
+		Ports: []core.PortForward{
 			{
-				Protocol: dagger.NetworkProtocolTcp,
+				Protocol: core.NetworkProtocolTcp,
 				Frontend: 8080,
 				Backend:  8080,
 			},
@@ -971,15 +975,15 @@ func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *dagger.File) (st
 	return fetch()
 }
 
-func (f *Foo) TestContainerUpEntrypoint(ctx context.Context, app *dagger.File) (string, error) {
+func (f *Foo) TestContainerUpEntrypoint(ctx context.Context, app *core.File) (string, error) {
 	ctr, err := f.StartEntrypointByDefault(ctx, app)
 	if err != nil {
 		return "", err
 	}
-	go ctr.Up(ctx, dagger.ContainerUpOpts{
-		Ports: []dagger.PortForward{
+	go ctr.Up(ctx, core.ContainerUpOpts{
+		Ports: []core.PortForward{
 			{
-				Protocol: dagger.NetworkProtocolTcp,
+				Protocol: core.NetworkProtocolTcp,
 				Frontend: 8080,
 				Backend:  8080,
 			},
@@ -988,7 +992,7 @@ func (f *Foo) TestContainerUpEntrypoint(ctx context.Context, app *dagger.File) (
 	return fetch()
 }
 
-func (f *Foo) StartEntrypointByDefault(ctx context.Context, app *dagger.File) (*dagger.Container, error) {
+func (f *Foo) StartEntrypointByDefault(ctx context.Context, app *core.File) (*core.Container, error) {
 	return dag.Container().
 		From("alpine:3.20.2").
 		WithFile("/bin/app", app).
@@ -997,7 +1001,7 @@ func (f *Foo) StartEntrypointByDefault(ctx context.Context, app *dagger.File) (*
 		WithExposedPort(8080), nil
 }
 
-func (f *Foo) TestServiceBindingWithExec(ctx context.Context, app *dagger.File) (string, error) {
+func (f *Foo) TestServiceBindingWithExec(ctx context.Context, app *core.File) (string, error) {
 	ctr, err := f.UseWithExecWhenAvailable(ctx, app)
 	if err != nil {
 		return "", err
@@ -1011,15 +1015,15 @@ func (f *Foo) TestServiceBindingWithExec(ctx context.Context, app *dagger.File) 
 		Stdout(ctx)
 }
 
-func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *dagger.File) (string, error) {
+func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *core.File) (string, error) {
 	ctr, err := f.UseWithExecWhenAvailable(ctx, app)
 	if err != nil {
 		return "", err
 	}
-	go ctr.AsService().Up(ctx, dagger.ServiceUpOpts{
-		Ports: []dagger.PortForward{
+	go ctr.AsService().Up(ctx, core.ServiceUpOpts{
+		Ports: []core.PortForward{
 			{
-				Protocol: dagger.NetworkProtocolTcp,
+				Protocol: core.NetworkProtocolTcp,
 				Frontend: 8080,
 				Backend:  8080,
 			},
@@ -1028,15 +1032,15 @@ func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *dagger.File) (stri
 	return fetch()
 }
 
-func (f *Foo) TestContainerUpWithExec(ctx context.Context, app *dagger.File) (string, error) {
+func (f *Foo) TestContainerUpWithExec(ctx context.Context, app *core.File) (string, error) {
 	ctr, err := f.UseWithExecWhenAvailable(ctx, app)
 	if err != nil {
 		return "", err
 	}
-	go ctr.Up(ctx, dagger.ContainerUpOpts{
-		Ports: []dagger.PortForward{
+	go ctr.Up(ctx, core.ContainerUpOpts{
+		Ports: []core.PortForward{
 			{
-				Protocol: dagger.NetworkProtocolTcp,
+				Protocol: core.NetworkProtocolTcp,
 				Frontend: 8080,
 				Backend:  8080,
 			},
@@ -1045,7 +1049,7 @@ func (f *Foo) TestContainerUpWithExec(ctx context.Context, app *dagger.File) (st
 	return fetch()
 }
 
-func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*dagger.Container, error) {
+func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *core.File) (*core.Container, error) {
 	return dag.Container().
 		From("alpine:3.20.2").
 		WithFile("/bin/app", app).
@@ -1078,7 +1082,7 @@ func fetch() (string, error) {
 }
 `
 
-	app := c.Container().
+	app := core.NewQuery(c).Container().
 		From(golangImage).
 		WithWorkdir("/work").
 		WithNewFile("main.go", serversource).
@@ -1149,7 +1153,7 @@ func (LegacySuite) TestDirectoryTrailingSlash(ctx context.Context, t *testctx.T)
 
 import (
 	"context"
-	"dagger/bare/internal/dagger"
+	"dagger/bare/internal/dagger/core"
 )
 
 type Bare struct {}
@@ -1166,7 +1170,7 @@ func (m *Bare) TestName(ctx context.Context) (string, error) {
 	return m.dir().Directory("foo").Name(ctx)
 }
 
-func (m *Bare) dir() *dagger.Directory {
+func (m *Bare) dir() *core.Directory {
 	return dag.Directory().
 		WithDirectory("foo", dag.Directory()).
 		WithNewFile("foo/bar", "").

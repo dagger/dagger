@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,7 @@ func (AddressSuite) TestValue(ctx context.Context, t *testctx.T) {
 		"tcp://localhost:4242",
 		"unix:///var/run/docker.sock",
 	} {
-		value, err := c.Address(input).Value(ctx)
+		value, err := core.NewQuery(c).Address(input).Value(ctx)
 		require.NoError(t, err)
 		require.Equal(t, input, value)
 	}
@@ -44,7 +45,7 @@ func (AddressSuite) TestValue(ctx context.Context, t *testctx.T) {
 
 func (AddressSuite) TestContainer(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Address(alpineImage).Container()
+	ctr := core.NewQuery(c).Address(alpineImage).Container()
 	ref, err := ctr.ImageRef(ctx)
 	require.NoError(t, err)
 	require.Contains(t, ref, "alpine")
@@ -57,7 +58,7 @@ func (AddressSuite) TestService(ctx context.Context, t *testctx.T) {
 		w.Write([]byte("hello world"))
 	})
 	t.Run("simple", func(ctx context.Context, t *testctx.T) {
-		host := c.Address(fmt.Sprintf("tcp://localhost:%d", port)).Service()
+		host := core.NewQuery(c).Address(fmt.Sprintf("tcp://localhost:%d", port)).Service()
 		url := fmt.Sprintf("http://www:%d", port)
 		require.Equal(t, "hello world", httpQuery(t, c, host, url))
 	})
@@ -70,7 +71,7 @@ func (AddressSuite) TestService(ctx context.Context, t *testctx.T) {
 			"http://localhost",
 			"foo://bar",
 		} {
-			_, err := c.Address(value).Service().ID(ctx)
+			_, err := core.NewQuery(c).Address(value).Service().ID(ctx)
 			require.Error(t, err)
 		}
 	})
@@ -83,13 +84,11 @@ func (AddressSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	// Absolute file path
 	requireFileContains(ctx, t,
-		"hello there",
-		c.Address(tmp+"/hello.txt").File(),
+		"hello there", core.NewQuery(c).Address(tmp+"/hello.txt").File(),
 	)
 	// Relative file path
 	requireFileContains(ctx, t,
-		"hello there",
-		c.Address("./hello.txt").File(),
+		"hello there", core.NewQuery(c).Address("./hello.txt").File(),
 	)
 }
 
@@ -100,13 +99,11 @@ func (AddressSuite) TestLocalDirectory(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	// Absolute directory path
 	requireFileContains(ctx, t,
-		"hello there",
-		c.Address(tmp).Directory().File("hello.txt"),
+		"hello there", core.NewQuery(c).Address(tmp).Directory().File("hello.txt"),
 	)
 	// Relative directory path
 	requireFileContains(ctx, t,
-		"hello there",
-		c.Address(".").Directory().File("hello.txt"),
+		"hello there", core.NewQuery(c).Address(".").Directory().File("hello.txt"),
 	)
 }
 
@@ -114,18 +111,18 @@ func (AddressSuite) TestGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("remote repo", func(ctx context.Context, t *testctx.T) {
-		requireSampleGitRepo(ctx, t, c, c.Address("https://github.com/dagger/dagger").GitRepository())
+		requireSampleGitRepo(ctx, t, c, core.NewQuery(c).Address("https://github.com/dagger/dagger").GitRepository())
 	})
 
 	t.Run("remote branch", func(ctx context.Context, t *testctx.T) {
-		var refs []*dagger.GitRef
+		var refs []*core.GitRef
 		for _, fragment := range []string{
 			"",
 			"#main",
 			"#refs/heads/main",
 		} {
 			addr := "https://github.com/dagger/dagger" + fragment
-			refs = append(refs, c.Address(addr).GitRef())
+			refs = append(refs, core.NewQuery(c).Address(addr).GitRef())
 		}
 		requireGitRefCommitsEqual(ctx, t, refs...)
 		for _, ref := range refs {
@@ -134,21 +131,13 @@ func (AddressSuite) TestGit(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("remote tag", func(ctx context.Context, t *testctx.T) {
-		requireSampleGitTag(ctx, t, c,
-			c.Address("https://github.com/dagger/dagger#v0.9.5").GitRef(),
-		)
-		requireGitRefIsSampleAnnotatedTag(ctx, t, c,
-			c.Address("https://github.com/dagger/dagger#v0.6.1").GitRef(),
-		)
+		requireSampleGitTag(ctx, t, c, core.NewQuery(c).Address("https://github.com/dagger/dagger#v0.9.5").GitRef())
+		requireGitRefIsSampleAnnotatedTag(ctx, t, c, core.NewQuery(c).Address("https://github.com/dagger/dagger#v0.6.1").GitRef())
 	})
 
 	t.Run("remote commit", func(ctx context.Context, t *testctx.T) {
-		requireSampleGitCommit(ctx, t, c,
-			c.Address("https://github.com/dagger/dagger#c80ac2c13df7d573a069938e01ca13f7a81f0345").GitRef(),
-		)
-		requireSampleGitHiddenCommit(ctx, t, c,
-			c.Address("https://github.com/dagger/dagger#318970484f692d7a76cfa533c5d47458631c9654").GitRef(),
-		)
+		requireSampleGitCommit(ctx, t, c, core.NewQuery(c).Address("https://github.com/dagger/dagger#c80ac2c13df7d573a069938e01ca13f7a81f0345").GitRef())
+		requireSampleGitHiddenCommit(ctx, t, c, core.NewQuery(c).Address("https://github.com/dagger/dagger#318970484f692d7a76cfa533c5d47458631c9654").GitRef())
 	})
 
 	t.Run("remote directory & file", func(ctx context.Context, t *testctx.T) {
@@ -168,15 +157,9 @@ func (AddressSuite) TestGit(ctx context.Context, t *testctx.T) {
 			case "c80ac2c13df7d573a069938e01ca13f7a81f0345":
 				subdir = "cmd/cloak"
 			}
-			requireSampleGitRootDir(ctx, t, c,
-				c.Address(fmt.Sprintf("https://github.com/dagger/dagger#%s", ref)).Directory(),
-			)
-			requireSampleGitSubDir(ctx, t, c,
-				c.Address(fmt.Sprintf("https://github.com/dagger/dagger#%s:%s", ref, subdir)).Directory(),
-			)
-			requireSampleGitFile(ctx, t, c,
-				c.Address(fmt.Sprintf("https://github.com/dagger/dagger#%s:%s/main.go", ref, subdir)).File(),
-			)
+			requireSampleGitRootDir(ctx, t, c, core.NewQuery(c).Address(fmt.Sprintf("https://github.com/dagger/dagger#%s", ref)).Directory())
+			requireSampleGitSubDir(ctx, t, c, core.NewQuery(c).Address(fmt.Sprintf("https://github.com/dagger/dagger#%s:%s", ref, subdir)).Directory())
+			requireSampleGitFile(ctx, t, c, core.NewQuery(c).Address(fmt.Sprintf("https://github.com/dagger/dagger#%s:%s/main.go", ref, subdir)).File())
 		}
 	})
 }
@@ -185,14 +168,14 @@ func (AddressSuite) TestSecret(ctx context.Context, t *testctx.T) {
 	t.Run("env variable", func(ctx context.Context, t *testctx.T) {
 		os.Setenv("hello", "kitty")
 		c := connect(ctx, t)
-		plaintext, err := c.Address("env://hello").Secret().Plaintext(ctx)
+		plaintext, err := core.NewQuery(c).Address("env://hello").Secret().Plaintext(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "kitty", plaintext)
 	})
 
 	t.Run("command", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		plaintext, err := c.Address("cmd://echo hello there").Secret().Plaintext(ctx)
+		plaintext, err := core.NewQuery(c).Address("cmd://echo hello there").Secret().Plaintext(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello there\n", plaintext)
 	})
@@ -222,7 +205,7 @@ func (AddressSuite) TestSecret(ctx context.Context, t *testctx.T) {
 		} {
 			tc := tc
 			t.Run(strings.Replace(tc.input, "://", ": ", 1), func(ctx context.Context, t *testctx.T) {
-				uri, err := c.Address(tc.input).Secret().URI(ctx)
+				uri, err := core.NewQuery(c).Address(tc.input).Secret().URI(ctx)
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedURI, uri)
 			})

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	sdkcore "dagger.io/dagger/core"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -31,7 +31,7 @@ func TestDockerfile(t *testing.T) {
 func (DockerfileSuite) TestDockerBuild(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	contextDir := c.Container().
+	contextDir := sdkcore.NewQuery(c).Container().
 		From(golangImage).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "mod", "init", "hello"}).
@@ -120,7 +120,7 @@ RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
 `)
-		opts := dagger.DirectoryDockerBuildOpts{Dockerfile: "subdir/Dockerfile.whee"}
+		opts := sdkcore.DirectoryDockerBuildOpts{Dockerfile: "subdir/Dockerfile.whee"}
 		env, err := dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
@@ -136,7 +136,7 @@ RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
 `)
-		sub := c.Directory().WithDirectory("subcontext", dir).Directory("subcontext")
+		sub := sdkcore.NewQuery(c).Directory().WithDirectory("subcontext", dir).Directory("subcontext")
 		env, err := sub.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
@@ -152,8 +152,8 @@ RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
 `)
-		sub := c.Directory().WithDirectory("subcontext", dir).Directory("subcontext")
-		opts := dagger.DirectoryDockerBuildOpts{Dockerfile: "subdir/Dockerfile.whee"}
+		sub := sdkcore.NewQuery(c).Directory().WithDirectory("subcontext", dir).Directory("subcontext")
+		opts := sdkcore.DirectoryDockerBuildOpts{Dockerfile: "subdir/Dockerfile.whee"}
 		env, err := sub.DockerBuild(opts).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
@@ -179,7 +179,7 @@ CMD ["cat", "/SHA256SUMS.d/buildkit-v0.1"]
 
 		const sourceURL = "https://raw.githubusercontent.com/octocat/Hello-World/master/README"
 
-		sourceContents, err := c.HTTP(sourceURL).Contents(ctx)
+		sourceContents, err := sdkcore.NewQuery(c).HTTP(sourceURL).Contents(ctx)
 		require.NoError(t, err)
 		expected := digest.FromString(sourceContents).String()
 
@@ -229,7 +229,7 @@ CMD ["sh", "-c", "cat /repo-branch/README && echo --- && cat /repo-ref/README &&
 	})
 
 	t.Run("add-http-plain-file", func(ctx context.Context, t *testctx.T) {
-		srv := c.Container().
+		srv := sdkcore.NewQuery(c).Container().
 			From(busyboxImage).
 			WithWorkdir("/srv").
 			WithNewFile("README", "hello-from-http\n").
@@ -241,7 +241,7 @@ CMD ["sh", "-c", "cat /repo-branch/README && echo --- && cat /repo-ref/README &&
 		_, err := srv.Start(ctx)
 		require.NoError(t, err)
 
-		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 ADD http://fileserver/README /downloads/README
 CMD ["cat", "/downloads/README"]
 `, alpineImage))
@@ -252,7 +252,7 @@ CMD ["cat", "/downloads/README"]
 	})
 
 	t.Run("add-local-archive-unpacks", func(ctx context.Context, t *testctx.T) {
-		dir := c.Container().
+		dir := sdkcore.NewQuery(c).Container().
 			From(busyboxImage).
 			WithWorkdir("/ctx").
 			WithExec([]string{"sh", "-c", "mkdir -p inner && echo hello-from-archive > inner/hello.txt && tar cf archive.tar inner"}).
@@ -268,7 +268,7 @@ CMD ["cat", "/out/inner/hello.txt"]
 	})
 
 	t.Run("add-non-archive-falls-back-to-plain-copy", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("archive.tar", "not-an-archive\n").
 			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 ADD archive.tar /out/plain.txt
@@ -281,7 +281,7 @@ CMD ["cat", "/out/plain.txt"]
 	})
 
 	t.Run("workdir-created-with-named-user-ownership", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 RUN addgroup -g 4321 appgrp && adduser -D -u 1234 -G appgrp app
 USER app:appgrp
 WORKDIR /work
@@ -294,7 +294,7 @@ CMD ["sh", "-lc", "stat -c '%%u:%%g' /work"]
 	})
 
 	t.Run("copy-chmod-recursive", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("root.txt", "root").
 			WithNewFile("nested/file.txt", "nested").
 			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
@@ -312,7 +312,7 @@ COPY --chmod=751 . /app/
 	})
 
 	t.Run("copy-chmod-explicit-file-destination", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("input.txt", "explicit-file-dest").
 			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 COPY --chmod=751 input.txt /app/out.txt
@@ -329,7 +329,7 @@ COPY --chmod=751 input.txt /app/out.txt
 	})
 
 	t.Run("copy-group-only-chown", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("input.txt", "group-only-chown").
 			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 COPY --chown=:123 input.txt /app/out.txt
@@ -346,7 +346,7 @@ COPY --chown=:123 input.txt /app/out.txt
 	})
 
 	t.Run("copy-named-chown", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("input.txt", "named-chown").
 			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 RUN addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser
@@ -364,7 +364,7 @@ COPY --chown=auser:agroup input.txt /app/out.txt
 	})
 
 	t.Run("copy-stage-root-to-subdir", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s AS outfull
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s AS outfull
 RUN mkdir -p /lib/systemd/system && echo ok >/lib/systemd/system/containerd.service
 
 FROM %s
@@ -378,7 +378,7 @@ COPY --from=outfull / /usr/local/
 	})
 
 	t.Run("copy-multi-stage-service-layout", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s AS build-containerd
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s AS build-containerd
 RUN mkdir -p /out/amd64 && echo bin >/out/amd64/containerd && echo svc >/out/containerd.service
 
 FROM %s AS build-full
@@ -428,8 +428,8 @@ CMD ["cat", "/tmp/out.go"]
 		require.NoError(t, err)
 		require.Contains(t, out, "package main")
 
-		opts := dagger.DirectoryDockerBuildOpts{
-			BuildArgs: []dagger.BuildArg{
+		opts := sdkcore.DirectoryDockerBuildOpts{
+			BuildArgs: []sdkcore.BuildArg{
 				{Name: "SRC", Value: "alt.go"},
 			},
 		}
@@ -443,7 +443,7 @@ CMD ["cat", "/tmp/out.go"]
 			t.Skip("symlink context behavior is unstable on windows hosts")
 		}
 
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("real/file.txt", "symlink-copy-ok\n").
 			WithSymlink("real", "linkdir").
 			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
@@ -547,7 +547,7 @@ CMD ["cat", "/tmp/out"]
 	})
 
 	t.Run("run-mount-bind-readonly", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("mounted.txt", "readonly-bind-data").
 			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM %s
@@ -566,7 +566,7 @@ CMD ["cat", "/copied.txt"]
 	})
 
 	t.Run("run-mount-bind-file", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("pyproject.toml", "[project]\nname = \"bind-file\"\n").
 			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM %s
@@ -580,7 +580,7 @@ CMD ["cat", "/copied.txt"]
 	})
 
 	t.Run("run-mount-bind-file-metadata", func(ctx context.Context, t *testctx.T) {
-		dir := c.Container().
+		dir := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithWorkdir("/ctx").
 			WithExec([]string{"sh", "-lc", `
@@ -607,7 +607,7 @@ CMD ["cat", "/result.txt"]
 	})
 
 	t.Run("run-mount-bind-non-sticky", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
+		dir := sdkcore.NewQuery(c).Directory().
 			WithNewFile("ctx.txt", "non-sticky-bind").
 			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM %s
@@ -622,7 +622,7 @@ CMD ["cat", "/copied.txt"]
 	})
 
 	t.Run("run-network-none", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 RUN --network=none sh -c 'echo network-none > /status'
 CMD ["cat", "/status"]
 `, alpineImage))
@@ -633,7 +633,7 @@ CMD ["cat", "/status"]
 	})
 
 	t.Run("run-network-host", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 RUN --network=host sh -c 'echo network-host > /status'
 CMD ["cat", "/status"]
 `, alpineImage))
@@ -658,8 +658,8 @@ CMD goenv
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 
-		opts := dagger.DirectoryDockerBuildOpts{
-			BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}},
+		opts := sdkcore.DirectoryDockerBuildOpts{
+			BuildArgs: []sdkcore.BuildArg{{Name: "FOOARG", Value: "barbar"}},
 		}
 		env, err = dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
@@ -682,7 +682,7 @@ CMD echo "stage2"
 		require.NoError(t, err)
 		require.Contains(t, output, "stage2\n")
 
-		opts := dagger.DirectoryDockerBuildOpts{Target: "stage1"}
+		opts := sdkcore.DirectoryDockerBuildOpts{Target: "stage1"}
 		output, err = dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, output, "stage1\n")
@@ -716,7 +716,7 @@ CMD cat /heredoc-output
 	})
 
 	t.Run("with build secrets", func(ctx context.Context, t *testctx.T) {
-		sec := c.SetSecret("my-secret", "barbar")
+		sec := sdkcore.NewQuery(c).SetSecret("my-secret", "barbar")
 
 		dockerfile := `FROM ` + alpineImage + `
 WORKDIR /src
@@ -727,7 +727,7 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 
 		t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
 			dir := baseDir.WithNewFile("Dockerfile", dockerfile)
-			opts := dagger.DirectoryDockerBuildOpts{Secrets: []*dagger.Secret{sec}}
+			opts := sdkcore.DirectoryDockerBuildOpts{Secrets: []*sdkcore.Secret{sec}}
 
 			stdout, err := dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
 			require.NoError(t, err)
@@ -737,7 +737,7 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 
 		t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
 			dir := baseDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
-			opts := dagger.DirectoryDockerBuildOpts{Secrets: []*dagger.Secret{sec}}
+			opts := sdkcore.DirectoryDockerBuildOpts{Secrets: []*sdkcore.Secret{sec}}
 
 			stdout, err := dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
 			require.NoError(t, err)
@@ -753,7 +753,7 @@ CMD sh -c 'cat /env && echo && cat /env | tr "[a-z]" "[A-Z]"'
 
 		t.Run("env builtin frontend", func(ctx context.Context, t *testctx.T) {
 			dir := baseDir.WithNewFile("Dockerfile", dockerfile)
-			opts := dagger.DirectoryDockerBuildOpts{Secrets: []*dagger.Secret{sec}}
+			opts := sdkcore.DirectoryDockerBuildOpts{Secrets: []*sdkcore.Secret{sec}}
 
 			stdout, err := dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
 			require.NoError(t, err)
@@ -763,7 +763,7 @@ CMD sh -c 'cat /env && echo && cat /env | tr "[a-z]" "[A-Z]"'
 
 		t.Run("env remote frontend", func(ctx context.Context, t *testctx.T) {
 			dir := baseDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
-			opts := dagger.DirectoryDockerBuildOpts{Secrets: []*dagger.Secret{sec}}
+			opts := sdkcore.DirectoryDockerBuildOpts{Secrets: []*sdkcore.Secret{sec}}
 
 			stdout, err := dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
 			require.NoError(t, err)
@@ -820,10 +820,10 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 	})
 
 	t.Run("prevent duplicate secret transform", func(ctx context.Context, t *testctx.T) {
-		sec := c.SetSecret("my-secret", "barbar")
+		sec := sdkcore.NewQuery(c).SetSecret("my-secret", "barbar")
 
 		// src is a directory that has a secret dependency in its build graph
-		dir := c.Container().
+		dir := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithWorkdir("/src").
 			WithMountedSecret("/run/secret", sec).
@@ -981,13 +981,13 @@ HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --
 func (DockerfileSuite) TestDockerBuildBuildPlatformArg(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	nativePlatform, err := c.DefaultPlatform(ctx)
+	nativePlatform, err := sdkcore.NewQuery(c).DefaultPlatform(ctx)
 	require.NoError(t, err)
 	nativeUname, ok := platformToUname[nativePlatform]
 	require.True(t, ok, "unsupported native platform %q", nativePlatform)
 
 	// a target platform that differs from the engine's native platform
-	targetPlatform := dagger.Platform("linux/arm64")
+	targetPlatform := sdkcore.Platform("linux/arm64")
 	if nativePlatform == targetPlatform {
 		targetPlatform = "linux/amd64"
 	}
@@ -1000,9 +1000,9 @@ RUN printf '%s' "$BUILDPLATFORM" > /buildplatform.txt
 RUN printf '%s' "$TARGETPLATFORM" > /targetplatform.txt
 RUN uname -m > /uname.txt
 `
-	dir := c.Directory().WithNewFile("Dockerfile", dockerfile)
+	dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", dockerfile)
 
-	buildInfo := func(ctx context.Context, t *testctx.T, opts dagger.DirectoryDockerBuildOpts) (buildPlatform, targetPlatformArg, uname string) {
+	buildInfo := func(ctx context.Context, t *testctx.T, opts sdkcore.DirectoryDockerBuildOpts) (buildPlatform, targetPlatformArg, uname string) {
 		ctr := dir.DockerBuild(opts)
 		buildPlatform, err := ctr.File("/buildplatform.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -1014,7 +1014,7 @@ RUN uname -m > /uname.txt
 	}
 
 	t.Run("BUILDPLATFORM resolves to the native build platform, not the target", func(ctx context.Context, t *testctx.T) {
-		buildPlatform, targetPlatformArg, uname := buildInfo(ctx, t, dagger.DirectoryDockerBuildOpts{
+		buildPlatform, targetPlatformArg, uname := buildInfo(ctx, t, sdkcore.DirectoryDockerBuildOpts{
 			Platform: targetPlatform,
 		})
 
@@ -1035,10 +1035,10 @@ RUN uname -m > /uname.txt
 		// The whole point of --platform=$BUILDPLATFORM is that these stages are identical
 		// regardless of which target arch we ultimately build for, so they share cache. If the
 		// build platform tracks the target, the two builds diverge into separate DAGs.
-		_, _, unameNativeTarget := buildInfo(ctx, t, dagger.DirectoryDockerBuildOpts{
+		_, _, unameNativeTarget := buildInfo(ctx, t, sdkcore.DirectoryDockerBuildOpts{
 			Platform: nativePlatform,
 		})
-		_, _, unameCrossTarget := buildInfo(ctx, t, dagger.DirectoryDockerBuildOpts{
+		_, _, unameCrossTarget := buildInfo(ctx, t, sdkcore.DirectoryDockerBuildOpts{
 			Platform: targetPlatform,
 		})
 		require.Equal(t, unameNativeTarget, unameCrossTarget,
@@ -1047,9 +1047,9 @@ RUN uname -m > /uname.txt
 
 	t.Run("explicit BUILDPLATFORM build arg restores native behavior", func(ctx context.Context, t *testctx.T) {
 		// The reported workaround: pin BUILDPLATFORM to the native platform explicitly.
-		buildPlatform, _, uname := buildInfo(ctx, t, dagger.DirectoryDockerBuildOpts{
+		buildPlatform, _, uname := buildInfo(ctx, t, sdkcore.DirectoryDockerBuildOpts{
 			Platform: targetPlatform,
-			BuildArgs: []dagger.BuildArg{
+			BuildArgs: []sdkcore.BuildArg{
 				{Name: "BUILDPLATFORM", Value: string(nativePlatform)},
 			},
 		})
@@ -1062,7 +1062,7 @@ func (DockerfileSuite) TestBuildMergesWithParent(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 
 	// Create a container with envs variables and labels
-	testCtr := c.Directory().WithNewFile("Dockerfile",
+	testCtr := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile",
 		`FROM `+alpineImage+`
 ENV FOO=BAR
 LABEL "com.example.test"="foo"
@@ -1158,7 +1158,7 @@ func (DockerfileSuite) TestDockerBuildSSH(ctx context.Context, t *testctx.T) {
 		}
 	}()
 
-	sockID, err := c.Host().UnixSocket(sock).ID(ctx)
+	sockID, err := sdkcore.NewQuery(c).Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
 
 	dockerfile := `FROM ` + alpineImage + `
@@ -1167,7 +1167,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 `
 
 	t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", dockerfile)
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", dockerfile)
 		dirID, err := dir.ID(ctx)
 		require.NoError(t, err)
 
@@ -1200,7 +1200,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 	})
 
 	t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
 		dirID, err := dir.ID(ctx)
 		require.NoError(t, err)
 
@@ -1233,7 +1233,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 	})
 
 	t.Run("without ssh socket fails", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", dockerfile)
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", dockerfile)
 		_, err := dir.DockerBuild().Sync(ctx)
 		require.Error(t, err)
 	})
@@ -1242,7 +1242,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 func (DockerfileSuite) TestAddHTTPDoesNotUnpack(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	srv := c.Container().
+	srv := sdkcore.NewQuery(c).Container().
 		From(busyboxImage).
 		WithWorkdir("/srv").
 		WithExec([]string{"sh", "-c", "mkdir mydir && echo remotedata > mydir/data && tar czf remotedir.tar.gz mydir"}).
@@ -1254,7 +1254,7 @@ func (DockerfileSuite) TestAddHTTPDoesNotUnpack(ctx context.Context, t *testctx.
 	_, err := srv.Start(ctx)
 	require.NoError(t, err)
 
-	dir := c.Container().
+	dir := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		Directory(".").
 		WithNewFile("Dockerfile",
@@ -1277,7 +1277,7 @@ ADD http://fileserver/remotedir.tar.gz this-should-not-unpack
 func (DockerfileSuite) TestCopyExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	contextDir := c.Directory().
+	contextDir := sdkcore.NewQuery(c).Directory().
 		WithNewDirectory("data").
 		WithNewFile("data/yes", "oui").
 		WithNewFile("data/no", "nein")
@@ -1302,7 +1302,7 @@ COPY --exclude=no data data
 func (DockerfileSuite) TestAddUnpack(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	contextDir := c.Container().
+	contextDir := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithWorkdir("/src").
 		WithExec([]string{"sh", "-c", "mkdir -p payload && printf hello > payload/hello.txt && tar -cf archive.tar payload"}).
@@ -1345,7 +1345,7 @@ RUN --mount=type=bind,source=app/main.txt,target=/mnt/main.txt head -c16 /dev/ur
 	stamps := func() (string, string) {
 		c := connect(ctx, t)
 		defer c.Close()
-		ctr := c.Host().Directory(dir).DockerBuild()
+		ctr := sdkcore.NewQuery(c).Host().Directory(dir).DockerBuild()
 		copyStamp, err := ctr.File("/copy-stamp").Contents(ctx)
 		require.NoError(t, err)
 		bindStamp, err := ctr.File("/bind-stamp").Contents(ctx)
@@ -1378,7 +1378,7 @@ COPY optional-* /out/
 COPY present.txt /present.txt
 `), 0o644))
 
-	ctr := c.Host().Directory(dir).DockerBuild()
+	ctr := sdkcore.NewQuery(c).Host().Directory(dir).DockerBuild()
 	contents, err := ctr.File("/present.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hi", contents)

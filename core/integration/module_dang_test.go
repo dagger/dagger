@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -570,7 +571,7 @@ func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
   hello: String! { intentionallyUndefinedSymbol }
 }
 `)
-		mod, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		mod, err := core.NewQuery(c).ModuleSource(modDir).AsModule().Sync(ctx)
 		require.NoError(t, err)
 		require.NoError(t, mod.Serve(ctx))
 
@@ -588,17 +589,17 @@ func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
   hello: IntentionallyUndefinedType! { "hi" }
 }
 `)
-		_, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		_, err := core.NewQuery(c).ModuleSource(modDir).AsModule().Sync(ctx)
 		requireReported(t, c, &logs, err, "unresolved type: IntentionallyUndefinedType")
 	})
 }
 
-func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
+func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *core.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/dang", moduleName))
 	require.NoError(t, err)
 
 	return goGitBase(t, c).
-		WithDirectory("testdata/modules/dang/"+moduleName, c.Host().Directory(modSrc)).
+		WithDirectory("testdata/modules/dang/"+moduleName, core.NewQuery(c).Host().Directory(modSrc)).
 		WithWorkdir("/work/testdata/modules/dang/" + moduleName)
 }

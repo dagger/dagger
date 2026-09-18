@@ -21,6 +21,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 // Group all tests that are specific to Python only.
@@ -306,7 +307,7 @@ class Test:
 `, tc.name),
 				)).
 				With(fileContents("pyproject.toml", tc.conf+"\n# "+tc.path)).
-				With(func(ctr *dagger.Container) *dagger.Container {
+				With(func(ctr *core.Container) *core.Container {
 					// For poetry projects, uv will fail to build due to missing
 					// [project] table in pyproject.toml. Support is possible
 					// via `uv pip` and requirements.lock though.
@@ -470,13 +471,13 @@ func (PythonSuite) TestAltRuntime(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	base := goGitBase(t, c).
-		WithMountedDirectory("/work/runtime", c.Host().Directory(runtimeSrcPath)).
-		WithMountedDirectory("/work/extended", c.Host().Directory(extSrcPath)).
+		WithMountedDirectory("/work/runtime", core.NewQuery(c).Host().Directory(runtimeSrcPath)).
+		WithMountedDirectory("/work/extended", core.NewQuery(c).Host().Directory(extSrcPath)).
 		WithExec([]string{"sed", "-i", "s#../../../../../sdk/python/##", "/work/extended/dagger.json"})
 
 	t.Run("git dependency", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			WithMountedDirectory("/work/git-dep", c.Host().Directory(moduleSrcPath)).
+			WithMountedDirectory("/work/git-dep", core.NewQuery(c).Host().Directory(moduleSrcPath)).
 			WithWorkdir("/work/git-dep").
 			With(daggerCallAt(".", "hello")).
 			Stdout(ctx)
@@ -1771,34 +1772,34 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("unhandled", func(ctx context.Context, t *testctx.T) {
 		_, err := ctr.With(daggerCallAt(".", "unhandled")).Sync(ctx)
-		var exerr *dagger.ExecError
+		var exerr *core.ExecError
 		require.ErrorAs(t, err, &exerr)
 		require.Contains(t, exerr.Stderr, "Unhandled exception while executing function")
 		require.Contains(t, exerr.Stderr, "ValueError: a foo bubbles up to bar")
 	})
 }
 
-func pythonSource(contents string) dagger.WithContainerFunc {
+func pythonSource(contents string) core.WithContainerFunc {
 	return pythonSourceAt("", contents)
 }
 
-func pythonSourceAt(modPath, contents string) dagger.WithContainerFunc {
+func pythonSourceAt(modPath, contents string) core.WithContainerFunc {
 	return fileContents(path.Join(modPath, "src/test/__init__.py"), contents)
 }
 
-func pythonModInit(t testing.TB, c *dagger.Client, source string) *dagger.Container {
+func pythonModInit(t testing.TB, c *dagger.Client, source string) *core.Container {
 	t.Helper()
 	return daggerCliBase(t, c).
 		With(withPythonModule(t, c, "python/base-test")).
 		With(pythonSource(source))
 }
 
-func withPythonModule(t testing.TB, c *dagger.Client, fixture string) dagger.WithContainerFunc {
+func withPythonModule(t testing.TB, c *dagger.Client, fixture string) core.WithContainerFunc {
 	t.Helper()
 	return withModuleFixture(t, c, ".", fixture)
 }
 
-func pyprojectExtra(dependencies []string, contents string) dagger.WithContainerFunc {
+func pyprojectExtra(dependencies []string, contents string) core.WithContainerFunc {
 	dependencies = append([]string{"dagger-io"}, dependencies...)
 	depLine := `dependencies = ["` + strings.Join(dependencies, `", "`) + `"]`
 	base := `
@@ -1816,12 +1817,12 @@ version = "0.0.0"
 	return fileContents("pyproject.toml", base+depLine+"\n"+contents)
 }
 
-func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) dagger.WithContainerFunc {
+func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) core.WithContainerFunc {
 	t.Helper()
 	modSrc, err := filepath.Abs("./testdata/modules/python/pip-lock")
 	require.NoError(t, err)
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithDirectory("", c.Host().Directory(modSrc, dagger.HostDirectoryOpts{
+	return func(ctr *core.Container) *core.Container {
+		return ctr.WithDirectory("", core.NewQuery(c).Host().Directory(modSrc, core.HostDirectoryOpts{
 			Include: inc,
 		}))
 	}

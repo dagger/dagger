@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	enginecore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -131,7 +132,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		return dir
 	}
 	type running struct {
-		upstream, tunnel *dagger.Service
+		upstream, tunnel *core.Service
 		client           *dagger.Client
 		endpoint         string
 	}
@@ -139,8 +140,8 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		t.Helper()
 		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
 	}
-	start := func(t *testctx.T, state string, volume *dagger.CacheVolume, checkout string) *running {
-		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
+	start := func(t *testctx.T, state string, volume *core.CacheVolume, checkout string) *running {
+		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		if !defaultGC {
@@ -150,9 +151,9 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		}
 		e := &running{upstream: devEngineContainerAsService(ctr)}
 		var err error
-		e.tunnel, err = outer.Host().Tunnel(e.upstream).Start(ctx)
+		e.tunnel, err = core.NewQuery(outer).Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
-		e.endpoint, err = e.tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		e.endpoint, err = e.tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithWorkdir(checkout), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
@@ -193,10 +194,10 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		return count
 	}
 	aDir := newCheckout(t)
-	aVolume := outer.CacheVolume("b2-transfer-a-" + identity.NewID())
+	aVolume := core.NewQuery(outer).CacheVolume("b2-transfer-a-" + identity.NewID())
 	a := start(t, "b2-transfer-a-state-"+identity.NewID(), aVolume, aDir)
 	defer stop(t, a)
-	require.NoError(t, a.client.ModuleSource(".").AsModule().Serve(ctx))
+	require.NoError(t, core.NewQuery(a.client).ModuleSource(".").AsModule().Serve(ctx))
 	aID := callReport(t, a.client, "same")
 	require.Equal(t, uint64(1), countBody(t, a.client, "report"))
 	var source []transferFixtureMapping
@@ -216,20 +217,20 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	for _, order := range orders {
 		t.Run(order, func(ctx context.Context, t *testctx.T) {
 			bDir := newCheckout(t)
-			bVolume := outer.CacheVolume("b2-transfer-b-" + identity.NewID())
+			bVolume := core.NewQuery(outer).CacheVolume("b2-transfer-b-" + identity.NewID())
 			bState := "b2-transfer-b-state-" + identity.NewID()
 			b := start(t, bState, bVolume, bDir)
 			defer func() { stop(t, b) }()
-			var operational *dagger.Module
+			var operational *core.Module
 			var err error
 			if !cold {
-				operational = b.client.ModuleSource(".").AsModule()
+				operational = core.NewQuery(b.client).ModuleSource(".").AsModule()
 				operational, err = operational.Sync(ctx)
 				require.NoError(t, err)
 				// Schema Files now use FileBlobLazy, so warming the SDK no longer
 				// evaluates an ordinary empty Directory as an incidental input.
 				// Warm that local donor explicitly for both import orders.
-				warmScratch, err := b.client.Directory().Sync(ctx)
+				warmScratch, err := core.NewQuery(b.client).Directory().Sync(ctx)
 				require.NoError(t, err)
 				warmScratchID, err := warmScratch.ID(ctx)
 				require.NoError(t, err)
@@ -250,7 +251,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			if order == "after" {
 				require.NoError(t, operational.Serve(ctx))
 			}
-			_, err = outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
+			_, err = core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
 				WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/report.json /destination/bundles/report.json; cp -a /source/blobs /destination/"}).Sync(ctx)
 			require.NoError(t, err)
 			var imported []transferFixtureMapping
@@ -259,7 +260,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"))
 			if order == "before" {
 				if cold {
-					operational = b.client.ModuleSource(".").AsModule()
+					operational = core.NewQuery(b.client).ModuleSource(".").AsModule()
 				}
 				require.NoError(t, operational.Serve(ctx))
 			}
@@ -297,7 +298,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			// the earlier acquisition report was captured.
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
 			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold)
-			entries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(scratchHandle)).Entries(ctx)
+			entries, err := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(scratchHandle)).Entries(ctx)
 			require.NoError(t, err)
 			require.Empty(t, entries)
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
@@ -329,12 +330,12 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			if defaultGC {
 				// A bounded temporary file outside engine state supplies actual disk
 				// pressure; the default policy and imported root remain unchanged.
-				pressure := outer.Container().From(alpineImage).WithMountedCache("/fixture", bVolume)
+				pressure := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/fixture", bVolume)
 				defer func() {
 					_, err := pressure.WithEnvVariable("CLEANUP", identity.NewID()).WithExec([]string{"rm", "-f", "/fixture/gc-pressure"}).Sync(context.WithoutCancel(ctx))
 					require.NoError(t, err)
 				}()
-				minimum, err := b.client.Engine().LocalCache().MinFreeSpace(ctx)
+				minimum, err := core.NewQuery(b.client).Engine().LocalCache().MinFreeSpace(ctx)
 				require.NoError(t, err)
 				require.Positive(t, minimum, "default disk policy must define its free-space target")
 				stats, err := pressure.WithEnvVariable("STAT", identity.NewID()).WithExec([]string{"stat", "-f", "-c", "%a %S", "/fixture"}).Stdout(ctx)
@@ -383,7 +384,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.Len(t, restored.Rows, 1)
 			require.True(t, restored.Rows[0].Persisted)
 			// Module-aware request installs the consumer's current operational Module.
-			require.NoError(t, b.client.ModuleSource(".").AsModule().Serve(ctx))
+			require.NoError(t, core.NewQuery(b.client).ModuleSource(".").AsModule().Serve(ctx))
 			loadNotes("noteDirectory", "consumer directory notes after restart")
 			require.Equal(t, uint64(1), countBody(t, b.client, "report"))
 			t.Logf("acquisition clean-restart control cold=%t saved-row=%d noteDirectory=passed report-body-count=1", cold, restored.Rows[0].ResultID)
@@ -392,7 +393,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			writer, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
 			require.NoError(t, err)
 			defer func() { require.NoError(t, closeClientBounded(ctx, writer), "close writer session") }()
-			nativeModule := writer.ModuleSource(".").AsModule().WithDescription("native recorded control")
+			nativeModule := core.NewQuery(writer).ModuleSource(".").AsModule().WithDescription("native recorded control")
 			require.NoError(t, nativeModule.Serve(ctx))
 			nativeID := callReport(t, writer, "native recorded control")
 			var graph transferFixtureReport
@@ -440,15 +441,15 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		return
 	}
 	t.Run("foreign context", func(ctx context.Context, t *testctx.T) {
-		volume := outer.CacheVolume("b2-transfer-foreign-" + identity.NewID())
+		volume := core.NewQuery(outer).CacheVolume("b2-transfer-foreign-" + identity.NewID())
 		foreign := start(t, "b2-transfer-foreign-state-"+identity.NewID(), volume, newCheckout(t))
 		defer stop(t, foreign)
 		// This bare client also uses addendum 2's runtime preparation; it never
 		// serves the Module, so schema recovery has no installed candidates.
-		_, err := foreign.client.ModuleSource(".").AsModule().Sync(ctx)
+		_, err := core.NewQuery(foreign.client).ModuleSource(".").AsModule().Sync(ctx)
 		require.NoError(t, err)
 		require.Equal(t, uint64(0), countBody(t, foreign.client, "report"))
-		raw, err := outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).
+		raw, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).
 			WithEnvVariable("READ", identity.NewID()).WithExec([]string{"cat", "/source/bundles/report.json"}).Stdout(ctx)
 		require.NoError(t, err)
 		var bundle dagql.ValueBundle
@@ -459,7 +460,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			t.Helper()
 			encoded, err := json.Marshal(bundle)
 			require.NoError(t, err)
-			_, err = outer.Container().From(alpineImage).WithMountedCache("/destination", volume).
+			_, err = core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/destination", volume).
 				WithNewFile("/bundle.json", string(encoded)).WithEnvVariable("WRITE", identity.NewID()).
 				WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /bundle.json /destination/bundles/" + name}).Sync(ctx)
 			require.NoError(t, err)
@@ -686,10 +687,10 @@ func transferContextTool(ctx context.Context, t *testctx.T, client *dagger.Clien
 	require.NotEmpty(t, loaded.Node.ID)
 	// A bare schema cannot validate an inline fragment on an uninstalled
 	// module type. Bound tools dispatch through the recovered schema.
-	model := cannedRecordingModel(ctx, t, client, client.LLM().WithPrompt("read the notes").
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindToolCall, CallID: "notes", ToolName: "noteDirectory"}}).
+	model := cannedRecordingModel(ctx, t, client, core.NewQuery(client).LLM().WithPrompt("read the notes").
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindToolCall, CallID: "notes", ToolName: "noteDirectory"}}).
 		WithToolResult("notes", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "finished"}}))
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "finished"}}))
 	var result struct {
 		LLM struct {
 			WithTools struct {
@@ -725,12 +726,12 @@ func transferBoundToolControl(ctx context.Context, t *testctx.T, client *dagger.
 		}
 	}
 	require.NotEmpty(t, objectID)
-	model := cannedRecordingModel(ctx, t, client, client.LLM().WithPrompt("change the seed and read its label").
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindToolCall, CallID: "change", ToolName: "withSeed", Arguments: dagger.JSON(`{"seed":"bound"}`)}}).
+	model := cannedRecordingModel(ctx, t, client, core.NewQuery(client).LLM().WithPrompt("change the seed and read its label").
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindToolCall, CallID: "change", ToolName: "withSeed", Arguments: core.JSON(`{"seed":"bound"}`)}}).
 		WithToolResult("change", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindToolCall, CallID: "read", ToolName: "label"}}).
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindToolCall, CallID: "read", ToolName: "label"}}).
 		WithToolResult("read", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "finished"}}))
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "finished"}}))
 	var result struct {
 		LLM struct {
 			WithTools struct {
