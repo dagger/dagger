@@ -11,8 +11,10 @@ import (
 // boundary. All other behavior remains owned by huh.MultiSelect.
 type FlowMultiSelect[T comparable] struct {
 	*huh.MultiSelect[T]
-	last   T
-	keymap huh.MultiSelectKeyMap
+	last      T
+	keymap    huh.MultiSelectKeyMap
+	startNext bool
+	started   bool
 }
 
 func NewFlowMultiSelect[T comparable](field *huh.MultiSelect[T], last T) *FlowMultiSelect[T] {
@@ -23,7 +25,22 @@ func NewFlowMultiSelect[T comparable](field *huh.MultiSelect[T], last T) *FlowMu
 	}
 }
 
+// StartFocusAfter makes the form open with the NEXT field focused (e.g. the
+// confirm button) instead of this list. Every option starts selected, so the
+// common path is to accept them all: the user can press Enter immediately, and
+// Up still returns to the list to toggle individual options.
+func (field *FlowMultiSelect[T]) StartFocusAfter() *FlowMultiSelect[T] {
+	field.startNext = true
+	return field
+}
+
 func (field *FlowMultiSelect[T]) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if field.startNext && !field.started {
+		// The group dispatches an update to every field as it initializes;
+		// hand focus forward on that first pass.
+		field.started = true
+		return field, huh.NextField
+	}
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && key.Matches(keyMsg, field.keymap.Down) {
 		if hovered, ok := field.Hovered(); ok && hovered == field.last {
 			return field, huh.NextField

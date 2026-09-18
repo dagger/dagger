@@ -31,14 +31,13 @@ var (
 )
 
 var traceCmd = &cobra.Command{
-	Use:    "trace [trace ID]",
-	Hidden: true,
-	Args:   cobra.ExactArgs(1),
+	Use:  "traces [trace ID]",
+	Args: cobra.ExactArgs(1),
 	Annotations: map[string]string{
 		"experimental":       "true",
 		showFinalProgressKey: "true",
 	},
-	Aliases: []string{"t", "analyze", "diagnose"},
+	Aliases: []string{"trace", "t", "analyze", "diagnose"},
 	Short:   "Diagnose or view a Dagger Cloud trace.",
 	Long: `Stream and render a Dagger Cloud trace: the overall pass/fail verdict, the
 command(s) that caused a failure, check results, and failed tests, each with the
@@ -47,7 +46,7 @@ are fetched incrementally, so the whole trace doesn't have to load up front.
 
 Use --span/--check/--test to scope and zoom the view to a single span, check, or
 test by name.`,
-	Example: `dagger trace 2f123ba77bf7bd2d4db2f70ed20613e8`,
+	Example: `dagger cloud traces 2f123ba77bf7bd2d4db2f70ed20613e8`,
 	RunE:    traceRun,
 }
 
@@ -55,6 +54,9 @@ func init() {
 	traceCmd.Flags().StringVar(&traceSpan, "span", "", "Scope and zoom the view to a span ID (fetches its subtree and logs)")
 	traceCmd.Flags().StringVar(&traceCheck, "check", "", "Scope and zoom the view to a check by name")
 	traceCmd.Flags().StringVar(&traceTest, "test", "", "Scope and zoom the view to a test by name")
+
+	// Lives under `dagger cloud` as `dagger cloud traces` (with a `trace` alias).
+	cloudCmd.AddCommand(traceCmd)
 }
 
 func traceRun(cmd *cobra.Command, args []string) error {

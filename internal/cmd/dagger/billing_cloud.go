@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -39,7 +40,25 @@ func newBillingCmd(hidden bool) *cobra.Command {
 			RunE:  cloudCLI.BillingPlans,
 		},
 		newBillingManageCmd(),
+		newBillingPaymentCmd(),
 	)
+	return cmd
+}
+
+var billingPaymentOpen bool
+
+func newBillingPaymentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "payment [org]",
+		Short: "Enter or update the payment method for a Dagger Cloud org",
+		Long: `Enter or update the payment method for a Dagger Cloud org.
+
+Creates a secure hosted checkout page for the org's existing subscription
+where you can add or change the card on file, and prints its URL.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: cloudCLI.BillingPayment,
+	}
+	cmd.Flags().BoolVar(&billingPaymentOpen, "open", false, "Open the payment page in a browser")
 	return cmd
 }
 
@@ -71,7 +90,29 @@ func (cli *CloudCLI) BillingPlans(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func (cli *CloudCLI) BillingPayment(cmd *cobra.Command, args []string) error {
+	return cli.billingURLCommand(cmd, args, billingPaymentOpen,
+		func(ctx context.Context, client *cloudapi.Client, orgID string) (string, error) {
+			return client.CreatePaymentCheckout(ctx, orgID)
+		})
+}
+
 func (cli *CloudCLI) BillingManage(cmd *cobra.Command, args []string) error {
+	return cli.billingURLCommand(cmd, args, billingOpen,
+		func(ctx context.Context, client *cloudapi.Client, orgID string) (string, error) {
+			return client.CreatePortalSession(ctx, orgID)
+		})
+}
+
+// billingURLCommand resolves the target org (positional arg, --org, or the
+// current org), asks Cloud for a hosted billing URL, and reports it: opened in
+// a browser when open is set, as JSON with --json, otherwise printed.
+func (cli *CloudCLI) billingURLCommand(
+	cmd *cobra.Command,
+	args []string,
+	open bool,
+	hostedURL func(ctx context.Context, client *cloudapi.Client, orgID string) (string, error),
+) error {
 	ctx := cmd.Context()
 	client, cloudAuth, err := cli.cloudClient(ctx)
 	if err != nil {
@@ -86,19 +127,19 @@ func (cli *CloudCLI) BillingManage(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	portalURL, err := client.CreatePortalSession(ctx, org.ID)
+	url, err := hostedURL(ctx, client, org.ID)
 	if err != nil {
 		return err
 	}
-	if billingOpen {
-		if err := browser.OpenURL(portalURL); err != nil {
+	if open {
+		if err := browser.OpenURL(url); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
 		}
 	}
 	if cloudJSON {
-		return writeCloudJSON(cmd, map[string]any{"org": org, "url": portalURL})
+		return writeCloudJSON(cmd, map[string]any{"org": org, "url": url})
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), portalURL)
+	fmt.Fprintln(cmd.OutOrStdout(), url)
 	return nil
 }
 

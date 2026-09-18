@@ -24,7 +24,7 @@ dagger [options] [subcommand | file...]
 * [dagger agent](#dagger-agent)	 - Compose your installed agent modules and drop into an interactive prompt.
 * [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
 * [dagger check](#dagger-check)	 - Verify your project — tests, linters, type checks, security scans, etc.
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 * [dagger generate](#dagger-generate)	 - Generate derived files for your project — code, SDKs, types, docs, etc.
 * [dagger init](#dagger-init)	 - Initialize a workspace and show the next commands
 * [dagger install](#dagger-install)	 - Install a module into your workspace
@@ -400,7 +400,7 @@ dagger check [options] [pattern...]
 
 ## dagger cloud
 
-Manage Dagger Cloud
+Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 
 ### Options inherited from parent commands
 
@@ -413,6 +413,7 @@ Manage Dagger Cloud
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 * [dagger cloud billing](#dagger-cloud-billing)	 - Manage Dagger Cloud billing
 * [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
+* [dagger cloud engines](#dagger-cloud-engines)	 - Manage Dagger Cloud engines
 * [dagger cloud integration](#dagger-cloud-integration)	 - Manage Dagger Cloud integration providers
 * [dagger cloud login](#dagger-cloud-login)	 - Log in to Dagger Cloud
 * [dagger cloud logout](#dagger-cloud-logout)	 - Log out from Dagger Cloud
@@ -420,7 +421,9 @@ Manage Dagger Cloud
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
 * [dagger cloud rerun](#dagger-cloud-rerun)	 - Re-run checks on Dagger Cloud for the current commit
 * [dagger cloud signup](#dagger-cloud-signup)	 - Create or select a Dagger Cloud account and organization
+* [dagger cloud traces](#dagger-cloud-traces)	 - Diagnose or view a Dagger Cloud trace.
 * [dagger cloud usage](#dagger-cloud-usage)	 - Show Dagger Cloud usage
+* [dagger cloud workspaces](#dagger-cloud-workspaces)	 - Manage Dagger Cloud workspaces
 
 ## dagger cloud billing
 
@@ -444,8 +447,9 @@ dagger cloud billing
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 * [dagger cloud billing manage](#dagger-cloud-billing-manage)	 - Open the billing portal for a Dagger Cloud org
+* [dagger cloud billing payment](#dagger-cloud-billing-payment)	 - Enter or update the payment method for a Dagger Cloud org
 * [dagger cloud billing plans](#dagger-cloud-billing-plans)	 - List Dagger Cloud plans available at signup
 
 ## dagger cloud billing manage
@@ -460,6 +464,38 @@ dagger cloud billing manage [org]
 
 ```
       --open   Open the billing portal in a browser
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
+```
+
+### SEE ALSO
+
+* [dagger cloud billing](#dagger-cloud-billing)	 - Manage Dagger Cloud billing
+
+## dagger cloud billing payment
+
+Enter or update the payment method for a Dagger Cloud org
+
+### Synopsis
+
+Enter or update the payment method for a Dagger Cloud org.
+
+Creates a secure hosted checkout page for the org's existing subscription
+where you can add or change the card on file, and prints its URL.
+
+```
+dagger cloud billing payment [org]
+```
+
+### Options
+
+```
+      --open   Open the payment page in a browser
 ```
 
 ### Options inherited from parent commands
@@ -509,7 +545,7 @@ dagger cloud checks
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 * [dagger cloud checks list](#dagger-cloud-checks-list)	 - List Cloud-side checks for this workspace
 * [dagger cloud checks off](#dagger-cloud-checks-off)	 - Disable a Cloud-side check (by name; defaults to the workspace remote's default check)
 * [dagger cloud checks on](#dagger-cloud-checks-on)	 - Enable a Cloud-side check (by name; defaults to the workspace remote's default check)
@@ -567,6 +603,12 @@ Enable a Cloud-side check (by name; defaults to the workspace remote's default c
 dagger cloud checks on [name]
 ```
 
+### Options
+
+```
+      --start-trial   Start a free trial when a required Cloud feature is not enabled yet
+```
+
 ### Options inherited from parent commands
 
 ```
@@ -597,6 +639,24 @@ dagger cloud checks status [name]
 
 * [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
 
+## dagger cloud engines
+
+Manage Dagger Cloud engines
+
+```
+dagger cloud engines
+```
+
+### Options inherited from parent commands
+
+```
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
+```
+
+### SEE ALSO
+
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
+
 ## dagger cloud integration
 
 Manage Dagger Cloud integration providers
@@ -619,7 +679,7 @@ dagger cloud integration
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 * [dagger cloud integration create](#dagger-cloud-integration-create)	 - Create a new integration of the given provider type
 * [dagger cloud integration list](#dagger-cloud-integration-list)	 - List configured integrations (optionally filtered by provider type)
 * [dagger cloud integration rm](#dagger-cloud-integration-rm)	 - Remove a configured integration
@@ -715,7 +775,7 @@ dagger cloud login [options] [org]
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 
 ## dagger cloud logout
 
@@ -733,7 +793,7 @@ dagger cloud logout
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 
 ## dagger cloud logs
 
@@ -775,7 +835,7 @@ dagger cloud logs <trace-id> [--span <id> | --check <name> | --test <name>]
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 
 ## dagger cloud org
 
@@ -799,7 +859,7 @@ dagger cloud org [flags]
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 * [dagger cloud org info](#dagger-cloud-org-info)	 - Show Dagger Cloud organization status
 * [dagger cloud org list](#dagger-cloud-org-list)	 - List Dagger Cloud organizations
 * [dagger cloud org use](#dagger-cloud-org-use)	 - Select the current Dagger Cloud organization
@@ -907,7 +967,7 @@ dagger cloud rerun [--check NAME ...] [--failed | --all]
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 
 ## dagger cloud signup
 
@@ -939,7 +999,55 @@ dagger cloud signup [options] [org]
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
+
+## dagger cloud traces
+
+Diagnose or view a Dagger Cloud trace.
+
+### Synopsis
+
+Stream and render a Dagger Cloud trace: the overall pass/fail verdict, the
+command(s) that caused a failure, check results, and failed tests, each with the
+tail of its logs, plus the full call tree, arguments, and timing. Spans and logs
+are fetched incrementally, so the whole trace doesn't have to load up front.
+
+Use --span/--check/--test to scope and zoom the view to a single span, check, or
+test by name.
+
+```
+dagger cloud traces [trace ID] [flags]
+```
+
+### Examples
+
+```
+dagger cloud traces 2f123ba77bf7bd2d4db2f70ed20613e8
+```
+
+### Options
+
+```
+      --check string   Scope and zoom the view to a check by name
+      --span string    Scope and zoom the view to a span ID (fetches its subtree and logs)
+      --test string    Scope and zoom the view to a test by name
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug             Enable engine and trace diagnostics
+  -E, --no-exit           Leave the TUI running after completion
+      --progress string   Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 
 ## dagger cloud usage
 
@@ -972,7 +1080,25 @@ dagger cloud usage [options] [org] [flags]
 
 ### SEE ALSO
 
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
+
+## dagger cloud workspaces
+
+Manage Dagger Cloud workspaces
+
+```
+dagger cloud workspaces [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
+```
+
+### SEE ALSO
+
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 
 ## dagger engine
 

@@ -2,12 +2,10 @@ package daggercmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"time"
+	"strings"
 
-	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 
@@ -22,15 +20,19 @@ var loginSwitchAccount bool
 
 var cloudCmd = &cobra.Command{
 	Use:   "cloud",
-	Short: "Manage Dagger Cloud",
+	Short: "Manage Dagger Cloud (checks, engines, traces, billing, etc.)",
 }
 
-var cloudLoginCmd = newLoginCmd(false)
-var cloudSignupCmd = newSignupCmd()
-var loginCmd = newLoginCmd(true)
+var (
+	cloudLoginCmd  = newLoginCmd(false)
+	cloudSignupCmd = newSignupCmd()
+	loginCmd       = newLoginCmd(true)
+)
 
-var cloudLogoutCmd = newLogoutCmd(false)
-var logoutCmd = newLogoutCmd(true)
+var (
+	cloudLogoutCmd = newLogoutCmd(false)
+	logoutCmd      = newLogoutCmd(true)
+)
 
 func init() {
 	cloudCmd.AddCommand(cloudLoginCmd, cloudSignupCmd, cloudLogoutCmd)
@@ -93,12 +95,13 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return finishCloudLogin(cmd, orgName, client, true)
+	return finishCloudLogin(cmd, orgName, client)
 }
 
-// Login always permits organization creation, as it did before signup was
-// added. Only non-interactive signup disables the browser step.
-func finishCloudLogin(cmd *cobra.Command, orgName string, client *cloud.Client, allowCreateOrg bool) error {
+// finishCloudLogin selects (or creates) the org for the authenticated user.
+// Organization creation happens directly from the CLI (createQuickstartOrg),
+// so it needs no browser and works non-interactively for signup too.
+func finishCloudLogin(cmd *cobra.Command, orgName string, client *cloud.Client) error {
 	ctx := cmd.Context()
 	outW := cmd.OutOrStdout()
 	errW := cmd.ErrOrStderr()
@@ -110,17 +113,9 @@ func finishCloudLogin(cmd *cobra.Command, orgName string, client *cloud.Client, 
 	var selectedOrg *auth.Org
 	switch len(user.Orgs) {
 	case 0:
-		if !allowCreateOrg {
-			return fmt.Errorf("human action required: create an organization at https://dagger.cloud/traces/setup, then run dagger cloud %s again", cmd.Name())
-		}
-		fmt.Fprintln(errW, "You are not a member of any Dagger Cloud organizations.")
-		selectedOrg, err = createNewOrg(ctx, client, errW)
+		selectedOrg, err = createNewOrg(ctx, client, user, orgName, errW)
 		if err != nil {
-			// logging out user here so terminal is not filled with 403
-			// errors the next time `dagger login` is called since the user
-			// still doesn't have an org set
-			auth.Logout()
-			fmt.Fprintf(errW, "Error setting up new organization: %v", err)
+			fmt.Fprintf(errW, "Error setting up new organization: %v\n", err)
 			return idtui.Fail
 		}
 	case 1:
@@ -161,41 +156,67 @@ func finishCloudLogin(cmd *cobra.Command, orgName string, client *cloud.Client, 
 	return nil
 }
 
-func createNewOrg(ctx context.Context, cli *cloud.Client, w io.Writer) (*auth.Org, error) {
-	url := "https://dagger.cloud/traces/setup"
-	fmt.Fprintf(w, "Create or select an organization here: %s\n", url)
-	err := browser.OpenURL(url)
-	if err != nil {
-		fmt.Fprintf(w, "Unable to open browser automatically; open the URL above to continue.\n")
+// createNewOrg creates a free Dagger Cloud organization entirely from the CLI
+// (no browser round-trip). The org name is taken from the requested name when
+// provided, otherwise derived from the account so the user isn't forced to
+// invent one. The server may adjust the name (e.g. to resolve collisions), so
+// the returned org reflects the actual name.
+func createNewOrg(ctx context.Context, cli *cloud.Client, user *cloud.UserResponse, requestedName string, w io.Writer) (*auth.Org, error) {
+	name := requestedName
+	if name == "" {
+		name = defaultOrgName(user)
 	}
 
-	timer := time.After(5 * time.Minute)
-	t := time.NewTicker(1 * time.Second)
+	fmt.Fprintln(w, "You are not a member of any Dagger Cloud organizations.")
+	fmt.Fprintf(w, "Creating a new organization %q...\n", name)
 
-	defer t.Stop()
+	org, err := cli.CreateQuickstartOrg(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if org.Name != name {
+		fmt.Fprintf(w, "Created organization %q.\n", org.Name)
+	}
+	return &auth.Org{ID: org.ID, Name: org.Name}, nil
+}
 
-	for {
-		select {
-		case <-timer:
-			return nil, errors.New("timed out waiting to create an organization")
-		case <-t.C:
-			u, err := cli.User(ctx)
-			if err != nil {
-				return nil, err
+// defaultOrgName derives an org name from the authenticated account, preferring
+// the account nickname (typically the GitHub login), then the email local part,
+// falling back to a generic name. Org names are not user-facing identifiers, so
+// a sensible default avoids an unnecessary prompt.
+func defaultOrgName(user *cloud.UserResponse) string {
+	if user != nil {
+		if name := sanitizeOrgName(user.Nickname); name != "" {
+			return name
+		}
+		if local, _, ok := strings.Cut(user.Email, "@"); ok {
+			if name := sanitizeOrgName(local); name != "" {
+				return name
 			}
-			if len(u.Orgs) == 0 {
-				continue
-			}
-
-			user, err := cli.User(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return &user.Orgs[0], nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
 		}
 	}
+	return "my-org"
+}
+
+// sanitizeOrgName reduces an arbitrary string to a lowercase slug of ASCII
+// alphanumerics and single hyphens, suitable as a default org name.
+func sanitizeOrgName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	lastHyphen := false
+	for _, r := range s {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			lastHyphen = false
+		case r == '-' || r == '_' || r == '.' || r == ' ':
+			if b.Len() > 0 && !lastHyphen {
+				b.WriteRune('-')
+				lastHyphen = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func (cli *CloudCLI) Logout(cmd *cobra.Command, args []string) error {

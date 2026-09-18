@@ -3,8 +3,10 @@ package daggercmd
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -42,9 +44,16 @@ func TestCloudSignupNonInteractiveNeedsAccount(t *testing.T) {
 	})
 }
 
-func TestCloudSignupNonInteractiveNeedsOrganization(t *testing.T) {
+func TestCloudSignupNonInteractiveCreatesOrganization(t *testing.T) {
+	// Organization creation is CLI-only (createQuickstartOrg), so signup no
+	// longer needs a browser step even without a terminal.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(string(body), "createQuickstartOrg") {
+			fmt.Fprint(w, `{"data":{"createQuickstartOrg":{"id":"org-1","name":"my-org"}}}`)
+			return
+		}
 		fmt.Fprint(w, `{"data":{"user":{"id":"user","orgs":[]}}}`)
 	}))
 	defer server.Close()
@@ -52,9 +61,9 @@ func TestCloudSignupNonInteractiveNeedsOrganization(t *testing.T) {
 		"credentials.json": `{"access_token":"test-login-token","token_type":"Bearer"}`,
 	}
 	daggerCloudWithConfig(t, []string{"DAGGER_CLOUD_URL=" + server.URL}, []string{"cloud", "signup"}, config, func(t *testing.T, err error, out, stderr *bytes.Buffer) {
-		require.Error(t, err)
-		require.Contains(t, stderr.String(), "human action required: create an organization")
+		require.NoError(t, err, stderr.String())
+		require.Contains(t, stderr.String(), `Creating a new organization "my-org"`)
 		require.NotContains(t, stderr.String(), "Unable to open browser")
-		require.Empty(t, out.String())
+		require.Contains(t, out.String(), "Success.")
 	})
 }
