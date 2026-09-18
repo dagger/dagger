@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  A module run through a Dang entrypoint now receives the workspace it was
+  loaded from, not the workspace of the module that loaded it. Chains of local
+  modules loaded through clients, such as `demo` loading `lib` loading `lib2`,
+  now resolve each module's local dependencies.
+time: 2026-09-18T19:27:09Z
+custom:
+  Author: eunomie
