@@ -445,6 +445,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *state.persistedEnvelope); err == nil && decoded != nil {
 			res.payloadMu.Lock()
 			if !res.hasValue && res.persistedEnvelope != nil {
+				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
+					withSelf.InitializeResultReference(Result[Typed]{shared: res})
+				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
@@ -754,6 +757,9 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 
 			res.payloadMu.Lock()
 			if !res.hasValue && res.persistedEnvelope != nil {
+				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
+					withSelf.InitializeResultReference(Result[Typed]{shared: res})
+				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {

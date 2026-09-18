@@ -215,6 +215,9 @@ func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{
 		}
 		workspaceID = id.EngineResultID()
 	}
+	if len(parent.Selector.ExcludedURIs) > 0 {
+		return "", fmt.Errorf("one DAG address cannot express collection key exclusions")
+	}
 	bound, err := parent.BindDimensions()
 	if err != nil {
 		return "", err

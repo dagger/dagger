@@ -90,3 +90,31 @@ func TestArtifactCollectionExactEndpoints(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, roundTrip.Entries, 3)
 }
+
+func TestArtifactCollectionExclusions(t *testing.T) {
+	all, err := collectionArtifactFixture().FilterPattern("items*")
+	require.NoError(t, err)
+	exclusion, err := dagaddress.Parse("items?item=a")
+	require.NoError(t, err)
+	selected, err := all.WithoutURI(exclusion)
+	require.NoError(t, err)
+	require.Empty(t, all.Selector.ExcludedURIs)
+	expanded, err := selected.Expand(t.Context())
+	require.NoError(t, err)
+	require.Len(t, expanded.Entries, 2)
+	require.Empty(t, expanded.Entries[0].DimensionKeys)
+	require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.items", Key: "b"}}, expanded.Entries[1].DimensionKeys)
+	for _, key := range []string{"a", "b"} {
+		narrowed := all.FilterDimensionKeys("item", []string{key})
+		narrowed, err = narrowed.WithoutURI(exclusion)
+		require.NoError(t, err)
+		expanded, err := narrowed.Expand(t.Context())
+		require.NoError(t, err)
+		if key == "a" {
+			require.Empty(t, expanded.Entries)
+		} else {
+			require.Len(t, expanded.Entries, 1)
+			require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.items", Key: "b"}}, expanded.Entries[0].DimensionKeys)
+		}
+	}
+}

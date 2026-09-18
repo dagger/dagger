@@ -121,9 +121,7 @@ func (obj *ModuleObject) collectionSubset(ctx context.Context, requested []colle
 		selected[key.text] = true
 	}
 	values := make([]any, 0, len(requested))
-	base := make([]string, 0, len(keys))
 	for _, key := range keys {
-		base = append(base, key.text)
 		if selected[key.text] {
 			values = append(values, key.sdkValue)
 			delete(selected, key.text)
@@ -139,9 +137,6 @@ func (obj *ModuleObject) collectionSubset(ctx context.Context, requested []colle
 	subset := *obj
 	subset.Fields = maps.Clone(obj.Fields)
 	subset.Fields[members.Keys.OriginalName] = values
-	if obj.CollectionBaseKeys == nil {
-		subset.CollectionBaseKeys = base
-	}
 	return &subset, nil
 }
 
@@ -150,18 +145,22 @@ func (obj *ModuleObject) collectionDelta(ctx context.Context) (*CollectionDelta,
 	if err != nil {
 		return nil, err
 	}
-	delta := &CollectionDelta{AddedKeys: []string{}, RemovedKeys: []string{}, BaseKeys: slices.Clone(obj.CollectionBaseKeys)}
-	if obj.CollectionBaseKeys == nil {
-		delta.BaseKeys = make([]string, 0, len(keys))
-		for _, key := range keys {
-			delta.BaseKeys = append(delta.BaseKeys, key.text)
-		}
-		return delta, nil
+	if obj.CollectionBase == nil {
+		return nil, fmt.Errorf("collection %q has no base", obj.TypeDef.Name)
 	}
+	original, ok := dagql.UnwrapAs[*ModuleObject](obj.CollectionBase)
+	if !ok {
+		return nil, fmt.Errorf("invalid collection base %T", obj.CollectionBase.Unwrap())
+	}
+	baseKeys, err := original.collectionKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	delta := &CollectionDelta{AddedKeys: []string{}, RemovedKeys: []string{}}
 	current := make(map[string]bool, len(keys))
-	base := make(map[string]bool, len(obj.CollectionBaseKeys))
-	for _, key := range obj.CollectionBaseKeys {
-		base[key] = true
+	base := make(map[string]bool, len(baseKeys))
+	for _, key := range baseKeys {
+		base[key.text] = true
 	}
 	for _, key := range keys {
 		current[key.text] = true
@@ -169,9 +168,9 @@ func (obj *ModuleObject) collectionDelta(ctx context.Context) (*CollectionDelta,
 			delta.AddedKeys = append(delta.AddedKeys, key.text)
 		}
 	}
-	for _, key := range obj.CollectionBaseKeys {
-		if !current[key] {
-			delta.RemovedKeys = append(delta.RemovedKeys, key)
+	for _, key := range baseKeys {
+		if !current[key.text] {
+			delta.RemovedKeys = append(delta.RemovedKeys, key.text)
 		}
 	}
 	return delta, nil
@@ -184,8 +183,16 @@ func (obj *ModuleObject) collectionSDKFields(ctx context.Context) (map[string]an
 	if err != nil {
 		return nil, err
 	}
-	if members == nil || members.Delta == nil {
+	if members == nil {
 		return obj.Fields, nil
+	}
+	if obj.CollectionBase == nil {
+		return nil, fmt.Errorf("collection %q has no base", obj.TypeDef.Name)
+	}
+	fields := maps.Clone(obj.Fields)
+	fields[collectionBaseField] = obj.CollectionBase
+	if members.Delta == nil {
+		return fields, nil
 	}
 	delta, err := obj.collectionDelta(ctx)
 	if err != nil {
@@ -200,24 +207,50 @@ func (obj *ModuleObject) collectionSDKFields(ctx context.Context) (map[string]an
 		Field: "__collectionDelta", Args: []dagql.NamedInput{
 			{Name: "addedKeys", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(delta.AddedKeys...))},
 			{Name: "removedKeys", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(delta.RemovedKeys...))},
-			{Name: "baseKeys", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(delta.BaseKeys...))},
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
-	fields := maps.Clone(obj.Fields)
 	fields[members.Delta.OriginalName] = result
 	return fields, nil
 }
 
+// The SDK transports this field as opaque state. It is never a schema field.
+const collectionBaseField = "__daggerCollectionBase"
+
+func (obj *ModuleObject) InitializeResultReference(self dagql.AnyResult) {
+	if obj.TypeDef != nil && obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled && obj.CollectionBase == nil {
+		obj.CollectionBase = self
+	}
+}
+
+func (obj *ModuleObject) attachCollectionBase(ctx context.Context, self dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	if obj.TypeDef == nil || obj.TypeDef.Collection == nil || !obj.TypeDef.Collection.Enabled {
+		return nil, nil
+	}
+	obj.InitializeResultReference(self)
+	if obj.CollectionBase == nil {
+		return nil, fmt.Errorf("collection %q attached without a result", obj.TypeDef.Name)
+	}
+	if obj.CollectionBase.Unwrap() == obj {
+		return nil, nil
+	}
+	base, err := attach(obj.CollectionBase)
+	if err != nil {
+		return nil, err
+	}
+	obj.CollectionBase = base
+	return []dagql.AnyResult{base}, nil
+}
+
 func (obj *ModuleObject) restoreCollectionBase(ctx context.Context) error {
 	members, err := obj.TypeDef.CollectionMembers()
-	if err != nil || members == nil || members.Delta == nil {
+	if err != nil || members == nil {
 		return err
 	}
-	value := obj.Fields[members.Delta.OriginalName]
-	if value == nil {
+	value := obj.Fields[collectionBaseField]
+	if value == nil || value == "" {
 		return nil
 	}
 	var result dagql.AnyResult
@@ -227,7 +260,7 @@ func (obj *ModuleObject) restoreCollectionBase(ctx context.Context) error {
 	case string:
 		var id call.ID
 		if err := id.Decode(value); err != nil {
-			return fmt.Errorf("collection delta ID: %w", err)
+			return fmt.Errorf("collection base ID: %w", err)
 		}
 		dag, err := CurrentDagqlServer(ctx)
 		if err != nil {
@@ -238,13 +271,15 @@ func (obj *ModuleObject) restoreCollectionBase(ctx context.Context) error {
 			return err
 		}
 	default:
-		return fmt.Errorf("invalid collection delta value %T", value)
+		return fmt.Errorf("invalid collection base value %T", value)
 	}
-	delta, ok := dagql.UnwrapAs[*CollectionDelta](result)
-	if !ok {
-		return fmt.Errorf("invalid collection delta type %s", result.Type())
+	base, ok := dagql.UnwrapAs[*ModuleObject](result)
+	if !ok || base.TypeDef.Name != obj.TypeDef.Name || base.CollectionBatch {
+		return fmt.Errorf("invalid collection base type %s", result.Type())
 	}
-	obj.CollectionBaseKeys = slices.Clone(delta.BaseKeys)
+	obj.CollectionBase = result
+	obj.Fields = maps.Clone(obj.Fields)
+	delete(obj.Fields, collectionBaseField)
 	return nil
 }
 
@@ -254,18 +289,11 @@ func (obj *ModuleObject) collectionFields(ctx context.Context, dag *dagql.Server
 		return nil, err
 	}
 	if obj.CollectionBatch {
-		var fields []dagql.Field[*ModuleObject]
-		for _, fn := range obj.TypeDef.Functions {
-			if fn.Self().Name == members.Get.Name {
-				continue
-			}
-			field, err := objFun(ctx, obj.Module, obj.TypeDef, fn.Self(), dag)
-			if err != nil {
-				return nil, err
-			}
-			fields = append(fields, field)
+		fields, err := obj.functions(ctx, dag)
+		if err != nil {
+			return nil, err
 		}
-		return fields, nil
+		return slices.DeleteFunc(fields, func(field dagql.Field[*ModuleObject]) bool { return field.Spec.Name == members.Get.Name }), nil
 	}
 	moduleID, err := NewUserMod(obj.Module).ResultCallModule(ctx)
 	if err != nil {

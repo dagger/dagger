@@ -8,6 +8,10 @@ PythonName: TypeAlias = str
 APIName: TypeAlias = str
 ContextPath: TypeAlias = str
 
+# Engine state. It is not part of the module schema.
+COLLECTION_BASE_ATTR = "_dagger_collection_base"
+COLLECTION_BASE_FIELD = "__daggerCollectionBase"
+
 
 @dataclasses.dataclass(slots=True, frozen=True)
 class FieldDefinition:

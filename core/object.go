@@ -357,6 +357,25 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
 	objFields := obj.Fields
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
+		base := obj
+		if obj.CollectionBase != nil {
+			base = obj.CollectionBase.Unwrap().(*ModuleObject)
+		}
+		keys, err := base.collectionKeys(ctx)
+		if err != nil {
+			return err
+		}
+		texts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			texts = append(texts, key.text)
+		}
+		// Compare base contents, not session-local handles. Never recurse through
+		// the original collection's reference to itself.
+		if err := content.CollectKeyed(collectionBaseField, func() error { return content.CollectJSONable(texts) }); err != nil {
+			return err
+		}
+	}
 	parentCall, err := value.ResultCall()
 	if err != nil {
 		return fmt.Errorf("resolve module object result call: %w", err)
@@ -465,11 +484,13 @@ type ModuleObject struct {
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
 
-	CollectionBatch    bool
-	CollectionBaseKeys []string
+	CollectionBatch bool
+	// Set once when the value is attached. Ordinary copies retain this reference.
+	CollectionBase dagql.AnyResult
 }
 
 var _ dagql.HasDependencyResults = (*ModuleObject)(nil)
+var _ dagql.HasResultReference = (*ModuleObject)(nil)
 
 const (
 	persistedModuleObjectValueKindNull      = "null"
@@ -490,8 +511,8 @@ type persistedModuleObjectValue struct {
 }
 
 type persistedModuleObjectPayload struct {
-	Fields             map[string]persistedModuleObjectValue `json:"fields,omitempty"`
-	CollectionBaseKeys []string                              `json:"collectionBaseKeys"`
+	Fields         map[string]persistedModuleObjectValue `json:"fields,omitempty"`
+	CollectionBase uint64                                `json:"collectionBase,omitempty"`
 }
 
 func (obj *ModuleObject) AttachDependencyResults(
@@ -499,12 +520,15 @@ func (obj *ModuleObject) AttachDependencyResults(
 	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if obj == nil || len(obj.Fields) == 0 {
+	if obj == nil {
 		return nil, nil
+	}
+	owned, err := obj.attachCollectionBase(ctx, self, attach)
+	if err != nil {
+		return nil, err
 	}
 
 	if obj.Module.Self() == nil || obj.TypeDef == nil {
-		owned := make([]dagql.AnyResult, 0)
 		for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
 			updated, deps, err := attachModuleObjectValue(ctx, attach, obj.Fields[name])
 			if err != nil {
@@ -526,7 +550,6 @@ func (obj *ModuleObject) AttachDependencyResults(
 	}
 
 	modInst := NewUserMod(obj.Module)
-	owned := make([]dagql.AnyResult, 0)
 	for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
 		fieldTypeDef, ok := obj.TypeDef.FieldByOriginalName(name)
 		if !ok {
@@ -759,12 +782,20 @@ func persistedModuleObjectValueHasCallID(val persistedModuleObjectValue) bool {
 }
 
 func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
-	if obj == nil || len(obj.Fields) == 0 {
+	if obj == nil {
 		return encodePersistedObjectPayload(persistedModuleObjectPayload{})
 	}
 	payload := persistedModuleObjectPayload{
-		Fields:             make(map[string]persistedModuleObjectValue, len(obj.Fields)),
-		CollectionBaseKeys: obj.CollectionBaseKeys,
+		Fields: make(map[string]persistedModuleObjectValue, len(obj.Fields)),
+	}
+	// A base that points to self is restored before the cache publishes it. Encoding
+	// it as a child reference would require recursively decoding the same value.
+	if obj.CollectionBase != nil && obj.CollectionBase.Unwrap() != obj {
+		var err error
+		payload.CollectionBase, err = encodePersistedObjectRef(cache, obj.CollectionBase, "collection base")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
 	}
 	fieldNames := slices.Collect(maps.Keys(obj.Fields))
 	slices.Sort(fieldNames)
@@ -808,13 +839,20 @@ func (obj *ModuleObject) DecodePersistedObject(
 		}
 		fields[name] = decoded
 	}
-	return &ModuleObject{
-		Module:             obj.Module,
-		TypeDef:            obj.TypeDef,
-		Fields:             fields,
-		CollectionBatch:    obj.CollectionBatch,
-		CollectionBaseKeys: payload.CollectionBaseKeys,
-	}, nil
+	decoded := &ModuleObject{
+		Module:          obj.Module,
+		TypeDef:         obj.TypeDef,
+		Fields:          fields,
+		CollectionBatch: obj.CollectionBatch,
+	}
+	if payload.CollectionBase != 0 {
+		var err error
+		decoded.CollectionBase, err = loadPersistedResultByResultID(ctx, dag, payload.CollectionBase, "collection base")
+		if err != nil {
+			return nil, err
+		}
+	}
+	return decoded, nil
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
@@ -1361,13 +1399,6 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			}
 			return result, nil
 		}
-		if fun.Self().CheckReturnType.Self() != nil {
-			legacy := proxySpec
-			legacy.Type = fun.Self().CheckReturnType.Self().ToTyped()
-			legacy.ViewFilter = BeforeVersion("v1.0.0-0")
-			dag.Root().ObjectType().Extend(legacy, proxy)
-			proxySpec.ViewFilter = AfterVersion("v1.0.0-0")
-		}
 		dag.Root().ObjectType().Extend(proxySpec, proxy)
 	}
 
@@ -1540,13 +1571,9 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			parentFields, err := obj.Self().collectionSDKFields(ctx)
-			if err != nil {
-				return nil, err
-			}
 			opts := &CallOpts{
 				ParentTyped:    obj,
-				ParentFields:   parentFields,
+				ParentFields:   obj.Self().Fields,
 				SkipSelfSchema: false,
 				Server:         dag,
 			}

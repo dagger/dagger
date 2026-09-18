@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -23,7 +24,17 @@ func collectionTestObject(t *testing.T, kind TypeDefKind, keys any) (*ModuleObje
 	obj.Collection = &CollectionConfig{Enabled: true}
 	obj.Fields = dagql.ObjectResultArray[*FieldTypeDef]{field}
 	obj.Functions = dagql.ObjectResultArray[*Function]{get}
-	return &ModuleObject{TypeDef: obj, Fields: map[string]any{"Keys": keys, "privateState": "retained"}}, dag
+	value := &ModuleObject{TypeDef: obj, Fields: map[string]any{"Keys": keys, "privateState": "retained"}}
+	attachCollectionTestObject(t, value)
+	return value, dag
+}
+
+func attachCollectionTestObject(t *testing.T, obj *ModuleObject) {
+	t.Helper()
+	self, err := dagql.NewResultForCall(obj, moduleObjectTestSyntheticCall("collection", obj))
+	require.NoError(t, err)
+	_, err = obj.attachCollectionBase(t.Context(), self, func(value dagql.AnyResult) (dagql.AnyResult, error) { return value, nil })
+	require.NoError(t, err)
 }
 
 func TestCollectionSubsetDelta(t *testing.T) {
@@ -60,20 +71,54 @@ func TestCollectionSubsetDelta(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"a", "b", "c"}, delta.RemovedKeys)
 
-	// The persistence codec must retain the fixed base, including on a batch.
+	// The original is persisted without a recursive reference to itself.
 	installModuleObjectTestModuleClass(dag)
-	second.Module = newTypeDefDetachedResult(t, dag, "module", &Module{})
-	second.CollectionBatch = true
-	encoded, err := second.EncodePersistedObject(context.Background(), nil)
+	obj.Module = newTypeDefDetachedResult(t, dag, "module", &Module{})
+	encoded, err := obj.EncodePersistedObject(context.Background(), nil)
 	require.NoError(t, err)
-	decoded, err := second.DecodePersistedObject(context.Background(), dag, 0, nil, encoded.JSON)
+	decoded, err := obj.DecodePersistedObject(context.Background(), dag, 0, nil, encoded.JSON)
 	require.NoError(t, err)
 	reloaded := decoded.(*ModuleObject)
-	require.True(t, reloaded.CollectionBatch)
-	require.Equal(t, "Items_Batch", reloaded.Type().Name())
-	delta, err = reloaded.collectionDelta(t.Context())
+	attachCollectionTestObject(t, reloaded)
+	delta, err = selectKeys(reloaded, "c").collectionDelta(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"a", "b"}, delta.RemovedKeys)
+}
+
+func TestCollectionBaseTracksModuleChanges(t *testing.T) {
+	original, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b", "c"})
+	// This type has no delta field. The base exists before any subset call.
+	require.Same(t, original, original.CollectionBase.Unwrap())
+	fields, err := original.collectionSDKFields(t.Context())
+	require.NoError(t, err)
+	require.NotContains(t, original.Fields, collectionBaseField)
+	fields["Keys"] = []any{"a", "c", "d"}
+	changed := &ModuleObject{TypeDef: original.TypeDef, Fields: fields}
+	require.NoError(t, changed.restoreCollectionBase(t.Context()))
+	attachCollectionTestObject(t, changed)
+	require.Same(t, original, changed.CollectionBase.Unwrap())
+	delta, err := changed.collectionDelta(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"d"}, delta.AddedKeys)
+	require.Equal(t, []string{"b"}, delta.RemovedKeys)
+
+	// Ordinary state copies preserve the base. Restoring a removed key cancels
+	// its removal; neither operation needs to notify the engine.
+	restored := *changed
+	restored.Fields = maps.Clone(changed.Fields)
+	restored.Fields["Keys"] = []any{"d", "c", "b", "a"}
+	attachCollectionTestObject(t, &restored)
+	delta, err = restored.collectionDelta(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"d"}, delta.AddedKeys)
+	require.Empty(t, delta.RemovedKeys)
+
+	fresh := &ModuleObject{TypeDef: original.TypeDef, Fields: map[string]any{"Keys": []any{"d"}}}
+	attachCollectionTestObject(t, fresh)
+	delta, err = fresh.collectionDelta(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, delta.AddedKeys)
+	require.Empty(t, delta.RemovedKeys)
 }
 
 func TestCollectionInvalidKeys(t *testing.T) {
