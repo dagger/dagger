@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -202,6 +203,21 @@ func (a *Artifacts) FilterTypes(types []string) *Artifacts {
 	return selected
 }
 
+// FilterTypeNames keeps artifacts whose type has any of the listed CLI-case
+// names, as written in a DAG address scheme.
+func (a *Artifacts) FilterTypeNames(names []string) *Artifacts {
+	var types []string
+	for _, artifact := range a.Entries {
+		if slices.Contains(names, ArtifactTypeName(artifact.TypeName)) && !slices.Contains(types, artifact.TypeName) {
+			types = append(types, artifact.TypeName)
+		}
+	}
+	if types == nil {
+		types = []string{}
+	}
+	return a.FilterTypes(types)
+}
+
 func (a *Artifacts) Types() []string {
 	types := map[string]struct{}{}
 	for _, artifact := range a.Entries {
@@ -224,6 +240,26 @@ func (a *Artifacts) FilterPath(path []string) *Artifacts {
 	return a.withPathFilter(func(artifact *Artifact) bool { return slices.Equal(path, artifact.Path) }, []string{strings.Join(path, "/")})
 }
 
+// FilterPattern keeps artifacts whose path matches the pattern, with the
+// same glob rules as include patterns. A literal pattern matches one path
+// exactly. The qualified path with the module name also matches, so an
+// entrypoint artifact answers to both its shorthand and its full path.
+func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
+	pattern = artifactPattern(pattern)
+	var matchErr error
+	selected := a.withPathFilter(func(artifact *Artifact) bool {
+		match, err := artifact.matchesPattern(pattern)
+		if err != nil {
+			matchErr = err
+		}
+		return match
+	}, []string{pattern})
+	if matchErr != nil {
+		return nil, matchErr
+	}
+	return selected, nil
+}
+
 // artifactPattern normalizes a path pattern to CLI case, as artifact paths are.
 func artifactPattern(pattern string) string {
 	segments := strings.Split(pattern, "/")
@@ -242,6 +278,16 @@ func IncludePattern(include string) string {
 		return pattern
 	}
 	return pattern + "/**"
+}
+
+func (a *Artifact) matchesPattern(pattern string) (bool, error) {
+	if match, err := doublestar.PathMatch(pattern, strings.Join(a.Path, "/")); err != nil || match {
+		return match, err
+	}
+	if a.Node == nil {
+		return false, nil
+	}
+	return doublestar.PathMatch(pattern, strings.Join(a.Node.Path().CliCase(), "/"))
 }
 
 func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
@@ -319,6 +365,30 @@ func (a *Artifacts) DimensionKeys(dimension string) []string {
 	return slices.Sorted(maps.Keys(keys))
 }
 
+// FilterURI applies a DAG address as one filter: the chain of path, type, and
+// dimension-key filters the address encodes.
+func (a *Artifacts) FilterURI(addr *dagaddress.Address) (*Artifacts, error) {
+	selected := a
+	if addr.Path != "" {
+		var err error
+		selected, err = selected.FilterPattern(addr.Path)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(addr.Types) > 0 {
+		selected = selected.FilterTypeNames(addr.Types)
+	}
+	for _, filter := range addr.DimensionFilters() {
+		if filter.Keys == nil {
+			selected = selected.FilterDimensions([]string{filter.Dimension})
+		} else {
+			selected = selected.FilterDimensionKeys(filter.Dimension, filter.Keys)
+		}
+	}
+	return selected, nil
+}
+
 // URI is the selector for the whole selection: filterUri(uri) selects the
 // same set. Include patterns and chained filters are normalized; an empty
 // selection prints as the empty alternation "{}".
@@ -378,6 +448,18 @@ func (a *Artifacts) One() (*Artifact, error) {
 		}
 		return nil, fmt.Errorf("%s matches %d artifacts:\n%s", a.URI(), len(a.Entries), strings.Join(lines, "\n"))
 	}
+}
+
+// AssertType checks a type assertion from a DAG address against this artifact.
+func (a *Artifact) AssertType(types []string) error {
+	if len(types) == 0 || slices.Contains(types, ArtifactTypeName(a.TypeName)) {
+		return nil
+	}
+	uri, err := a.URI(ArtifactURIOpts{DimensionKeys: true})
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("%s is a %s, not %s", uri, a.TypeName, strings.Join(types, " or "))
 }
 
 // Evaluate selects the artifact's value in the caller's session. The cached
