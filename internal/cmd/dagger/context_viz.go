@@ -32,6 +32,7 @@ import (
 	"github.com/pkg/browser"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
@@ -509,7 +510,7 @@ func buildContextVizSnapshot(conv *vizConversation) *contextVizSnapshot {
 // contextVizLLMID resolves the conversation state to visualize: the agent
 // runtime's last committed snapshot when one exists (fresh at every step
 // boundary, even mid-turn), falling back to the conversation's own LLM value.
-func (a *sessionAgent) contextVizLLMID(ctx context.Context) (dagger.ID, error) {
+func (a *sessionAgent) contextVizLLMID(ctx context.Context) (core.ID, error) {
 	if rt := a.runtime(); rt != nil {
 		if id, err := rt.SnapshotID(ctx); err == nil {
 			return id, nil

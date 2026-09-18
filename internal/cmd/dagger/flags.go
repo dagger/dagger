@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type UnsupportedFlagError struct {
@@ -30,7 +31,7 @@ func (e *UnsupportedFlagError) Error() string {
 	return msg
 }
 
-// GetCustomFlagValue returns a pflag.Value instance for a dagger.ObjectTypeDef name.
+// GetCustomFlagValue returns a pflag.Value instance for a core.ObjectTypeDef name.
 func GetCustomFlagValue(name string) DaggerValue {
 	switch name {
 	case Container:
@@ -69,7 +70,7 @@ func GetCustomFlagValue(name string) DaggerValue {
 	return nil
 }
 
-// GetCustomFlagValueSlice returns a pflag.Value instance for a dagger.ObjectTypeDef name.
+// GetCustomFlagValueSlice returns a pflag.Value instance for a core.ObjectTypeDef name.
 func GetCustomFlagValueSlice(name string, defVal []string) (DaggerValue, error) {
 	switch name {
 	case Container:
@@ -121,7 +122,7 @@ type DaggerValue interface {
 	pflag.Value
 
 	// Get returns the final value for the query builder.
-	Get(context.Context, *dagger.Client, *dagger.ModuleSource, *modFunctionArg) (any, error)
+	Get(context.Context, *dagger.Client, *core.ModuleSource, *modFunctionArg) (any, error)
 }
 
 // sliceValue is a pflag.Value that builds a slice of DaggerValue instances.
@@ -151,7 +152,7 @@ func (v *sliceValue[T]) String() string {
 	return "[" + out + "]"
 }
 
-func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
+func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client, modSrc *core.ModuleSource, modArg *modFunctionArg) (any, error) {
 	out := make([]any, len(v.value))
 	for i, v := range v.value {
 		outV, err := v.Get(ctx, c, modSrc, modArg)
@@ -247,7 +248,7 @@ func (v *enumValue) String() string {
 	return v.value
 }
 
-func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *core.ModuleSource, _ *modFunctionArg) (any, error) {
 	return v.value, nil
 }
 
@@ -262,7 +263,7 @@ func (v *enumValue) Set(s string) error {
 	return fmt.Errorf("value should be one of %s", v.Type())
 }
 
-// containerValue is a pflag.Value that builds a dagger.Container from a
+// containerValue is a pflag.Value that builds a core.Container from a
 // base image name.
 type containerValue struct {
 	address string
@@ -281,11 +282,11 @@ func (v *containerValue) String() string {
 	return v.address
 }
 
-func (v *containerValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).Container().Sync(ctx)
+func (v *containerValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
+	return core.NewQuery(c).Address(v.address).Container().Sync(ctx)
 }
 
-// directoryValue is a pflag.Value that builds a dagger.Directory from a host path.
+// directoryValue is a pflag.Value that builds a core.Directory from a host path.
 type directoryValue struct {
 	address string
 }
@@ -303,16 +304,16 @@ func (v *directoryValue) String() string {
 	return v.address
 }
 
-func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
-	return dag.Address(v.String()).
+func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *core.ModuleSource, modArg *modFunctionArg) (any, error) {
+	return core.NewQuery(dag).Address(v.String()).
 		Directory(
-			dagger.AddressDirectoryOpts{
+			core.AddressDirectoryOpts{
 				Exclude: modArg.Ignore,
 			},
 		).Sync(ctx)
 }
 
-// workspaceValue is a pflag.Value that builds a dagger.Workspace from an
+// workspaceValue is a pflag.Value that builds a core.Workspace from an
 // address. Left unset, the CLI fills the argument with the session's current
 // workspace instead (see selectFunc), so the flag only has to cover the case
 // where the caller wants a different one.
@@ -333,11 +334,11 @@ func (v *workspaceValue) String() string {
 	return v.address
 }
 
-func (v *workspaceValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return dag.Address(v.address).Directory().AsWorkspace(), nil
+func (v *workspaceValue) Get(_ context.Context, dag *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
+	return core.NewQuery(dag).Address(v.address).Directory().AsWorkspace(), nil
 }
 
-// fileValue is a pflag.Value that builds a dagger.File from a host path.
+// fileValue is a pflag.Value that builds a core.File from a host path.
 type fileValue struct {
 	address string
 }
@@ -355,11 +356,11 @@ func (v *fileValue) String() string {
 	return v.address
 }
 
-func (v *fileValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).File().Sync(ctx)
+func (v *fileValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
+	return core.NewQuery(c).Address(v.address).File().Sync(ctx)
 }
 
-// secretValue is a pflag.Value that builds a dagger.Secret from a name and a
+// secretValue is a pflag.Value that builds a core.Secret from a name and a
 // plaintext value.
 type secretValue struct {
 	address string
@@ -378,14 +379,14 @@ func (v *secretValue) String() string {
 	return v.address
 }
 
-func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
 	if !strings.Contains(v.address, ":") {
 		slog.Warn("deprecation: missig URI scheme in secret argument \"" + v.address + "\". Add env:// prefix to prevent errors in future versions")
 	}
-	return c.Address(v.address).Secret(), nil
+	return core.NewQuery(c).Address(v.address).Secret(), nil
 }
 
-// serviceValue is a pflag.Value that builds a dagger.Service from a host:port
+// serviceValue is a pflag.Value that builds a core.Service from a host:port
 // combination.
 type serviceValue struct {
 	address string
@@ -404,8 +405,8 @@ func (v *serviceValue) Set(s string) error {
 	return nil
 }
 
-func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	svc := c.Address(v.address).Service()
+func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
+	svc := core.NewQuery(c).Address(v.address).Service()
 	// tcp:// and udp:// host services are started eagerly: the caller expects
 	// the tunnel up for the duration of the call. Module references resolve to
 	// services that start lazily on first use via service bindings; starting
@@ -456,8 +457,8 @@ func (v *portForwardValue) String() string {
 	return fmt.Sprintf("%d:%d", v.frontend, v.backend)
 }
 
-func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return &dagger.PortForward{
+func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
+	return &core.PortForward{
 		Frontend: v.frontend,
 		Backend:  v.backend,
 	}, nil
@@ -480,11 +481,11 @@ func (v *socketValue) Set(s string) error {
 	return nil
 }
 
-func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).Socket(), nil
+func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
+	return core.NewQuery(c).Address(v.address).Socket(), nil
 }
 
-// cacheVolumeValue is a pflag.Value that builds a dagger.CacheVolume from a
+// cacheVolumeValue is a pflag.Value that builds a core.CacheVolume from a
 // volume name.
 type cacheVolumeValue struct {
 	name string
@@ -506,11 +507,11 @@ func (v *cacheVolumeValue) String() string {
 	return v.name
 }
 
-func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("cacheVolume name cannot be empty")
 	}
-	return dag.CacheVolume(v.name), nil
+	return core.NewQuery(dag).CacheVolume(v.name), nil
 }
 
 // volumeValue is a pflag.Value that builds an opaque Volume from an address.
@@ -534,11 +535,11 @@ func (v *volumeValue) String() string {
 	return v.address
 }
 
-func (v *volumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *volumeValue) Get(_ context.Context, dag *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.address == "" {
 		return nil, fmt.Errorf("volume address cannot be empty")
 	}
-	return dag.Address(v.address).Volume(), nil
+	return core.NewQuery(dag).Address(v.address).Volume(), nil
 }
 
 type moduleValue struct {
@@ -561,11 +562,11 @@ func (v *moduleValue) String() string {
 	return v.ref
 }
 
-func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.ref == "" {
 		return nil, fmt.Errorf("module ref cannot be empty")
 	}
-	return dag.ModuleSource(v.ref).AsModule().Sync(ctx)
+	return core.NewQuery(dag).ModuleSource(v.ref).AsModule().Sync(ctx)
 }
 
 type moduleSourceValue struct {
@@ -588,11 +589,11 @@ func (v *moduleSourceValue) String() string {
 	return v.ref
 }
 
-func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.ref == "" {
 		return nil, fmt.Errorf("module source ref cannot be empty")
 	}
-	return dag.ModuleSource(v.ref).Sync(ctx)
+	return core.NewQuery(dag).ModuleSource(v.ref).Sync(ctx)
 }
 
 type platformValue struct {
@@ -618,7 +619,7 @@ func (v *platformValue) String() string {
 	return v.platform
 }
 
-func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.platform == "" {
 		return nil, fmt.Errorf("platform cannot be empty")
 	}
@@ -655,11 +656,11 @@ func (v *buildArgValue) String() string {
 	return fmt.Sprintf("%s=%s", v.name, v.value)
 }
 
-func (v *buildArgValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *buildArgValue) Get(ctx context.Context, dag *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.name == "" {
 		return nil, fmt.Errorf("build arg cannot be empty")
 	}
-	return dagger.BuildArg{Name: v.name, Value: v.value}, nil
+	return core.BuildArg{Name: v.name, Value: v.value}, nil
 }
 
 type gitRepositoryValue struct {
@@ -679,8 +680,8 @@ func (v *gitRepositoryValue) Set(s string) error {
 	return nil
 }
 
-func (v *gitRepositoryValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).GitRepository(), nil
+func (v *gitRepositoryValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
+	return core.NewQuery(c).Address(v.address).GitRepository(), nil
 }
 
 type gitRefValue struct {
@@ -700,8 +701,8 @@ func (v *gitRefValue) Set(s string) error {
 	return nil
 }
 
-func (v *gitRefValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).GitRef(), nil
+func (v *gitRefValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
+	return core.NewQuery(c).Address(v.address).GitRef(), nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
@@ -717,27 +718,27 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 	}
 
 	switch r.TypeDef.Kind {
-	case dagger.TypeDefKindStringKind:
+	case core.TypeDefKindStringKind:
 		val, _ := getDefaultValue[string](r)
 		flags.String(name, val, usage)
 		return nil
 
-	case dagger.TypeDefKindIntegerKind:
+	case core.TypeDefKindIntegerKind:
 		val, _ := getDefaultValue[int](r)
 		flags.Int(name, val, usage)
 		return nil
 
-	case dagger.TypeDefKindFloatKind:
+	case core.TypeDefKindFloatKind:
 		val, _ := getDefaultValue[float64](r)
 		flags.Float64(name, val, usage)
 		return nil
 
-	case dagger.TypeDefKindBooleanKind:
+	case core.TypeDefKindBooleanKind:
 		val, _ := getDefaultValue[bool](r)
 		flags.Bool(name, val, usage)
 		return nil
 
-	case dagger.TypeDefKindScalarKind:
+	case core.TypeDefKindScalarKind:
 		scalarName := r.TypeDef.AsScalar.Name
 		defVal, _ := getDefaultValue[string](r)
 
@@ -752,7 +753,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		flags.String(name, defVal, usage)
 		return nil
 
-	case dagger.TypeDefKindEnumKind:
+	case core.TypeDefKindEnumKind:
 		enumName := r.TypeDef.AsEnum.Name
 		defVal, _ := getDefaultValue[string](r)
 
@@ -769,7 +770,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 		return nil
 
-	case dagger.TypeDefKindObjectKind:
+	case core.TypeDefKindObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
 		if name == "id" && r.TypeDef.AsObject.IsCore() {
@@ -793,7 +794,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 			Type: fmt.Sprintf("%q object", objName),
 		}
 
-	case dagger.TypeDefKindInputKind:
+	case core.TypeDefKindInputKind:
 		inputName := r.TypeDef.AsInput.Name
 
 		if val := GetCustomFlagValue(inputName); val != nil {
@@ -807,31 +808,31 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 			Type: fmt.Sprintf("%q input", inputName),
 		}
 
-	case dagger.TypeDefKindListKind:
+	case core.TypeDefKindListKind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
 
 		switch elementType.Kind {
-		case dagger.TypeDefKindStringKind:
+		case core.TypeDefKindStringKind:
 			val, _ := getDefaultValue[[]string](r)
 			flags.StringSlice(name, val, usage)
 			return nil
 
-		case dagger.TypeDefKindIntegerKind:
+		case core.TypeDefKindIntegerKind:
 			val, _ := getDefaultValue[[]int](r)
 			flags.IntSlice(name, val, usage)
 			return nil
 
-		case dagger.TypeDefKindFloatKind:
+		case core.TypeDefKindFloatKind:
 			val, _ := getDefaultValue[[]float64](r)
 			flags.Float64Slice(name, val, usage)
 			return nil
 
-		case dagger.TypeDefKindBooleanKind:
+		case core.TypeDefKindBooleanKind:
 			val, _ := getDefaultValue[[]bool](r)
 			flags.BoolSlice(name, val, usage)
 			return nil
 
-		case dagger.TypeDefKindScalarKind:
+		case core.TypeDefKindScalarKind:
 			scalarName := elementType.AsScalar.Name
 			defVal, _ := getDefaultValue[[]string](r)
 
@@ -847,7 +848,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 			flags.StringSlice(name, defVal, usage)
 			return nil
 
-		case dagger.TypeDefKindEnumKind:
+		case core.TypeDefKindEnumKind:
 			enumName := elementType.AsEnum.Name
 			defVal, _ := getDefaultValue[[]string](r)
 
@@ -865,7 +866,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 			return nil
 
-		case dagger.TypeDefKindObjectKind:
+		case core.TypeDefKindObjectKind:
 			objName := elementType.AsObject.Name
 
 			val, err := GetCustomFlagValueSlice(objName, nil)
@@ -883,7 +884,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 				Type: fmt.Sprintf("list of %q objects", objName),
 			}
 
-		case dagger.TypeDefKindInputKind:
+		case core.TypeDefKindInputKind:
 			inputName := elementType.AsInput.Name
 
 			val, err := GetCustomFlagValueSlice(inputName, nil)
@@ -901,7 +902,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 				Type: fmt.Sprintf("list of %q inputs", inputName),
 			}
 
-		case dagger.TypeDefKindListKind:
+		case core.TypeDefKindListKind:
 			return &UnsupportedFlagError{
 				Name: name,
 				Type: "list of lists",

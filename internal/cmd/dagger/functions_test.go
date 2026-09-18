@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -88,7 +88,7 @@ func TestFunctionArgNamedWorkspaceIgnoresInheritedGlobalWorkspaceFlag(t *testing
 			typeDefsByName: map[string]*modTypeDef{
 				Directory: {
 					TypeName: Directory,
-					Kind:     dagger.TypeDefKindObjectKind,
+					Kind:     core.TypeDefKindObjectKind,
 					AsObject: &modObject{Name: Directory},
 				},
 			},
@@ -178,12 +178,12 @@ func TestHandleResponseNullableObject(t *testing.T) {
 }
 
 func testStringTypeDef() *modTypeDef {
-	return &modTypeDef{Kind: dagger.TypeDefKindStringKind}
+	return &modTypeDef{Kind: core.TypeDefKindStringKind}
 }
 
 func testObjectTypeDef(name, sourceModuleName, description string) *modTypeDef {
 	return &modTypeDef{
-		Kind: dagger.TypeDefKindObjectKind,
+		Kind: core.TypeDefKindObjectKind,
 		AsObject: &modObject{
 			Name:             name,
 			Description:      description,

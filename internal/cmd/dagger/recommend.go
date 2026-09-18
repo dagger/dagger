@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 // recommendation pairs a registry entry with the workspace-relative path that
@@ -35,11 +36,11 @@ var recommendExcludeDirs = []string{
 
 // RecommendFn returns the workspace-root-relative paths that recommend a module.
 // An empty result means no recommendation. A nil function is never called.
-type RecommendFn func(context.Context, *dagger.Workspace) ([]string, error)
+type RecommendFn func(context.Context, *core.Workspace) ([]string, error)
 
 // SimpleRecommend recommends a module when any file path pattern matches.
 func SimpleRecommend(patterns ...string) RecommendFn {
-	return func(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+	return func(ctx context.Context, ws *core.Workspace) ([]string, error) {
 		dir := recommendationDirectory(ws)
 		var matches []string
 		for _, pattern := range patterns {
@@ -57,8 +58,8 @@ func SimpleRecommend(patterns ...string) RecommendFn {
 	}
 }
 
-func recommendationDirectory(ws *dagger.Workspace) *dagger.Directory {
-	return ws.Directory("/", dagger.WorkspaceDirectoryOpts{
+func recommendationDirectory(ws *core.Workspace) *core.Directory {
+	return ws.Directory("/", core.WorkspaceDirectoryOpts{
 		Exclude: recommendExcludeDirs,
 	})
 }
@@ -72,10 +73,10 @@ func runRecommend(ctx context.Context, dag *dagger.Client) ([]recommendation, er
 		return nil, err
 	}
 
-	return recommendModules(ctx, dag.CurrentWorkspace(), loadModuleRegistry(), installed)
+	return recommendModules(ctx, core.NewQuery(dag).CurrentWorkspace(), loadModuleRegistry(), installed)
 }
 
-func recommendModules(ctx context.Context, ws *dagger.Workspace, mods []registryModule, installed map[string]bool) ([]recommendation, error) {
+func recommendModules(ctx context.Context, ws *core.Workspace, mods []registryModule, installed map[string]bool) ([]recommendation, error) {
 	ws = ws.WithWorkdir(".")
 
 	recs := make([]recommendation, 0, len(mods))

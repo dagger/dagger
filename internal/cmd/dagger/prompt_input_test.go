@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/stretchr/testify/require"
@@ -168,7 +169,7 @@ func TestPromptImageOnlyInitialTurn(t *testing.T) {
 	s.dag = dag
 	a := agents[0]
 	a.autoCompact = false
-	a.llm = dagger.Ref[*dagger.LLM](dag, "seed")
+	a.llm = core.Ref[*core.LLM](core.NewQuery(dag), "seed")
 	rt := newFakePromptRuntime()
 	rt.snapshot = "snapshot"
 	a.bindRuntime(rt, "chief", "attached-id", false)
@@ -221,7 +222,7 @@ func TestPromptImageOnlySpawnsThroughMailbox(t *testing.T) {
 	s.dag = dag
 	a := s.newAgent("fresh")
 	a.autoCompact = false
-	a.llm = dagger.Ref[*dagger.LLM](dag, "seed")
+	a.llm = core.Ref[*core.LLM](core.NewQuery(dag), "seed")
 	s.SetTarget(a)
 	h := &shellCallHandler{mode: modePrompt, llmSession: s}
 	require.NoError(t, h.HandlePrompt(t.Context(), input))
@@ -248,7 +249,7 @@ func TestPromptImagesUseLiveAgentMailbox(t *testing.T) {
 			}}))
 			require.NoError(t, err)
 			defer dag.Close()
-			rt := liveAgent{dag: dag, agent: dagger.Ref[*dagger.Agent](dag, "existing-agent")}
+			rt := liveAgent{dag: dag, agent: core.Ref[*core.Agent](core.NewQuery(dag), "existing-agent")}
 			_, err = sendAgentPrompt(t.Context(), rt, input)
 			require.NoError(t, err)
 			require.True(t, sent)
@@ -262,7 +263,7 @@ func TestPromptImageBlocks(t *testing.T) {
 	blocks := promptImageBlocks(input)
 	require.Len(t, blocks, 2)
 	for i, block := range blocks {
-		require.Equal(t, dagger.LLMContentBlockKindImage, block.Kind)
+		require.Equal(t, core.LLMContentBlockKindImage, block.Kind)
 		require.Equal(t, input.Images[i].MIMEType, block.MimeType)
 		decoded, err := base64.StdEncoding.DecodeString(block.Data)
 		require.NoError(t, err)

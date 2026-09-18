@@ -37,6 +37,7 @@ import (
 	"golang.org/x/term"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
@@ -2565,7 +2566,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			// Keep the failed command's exit code (e.g. a shell script's failed
 			// exec must exit with the exec's own code) instead of flattening
 			// every rendered error to 1.
-			var execErr *dagger.ExecError
+			var execErr *core.ExecError
 			if errors.As(fe.err, &execErr) {
 				return ExitError{OriginalCode: execErr.ExitCode, Original: fe.err}
 			}
@@ -6510,7 +6511,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			_, err = dagger.Ref[*dagger.Container](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
+			_, err = core.Ref[*core.Container](core.NewQuery(fe.dag), core.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	case "Directory":
@@ -6522,7 +6523,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			_, err = dagger.Ref[*dagger.Directory](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
+			_, err = core.Ref[*core.Directory](core.NewQuery(fe.dag), core.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	case "Service":
@@ -6531,7 +6532,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			_, err = dagger.Ref[*dagger.Service](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
+			_, err = core.Ref[*core.Service](core.NewQuery(fe.dag), core.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	}

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -143,7 +143,7 @@ func TestModuleInitFlagCommandPosition(t *testing.T) {
 
 			var args []*modFunctionArg
 			if test.settings {
-				args = []*modFunctionArg{{Name: "path", TypeDef: &modTypeDef{Kind: dagger.TypeDefKindStringKind, Optional: true}}}
+				args = []*modFunctionArg{{Name: "path", TypeDef: &modTypeDef{Kind: core.TypeDefKindStringKind, Optional: true}}}
 			}
 			cmd, err := newSDKModuleInitCommand(configuredSDK{commandName: sdkName}, args)
 			require.NoError(t, err)
@@ -238,7 +238,7 @@ func TestModuleInitGlobalFlagDiscovery(t *testing.T) {
 				}
 				var args []*modFunctionArg
 				for _, name := range settings {
-					args = append(args, &modFunctionArg{Name: name, TypeDef: &modTypeDef{Kind: dagger.TypeDefKindStringKind, Optional: true}})
+					args = append(args, &modFunctionArg{Name: name, TypeDef: &modTypeDef{Kind: core.TypeDefKindStringKind, Optional: true}})
 				}
 				cmd, err := newSDKModuleInitCommand(configuredSDK{commandName: sdk}, args)
 				require.NoError(t, err)
@@ -293,7 +293,7 @@ func TestSDKModuleSettingFlagsAreBare(t *testing.T) {
 		Name:        "runtime",
 		Description: "Runtime to use.",
 		TypeDef: &modTypeDef{
-			Kind: dagger.TypeDefKindStringKind,
+			Kind: core.TypeDefKindStringKind,
 		},
 	}}
 	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args))
@@ -314,7 +314,7 @@ func TestSDKModuleSettingFlagRejectsAnotherSDK(t *testing.T) {
 	args := []*modFunctionArg{{
 		Name: "compat",
 		TypeDef: &modTypeDef{
-			Kind: dagger.TypeDefKindBooleanKind,
+			Kind: core.TypeDefKindBooleanKind,
 		},
 	}}
 	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args))
@@ -327,25 +327,25 @@ func TestSDKModuleSettingFlagsKeepTypes(t *testing.T) {
 	cmd := &cobra.Command{Use: "init"}
 	sdk := configuredSDK{commandName: "test"}
 	args := []*modFunctionArg{
-		{Name: "boolean", TypeDef: &modTypeDef{Kind: dagger.TypeDefKindBooleanKind}},
-		{Name: "integer", TypeDef: &modTypeDef{Kind: dagger.TypeDefKindIntegerKind}},
-		{Name: "float", TypeDef: &modTypeDef{Kind: dagger.TypeDefKindFloatKind}},
+		{Name: "boolean", TypeDef: &modTypeDef{Kind: core.TypeDefKindBooleanKind}},
+		{Name: "integer", TypeDef: &modTypeDef{Kind: core.TypeDefKindIntegerKind}},
+		{Name: "float", TypeDef: &modTypeDef{Kind: core.TypeDefKindFloatKind}},
 		{Name: "booleans", TypeDef: &modTypeDef{
-			Kind: dagger.TypeDefKindListKind,
+			Kind: core.TypeDefKindListKind,
 			AsList: &modList{
-				ElementTypeDef: &modTypeDef{Kind: dagger.TypeDefKindBooleanKind},
+				ElementTypeDef: &modTypeDef{Kind: core.TypeDefKindBooleanKind},
 			},
 		}},
 		{Name: "integers", TypeDef: &modTypeDef{
-			Kind: dagger.TypeDefKindListKind,
+			Kind: core.TypeDefKindListKind,
 			AsList: &modList{
-				ElementTypeDef: &modTypeDef{Kind: dagger.TypeDefKindIntegerKind},
+				ElementTypeDef: &modTypeDef{Kind: core.TypeDefKindIntegerKind},
 			},
 		}},
 		{Name: "floats", TypeDef: &modTypeDef{
-			Kind: dagger.TypeDefKindListKind,
+			Kind: core.TypeDefKindListKind,
 			AsList: &modList{
-				ElementTypeDef: &modTypeDef{Kind: dagger.TypeDefKindFloatKind},
+				ElementTypeDef: &modTypeDef{Kind: core.TypeDefKindFloatKind},
 			},
 		}},
 	}
@@ -390,7 +390,7 @@ func TestSDKModuleSettingFlagsAreBareForModuleInit(t *testing.T) {
 		Name:        "starter",
 		Description: "Starter style.",
 		TypeDef: &modTypeDef{
-			Kind: dagger.TypeDefKindStringKind,
+			Kind: core.TypeDefKindStringKind,
 		},
 	}}
 	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args))
@@ -581,7 +581,7 @@ func TestModuleInitControlsRespectSDKFlagPosition(t *testing.T) {
 			root.AddCommand(module)
 			module.AddCommand(init)
 			sdk, err := newSDKModuleInitCommand(configuredSDK{commandName: "custom"}, []*modFunctionArg{
-				{Name: flag, TypeDef: &modTypeDef{Kind: dagger.TypeDefKindBooleanKind}},
+				{Name: flag, TypeDef: &modTypeDef{Kind: core.TypeDefKindBooleanKind}},
 			})
 			require.NoError(t, err)
 			sdk.RunE = func(cmd *cobra.Command, _ []string) error {

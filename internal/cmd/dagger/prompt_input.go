@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 )
 
@@ -17,14 +17,14 @@ type promptAgentRuntime interface {
 }
 
 func (l liveAgent) SendPrompt(ctx context.Context, input idtui.PromptInput) (agentMessage, error) {
-	return l.agent.Send(ctx, input.Text, dagger.AgentSendOpts{Content: promptImageBlocks(input)})
+	return l.agent.Send(ctx, input.Text, core.AgentSendOpts{Content: promptImageBlocks(input)})
 }
 
-func promptImageBlocks(input idtui.PromptInput) []dagger.LLMContentBlockInput {
-	var blocks []dagger.LLMContentBlockInput
+func promptImageBlocks(input idtui.PromptInput) []core.LLMContentBlockInput {
+	var blocks []core.LLMContentBlockInput
 	for _, image := range input.Images {
-		blocks = append(blocks, dagger.LLMContentBlockInput{
-			Kind:     dagger.LLMContentBlockKindImage,
+		blocks = append(blocks, core.LLMContentBlockInput{
+			Kind:     core.LLMContentBlockKindImage,
 			MimeType: image.MIMEType,
 			Data:     base64.StdEncoding.EncodeToString(image.Data),
 		})
@@ -78,7 +78,7 @@ type promptMessage struct {
 	input idtui.PromptInput
 }
 
-func (m promptMessage) Delivery(ctx context.Context) (dagger.AgentMessageDelivery, error) {
+func (m promptMessage) Delivery(ctx context.Context) (core.AgentMessageDelivery, error) {
 	delivery, err := m.agentMessage.Delivery(ctx)
 	return delivery, promptDiagnosticError(err, m.input)
 }

@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/google/pprof/profile"
 	"golang.org/x/sync/errgroup"
 )
@@ -166,7 +167,7 @@ func record(args []string) error {
 		return fmt.Errorf("query engine version: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "engine %s: serving workload module\n", run.EngineVersion)
-	if err := client.ModuleSource(moduleDir).AsModule().Serve(ctx); err != nil {
+	if err := core.NewQuery(client).ModuleSource(moduleDir).AsModule().Serve(ctx); err != nil {
 		return fmt.Errorf("serve workload module: %w", err)
 	}
 	// The first call pays for the module runtime and image pulls; keep it out

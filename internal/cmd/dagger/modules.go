@@ -3,7 +3,7 @@ package daggercmd
 import (
 	"context"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 // registryModule is one entry in the searchable module registry.
@@ -63,7 +63,7 @@ func loadModuleRegistry() []registryModule {
 			Name:        "mochajs",
 			Description: "Run JavaScript and TypeScript tests with Mocha",
 			Repo:        "dagger.io/js/mocha",
-			Recommend: func(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+			Recommend: func(ctx context.Context, ws *core.Workspace) ([]string, error) {
 				matches, err := SimpleRecommend("**/.mocharc.*")(ctx, ws)
 				if err != nil {
 					return nil, err
@@ -86,7 +86,7 @@ func loadModuleRegistry() []registryModule {
 			Name:        "pytest",
 			Description: "Run Python tests with pytest",
 			Repo:        "dagger.io/python/pytest",
-			Recommend: func(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+			Recommend: func(ctx context.Context, ws *core.Workspace) ([]string, error) {
 				matches, err := SimpleRecommend("**/pytest.ini", "**/.pytest.ini")(ctx, ws)
 				if err != nil {
 					return nil, err
@@ -113,7 +113,7 @@ func loadModuleRegistry() []registryModule {
 			Name:        "mypy",
 			Description: "Type-check Python projects with mypy",
 			Repo:        "dagger.io/python/mypy",
-			Recommend: func(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+			Recommend: func(ctx context.Context, ws *core.Workspace) ([]string, error) {
 				matches, err := SimpleRecommend("**/mypy.ini", "**/.mypy.ini")(ctx, ws)
 				if err != nil {
 					return nil, err
@@ -135,7 +135,7 @@ func loadModuleRegistry() []registryModule {
 			Name:        "ruff",
 			Description: "Lint and format Python projects with Ruff",
 			Repo:        "dagger.io/python/ruff",
-			Recommend: func(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+			Recommend: func(ctx context.Context, ws *core.Workspace) ([]string, error) {
 				matches, err := SimpleRecommend("**/ruff.toml", "**/.ruff.toml")(ctx, ws)
 				if err != nil {
 					return nil, err
@@ -152,7 +152,7 @@ func loadModuleRegistry() []registryModule {
 			Name:        "ty",
 			Description: "Type-check Python projects with ty",
 			Repo:        "dagger.io/python/ty",
-			Recommend: func(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+			Recommend: func(ctx context.Context, ws *core.Workspace) ([]string, error) {
 				matches, err := SimpleRecommend("**/ty.toml")(ctx, ws)
 				if err != nil {
 					return nil, err
@@ -169,7 +169,7 @@ func loadModuleRegistry() []registryModule {
 			Name:        "uv",
 			Description: "Lock, build, and audit Python projects with uv",
 			Repo:        "dagger.io/python/uv",
-			Recommend: func(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+			Recommend: func(ctx context.Context, ws *core.Workspace) ([]string, error) {
 				matches, err := SimpleRecommend("**/uv.lock", "**/uv.toml")(ctx, ws)
 				if err != nil {
 					return nil, err

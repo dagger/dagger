@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 )
@@ -25,14 +26,14 @@ They do not load installed modules.`,
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(
-		newWorkspaceGitValueCmd("ref", "Print the resolved ref name, or commit hash if unnamed", func(ctx context.Context, git *dagger.WorkspaceGit) (string, error) {
+		newWorkspaceGitValueCmd("ref", "Print the resolved ref name, or commit hash if unnamed", func(ctx context.Context, git *core.WorkspaceGit) (string, error) {
 			return git.Head().Name(ctx)
 		}),
-		newWorkspaceGitValueCmd("sha", "Print the full commit hash", func(ctx context.Context, git *dagger.WorkspaceGit) (string, error) {
+		newWorkspaceGitValueCmd("sha", "Print the full commit hash", func(ctx context.Context, git *core.WorkspaceGit) (string, error) {
 			return git.Head().CommitSHA(ctx)
 		}),
 	)
-	dirtyCmd := newWorkspaceGitValueCmd("dirty", "Print whether the workspace has uncommitted changes", func(ctx context.Context, git *dagger.WorkspaceGit) (string, error) {
+	dirtyCmd := newWorkspaceGitValueCmd("dirty", "Print whether the workspace has uncommitted changes", func(ctx context.Context, git *core.WorkspaceGit) (string, error) {
 		empty, err := git.Uncommitted().IsEmpty(ctx)
 		return strconv.FormatBool(!empty), err
 	})
@@ -45,7 +46,7 @@ Both true and false return exit status 0.`
 	return cmd
 }
 
-func newWorkspaceGitValueCmd(name, description string, value func(context.Context, *dagger.WorkspaceGit) (string, error)) *cobra.Command {
+func newWorkspaceGitValueCmd(name, description string, value func(context.Context, *core.WorkspaceGit) (string, error)) *cobra.Command {
 	return &cobra.Command{
 		Use:   name,
 		Short: description,
@@ -54,7 +55,7 @@ func newWorkspaceGitValueCmd(name, description string, value func(context.Contex
 			return withEngine(cmd.Context(), client.Params{
 				SkipWorkspaceModules: true,
 			}, func(ctx context.Context, engineClient *client.Client) error {
-				result, err := value(ctx, engineClient.Dagger().CurrentWorkspace().Git())
+				result, err := value(ctx, core.NewQuery(engineClient.Dagger()).CurrentWorkspace().Git())
 				if err != nil {
 					return fmt.Errorf("read workspace git %s: %w", name, err)
 				}

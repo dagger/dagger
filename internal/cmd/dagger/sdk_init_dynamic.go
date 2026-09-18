@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/spf13/pflag"
@@ -51,7 +52,7 @@ func readWorkspaceConfigForSDKInitRegistration() (*workspace.Config, string, err
 }
 
 func readSelectedWorkspaceConfig(ctx context.Context, dag *dagger.Client) (*workspace.Config, string, error) {
-	ws := dag.CurrentWorkspace()
+	ws := core.NewQuery(dag).CurrentWorkspace()
 	cfgPath, err := ws.ConfigFile(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("load selected workspace config file: %w", err)
