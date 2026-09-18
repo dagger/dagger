@@ -340,6 +340,36 @@ func (l *spanLookup) hasSpan(spanID string) bool {
 	return found
 }
 
+// allSpanIDs snapshots every span ID the index has seen a snapshot of.
+func (l *spanLookup) allSpanIDs() map[string]struct{} {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	ids := make(map[string]struct{}, len(l.lastRow))
+	for id := range l.lastRow {
+		ids[id] = struct{}{}
+	}
+	return ids
+}
+
+// directChildren returns the spans one edge beneath spanID over the same
+// downward edges logScope walks: child edges and cause-purpose link edges.
+func (l *spanLookup) directChildren(spanID string) map[string]struct{} {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	kids := make(map[string]struct{}, len(l.children[spanID])+len(l.causalChildren[spanID]))
+	for _, kid := range l.children[spanID] {
+		if kid != spanID {
+			kids[kid] = struct{}{}
+		}
+	}
+	for _, kid := range l.causalChildren[spanID] {
+		if kid != spanID {
+			kids[kid] = struct{}{}
+		}
+	}
+	return kids
+}
+
 // markedSpanIDs snapshots the check- and test-marked span ID sets.
 func (l *spanLookup) markedSpanIDs() (checks, tests map[string]struct{}) {
 	l.mu.RLock()
@@ -417,6 +447,7 @@ type DB struct {
 	metrics *logStream[Metric]
 	lookup  *spanLookup
 	logIdx  *logLookup
+	callIdx *callLookup
 
 	clientID string
 	refCount int
@@ -431,6 +462,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 	store := &DB{
 		lookup:   newSpanLookup(),
 		logIdx:   newLogLookup(),
+		callIdx:  newCallLookup(),
 		clientID: clientID,
 	}
 	defer func() {
@@ -445,8 +477,14 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".spans.log"),
 		spanCodec,
 		tailBudget,
-		store.lookup.add,
-		store.lookup.addAll,
+		func(row Span) {
+			store.lookup.add(row)
+			store.callIdx.addSpan(row)
+		},
+		func(rows []Span) {
+			store.lookup.addAll(rows)
+			store.callIdx.addSpans(rows)
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("open span stream: %w", err)
@@ -456,8 +494,14 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".logs.log"),
 		logCodec,
 		tailBudget,
-		store.logIdx.add,
-		store.logIdx.addAll,
+		func(row Log) {
+			store.logIdx.add(row)
+			store.callIdx.addLog(row)
+		},
+		func(rows []Log) {
+			store.logIdx.addAll(rows)
+			store.callIdx.addLogs(rows)
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("open log stream: %w", err)
@@ -574,6 +618,22 @@ func (s *DB) HasSpan(spanID string) bool {
 	return s.lookup.hasSpan(spanID)
 }
 
+// SpanIDs returns every span ID the store has seen a snapshot of -- the seed
+// for a session-wide scoped load (e.g. a name search), sized by the span
+// count rather than by the snapshot stream. The returned map is a fresh
+// snapshot the caller owns.
+func (s *DB) SpanIDs() map[string]struct{} {
+	return s.lookup.allSpanIDs()
+}
+
+// ChildSpanIDs returns the spans one edge beneath spanID, over the same edges
+// as the log queries: parent→child plus cause-purpose links. Answered from the
+// index alone, so a caller can load a span's immediate surroundings without
+// materializing its whole subtree.
+func (s *DB) ChildSpanIDs(spanID string) map[string]struct{} {
+	return s.lookup.directChildren(spanID)
+}
+
 // AncestorClosure returns ids plus every member's ancestor chain up to its
 // trace root. A scoped span load includes it so that no loaded span's parent
 // pointer resolves to an unreceived placeholder — dagui would otherwise
@@ -630,6 +690,67 @@ func (s *DB) SelectLogsForSpans(ctx context.Context, ids map[string]struct{}, pe
 		rows = append(rows, row)
 	}
 	return rows, nil
+}
+
+// CallFrame is where the store holds one call's frame: the newest snapshot
+// of the span that carries it as dagger.io/dag.call, and/or the call-payload
+// log record that carries it. A frame delivered by both transports has both;
+// the log record is the cheaper one to decode (the span's attributes hold
+// everything else about the span too).
+type CallFrame struct {
+	Digest string
+	Span   *Span
+	Log    *Log
+}
+
+// CallDigests returns every call digest the store holds a frame for, on
+// either transport -- the seed for a session-wide call search, sized by the
+// number of distinct calls. The returned map is a fresh snapshot the caller
+// owns.
+func (s *DB) CallDigests() map[string]struct{} {
+	return s.callIdx.digests()
+}
+
+// SelectCallFrames returns the frames the store holds for digests, in
+// ascending digest order, skipping digests it holds no frame for. Answered
+// through the call index, so a recipe rebuild that follows a chain's
+// references loads a row per frame rather than scanning either stream.
+func (s *DB) SelectCallFrames(ctx context.Context, digests map[string]struct{}) ([]CallFrame, error) {
+	ordered := make([]string, 0, len(digests))
+	for digest := range digests {
+		ordered = append(ordered, digest)
+	}
+	sort.Strings(ordered)
+	frames := make([]CallFrame, 0, len(ordered))
+	for _, digest := range ordered {
+		spanRow, logRow := s.callIdx.rows(digest)
+		if spanRow == 0 && logRow == 0 {
+			continue
+		}
+		frame := CallFrame{Digest: digest}
+		if logRow != 0 {
+			row, found, err := s.logs.readID(ctx, logRow)
+			if err != nil {
+				return nil, fmt.Errorf("read log row %d: %w", logRow, err)
+			}
+			if !found {
+				return nil, fmt.Errorf("indexed log row %d: %w", logRow, sql.ErrNoRows)
+			}
+			frame.Log = &row
+		}
+		if spanRow != 0 {
+			row, found, err := s.spans.readID(ctx, spanRow)
+			if err != nil {
+				return nil, fmt.Errorf("read span row %d: %w", spanRow, err)
+			}
+			if !found {
+				return nil, fmt.Errorf("indexed span row %d: %w", spanRow, sql.ErrNoRows)
+			}
+			frame.Span = &row
+		}
+		frames = append(frames, frame)
+	}
+	return frames, nil
 }
 
 // SelectLogsBeneathSpan returns the log rows of the capture rooted at

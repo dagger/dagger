@@ -2260,31 +2260,152 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Render the trace report for a span, check, or test: the span tree, plus the CHECKS and TESTS sections, exactly as they appear at the end of a run." + "\n" +
-			"Tool results are abridged; this is how you see the full detail behind one - pass the span ID from a report's footer, or the name of a check or test you saw run." + "\n" +
-			"Prefer ReadTrace when you want the shape of what ran (which steps, which checks/tests, where it failed); use ReadLogs when you want the raw log lines of a span." + "\n" +
-			"When a name matches several spans, the most recent one is rendered.",
+		Description: "Read the trace of this session at a span, check, or test, in one of three views." + "\n" +
+			"- report (default): the trace report -- the span tree plus the CHECKS and TESTS sections, exactly as they appear at the end of a run. Tool results are abridged; this is how you see the full detail behind one." + "\n" +
+			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
+			"- timings: the span's subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included. Use it to see where the time went." + "\n" +
+			"Pass the span ID from a report's footer or a FindSpans result, or the name of a check or test you saw run; when a name matches several spans, the most recent one is used." + "\n" +
+			"Use ReadLogs when you want the raw log lines beneath a span.",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"span": map[string]any{
 					"type":        "string",
-					"description": "Span ID (hex) to render the report for, scoped to that span's subtree.",
+					"description": "Span ID (hex) to read, scoped to that span's subtree.",
 				},
 				"check": map[string]any{
 					"type":        "string",
-					"description": "Check name to render the report for, e.g. \"shellcheck:check\".",
+					"description": "Check name to read, e.g. \"shellcheck:check\".",
 				},
 				"test": map[string]any{
 					"type":        "string",
-					"description": "Test case or suite name to render the report for.",
+					"description": "Test case or suite name to read.",
+				},
+				"view": map[string]any{
+					"type":        "string",
+					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings},
+					"description": "Which view to render.",
+					"default":     traceViewReport,
+				},
+				"minDuration": map[string]any{
+					"type":        "string",
+					"description": "timings view only: hide spans shorter than this Go duration, e.g. \"10ms\" or \"1s\". Spans with unknown timing are kept.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "timings view only: maximum number of rows (0 = unlimited).",
+					"minimum":     0,
+					"default":     200,
 				},
 			},
 			"required":             []string{},
 			"additionalProperties": false,
 		},
 		Call: m.readTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "FindSpans",
+		Description: "Find spans in this session's trace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest first, with running services tagged by hostname." + "\n" +
+			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
+			"Matching is a substring test on the span name (and a service's hostname); an empty query lists everything in scope. Only the newest `limit` matches are returned.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Substring of the span name (or service hostname) to match. Empty matches every span.",
+					"default":     "",
+				},
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Restrict the search to this span's subtree (hex span ID). Empty searches the whole session.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Maximum matches to return; the newest are kept.",
+					"minimum":     1,
+					"default":     findSpansDefaultLimit,
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Call: m.findSpansTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "InspectCall",
+		Description: "Inspect the recipe (dagql call ID) behind a call in this session: the whole chain of API calls that produced a value, rebuilt from telemetry." + "\n" +
+			"Pass the call digest (xxh3:...) named by an engine error, a FindCalls line, or ReadTrace's inspect view -- or the span ID of the call. Views:" + "\n" +
+			"- chain (default): every selector on the receiver chain, as the TUI renders it." + "\n" +
+			"- tree: the chain with ID-valued arguments expanded inline (each withDirectory/withTools/... argument hangs a whole other chain), numbered, with digests." + "\n" +
+			"- stats: distinct calls, chain depth, module provenance, and per-call expansion counts -- how many times a loader that walks the recipe without deduplicating would re-execute each call. The view for \"why did this run that call N times?\"." + "\n" +
+			"- find: every call in the recipe whose Type.field name matches `find` (a regexp), with its path, arguments and referrers." + "\n" +
+			"`diff` structurally compares this recipe against another digest's instead: size, where the chains diverge, calls only on either side. Use it for \"why did this miss the cache / how do these two differ\"." + "\n" +
+			"A frame the client never received is reported with the frame that referenced it.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"digest": map[string]any{
+					"type":        "string",
+					"description": "Call digest to inspect, e.g. \"xxh3:9d2f...\".",
+				},
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Alternatively, the span ID (hex) of the call to inspect.",
+				},
+				"view": map[string]any{
+					"type":        "string",
+					"enum":        []string{callViewChain, callViewTree, callViewStats, callViewFind},
+					"description": "Which view to render.",
+					"default":     callViewChain,
+				},
+				"find": map[string]any{
+					"type":        "string",
+					"description": "find view only: regexp matched against each call's Type.field name (e.g. \"withExec\" or \"Container\\\\.from\").",
+				},
+				"depth": map[string]any{
+					"type":        "integer",
+					"description": "tree view only: recurse at most this many levels into ID arguments (0 = unlimited).",
+					"minimum":     0,
+					"default":     0,
+				},
+				"diff": map[string]any{
+					"type":        "string",
+					"description": "Digest of another call to structurally diff this one against (ignores `view`).",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Call: m.inspectCallTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "FindCalls",
+		Description: "Content-search every dagql call made in this session: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- with argument literals untruncated, sorted." + "\n" +
+			"This is how you find which call references a path, image, module or value, and how you walk a chain: grep for the digest another line names as its receiver or argument, then InspectCall it." + "\n" +
+			"`query` is a regexp over the rendered line.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Regexp matched against each rendered call line.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Maximum matches to return.",
+					"minimum":     1,
+					"default":     findCallsDefaultLimit,
+				},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		},
+		Call: m.findCallsTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "ListServices",
@@ -2598,33 +2719,161 @@ func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern
 	return strings.Join(logs, "\n"), nil
 }
 
-// readTraceTool renders the pretty trace report for a span, check or test --
-// in the same shape a tool call's own result is rendered as (the target's own
-// output, then the report), so what the reader gets back is in the vocabulary
-// it already sees, just scoped to the target it asked about.
+// readTraceTool reads the trace at a span, check or test, in the requested
+// view. The report view renders the pretty trace report in the same shape a
+// tool call's own result is rendered as (the target's own output, then the
+// report), so what the reader gets back is in the vocabulary it already
+// sees, just scoped to the target it asked about. The inspect and timings
+// views are the TUI console's span views, answered from the engine.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span  string `default:""`
-		Check string `default:""`
-		Test  string `default:""`
+		Span        string `default:""`
+		Check       string `default:""`
+		Test        string `default:""`
+		View        string `default:"report"`
+		MinDuration string `default:""`
+		Limit       int    `default:"200"`
 	}) (any, error) {
 		target := traceTarget{
-			Span:  args.Span,
+			Span:  normalizeSpanArg(args.Span),
 			Check: args.Check,
 			Test:  args.Test,
+		}
+		var minDuration time.Duration
+		if args.MinDuration != "" {
+			var err error
+			minDuration, err = time.ParseDuration(args.MinDuration)
+			if err != nil || minDuration < 0 {
+				return nil, fmt.Errorf("invalid minDuration %q: want a non-negative Go duration such as \"10ms\"", args.MinDuration)
+			}
+		}
+		switch args.View {
+		case traceViewReport, traceViewInspect, traceViewTimings:
+		default:
+			return nil, fmt.Errorf("unknown view %q: want %s, %s or %s", args.View, traceViewReport, traceViewInspect, traceViewTimings)
 		}
 		spanID, err := resolveTraceTarget(ctx, target)
 		if err != nil {
 			return nil, err
+		}
+		switch args.View {
+		case traceViewInspect:
+			return inspectSpan(ctx, spanID)
+		case traceViewTimings:
+			return spanTimings(ctx, spanID, minDuration, args.Limit)
 		}
 		if result := m.spanResult(ctx, spanID, readTraceReportOpts(target)); result != "" {
 			return result, nil
 		}
 		// A subtree can legitimately render to nothing (dagui hides internal,
 		// passthrough and encapsulated spans); say so rather than returning an
-		// empty result, and point at the path that does show raw output.
-		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs)",
-			spanID, spanID), nil
+		// empty result, and point at the paths that do show something.
+		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs, or ReadTrace(span: %s, view: \"inspect\") to see the span itself)",
+			spanID, spanID, spanID), nil
+	})
+}
+
+// findSpansTool searches the session's trace by span name; see findSpans.
+func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Query string `default:""`
+		Span  string `default:""`
+		Limit int    `default:"100"`
+	}) (any, error) {
+		root := ""
+		if strings.TrimSpace(args.Span) != "" {
+			root = normalizeSpanArg(args.Span)
+			if !isHexID(root, 16) {
+				return nil, fmt.Errorf("invalid span ID %q: want a hex span ID", args.Span)
+			}
+		}
+		if args.Limit <= 0 {
+			args.Limit = findSpansDefaultLimit
+		}
+		return findSpans(ctx, args.Query, root, args.Limit)
+	})
+}
+
+// inspectCallTool rebuilds and renders the recipe behind a call digest or a
+// call's span; see inspectCall.
+func (m *MCP) inspectCallTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Digest string `default:""`
+		Span   string `default:""`
+		View   string `default:"chain"`
+		Find   string `default:""`
+		Depth  int    `default:"0"`
+		Diff   string `default:""`
+	}) (any, error) {
+		opts := callInspectOpts{View: args.View, Depth: args.Depth, Diff: normalizeDigestArg(args.Diff)}
+		switch args.View {
+		case callViewChain, callViewTree, callViewStats, callViewFind:
+		default:
+			return nil, fmt.Errorf("unknown view %q: want %s, %s, %s or %s", args.View, callViewChain, callViewTree, callViewStats, callViewFind)
+		}
+		if args.Find != "" {
+			re, err := regexp.Compile(args.Find)
+			if err != nil {
+				return nil, fmt.Errorf("invalid find pattern %q: %w", args.Find, err)
+			}
+			opts.Find = re
+			if args.View == callViewChain {
+				// A pattern implies the view that uses it.
+				opts.View = callViewFind
+			}
+		}
+		digest := normalizeDigestArg(args.Digest)
+		span := strings.TrimSpace(args.Span)
+		switch {
+		case digest != "" && span != "":
+			return nil, fmt.Errorf("pass either digest or span, not both")
+		case digest == "" && span == "":
+			return nil, fmt.Errorf("pass a call digest (xxh3:...) or the span ID of a call")
+		case span != "":
+			span = normalizeSpanArg(span)
+			if !isHexID(span, 16) {
+				return nil, fmt.Errorf("invalid span ID %q: want a hex span ID", args.Span)
+			}
+			clientDB, err := traceReportClientDB(ctx)
+			if err != nil {
+				return nil, err
+			}
+			defer clientDB.Close()
+			digest, err = spanCallDigest(ctx, clientDB.Read(), span)
+			if err != nil {
+				return nil, err
+			}
+			return inspectCallIn(ctx, clientDB.Read(), digest, opts)
+		}
+		return inspectCall(ctx, digest, opts)
+	})
+}
+
+// normalizeDigestArg accepts the forms a call digest gets pasted in: bare,
+// or with the "digest=" / "load " prefixes engine errors and tool output
+// wrap it in.
+func normalizeDigestArg(arg string) string {
+	arg = strings.TrimSpace(arg)
+	for _, prefix := range []string{"digest=", "digest:", "load "} {
+		arg = strings.TrimPrefix(arg, prefix)
+	}
+	return strings.TrimSpace(arg)
+}
+
+// findCallsTool content-searches the session's calls; see findCalls.
+func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Query string
+		Limit int `default:"200"`
+	}) (any, error) {
+		re, err := regexp.Compile(args.Query)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query %q: %w", args.Query, err)
+		}
+		if args.Limit <= 0 {
+			args.Limit = findCallsDefaultLimit
+		}
+		return findCalls(ctx, re, args.Limit)
 	})
 }
 

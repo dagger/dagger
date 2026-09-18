@@ -471,11 +471,12 @@ type TuiQa {
   }
 
   """
-  Show one span in depth: name, status, timing, the dagui flags that shape how
-  the UI treats it (internal, passthrough, encapsulation, log/span roll-up,
-  service, …), and the parent chain up to the root with each ancestor's flags.
-  Get ids from `spans`; use this to answer "why is this span hidden / why
-  didn't its logs roll up".
+  Show one span in depth: name, status, error and its origins, timing, the
+  dagui flags that shape how the UI treats it (internal, passthrough,
+  encapsulation, log/span roll-up, service, …), the parent chain up to the
+  root with each ancestor's flags, and its loaded direct children. Get ids
+  from `spans`; use this to answer "why is this span hidden / why didn't its
+  logs roll up", or to walk up and down from a span.
   """
   span(spanHex: String!): String! @cache(policy: FunctionCachePolicy.Never) {
     get("/span?id=" + spanHex)

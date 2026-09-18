@@ -873,6 +873,11 @@ func marshalSpanAttrs(t *testing.T, attrs ...*otlpcommonv1.KeyValue) []byte {
 
 func marshalCauseLink(t *testing.T, traceID, spanID string) []byte {
 	t.Helper()
+	return marshalPurposeLink(t, traceID, spanID, telemetry.LinkPurposeCause)
+}
+
+func marshalPurposeLink(t *testing.T, traceID, spanID, purpose string) []byte {
+	t.Helper()
 	tid, err := trace.TraceIDFromHex(traceID)
 	if err != nil {
 		t.Fatal(err)
@@ -883,7 +888,7 @@ func marshalCauseLink(t *testing.T, traceID, spanID string) []byte {
 	}
 	data, err := clientdb.MarshalProtoJSONs(telemetry.SpanLinksToPB([]sdktrace.Link{{
 		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid}),
-		Attributes:  []attribute.KeyValue{attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause)},
+		Attributes:  []attribute.KeyValue{attribute.String(telemetry.LinkPurposeAttr, purpose)},
 	}}))
 	if err != nil {
 		t.Fatal(err)
