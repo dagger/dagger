@@ -599,3 +599,44 @@ func TestModuleInitControlsRespectSDKFlagPosition(t *testing.T) {
 		})
 	}
 }
+
+func TestSDKModuleDisposition(t *testing.T) {
+	root := testRootCommand()
+	for _, tc := range []struct {
+		name           string
+		args           []string
+		apply          bool
+		noApply        bool
+		offersNoApply  bool
+		runningInAgent bool
+		want           changesetDisposition
+		wantErr        string
+		wantNoErr      string
+	}{
+		{name: "human prompt", args: []string{"module", "init"}, offersNoApply: true, want: changesetDispositionPrompt},
+		{name: "agent init requires choice", args: []string{"module", "init"}, offersNoApply: true, runningInAgent: true, want: changesetDispositionPrompt, wantErr: "pass --no-apply"},
+		{name: "agent init apply", args: []string{"module", "init"}, apply: true, offersNoApply: true, runningInAgent: true, want: changesetDispositionApply},
+		{name: "agent init no apply", args: []string{"module", "init"}, noApply: true, offersNoApply: true, runningInAgent: true, want: changesetDispositionNoApply},
+		{name: "agent client requires apply", args: []string{"module", "client", "add"}, runningInAgent: true, want: changesetDispositionPrompt, wantErr: "dagger module client add requires an explicit changeset choice", wantNoErr: "--no-apply"},
+		{name: "agent client apply", args: []string{"module", "client", "add"}, apply: true, runningInAgent: true, want: changesetDispositionApply},
+		{name: "conflicting choices", args: []string{"module", "init"}, apply: true, noApply: true, offersNoApply: true, want: changesetDispositionPrompt, wantErr: "cannot be used together"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd, _, err := root.Find(tc.args)
+			require.NoError(t, err)
+			got, err := sdkModuleDisposition(cmd, tc.apply, tc.noApply, tc.offersNoApply, tc.runningInAgent)
+			require.Equal(t, tc.want, got)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+			if tc.runningInAgent {
+				require.ErrorContains(t, err, "pass -y/--auto-apply")
+			}
+			if tc.wantNoErr != "" {
+				require.NotContains(t, err.Error(), tc.wantNoErr)
+			}
+		})
+	}
+}
