@@ -151,6 +151,7 @@ func TestFixtureBarrierCloseReleasesPausedOperation(t *testing.T) {
 // tell them apart, so the attempt is held at ownerSyncDone until Finish has
 // joined it. The retry by a later demand is then the one asserted below.
 func TestFixtureBarrierOwnerAttachFaults(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		action   FixtureBarrierAction
 		point    FixtureBarrierPoint
@@ -160,7 +161,11 @@ func TestFixtureBarrierOwnerAttachFaults(t *testing.T) {
 		{FixtureFailOwnerAttachAfter, FixtureAfterOwnerAttach, 1},
 	} {
 		t.Run(string(tc.action), func(t *testing.T) {
+			t.Parallel()
 			ctx, c, srv, manager := shareTestCache(t)
+			// The cache's context is Background; every wait below is bounded.
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
 			c.EnableTransferFixtureParts()
 			barrier := newSharePassBarrier(c)
 			donor, receiver := shareTestPair(t, ctx, c, srv,
@@ -174,10 +179,14 @@ func TestFixtureBarrierOwnerAttachFaults(t *testing.T) {
 			// Hold the failing attempt after the fault and before it retires.
 			held, err := c.ArmTransferFixtureBarrier(FixtureBarrierRequest{Key: "synced", Point: FixtureOwnerSyncDone, Selector: FixtureBarrierSelector{ResultID: uint64(row.id)}, Action: FixturePause})
 			require.NoError(t, err)
-			joined := make(chan struct{}, 4)
+			// One join is expected; the hook never blocks a joiner.
+			joined := make(chan struct{}, 1)
 			c.testAfterLazyEvalJoin = func(attempt *lazyEvalAttempt) {
 				if attempt.token.row == row {
-					joined <- struct{}{}
+					select {
+					case joined <- struct{}{}:
+					default:
+					}
 				}
 			}
 			shareTestUnite(t, ctx, c, "fixture-attach-"+string(tc.action), donor, receiver)
@@ -462,6 +471,7 @@ func TestFixtureBarrierDecodeJoined(t *testing.T) {
 // joined schedule is TestFixtureBarrierOwnerAttachFaults; both are correct
 // and both now have a test.
 func TestFixtureBarrierOwnerAttachFaultFinishLedRetry(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		action   FixtureBarrierAction
 		point    FixtureBarrierPoint
@@ -471,7 +481,11 @@ func TestFixtureBarrierOwnerAttachFaultFinishLedRetry(t *testing.T) {
 		{FixtureFailOwnerAttachAfter, FixtureAfterOwnerAttach, 1},
 	} {
 		t.Run(string(tc.action), func(t *testing.T) {
+			t.Parallel()
 			ctx, c, srv, manager := shareTestCache(t)
+			// The cache's context is Background; every wait below is bounded.
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
 			c.EnableTransferFixtureParts()
 			donor, receiver := shareTestPair(t, ctx, c, srv,
 				map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
