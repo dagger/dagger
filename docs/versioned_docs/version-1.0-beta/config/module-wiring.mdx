@@ -66,7 +66,7 @@ The entrypoint module's functions are hoisted onto the workspace root, so a
 reference to one can drop the module name:
 
 ```shell
-dagger settings playwright service serve
+dagger module settings playwright service serve
 ```
 
 The config always stores the long form:
@@ -127,4 +127,5 @@ If you author modules, wiring changes how you shape a constructor:
   workspace may have nothing to wire yet.
 
 The [Playwright module](../reference/modules/js/playwright.mdx) is a worked example of all
-three.
+three. [Daggerize a Go Project](../getting-started/platform-guides/go/index.mdx) wires a project's own
+module into the Go module's `base` setting, from the consumer's side.
