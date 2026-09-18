@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -214,7 +213,7 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		io.WriteString(w, fe.consoleSpans(r.URL.Query().Get("q")))
+		io.WriteString(w, RenderSpanList(fe.db, r.URL.Query().Get("q"), 0))
 	})
 	mux.HandleFunc("/toolset", func(w http.ResponseWriter, r *http.Request) {
 		// The rendered docs of the tools the model in an interactive LLM
@@ -256,7 +255,7 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		}
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
-		detail, ok := fe.consoleSpanDetail(dagui.SpanID{SpanID: sid})
+		detail, ok := RenderSpanDetail(fe.db, dagui.SpanID{SpanID: sid})
 		if !ok {
 			http.Error(w, fmt.Sprintf("unknown span %s", hex), http.StatusNotFound)
 			return
@@ -449,130 +448,6 @@ func (fe *frontendPretty) consoleViewport(lines []string) []string {
 	return lines
 }
 
-// consoleSpans lists the spans currently loaded in the DB (everything fetched so
-// far), optionally filtered by a name substring, so a caller can find a span hex
-// to zoom to. Service-instance spans are tagged with their hostname so running
-// services (whose logs live beneath them) are cheap to find.
-func (fe *frontendPretty) consoleSpans(q string) string {
-	var b strings.Builder
-	for _, sp := range fe.db.Spans.Order {
-		if q != "" && !strings.Contains(sp.Name, q) && !strings.Contains(sp.ServiceName, q) {
-			continue
-		}
-		name := sp.Name
-		if sp.Service {
-			tag := "service"
-			if sp.ServiceName != "" {
-				tag += " " + sp.ServiceName
-			}
-			name += "  [" + tag + "]"
-		}
-		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, consoleSpanStatus(sp), name)
-	}
-	return b.String()
-}
-
-// consoleSpanStatus classifies a span with the same vocabulary /spans uses.
-// A span often passes its own OTel status through while the failure rides on a
-// link (a test/check whose error is on a descendant or linked span). Surface
-// that as FAIL so a caller can still find it by name, distinct from ERROR (the
-// span itself errored).
-func consoleSpanStatus(sp *dagui.Span) string {
-	switch {
-	case sp.IsFailed():
-		return "ERROR"
-	case sp.IsFailedOrCausedFailure():
-		return "FAIL"
-	case sp.IsRunning():
-		return "run"
-	default:
-		return "ok"
-	}
-}
-
-// consoleSpanFlags lists the dagui flags set on a span that shape how the UI
-// treats it (visibility, encapsulation, log/span roll-up) — only the ones that
-// are actually set, so ancestor-chain lines stay compact.
-func consoleSpanFlags(sp *dagui.Span) []string {
-	var flags []string
-	set := func(on bool, name string) {
-		if on {
-			flags = append(flags, name)
-		}
-	}
-	set(sp.Internal, "internal")
-	set(sp.Boundary, "boundary")
-	set(sp.Encapsulate, "encapsulate")
-	set(sp.Encapsulated, "encapsulated")
-	set(sp.Passthrough, "passthrough")
-	set(sp.Ignore, "ignore")
-	set(sp.Reveal, "reveal")
-	set(sp.RollUpLogs, "rollUpLogs")
-	set(sp.RollUpSpans, "rollUpSpans")
-	set(sp.Cached, "cached")
-	set(sp.Canceled, "canceled")
-	switch {
-	case sp.Service && sp.ServiceName != "":
-		flags = append(flags, "service="+sp.ServiceName)
-	case sp.Service:
-		flags = append(flags, "service")
-	case sp.ServiceName != "":
-		flags = append(flags, "serviceName="+sp.ServiceName)
-	}
-	if sp.LLMRole != "" {
-		flags = append(flags, "llmRole="+sp.LLMRole)
-	}
-	if sp.LLMTool != "" {
-		flags = append(flags, "llmTool="+sp.LLMTool)
-	}
-	return flags
-}
-
-// consoleSpanDetail reports one span in depth: status, timing, the UI-shaping
-// flags, and the parent chain up to the root — each ancestor with its own set
-// flags, which is what debugging "why is this span hidden / why didn't its
-// logs roll up" needs. Returns false if the span isn't loaded in the DB.
-func (fe *frontendPretty) consoleSpanDetail(id dagui.SpanID) (string, bool) {
-	sp, ok := fe.db.Spans.Map[id]
-	if !ok || sp == nil {
-		return "", false
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "span:     %s  %s\n", sp.ID, sp.Name)
-	fmt.Fprintf(&b, "status:   %s\n", consoleSpanStatus(sp))
-	if sp.StartTime.IsZero() {
-		fmt.Fprintf(&b, "started:  (unknown)\n")
-	} else {
-		fmt.Fprintf(&b, "started:  %s\n", sp.StartTime.Format(time.RFC3339Nano))
-		if sp.IsRunning() {
-			// Running spans have no end time yet (dagui encodes that as
-			// EndTime < StartTime); show elapsed time instead.
-			fmt.Fprintf(&b, "ended:    (still running)\n")
-			fmt.Fprintf(&b, "duration: %s (so far)\n", time.Since(sp.StartTime).Truncate(time.Millisecond))
-		} else {
-			fmt.Fprintf(&b, "ended:    %s\n", sp.EndTime.Format(time.RFC3339Nano))
-			fmt.Fprintf(&b, "duration: %s\n", sp.EndTime.Sub(sp.StartTime).Truncate(time.Millisecond))
-		}
-	}
-	if flags := consoleSpanFlags(sp); len(flags) > 0 {
-		fmt.Fprintf(&b, "flags:    %s\n", strings.Join(flags, " "))
-	} else {
-		fmt.Fprintf(&b, "flags:    (none)\n")
-	}
-	fmt.Fprintf(&b, "parents (nearest first):\n")
-	if sp.ParentSpan == nil {
-		fmt.Fprintf(&b, "  (none — root span)\n")
-	}
-	for parent := sp.ParentSpan; parent != nil; parent = parent.ParentSpan {
-		line := fmt.Sprintf("  %s  %s", parent.ID, parent.Name)
-		if flags := consoleSpanFlags(parent); len(flags) > 0 {
-			line += "  [" + strings.Join(flags, " ") + "]"
-		}
-		fmt.Fprintf(&b, "%s\n", line)
-	}
-	return b.String(), true
-}
-
 func (fe *frontendPretty) consoleTimingsHandler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	hex := q.Get("root")
@@ -599,89 +474,13 @@ func (fe *frontendPretty) consoleTimingsHandler(w http.ResponseWriter, r *http.R
 	}
 	fe.consoleMu.Lock()
 	defer fe.consoleMu.Unlock()
-	detail, ok := fe.consoleTimings(dagui.SpanID{SpanID: sid}, minDuration, limit, time.Now())
+	detail, ok := RenderSpanTimings(fe.db, dagui.SpanID{SpanID: sid}, minDuration, limit, time.Now())
 	if !ok {
 		http.Error(w, fmt.Sprintf("span %s is not loaded", hex), http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	io.WriteString(w, detail)
-}
-
-// consoleTimings reports raw parent/child timing, not the UI's filtered or
-// linked tree. It never fetches telemetry or logs. now is shared by all running
-// rows so their elapsed durations describe one snapshot.
-func (fe *frontendPretty) consoleTimings(id dagui.SpanID, minDuration time.Duration, limit int, now time.Time) (string, bool) {
-	root, ok := fe.db.Spans.Map[id]
-	if !ok || root == nil || !root.Received {
-		return "", false
-	}
-	children := make(map[dagui.SpanID][]*dagui.Span)
-	for _, sp := range fe.db.Spans.Order {
-		if sp.Received {
-			children[sp.ParentID] = append(children[sp.ParentID], sp)
-		}
-	}
-	var spans []*dagui.Span
-	seen := make(map[dagui.SpanID]bool)
-	pending := []*dagui.Span{root}
-	for len(pending) > 0 {
-		sp := pending[len(pending)-1]
-		pending = pending[:len(pending)-1]
-		if seen[sp.ID] {
-			continue
-		}
-		seen[sp.ID] = true
-		spans = append(spans, sp)
-		pending = append(pending, children[sp.ID]...)
-	}
-	slices.SortFunc(spans, func(a, b *dagui.Span) int {
-		// Unknown starts sort last; equal starts have a stable ID tie-break.
-		if a.StartTime.IsZero() != b.StartTime.IsZero() {
-			if a.StartTime.IsZero() {
-				return 1
-			}
-			return -1
-		}
-		if cmp := a.StartTime.Compare(b.StartTime); cmp != 0 {
-			return cmp
-		}
-		return strings.Compare(a.ID.String(), b.ID.String())
-	})
-	var b strings.Builder
-	fmt.Fprintf(&b, "root: %s  %q\n", root.ID, root.Name)
-	fmt.Fprintln(&b, "Loaded spans only (including internal); incomplete if telemetry is missing or not fetched. No logs fetched.")
-	fmt.Fprintln(&b, "Durations are wall time, may overlap, and are not CPU self time; 'so far' uses the current clock. Unknown timings survive the duration filter.")
-	fmt.Fprintln(&b, "span_id  parent_id  start_offset  duration  name")
-	shown, filtered, capped := 0, 0, 0
-	for _, sp := range spans {
-		offset, duration := "unknown", "unknown"
-		if !sp.StartTime.IsZero() {
-			elapsed := sp.EndTime.Sub(sp.StartTime)
-			if sp.IsRunning() {
-				elapsed = now.Sub(sp.StartTime)
-			}
-			if elapsed < minDuration {
-				filtered++
-				continue
-			}
-			duration = elapsed.String()
-			if sp.IsRunning() {
-				duration += " (so far)"
-			}
-			if !root.StartTime.IsZero() {
-				offset = sp.StartTime.Sub(root.StartTime).String()
-			}
-		}
-		if limit > 0 && shown >= limit {
-			capped++
-			continue
-		}
-		fmt.Fprintf(&b, "%s  %s  %s  %s  %q\n", sp.ID, sp.ParentID, offset, duration, sp.Name)
-		shown++
-	}
-	fmt.Fprintf(&b, "shown: %d; omitted: %d (%d below minDuration, %d over limit); loaded subtree: %d\n", shown, filtered+capped, filtered, capped, len(spans))
-	return b.String(), true
 }
 
 func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
@@ -696,7 +495,7 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"                       (with no body) has been unchanged for ?quiet= (default 2s);\n"+
 		"                       either way return the frame at ?timeout= (default 60s) at the latest\n"+
 		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
-		"  GET  /span?id=<hex>  span detail: status, timing, flags, parent chain\n"+
+		"  GET  /span?id=<hex>  span detail: status, error, timing, flags, parent chain, direct children\n"+
 		"  GET  /timings?root=<hex>[&minDuration=10ms&limit=200]  loaded subtree wall timings (0 limit = unlimited)\n"+
 		"  GET  /toolset        the interactive LLM session's tool docs, when one is live\n"+
 		"  GET  /agents         trace-derived roster (handles, names, state, parent, spans)\n"+
