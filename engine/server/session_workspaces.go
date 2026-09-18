@@ -1185,8 +1185,7 @@ func workspaceGitRefSelector(remote workspaceRemoteRef, supportsVersionQueries b
 // committed generated files don't exist yet, which loads only after its SDK
 // generator runs), or may have work to do for the modules that did load
 // (dagger check). The skipped modules' failure messages are returned so the
-// caller can surface them (e.g. GeneratorGroup.loadFailures, or the failed
-// check Workspace.checks stands each one up as). Genuine engine errors (batch
+// caller can surface them as failed check artifacts. Genuine engine errors (batch
 // resolution, arbitration, serving) stay fatal regardless.
 func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *clientRuntime, filter func([]pendingModule) []pendingModule, mode core.ModuleLoadMode) (loadFailures []core.ModuleLoadFailure, _ error) {
 	return srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, mode, nil)
@@ -1228,7 +1227,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
 			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-				loadFailures = append(loadFailures, moduleLoadFailure(mod, err, mode))
+				loadFailures = append(loadFailures, moduleLoadFailure(mod, err))
 				continue
 			}
 			kept = append(kept, mod)
@@ -1266,7 +1265,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 			client.recordFailedModule(load.mod, loadErr)
 			if mode.BestEffort() {
 				reportSkippedModule(ctx, moduleProgressName(load.mod), core.LoadFailureCause("", loadErr, mode))
-				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr, mode))
+				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr))
 				continue
 			}
 			if firstErr == nil {
@@ -1973,11 +1972,11 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 // moduleLoadFailure is the API-facing record of a skipped module: its name
 // (matching the skipped-module span), its workspace directory (so generate
 // can tell whether the run regenerated it) and the described message.
-func moduleLoadFailure(mod pendingModule, err error, mode core.ModuleLoadMode) core.ModuleLoadFailure {
+func moduleLoadFailure(mod pendingModule, err error) core.ModuleLoadFailure {
 	return core.ModuleLoadFailure{
 		Name:    moduleProgressName(mod),
 		Dir:     mod.WorkspaceDir,
-		Message: core.DescribeLoadFailure(err, mode),
+		Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort),
 	}
 }
 

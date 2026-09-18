@@ -23,6 +23,15 @@ class WorkspaceSDK extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Generate the modules and clients managed by this SDK.
+     */
+    public function generate(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generate');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this WorkspaceSDK.
      */
     public function id(): Id

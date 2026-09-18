@@ -2,7 +2,7 @@ type Repro {
   """
   Read input.txt from the workspace and write output.txt derived from it.
 
-  Proves whether a generator run via `Workspace.generators` sees the workspace
+  Proves whether a generator run via `Workspace.artifacts` sees the workspace
   it was called on (including overlay edits) or a frozen session workspace.
   """
   pub gen(ws: Workspace!): Changeset! @generate {

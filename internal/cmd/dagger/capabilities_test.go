@@ -250,7 +250,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger api query",
 		"dagger api session",
 		"dagger api with-session",
-		"dagger artifacts",
+		"dagger artifact",
 		"dagger call",
 		"dagger check",
 		"dagger core",

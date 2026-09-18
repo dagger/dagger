@@ -224,63 +224,6 @@ enum ChangesetsMergeConflict {
   FAIL
 }
 
-type Check implements Node {
-  """Whether the check completed"""
-  completed: Boolean!
-
-  """The description of the check"""
-  description: String!
-
-  """If the check failed, this is the error"""
-  error: Error
-
-  """A unique identifier for this Check."""
-  id: ID!
-
-  """
-  Return the command name of the check. Entrypoint targets omit the module prefix.
-  """
-  name: String!
-
-  """The original module in which the check has been defined"""
-  originalModule: Module!
-
-  """Whether the check passed"""
-  passed: Boolean!
-
-  """The path of the check within its module"""
-  path: [String!]!
-
-  """An emoji representing the result of the check"""
-  resultEmoji: String!
-
-  """Execute the check"""
-  run: Check!
-}
-
-type CheckGroup implements Node {
-  """A unique identifier for this CheckGroup."""
-  id: ID!
-
-  """Return a list of individual checks and their details"""
-  list: [Check!]!
-
-  """Generate a markdown report"""
-  report: File!
-
-  """Execute all selected checks"""
-  run(
-    """If true, stop running checks as soon as any check fails."""
-    failFast: Boolean
-  ): CheckGroup!
-}
-
-"""A unique identifier for an object."""
-scalar CheckGroupID
-
-"""A unique identifier for an object."""
-scalar CheckID
-
 """Dagger Cloud configuration and state"""
 type Cloud implements Node {
   """A unique identifier for this Cloud."""
@@ -1503,12 +1446,6 @@ type CurrentModule implements Node {
   The generated files and directories made on top of the module source's context directory.
   """
   generatedContextDirectory: Directory!
-
-  """Return all generators defined by the module"""
-  generators(
-    """Only include generators matching the specified patterns"""
-    include: [String!]
-  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this CurrentModule."""
   id: ID!
@@ -2795,73 +2732,6 @@ type GeneratedCode implements Node {
 """A unique identifier for an object."""
 scalar GeneratedCodeID
 
-type Generator implements Node {
-  """The generated changeset from the last run"""
-  changes: Changeset!
-
-  """Whether the generator complete"""
-  completed: Boolean!
-
-  """Return the description of the generator"""
-  description: String!
-
-  """A unique identifier for this Generator."""
-  id: ID!
-
-  """Whether changeset from the last generator run is empty or not"""
-  isEmpty: Boolean!
-
-  """
-  Return the command name of the generator. Entrypoint targets omit the module prefix.
-  """
-  name: String!
-
-  """
-  The module that defined the generator, or null for an engine-defined generator
-  """
-  originalModule: Module
-
-  """The path of the generator within its module"""
-  path: [String!]!
-
-  """Execute the generator"""
-  run: Generator!
-}
-
-type GeneratorGroup implements Node {
-  """
-  The combined changes from the last run of the generators
-
-  If any conflict occurs, for instance if the same file is modified by multiple
-  generators, or if a file is both modified and deleted, an error is raised and
-  the merge of the changesets will failed.
-
-  Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
-  """
-  changes(
-    """Strategy to apply on conflicts between generators"""
-    onConflict: ChangesetsMergeConflict = FAIL_EARLY
-  ): Changeset!
-
-  """A unique identifier for this GeneratorGroup."""
-  id: ID!
-
-  """Whether the generated changeset from the last run is empty or not"""
-  isEmpty: Boolean!
-
-  """Return a list of individual generators and their details"""
-  list: [Generator!]!
-
-  """Execute all selected generators"""
-  run: GeneratorGroup!
-}
-
-"""A unique identifier for an object."""
-scalar GeneratorGroupID
-
-"""A unique identifier for an object."""
-scalar GeneratorID
-
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
   """The resolved commit id at this ref."""
@@ -3411,20 +3281,6 @@ scalar ListTypeDefID
 
 """A Dagger module."""
 type Module implements Node & Syncer {
-  """
-  Return the check defined by the module with the given name. Must match to exactly one check.
-  """
-  check(
-    """The name of the check to retrieve"""
-    name: String!
-  ): Check! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
-  """Return all checks defined by the module"""
-  checks(
-    """Only include checks matching the specified patterns"""
-    include: [String!]
-  ): CheckGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -3438,20 +3294,6 @@ type Module implements Node & Syncer {
   The generated files and directories made on top of the module source's context directory.
   """
   generatedContextDirectory: Directory!
-
-  """
-  Return the generator defined by the module with the given name. Must match to exactly one generator.
-  """
-  generator(
-    """The name of the generator to retrieve"""
-    name: String!
-  ): Generator! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
-  """Return all generators defined by the module"""
-  generators(
-    """Only include generators matching the specified patterns"""
-    include: [String!]
-  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Module."""
   id: ID!
@@ -3498,12 +3340,6 @@ type Module implements Node & Syncer {
     """
     entrypoint: Boolean
   ): Void
-
-  """Return all services defined by the module"""
-  services(
-    """Only include services matching the specified patterns"""
-    include: [String!]
-  ): UpGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """The source for the module."""
   source: ModuleSource
@@ -4123,12 +3959,6 @@ type Query implements Node {
   """Load a Changeset from its ID."""
   loadChangesetFromID(id: ChangesetID!): Changeset!
 
-  """Load a Check from its ID."""
-  loadCheckFromID(id: CheckID!): Check!
-
-  """Load a CheckGroup from its ID."""
-  loadCheckGroupFromID(id: CheckGroupID!): CheckGroup!
-
   """Load a Cloud from its ID."""
   loadCloudFromID(id: CloudID!): Cloud!
 
@@ -4197,12 +4027,6 @@ type Query implements Node {
 
   """Load a GeneratedCode from its ID."""
   loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
-
-  """Load a Generator from its ID."""
-  loadGeneratorFromID(id: GeneratorID!): Generator!
-
-  """Load a GeneratorGroup from its ID."""
-  loadGeneratorGroupFromID(id: GeneratorGroupID!): GeneratorGroup!
 
   """Load a GitRef from its ID."""
   loadGitRefFromID(id: GitRefID!): GitRef!
@@ -4287,12 +4111,6 @@ type Query implements Node {
 
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
-
-  """Load a Up from its ID."""
-  loadUpFromID(id: UpID!): Up!
-
-  """Load a UpGroup from its ID."""
-  loadUpGroupFromID(id: UpGroupID!): UpGroup!
 
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
@@ -4888,45 +4706,6 @@ enum TypeDefKind {
   ENUM_KIND
 }
 
-type Up implements Node {
-  """The description of the service"""
-  description: String!
-
-  """A unique identifier for this Up."""
-  id: ID!
-
-  """
-  Return the command name of the service. Entrypoint targets omit the module prefix.
-  """
-  name: String!
-
-  """The original module in which the service has been defined"""
-  originalModule: Module!
-
-  """The path of the service within its module"""
-  path: [String!]!
-
-  """Execute the service function"""
-  run: Up!
-}
-
-type UpGroup implements Node {
-  """A unique identifier for this UpGroup."""
-  id: ID!
-
-  """Return a list of individual services and their details"""
-  list: [Up!]!
-
-  """Execute all selected service functions"""
-  run: UpGroup!
-}
-
-"""A unique identifier for an object."""
-scalar UpGroupID
-
-"""A unique identifier for an object."""
-scalar UpID
-
 """
 The absence of a value.
 
@@ -4942,12 +4721,6 @@ type Workspace implements Node {
   Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
   """
   address: String!
-
-  """Return all checks from modules loaded in the workspace."""
-  checks(
-    """Only include checks matching the specified patterns"""
-    include: [String!]
-  ): CheckGroup!
 
   """
   Path to config.toml relative to the workspace boundary (empty if not initialized).
@@ -5015,12 +4788,6 @@ type Workspace implements Node {
     from: String = "."
   ): String
 
-  """Return all generators from modules loaded in the workspace."""
-  generators(
-    """Only include generators matching the specified patterns"""
-    include: [String!]
-  ): GeneratorGroup!
-
   """Whether a config.toml file exists in the workspace."""
   hasConfig: Boolean!
 
@@ -5032,12 +4799,6 @@ type Workspace implements Node {
 
   """Workspace directory path relative to the workspace boundary."""
   path: String!
-
-  """Return all services from modules loaded in the workspace."""
-  services(
-    """Only include services matching the specified patterns"""
-    include: [String!]
-  ): UpGroup!
 }
 
 """A unique identifier for an object."""

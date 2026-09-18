@@ -54,6 +54,16 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Keep artifacts with any listed directive.
+     */
+    public function filterDirectives(array $directives): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDirectives');
+        $innerQueryBuilder->setArgument('directives', $directives);
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Match one complete, ordered field sequence exactly.
      */
     public function filterPath(array $path): Artifacts
@@ -128,5 +138,30 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uri');
         return (string)$this->queryLeaf($leafQueryBuilder, 'uri');
+    }
+
+    /**
+     * Evaluate the selection in parallel, retaining each result and error.
+     */
+    public function values(?bool $failFast = false, ?Json $arguments = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');
+        if (null !== $failFast) {
+        $leafQueryBuilder->setArgument('failFast', $failFast);
+        }
+        if (null !== $arguments) {
+        $leafQueryBuilder->setArgument('arguments', $arguments);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'values');
+    }
+
+    /**
+     * Remove artifacts selected by a DAG address.
+     */
+    public function withoutUri(string $uri): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUri');
+        $innerQueryBuilder->setArgument('uri', $uri);
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

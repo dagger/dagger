@@ -13,8 +13,8 @@ import (
 
 type checkNameKey struct{}
 
-// WithCheckName supplies an artifact address for check telemetry without
-// changing the check's execution identity.
+// WithCheckName marks a check already covered by an artifact evaluation span.
+// It does not change the check's execution identity.
 func WithCheckName(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, checkNameKey{}, name)
 }
@@ -55,11 +55,9 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 		return c, nil
 	}
 	var failure error
-	if c.RemoteArtifact == nil {
-		name, _ := ctx.Value(checkNameKey{}).(string)
-		if name == "" {
-			name = c.Function
-		}
+	name, _ := ctx.Value(checkNameKey{}).(string)
+	if c.RemoteArtifact == nil && name == "" {
+		name = c.Function
 		if name == "" {
 			name = "changeset stale"
 		}

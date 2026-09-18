@@ -449,6 +449,15 @@ func buildCoreObjectLikeTypeDef[T dagql.Typed](
 		return zero, false, err
 	}
 
+	// Core names already have their final GraphQL spelling (WorkspaceSDK,
+	// LLM, etc.). Module-name normalization must not change them.
+	if err := dag.Select(ctx, obj, &obj, dagql.Selector{
+		Field: "__withName",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+	}); err != nil {
+		return zero, false, err
+	}
+
 	fnIDs, isIdable, err := buildCoreTypeDefFunctions(ctx, dag, introspectionType)
 	if err != nil {
 		return zero, false, err

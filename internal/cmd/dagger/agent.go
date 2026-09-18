@@ -37,12 +37,12 @@ enqueued but never consumed are not in the trace at all, so they are not
 restored; anything a turn actually consumed is part of its conversation and is.
 
 Examples:
-  dagger agent                    # Compose all installed agents and start the prompt
-  dagger agent -l                 # List all available agents
-  dagger agent dag://editor dag://dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=<session>       # Resume a specific saved session
-  dagger agent --trace <id>       # Restore a past session from its Dagger Cloud trace
+  dagger agent                               # Compose all installed agents and start the prompt
+  dagger agent -l                            # List all available agents
+  dagger agent dag://editor dag://dagger-go  # Compose only the 'editor' and 'dagger-go' agents
+  dagger agent -r                            # Resume a saved session (interactive picker)
+  dagger agent -r=<session>                  # Resume a specific saved session
+  dagger agent --trace <id>                  # Restore a past session from its Dagger Cloud trace
 `,
 	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
@@ -58,7 +58,7 @@ Examples:
 		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
 			return err
 		}
-		params, err := artifactClientParams(client.Params{LoadWorkspaceModules: agentTrace == "" || agentListMode}, args)
+		params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, args)
 		if err != nil {
 			return err
 		}

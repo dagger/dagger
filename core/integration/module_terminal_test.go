@@ -56,9 +56,8 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 		out, err := hostDaggerExecRaw(ctx, t, modDir, "shell", "-l")
 		require.NoError(t, err)
-		require.Contains(t, string(out), "# select with 'dagger shell <NAME>'\n")
-		require.Contains(t, string(out), "\nctr")
-		require.NotContains(t, string(out), "test:ctr")
+		require.Contains(t, string(out), "dag://ctr")
+		require.NotContains(t, string(out), "dag://test/ctr")
 
 		console, err := newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
@@ -68,7 +67,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 20})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "dag://ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty

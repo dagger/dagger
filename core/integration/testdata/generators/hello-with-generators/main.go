@@ -5,6 +5,8 @@ import (
 	"errors"
 
 	"dagger/hello-with-generators/internal/dagger"
+
+	"dagger.io/dagger/dag"
 )
 
 type HelloWithGenerators struct{}

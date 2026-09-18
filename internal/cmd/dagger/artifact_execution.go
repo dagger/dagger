@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dagger/dagger/core/dagaddress"
-	telemetry "github.com/dagger/otel-go"
 	"io"
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type artifactValueResult struct {
@@ -51,19 +51,12 @@ func artifactResultErrors(results []artifactValueResult) error {
 	return errors.Join(failures...)
 }
 
-func artifactWorkspaceConfig(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace) (*workspace.Config, error) {
-	id, err := ws.ID(ctx)
+func artifactWorkspaceConfig(ctx context.Context, ws *dagger.Workspace) (*workspace.Config, error) {
+	config, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{Effective: true})
 	if err != nil {
 		return nil, err
 	}
-	var response struct{ Node struct{ ConfigRead string } }
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!) {
-		node(id: $id) { ... on Workspace { configRead(effective: true) } }
-	}`, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
-	if err != nil {
-		return nil, err
-	}
-	return workspace.ParseConfig([]byte(response.Node.ConfigRead))
+	return workspace.ParseConfig([]byte(config))
 }
 
 // commandArtifacts keeps each address's filters scoped to its own path.

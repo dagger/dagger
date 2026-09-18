@@ -92,37 +92,12 @@ func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, 
 }
 
 func (c *Check) runRemote(ctx context.Context) error {
-	var outcome struct {
-		Pass  bool
-		Error *Error
-	}
-	used, err := c.RemoteArtifact.QueryCloud(ctx, c.RemoteArguments, `... on Check { pass error { message values { name value } } }`, &outcome)
-	if err != nil {
+	var outcome struct{ Pass bool }
+	if err := c.RemoteArtifact.QueryCloud(ctx, c.RemoteArguments, `... on Check { pass }`, &outcome); err != nil {
 		return err
 	}
-	if used {
-		if outcome.Error != nil {
-			return outcome.Error
-		}
-		if !outcome.Pass {
-			return fmt.Errorf("check failed")
-		}
-		return nil
-	}
-	var check dagql.ObjectResult[*Check]
-	if err := c.RemoteArtifact.Evaluate(ctx, &check); err != nil {
-		return err
-	}
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return err
-	}
-	var result dagql.ObjectResult[*Check]
-	if err := srv.Select(ctx, check, &result, dagql.Selector{Field: "sync"}); err != nil {
-		return err
-	}
-	if result.Self().Error.Valid {
-		return result.Self().Error.Value.Self()
+	if !outcome.Pass {
+		return fmt.Errorf("check failed")
 	}
 	return nil
 }

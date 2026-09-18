@@ -294,9 +294,6 @@ func artifactPattern(pattern string) string {
 // children.
 func IncludePattern(include string) string {
 	pattern := artifactPattern(strings.ReplaceAll(include, ":", "/"))
-	if strings.ContainsAny(pattern, "*?[{") {
-		return pattern
-	}
 	return pattern + "/**"
 }
 

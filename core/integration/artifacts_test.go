@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -156,7 +157,11 @@ func (ArtifactsSuite) TestURI(ctx context.Context, t *testctx.T) {
 
 func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ref := workspaceSelectionRemoteRef(ctx, t, c, artifactSource(c))
+	source := artifactSource(c)
+	provider, err := source.File("provider/main.dang").Contents(ctx)
+	require.NoError(t, err)
+	source = source.WithNewFile("provider/main.dang", strings.Replace(provider, "pub label:", "pub verify: Void @check { null }\n  pub label:", 1))
+	ref := workspaceSelectionRemoteRef(ctx, t, c, source)
 	base := nativeWorkspaceBase(t, c)
 	out, err := base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
   artifacts { filterPath(path: ["base"]) { one { uri(absolute: true) } } }
@@ -175,11 +180,14 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	host := strings.TrimSuffix(strings.TrimPrefix(ref, "http://"), "/repo.git@main")
 	require.Regexp(t, regexp.MustCompile(`^dag://`+regexp.QuoteMeta(host)+`/repo@[0-9a-f]{40}:base$`), uri)
 
-	for _, prefix := range []string{"dag://"} {
-		out, err := base.With(workspaceSelectionDaggerExec("artifact", "list", prefix+ref+":base")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "dag://base\n", out)
-	}
+	out, err = base.With(workspaceSelectionDaggerExec("artifact", "list", "dag://"+ref+":base")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "dag://base\n", out)
+	out, err = base.With(workspaceSelectionDaggerExec("check", "-l", "dag://"+ref+":verify")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "dag://verify\n", out)
+	_, err = base.With(workspaceSelectionDaggerExec("check", "dag://"+ref+":verify")).Sync(ctx)
+	require.NoError(t, err)
 
 	// The current workspace's own absolute address is accepted; any other is reserved.
 	out, err = base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace {
@@ -194,7 +202,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	_, err = base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
   artifacts { filterUri(uri: "dag://github.com/dagger/dagger@main:base") { items { uri } } }
 } }`, "-W", ref, "-m", "core")).Stdout(ctx)
-	requireErrOut(t, err, "absolute addresses are not supported yet: dag://github.com/dagger/dagger@main:base")
+	requireErrOut(t, err, "address selects another workspace; filters cannot change workspace: dag://github.com/dagger/dagger@main:base")
 }
 
 func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
@@ -244,7 +252,7 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 		})
 	}
 	for _, tc := range []struct{ uri, want string }{
-		{"dag://github.com/dagger/dagger@main:base", "absolute addresses are not supported yet: dag://github.com/dagger/dagger@main:base"},
+		{"dag://github.com/dagger/dagger@main:base", "address selects another workspace; filters cannot change workspace: dag://github.com/dagger/dagger@main:base"},
 		{"https://github.com/dagger/dagger", "not a DAG address"},
 		{"dag://github.com/dagger/dagger@main", "tree addresses are not supported"},
 	} {
@@ -267,7 +275,8 @@ func (ArtifactsSuite) TestSelectorRoundTrip(ctx context.Context, t *testctx.T) {
 		{`artifacts ` + sel, "dag://"},
 		{`artifacts(include: ["docs"]) ` + sel, "dag://docs/**"},
 		{`artifacts(include: ["docs", "provider:base"]) ` + sel, "dag://{docs/**,provider/base/**}"},
-		{`artifacts(include: ["**/source"]) ` + sel, "dag://**/source"},
+		{`artifacts(include: ["**/source"]) ` + sel, "dag://**/source/**"},
+		{`artifacts(include: ["d*"]) ` + sel, "dag://d*/**"},
 		{`artifacts { filterTypes(types: ["Container", "Directory"]) ` + sel + ` }`, "dag+container+directory://"},
 		{`artifacts { filterPath(path: ["docs", "source"]) ` + sel + ` }`, "dag://docs/source"},
 		{`artifacts(include: ["docs"]) { filterPath(path: ["docs", "again"]) ` + sel + ` }`, "dag://docs/again"},
@@ -679,7 +688,7 @@ func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 		{"dag+directory://docs/source", "artifact is a Directory, not a Container"},
 		{"dag://**/source", "matches 2 artifacts:\ndag://docs/source\ndag://other-docs/source"},
 		{"dag://", "matches 15 artifacts:\n"},
-		{"dag://github.com/dagger/dagger@main:base", "absolute addresses are not supported yet"},
+		{"dag://github.com/dagger/dagger@main:base", "address selects another workspace; filters cannot change workspace"},
 	} {
 		_, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $address: String!) {
   node(id: $ws) { ... on Workspace { resolve(value: $address) { container { id } } } }
@@ -988,4 +997,163 @@ func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 	require.Len(t, repeated.CurrentWorkspace.Artifacts.A, 1)
 	require.Len(t, repeated.CurrentWorkspace.Artifacts.B, 1)
 	require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Error.Message)
+}
+
+// Materialization errors belong to each result, before consumers read its value.
+func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("probe/main.dang", `type Probe {
+ pub brokenDirectory: Directory! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs }
+ pub brokenFile: File! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 43"]).file("/missing") }
+ pub good: Directory! { directory.withNewFile("ok", "ok") }
+}`)
+	out, err := base.With(daggerQuery(`{
+ currentWorkspace { artifacts { filterTypes(types: ["Directory", "File"]) {
+  values { artifact { uri } error { message } value { ... on Directory { entries } ... on File { contents } } }
+ } } }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var response struct {
+		CurrentWorkspace struct {
+			Artifacts struct {
+				FilterTypes struct {
+					Values []struct {
+						Artifact struct{ URI string }
+						Error    *struct{ Message string }
+						Value    json.RawMessage
+					}
+				}
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &response))
+	results := response.CurrentWorkspace.Artifacts.FilterTypes.Values
+	require.Len(t, results, 3)
+	for i, code := range []string{"42", "43"} {
+		require.NotNil(t, results[i].Error)
+		require.Contains(t, results[i].Error.Message, code)
+		require.JSONEq(t, "null", string(results[i].Value))
+	}
+	require.Nil(t, results[2].Error)
+	require.JSONEq(t, `{ "entries": ["ok"] }`, string(results[2].Value))
+}
+
+func (ArtifactsSuite) TestCheckScaleOut(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, sink.clientOpts()...)
+	target := devEngineContainerAsService(devEngineContainer(c))
+	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("scaleout-engine", target).
+			WithEnvVariable("_DAGGER_TESTS_CLOUD_RUNNER_HOST", "tcp://scaleout-engine:1234")
+	}))
+	base := engineClientContainer(ctx, t, c, source).
+		WithWorkdir("/work").
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
+		WithNewFile("dagger.toml", `[modules.good]
+source = "./good"
+settings.expected = "bound"
+[modules.bad]
+source = "./bad"
+entrypoint = true
+`).
+		WithNewFile("marker", "bound").
+		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("good/main.dang", `type Good {
+ pub expected: String! = "default"
+ pub verify(ws: Workspace!): Void @check {
+  if ws.file("marker").contents != expected { raise "workspace binding lost" }
+  null
+ }
+ pub verifyOverlay(ws: Workspace!, expectedMarker: String! = "default"): Void @check {
+  if expectedMarker != "overlay" { raise "explicit argument lost" }
+  if ws.file("marker").contents != expectedMarker { raise "workspace overlay lost" }
+  null
+ }
+ pub verifyObjects(source: Directory, files: [File!]! = [], absent: File, text: String! = ""): Void @check {
+  if source == null { raise "directory argument lost" }
+  if source.file("marker").contents != "objects" { raise "wrong directory" }
+  if files.length != 1 { raise "file list lost" }
+  let file = files[0]
+  if file == null { raise "file argument lost" }
+  if file.contents != "objects" { raise "wrong file" }
+  if absent != null { raise "null argument changed" }
+  if source.file("id-text").contents != text { raise "string argument changed" }
+  null
+ }
+ pub fail: Void @check { raise "remote assertion" }
+}`).
+		WithNewFile("bad/dagger-module.toml", "name = \"bad\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("bad/main.dang", "invalid source")
+	out, err := base.With(daggerNonNestedExec("check", "--scale-out", "dag://good/verify")).CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "dag://good/verify")
+	out, err = base.With(daggerNonNestedExecFail("check", "--scale-out", "dag://good/fail")).CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "remote assertion")
+	// -m adds a module outside the workspace configuration.
+	out, err = base.WithNewFile("dagger.toml", "[modules]\n").
+		WithNewFile("marker", "default").
+		With(daggerNonNestedExec("-m", "./good", "check", "--scale-out", "dag://verify")).CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "dag://verify")
+	// The remote query must preserve explicit arguments and the selected overlay.
+	out, err = base.WithEnvVariable("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT", "1").
+		WithNewFile("scaleout.graphql", `{
+ currentWorkspace {
+  host: file(path: "marker") { contents }
+  withNewFile(path: "marker", contents: "overlay") {
+   artifacts(include: ["good/verify-overlay"]) {
+    values(arguments: "{\"expectedMarker\":\"overlay\"}") {
+     error { message }
+     value { ... on Check { pass } }
+    }
+   }
+  }
+ }
+}`).
+		With(daggerNonNestedExec("query", "--no-load-module", "--doc", "scaleout.graphql")).Stdout(ctx)
+	require.NoError(t, err, out)
+	require.JSONEq(t, `{"currentWorkspace":{"host":{"contents":"bound"},"withNewFile":{"artifacts":{"values":[{"error":null,"value":{"pass":true}}]}}}}`, out)
+	// Keep source object handles alive while the remote check consumes them.
+	out, err = base.WithEnvVariable("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT", "1").
+		WithExec([]string{"apk", "add", "python3"}).
+		WithNewFile("object-arguments.py", `import base64, json, os, urllib.request
+
+def query(document, variables=None):
+    request = urllib.request.Request(
+        "http://127.0.0.1:" + os.environ["DAGGER_SESSION_PORT"] + "/query",
+        data=json.dumps({"query": document, "variables": variables or {}}).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Basic " + base64.b64encode((os.environ["DAGGER_SESSION_TOKEN"] + ":").encode()).decode(),
+        },
+    )
+    with urllib.request.urlopen(request) as response:
+        result = json.load(response)
+    assert not result.get("errors"), result
+    return result["data"]
+
+file_id = query('{ directory { withNewFile(path: "marker", contents: "objects") { file(path: "marker") { id } } } }')["directory"]["withNewFile"]["file"]["id"]
+directory_id = query('query($text: String!) { directory { withNewFile(path: "marker", contents: "objects") { withNewFile(path: "id-text", contents: $text) { id } } } }', {"text": file_id})["directory"]["withNewFile"]["withNewFile"]["id"]
+print(json.dumps(query('query($args: JSON!) { currentWorkspace { artifacts(include: ["good/verify-objects"]) { values(arguments: $args) { error { message } value { ... on Check { pass } } } } } }', {
+    "args": json.dumps({"source": directory_id, "files": [file_id], "absent": None, "text": file_id}),
+})))
+`).
+		With(daggerNonNestedExec("--no-load-module", "run", "python3", "object-arguments.py")).Stdout(ctx)
+	require.NoError(t, err, out)
+	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"values":[{"error":null,"value":{"pass":true}}]}}}`, out)
+	require.NoError(t, c.Close())
+	sink.read(func(db *dagui.DB) {
+		connections := 0
+		for _, span := range db.Spans.Map {
+			if span.Name == "starting scale-out session" && !span.IsRunning() {
+				connections++
+			}
+		}
+		require.Equal(t, 5, connections)
+	})
 }

@@ -16,6 +16,40 @@ defmodule Dagger.Artifact do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The arguments accepted by the artifact field.
+  """
+  @spec arguments(t()) :: {:ok, [Dagger.FunctionArg.t()]} | {:error, term()}
+  def arguments(%__MODULE__{} = artifact) do
+    query_builder =
+      artifact.query_builder |> QB.select("arguments") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifact.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.FunctionArg{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("FunctionArg"),
+           client: artifact.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  The description of the field that supplies this artifact.
+  """
+  @spec description(t()) :: {:ok, String.t()} | {:error, term()}
+  def description(%__MODULE__{} = artifact) do
+    query_builder =
+      artifact.query_builder |> QB.select("description")
+
+    Client.execute(artifact.client, query_builder)
+  end
+
+  @doc """
   One key per dimension along the path. Unordered; empty for static artifacts.
   """
   @spec dimension_keys(t()) :: {:ok, [Dagger.ArtifactDimensionKey.t()]} | {:error, term()}
@@ -39,12 +73,34 @@ defmodule Dagger.Artifact do
   end
 
   @doc """
+  The directives carried by this artifact.
+  """
+  @spec directives(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def directives(%__MODULE__{} = artifact) do
+    query_builder =
+      artifact.query_builder |> QB.select("directives")
+
+    Client.execute(artifact.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this Artifact.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = artifact) do
     query_builder =
       artifact.query_builder |> QB.select("id")
+
+    Client.execute(artifact.client, query_builder)
+  end
+
+  @doc """
+  A module load failure, or an empty string if discovery succeeded.
+  """
+  @spec load_error(t()) :: {:ok, String.t()} | {:error, term()}
+  def load_error(%__MODULE__{} = artifact) do
+    query_builder =
+      artifact.query_builder |> QB.select("loadError")
 
     Client.execute(artifact.client, query_builder)
   end
@@ -82,10 +138,10 @@ defmodule Dagger.Artifact do
   @doc """
   Evaluate the target in the workspace that supplied this artifact.
   """
-  @spec value(t()) :: Dagger.Node.t()
-  def value(%__MODULE__{} = artifact) do
+  @spec value(t(), Dagger.JSON.t()) :: Dagger.Node.t()
+  def value(%__MODULE__{} = artifact, arguments) do
     query_builder =
-      artifact.query_builder |> QB.select("value")
+      artifact.query_builder |> QB.select("value") |> QB.put_arg("arguments", arguments)
 
     %Dagger.Node{
       query_builder: query_builder,

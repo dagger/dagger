@@ -374,51 +374,6 @@ enum AgentMessageDelivery {
 """
 EXPERIMENTAL: Agent APIs are likely to change.
 
-An agent middleware contributed by a module.
-"""
-type AgentMiddleware implements Node {
-  """The description of the agent"""
-  description: String! @experimental(reason: "Agent APIs are likely to change.")
-
-  """A unique identifier for this AgentMiddleware."""
-  id: ID!
-
-  """
-  Return the command name of the agent. Entrypoint targets omit the module prefix.
-  """
-  name: String! @experimental(reason: "Agent APIs are likely to change.")
-
-  """The original module in which the agent has been defined"""
-  originalModule: Module! @experimental(reason: "Agent APIs are likely to change.")
-
-  """The path of the agent within its module"""
-  path: [String!]! @experimental(reason: "Agent APIs are likely to change.")
-}
-
-"""
-EXPERIMENTAL: Agent APIs are likely to change.
-
-A group of agent middlewares composable onto a base LLM.
-"""
-type AgentMiddlewareGroup implements Node {
-  """
-  Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
-  """
-  compose(
-    """The base LLM to compose onto. Defaults to a fresh workspace-bound LLM."""
-    base: ID @expectedType(name: "LLM")
-  ): LLM! @experimental(reason: "Agent APIs are likely to change.")
-
-  """A unique identifier for this AgentMiddlewareGroup."""
-  id: ID!
-
-  """Return a list of individual agents and their details"""
-  list: [AgentMiddleware!]! @experimental(reason: "Agent APIs are likely to change.")
-}
-
-"""
-EXPERIMENTAL: Agent APIs are likely to change.
-
 Computed lifecycle state of an agent.
 """
 enum AgentState {
@@ -447,13 +402,25 @@ Reading metadata does not evaluate the value. Different addresses remain
 distinct even if they return the same object.
 """
 type Artifact implements Node {
+  """The arguments accepted by the artifact field."""
+  arguments: [FunctionArg!]!
+
+  """The description of the field that supplies this artifact."""
+  description: String!
+
   """
   One key per dimension along the path. Unordered; empty for static artifacts.
   """
   dimensionKeys: [ArtifactDimensionKey!]!
 
+  """The directives carried by this artifact."""
+  directives: [String!]!
+
   """A unique identifier for this Artifact."""
   id: ID!
+
+  """A module load failure, or an empty string if discovery succeeded."""
+  loadError: String!
 
   """
   Ordered, literal fields to follow. Entrypoint targets use their shorthand.
@@ -479,7 +446,10 @@ type Artifact implements Node {
   ): String!
 
   """Evaluate the target in the workspace that supplied this artifact."""
-  value: Node!
+  value(
+    """Field arguments as a JSON object."""
+    arguments: JSON! = "{}"
+  ): Node!
 }
 
 type ArtifactDimensionKey implements Node {
@@ -491,6 +461,20 @@ type ArtifactDimensionKey implements Node {
 
   """The dimension item's key."""
   key: String!
+}
+
+type ArtifactResult implements Node {
+  """The artifact that was evaluated."""
+  artifact: Artifact!
+
+  """The evaluation failure, if any."""
+  error: Error
+
+  """A unique identifier for this ArtifactResult."""
+  id: ID!
+
+  """The evaluated value, or null when evaluation failed."""
+  value: Node
 }
 
 """
@@ -514,6 +498,9 @@ type Artifacts implements Node {
 
   """Keep artifacts selected through any listed dimension."""
   filterDimensions(dimensions: [String!]!): Artifacts!
+
+  """Keep artifacts with any listed directive."""
+  filterDirectives(directives: [String!]!): Artifacts!
 
   """Match one complete, ordered field sequence exactly."""
   filterPath(path: [String!]!): Artifacts!
@@ -552,6 +539,18 @@ type Artifacts implements Node {
   The DAG address that selects this whole selection: filterUri(uri) selects the same set.
   """
   uri: String!
+
+  """Evaluate the selection in parallel, retaining each result and error."""
+  values(
+    """Cancel remaining work after the first failure."""
+    failFast: Boolean = false
+
+    """Field arguments applied to each artifact, as a JSON object."""
+    arguments: JSON = "{}"
+  ): [ArtifactResult!]!
+
+  """Remove artifacts selected by a DAG address."""
+  withoutUri(uri: String!): Artifacts!
 }
 
 """Key value object that represents a build argument."""
@@ -648,6 +647,9 @@ type Changeset implements Exportable & Node & Syncer {
   """
   removedPaths: [String!]!
 
+  """A check that passes when the changeset is empty."""
+  stale: Check! @check
+
   """Force evaluation in the engine."""
   sync: ID! @expectedType(name: "Changeset")
 
@@ -720,61 +722,25 @@ enum ChangesetsMergeConflict {
   FAIL
 }
 
+"""One deferred check. Reading pass, error, or sync runs it."""
 type Check implements Node {
-  """
-  The type of check: 'check' for annotated checks, 'generate' for
-  generate-as-checks, 'load' for a workspace module that could not be loaded
-  """
-  checkType: String!
+  """The assertion that is false when this check fails."""
+  assertion: String
 
-  """Whether the check completed"""
-  completed: Boolean!
-
-  """The description of the check"""
-  description: String!
-
-  """If the check failed, this is the error"""
+  """Run the check and return its failure, if any."""
   error: Error
 
   """A unique identifier for this Check."""
   id: ID!
 
-  """
-  Return the command name of the check. Entrypoint targets omit the module prefix.
-  """
-  name: String!
+  """Run the check and return whether it passes."""
+  pass: Boolean!
 
-  """The original module in which the check has been defined"""
-  originalModule: Module!
+  """An optional report produced by the check."""
+  report: Directory
 
-  """Whether the check passed"""
-  passed: Boolean!
-
-  """The path of the check within its module"""
-  path: [String!]!
-
-  """An emoji representing the result of the check"""
-  resultEmoji: String!
-
-  """Execute the check"""
-  run: Check!
-}
-
-type CheckGroup implements Node {
-  """A unique identifier for this CheckGroup."""
-  id: ID!
-
-  """Return a list of individual checks and their details"""
-  list: [Check!]!
-
-  """Generate a markdown report"""
-  report: File!
-
-  """Execute all selected checks"""
-  run(
-    """If true, stop running checks as soon as any check fails."""
-    failFast: Boolean
-  ): CheckGroup!
+  """Run the check and retain its result."""
+  sync: Check!
 }
 
 """An internal persistent filesync mirror."""
@@ -2182,12 +2148,6 @@ type CurrentModule implements Node {
   """
   generatedContextDirectory: Directory!
 
-  """Return all generators defined by the module"""
-  generators(
-    """Only include generators matching the specified patterns"""
-    include: [String!]
-  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
   """A unique identifier for this CurrentModule."""
   id: ID!
 
@@ -3487,83 +3447,6 @@ type GeneratedCode implements Node {
 
   """Set the list of paths to ignore in version control."""
   withVCSIgnoredPaths(paths: [String!]!): GeneratedCode!
-}
-
-type Generator implements Node {
-  """The generated changeset from the last run"""
-  changes: Changeset!
-
-  """Whether the generator complete"""
-  completed: Boolean!
-
-  """Return the description of the generator"""
-  description: String!
-
-  """A unique identifier for this Generator."""
-  id: ID!
-
-  """Whether changeset from the last generator run is empty or not"""
-  isEmpty: Boolean!
-
-  """
-  Return the command name of the generator. Entrypoint targets omit the module prefix.
-  """
-  name: String!
-
-  """
-  The module that defined the generator, or null for an engine-defined generator
-  """
-  originalModule: Module
-
-  """The path of the generator within its module"""
-  path: [String!]!
-
-  """Execute the generator"""
-  run: Generator!
-}
-
-type GeneratorGroup implements Node {
-  """
-  The combined changes from the last run of the generators
-
-  If any conflict occurs, for instance if the same file is modified by multiple
-  generators, or if a file is both modified and deleted, an error is raised and
-  the merge of the changesets will failed.
-
-  Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
-  """
-  changes(
-    """Strategy to apply on conflicts between generators"""
-    onConflict: ChangesetsMergeConflict = FAIL_EARLY
-  ): Changeset!
-
-  """A unique identifier for this GeneratorGroup."""
-  id: ID!
-
-  """Whether the generated changeset from the last run is empty or not"""
-  isEmpty: Boolean!
-
-  """Return a list of individual generators and their details"""
-  list: [Generator!]!
-
-  """
-  Load failures tolerated while collecting the generators.
-
-  Empty unless a workspace module could not be loaded during an unscoped 'dagger
-  generate' (no selector), where load failures are tolerated so the modules that
-  do load still generate. Each entry is a human-readable error message. An
-  explicit selector keeps failing hard instead.
-  """
-  loadFailures: [String!]!
-
-  """Execute all selected generators"""
-  run: GeneratorGroup!
-
-  """The workspace with the combined output from the last generator run"""
-  workspace(
-    """Strategy to apply on conflicts between generators"""
-    onConflict: ChangesetsMergeConflict = FAIL_EARLY
-  ): Workspace!
 }
 
 """
@@ -4899,25 +4782,6 @@ type ListTypeDef implements Node {
 
 """A Dagger module."""
 type Module implements Node & Syncer {
-  """
-  Return the check defined by the module with the given name. Must match to exactly one check.
-  """
-  check(
-    """The name of the check to retrieve"""
-    name: String!
-  ): Check! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
-  """Return all checks defined by the module"""
-  checks(
-    """Only include checks matching the specified patterns"""
-    include: [String!]
-
-    """
-    When true, only return annotated check functions; exclude generate-as-checks
-    """
-    noGenerate: Boolean
-  ): CheckGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -4931,20 +4795,6 @@ type Module implements Node & Syncer {
   The generated files and directories made on top of the module source's context directory.
   """
   generatedContextDirectory: Directory!
-
-  """
-  Return the generator defined by the module with the given name. Must match to exactly one generator.
-  """
-  generator(
-    """The name of the generator to retrieve"""
-    name: String!
-  ): Generator! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
-  """Return all generators defined by the module"""
-  generators(
-    """Only include generators matching the specified patterns"""
-    include: [String!]
-  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Module."""
   id: ID!
@@ -4991,12 +4841,6 @@ type Module implements Node & Syncer {
     """
     entrypoint: Boolean
   ): Void
-
-  """Return all services defined by the module"""
-  services(
-    """Only include services matching the specified patterns"""
-    include: [String!]
-  ): UpGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """The source for the module."""
   source: ModuleSource
@@ -6008,7 +5852,12 @@ type Service implements Node & Syncer {
   id: ID!
 
   """Retrieves the list of ports provided by the service."""
-  ports: [Port!]!
+  ports(
+    """
+    Return only container ports declared before startup. Other service types return an empty list.
+    """
+    declared: Boolean = false
+  ): [Port!]!
 
   """
   Start the service and wait for its health checks to succeed.
@@ -6120,36 +5969,6 @@ type Terminal implements Node & Syncer {
   It doesn't run the default command if no exec has been set.
   """
   sync: ID! @expectedType(name: "Terminal")
-}
-
-type TerminalGroup implements Node {
-  """A unique identifier for this TerminalGroup."""
-  id: ID!
-
-  """Return the selected terminal targets and their details"""
-  list: [TerminalTarget!]!
-
-  """Open the selected terminal target"""
-  run: TerminalGroup!
-}
-
-type TerminalTarget implements Node {
-  """The description of the terminal target"""
-  description: String!
-
-  """A unique identifier for this TerminalTarget."""
-  id: ID!
-
-  """
-  Return the command name of the terminal target. Entrypoint targets omit the module prefix.
-  """
-  name: String!
-
-  """The module in which the terminal target is defined"""
-  originalModule: Module!
-
-  """The path of the terminal target within its module"""
-  path: [String!]!
 }
 
 """A definition of a parameter or return type in a Module."""
@@ -6425,39 +6244,6 @@ enum TypeDefKind {
   ENUM @enumValue(value: "ENUM_KIND")
 }
 
-type Up implements Node {
-  """The description of the service"""
-  description: String!
-
-  """A unique identifier for this Up."""
-  id: ID!
-
-  """
-  Return the command name of the service. Entrypoint targets omit the module prefix.
-  """
-  name: String!
-
-  """The original module in which the service has been defined"""
-  originalModule: Module!
-
-  """The path of the service within its module"""
-  path: [String!]!
-
-  """Execute the service function"""
-  run: Up!
-}
-
-type UpGroup implements Node {
-  """A unique identifier for this UpGroup."""
-  id: ID!
-
-  """Return a list of individual services and their details"""
-  list: [Up!]!
-
-  """Execute all selected service functions"""
-  run: UpGroup!
-}
-
 """
 The absence of a value.
 
@@ -6480,15 +6266,6 @@ type Workspace implements Node {
   """
   address: String!
 
-  """Return all agent middlewares from modules loaded in the workspace."""
-  agents(
-    """Only include agents matching the specified patterns"""
-    include: [String!]
-
-    """Exclude agents matching the specified patterns"""
-    exclude: [String!]
-  ): AgentMiddlewareGroup! @experimental(reason: "Agent APIs are likely to change.")
-
   """
   Discover static object artifacts from workspace modules without evaluating their values.
   """
@@ -6510,25 +6287,6 @@ type Workspace implements Node {
     """An earlier workspace state to compare against."""
     from: ID @expectedType(name: "Workspace")
   ): Changeset!
-
-  """Return all checks from modules loaded in the workspace."""
-  checks(
-    """Only include checks matching the specified patterns"""
-    include: [String!]
-
-    """Skip checks matching the specified patterns"""
-    skip: [String!]
-
-    """
-    When true, only return annotated check functions; exclude generate-as-checks
-    """
-    noGenerate: Boolean
-
-    """
-    When true, only return generate-as-checks; exclude annotated check functions
-    """
-    onlyGenerate: Boolean
-  ): CheckGroup!
 
   """
   Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
@@ -6579,6 +6337,11 @@ type Workspace implements Node {
   configRead(
     """Dotted key path (e.g. modules.greeter.source). Empty for full config."""
     key: String = ""
+
+    """
+    Include the selected environment, user overrides, and legacy workspace settings.
+    """
+    effective: Boolean = false
   ): String!
 
   """
@@ -6721,12 +6484,6 @@ type Workspace implements Node {
     """
     from: String = "."
   ): String
-
-  """Return all generators from modules loaded in the workspace."""
-  generators(
-    """Only include generators matching the specified patterns"""
-    include: [String!]
-  ): GeneratorGroup!
 
   """
   Git state for this workspace. Errors if the workspace is not in a git repository.
@@ -6874,12 +6631,6 @@ type Workspace implements Node {
     limit: Int
   ): [SearchResult!]!
 
-  """Return all services from modules loaded in the workspace."""
-  services(
-    """Only include services matching the specified patterns"""
-    include: [String!]
-  ): UpGroup!
-
   """
   Return a snapshot of this workspace as a stable value.
 
@@ -6900,12 +6651,6 @@ type Workspace implements Node {
   The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
   """
   snapshot: Workspace! @experimental(reason: "Best-effort capture for resumable sessions; capture and fallback behavior may change.")
-
-  """Return all terminal targets from modules loaded in the workspace."""
-  terminals(
-    """Only include terminal targets matching the specified patterns"""
-    include: [String!]
-  ): TerminalGroup!
 
   """
   Return this workspace with a changeset applied, without mutating the source.
@@ -7612,6 +7357,9 @@ An installed SDK: a module marked for scaffolding other modules and clients.
 type WorkspaceSDK implements Node {
   """Clients generated with this SDK."""
   clients: [WorkspaceModule!]!
+
+  """Generate the modules and clients managed by this SDK."""
+  generate: Changeset! @generate
 
   """A unique identifier for this WorkspaceSDK."""
   id: ID!
