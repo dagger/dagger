@@ -42,30 +42,23 @@ Cache hits 108/266 (41%) · Saved ~23s wall | ~2m42s CPU | ~335 MB memory for 46
 
 - Reset the engine cache using the preparation steps above.
 
-- Move outside the repository so no workspace is discovered:
+- Run the Dang demo once to record a cold baseline:
 
   ```bash
-  dagger_bin="$(realpath ./bin/dagger)"
-  cd "$(mktemp -d)"
+  ./bin/dagger api call -m ./dagql/idtui/demos/cache-demo cache-savings-demo
   ```
 
-- Run this direct core API pipeline twice:
+- Run the same workflow again:
 
   ```bash
-  "$dagger_bin" api call -M container \
-    from --address alpine:3.21.3 \
-    with-exec --args='sh,-c,apk add --no-cache curl && sleep 2' \
-    with-exec --args='curl,--version' \
-    with-exec --args='sh,-c,echo cache-demo > /tmp/result' \
-    with-exec --args='cat,/tmp/result' \
-    stdout
+  ./bin/dagger api call -m ./dagql/idtui/demos/cache-demo cache-savings-demo
   ```
 
-- Explain that the temporary directory avoids workspace discovery and `-M`
-  skips module loading.
+- Explain that the Dang module uses core API calls and does not use a
+  `Workspace`.
 
 - Point out the higher warm cache hit rate:
 
   ```text
-  Cache hits 6/8 (75%) · Saved ~7s wall | ~2.5 MB memory for 7s
+  Cache hits 64/94 (68%) · Saved ~9s wall | ...
   ```

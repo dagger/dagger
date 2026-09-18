@@ -1,0 +1,29 @@
+type CacheDemo {
+  let job(name: String!): String! {
+    container
+      .from("alpine:3.22.1")
+      .withExec(["sh", "-c", `sleep 0.2; echo ${name} > /tmp/result`])
+      .withExec(["test", "-s", "/tmp/result"])
+      .withExec(["wc", "-c", "/tmp/result"])
+      .withExec(["sha256sum", "/tmp/result"])
+      .withExec(["cat", "/tmp/result"])
+      .stdout
+  }
+
+  pub cacheSavingsDemo: [String!]! {
+    [
+      job("one"),
+      job("two"),
+      job("three"),
+      job("four"),
+      job("five"),
+      job("six"),
+      job("seven"),
+      job("eight"),
+      job("nine"),
+      job("ten"),
+      job("eleven"),
+      job("twelve"),
+    ]
+  }
+}
