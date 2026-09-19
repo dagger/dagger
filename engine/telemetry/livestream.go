@@ -24,8 +24,37 @@ const (
 	maxLiveErrorSize   = 4 << 10
 )
 
+// LiveFrameKind distinguishes the frames a live telemetry stream carries.
+type LiveFrameKind uint8
+
+const (
+	// LiveFrameData carries one cursor-addressed protobuf payload.
+	LiveFrameData LiveFrameKind = iota
+	// LiveFrameHello opens a subscription. Its cursor is the position the
+	// server resumed from; it carries no payload and does not advance the
+	// consumer's cursor.
+	LiveFrameHello
+	// LiveFrameTerminal marks a cleanly drained subscription. Its cursor is
+	// the last delivered cursor and it carries no payload.
+	LiveFrameTerminal
+)
+
+func (k LiveFrameKind) String() string {
+	switch k {
+	case LiveFrameData:
+		return "data"
+	case LiveFrameHello:
+		return "hello"
+	case LiveFrameTerminal:
+		return "terminal"
+	default:
+		return fmt.Sprintf("LiveFrameKind(%d)", uint8(k))
+	}
+}
+
 var (
 	liveFrameMagic    = [4]byte{'D', 'T', 'P', 1}
+	liveHelloMagic    = [4]byte{'D', 'T', 'S', 1}
 	liveTerminalMagic = [4]byte{'D', 'T', 'E', 1}
 	liveErrorMagic    = [4]byte{'D', 'T', 'X', 1}
 )
@@ -41,6 +70,14 @@ var (
 // WriteLiveFrame writes one cursor-addressed protobuf payload.
 func WriteLiveFrame(w io.Writer, cursor int64, payload []byte) error {
 	return writeLiveFrame(w, liveFrameMagic, cursor, payload)
+}
+
+// WriteLiveHello writes the marker sent as soon as a subscription is attached,
+// before any data is available. Sending body bytes (rather than relying on a
+// header-only flush) lets the stream announce itself through intermediaries
+// that only flush on body writes.
+func WriteLiveHello(w io.Writer, cursor int64) error {
+	return writeLiveFrame(w, liveHelloMagic, cursor, nil)
 }
 
 // WriteLiveTerminal writes the marker sent after the server has drained the
@@ -96,46 +133,55 @@ func writeLiveFramePart(w io.Writer, data []byte) error {
 	return nil
 }
 
-// ReadLiveFrame reads one cursor-addressed protobuf payload. terminal is true
-// for the empty frame that marks a cleanly drained subscription.
-func ReadLiveFrame(r io.Reader) (cursor int64, payload []byte, terminal bool, err error) {
+// ReadLiveFrame reads one frame. Data frames carry a cursor-addressed protobuf
+// payload; hello and terminal frames carry only a cursor. A producer-reported
+// error frame is returned as an error wrapping ErrLiveStream.
+func ReadLiveFrame(r io.Reader) (kind LiveFrameKind, cursor int64, payload []byte, err error) {
 	var header [liveFrameHeaderSize]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return 0, nil, false, fmt.Errorf("read live telemetry frame header: %w", err)
+		return 0, 0, nil, fmt.Errorf("read live telemetry frame header: %w", err)
 	}
 	magic := [4]byte(header[:4])
-	terminal = magic == liveTerminalMagic
-	streamError := magic == liveErrorMagic
-	if magic != liveFrameMagic && !terminal && !streamError {
-		return 0, nil, false, fmt.Errorf("%w: bad magic %x", ErrInvalidLiveFrame, header[:4])
+	streamError := false
+	switch magic {
+	case liveFrameMagic:
+		kind = LiveFrameData
+	case liveHelloMagic:
+		kind = LiveFrameHello
+	case liveTerminalMagic:
+		kind = LiveFrameTerminal
+	case liveErrorMagic:
+		streamError = true
+	default:
+		return 0, 0, nil, fmt.Errorf("%w: bad magic %x", ErrInvalidLiveFrame, header[:4])
 	}
 
 	wireCursor := binary.BigEndian.Uint64(header[4:12])
 	if wireCursor > (^uint64(0) >> 1) {
-		return 0, nil, false, fmt.Errorf("%w: cursor %d overflows int64", ErrInvalidLiveFrame, wireCursor)
+		return 0, 0, nil, fmt.Errorf("%w: cursor %d overflows int64", ErrInvalidLiveFrame, wireCursor)
 	}
 	cursor = int64(wireCursor)
 
 	payloadSize := binary.BigEndian.Uint32(header[12:16])
 	if payloadSize > MaxLivePayloadSize {
-		return 0, nil, false, fmt.Errorf("%w: payload is %d bytes (maximum %d)", ErrInvalidLiveFrame, payloadSize, MaxLivePayloadSize)
+		return 0, 0, nil, fmt.Errorf("%w: payload is %d bytes (maximum %d)", ErrInvalidLiveFrame, payloadSize, MaxLivePayloadSize)
 	}
-	if terminal {
+	if kind == LiveFrameHello || kind == LiveFrameTerminal {
 		if payloadSize != 0 {
-			return 0, nil, false, fmt.Errorf("%w: terminal frame has %d-byte payload", ErrInvalidLiveFrame, payloadSize)
+			return 0, 0, nil, fmt.Errorf("%w: %s frame has %d-byte payload", ErrInvalidLiveFrame, kind, payloadSize)
 		}
-		return cursor, nil, true, nil
+		return kind, cursor, nil, nil
 	}
 	if streamError && payloadSize > maxLiveErrorSize {
-		return 0, nil, false, fmt.Errorf("%w: error payload is %d bytes (maximum %d)", ErrInvalidLiveFrame, payloadSize, maxLiveErrorSize)
+		return 0, 0, nil, fmt.Errorf("%w: error payload is %d bytes (maximum %d)", ErrInvalidLiveFrame, payloadSize, maxLiveErrorSize)
 	}
 
 	payload = make([]byte, int(payloadSize))
 	if _, err := io.ReadFull(r, payload); err != nil {
-		return 0, nil, false, fmt.Errorf("read live telemetry frame payload: %w", err)
+		return 0, 0, nil, fmt.Errorf("read live telemetry frame payload: %w", err)
 	}
 	if streamError {
-		return cursor, nil, false, fmt.Errorf("%w: %s", ErrLiveStream, payload)
+		return 0, cursor, nil, fmt.Errorf("%w: %s", ErrLiveStream, payload)
 	}
-	return cursor, payload, false, nil
+	return LiveFrameData, cursor, payload, nil
 }

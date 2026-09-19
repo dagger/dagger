@@ -1093,18 +1093,24 @@ func (c *otlpConsumer) consumeResponse(
 	}
 
 	for {
-		next, data, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		kind, next, data, err := enginetel.ReadLiveFrame(resp.Body)
 		if err != nil {
 			return false, err
 		}
-		if terminal {
+		switch kind {
+		case enginetel.LiveFrameHello:
+			// The server announces where it resumed from; that is our own
+			// cursor echoed back, so it neither advances nor validates state.
+			logger.ExtraDebug("subscribed to OTLP stream", "cursor", next)
+		case enginetel.LiveFrameTerminal:
 			if next != *cursor {
 				return false, fmt.Errorf("%w: terminal cursor %d, expected %d", enginetel.ErrInvalidLiveFrame, next, *cursor)
 			}
 			return true, nil
-		}
-		if err := consumeTelemetryPayload(next, data, liveTelemetryBinary, cursor, cb, span, logger); err != nil {
-			return false, err
+		default:
+			if err := consumeTelemetryPayload(next, data, liveTelemetryBinary, cursor, cb, span, logger); err != nil {
+				return false, err
+			}
 		}
 	}
 }

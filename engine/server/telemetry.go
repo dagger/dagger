@@ -977,7 +977,14 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusOK)
 	// Commit and flush the response before waiting for the first batch so the
 	// client can distinguish an attached subscription from pending headers.
-	if !binary {
+	// Both encodings write body bytes rather than relying on a header-only
+	// flush, which intermediaries (older CLI proxies, buffering HTTP proxies)
+	// may hold back until the first body write.
+	if binary {
+		if err := enginetel.WriteLiveHello(w, since); err != nil {
+			return fmt.Errorf("write hello frame: %w", err)
+		}
+	} else {
 		if err := (sse.Event{Name: "subscribed"}).Write(w); err != nil {
 			return fmt.Errorf("write subscribed event: %w", err)
 		}

@@ -14,27 +14,34 @@ func TestLiveFrameRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	var stream bytes.Buffer
+	require.NoError(t, WriteLiveHello(&stream, 41))
 	require.NoError(t, WriteLiveFrame(&stream, 42, []byte("protobuf")))
 	require.NoError(t, WriteLiveFrame(&stream, 43, nil))
 	require.NoError(t, WriteLiveTerminal(&stream, 43))
 
-	cursor, payload, terminal, err := ReadLiveFrame(&oneByteReader{Reader: &stream})
+	kind, cursor, payload, err := ReadLiveFrame(&oneByteReader{Reader: &stream})
 	require.NoError(t, err)
+	require.Equal(t, LiveFrameHello, kind)
+	require.Equal(t, int64(41), cursor)
+	require.Nil(t, payload)
+
+	kind, cursor, payload, err = ReadLiveFrame(&oneByteReader{Reader: &stream})
+	require.NoError(t, err)
+	require.Equal(t, LiveFrameData, kind)
 	require.Equal(t, int64(42), cursor)
 	require.Equal(t, []byte("protobuf"), payload)
-	require.False(t, terminal)
 
-	cursor, payload, terminal, err = ReadLiveFrame(&oneByteReader{Reader: &stream})
+	kind, cursor, payload, err = ReadLiveFrame(&oneByteReader{Reader: &stream})
 	require.NoError(t, err)
+	require.Equal(t, LiveFrameData, kind)
 	require.Equal(t, int64(43), cursor)
 	require.Empty(t, payload)
-	require.False(t, terminal)
 
-	cursor, payload, terminal, err = ReadLiveFrame(&oneByteReader{Reader: &stream})
+	kind, cursor, payload, err = ReadLiveFrame(&oneByteReader{Reader: &stream})
 	require.NoError(t, err)
+	require.Equal(t, LiveFrameTerminal, kind)
 	require.Equal(t, int64(43), cursor)
 	require.Nil(t, payload)
-	require.True(t, terminal)
 }
 
 func TestLiveErrorRoundTrip(t *testing.T) {
@@ -43,12 +50,11 @@ func TestLiveErrorRoundTrip(t *testing.T) {
 	var stream bytes.Buffer
 	require.NoError(t, WriteLiveError(&stream, 42, errors.New("row too large")))
 
-	cursor, payload, terminal, err := ReadLiveFrame(&stream)
+	_, cursor, payload, err := ReadLiveFrame(&stream)
 	require.ErrorIs(t, err, ErrLiveStream)
 	require.ErrorContains(t, err, "row too large")
 	require.Equal(t, int64(42), cursor)
 	require.Nil(t, payload)
-	require.False(t, terminal)
 }
 
 func TestLiveFrameBoundsChecks(t *testing.T) {
@@ -77,6 +83,14 @@ func TestLiveFrameBoundsChecks(t *testing.T) {
 		frame := make([]byte, liveFrameHeaderSize)
 		copy(frame[:4], liveFrameMagic[:])
 		binary.BigEndian.PutUint32(frame[12:16], MaxLivePayloadSize+1)
+		_, _, _, err := ReadLiveFrame(bytes.NewReader(frame))
+		require.ErrorIs(t, err, ErrInvalidLiveFrame)
+	})
+
+	t.Run("hello payload", func(t *testing.T) {
+		frame := make([]byte, liveFrameHeaderSize)
+		copy(frame[:4], liveHelloMagic[:])
+		binary.BigEndian.PutUint32(frame[12:16], 1)
 		_, _, _, err := ReadLiveFrame(bytes.NewReader(frame))
 		require.ErrorIs(t, err, ErrInvalidLiveFrame)
 	})

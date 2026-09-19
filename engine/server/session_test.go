@@ -1999,22 +1999,28 @@ func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
 	require.Equal(t, enginetel.LiveContentType, resp.Header().Get("Content-Type"))
 	require.True(t, resp.Flushed)
 
+	kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameHello, kind)
+	require.Equal(t, int64(4), cursor, "hello frame carries the resume cursor")
+	require.Nil(t, payload)
+
 	for _, expectedCursor := range []int64{5, 6} {
-		cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
 		require.NoError(t, err)
+		require.Equal(t, enginetel.LiveFrameData, kind)
 		require.Equal(t, expectedCursor, cursor)
-		require.False(t, terminal)
 		require.NotEmpty(t, payload)
 		require.NotEqual(t, byte('{'), payload[0], "payload must be binary protobuf, not protojson")
 		var batch collogspb.ExportLogsServiceRequest
 		require.NoError(t, proto.Unmarshal(payload, &batch))
 		require.Equal(t, fmt.Sprintf("batch-%d", expectedCursor), batch.ResourceLogs[0].SchemaUrl)
 	}
-	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	kind, cursor, payload, err = enginetel.ReadLiveFrame(resp.Body)
 	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameTerminal, kind)
 	require.Equal(t, int64(6), cursor)
 	require.Nil(t, payload)
-	require.True(t, terminal)
 	require.Empty(t, resp.Body.Bytes())
 }
 
@@ -2127,18 +2133,23 @@ func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
 		{since: 4, limit: otlpBatchSize},
 	}, calls)
 
+	kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameHello, kind)
+	require.Equal(t, int64(0), cursor)
+	require.Nil(t, payload)
 	for _, expectedCursor := range []int64{2, 4} {
-		cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
 		require.NoError(t, err)
+		require.Equal(t, enginetel.LiveFrameData, kind)
 		require.Equal(t, expectedCursor, cursor)
 		require.LessOrEqual(t, len(payload), maxPayloadSize)
-		require.False(t, terminal)
 	}
-	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	kind, cursor, payload, err = enginetel.ReadLiveFrame(resp.Body)
 	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameTerminal, kind)
 	require.Equal(t, int64(4), cursor)
 	require.Nil(t, payload)
-	require.True(t, terminal)
 }
 
 func TestTelemetryStreamReportsSingleOversizedRow(t *testing.T) {
@@ -2169,12 +2180,17 @@ func TestTelemetryStreamReportsSingleOversizedRow(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, fetches, "an oversized row must not be fetched repeatedly")
 
-	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameHello, kind)
+	require.Equal(t, int64(0), cursor)
+	require.Nil(t, payload)
+
+	_, cursor, payload, err = enginetel.ReadLiveFrame(resp.Body)
 	require.ErrorIs(t, err, enginetel.ErrLiveStream)
 	require.ErrorContains(t, err, "telemetry row at cursor 1")
 	require.Equal(t, int64(0), cursor)
 	require.Nil(t, payload)
-	require.False(t, terminal)
 }
 
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {

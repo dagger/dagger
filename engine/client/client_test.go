@@ -141,6 +141,9 @@ func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {
 					if cursor := req.Header.Get(enginetel.LiveCursorHeader); cursor != "" {
 						return nil, fmt.Errorf("initial cursor = %q", cursor)
 					}
+					if err := enginetel.WriteLiveHello(&stream, 0); err != nil {
+						return nil, err
+					}
 					if err := enginetel.WriteLiveFrame(&stream, 7, []byte("batch one")); err != nil {
 						return nil, err
 					}
@@ -153,6 +156,11 @@ func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {
 					}
 					if cursor := req.Header.Get("Last-Event-ID"); cursor != "7" {
 						return nil, fmt.Errorf("standard SSE resume cursor = %q, want 7", cursor)
+					}
+					// The hello echoes the resume cursor, which must not trip the
+					// client's non-increasing cursor check.
+					if err := enginetel.WriteLiveHello(&stream, 7); err != nil {
+						return nil, err
 					}
 					if err := enginetel.WriteLiveFrame(&stream, 9, []byte("batch two")); err != nil {
 						return nil, err
@@ -266,6 +274,9 @@ func TestOTLPConsumerDoesNotReconnectStreamErrors(t *testing.T) {
 			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				requests++
 				var stream bytes.Buffer
+				if err := enginetel.WriteLiveHello(&stream, 0); err != nil {
+					return nil, err
+				}
 				if err := enginetel.WriteLiveError(&stream, 0, errors.New("oversized telemetry row")); err != nil {
 					return nil, err
 				}
