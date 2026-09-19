@@ -395,6 +395,14 @@ type SpanSnapshot struct {
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
+	// Cache evidence is the engine-authored, versioned account of the cache
+	// decision made for this invocation. It is deliberately separate from
+	// Cached: a cache hit may return a pending lazy shell, while Cached describes
+	// the evaluation state presented by the trace UI.
+	CacheContract string `json:",omitempty"`
+	CacheOutcome  string `json:",omitempty"`
+	CacheHitRoute string `json:",omitempty"`
+
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
 
@@ -482,6 +490,15 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.DagCallScopeAttr:
 		snapshot.CallScope = val.(string)
+
+	case telemetryattrs.CacheContractAttr:
+		snapshot.CacheContract = val.(string)
+
+	case telemetryattrs.CacheOutcomeAttr:
+		snapshot.CacheOutcome = val.(string)
+
+	case telemetryattrs.CacheHitRouteAttr:
+		snapshot.CacheHitRoute = val.(string)
 
 	case telemetry.CachedAttr:
 		snapshot.Cached = val.(bool)

@@ -82,6 +82,9 @@ type frontendPretty struct {
 	reportOnly bool
 	reportMu   sync.Mutex // protects state in reportOnly mode (no TUI event loop)
 
+	cacheImpact         *cacheImpact
+	cacheImpactPrepared bool
+
 	// console, when set (DAGGER_TUI_CONSOLE=<addr>), serves the TUI over HTTP on
 	// a headless terminal instead of attaching to a real one (frontend_console.go).
 	console string
@@ -100,6 +103,7 @@ type frontendPretty struct {
 	tui         *tuist.TUI
 	run         func(context.Context) (cleanups.CleanupF, error)
 	runCtx      context.Context
+	ran         bool
 	interrupt   context.CancelCauseFunc
 	interrupted bool
 	quitting    bool
@@ -1226,6 +1230,7 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
+	fe.ran = true
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -2482,10 +2487,16 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	}
 
 	fe.setupFinalRenderLocked()
+	// Only a frontend that actually ran a command may read or update the local
+	// comparison baseline. Standalone report rendering (tests, Cloud trace
+	// replay, embedded reports) must remain side-effect free.
+	if fe.ran && fe.traceID == "" {
+		fe.prepareCacheImpact()
+	}
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasConversation() || fe.db.HasGenerateReport() {
+	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasConversation() || fe.db.HasGenerateReport() || fe.db.HasCacheReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
@@ -3318,6 +3329,18 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
 		renderedRows = len(progressLines) > 0
+	}
+
+	// Cache decisions are independent of the visual tree: hidden and
+	// passthrough call spans still represent real lookups. Render their exact
+	// outcome tally after the workflow content. Counterfactual savings are only
+	// added when a compatible historical miss profile is available.
+	if cacheLines := fe.cacheReport(zoomed); len(cacheLines) > 0 {
+		if renderedRows {
+			ctx.Line("")
+		}
+		ctx.Lines(cacheLines...)
+		renderedRows = true
 	}
 
 	// List every surfaced service instance (running or exited, with its
