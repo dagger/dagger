@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/engineutil"
 )
 
 type moduleObjectTestServer struct {
@@ -82,6 +83,107 @@ func (s *moduleObjectTestServer) DefaultDeps(context.Context) (*SchemaBuilder, e
 		return s.defaultDeps, nil
 	}
 	return NewSchemaBuilder(s.root, nil), nil
+}
+
+type moduleObjectReplayRuntime struct {
+	moduleSourceAttachTestSDK
+}
+
+func (sdk *moduleObjectReplayRuntime) AsRuntime() (Runtime, bool)             { return sdk, true }
+func (sdk *moduleObjectReplayRuntime) CloneForModuleSource(*ModuleSource) SDK { return sdk }
+func (sdk *moduleObjectReplayRuntime) Runtime(context.Context, *SchemaBuilder, dagql.ObjectResult[*ModuleSource]) (ModuleRuntime, error) {
+	return sdk, nil
+}
+func (*moduleObjectReplayRuntime) AsContainer() (dagql.ObjectResult[*Container], bool) {
+	return dagql.ObjectResult[*Container]{}, false
+}
+func (*moduleObjectReplayRuntime) Call(ctx context.Context, _ *engineutil.ExecutionMetadata, fnCall *FunctionCall, mod dagql.ObjectResult[*Module]) error {
+	// Container.WithExec scopes this same module-context result before running
+	// the module. Exercise that boundary without starting an engine/container.
+	if _, err := ImplementationScopedModule(ctx, mod); err != nil {
+		return err
+	}
+	return fnCall.ReturnValue(ctx, JSON(`"ok"`))
+}
+
+// Reloading field provenance must also refresh module results captured by the
+// installed ModuleObject / ModuleFunction closures. A lazy binding can retain
+// the class without retaining any of the producing session's cache results.
+func TestModuleObjectMethodsAfterModuleSessionRelease(t *testing.T) {
+	for _, release := range []bool{false, true} {
+		t.Run(map[bool]string{false: "live producer", true: "released producer"}[release], func(t *testing.T) {
+			cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+			assert.NilError(t, err)
+			t.Cleanup(func() { assert.NilError(t, cache.Close(t.Context())) })
+			root := &Query{}
+			testSrv := &moduleObjectTestServer{
+				mockServer: &mockServer{moduleSource: &ModuleSource{Kind: ModuleSourceKindDir}},
+				cache:      cache,
+				root:       root,
+			}
+			root.Server = testSrv
+			dag := newCoreDagqlServerForTest(t, root)
+			testSrv.dag = dag
+			installModuleObjectTestModuleClass(dag)
+			sessionContext := func(id string) context.Context {
+				ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: id, SessionID: id})
+				return ContextWithQuery(dagql.ContextWithCache(ctx, cache), root)
+			}
+			producerCtx, consumerCtx := sessionContext("module-producer"), sessionContext("module-consumer")
+			moduleCalls := 0
+			dagql.Fields[*Query]{
+				dagql.Func("replayableModule", func(ctx context.Context, _ *Query, _ struct{}) (*Module, error) {
+					moduleCalls++
+					src := &ModuleSource{
+						Kind:               ModuleSourceKindDir,
+						ModuleName:         "example",
+						ModuleOriginalName: "example",
+						SDKImpl:            &moduleObjectReplayRuntime{},
+					}
+					srcRes, err := dagql.NewObjectResultForCall(src, dag, moduleObjectTestSyntheticCall("example-source", src))
+					if err != nil {
+						return nil, err
+					}
+					return &Module{
+						NameField: "example", OriginalName: "example", Source: dagql.NonNull(srcRes),
+						Deps: NewSchemaBuilder(root, nil),
+					}, nil
+				}),
+			}.Install(dag)
+			var mod dagql.ObjectResult[*Module]
+			assert.NilError(t, dag.Select(producerCtx, dag.Root(), &mod, dagql.Selector{Field: "replayableModule"}))
+			installTypeDefTestClasses(dag)
+			stringType := &TypeDef{Kind: TypeDefKindString}
+			stringTypeRes, err := dagql.NewObjectResultForCall(stringType, dag, moduleObjectTestSyntheticCall("example-string", stringType))
+			assert.NilError(t, err)
+			checkFn := NewFunction("check", stringTypeRes)
+			checkFnRes, err := dagql.NewObjectResultForCall(checkFn, dag, moduleObjectTestSyntheticCall("example-check", checkFn))
+			assert.NilError(t, err)
+			objDef := NewObjectTypeDef("Example", "", nil)
+			objDef.Functions = dagql.ObjectResultArray[*Function]{checkFnRes}
+			obj := &ModuleObject{Module: mod, TypeDef: objDef}
+			assert.NilError(t, obj.Install(producerCtx, dag))
+			if release {
+				assert.NilError(t, cache.ReleaseSession(producerCtx, "module-producer"))
+				assert.Equal(t, 0, cache.Size())
+			}
+
+			// Keep only the installed schema, as a lazy tool binding does. Dispatch
+			// must replay the module and must not reuse its collected result wrapper.
+			var result dagql.AnyObjectResult
+			err = dag.Select(consumerCtx, dag.Root(), &result, dagql.Selector{Field: "example"})
+			assert.NilError(t, err)
+			if release {
+				assert.Equal(t, 2, moduleCalls)
+			} else {
+				assert.Equal(t, 1, moduleCalls)
+			}
+			var output string
+			err = dag.Select(consumerCtx, result, &output, dagql.Selector{Field: "check"})
+			assert.NilError(t, err)
+			assert.Equal(t, "ok", output)
+		})
+	}
 }
 
 func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
