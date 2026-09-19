@@ -227,6 +227,13 @@ type DB struct {
 	agentsAt   uint64
 	agentsInit bool
 
+	// Rewinds are session-wide for the same reason as the roster, and their
+	// memo doubles as the superseded-message index (see DB.Rewinds).
+	rewinds     []*Rewind
+	superseded  map[SpanID]*Rewind
+	rewindsAt   uint64
+	rewindsInit bool
+
 	testIndex *TestIndex
 }
 
