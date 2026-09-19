@@ -1101,6 +1101,23 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 		require.Equal(t, uris(ctx, t, directories), uris(ctx, t, joined.FilterTypes([]string{"Directory"})))
 		require.Equal(t, allURIs, uris(ctx, t, all))
 	})
+	t.Run("directive filters use each workspace settings", func(ctx context.Context, t *testctx.T) {
+		config, err := source.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		skipped := source.WithNewFile("dagger.toml", config+`
+[modules.provider.check]
+skip = ["gen"]
+`).AsWorkspace().Artifacts().FilterURI("dag://gen/stale")
+		enabled := all.FilterURI("dag://gen/stale")
+		for _, joined := range []*dagger.Artifacts{skipped.WithArtifacts(enabled), enabled.WithArtifacts(skipped)} {
+			included := joined.FilterDirectives([]string{"check"})
+			excluded := joined.FilterDirectives([]string{"check"}, dagger.ArtifactsFilterDirectivesOpts{Exclude: true})
+			require.Equal(t, []string{"dag://gen/stale"}, uris(ctx, t, included))
+			require.Equal(t, []string{"dag://gen/stale"}, uris(ctx, t, excluded))
+			require.Len(t, uris(ctx, t, included.WithArtifacts(enabled)), 1)
+			require.Len(t, uris(ctx, t, excluded.WithArtifacts(skipped)), 1)
+		}
+	})
 	t.Run("union preserves workspace identity", func(ctx context.Context, t *testctx.T) {
 		first := all.FilterPath([]string{"base"})
 		second := source.WithNewFile("marker.txt", "other").AsWorkspace().Artifacts().FilterPath([]string{"base"})

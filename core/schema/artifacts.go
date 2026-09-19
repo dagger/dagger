@@ -539,20 +539,43 @@ func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artif
 		}
 		return selected, nil
 	}
-	cfg, err := workspaceEffectiveConfig(ctx, selected.Entries[0].Workspace.Self())
-	if err != nil {
-		return nil, err
+	// A union can contain artifacts from workspaces with different settings.
+	byWorkspace := map[uint64][]*core.Artifact{}
+	for _, artifact := range parent.Entries {
+		id, err := artifact.Workspace.ID()
+		if err != nil {
+			return nil, err
+		}
+		byWorkspace[id.EngineResultID()] = append(byWorkspace[id.EngineResultID()], artifact)
 	}
-	policies, wrappers, err := artifactGeneratorPolicies(ctx, parent.Entries, cfg)
-	if err != nil {
-		return nil, err
+	type workspacePolicy struct {
+		config   *workspace.Config
+		modules  map[string]artifactGeneratorPolicy
+		wrappers map[string]bool
+	}
+	workspacePolicies := map[uint64]workspacePolicy{}
+	for id, entries := range byWorkspace {
+		cfg, err := workspaceEffectiveConfig(ctx, entries[0].Workspace.Self())
+		if err != nil {
+			return nil, err
+		}
+		policies, wrappers, err := artifactGeneratorPolicies(ctx, entries, cfg)
+		if err != nil {
+			return nil, err
+		}
+		workspacePolicies[id] = workspacePolicy{cfg, policies, wrappers}
 	}
 	for _, artifact := range selected.Entries {
 		if artifact.Node == nil || len(artifact.Node.Path()) == 0 {
 			continue
 		}
+		id, err := artifact.Workspace.ID()
+		if err != nil {
+			return nil, err
+		}
+		workspacePolicy := workspacePolicies[id.EngineResultID()]
 		name := artifact.Node.Path()[0]
-		entry := cfg.Modules[name]
+		entry := workspacePolicy.config.Modules[name]
 		nodes := []*core.ModTreeNode{artifact.Node}
 		if generator := artifactGeneratorNode(artifact.Node); generator != nil {
 			nodes = append(nodes, generator)
@@ -570,9 +593,9 @@ func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artif
 				skip = entry.Up.Skip
 			}
 			if len(nodes) > 1 {
-				policy, found := policies[name]
+				policy, found := workspacePolicy.modules[name]
 				if found {
-					if wrappers[policy.source] && !policy.wrapper {
+					if workspacePolicy.wrappers[policy.source] && !policy.wrapper {
 						continue
 					}
 					skip = append(slices.Clone(skip), policy.skip...)
@@ -590,7 +613,7 @@ func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artif
 			}
 		}
 		if !enabled {
-			selected, err = selected.WithoutURI(&dagaddress.Address{Path: strings.Join(artifact.Path, "/")})
+			selected, err = selected.WithoutArtifacts(&core.Artifacts{Entries: []*core.Artifact{artifact}})
 			if err != nil {
 				return nil, err
 			}

@@ -975,7 +975,7 @@ func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	}
 }
 
-// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded
 func (r *Check) CheckType(ctx context.Context) (string, error) {
 	if r.checkType != nil {
 		return *r.checkType, nil
