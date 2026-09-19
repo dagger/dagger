@@ -122,16 +122,21 @@ func (r *payloadRecorder) snapshot() []recordedPayload {
 	return append([]recordedPayload(nil), r.records...)
 }
 
+// testSeenKeys mirrors the production store's contract: ClaimCallPayload is a
+// claiming LoadOrStore, so a second walk over an in-flight digest must see it
+// as taken even before anything was persisted. A non-claiming fake would let
+// the once-per-frame assertions below pass while production amplified every
+// concurrent walk.
 type testSeenKeys struct {
 	keys sync.Map
 }
 
-func (s *testSeenKeys) LoadOrStoreTelemetrySeenKey(key string) bool {
+func (s *testSeenKeys) ClaimCallPayload(key string) bool {
 	_, seen := s.keys.LoadOrStore(key, struct{}{})
-	return seen
+	return !seen
 }
 
-func (s *testSeenKeys) StoreTelemetrySeenKey(key string) {
+func (s *testSeenKeys) CallPayloadDelivered(key string) {
 	s.keys.Store(key, struct{}{})
 }
 
@@ -140,9 +145,22 @@ type alreadySeenTelemetryStore struct{}
 func (alreadySeenTelemetryStore) LoadOrStoreTelemetrySeenKey(string) bool { return true }
 func (alreadySeenTelemetryStore) StoreTelemetrySeenKey(string)            {}
 
+type testSpanSeenKeys struct {
+	keys sync.Map
+}
+
+func (s *testSpanSeenKeys) LoadOrStoreTelemetrySeenKey(key string) bool {
+	_, seen := s.keys.LoadOrStore(key, struct{}{})
+	return seen
+}
+
+func (s *testSpanSeenKeys) StoreTelemetrySeenKey(key string) {
+	s.keys.Store(key, struct{}{})
+}
+
 type payloadRoutingTestServer struct {
 	*mockServer
-	payloadStore dagql.TelemetrySeenKeyStore
+	payloadStore dagql.CallPayloadSeenKeyStore
 	spanStore    dagql.TelemetrySeenKeyStore
 }
 
@@ -153,7 +171,7 @@ func (s *payloadRoutingTestServer) TelemetrySeenKeyStore(context.Context) (dagql
 	return alreadySeenTelemetryStore{}, nil
 }
 
-func (s *payloadRoutingTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+func (s *payloadRoutingTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.CallPayloadSeenKeyStore, error) {
 	return s.payloadStore, nil
 }
 
@@ -196,7 +214,7 @@ func TestAroundFuncRoutesPayloadsBeforeSpanDeduplication(t *testing.T) {
 	agent, _, _ := skillsChain()
 	req := &dagql.CallRequest{ResultCall: agent}
 
-	runRoute := func(store dagql.TelemetrySeenKeyStore) (*payloadRecorder, context.Context) {
+	runRoute := func(store dagql.CallPayloadSeenKeyStore) (*payloadRecorder, context.Context) {
 		recorder, ctx := payloadRecorderCtx(t)
 		ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
 			mockServer:   &mockServer{},
@@ -229,7 +247,7 @@ func TestAroundFuncLogsOnlyPayloadsMissingFromSpans(t *testing.T) {
 	ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
 		mockServer:   &mockServer{},
 		payloadStore: &testSeenKeys{},
-		spanStore:    &testSeenKeys{},
+		spanStore:    &testSpanSeenKeys{},
 	}})
 	req := &dagql.CallRequest{ResultCall: agent}
 	_, done := AroundFunc(ctx, req)
@@ -306,8 +324,7 @@ func TestRecordCallPayloadsSkipsFramesDeliveredBySpans(t *testing.T) {
 	require.NoError(t, err)
 
 	seen := &testSeenKeys{}
-	require.True(t, dagql.ShouldEmitCallPayload(seen, spannedDigest.String()),
-		"fixture must claim the transitive frame as span-delivered")
+	seen.CallPayloadDelivered(spannedDigest.String())
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
 
 	require.Equal(t, 4, rec.emissionCount())
@@ -365,4 +382,36 @@ func TestRecordCallPayloadsRequiresSeenKeyStore(t *testing.T) {
 
 	recordCallPayloads(ctx, nil, rootDigest.String(), agent, false)
 	require.Equal(t, 0, rec.len())
+}
+
+// Concurrent walks over a shared chain — parallel selections, an LLM loop
+// re-sending the same chain — must claim each frame at the producer, before
+// any recipe work, rather than rely on the exporter to dedupe after the fact.
+// Otherwise every walk that starts before the first one's records are
+// persisted rebuilds, encodes and emits the whole closure again.
+func TestRecordCallPayloadsClaimsBeforeConcurrentWalks(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	agent, _, _ := skillsChain()
+	rootDigest, err := agent.RecipeDigest(ctx)
+	require.NoError(t, err)
+
+	seen := &testSeenKeys{}
+	const walks = 50
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range walks {
+		wg.Go(func() {
+			<-start
+			recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
+		})
+	}
+	close(start)
+	wg.Wait()
+	require.Equal(t, 5, rec.emissionCount(),
+		"concurrent walks over the same chain must emit each frame once")
+
+	// Nothing has been persisted yet, but the claims are already spent: a
+	// sequential walk in that window must not re-emit either.
+	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
+	require.Equal(t, 5, rec.emissionCount())
 }

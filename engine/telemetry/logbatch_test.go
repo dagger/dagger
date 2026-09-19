@@ -2,23 +2,33 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 	"unsafe"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	otelgo "github.com/dagger/otel-go"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
 	logapi "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"google.golang.org/protobuf/proto"
 )
 
 // countingLogExporter records how many log records arrive and when the first
 // batch lands.
 type countingLogExporter struct {
-	mu       sync.Mutex
-	exported int
-	firstAt  time.Time
+	mu        sync.Mutex
+	exported  int
+	batches   int
+	flushes   int
+	shutdowns int
+	firstAt   time.Time
 }
 
 var _ sdklog.Exporter = (*countingLogExporter)(nil)
@@ -29,17 +39,43 @@ func (e *countingLogExporter) Export(_ context.Context, recs []sdklog.Record) er
 	if e.exported == 0 && len(recs) > 0 {
 		e.firstAt = time.Now()
 	}
+	if len(recs) > 0 {
+		e.batches++
+	}
 	e.exported += len(recs)
 	return nil
 }
 
-func (e *countingLogExporter) Shutdown(context.Context) error   { return nil }
-func (e *countingLogExporter) ForceFlush(context.Context) error { return nil }
+func (e *countingLogExporter) Shutdown(context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.shutdowns++
+	return nil
+}
+
+func (e *countingLogExporter) ForceFlush(context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.flushes++
+	return nil
+}
 
 func (e *countingLogExporter) count() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.exported
+}
+
+func (e *countingLogExporter) batchCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.batches
+}
+
+func (e *countingLogExporter) lifecycleCounts() (int, int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.flushes, e.shutdowns
 }
 
 // TestLogBatchProcessorIdleChurnBounded guards the property that motivated
@@ -161,4 +197,362 @@ func TestLogBatchProcessorTrickleDelivery(t *testing.T) {
 	require.Eventually(t, func() bool { return exp.count() >= 1 },
 		2*LogExportInterval, 5*time.Millisecond,
 		"a single sparse record must arrive within ~one export interval")
+}
+
+func TestCallPayloadBatchProcessorFastPathRecordShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		scope string
+		body  logapi.Value
+		attrs []logapi.KeyValue
+		want  bool
+	}{
+		{
+			name:  "valid raw payload",
+			scope: "test.core",
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)},
+			want:  true,
+		},
+		{
+			name:  "other content type",
+			scope: "test.core",
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, "application/json")},
+		},
+		{
+			name:  "wrong content type kind",
+			scope: "test.core",
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.Bool(otelgo.ContentTypeAttr, true)},
+		},
+		{
+			name:  "missing content type",
+			scope: "test.core",
+			body:  logapi.BytesValue([]byte("payload")),
+		},
+		{
+			name:  "wrong body kind",
+			scope: "test.core",
+			body:  logapi.StringValue("payload"),
+			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			exp := &countingLogExporter{}
+			proc := NewCallPayloadBatchProcessor(exp)
+			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+
+			var record logapi.Record
+			record.SetBody(test.body)
+			record.AddAttributes(test.attrs...)
+			provider.Logger(test.scope).Emit(t.Context(), record)
+
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			require.NoError(t, proc.ForceFlush(ctx))
+			if test.want {
+				require.Equal(t, 1, exp.count())
+			} else {
+				require.Zero(t, exp.count(), "malformed reserved record must remain on the normal batch path")
+			}
+			require.NoError(t, proc.Shutdown(ctx))
+		})
+	}
+}
+
+func TestCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
+	t.Parallel()
+
+	exp := &countingLogExporter{}
+	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+
+	var ordinary sdklog.Record
+	ordinary.SetBody(logapi.StringValue("ordinary"))
+	require.NoError(t, proc.OnEmit(t.Context(), &ordinary))
+
+	var payload logapi.Record
+	payload.SetBody(logapi.BytesValue([]byte("payload")))
+	payload.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	logger := provider.Logger("test.core")
+	const records = 2*LogExportMaxBatchSize + 1
+	for range records {
+		logger.Emit(t.Context(), payload)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, proc.ForceFlush(ctx))
+	require.Equal(t, records, exp.count())
+	require.Equal(t, 3, exp.batchCount(), "the full queued closure must drain in back-to-back bounded batches")
+
+	// The worker has no idle poll loop, so draining leaves no delayed empty or
+	// duplicate exports behind.
+	time.Sleep(2 * CallPayloadExportDelay)
+	require.Equal(t, records, exp.count())
+
+	require.NoError(t, proc.Shutdown(ctx))
+	flushes, shutdowns := exp.lifecycleCounts()
+	require.Zero(t, flushes, "the payload processor does not own the shared exporter")
+	require.Zero(t, shutdowns, "the payload processor does not own the shared exporter")
+}
+
+func TestWithoutCallPayloadsKeepsPayloadsOffOrdinaryPath(t *testing.T) {
+	t.Parallel()
+
+	ordinaryExp := &countingLogExporter{}
+	payloadExp := &countingLogExporter{}
+	payloadProc := NewCallPayloadBatchProcessor(payloadExp)
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(payloadProc),
+		sdklog.WithProcessor(WithoutCallPayloads(sdklog.NewSimpleProcessor(ordinaryExp))),
+	)
+	logger := provider.Logger("test.core")
+
+	var payload logapi.Record
+	payload.SetBody(logapi.BytesValue([]byte("payload")))
+	payload.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	var ordinary logapi.Record
+	ordinary.SetBody(logapi.StringValue("exec output"))
+	for range 3 {
+		logger.Emit(t.Context(), payload)
+		logger.Emit(t.Context(), ordinary)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, provider.ForceFlush(ctx))
+	require.Equal(t, 3, ordinaryExp.count(),
+		"ordinary logs must still reach the ordinary processor")
+	require.Equal(t, 3, payloadExp.count(),
+		"payloads must be exported exactly once, by the payload processor")
+	require.NoError(t, provider.Shutdown(ctx))
+}
+
+// flakyLogExporter fails the first failures exports, then records every
+// record body it is handed in order.
+type flakyLogExporter struct {
+	mu       sync.Mutex
+	failures int
+	attempts int
+	bodies   []string
+	batches  []int
+}
+
+func (e *flakyLogExporter) Export(_ context.Context, recs []sdklog.Record) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.attempts++
+	if e.attempts <= e.failures {
+		return errors.New("client db unavailable")
+	}
+	e.batches = append(e.batches, len(recs))
+	for _, rec := range recs {
+		e.bodies = append(e.bodies, string(rec.Body().AsBytes()))
+	}
+	return nil
+}
+
+func (e *flakyLogExporter) stats() (int, []string, []int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.attempts, append([]string(nil), e.bodies...), append([]int(nil), e.batches...)
+}
+
+func (*flakyLogExporter) Shutdown(context.Context) error   { return nil }
+func (*flakyLogExporter) ForceFlush(context.Context) error { return nil }
+
+func payloadRecordWithBody(body string) logapi.Record {
+	var rec logapi.Record
+	rec.SetBody(logapi.BytesValue([]byte(body)))
+	rec.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	return rec
+}
+
+// The payload processor is the only transport for payload records, so a
+// failed export must be retried by the processor itself — in order, so a
+// root never lands after the dependencies emitted behind it — with records
+// emitted during the backoff queued behind the failed batch.
+func TestCallPayloadBatchProcessorRetriesFailedBatchInOrder(t *testing.T) {
+	t.Parallel()
+
+	exp := &flakyLogExporter{failures: 2}
+	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	logger := provider.Logger("test.core")
+
+	const first = LogExportMaxBatchSize + 1
+	for i := range first {
+		logger.Emit(t.Context(), payloadRecordWithBody(strconv.Itoa(i)))
+	}
+	require.Eventually(t, func() bool {
+		attempts, _, _ := exp.stats()
+		return attempts >= 1
+	}, time.Second, time.Millisecond, "the first batch must reach the exporter")
+	// Emitted while the failed batch is waiting for its retry.
+	logger.Emit(t.Context(), payloadRecordWithBody("late"))
+
+	require.Eventually(t, func() bool {
+		_, bodies, _ := exp.stats()
+		return len(bodies) == first+1
+	}, 5*time.Second, 5*time.Millisecond, "every record must land once the exporter recovers")
+
+	attempts, bodies, batches := exp.stats()
+	require.Equal(t, 2+2, attempts, "two failed attempts, then the two batches in one drain")
+	want := make([]string, 0, first+1)
+	for i := range first {
+		want = append(want, strconv.Itoa(i))
+	}
+	want = append(want, "late")
+	require.Equal(t, want, bodies, "retries must preserve emission order and never duplicate")
+	require.Equal(t, []int{LogExportMaxBatchSize, 2}, batches)
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, proc.Shutdown(ctx))
+}
+
+// A batch that never lands must eventually be dropped rather than wedge the
+// queue: the session exporter has released its records' delivery claims, so a
+// later closure walk can still repair them.
+func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
+	t.Parallel()
+
+	exp := &flakyLogExporter{failures: CallPayloadMaxExportAttempts}
+	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	logger := provider.Logger("test.core")
+	logger.Emit(t.Context(), payloadRecordWithBody("doomed"))
+
+	// Each explicit flush is one attempt, without waiting out the backoff.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var err error
+	for range CallPayloadMaxExportAttempts {
+		err = proc.ForceFlush(ctx)
+		require.Error(t, err)
+	}
+	require.ErrorContains(t, err, "dropping 1 call payload records")
+	attempts, bodies, _ := exp.stats()
+	require.Equal(t, CallPayloadMaxExportAttempts, attempts)
+	require.Empty(t, bodies)
+
+	// The queue is clear: a later record exports on the first try.
+	logger.Emit(t.Context(), payloadRecordWithBody("repaired"))
+	require.NoError(t, proc.ForceFlush(ctx))
+	_, bodies, _ = exp.stats()
+	require.Equal(t, []string{"repaired"}, bodies)
+	require.NoError(t, proc.Shutdown(ctx))
+}
+
+func TestCallPayloadRetryDelayBackoff(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, CallPayloadRetryBaseDelay, callPayloadRetryDelay(1))
+	require.Equal(t, 2*CallPayloadRetryBaseDelay, callPayloadRetryDelay(2))
+	require.Equal(t, 4*CallPayloadRetryBaseDelay, callPayloadRetryDelay(3))
+	require.Equal(t, CallPayloadRetryMaxDelay, callPayloadRetryDelay(CallPayloadMaxExportAttempts))
+	require.Equal(t, CallPayloadRetryMaxDelay, callPayloadRetryDelay(100))
+}
+
+type blockingLogExporter struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+
+	mu       sync.Mutex
+	exported int
+	batches  []int
+}
+
+func (e *blockingLogExporter) Export(_ context.Context, records []sdklog.Record) error {
+	e.once.Do(func() { close(e.started) })
+	<-e.release
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.exported += len(records)
+	e.batches = append(e.batches, len(records))
+	return nil
+}
+
+func (e *blockingLogExporter) stats() (int, []int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.exported, append([]int(nil), e.batches...)
+}
+
+func (*blockingLogExporter) Shutdown(context.Context) error   { return nil }
+func (*blockingLogExporter) ForceFlush(context.Context) error { return nil }
+
+func TestCallPayloadBatchProcessorLosslessWhileExporterBlocked(t *testing.T) {
+	t.Parallel()
+
+	exp := &blockingLogExporter{started: make(chan struct{}), release: make(chan struct{})}
+	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	logger := provider.Logger("test.core")
+
+	// Build distinct, valid raw call payloads so the burst models a real recipe
+	// closure rather than duplicate log traffic.
+	const records = 2*LogQueueSize + 1
+	payloads := make([]logapi.Record, records+1)
+	for i := range payloads {
+		body, err := proto.Marshal(&callpbv1.Call{
+			Field: "dependency",
+			Type:  &callpbv1.Type{NamedType: "Thing"},
+			Args: []*callpbv1.Argument{{
+				Name: "index",
+				Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{
+					String_: strconv.Itoa(i),
+				}},
+			}},
+		})
+		require.NoError(t, err)
+		payloads[i].SetBody(logapi.BytesValue(body))
+		payloads[i].AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	}
+	logger.Emit(t.Context(), payloads[0])
+
+	select {
+	case <-exp.started:
+	case <-time.After(time.Second):
+		t.Fatal("payload batch did not reach exporter")
+	}
+
+	// Hold the exporter while enqueueing more than the old 2048-record cap.
+	// Agent recipes can be tens of thousands of calls; dropping the tail from
+	// both this fast path and the ordinary bounded log processor left the root
+	// claimed while nested ID arguments such as Directory.withChanges(changes:)
+	// never reached the spawning client. OnEmit must stay nonblocking, but this
+	// dedicated immutable-payload queue must retain the entire burst.
+	returned := make(chan struct{})
+	go func() {
+		for i := 1; i < len(payloads); i++ {
+			logger.Emit(context.Background(), payloads[i])
+		}
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("OnEmit blocked behind the exporter")
+	}
+
+	close(exp.release)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, proc.ForceFlush(ctx))
+	exported, batches := exp.stats()
+	require.Equal(t, records+1, exported,
+		"every dependency in an oversized call-payload closure must reach the exporter")
+	for _, size := range batches {
+		require.LessOrEqual(t, size, LogExportMaxBatchSize,
+			"lossless ingress must still use bounded exporter batches")
+	}
+	require.NoError(t, proc.Shutdown(ctx))
 }

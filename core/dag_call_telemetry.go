@@ -30,50 +30,35 @@ import (
 // transports claim digests from the same delivery-domain store, so the closure
 // walk below publishes logs only for frames a span did not already deliver.
 //
-// The claim store is scoped to the emitting client's DELIVERY DOMAIN — the
-// client and its ancestors, exactly the per-client DBs telemetry fans out to
-// (Query.CallPayloadSeenKeyStore) — NOT to the session. A session-wide claim
-// let one client's emission permanently satisfy the claim for clients that
-// never received it: a client attaching to the session later (e.g. a nested
-// `dagger agent`) could then never obtain the payloads for frames claimed
-// before it existed, leaving every agent whose chain crossed such a frame
-// unaddressable there. Delivery-domain claims mean a later client's first
-// closure walk re-publishes into its own domain; consumers dedupe by digest,
-// so the bounded re-publication is harmless.
+// The claim store is scoped per target — the client and its ancestors,
+// exactly the per-client DBs telemetry fans out to — NOT to the session. A
+// session-wide claim could let one client's emission permanently satisfy a
+// client that never received it. Producers CLAIM each frame before doing any
+// recipe work, so concurrent walks over a shared chain (parallel selections,
+// an LLM loop re-sending the same chain) build and encode each frame once for
+// the whole route; the session log exporter then settles those claims per
+// target once persistence succeeds, releasing any target whose write failed.
 
 // recordCallPayloads publishes the missing frames in the transitive closure of
 // a call's ID over the log channel — through receivers, modules, arguments (ID
 // literals inside lists and objects included) and implicit inputs — minus
-// digests already delivered by a span or log in the client's delivery domain.
+// digests already claimed by a span or log in the client's delivery domain.
 //
-// rootOnSpan means the caller already claimed the root for a recording span;
-// the walk skips its log but still visits the closure. Otherwise this function
-// claims the root itself and emits it as a log. A previously claimed root
-// short-circuits the whole walk: reachability is transitive, so its first claim
-// already accompanied a walk that delivered every then-missing frame.
+// rootOnSpan means the root payload rides a recording span: the caller marks
+// it delivered and the walk skips its log while still visiting the closure.
+// Otherwise, including when presentation-span deduplication suppresses the
+// call, this function claims the root itself and emits it as a log. A root
+// already claimed short-circuits the whole walk: reachability is transitive,
+// so the claim's own walk already covered every frame this one would.
 //
 // Everything here is best-effort. A payload that cannot be built or encoded is
 // dropped rather than failing the call; the consequence is a client that
-// cannot rebuild that one chain, which is exactly the status quo.
+// cannot rebuild that one chain, which is exactly the status quo. Such a
+// frame stays claimed on purpose: a recipe that cannot be rebuilt fails the
+// same way on every walk, and releasing it would only repeat that work.
 func recordCallPayloadsForSpan(
 	ctx context.Context,
-	store dagql.TelemetrySeenKeyStore,
-	callDigest string,
-	frame *dagql.ResultCall,
-	rootOnSpan bool,
-) {
-	if rootOnSpan {
-		if dagql.ShouldEmitCallPayload(store, callDigest) {
-			recordCallPayloads(ctx, store, callDigest, frame, true)
-		}
-		return
-	}
-	recordCallPayloads(ctx, store, callDigest, frame, false)
-}
-
-func recordCallPayloads(
-	ctx context.Context,
-	store dagql.TelemetrySeenKeyStore,
+	store dagql.CallPayloadSeenKeyStore,
 	callDigest string,
 	frame *dagql.ResultCall,
 	rootOnSpan bool,
@@ -81,8 +66,27 @@ func recordCallPayloads(
 	if store == nil || frame == nil {
 		return
 	}
-	if !rootOnSpan && !dagql.ShouldEmitCallPayload(store, callDigest) {
-		// Someone already published this call's payload, and whoever did also
+	if rootOnSpan {
+		if !store.ClaimCallPayload(callDigest) {
+			return
+		}
+		store.CallPayloadDelivered(callDigest)
+	}
+	recordCallPayloads(ctx, store, callDigest, frame, rootOnSpan)
+}
+
+func recordCallPayloads(
+	ctx context.Context,
+	store dagql.CallPayloadSeenKeyStore,
+	callDigest string,
+	frame *dagql.ResultCall,
+	rootOnSpan bool,
+) {
+	if store == nil || frame == nil {
+		return
+	}
+	if !rootOnSpan && !store.ClaimCallPayload(callDigest) {
+		// Someone already claimed this call's payload, and whoever did also
 		// walked its closure — reachability is transitive, so that walk
 		// covered everything this one would.
 		return
@@ -118,9 +122,9 @@ func recordCallPayloads(
 				return
 			}
 		} else {
-			// Claim every other frame before encoding so repeated closure walks
-			// skip payloads already delivered by either transport.
-			if !dagql.ShouldEmitCallPayload(store, dgst) {
+			// Claim every other frame before encoding so concurrent and repeated
+			// closure walks skip payloads already claimed by either transport.
+			if !store.ClaimCallPayload(dgst) {
 				return
 			}
 		}
