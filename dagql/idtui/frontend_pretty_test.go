@@ -1646,8 +1646,9 @@ func (h *focusedEditShellHandler) EditFromID(_ context.Context, encoded string) 
 
 // TestPromptEditTarget covers the frontend half of rewind/reword/resume: the
 // post-withPrompt digest is rewound through its receiver, same-boundary prompts
-// map oldest-to-newest, reply rows edit their originating prompt, and a nested
-// worker row cannot be routed into the focused chief.
+// map oldest-to-newest, only user prompt rows are edit targets (a reply row
+// must not rewind the turn it belongs to), and a nested worker row cannot be
+// routed into the focused chief.
 func TestPromptEditTarget(t *testing.T) {
 	db := dagui.NewDB()
 	base := &callpbv1.Call{
@@ -1705,9 +1706,10 @@ func TestPromptEditTarget(t *testing.T) {
 	require.Equal(t, "second wording", prompt)
 	require.NotEmpty(t, encoded)
 
-	prompt, _, ok = fe.promptEditTarget(db.Spans.Map[replyID])
-	require.True(t, ok)
-	require.Equal(t, "second wording", prompt, "reply edits its originating prompt")
+	_, _, ok = fe.promptEditTarget(db.Spans.Map[replyID])
+	require.False(t, ok, "a reply row must not rewind the turn it belongs to")
+	require.False(t, fe.editablePrompt(db.Spans.Map[replyID]), "e must not be offered on a reply row")
+	require.True(t, fe.editablePrompt(db.Spans.Map[secondID]))
 
 	_, _, ok = fe.promptEditTarget(db.Spans.Map[workerReplyID])
 	require.False(t, ok, "nested worker must not rewind the focused chief")
@@ -1725,8 +1727,8 @@ func TestPromptEditTarget(t *testing.T) {
 	live.setupTUI()
 	live.startShell(context.Background(), handler)
 	live.enterNavMode()
-	live.FocusedSpan = replyID
-	_, wantEncoded, ok := live.promptEditTarget(db.Spans.Map[replyID])
+	live.FocusedSpan = secondID
+	_, wantEncoded, ok := live.promptEditTarget(db.Spans.Map[secondID])
 	require.True(t, ok)
 
 	live.editPrompt()
