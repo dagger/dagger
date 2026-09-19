@@ -44,7 +44,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		}
 	}
 	cmd, commandArgs := resolveCommand(root, args)
-	if cmd != workspaceCmd && cmd != artifactsCmd && cmd.Parent() != artifactsCmd {
+	if cmd != workspaceCmd && cmd != artifactsCmd && cmd.Parent() != artifactsCmd && cmd != checksCmd {
 		return nil
 	}
 	if cmd != workspaceCmd {
@@ -57,6 +57,9 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 			}
 		}
 		if !discover {
+			if cmd == checksCmd {
+				return nil
+			}
 			return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
 		}
 		// parseGlobalFlags already removed flags and their values.
@@ -81,10 +84,13 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 			for _, def := range definitions {
 				names = append(names, def.Name, def.QualifiedName, def.Identifier)
 			}
-			registerArtifactDimensionFlags(artifactsCmd, names)
+			registerArtifactDimensionFlags(cmd, names)
 			return nil
 		}); err != nil {
 			return err
+		}
+		if cmd == checksCmd {
+			return nil
 		}
 		return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
 	}
