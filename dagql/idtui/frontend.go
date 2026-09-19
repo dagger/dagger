@@ -157,17 +157,16 @@ type ViewHandle interface {
 }
 
 // TraceFrontend is the optional interface 'dagger trace' drives for
-// incremental loading and report zooming: snapshot import, lazy span/log
-// providers, surfaced-failure prefetch, and name-based zoom targets. Only the
-// pretty frontend implements it; other frontends receive a plain OTLP
-// span/log stream instead.
+// incremental loading and report zooming: lazy span/log providers,
+// surfaced-failure prefetch, and name-based zoom targets. Spans arrive through
+// the ordinary OTLP exporters, carrying the dagger.io/ui.* attributes Cloud's
+// dagui view stamps on them (child count, has-logs) that the lazy-expand
+// affordance needs. Only the pretty frontend implements it; other frontends
+// receive the whole trace as a plain OTLP span/log stream instead.
 type TraceFrontend interface {
 	// SetTraceID lets the frontend point surfaced failure logs at
 	// 'dagger cloud logs <trace> <span>' for the full output.
 	SetTraceID(string)
-	// ImportSnapshots folds Cloud span snapshots (carrying ChildCount and
-	// Partial, which OTLP drops) into the frontend's DB.
-	ImportSnapshots([]dagui.SpanSnapshot)
 	// SetLogProvider/SetSpanProvider register the lazy fetchers fired when a
 	// span is expanded or a failure is surfaced.
 	SetLogProvider(func(id dagui.SpanID, descendants bool))
@@ -185,7 +184,8 @@ type TraceFrontend interface {
 	// suggest commit-scoped re-run commands.
 	SetCIContext(commit string, isNativeCI bool)
 	// ResolveSpanTarget resolves a --check/--test name against the loaded
-	// view, matching the selection rules the report rendered with.
+	// trace, matching the selection rules the report rendered with and
+	// falling back to a raw span scan for names the surfaced view hides.
 	ResolveSpanTarget(check, test string) (dagui.SpanID, bool)
 	// ZoomToSpan scopes the view to a span; RequestZoomLogs fetches the
 	// logs the zoomed report will render.

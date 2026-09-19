@@ -9,15 +9,16 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/internal/cloud"
 	"github.com/vito/tuist"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // traceSource supplies a trace's spans and logs to a traceSession on demand,
 // the way the CLI fetches from Cloud: the priority spans up front, then a span's
-// children and logs lazily when it's expanded or rendered. liveSource hits
-// Cloud (trace_live_test.go); staticSource serves an in-memory tree for offline
-// smoke tests (trace_static_test.go).
+// children and logs lazily when it's expanded or rendered. staticSource serves
+// an in-memory tree for offline smoke tests (trace_static_test.go).
 type traceSource interface {
 	// traceID is the hex trace id (for log record attribution).
 	traceID() string
@@ -27,7 +28,33 @@ type traceSource interface {
 	// none or the whole tree is already loaded (expanding is then local).
 	children(id dagui.SpanID) []dagui.SpanSnapshot
 	// logs returns a span's logs; descendants selects the rolled-up form.
-	logs(id dagui.SpanID, descendants bool) []cloud.LogMessage
+	logs(id dagui.SpanID, descendants bool) []traceLog
+}
+
+// traceLog is one text log record as a source serves it: the span it belongs
+// to (hex; empty for unattributed) and its body.
+type traceLog struct {
+	SpanID string
+	Body   string
+}
+
+// traceLogRecords converts served logs into the SDK records the frontend's
+// LogExporter takes, attributed to traceID.
+func traceLogRecords(traceID string, logs []traceLog) []sdklog.Record {
+	tid, _ := trace.TraceIDFromHex(traceID)
+	records := make([]sdklog.Record, 0, len(logs))
+	for _, l := range logs {
+		var rec sdklog.Record
+		rec.SetTimestamp(time.Now())
+		rec.SetBody(otellog.StringValue(l.Body))
+		rec.SetTraceID(tid)
+		if l.SpanID != "" {
+			sid, _ := trace.SpanIDFromHex(l.SpanID)
+			rec.SetSpanID(sid)
+		}
+		records = append(records, rec)
+	}
+	return records
 }
 
 // traceSession drives the real interactive pretty frontend as a black box,
@@ -58,7 +85,7 @@ type traceSession struct {
 	requestedLogs map[string]bool // (hex|desc) already requested
 
 	pendingSpans []dagui.SpanSnapshot
-	pendingLogs  []cloud.LogMessage
+	pendingLogs  []traceLog
 }
 
 // newTraceSession builds the frontend, wires the providers, loads the priority
@@ -140,9 +167,9 @@ func (s *traceSession) serveLogs(id dagui.SpanID, descendants bool) {
 
 	msgs := s.src.logs(id, descendants)
 	if descendants {
-		rekeyed := make([]cloud.LogMessage, len(msgs))
+		rekeyed := make([]traceLog, len(msgs))
 		for i, m := range msgs {
-			m.SpanID = &hex
+			m.SpanID = hex
 			rekeyed[i] = m
 		}
 		msgs = rekeyed
@@ -164,7 +191,7 @@ func (s *traceSession) deliver() bool {
 		s.pendingSpans = nil
 	}
 	if len(s.pendingLogs) > 0 {
-		records := cloud.LogMessagesToRecords(s.src.traceID(), s.pendingLogs)
+		records := traceLogRecords(s.src.traceID(), s.pendingLogs)
 		_ = s.fe.LogExporter().Export(context.Background(), records)
 		s.pendingLogs = nil
 	}
@@ -218,7 +245,7 @@ func (s *traceSession) Zoom(id dagui.SpanID) string {
 func (s *traceSession) Network() *fetchStats { return s.net }
 
 // jsonBytes approximates the wire size of a fetched batch (the real client
-// counts raw SSE payload bytes; JSON size is the closest deterministic proxy).
+// counts raw stream payload bytes; JSON size is the closest deterministic proxy).
 func jsonBytes(v any) int64 {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -227,12 +254,13 @@ func jsonBytes(v any) int64 {
 	return int64(len(b))
 }
 
-// fetchOp names a recorded fetch, matching the cloud client's --debug buckets.
+// fetchOp names a recorded fetch, matching the cloud client's --debug buckets
+// (the OTLP stream kinds).
 type fetchOp string
 
 const (
-	opSpanUpdates fetchOp = "GetSpanUpdates"
-	opSpanLogs    fetchOp = "GetSpanLogs"
+	opSpanUpdates fetchOp = "traces"
+	opSpanLogs    fetchOp = "logs"
 )
 
 // fetchStats accumulates per-op request/record/byte counts like the cloud
