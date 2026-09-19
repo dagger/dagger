@@ -130,7 +130,7 @@ func init() {
 	gqlClient := getClientParams()
 	dag = &Client{
 		Query:  core.NewQuery(gqlClient),
-		client: gqlClient,
+		client: core.WrapClient(gqlClient),
 	}
 }
 
