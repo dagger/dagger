@@ -87,6 +87,8 @@
       max-width: 1100px;
     }
 
+    .lede strong { color: var(--ink); font-weight: 650; }
+
     .report {
       border: 1px solid rgba(183, 243, 107, .35);
       background: rgba(183, 243, 107, .075);
@@ -212,7 +214,7 @@
     <section class="slide active" aria-label="How cache savings are calculated">
       <div class="eyebrow">Dagger cache report · 01</div>
       <h1>What did the cache save?</h1>
-      <p class="lede">Compare the warm run with the coldest compatible local run of the same workflow. Only positive, available differences are shown.</p>
+      <p class="lede">Compare the warm run with the coldest compatible local run of the same workflow. Only positive, available differences are shown. <strong>For timing, this uses wcprof—Dagger’s wall-clock profiler—to track what ran, waited, and overlapped so parallel work is not double-counted.</strong></p>
       <div class="report">♻️ Cache hits 108/266 (41%) ⚡ Saved ~23s wall · ~2m42s CPU · ~1.2 GB peak memory · ~120 MB net rx · ~31 MB net tx</div>
 
       <div class="metrics">
