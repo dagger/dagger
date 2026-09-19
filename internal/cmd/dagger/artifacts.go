@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
@@ -204,34 +205,41 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 	if err != nil {
 		return err
 	}
+	flags, err := artifactKeyFlags(cmd)
+	if err != nil {
+		return err
+	}
 	return withEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
 		// Flags bind in the combined path scope; address queries bind in their own scope.
-		defs, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}))
-		if err != nil {
-			return err
-		}
-		flags, err := artifactKeyFlags(cmd)
-		if err != nil {
-			return err
-		}
-		if err := bindArtifactDimensions(flags, defs); err != nil {
-			return err
-		}
-		if dimension != "" {
-			dimension, err = resolveArtifactDimensionName(defs, dimension)
+		if len(flags) > 0 || dimension != "" {
+			defs, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}))
 			if err != nil {
 				return err
+			}
+			if err := validateArtifactDimensionFlags(cmd, defs); err != nil {
+				return err
+			}
+			if err := bindArtifactDimensions(flags, defs); err != nil {
+				return err
+			}
+			if dimension != "" {
+				dimension, err = defs.Resolve(dimension)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		var lines []commandListItem
 		for _, addr := range parsed {
 			artifacts := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})
-			pathDefs, err := artifactDimensions(ctx, ec.Dagger(), artifacts)
-			if err != nil {
-				return err
-			}
-			if err := bindArtifactDimensions(addr.Query, pathDefs); err != nil {
-				return err
+			if len(addr.Query) > 0 {
+				pathDefs, err := artifactDimensions(ctx, ec.Dagger(), artifacts)
+				if err != nil {
+					return err
+				}
+				if err := bindArtifactDimensions(addr.Query, pathDefs); err != nil {
+					return err
+				}
 			}
 			if typeName := cmd.Annotations[artifactListType]; typeName != "" {
 				artifacts = artifacts.FilterTypes([]string{typeName})
@@ -261,17 +269,13 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 	})
 }
 
-type artifactDimensionDefinition struct {
-	Identifier, Name, QualifiedName string
-}
-
-func artifactDimensions(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]artifactDimensionDefinition, error) {
+func artifactDimensions(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) (artifact.Dimensions, error) {
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var res struct {
-		Node struct{ DimensionDefinitions []artifactDimensionDefinition }
+		Node struct{ DimensionDefinitions artifact.Dimensions }
 	}
 	err = dag.Do(ctx, &dagger.Request{
 		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { identifier name qualifiedName } } } }`,
@@ -280,30 +284,24 @@ func artifactDimensions(ctx context.Context, dag *dagger.Client, artifacts *dagg
 	return res.Node.DimensionDefinitions, err
 }
 
-func resolveArtifactDimensionName(defs []artifactDimensionDefinition, name string) (string, error) {
-	for _, def := range defs {
-		if def.Identifier == name {
-			return name, nil
+func validateArtifactDimensionFlags(cmd *cobra.Command, defs artifact.Dimensions) error {
+	var err error
+	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		if err != nil || len(flag.Annotations[artifactDimensionFlag]) == 0 {
+			return
 		}
-	}
-	var matches []string
-	for _, def := range defs {
-		if def.Name == name || def.QualifiedName == name {
-			matches = append(matches, def.Identifier)
+		if !slices.ContainsFunc(defs, func(def *artifact.Dimension) bool {
+			return flag.Name == def.Identifier || flag.Name == def.Name || flag.Name == def.QualifiedName
+		}) {
+			err = fmt.Errorf("unknown flag: --%s", flag.Name)
 		}
-	}
-	if len(matches) > 1 {
-		return "", fmt.Errorf("ambiguous dimension %q: use %s", name, strings.Join(matches, " or "))
-	}
-	if len(matches) == 1 {
-		return matches[0], nil
-	}
-	return name, nil
+	})
+	return err
 }
 
-func bindArtifactDimensions(pairs []dagaddress.Pair, defs []artifactDimensionDefinition) error {
+func bindArtifactDimensions(pairs []dagaddress.Pair, defs artifact.Dimensions) error {
 	for i := range pairs {
-		id, err := resolveArtifactDimensionName(defs, pairs[i].Dimension)
+		id, err := defs.Resolve(pairs[i].Dimension)
 		if err != nil {
 			return err
 		}
@@ -312,7 +310,7 @@ func bindArtifactDimensions(pairs []dagaddress.Pair, defs []artifactDimensionDef
 	return nil
 }
 
-func printArtifactDimensions(cmd *cobra.Command, defs []artifactDimensionDefinition) error {
+func printArtifactDimensions(cmd *cobra.Command, defs artifact.Dimensions) error {
 	if len(defs) == 0 {
 		return nil
 	}
@@ -321,13 +319,7 @@ func printArtifactDimensions(cmd *cobra.Command, defs []artifactDimensionDefinit
 		return err
 	}
 	for _, def := range defs {
-		name := def.Identifier
-		for _, alias := range []string{def.Name, def.QualifiedName} {
-			if id, err := resolveArtifactDimensionName(defs, alias); err == nil && id == def.Identifier {
-				name = alias
-				break
-			}
-		}
+		name := defs.DisplayName(def)
 		if _, err := fmt.Fprintf(writer, "%s\t%s\n", name, def.Identifier); err != nil {
 			return err
 		}

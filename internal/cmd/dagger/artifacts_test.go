@@ -7,6 +7,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
+	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
@@ -94,6 +95,29 @@ func TestArtifactDimensionFlagPreparation(t *testing.T) {
 	}
 }
 
+func TestArtifactDimensionFlagValidation(t *testing.T) {
+	defs := artifact.Dimensions{
+		{Identifier: "Golang.modules", Name: "go-module", QualifiedName: "golang-modules"},
+	}
+	for _, name := range []string{"go-module", "golang-modules", "Golang.modules", "does-not-exist"} {
+		t.Run(name, func(t *testing.T) {
+			cmd := newArtifactsCommand()
+			child, _, err := cmd.Find([]string{"list"})
+			require.NoError(t, err)
+			args := []string{"--" + name + "=sdk/go"}
+			_, err = prepareArtifactDimensionFlags(child, args)
+			require.NoError(t, err)
+			require.NoError(t, child.ParseFlags(args))
+			err = validateArtifactDimensionFlags(child, defs)
+			if name == "does-not-exist" {
+				require.EqualError(t, err, "unknown flag: --does-not-exist")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestArtifactPreparationDoesNotConnect(t *testing.T) {
 	previous := artifactsCmd
 	t.Cleanup(func() { artifactsCmd = previous })
@@ -156,13 +180,13 @@ func TestArtifactAddressArguments(t *testing.T) {
 }
 
 func TestArtifactDimensionAliases(t *testing.T) {
-	defs := []artifactDimensionDefinition{
+	defs := artifact.Dimensions{
 		{Identifier: "Golang.modules", Name: "go-module", QualifiedName: "golang-modules"},
 		{Identifier: "App.dependencies", Name: "go-module", QualifiedName: "app-dependencies"},
 	}
-	_, err := resolveArtifactDimensionName(defs, "go-module")
+	_, err := defs.Resolve("go-module")
 	require.ErrorContains(t, err, "ambiguous dimension")
-	name, err := resolveArtifactDimensionName(defs[:1], "go-module")
+	name, err := defs[:1].Resolve("go-module")
 	require.NoError(t, err)
 	require.Equal(t, "Golang.modules", name)
 	sel, err := parseArtifactAddresses([]string{"modules?go-module=a&golang-modules=b"})
