@@ -145,15 +145,31 @@ type MCPServerConfig struct {
 	Service dagql.ObjectResult[*Service]
 }
 
-func (srv *MCPServerConfig) Dial(ctx context.Context) (_ *mcp.ClientSession, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+srv.Name, telemetry.Reveal())
-	defer telemetry.EndWithCause(span, &rerr)
-	return mcp.NewClient(&mcp.Implementation{
-		Title:   "Dagger",
-		Version: engine.Version,
-	}, nil).Connect(ctx, &ServiceMCPTransport{
-		Service: srv.Service,
-	}, nil)
+// Dial returns a session with the server, reusing the live one dialed earlier
+// in this Dagger session for the same service (see mcpSessionRegistry).
+func (srv *MCPServerConfig) Dial(ctx context.Context) (*mcp.ClientSession, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, err
+	}
+	key, err := mcpServiceKey(ctx, srv.Service)
+	if err != nil {
+		return nil, err
+	}
+	return svcs.mcpSessions.getOrDial(key, func() (_ *mcp.ClientSession, rerr error) {
+		ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+srv.Name, telemetry.Reveal())
+		defer telemetry.EndWithCause(span, &rerr)
+		return mcp.NewClient(&mcp.Implementation{
+			Title:   "Dagger",
+			Version: engine.Version,
+		}, nil).Connect(ctx, &ServiceMCPTransport{
+			Service: srv.Service,
+		}, nil)
+	})
 }
 
 func newMCP() *MCP {
@@ -1276,22 +1292,105 @@ func workspaceRoot(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult
 // applyWorkspaceSnapshot overlays the difference between before and after (the
 // pre- and post-run workspace filesystem, e.g. edits made by an external MCP
 // server) onto the bound workspace.
+//
+// The snapshot holds everything the server wrote, so the difference is
+// filtered the way git status would see it before it's overlaid: additions the
+// snapshot's own .gitignore rules ignore (node_modules/, .venv/, target/, build
+// caches) are dropped, keeping modifications and deletions of tracked paths,
+// and the workspace-root .git directory is never touched. Without this a
+// single `npm install` overlays tens of thousands of files onto the workspace,
+// and summarizing that as a patch takes forever or fails outright.
 func (m *MCP) applyWorkspaceSnapshot(ctx context.Context, srv *dagql.Server, before, after dagql.ObjectResult[*Directory]) error {
-	beforeID, err := before.ID()
+	changes, err := snapshotChanges(ctx, srv, before, after)
 	if err != nil {
 		return err
 	}
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return err
+	}
+	// The tool may have run git itself (init, commit, ...): the repository's
+	// metadata is the workspace's own concern, so leave it out of the diff
+	// entirely by comparing the two trees without it.
+	if n := gitMetaPathCount(paths); n > 0 {
+		before, err = withoutGitMetaDir(ctx, srv, before)
+		if err != nil {
+			return err
+		}
+		after, err = withoutGitMetaDir(ctx, srv, after)
+		if err != nil {
+			return err
+		}
+		changes, err = snapshotChanges(ctx, srv, before, after)
+		if err != nil {
+			return err
+		}
+		slog.Debug("mcp: dropped VCS metadata written by MCP server from workspace snapshot", "paths", n)
+	}
+	// A workspace whose .gitignore rules match nothing makes this a cheap
+	// no-op: only the .gitignore files along each added path are read.
+	after, ignored, err := WithoutGitIgnoredAdditions(ctx, srv, after, changes)
+	if err != nil {
+		return err
+	}
+	if ignored > 0 {
+		changes, err = snapshotChanges(ctx, srv, before, after)
+		if err != nil {
+			return err
+		}
+		slog.Debug("mcp: dropped gitignored additions written by MCP server from workspace snapshot", "paths", ignored)
+	}
+	paths, err = changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return err
+	}
+	if changesetPathCount(paths) == 0 {
+		return nil
+	}
+	return m.applyChangeset(ctx, srv, changes)
+}
+
+// snapshotChanges computes after.changes(from: before).
+func snapshotChanges(ctx context.Context, srv *dagql.Server, before, after dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Changeset], error) {
 	var changes dagql.ObjectResult[*Changeset]
-	if err := srv.Select(ctx, after, &changes, dagql.Selector{
+	beforeID, err := before.ID()
+	if err != nil {
+		return changes, err
+	}
+	err = srv.Select(ctx, after, &changes, dagql.Selector{
 		View:  srv.View,
 		Field: "changes",
 		Args: []dagql.NamedInput{
 			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
 		},
-	}); err != nil {
-		return err
+	})
+	return changes, err
+}
+
+// gitMetaPathCount counts the paths in ch under the workspace-root .git
+// directory (see gitMetaPath).
+func gitMetaPathCount(ch *ChangesetPaths) int {
+	n := 0
+	for _, paths := range [][]string{ch.Added, ch.Modified, ch.Removed} {
+		for _, p := range paths {
+			if gitMetaPath(p) {
+				n++
+			}
+		}
 	}
-	return m.applyChangeset(ctx, srv, changes)
+	return n
+}
+
+// withoutGitMetaDir returns dir without its workspace-root .git directory.
+func withoutGitMetaDir(ctx context.Context, srv *dagql.Server, dir dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
+	err := srv.Select(ctx, dir, &dir, dagql.Selector{
+		View:  srv.View,
+		Field: "withoutDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(".git")},
+		},
+	})
+	return dir, err
 }
 
 func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
@@ -1688,13 +1787,11 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallDisplays)...)
 	}
 
-	// 5. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []*LLMToolCall
-	for _, calls := range readOnlyMCPCalls {
-		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
-	}
-	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls, toolCallDisplays)...)
+	// Sync read-only calls too: they need current workspace edits and the live
+	// server's retained runtime files just as destructive calls do. Keep export
+	// sequential because annotations are hints, not a filesystem sandbox.
+	for serverName, calls := range readOnlyMCPCalls {
+		allResults = append(allResults, m.callBatchMCPServer(ctx, tools, calls, serverName, toolCallDisplays)...)
 	}
 
 	return allResults
@@ -1732,7 +1829,9 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	if err != nil {
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
-	runningSvc, err := running.Get(ctx, serviceDigest, false)
+	// ServiceMCPTransport starts the server as a per-client instance, so it's
+	// registered under a client-specific key; look it up the same way.
+	runningSvc, err := running.Get(ctx, serviceDigest, true)
 	if err != nil {
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
@@ -1751,19 +1850,32 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
+	runningSvc.workspaceMu.Lock()
+	defer runningSvc.workspaceMu.Unlock()
+
 	var results []*LLMMessage
+	ran := false
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
 		runningSvc,
 		ctr.Self().Config.WorkingDir,
+		m.workspace.Self().Address,
 		sourceDir,
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
+			ran = true
 			results = m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 			return nil
 		})
 
 	if err != nil {
+		if ran {
+			// The tools already ran (and may have mutated state, or taken the
+			// server down with them); re-running them is not an option. Keep
+			// their results and give up on syncing this batch.
+			slog.Warn("failed to snapshot workspace after MCP server batch; changes not synced", "server", serverName, "error", err)
+			return results
+		}
 		// Fall back to individual calls if sync fails
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
@@ -1772,6 +1884,12 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	if hasChanges {
 		if err := m.applyWorkspaceSnapshot(ctx, srv, sourceDir, snapshot); err != nil {
 			slog.Error("failed to update workspace after MCP server batch", "server", serverName, "error", err)
+		} else if exported, err := m.workspaceDirectory(ctx, srv); err != nil {
+			slog.Error("failed to record synced MCP workspace", "server", serverName, "error", err)
+		} else if _, err := exported.Self().Snapshot.GetOrEval(ctx, exported.Result); err != nil {
+			slog.Error("failed to snapshot synced MCP workspace baseline", "server", serverName, "error", err)
+		} else {
+			runningSvc.workspaceSource = exported
 		}
 	}
 

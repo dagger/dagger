@@ -159,6 +159,16 @@ func (gwp *GlobalNamespaceWorkerPool) SubmitJob(ctx context.Context, job *Namesp
 	}
 }
 
+// OpenContainerRootFS pins the running container's root, including its mounts,
+// for host-side filesystem access. The caller must close the returned handle.
+func OpenContainerRootFS(containerID string) (*os.File, error) {
+	pid, err := getContainerPID(containerID)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(fmt.Sprintf("/proc/%d/root", pid))
+}
+
 // RunInNamespaces executes a function in the context of specific namespaces for a given PID
 func (gwp *GlobalNamespaceWorkerPool) RunInNamespaces(ctx context.Context, containerID string, namespaces []specs.LinuxNamespace, fn func() error) error {
 	resultCh := make(chan error, 1)
