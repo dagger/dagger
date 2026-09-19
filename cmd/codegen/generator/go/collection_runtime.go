@@ -7,12 +7,14 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
+	"golang.org/x/tools/go/packages"
 )
 
 const collectionRuntimeBase = "daggerCollectionBase"
@@ -21,13 +23,17 @@ const collectionRuntimeBase = "daggerCollectionBase"
 // build. Author source and generated schema remain unchanged. A real struct
 // field preserves state through Go value copies, including value receivers.
 func PrepareCollectionRuntime(dir string) error {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
 	paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
 		return err
 	}
 	fset := token.NewFileSet()
 	files := map[string]*ast.File{}
-	collections := map[string]*ast.StructType{}
+	collections := map[*ast.StructType]string{}
 	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
 			continue
@@ -59,14 +65,38 @@ func PrepareCollectionRuntime(dir string) error {
 				if !ok {
 					return fmt.Errorf("collection %s must be a struct", typ.Name.Name)
 				}
-				collections[typ.Name.Name] = strct
+				collections[strct] = typ.Name.Name
 			}
 		}
 	}
 	if len(collections) == 0 {
 		return nil
 	}
-	for name, typ := range collections {
+	pkgs, err := packages.Load(&packages.Config{
+		Dir: dir, Fset: fset, Mode: packages.LoadSyntax,
+		ParseFile: func(fset *token.FileSet, path string, src []byte) (*ast.File, error) {
+			if file := files[path]; file != nil {
+				return file, nil
+			}
+			return parser.ParseFile(fset, path, src, parser.ParseComments)
+		},
+	}, ".")
+	if err != nil {
+		return err
+	}
+	if len(pkgs) != 1 {
+		return fmt.Errorf("expected one runtime package, got %d", len(pkgs))
+	}
+	pkg := pkgs[0]
+	if len(pkg.Errors) > 0 {
+		return fmt.Errorf("load collection runtime: %s", pkg.Errors[0])
+	}
+	collectionTypes := map[types.Type]bool{}
+	for typ, name := range collections {
+		if pkg.TypesInfo.TypeOf(typ) == nil {
+			continue // Excluded by build constraints.
+		}
+		collectionTypes[pkg.TypesInfo.TypeOf(typ)] = true
 		for _, field := range typ.Fields.List {
 			for _, fieldName := range field.Names {
 				if fieldName.Name == collectionRuntimeBase {
@@ -78,52 +108,20 @@ func PrepareCollectionRuntime(dir string) error {
 			Names: []*ast.Ident{ast.NewIdent(collectionRuntimeBase)}, Type: ast.NewIdent("string"),
 		})
 	}
-	for path, file := range files {
-		// Go permits omitted element types inside list and map literals. Resolve
-		// those from the enclosing literal before extending positional literals.
-		var rewriteLiteral func(*ast.CompositeLit, ast.Expr)
-		rewriteLiteral = func(lit *ast.CompositeLit, expected ast.Expr) {
-			typ := lit.Type
-			if typ == nil {
-				typ = expected
-			}
-			if ptr, ok := typ.(*ast.StarExpr); ok {
-				typ = ptr.X
-			}
-			var elem ast.Expr
-			switch typ := typ.(type) {
-			case *ast.ArrayType:
-				elem = typ.Elt
-			case *ast.MapType:
-				elem = typ.Value
-			case *ast.Ident:
-				if collections[typ.Name] != nil && len(lit.Elts) > 0 {
-					if _, keyed := lit.Elts[0].(*ast.KeyValueExpr); !keyed {
-						lit.Elts = append(lit.Elts, &ast.BasicLit{Kind: token.STRING, Value: `""`})
-					}
-				}
-			}
-			for _, element := range lit.Elts {
-				if pair, ok := element.(*ast.KeyValueExpr); ok {
-					element = pair.Value
-				}
-				if child, ok := element.(*ast.CompositeLit); ok {
-					rewriteLiteral(child, elem)
-				} else {
-					ast.Inspect(element, func(node ast.Node) bool {
-						if child, ok := node.(*ast.CompositeLit); ok {
-							rewriteLiteral(child, nil)
-							return false
-						}
-						return true
-					})
-				}
-			}
-		}
+	for _, file := range pkg.Syntax {
 		ast.Inspect(file, func(node ast.Node) bool {
-			if lit, ok := node.(*ast.CompositeLit); ok {
-				rewriteLiteral(lit, nil)
-				return false
+			lit, ok := node.(*ast.CompositeLit)
+			if !ok || len(lit.Elts) == 0 {
+				return true
+			}
+			typ := pkg.TypesInfo.TypeOf(lit)
+			if ptr, ok := typ.(*types.Pointer); ok {
+				typ = ptr.Elem()
+			}
+			if collectionTypes[typ.Underlying()] {
+				if _, keyed := lit.Elts[0].(*ast.KeyValueExpr); !keyed {
+					lit.Elts = append(lit.Elts, &ast.BasicLit{Kind: token.STRING, Value: `""`})
+				}
 			}
 			return true
 		})
@@ -137,7 +135,7 @@ func PrepareCollectionRuntime(dir string) error {
 				recv = ptr.X
 			}
 			name, ok := recv.(*ast.Ident)
-			if !ok || collections[name.Name] == nil || (fn.Name.Name != "MarshalJSON" && fn.Name.Name != "UnmarshalJSON") {
+			if !ok || !collectionTypes[pkg.TypesInfo.TypeOf(recv).Underlying()] || (fn.Name.Name != "MarshalJSON" && fn.Name.Name != "UnmarshalJSON") {
 				continue
 			}
 			// Both generated methods use a concrete transport struct. Extend it
@@ -176,7 +174,7 @@ func PrepareCollectionRuntime(dir string) error {
 		if err := format.Node(&out, fset, file); err != nil {
 			return err
 		}
-		if err := os.WriteFile(path, out.Bytes(), 0600); err != nil {
+		if err := os.WriteFile(fset.Position(file.Pos()).Filename, out.Bytes(), 0600); err != nil {
 			return err
 		}
 	}

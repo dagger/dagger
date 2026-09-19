@@ -36,16 +36,27 @@ func main() {
  if err != nil { panic(err) }
  println(string(b))
  // Positional literals, including elided types, still create new collections.
+ type Alias = Items
+ type ItemList []Alias
+ type ItemMap map[string]*Alias
+ type Derived Items
  fresh := []Items{{[]string{"c"}}, Items{[]string{"d"}}}
+ fresh = append(fresh, Alias{[]string{"e"}})
+ fresh = append(fresh, ItemList{{[]string{"f"}}}...)
+ fresh = append(fresh, *ItemMap{"g": {[]string{"g"}}}["g"])
+ fresh = append(fresh, Items(Derived{[]string{"h"}}))
+ // A local type with the same name is not a collection.
+ { type Items struct { N int }; _ = Items{1} }
  b, err = json.Marshal(fresh)
  if err != nil { panic(err) }
  println(string(b))
 }
 `), 0600))
-	require.NoError(t, PrepareCollectionRuntime(dir))
+	t.Chdir(dir)
+	require.NoError(t, PrepareCollectionRuntime("."))
 	cmd := exec.CommandContext(t.Context(), "go", "run", ".")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
-	require.Equal(t, "{\"Keys\":[\"b\"],\"__daggerCollectionBase\":\"original\"}\n[{\"Keys\":[\"c\"]},{\"Keys\":[\"d\"]}]\n", string(out))
+	require.Equal(t, "{\"Keys\":[\"b\"],\"__daggerCollectionBase\":\"original\"}\n[{\"Keys\":[\"c\"]},{\"Keys\":[\"d\"]},{\"Keys\":[\"e\"]},{\"Keys\":[\"f\"]},{\"Keys\":[\"g\"]},{\"Keys\":[\"h\"]}]\n", string(out))
 }
