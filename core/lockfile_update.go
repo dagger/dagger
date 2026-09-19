@@ -217,6 +217,8 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 		return updateGitSHALockEntry(ctx, entry)
 	case workspace.LockOperationVanityURL:
 		return updateVanityURLLockEntry(ctx, entry)
+	case workspace.LockOperationVanityVersion:
+		return updateVanityVersionLockEntry(ctx, entry)
 	default:
 		return "", fmt.Errorf(
 			"%w %q %q",
@@ -242,6 +244,33 @@ func updateVanityURLLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 	resolved := daggerGetProbe(ctx, sourceURL)
 	if resolved == sourceURL {
 		return "", fmt.Errorf("refresh vanity-url %q: no valid redirect received", sourceURL)
+	}
+	return resolved, nil
+}
+
+func updateVanityVersionLockEntry(ctx context.Context, entry workspace.LookupEntry) (string, error) {
+	required, options, err := workspace.ParseLookupInputs(entry.Inputs)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s inputs %v: %w", entry.Operation, entry.Inputs, err)
+	}
+	if len(required) != 2 || len(options) != 0 {
+		return "", fmt.Errorf("invalid %s inputs %v", entry.Operation, entry.Inputs)
+	}
+	sourceURL, ok := required[0].(string)
+	if !ok || sourceURL == "" {
+		return "", fmt.Errorf("invalid %s source URL %v", entry.Operation, required[0])
+	}
+	version, ok := required[1].(string)
+	if !ok {
+		return "", fmt.Errorf("invalid %s version %v", entry.Operation, required[1])
+	}
+	resolved := daggerGetProbeVersion(ctx, sourceURL, version).Version
+	if resolved == "" {
+		// The host does not rewrite this version.
+		resolved = version
+	}
+	if resolved == "" {
+		return "", fmt.Errorf("refresh vanity-version %q: the host returned no default version", sourceURL)
 	}
 	return resolved, nil
 }
