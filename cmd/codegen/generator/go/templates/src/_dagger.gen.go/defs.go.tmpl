@@ -1,9 +1,7 @@
 import (
 	"context"
 	"encoding/json"
-	{{- if not IsCoreLibrary }}
 	"errors"
-	{{- end }}
 	"fmt"
 	"net"
 	"net/http"
@@ -12,11 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-
-	{{- if not IsCoreLibrary }}
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	{{- end }}
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -28,10 +23,6 @@ import (
 {{ end }}
 
 {{- if IsStandaloneClient }}
-	"dagger.io/dagger"
-{{ end }}
-
-{{- if IsCoreLibrary }}
 	"dagger.io/dagger"
 {{ end }}
 )
@@ -68,14 +59,6 @@ type DaggerObject interface {
 	ID(ctx context.Context) (ID, error)
 }
 
-{{ if IsCoreLibrary }}
-// ExecError is an API error from an exec operation. It lives in
-// dagger.io/dagger, not here, because classifying transport-level errors
-// doesn't need any generated type, and dagger.io/dagger can't import this
-// package (this package imports dagger.io/dagger). Aliased here so existing
-// code can keep writing core.ExecError.
-type ExecError = dagger.ExecError
-{{ else }}
 type gqlExtendedError struct {
 	inner *gqlerror.Error
 }
@@ -169,7 +152,6 @@ func (e *ExecError) Message() string {
 func (e *ExecError) Unwrap() error {
 	return e.original
 }
-{{ end }}
 {{ range .Types }}
 {{ if eq .Kind "SCALAR" }}{{ template "_types/scalar.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "OBJECT" }}{{ template "_types/object.go.tmpl" . }}{{ end }}
