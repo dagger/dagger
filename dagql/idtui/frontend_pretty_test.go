@@ -2229,6 +2229,77 @@ func stripANSICodes(s string) string {
 	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, "")
 }
 
+// TestConversationTranscriptCollapsesRewoundMessages covers the live-shell
+// half of a rewind: after `e` rewinds past a turn, that turn's prompt, tool
+// call and reply collapse to dim struck one-liners (SGR 90;9) behind a
+// marker — the prompt loses its shaded card entirely — and a loud yellow
+// marker row says how many messages the model no longer has and that the
+// conversation resumes there. The kept and resumed turns keep their normal
+// styling, so the transcript reads as the fork it is rather than as one
+// linear conversation.
+func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
+	f := newRewindFixture()
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, f.db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	f.installLogs(fe, termenv.ANSI, 120)
+
+	fe.recalculateViewLocked()
+
+	frame := strings.Join(fe.tui.Frame(), "\n")
+	plain := stripANSICodes(frame)
+
+	// Each abandoned message is one struck, dimmed line behind the marker.
+	for _, want := range []string{"run the tests", "Bash go test ./...", "All tests pass."} {
+		if !strings.Contains(plain, SupersededMarker+" "+want) {
+			t.Errorf("abandoned message %q not collapsed behind %s:\n%s", want, SupersededMarker, plain)
+		}
+		if !containsStyledLine(frame, want, "\x1b[90;9m") {
+			t.Errorf("abandoned message %q is not struck and dimmed:\n%s", want, visibleEscapes(frame))
+		}
+	}
+	if !strings.Contains(plain, "All tests pass. (+2 lines)") {
+		t.Errorf("abandoned reply not elided behind a line count:\n%s", plain)
+	}
+	// The abandoned prompt is no longer a shaded card...
+	if containsStyledLine(frame, "run the tests", "\x1b[100m") {
+		t.Errorf("abandoned prompt still drawn as a shaded prompt block:\n%s", visibleEscapes(frame))
+	}
+	// ...and none of the abandoned turn's remaining content leaks.
+	for _, leak := range []string{"Nothing else to report", "github.com/example/pkg"} {
+		if strings.Contains(plain, leak) {
+			t.Errorf("abandoned content %q leaked into the transcript:\n%s", leak, plain)
+		}
+	}
+
+	// The marker is unmistakable: yellow (SGR 33), with the count.
+	marker := RewindMarker + " rewound: 3 messages above abandoned; the conversation resumes here"
+	if !strings.Contains(plain, marker) {
+		t.Fatalf("rewind marker missing:\n%s", plain)
+	}
+	if !containsStyledLine(frame, "rewound: 3 messages", "\x1b[33m") {
+		t.Errorf("rewind marker is not yellow:\n%s", visibleEscapes(frame))
+	}
+
+	// Kept and resumed prompts keep their shaded card; replies stay plain.
+	for _, want := range []string{"hello there", "run the linter instead"} {
+		if !containsStyledLine(frame, want, "\x1b[100m") {
+			t.Errorf("live prompt %q lost its shaded background:\n%s", want, visibleEscapes(frame))
+		}
+	}
+	for _, want := range []string{"hi, what can I do?", "Linting now."} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("live reply %q missing:\n%s", want, plain)
+		}
+		if containsStyledLine(frame, want, "\x1b[90;9m") {
+			t.Errorf("live reply %q rendered as abandoned:\n%s", want, visibleEscapes(frame))
+		}
+	}
+}
+
 func TestReproMarkdownWrapIndent(t *testing.T) {
 	const width = 50
 	run := func(t *testing.T, nested bool) {

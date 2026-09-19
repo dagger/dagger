@@ -582,6 +582,10 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	r.indentFunc = s.indentFunc(titleOut)
 	s.fe.renderStep(ctx, titleOut, r, row, s, visualFocused)
 	titleText := titleBuf.String()
+	// A rewind marker and the messages it abandoned are each exactly the one
+	// line renderStep produced: no prompt card padding, and none of the
+	// extras below.
+	rewound := row.Span.AgentRewindMarker() || s.fe.db.SupersededBy(row.Span) != nil
 	if titleText != "" {
 		titleLines := strings.Split(strings.TrimSuffix(titleText, "\n"), "\n")
 		// Highlight search matches in title lines only (not logs).
@@ -597,11 +601,50 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 				titleLines[i] = highlightANSI(line, s.fe.searchQuery, style)
 			}
 		}
-		titleLines = s.fe.padUserPrompt(row, titleLines)
+		if !rewound {
+			titleLines = s.fe.padUserPrompt(row, titleLines)
+		}
 		s.selfLineCount += len(titleLines)
 		ctx.Lines(titleLines...)
 	}
 
+	if !rewound {
+		// An abandoned message is its one collapsed line: no logs, errors or
+		// inline reports beneath it — the model no longer has any of it, and
+		// the zoomed view still reaches it for anyone who does. Its subtree
+		// still renders (collapsed the same way), so the rows navigation
+		// walks are the rows on screen.
+		s.renderRowExtras(ctx, r, row, visualFocused)
+	}
+
+	// Render children (already synced by syncSpanTreeState).
+	s.childGapCounts = s.childGapCounts[:0]
+	s.childLineCounts = s.childLineCounts[:0]
+	for _, child := range s.children {
+		// Gap line between children — uses parent's gap prefix (which always
+		// shows the parent bar), not the child's prefix.cont (which omits
+		// the parent bar for the last child).
+		var gapCount int
+		childRow := rows.BySpan[child.spanID]
+		if childRow != nil {
+			gaps := s.fe.renderTreeGap(r, childRow, s.childrenGapPrefix)
+			gapCount = len(gaps)
+			ctx.Lines(gaps...)
+		}
+
+		childCtx := ctx
+		childCtx.Width = ctx.Width - child.prefix.contWidth
+		result := s.RenderChildResult(childCtx, child)
+		ctx.Lines(result.Lines...)
+
+		s.childGapCounts = append(s.childGapCounts, gapCount)
+		s.childLineCounts = append(s.childLineCounts, len(result.Lines))
+	}
+}
+
+// renderRowExtras renders what follows a row's title: inline test and check
+// reports, its own inline logs, and the rest (errors, debug).
+func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagui.TraceRow, visualFocused bool) {
 	if inlineTests := s.renderInlineTests(ctx, r, row); len(inlineTests) > 0 {
 		s.selfLineCount += len(inlineTests)
 		ctx.Lines(inlineTests...)
@@ -631,30 +674,6 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		restLines := strings.Split(strings.TrimSuffix(restText, "\n"), "\n")
 		s.selfLineCount += len(restLines)
 		ctx.Lines(restLines...)
-	}
-
-	// Render children (already synced by syncSpanTreeState).
-	s.childGapCounts = s.childGapCounts[:0]
-	s.childLineCounts = s.childLineCounts[:0]
-	for _, child := range s.children {
-		// Gap line between children — uses parent's gap prefix (which always
-		// shows the parent bar), not the child's prefix.cont (which omits
-		// the parent bar for the last child).
-		var gapCount int
-		childRow := rows.BySpan[child.spanID]
-		if childRow != nil {
-			gaps := s.fe.renderTreeGap(r, childRow, s.childrenGapPrefix)
-			gapCount = len(gaps)
-			ctx.Lines(gaps...)
-		}
-
-		childCtx := ctx
-		childCtx.Width = ctx.Width - child.prefix.contWidth
-		result := s.RenderChildResult(childCtx, child)
-		ctx.Lines(result.Lines...)
-
-		s.childGapCounts = append(s.childGapCounts, gapCount)
-		s.childLineCounts = append(s.childLineCounts, len(result.Lines))
 	}
 }
 
@@ -5325,6 +5344,15 @@ func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []s
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
 	trimmedPrefix := strings.TrimRight(gapPrefix, " ")
 	if fe.shell != nil {
+		// Messages a rewind abandoned read as one block of collapsed lines:
+		// the first gets the separating line a turn would, the rest sit
+		// flush beneath it.
+		if fe.db.SupersededBy(row.Span) != nil {
+			if row.Depth == 0 && row.Previous != nil && fe.db.SupersededBy(row.Previous.Span) == nil {
+				return []string{""}
+			}
+			return nil
+		}
 		// Conversation turns get one separating line. Tool calls and ordinary
 		// trace spans stay attached to their parent/preceding message so an agent
 		// session does not become a double-spaced list of implementation details.
@@ -7706,6 +7734,18 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 }
 
 func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, statusHost statusIconHost, focused bool) error {
+	// A rewind fork in the transcript: the marker row where the conversation
+	// resumed, and the messages it abandoned. Both are rendered on their own
+	// terms so the visible transcript matches the model's actual history.
+	if row.Span.AgentRewindMarker() {
+		fe.renderRewindMarker(out, r, row, focused)
+		return nil
+	}
+	if fe.db.SupersededBy(row.Span) != nil {
+		fe.renderSupersededStep(out, r, row, focused)
+		return nil
+	}
+
 	// Message span names are implementation labels; their logs are the actual
 	// content. Until content arrives, omit the row entirely and let the status
 	// line carry the in-flight cue instead of rendering an empty bubble.
@@ -7803,6 +7843,121 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 	}
 
 	return nil
+}
+
+// RewindMarker leads the row at which a conversation resumed after a rewind;
+// SupersededMarker leads each message the rewind abandoned.
+const (
+	RewindMarker     = "↶"
+	SupersededMarker = "⊘"
+)
+
+// renderRowCue writes the leading focus cue a shell-mode conversation row
+// carries ("❯ " when focused, two spaces otherwise), after the tree indent.
+func (fe *frontendPretty) renderRowCue(out TermOutput, r *renderer, row *dagui.TraceRow, focused bool) {
+	r.fancyIndent(out, row, false, true)
+	if fe.finalRender || fe.shell == nil {
+		return
+	}
+	if focused {
+		fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
+	} else {
+		fmt.Fprint(out, "  ")
+	}
+}
+
+// renderRewindMarker renders the row where a conversation forked away from
+// the messages above it: a loud one-liner saying how many of them the model
+// no longer remembers, so the abandoned turn reads as abandoned at a glance
+// and not as the turn the next prompt continues.
+func (fe *frontendPretty) renderRewindMarker(out TermOutput, r *renderer, row *dagui.TraceRow, focused bool) {
+	fe.renderRowCue(out, r, row, focused)
+	var text string
+	var abandoned int
+	if rewind := fe.db.RewindFor(row.Span); rewind != nil {
+		abandoned = len(rewind.Abandoned)
+	}
+	switch abandoned {
+	case 0:
+		// The chain could not be walked with the payloads at hand: the
+		// engine still recorded a rewind, so say so without a count.
+		text = "rewound: the messages above are no longer part of the conversation"
+	case 1:
+		text = "rewound: 1 message above abandoned; the conversation resumes here"
+	default:
+		text = fmt.Sprintf("rewound: %d messages above abandoned; the conversation resumes here", abandoned)
+	}
+	fmt.Fprint(out, out.String(RewindMarker+" ").Foreground(termenv.ANSIYellow).Bold())
+	fmt.Fprint(out, out.String(text).Foreground(termenv.ANSIYellow))
+	fmt.Fprintln(out)
+}
+
+// renderSupersededStep collapses a message a rewind abandoned to a single
+// struck, dimmed line: a marker, the message's first line (a prompt's or
+// reply's text, a tool call's name and arguments), and how many lines are
+// elided. The full content stays in the span's logs for the zoomed view;
+// the transcript only needs to make unmistakable that the model no longer
+// has it.
+func (fe *frontendPretty) renderSupersededStep(out TermOutput, r *renderer, row *dagui.TraceRow, focused bool) {
+	span := row.Span
+	first, extra := fe.supersededSummary(r, span)
+	if first == "" {
+		// A message whose content has not arrived is omitted, as it is
+		// when live; a nested span with nothing to say is not worth a row.
+		return
+	}
+	fe.renderRowCue(out, r, row, focused)
+	width := fe.contentWidth
+	if width <= 0 {
+		width = fe.window.Width
+	}
+	if width > 0 {
+		// Leave room for the marker and the elision tail.
+		first = clipPlain(first, max(width-2-len(" (+9999 lines)"), 1))
+	}
+	fmt.Fprint(out, out.String(SupersededMarker+" ").Foreground(termenv.ANSIBrightBlack))
+	fmt.Fprint(out, out.String(first).Foreground(termenv.ANSIBrightBlack).CrossOut())
+	if extra > 0 {
+		fmt.Fprint(out, out.String(fmt.Sprintf(" (+%d lines)", extra)).Faint())
+	}
+	fmt.Fprintln(out)
+}
+
+// supersededSummary returns the plain first line of an abandoned span and
+// the number of content lines elided after it. Tool calls summarize as their
+// title; every other span summarizes as the first line of its logs, read
+// from the rendered view so Markdown content (what prompts and replies
+// stream) counts the same as terminal output.
+func (fe *frontendPretty) supersededSummary(r *renderer, span *dagui.Span) (string, int) {
+	if span.LLMTool != "" && span.LLMRole != "" {
+		buf := new(strings.Builder)
+		title := NewOutput(buf, termenv.WithProfile(termenv.Ascii))
+		_ = r.renderSpan(title, span, span.Name)
+		return strings.TrimSpace(buf.String()), 0
+	}
+	fe.requestLogsOnRender(span.ID)
+	logs := fe.logs.Logs[span.ID]
+	if logs == nil {
+		if span.LLMRole == "" {
+			return span.Name, 0
+		}
+		return "", 0
+	}
+	// Size the view to its content, as renderLogs does for an unbounded
+	// row: terminal content renders nothing until it has a height.
+	logs.SetHeight(logs.UsedHeight())
+	prefix := ansi.Strip(logs.Prefix)
+	lines := strings.Split(strings.TrimRight(logs.View(), "\n"), "\n")
+	for i, line := range lines {
+		plain := ansi.Strip(line)
+		if i > 0 {
+			plain = strings.TrimPrefix(plain, prefix)
+		}
+		if plain = strings.TrimSpace(plain); plain != "" {
+			return plain, len(lines) - i - 1
+		}
+	}
+	return "", 0
 }
 
 var statusOrder = []string{

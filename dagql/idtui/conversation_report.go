@@ -76,11 +76,16 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 	row := &dagui.TraceRow{Span: node.Span, Expanded: true}
 	_ = fe.renderStep(ctx, rowOut, r, row, fe, false)
 
+	// A message a rewind abandoned is its one collapsed line (renderStep):
+	// no arguments, output, tests, or nested turns follow it, since the model
+	// no longer has any of them.
+	superseded := fe.db.SupersededBy(node.Span) != nil
+
 	// Prompt/thinking/response spans (Message != "") render their content via
 	// renderStep -> renderStepLogs. Tool-call display spans carry their arguments
 	// and rolled-up execution output as logs with no Message, so render those
 	// explicitly here (the same log block a failed check's cause uses).
-	if node.Span.Message == "" {
+	if node.Span.Message == "" && !superseded {
 		fe.renderMessageLogs(rowOut, node.Span)
 	}
 
@@ -90,6 +95,9 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 		} else {
 			fmt.Fprintln(out, indent+line)
 		}
+	}
+	if superseded {
+		return
 	}
 
 	if testLines := fe.renderMessageTests(ctx, node.Span, len(indent)); len(testLines) > 0 {
