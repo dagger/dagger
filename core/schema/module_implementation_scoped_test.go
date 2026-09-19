@@ -226,7 +226,7 @@ func TestModuleImplementationScopedAliasRecipeReplay(t *testing.T) {
 	for _, release := range []bool{false, true} {
 		t.Run(map[bool]string{false: "live alias", true: "released alias"}[release], func(t *testing.T) {
 			f := newImplementationScopedTest(t)
-			_, err := core.NewUserMod(f.parent).ResultCallModule(f.nextScopedCtx)
+			originalProvenance, err := core.NewUserMod(f.parent).ResultCallModule(f.nextScopedCtx)
 			require.NoError(t, err)
 
 			// Aliases share implementation content, but their root constructors have
@@ -244,6 +244,12 @@ func TestModuleImplementationScopedAliasRecipeReplay(t *testing.T) {
 			require.True(t, ok)
 			obj := &core.ModuleObject{Module: renamed, TypeDef: core.NewObjectTypeDef("Codegen", "", nil)}
 			require.NoError(t, obj.Install(f.firstScopedCtx, f.dag))
+			renamedSpec, ok := f.dag.Root().ObjectType().FieldSpec("renamed", "")
+			require.True(t, ok)
+			require.NotEqual(t,
+				originalProvenance.ResultRef.Call.ContentDigest(),
+				renamedSpec.Module.ResultRef.Call.ContentDigest(),
+				"implementation-equivalent aliases must retain distinct defining schemas")
 			if release {
 				require.NoError(t, f.cache.ReleaseSession(f.firstScopedCtx, firstScopedSession))
 			}

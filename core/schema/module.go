@@ -410,7 +410,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.NodeFunc("_implementationScoped", s.moduleImplementationScoped).
-			Doc(`The module object scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
+			Doc(`The module object scoped to its name and implementation identity, i.e. source code and dependency content rather than client-specific provenance.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -3163,7 +3163,11 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: %w", err)
 	}
-	scopedDigestInputs := []string{"Module._implementationScoped", sourceDigest.String()}
+	// A scoped module is also used to reconstruct its defining schema. Aliases
+	// share source implementation content, but expose different constructors and
+	// type names, so their module results must not be interchangeable. Keep the
+	// source digest unchanged to preserve implementation sharing for SDK work.
+	scopedDigestInputs := []string{"Module._implementationScoped", parentMod.Self().Name(), sourceDigest.String()}
 	if parentMod.Self().AsModuleVariantDigest != "" {
 		scopedDigestInputs = append(scopedDigestInputs, parentMod.Self().AsModuleVariantDigest)
 	}
