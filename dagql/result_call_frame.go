@@ -1491,15 +1491,18 @@ func (frame *ResultCall) recipeIDWithVisiting(ctx context.Context, c *Cache, vis
 	if frame == nil {
 		return nil, fmt.Errorf("rebuild recipe ID: nil frame")
 	}
+	// Synthetic calls provide engine-local identity, not executable schema
+	// fields. Reject them anywhere in the recipe before exporting an ID that
+	// would only load while the originating engine still caches its result.
+	if frame.Kind == ResultCallKindSynthetic {
+		return nil, fmt.Errorf("rebuild recipe ID: synthetic operation %q has no replayable API", frame.SyntheticOp)
+	}
 	if memo != nil {
 		if cached, ok := memo.byFrame[frame]; ok {
 			return cached, nil
 		}
 	}
 	field := frame.Field
-	if frame.Kind == ResultCallKindSynthetic {
-		field = frame.SyntheticOp
-	}
 	if field == "" {
 		return nil, fmt.Errorf("rebuild recipe ID: missing field")
 	}
