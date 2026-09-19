@@ -46,6 +46,52 @@ func TestWorkspaceChangesRendering(t *testing.T) {
 		require.LessOrEqual(t, ansi.StringWidth(line), 24)
 	}
 	require.False(t, (workspaceChangesPreview{HistoryError: "unavailable"}).empty())
+
+	// A mass change (codegen, a distant branch) must stay a screenful.
+	p = workspaceChangesPreview{}
+	for i := range patchpreview.MaxEntries * 3 {
+		p.Files = append(p.Files, patchpreview.Entry{Path: fmt.Sprintf("gen/%04d.go", i), Kind: "MODIFIED", Added: 1})
+	}
+	text = ansi.Strip(p.render(80))
+	require.LessOrEqual(t, len(strings.Split(text, "\n")), patchpreview.MaxEntries+5)
+	require.Contains(t, text, fmt.Sprintf("… and %d more files", patchpreview.MaxEntries*2))
+	require.Contains(t, text, fmt.Sprintf("%d files changed", patchpreview.MaxEntries*3))
+}
+
+func TestChangesPreviewFailure(t *testing.T) {
+	require.True(t, incomparableWorkspaces(fmt.Errorf("input: workspace.changes cannot compare workspaces with different host roots")))
+	require.False(t, incomparableWorkspaces(fmt.Errorf("connection reset")))
+	require.False(t, incomparableWorkspaces(nil))
+	require.True(t, unrelatedHistories(fmt.Errorf("git merge-base failed: exit status 1")))
+	require.True(t, unrelatedHistories(fmt.Errorf("export requires related Git histories: git merge-base: exit status 1: ")))
+	require.False(t, unrelatedHistories(fmt.Errorf("cannot export commit abc: conflict on a.txt")))
+	require.False(t, unrelatedHistories(nil))
+
+	keys := func(section idtui.SidebarSection) []string {
+		var names []string
+		for _, binding := range section.KeyMap {
+			names = append(names, binding.Help().Key)
+		}
+		return names
+	}
+
+	// A swapped workspace: no save, but reload remains the way back.
+	switched := changesPreviewFailure(fmt.Errorf("refresh: %w", &workspaceSwitchedError{Address: "git-ref://" + strings.Repeat("c", 40)}))
+	require.Equal(t, "Changes", switched.Title)
+	text := ansi.Strip(switched.Body(80))
+	require.Contains(t, text, "Workspace switched to git-ref://ccc")
+	require.Contains(t, text, "save unavailable")
+	require.Contains(t, text, "ctrl+u")
+	require.Equal(t, []string{"ctrl+u"}, keys(switched))
+	for _, line := range strings.Split(ansi.Strip(switched.Body(24)), "\n") {
+		require.LessOrEqual(t, ansi.StringWidth(line), 24)
+	}
+
+	// Any other failure replaces stale content but keeps the sync keys.
+	failed := changesPreviewFailure(fmt.Errorf("query diff stat: connection reset"))
+	text = ansi.Strip(failed.Body(80))
+	require.Contains(t, text, "preview unavailable: query diff stat: connection reset")
+	require.Equal(t, []string{"ctrl+s", "ctrl+u"}, keys(failed))
 }
 
 func (DaggerCMDSuite) TestAgentWorkspaceWithoutGitBaseline(ctx context.Context, t *testctx.T) {
@@ -311,6 +357,98 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	remainingBaselineID, err := s.Target().lastSynced().ID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, baselineID, remainingBaselineID)
+}
+
+// A tool may rebind the agent to a workspace unrelated to the host checkout
+// (e.g. a checkout of another repository). The sidebar must say so instead of
+// keeping the previous preview or advertising the other repository's history
+// as commits to save, and saving must fail with the same explanation.
+func (DaggerCMDSuite) TestAgentWorkspaceSwitched(ctx context.Context, t *testctx.T) {
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	initRepo := func(dir, file string) {
+		git(dir, "init", "-b", "main")
+		git(dir, "config", "user.name", "UI Test")
+		git(dir, "config", "user.email", "ui@localhost")
+		git(dir, "config", "commit.gpgSign", "false")
+		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte(file+"\n"), 0o644))
+		git(dir, "add", ".")
+		git(dir, "commit", "-m", "initial "+file)
+	}
+	checkout, other := t.TempDir(), t.TempDir()
+	initRepo(checkout, "base.txt")
+	initRepo(other, "other.txt")
+	dag, err := dagger.Connect(ctx, dagger.WithWorkdir(checkout))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, dag.Close()) })
+	baseline, err := snapshotWorkspace(ctx, dag)
+	require.NoError(t, err)
+	start := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline)
+	var changes idtui.SidebarSection
+	s, err := NewLLMSession(ctx, dag, "", nil, &idtui.FrontendMock{
+		SetSidebarContentFunc: func(section idtui.SidebarSection) { changes = section },
+		SetStatusLineFunc:     func(idtui.StatusLineData) {},
+	}, start)
+	require.NoError(t, err)
+	waitRefresh := func() {
+		t.Helper()
+		require.Eventually(t, func() bool {
+			a := s.Target()
+			a.refreshL.Lock()
+			defer a.refreshL.Unlock()
+			return !a.refreshInFlight
+		}, 10*time.Second, time.Millisecond)
+	}
+	waitRefresh()
+	require.Empty(t, changes.Body(80))
+	keys := func() []string {
+		var names []string
+		for _, binding := range changes.KeyMap {
+			names = append(names, binding.Help().Key)
+		}
+		return names
+	}
+
+	// An unrelated Git history: base..HEAD lists every commit on both sides.
+	otherRepo := dag.Host().Directory(other).AsGit().Head().AsWorkspace().WithNewFile("edit.txt", "pending\n")
+	s.Target().llm = start.WithWorkspace(otherRepo)
+	require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
+	text := ansi.Strip(changes.Body(80))
+	require.Contains(t, text, "Workspace switched to git-ref://")
+	require.Contains(t, text, "save unavailable")
+	require.NotContains(t, text, "Commits to save")
+	require.NotContains(t, text, "edit.txt")
+	require.Equal(t, []string{"ctrl+u"}, keys())
+	err = s.Target().ExportChanges(ctx)
+	require.ErrorContains(t, err, "workspace switched to git-ref://")
+	require.ErrorContains(t, err, "unrelated to the local checkout")
+	require.Empty(t, git(checkout, "status", "--porcelain"), "a refused save must not touch the checkout")
+
+	// No Git at all, compared against a Git checkpoint: a legitimate (if
+	// total) diff, not a swap. The engine only refuses the comparison against
+	// a live host workspace, which a checkpoint never is.
+	s.Target().llm = start.WithWorkspace(dag.Directory().WithNewFile("loose.txt", "x\n").AsWorkspace())
+	require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
+	text = ansi.Strip(changes.Body(80))
+	require.NotContains(t, text, "Workspace switched")
+	require.Contains(t, text, "loose.txt")
+
+	// Reload is the way back: it rebinds to the checkout without comparing.
+	s.Target().llm = start.WithWorkspace(otherRepo)
+	require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
+	require.Equal(t, []string{"ctrl+u"}, keys())
+	require.NoError(t, s.Target().ResetWorkspace(ctx))
+	waitRefresh()
+	require.Empty(t, changes.Body(80))
+	sha, err := s.Target().llm.Workspace().Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, git(checkout, "rev-parse", "HEAD"), sha)
 }
 
 func (DaggerCMDSuite) TestAgentToolsetFollowsFocusAndSnapshot(ctx context.Context, t *testctx.T) {
