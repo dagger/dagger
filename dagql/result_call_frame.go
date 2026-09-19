@@ -64,6 +64,12 @@ type ResultCallRef struct {
 	ResultID uint64      `json:"resultID,omitempty"`
 	Call     *ResultCall `json:"call,omitempty"`
 
+	// KeepInline preserves a replay recipe without turning it into ownership of
+	// the result of that recipe. An embedded output may select itself from its
+	// producer, but retaining that producer would cycle back to the output.
+	// References inside Call still retain their own dependencies.
+	KeepInline bool `json:"keepInline,omitempty"`
+
 	// shared is a runtime-only fast path for attached result refs. It is not
 	// persisted and must never be the sole source of truth for identity.
 	shared *sharedResult
@@ -1045,9 +1051,10 @@ func (ref *ResultCallRef) cloneWith(memo resultCallCloneMemo) *ResultCallRef {
 		return nil
 	}
 	return &ResultCallRef{
-		ResultID: ref.ResultID,
-		Call:     ref.Call.cloneWith(memo),
-		shared:   ref.shared,
+		ResultID:   ref.ResultID,
+		Call:       ref.Call.cloneWith(memo),
+		KeepInline: ref.KeepInline,
+		shared:     ref.shared,
 	}
 }
 
