@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	cacheImpactStoreVersion = 5
+	cacheImpactStoreVersion = 6
 	maxCacheImpactProfiles  = 100
 )
 
@@ -44,7 +44,7 @@ type cacheRunProfile struct {
 	CPU                time.Duration `json:"cpu,omitempty"`
 	NetworkRxBytes     int64         `json:"networkRxBytes,omitempty"`
 	NetworkTxBytes     int64         `json:"networkTxBytes,omitempty"`
-	MemoryByteSecs     float64       `json:"memoryByteSeconds,omitempty"`
+	MemoryPeakBytes    int64         `json:"memoryPeakBytes,omitempty"`
 	CPUAvailable       bool          `json:"cpuAvailable,omitempty"`
 	NetworkRxAvailable bool          `json:"networkRxAvailable,omitempty"`
 	NetworkTxAvailable bool          `json:"networkTxAvailable,omitempty"`
@@ -60,16 +60,15 @@ type cacheImpactStore struct {
 }
 
 type cacheImpact struct {
-	Elapsed        time.Duration
-	CPU            time.Duration
-	NetworkRxBytes int64
-	NetworkTxBytes int64
-	MemoryBytes    float64
-	MemoryPeriod   time.Duration
-	HasCPU         bool
-	HasNetworkRx   bool
-	HasNetworkTx   bool
-	HasMemory      bool
+	Elapsed         time.Duration
+	CPU             time.Duration
+	NetworkRxBytes  int64
+	NetworkTxBytes  int64
+	MemoryPeakBytes int64
+	HasCPU          bool
+	HasNetworkRx    bool
+	HasNetworkTx    bool
+	HasMemory       bool
 }
 
 // prepareCacheImpact compares this run with a prior cache-cold run of the same
@@ -103,13 +102,11 @@ func (fe *frontendPretty) prepareCacheImpact() {
 			impact.HasNetworkTx = true
 			impact.NetworkTxBytes = max(0, baseline.NetworkTxBytes-current.NetworkTxBytes)
 		}
-		if baseline.MemoryAvailable && current.MemoryAvailable && baseline.Elapsed > 0 {
-			memoryByteSecs := max(0, baseline.MemoryByteSecs-current.MemoryByteSecs)
+		if baseline.MemoryAvailable && current.MemoryAvailable {
 			impact.HasMemory = true
-			impact.MemoryPeriod = baseline.Elapsed
-			impact.MemoryBytes = memoryByteSecs / baseline.Elapsed.Seconds()
+			impact.MemoryPeakBytes = max(int64(0), baseline.MemoryPeakBytes-current.MemoryPeakBytes)
 		}
-		if impact.Elapsed > 0 || impact.CPU > 0 || impact.NetworkRxBytes > 0 || impact.NetworkTxBytes > 0 || impact.MemoryBytes > 0 {
+		if impact.Elapsed > 0 || impact.CPU > 0 || impact.NetworkRxBytes > 0 || impact.NetworkTxBytes > 0 || impact.MemoryPeakBytes > 0 {
 			fe.cacheImpact = &impact
 		}
 	}
@@ -182,16 +179,16 @@ func cacheProfile(db *dagui.DB) (cacheRunProfile, bool) {
 			profile.NetworkTxBytes += value
 		}
 	}
-	profile.MemoryByteSecs, profile.MemoryAvailable = memoryByteSeconds(db)
+	profile.MemoryPeakBytes, profile.MemoryAvailable = peakMemoryBytes(db)
 	return profile, true
 }
 
-// memoryByteSeconds integrates each container's sampled memory.current gauge
-// over its execution span, then adds the series. Adding the integrals makes
-// parallel containers compose naturally without pretending their peaks occur
-// together. Samples represent the interval since the preceding sample; this
-// is an estimate at the engine's cgroup sampling resolution.
-func memoryByteSeconds(db *dagui.DB) (float64, bool) {
+// peakMemoryBytes reconstructs the workflow memory timeline from each
+// container's sampled memory.current gauge, sums only concurrent usage, and
+// returns the highest aggregate value. Samples represent the interval since
+// the preceding sample, so this remains an estimate at the engine's cgroup
+// sampling resolution.
+func peakMemoryBytes(db *dagui.DB) (int64, bool) {
 	series := map[string][]metricdata.DataPoint[int64]{}
 	for _, metrics := range db.MetricsByCall {
 		for _, point := range metrics[telemetry.MemoryCurrentBytes] {
@@ -202,11 +199,11 @@ func memoryByteSeconds(db *dagui.DB) (float64, bool) {
 	if len(series) == 0 {
 		// No series means this run executed no measured containers. Treat that as
 		// a real zero so a fully cached warm run can receive the entire colder
-		// run's memory occupancy as its estimated saving.
+		// run's peak as its estimated saving.
 		return 0, true
 	}
 
-	var total float64
+	events := map[time.Time]int64{}
 	for _, points := range series {
 		spanIDValue, ok := points[0].Attributes.Value(telemetry.MetricsSpanIDAttr)
 		if !ok {
@@ -220,18 +217,38 @@ func memoryByteSeconds(db *dagui.DB) (float64, bool) {
 		if span == nil || span.StartTime.IsZero() || !span.EndTime.After(span.StartTime) {
 			return 0, false
 		}
-		area, ok := integrateMemorySeries(points, span.StartTime, span.EndTime)
+		intervals, ok := memorySeriesIntervals(points, span.StartTime, span.EndTime)
 		if !ok {
 			return 0, false
 		}
-		total += area
+		for _, interval := range intervals {
+			events[interval.Start] += interval.Bytes
+			events[interval.End] -= interval.Bytes
+		}
 	}
-	return total, true
+
+	times := make([]time.Time, 0, len(events))
+	for at := range events {
+		times = append(times, at)
+	}
+	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
+	var current, peak int64
+	for _, at := range times {
+		current += events[at]
+		peak = max(peak, current)
+	}
+	return peak, true
 }
 
-func integrateMemorySeries(points []metricdata.DataPoint[int64], start, end time.Time) (float64, bool) {
+type memoryInterval struct {
+	Start time.Time
+	End   time.Time
+	Bytes int64
+}
+
+func memorySeriesIntervals(points []metricdata.DataPoint[int64], start, end time.Time) ([]memoryInterval, bool) {
 	if len(points) == 0 || !end.After(start) {
-		return 0, false
+		return nil, false
 	}
 	points = append([]metricdata.DataPoint[int64](nil), points...)
 	sort.SliceStable(points, func(i, j int) bool {
@@ -240,7 +257,7 @@ func integrateMemorySeries(points []metricdata.DataPoint[int64], start, end time
 
 	previous := start
 	var (
-		area      float64
+		intervals []memoryInterval
 		lastValue int64
 		hasSample bool
 	)
@@ -254,7 +271,7 @@ func integrateMemorySeries(points []metricdata.DataPoint[int64], start, end time
 		}
 		value := max(int64(0), point.Value)
 		if at.After(previous) {
-			area += float64(value) * at.Sub(previous).Seconds()
+			intervals = append(intervals, memoryInterval{Start: previous, End: at, Bytes: value})
 			previous = at
 		}
 		lastValue = value
@@ -264,12 +281,12 @@ func integrateMemorySeries(points []metricdata.DataPoint[int64], start, end time
 		}
 	}
 	if !hasSample {
-		return 0, false
+		return nil, false
 	}
 	if end.After(previous) {
-		area += float64(lastValue) * end.Sub(previous).Seconds()
+		intervals = append(intervals, memoryInterval{Start: previous, End: end, Bytes: lastValue})
 	}
-	return area, true
+	return intervals, true
 }
 
 func lastMetric(points []metricdata.DataPoint[int64]) (int64, bool) {

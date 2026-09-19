@@ -33,11 +33,8 @@ func (fe *frontendPretty) cacheReport(zoomed bool) []string {
 		if impact.HasCPU && impact.CPU > 0 {
 			savings = append(savings, fmt.Sprintf("~%s CPU", humanDuration(impact.CPU)))
 		}
-		if impact.HasMemory && impact.MemoryBytes > 0 {
-			savings = append(savings, fmt.Sprintf(
-				"~%s memory for %s",
-				humanize.Bytes(uint64(impact.MemoryBytes)), humanDuration(impact.MemoryPeriod),
-			))
+		if impact.HasMemory && impact.MemoryPeakBytes > 0 {
+			savings = append(savings, fmt.Sprintf("~%s peak memory", humanize.Bytes(uint64(impact.MemoryPeakBytes))))
 		}
 		if impact.HasNetworkRx && impact.NetworkRxBytes > 0 {
 			savings = append(savings, fmt.Sprintf("~%s net rx", humanize.Bytes(uint64(impact.NetworkRxBytes))))
