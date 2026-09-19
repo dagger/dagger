@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -312,11 +313,22 @@ func TestResolveDaggerGetRedirectWritesWorkspaceLock(t *testing.T) {
 	)
 	require.False(t, ok, "must not write a schemeless lockfile key")
 
-	// A different spelling and version must reuse the lock, not the session cache.
+	// A different spelling must reuse the lock, not the session cache.
+	resolved, err = ResolveDaggerGetRedirect(ctx, ref+"@main")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger@main", resolved)
+	require.EqualValues(t, 1, requests.Load(), "HTTPS lookup should reuse the schemeless lookup's lock entries")
+
+	// The host can rewrite each version, so a version that is not locked needs
+	// one probe. The locked URL stays.
 	resolved, err = ResolveDaggerGetRedirect(ctx, ref+"@other")
 	require.NoError(t, err)
 	require.Equal(t, "https://github.com/dagger/dagger@other", resolved)
-	require.EqualValues(t, 1, requests.Load(), "HTTPS lookup should reuse the schemeless lookup's lock entry")
+	require.EqualValues(t, 2, requests.Load())
+	resolved, err = ResolveDaggerGetRedirect(ctx, ref+"@other")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger@other", resolved)
+	require.EqualValues(t, 2, requests.Load(), "a locked version must not probe again")
 }
 
 func TestSourceURLWithVersionOverridesDestinationVersion(t *testing.T) {
@@ -386,8 +398,131 @@ func TestResolveDaggerGetRedirectPreservesDestinationVersion(t *testing.T) {
 				locked, ok = lock.GetLookup(workspace.CoreLockNamespace, workspace.LockOperationVanityURL, []any{ref})
 				require.True(t, ok)
 				require.Equal(t, destination, locked, "refresh must use the same destination format as creation")
-				require.EqualValues(t, 2, requests.Load())
+				// The refresh probes one time for the URL entry, and one time for
+				// the version entry that a ref with a version creates.
+				wantRequests := 2
+				if inputSuffix != "" {
+					wantRequests = 3
+				}
+				require.EqualValues(t, wantRequests, requests.Load())
 			})
 		}
+	}
+}
+
+// vanityVersionServer redirects /go to dagger/dagger. It rewrites the version
+// "my feature" to a pull request ref, gives "v1" as the default version, and
+// echoes any other version unchanged, as a passthrough host does.
+func vanityVersionServer(t *testing.T, requests *atomic.Int32) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests != nil {
+			requests.Add(1)
+		}
+		q := r.URL.Query()
+		if q.Get(daggerGetQueryParam) != "1" || r.URL.Path != "/go" || !q.Has(daggerVersionQueryParam) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		version := q.Get(daggerVersionQueryParam)
+		switch version {
+		case "my feature":
+			version = "pull/7/head"
+		case "":
+			version = "v1"
+		}
+		loc := url.URL{Scheme: "https", Host: "github.com", Path: "/dagger/dagger"}
+		loc.RawQuery = url.Values{
+			daggerGetQueryParam:     {"1"},
+			daggerVersionQueryParam: {version},
+		}.Encode()
+		http.Redirect(w, r, loc.String(), http.StatusFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	// Use a port-free vanity URL; schemeless host:port refs are SSH-like.
+	daggerGetClient.Transport.(*http.Transport).DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}
+	daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	t.Cleanup(func() { daggerGetClient = oldClient })
+	return srv
+}
+
+func TestDaggerGetProbeVersion(t *testing.T) {
+	vanityVersionServer(t, nil)
+	source := "https://127.0.0.1/go"
+
+	t.Run("host rewrites the version", func(t *testing.T) {
+		got := daggerGetProbeVersion(t.Context(), source, "my feature")
+		require.Equal(t, daggerGetResult{SourceURL: "https://github.com/dagger/dagger", Version: "pull/7/head"}, got)
+		require.Equal(t, "https://github.com/dagger/dagger@pull/7/head", daggerGetProbe(t.Context(), source+"@my feature"))
+	})
+
+	t.Run("echoed version is not a rewrite", func(t *testing.T) {
+		got := daggerGetProbeVersion(t.Context(), source, "main")
+		require.Equal(t, daggerGetResult{SourceURL: "https://github.com/dagger/dagger"}, got)
+		require.Equal(t, "https://github.com/dagger/dagger@main", daggerGetProbe(t.Context(), source+"@main"))
+	})
+
+	t.Run("host gives a default version", func(t *testing.T) {
+		got := daggerGetProbeVersion(t.Context(), source, "")
+		require.Equal(t, daggerGetResult{SourceURL: "https://github.com/dagger/dagger", Version: "v1"}, got)
+		require.Equal(t, "https://github.com/dagger/dagger@v1", daggerGetProbe(t.Context(), source))
+	})
+}
+
+func TestResolveDaggerGetRedirectLocksVanityVersion(t *testing.T) {
+	var requests atomic.Int32
+	vanityVersionServer(t, &requests)
+
+	lock := workspace.NewLock()
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	newCtx := func(sessionID string) context.Context {
+		ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{workspaceLock: lock, lockWritable: true}})
+		ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{SessionID: sessionID})
+		return dagql.ContextWithCache(ctx, cache)
+	}
+	source := "https://127.0.0.1/go"
+
+	resolved, err := ResolveDaggerGetRedirect(newCtx("session-a"), "127.0.0.1/go@my feature")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger@pull/7/head", resolved)
+	require.EqualValues(t, 1, requests.Load())
+
+	lockedURL, ok := lock.GetLookup(workspace.CoreLockNamespace, workspace.LockOperationVanityURL, []any{source})
+	require.True(t, ok)
+	require.Equal(t, "https://github.com/dagger/dagger", lockedURL)
+	lockedVersion, ok := lock.GetLookup(workspace.CoreLockNamespace, workspace.LockOperationVanityVersion, []any{source, "my feature"})
+	require.True(t, ok)
+	require.Equal(t, "pull/7/head", lockedVersion)
+
+	// A new session has no cached probe. The lock alone must resolve the ref.
+	resolved, err = ResolveDaggerGetRedirect(newCtx("session-b"), source+"@my feature")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger@pull/7/head", resolved)
+	require.EqualValues(t, 1, requests.Load(), "a locked version must not probe again")
+}
+
+func TestUpdateVanityVersionLockEntry(t *testing.T) {
+	vanityVersionServer(t, nil)
+	source := "https://127.0.0.1/go"
+
+	for requested, expected := range map[string]string{
+		"my feature": "pull/7/head",
+		"main":       "main",
+		"":           "v1",
+	} {
+		actual, err := updateVanityVersionLockEntry(t.Context(), workspace.LookupEntry{
+			Operation: workspace.LockOperationVanityVersion,
+			Inputs:    []any{source, requested},
+		})
+		require.NoError(t, err)
+		require.Equal(t, expected, actual)
 	}
 }
