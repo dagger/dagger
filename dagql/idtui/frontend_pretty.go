@@ -2485,9 +2485,12 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
+	// Only separate the primary output from a report actually rendered above it.
+	var rendered bool
 	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasConversation() || fe.db.HasGenerateReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
+			rendered = true
 		}
 
 		if fe.msgPreFinalRender.Len() > 0 {
@@ -2512,7 +2515,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 				// Only the error re-print is redundant, though: the stdout
 				// stream is the command's own result (e.g. a shell script's
 				// output from before it failed), so still write it.
-				if err := writePrimaryOutput(w, fe.db, fe.primarySpan(), false); err != nil {
+				if err := writePrimaryOutput(w, fe.db, fe.primarySpan(), false, rendered); err != nil {
 					return err
 				}
 			}
@@ -2548,10 +2551,10 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		// primary span's stderr), so nothing above covered that stream and
 		// dropping it here would lose it entirely.
 		if primary := fe.db.Spans.Map[fe.primarySpan()]; primary != nil && primary.IsFailedOrCausedFailure() {
-			return writePrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError())
+			return writePrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError(), rendered)
 		}
 	}
-	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan())
+	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan(), rendered)
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
