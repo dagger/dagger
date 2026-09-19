@@ -304,14 +304,14 @@ type persistedCacheVolumePayload struct {
 	Selector       string           `json:"selector,omitempty"`
 }
 
-func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if cache == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted cache volume: nil cache volume")
 	}
 	var sourceResultID uint64
 	if cache.Source.Valid {
-		encoded, err := encodePersistedObjectRef(persistedCache, cache.Source.Value, "cache volume source")
+		encoded, err := encodePersistedObjectRef(enc, cache.Source.Value, "cache volume source")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -395,7 +395,7 @@ func (cache *CacheVolume) lockKey() (string, error) {
 	return "cache-volume:" + string(payload), nil
 }
 
-func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*CacheVolume) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedCacheVolumePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted cache volume payload: %w", err)
@@ -403,7 +403,7 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 
 	source := dagql.Nullable[dagql.ObjectResult[*Directory]]{}
 	if persisted.SourceResultID != 0 {
-		sourceRes, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "cache volume source")
+		sourceRes, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.SourceResultID, "cache volume source")
 		if err != nil {
 			return nil, err
 		}
@@ -423,10 +423,10 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 	if cache.selector == "" {
 		cache.selector = "/"
 	}
-	if resultID == 0 {
+	if dec.ResultID() == 0 {
 		return cache, nil
 	}
-	links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "cache volume")
+	links, err := loadPersistedSnapshotLinksByResultID(ctx, dec, "cache volume")
 	if err != nil {
 		return nil, err
 	}

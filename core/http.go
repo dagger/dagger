@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -162,9 +163,9 @@ func (state *HTTPState) CacheUsageSize(ctx context.Context, sizeProvider dagql.C
 	return size, true, nil
 }
 
-func (state *HTTPState) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (state *HTTPState) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if state == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted http state: nil state")
 	}
@@ -173,6 +174,7 @@ func (state *HTTPState) EncodePersistedObject(ctx context.Context, cache dagql.P
 	if snapshotID == "" && state.snapshot != nil {
 		snapshotID = state.snapshot.SnapshotID()
 	}
+	saved := persistedHTTPStatePayload{URL: state.URL, ETag: state.ETag, LastModified: state.LastModified, ContentDigest: state.ContentDigest.String()}
 	state.mu.Unlock()
 	var links []dagql.PersistedSnapshotRefLink
 	if snapshotID != "" {
@@ -181,12 +183,7 @@ func (state *HTTPState) EncodePersistedObject(ctx context.Context, cache dagql.P
 			Role:   "snapshot",
 		}}
 	}
-	payload, err := json.Marshal(persistedHTTPStatePayload{
-		URL:           state.URL,
-		ETag:          state.ETag,
-		LastModified:  state.LastModified,
-		ContentDigest: state.ContentDigest.String(),
-	})
+	payload, err := json.Marshal(saved)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -196,7 +193,7 @@ func (state *HTTPState) EncodePersistedObject(ctx context.Context, cache dagql.P
 	}, nil
 }
 
-func (*HTTPState) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*HTTPState) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedHTTPStatePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted http state payload: %w", err)
@@ -213,8 +210,8 @@ func (*HTTPState) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		}
 		state.ContentDigest = dgst
 	}
-	if resultID != 0 {
-		links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "http state")
+	if dec.ResultID() != 0 {
+		links, err := loadPersistedSnapshotLinksByResultID(ctx, dec, "http state")
 		if err != nil {
 			return nil, err
 		}
@@ -396,7 +393,7 @@ func (state *HTTPState) fileResult(
 	query *Query,
 	name string,
 	permissions int,
-) (*HTTPFetchResult, error) {
+) (_ *HTTPFetchResult, rerr error) {
 	if state.snapshot == nil {
 		return nil, fmt.Errorf("http state %q has no snapshot", state.URL)
 	}
@@ -409,6 +406,11 @@ func (state *HTTPState) fileResult(
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if newRef != nil {
+			rerr = errors.Join(rerr, newRef.Release(context.WithoutCancel(ctx)))
+		}
+	}()
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		src, err := RootPathWithoutFinalSymlink(root, httpStateCanonicalPath)
 		if err != nil {
@@ -427,13 +429,13 @@ func (state *HTTPState) fileResult(
 		return nil
 	})
 	if err != nil {
-		_ = newRef.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
 	snap, err := newRef.Commit(ctx)
 	if err != nil {
 		return nil, err
 	}
+	newRef = nil
 	file := &File{
 		Platform: query.Platform(),
 		File:     new(LazyAccessor[string, *File]),
@@ -448,11 +450,11 @@ func (state *HTTPState) fileResult(
 	}, nil
 }
 
-func FetchHTTPFile(
-	ctx context.Context,
-	query *Query,
-	opts FetchHTTPRequestOpts,
-) (_ *HTTPFetchResult, rerr error) {
+func FetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts) (*HTTPFetchResult, error) {
+	return fetchHTTPFile(ctx, query, opts, false)
+}
+
+func fetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts, useFileResultLayout bool) (_ *HTTPFetchResult, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "fetching "+opts.URL, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
@@ -493,8 +495,20 @@ func FetchHTTPFile(
 	}()
 
 	h := sha256.New()
-	err = MountRef(ctx, bkref, func(out string, _ *mount.Mount) error {
+	err = MountRef(ctx, bkref, func(out string, _ *mount.Mount) (writeErr error) {
+		defer func() {
+			if useFileResultLayout && writeErr != nil {
+				writeErr = TrimErrPathPrefix(writeErr, out)
+			}
+		}()
 		dest := filepath.Join(out, opts.Filename)
+		if useFileResultLayout {
+			var err error
+			dest, err = RootPathWithoutFinalSymlink(out, opts.Filename)
+			if err != nil {
+				return err
+			}
+		}
 		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(opts.Permissions))
 		if err != nil {
 			return err
@@ -505,6 +519,12 @@ func FetchHTTPFile(
 		}
 		if err := f.Close(); err != nil {
 			return err
+		}
+
+		if useFileResultLayout {
+			if err := os.Chmod(dest, os.FileMode(opts.Permissions)); err != nil {
+				return err
+			}
 		}
 
 		timestamp := time.Unix(0, 0)
@@ -576,4 +596,102 @@ func parseOptionalChecksum(raw dagql.Optional[dagql.String]) (digest.Digest, err
 
 func etagValue(v string) string {
 	return strings.TrimPrefix(v, "W/")
+}
+
+const persistedFileLazyKindHTTPResolve = "httpResolve"
+
+type FileHTTPResolveLazy struct {
+	LazyState
+	URL         string
+	Filename    string
+	Permissions int
+	Checksum    dagql.Optional[dagql.String]
+	BodyDigest  digest.Digest
+}
+type persistedFileHTTPResolveLazy struct {
+	URL         string  `json:"url"`
+	Filename    string  `json:"filename"`
+	Permissions int     `json:"permissions"`
+	Checksum    *string `json:"checksum"`
+	BodyDigest  string  `json:"bodyDigest"`
+}
+
+func (p *persistedFileHTTPResolveLazy) validate() error {
+	dgst := digest.Digest(p.BodyDigest)
+	if err := dgst.Validate(); err != nil {
+		return fmt.Errorf("HTTP File producer body digest: %w", err)
+	}
+	if dgst.Algorithm() != digest.SHA256 {
+		return fmt.Errorf("HTTP File producer body digest must be SHA-256")
+	}
+	return nil
+}
+func (lazy *FileHTTPResolveLazy) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	p := persistedFileHTTPResolveLazy{URL: lazy.URL, Filename: lazy.Filename, Permissions: lazy.Permissions, BodyDigest: lazy.BodyDigest.String()}
+	if lazy.Checksum.Valid {
+		value := string(lazy.Checksum.Value)
+		p.Checksum = &value
+	}
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	return json.Marshal(p)
+}
+func decodeFileHTTPResolveLazy(payload json.RawMessage) (Lazy[*File], error) {
+	var p persistedFileHTTPResolveLazy
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("decode HTTP File producer: %w", err)
+	}
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	lazy := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: p.URL, Filename: p.Filename, Permissions: p.Permissions, BodyDigest: digest.Digest(p.BodyDigest)}
+	if p.Checksum != nil {
+		lazy.Checksum = dagql.Optional[dagql.String]{Valid: true, Value: dagql.String(*p.Checksum)}
+	}
+	return lazy, nil
+}
+func (*FileHTTPResolveLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+type HTTPProducerDigestMismatchError struct {
+	Recorded digest.Digest
+	Fetched  digest.Digest
+}
+
+func (err *HTTPProducerDigestMismatchError) Error() string {
+	return fmt.Sprintf("HTTP File producer body mismatch: recorded %s, fetched %s", err.Recorded, err.Fetched)
+}
+
+func (lazy *FileHTTPResolveLazy) Evaluate(ctx context.Context, file *File) error {
+	var candidate *File
+	err := lazy.LazyState.Evaluate(ctx, "HTTPState._resolve", func(ctx context.Context) error {
+		if err := validateProducedFileReceiver(file); err != nil {
+			return err
+		}
+		if err := (&persistedFileHTTPResolveLazy{BodyDigest: lazy.BodyDigest.String()}).validate(); err != nil {
+			return err
+		}
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		fetched, err := fetchHTTPFile(ctx, query, FetchHTTPRequestOpts{URL: lazy.URL, Filename: lazy.Filename, Permissions: lazy.Permissions, Checksum: lazy.Checksum}, true)
+		if err != nil {
+			return err
+		}
+		candidate = fetched.File
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if fetched.ContentDigest != lazy.BodyDigest {
+			return &HTTPProducerDigestMismatchError{Recorded: lazy.BodyDigest, Fetched: fetched.ContentDigest}
+		}
+		return moveProducedFile(file, candidate)
+	})
+	if candidate != nil {
+		err = errors.Join(err, candidate.OnRelease(context.WithoutCancel(ctx)))
+	}
+	return err
 }

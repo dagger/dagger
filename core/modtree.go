@@ -1223,15 +1223,15 @@ type persistedModTreeNode struct {
 }
 
 type persistedModTreeEncoder struct {
-	cache    dagql.PersistedObjectCache
+	encCtx   *dagql.PersistEncodeContext
 	ids      map[*ModTreeNode]int
 	visiting map[*ModTreeNode]bool
 	tree     persistedModTree
 }
 
-func newPersistedModTreeEncoder(cache dagql.PersistedObjectCache) *persistedModTreeEncoder {
+func newPersistedModTreeEncoder(enc *dagql.PersistEncodeContext) *persistedModTreeEncoder {
 	return &persistedModTreeEncoder{
-		cache:    cache,
+		encCtx:   enc,
 		ids:      map[*ModTreeNode]int{},
 		visiting: map[*ModTreeNode]bool{},
 	}
@@ -1268,21 +1268,21 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 		IsAgent:     node.IsAgent,
 	}
 	if node.Module.Self() != nil {
-		moduleID, err := encodePersistedObjectRef(enc.cache, node.Module, "mod tree module")
+		moduleID, err := encodePersistedObjectRef(enc.encCtx, node.Module, "mod tree module")
 		if err != nil {
 			return 0, err
 		}
 		persisted.ModuleResultID = moduleID
 	}
 	if node.OriginalModule.Self() != nil {
-		originalModuleID, err := encodePersistedObjectRef(enc.cache, node.OriginalModule, "mod tree original module")
+		originalModuleID, err := encodePersistedObjectRef(enc.encCtx, node.OriginalModule, "mod tree original module")
 		if err != nil {
 			return 0, err
 		}
 		persisted.OriginalModuleResultID = originalModuleID
 	}
 	if node.Type.Self() != nil {
-		typeID, err := encodePersistedObjectRef(enc.cache, node.Type, "mod tree typedef")
+		typeID, err := encodePersistedObjectRef(enc.encCtx, node.Type, "mod tree typedef")
 		if err != nil {
 			return 0, err
 		}
@@ -1292,7 +1292,7 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 	return id, nil
 }
 
-func decodePersistedModTree(ctx context.Context, dag *dagql.Server, tree persistedModTree) (map[int]*ModTreeNode, error) {
+func decodePersistedModTree(ctx context.Context, dec *dagql.PersistDecodeContext, tree persistedModTree) (map[int]*ModTreeNode, error) {
 	nodes := make(map[int]*ModTreeNode, len(tree.Nodes))
 	serverByModuleID := map[uint64]*dagql.Server{}
 
@@ -1313,7 +1313,7 @@ func decodePersistedModTree(ctx context.Context, dag *dagql.Server, tree persist
 			IsAgent:     persisted.IsAgent,
 		}
 		if persisted.ModuleResultID != 0 {
-			module, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleResultID, "mod tree module")
+			module, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, persisted.ModuleResultID, "mod tree module")
 			if err != nil {
 				return nil, err
 			}
@@ -1330,14 +1330,14 @@ func decodePersistedModTree(ctx context.Context, dag *dagql.Server, tree persist
 			}
 		}
 		if persisted.OriginalModuleResultID != 0 {
-			originalModule, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.OriginalModuleResultID, "mod tree original module")
+			originalModule, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, persisted.OriginalModuleResultID, "mod tree original module")
 			if err != nil {
 				return nil, err
 			}
 			node.OriginalModule = originalModule
 		}
 		if persisted.TypeResultID != 0 {
-			typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, persisted.TypeResultID, "mod tree typedef")
+			typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, persisted.TypeResultID, "mod tree typedef")
 			if err != nil {
 				return nil, err
 			}

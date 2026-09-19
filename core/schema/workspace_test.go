@@ -46,7 +46,12 @@ func (b *workspaceCheckoutBackend) Tree(_ context.Context, _ *dagql.Server, disc
 	b.requests = append(b.requests, workspaceCheckoutRequest{discard, depth, includeTags, remotes})
 	// Each backend invocation produces a distinct materialization. Comparing
 	// content digests would miss redundant copies of identical checkout data.
-	return &core.Directory{}, nil
+	// The accessors are what every real backend sets and what recording the
+	// completed producer requires.
+	dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory])}
+	dir.Dir.SetValue("/")
+	dir.Snapshot.SetValue(&workspaceExportTestSnapshot{})
+	return dir, nil
 }
 
 func TestWorkspaceGitCheckoutReuse(t *testing.T) {

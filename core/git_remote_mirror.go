@@ -105,9 +105,9 @@ type persistedRemoteGitMirrorPayload struct {
 	RemoteURL string `json:"remoteURL"`
 }
 
-func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if mirror == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted remote git mirror: nil mirror")
 	}
@@ -132,20 +132,20 @@ func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, cache 
 	}, nil
 }
 
-func (*RemoteGitMirror) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*RemoteGitMirror) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedRemoteGitMirrorPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted remote git mirror payload: %w", err)
 	}
 	mirror := NewRemoteGitMirror(persisted.RemoteURL)
-	if resultID == 0 {
+	if dec.ResultID() == 0 {
 		return mirror, nil
 	}
-	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, "remote git mirror", "bare_repo")
+	link, err := loadPersistedSnapshotLinkByResultID(ctx, dec, "remote git mirror", "bare_repo")
 	if err != nil {
 		return nil, err
 	}
-	query, err := persistedDecodeQuery(dag)
+	query, err := persistedDecodeQuery(dec)
 	if err != nil {
 		return nil, err
 	}

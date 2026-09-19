@@ -525,7 +525,7 @@ func (*ModuleConfigClient) TypeDescription() string {
 	return "The client generated for the module."
 }
 
-func (m ModuleConfigClient) Clone() *ModuleConfigClient {
-	cp := m
+func (client ModuleConfigClient) Clone() *ModuleConfigClient {
+	cp := client
 	return &cp
 }

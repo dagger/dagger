@@ -792,7 +792,7 @@ func (sdk persistedModuleSourceLazyRuntimeTarget) TargetRuntime(ctx context.Cont
 	return targetSDK.TargetRuntime(ctx)
 }
 
-func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if src == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: nil module source")
 	}
@@ -847,14 +847,14 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		}
 	}
 	if src.ContextDirectory.Self() != nil {
-		contextDirID, err := encodePersistedObjectRef(cache, src.ContextDirectory, "module source context directory")
+		contextDirID, err := encodePersistedObjectRef(enc, src.ContextDirectory, "module source context directory")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.ContextDirectoryResultID = contextDirID
 	}
 	if src.Workspace.Self() != nil {
-		workspaceID, err := encodePersistedObjectRef(cache, src.Workspace, "module source workspace")
+		workspaceID, err := encodePersistedObjectRef(enc, src.Workspace, "module source workspace")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -865,14 +865,14 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		if dep.Self() == nil {
 			continue
 		}
-		depID, err := encodePersistedObjectRef(cache, dep, "module source dependency")
+		depID, err := encodePersistedObjectRef(enc, dep, "module source dependency")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.DependencyResultIDs = append(payload.DependencyResultIDs, depID)
 	}
 	if src.Blueprint.Self() != nil {
-		blueprintID, err := encodePersistedObjectRef(cache, src.Blueprint, "module source blueprint")
+		blueprintID, err := encodePersistedObjectRef(enc, src.Blueprint, "module source blueprint")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -883,7 +883,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		if toolchain.Self() == nil {
 			continue
 		}
-		toolchainID, err := encodePersistedObjectRef(cache, toolchain, "module source toolchain")
+		toolchainID, err := encodePersistedObjectRef(enc, toolchain, "module source toolchain")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -904,7 +904,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			Ref:              src.Git.Ref,
 		}
 		if src.Git.UnfilteredContextDir.Self() != nil {
-			unfilteredID, err := encodePersistedObjectRef(cache, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
+			unfilteredID, err := encodePersistedObjectRef(enc, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
@@ -916,7 +916,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
 		}
 		if src.DirSrc.OriginalContextDir.Self() != nil {
-			originalContextDirID, err := encodePersistedObjectRef(cache, src.DirSrc.OriginalContextDir, "module source dir original context dir")
+			originalContextDirID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginalContextDir, "module source dir original context dir")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
@@ -926,34 +926,34 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedModuleSourcePayload
-	if err := json.Unmarshal(payload, &persisted); err != nil {
+	if err := unmarshalPersistedPayload(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted module source payload: %w", err)
 	}
-	contextDirectory, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ContextDirectoryResultID, "module source context directory")
+	contextDirectory, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.ContextDirectoryResultID, "module source context directory")
 	if err != nil {
 		return nil, err
 	}
-	workspace, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.WorkspaceResultID, "module source workspace")
+	workspace, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dec, persisted.WorkspaceResultID, "module source workspace")
 	if err != nil {
 		return nil, err
 	}
 	dependencies := make([]dagql.ObjectResult[*ModuleSource], 0, len(persisted.DependencyResultIDs))
 	for _, depID := range persisted.DependencyResultIDs {
-		depRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, depID, "module source dependency")
+		depRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dec, depID, "module source dependency")
 		if err != nil {
 			return nil, err
 		}
 		dependencies = append(dependencies, depRes)
 	}
-	blueprint, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.BlueprintResultID, "module source blueprint")
+	blueprint, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dec, persisted.BlueprintResultID, "module source blueprint")
 	if err != nil {
 		return nil, err
 	}
 	toolchains := make([]dagql.ObjectResult[*ModuleSource], 0, len(persisted.ToolchainResultIDs))
 	for _, toolchainID := range persisted.ToolchainResultIDs {
-		toolchainRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, toolchainID, "module source toolchain")
+		toolchainRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dec, toolchainID, "module source toolchain")
 		if err != nil {
 			return nil, err
 		}
@@ -1003,7 +1003,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 			Ref:              persisted.Git.Ref,
 		}
 		if persisted.GitUnfilteredContextDirResultID != 0 {
-			unfilteredContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.GitUnfilteredContextDirResultID, "module source git unfiltered context directory")
+			unfilteredContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.GitUnfilteredContextDirResultID, "module source git unfiltered context directory")
 			if err != nil {
 				return nil, err
 			}
@@ -1015,7 +1015,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 			OriginalSourceRootSubpath: persisted.DirSrc.OriginalSourceRootSubpath,
 		}
 		if persisted.DirSrc.OriginalContextDirResultID != 0 {
-			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
+			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
 			if err != nil {
 				return nil, err
 			}

@@ -26,17 +26,17 @@ type WorkspaceMigrationStep struct {
 
 // Retain the snapshots used by the plan and its steps for as long as the plan
 // is retained. Steps are metadata; their changesets are cache-backed objects.
-func (m *WorkspaceMigration) AttachDependencyResults(
+func (migration *WorkspaceMigration) AttachDependencyResults(
 	ctx context.Context,
 	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	changes, err := attachMigrationChanges(&m.Changes, attach)
+	changes, err := attachMigrationChanges(&migration.Changes, attach)
 	if err != nil {
 		return nil, err
 	}
 	deps := []dagql.AnyResult{changes}
-	for _, step := range m.Steps {
+	for _, step := range migration.Steps {
 		stepDeps, err := step.AttachDependencyResults(ctx, self, attach)
 		if err != nil {
 			return nil, err
@@ -46,12 +46,12 @@ func (m *WorkspaceMigration) AttachDependencyResults(
 	return deps, nil
 }
 
-func (s *WorkspaceMigrationStep) AttachDependencyResults(
+func (step *WorkspaceMigrationStep) AttachDependencyResults(
 	_ context.Context,
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	changes, err := attachMigrationChanges(&s.Changes, attach)
+	changes, err := attachMigrationChanges(&step.Changes, attach)
 	if err != nil {
 		return nil, err
 	}

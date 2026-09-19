@@ -46,9 +46,9 @@ func (*persistCodecNonPersistedObj) Type() *ast.Type {
 	}
 }
 
-func (obj *persistCodecObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (obj *persistCodecObj) EncodePersistedObject(ctx context.Context, enc *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	payload, err := json.Marshal(persistedPersistCodecObj{Name: obj.Name})
 	if err != nil {
 		return PersistedObjectEncoding{}, err
@@ -56,9 +56,9 @@ func (obj *persistCodecObj) EncodePersistedObject(ctx context.Context, cache Per
 	return PersistedObjectEncoding{JSON: payload}, nil
 }
 
-func (*persistCodecObj) DecodePersistedObject(ctx context.Context, dag *Server, _ uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
+func (*persistCodecObj) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, payload json.RawMessage) (Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var persisted persistedPersistCodecObj
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, err

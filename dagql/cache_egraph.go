@@ -1118,7 +1118,7 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs)
 }
 
-func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDigest digest.Digest) error {
+func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDigest digest.Digest, additionalLabels ...string) error {
 	if res == nil {
 		return fmt.Errorf("teach content digest: nil result")
 	}
@@ -1156,6 +1156,13 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 				Label:  call.ExtraDigestLabelContent,
 				Digest: contentDigest,
 			})
+		}
+
+		for _, label := range additionalLabels {
+			extra := call.ExtraDigest{Digest: contentDigest, Label: label}
+			if !slices.Contains(frame.ExtraDigests, extra) {
+				frame.ExtraDigests = append(frame.ExtraDigests, extra)
+			}
 		}
 
 		requestDigest, err := frame.deriveRecipeDigest(c)

@@ -1,0 +1,127 @@
+package dagql
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+)
+
+// CapturePersistedRecord copies one registered row without evaluating it or
+// opening its snapshots. The returned record owns its bytes and still uses
+// local result IDs. It is the encoding step of live metadata export, not a
+// portable graph: callers must separately capture and relocate its references.
+// A row being evaluated reports ErrPersistStateNotReady; unstarted work is
+// encoded with its original inputs.
+func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_ PersistedRecord, rerr error) {
+	op, err := c.beginCacheOperation()
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	defer op.finish(false)
+	if err := context.Cause(ctx); err != nil {
+		return PersistedRecord{}, err
+	}
+	if result == nil || result.cacheSharedResult() == nil {
+		return PersistedRecord{}, fmt.Errorf("capture persisted record: detached result")
+	}
+	shared := result.cacheSharedResult()
+	c.egraphMu.Lock()
+	if shared.id == 0 || c.resultsByID[shared.id] != shared {
+		c.egraphMu.Unlock()
+		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d is not registered in this cache", shared.id)
+	}
+	switch shared.attachmentState() {
+	case resultAttachmentOpen:
+		c.egraphMu.Unlock()
+		return PersistedRecord{}, fmt.Errorf("%w: result %d dependency attachment", ErrPersistStateNotReady, shared.id)
+	case resultAttachmentFailed:
+		c.egraphMu.Unlock()
+		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
+	}
+	c.incrementIncomingOwnershipLocked(ctx, shared)
+	c.egraphMu.Unlock()
+	defer func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		c.egraphMu.Lock()
+		queue, decErr := c.decrementIncomingOwnershipLocked(cleanupCtx, shared, nil)
+		releases, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
+		c.egraphMu.Unlock()
+		rerr = errors.Join(rerr, decErr, collectErr, runOnReleaseFuncs(cleanupCtx, releases))
+	}()
+
+	shared.lazyMu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			shared.lazyMu.Unlock()
+		}
+	}()
+	armed := shared.lazyWhole.eval != nil
+	if shared.lazyWhole.attempt != nil || shared.lazyWhole.syncPending {
+		return PersistedRecord{}, fmt.Errorf("%w: result %d whole evaluation", ErrPersistStateNotReady, shared.id)
+	}
+	for key, group := range shared.lazyPartGroups {
+		if group.attempt != nil || group.syncPending {
+			return PersistedRecord{}, fmt.Errorf("%w: result %d group %q", ErrPersistStateNotReady, shared.id, key)
+		}
+		armed = armed || group.eval != nil
+	}
+
+	payload := shared.loadPayloadState()
+	frame := shared.loadResultCall().clone()
+	captured := &sharedResult{
+		id:                    shared.id,
+		self:                  payload.self,
+		isObject:              payload.isObject,
+		hasValue:              payload.hasValue,
+		sessionResourceHandle: shared.sessionResourceHandle,
+	}
+	captured.storeResultCall(frame)
+	value := Result[Typed]{shared: captured}
+	// Parts may have unstarted work before a cache-side group exists. Consult
+	// the object callback too, but only after ruling out a published attempt.
+	if payload.persistedEnvelope != nil || shared.lazyEvalComplete || (!armed && lazyEvalFuncOfResult(value) == nil) {
+		shared.lazyMu.Unlock()
+		locked = false
+	}
+	if err := context.Cause(ctx); err != nil {
+		return PersistedRecord{}, err
+	}
+
+	var encoding PersistedResultEncoding
+	if payload.persistedEnvelope != nil {
+		encoding = PersistedResultEncoding{
+			Envelope:      *payload.persistedEnvelope,
+			SnapshotLinks: payload.snapshotOwnerLinks,
+		}
+	} else {
+		encodeCtx := ctx
+		if frame != nil {
+			encodeCtx = ContextWithCall(ctx, frame)
+		}
+		encoding, err = DefaultPersistedSelfCodec.EncodeResult(encodeCtx, c, value)
+		if err != nil {
+			return PersistedRecord{}, fmt.Errorf("capture persisted record %d: %w", shared.id, err)
+		}
+	}
+	if err := context.Cause(ctx); err != nil {
+		return PersistedRecord{}, err
+	}
+	return PersistedRecord{
+		ResultID:      uint64(shared.id),
+		Envelope:      clonePersistedEnvelope(encoding.Envelope),
+		Call:          frame,
+		SnapshotLinks: slices.Clone(encoding.SnapshotLinks),
+	}, nil
+}
+
+func clonePersistedEnvelope(env PersistedResultEnvelope) PersistedResultEnvelope {
+	env.ObjectJSON = slices.Clone(env.ObjectJSON)
+	env.ScalarJSON = slices.Clone(env.ScalarJSON)
+	env.Items = slices.Clone(env.Items)
+	for i := range env.Items {
+		env.Items[i] = clonePersistedEnvelope(env.Items[i])
+	}
+	return env
+}

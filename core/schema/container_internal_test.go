@@ -42,7 +42,7 @@ func (op *containerImagePartsConcurrencyTestOp) AttachDependencies(context.Conte
 	return nil, nil
 }
 
-func (op *containerImagePartsConcurrencyTestOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerImagePartsConcurrencyTestOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 

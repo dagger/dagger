@@ -38,7 +38,7 @@ func (*DirectoryRestoreLazy) AttachDependencies(context.Context, func(dagql.AnyR
 	return nil, nil
 }
 
-func (*DirectoryRestoreLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (*DirectoryRestoreLazy) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, fmt.Errorf("restored directory must encode its stored snapshot")
 }
 
@@ -62,7 +62,7 @@ func (*FileRestoreLazy) AttachDependencies(context.Context, func(dagql.AnyResult
 	return nil, nil
 }
 
-func (*FileRestoreLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (*FileRestoreLazy) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, fmt.Errorf("restored file must encode its stored snapshot")
 }
 

@@ -68,6 +68,8 @@ func TestContainerExecSuccessConsumesFinalReadOnlyMount(t *testing.T) {
 	child := newExecPartsTestChild(t, baseRes, base)
 	child.Lazy = &containerPartsTestSuccessfulExecOp{ContainerExecLazy: child.Lazy.(*ContainerExecLazy)}
 	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "exec-final-child", child)
+	pendingRecipe, err := child.Lazy.EncodePersisted(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
+	require.NoError(t, err)
 
 	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartExecMeta))
 	require.Equal(t, 1, baseOp.mountRunsFor("/ro"))
@@ -79,7 +81,7 @@ func TestContainerExecSuccessConsumesFinalReadOnlyMount(t *testing.T) {
 	require.Nil(t, child.lazyOpForRouting())
 	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
 
-	encoded, err := child.EncodePersistedObject(ctx, cache)
+	encoded, err := child.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 	require.NoError(t, err)
 	var persisted struct {
 		Metadata struct {
@@ -90,7 +92,7 @@ func TestContainerExecSuccessConsumesFinalReadOnlyMount(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(encoded.JSON, &persisted))
 	require.True(t, persisted.Metadata.Consumed)
-	require.Empty(t, persisted.LazyJSON)
+	require.JSONEq(t, string(pendingRecipe), string(persisted.LazyJSON))
 	require.Equal(t, containerPartDirectory, persisted.Parts[ContainerPartMount("/ro")].Kind)
 }
 

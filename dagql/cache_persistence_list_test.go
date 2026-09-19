@@ -105,8 +105,8 @@ func TestPersistedNestedListSurvivesRepeatedRestore(t *testing.T) {
 func TestPersistedListDefersReferencedChildrenWithoutServer(t *testing.T) {
 	ctx, _, _ := persistedListTestCache(t, "")
 	frame := &ResultCall{Kind: ResultCallKindField, Field: "list", Type: NewResultCallType(Array[Int]{}.Type())}
-	env := PersistedResultEnvelope{Kind: persistedResultKindList, ElemTypeName: "Int", Items: []PersistedResultEnvelope{
-		{Kind: persistedResultKindScalar, TypeName: "Int", ResultID: 999, ScalarJSON: json.RawMessage(`7`)},
+	env := PersistedResultEnvelope{Version: persistedResultEnvelopeVersion, Kind: persistedResultKindList, Items: []PersistedResultEnvelope{
+		{Version: persistedResultEnvelopeVersion, Kind: persistedResultKindRef, ResultID: 999},
 	}}
 	for _, ctx := range []context.Context{t.Context(), ctx} {
 		_, err := DefaultPersistedSelfCodec.DecodeResult(ctx, nil, 0, frame, env)

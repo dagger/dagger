@@ -132,6 +132,13 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
+// 19: self payload envelopes are version 3: attached absent values keep
+// their row identity, scalars decode losslessly, lists rebuild their declared
+// recursive type from the recorded call, object envelopes name their codec
+// family, and list items naming another row carry no duplicated body. Older
+// envelopes flatten list types and lose absent-row identity, so they are
+// wiped on import.
+//
 // 18: container payloads retain completion and snapshot descriptors per part,
 // replacing the whole-container ready/recipe split. Older payloads cannot
 // express that distinction and are wiped on import.
@@ -140,7 +147,7 @@ type persistedEdge struct {
 // persisted as result refs. Older snapshots may hold untracked scalar handle
 // strings whose referents were never retained (and whose IDs may have been
 // reused), so they are wiped rather than imported.
-const cachePersistenceSchemaVersion = "18"
+const cachePersistenceSchemaVersion = "19"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
@@ -2416,10 +2423,23 @@ func sharedResultObjectTypeName(res *sharedResult, state sharedResultPayloadStat
 // Persisted-envelope decoding still uses this directly because there is no
 // in-memory value to derive a class from at decode time.
 func resolverForSharedResultObject(ctx context.Context, resolver TypeResolver, res *sharedResult, typeName string) (TypeResolver, error) {
+	return resolverForSharedResultType(ctx, resolver, res, persistedEnvelopeTypeName{name: typeName, object: true})
+}
+
+// resolverForSharedResultType generalizes resolverForSharedResultObject to
+// scalar and enum types: a persisted enum or custom scalar defined by a module
+// needs that module's schema installed before its envelope can decode, exactly
+// as a module object does.
+func resolverForSharedResultType(ctx context.Context, resolver TypeResolver, res *sharedResult, typ persistedEnvelopeTypeName) (TypeResolver, error) {
+	typeName := typ.name
 	if resolver == nil || res == nil || typeName == "" {
 		return resolver, nil
 	}
-	if _, ok := resolver.ObjectType(typeName); ok {
+	if typ.object {
+		if _, ok := resolver.ObjectType(typeName); ok {
+			return resolver, nil
+		}
+	} else if _, ok := resolver.ScalarType(typeName); ok {
 		return resolver, nil
 	}
 	srv, ok := resolver.(*Server)
@@ -3276,7 +3296,9 @@ func derefTyped(val Typed) (Typed, bool) {
 	return derefable.Deref()
 }
 
-func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest) (Result[T], error) {
+// WithContentDigest sets the content identity and optionally attaches the same
+// digest under additional informational labels. Existing labelled entries remain.
+func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest, additionalLabels ...string) (Result[T], error) {
 	if contentDigest == "" {
 		return r, fmt.Errorf("set content digest on %T: empty digest", r.Self())
 	}
@@ -3288,7 +3310,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 		if err != nil {
 			return r, fmt.Errorf("set content digest on %T: current dagql cache: %w", r.Self(), err)
 		}
-		if err := cache.TeachContentDigest(ctx, r, contentDigest); err != nil {
+		if err := cache.TeachContentDigest(ctx, r, contentDigest, additionalLabels...); err != nil {
 			return r, err
 		}
 		return r, nil
@@ -3362,6 +3384,12 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			Label:  call.ExtraDigestLabelContent,
 			Digest: contentDigest,
 		})
+	}
+	for _, label := range additionalLabels {
+		extra := call.ExtraDigest{Digest: contentDigest, Label: label}
+		if !slices.Contains(frame.ExtraDigests, extra) {
+			frame.ExtraDigests = append(frame.ExtraDigests, extra)
+		}
 	}
 	return r, nil
 }
@@ -3579,8 +3607,8 @@ func (r ObjectResult[T]) Receiver(ctx context.Context, srv *Server) (AnyObjectRe
 	return obj, nil
 }
 
-func (r ObjectResult[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest) (ObjectResult[T], error) {
-	res, err := r.Result.WithContentDigest(ctx, contentDigest)
+func (r ObjectResult[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest, additionalLabels ...string) (ObjectResult[T], error) {
+	res, err := r.Result.WithContentDigest(ctx, contentDigest, additionalLabels...)
 	if err != nil {
 		return ObjectResult[T]{}, err
 	}

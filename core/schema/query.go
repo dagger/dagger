@@ -3,8 +3,10 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 	"time"
 
@@ -243,5 +245,13 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, file.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
+	if err := core.RecordCompletedProducer(file, &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: schemaJSONFilename, Contents: slices.Clone(moduleSchemaJSON), Permissions: perm}); err != nil {
+		return inst, err
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, file)
 }

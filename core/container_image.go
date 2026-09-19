@@ -253,12 +253,12 @@ func (lazy *ContainerFromImageRefLazy) AttachDependencies(ctx context.Context, a
 	return attachments, nil
 }
 
-func (lazy *ContainerFromImageRefLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container from parent")
+func (lazy *ContainerFromImageRefLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container from parent")
 	if err != nil {
 		return nil, err
 	}
-	services, err := encodePersistedServiceBindings(cache, "container from registry", lazy.RegistryServices)
+	services, err := encodePersistedServiceBindings(enc, "container from registry", lazy.RegistryServices)
 	if err != nil {
 		return nil, err
 	}

@@ -366,12 +366,15 @@ func benchmarkMetadataPopulateTransient(b *testing.B, c *Cache, ctx context.Cont
 	}
 }
 
-// BenchmarkCacheMetadataSchema18Import measures importing the unchanged
-// current persistence schema at the same two scale points. Run each
-// sub-benchmark with -benchtime=1x in a fresh process.
-func BenchmarkCacheMetadataSchema18Import(b *testing.B) {
-	if cachePersistenceSchemaVersion != "18" {
-		b.Fatalf("benchmark expects persistence schema 18, got %s", cachePersistenceSchemaVersion)
+// BenchmarkCacheMetadataCurrentSchemaImport measures importing the current
+// persistence schema at the same two scale points. The fixture writes and
+// reopens a store in whatever format the code currently writes, so it tracks
+// the constant instead of pinning a version that every format cut invalidates.
+// Run each sub-benchmark with -benchtime=1x in a fresh process.
+func BenchmarkCacheMetadataCurrentSchemaImport(b *testing.B) {
+	schemaVersion, err := strconv.Atoi(cachePersistenceSchemaVersion)
+	if err != nil {
+		b.Fatalf("persistence schema version %q is not a number: %v", cachePersistenceSchemaVersion, err)
 	}
 	for _, resultCount := range []int{200_000, 1_000_000} {
 		b.Run(strconv.Itoa(resultCount), func(b *testing.B) {
@@ -413,7 +416,7 @@ func BenchmarkCacheMetadataSchema18Import(b *testing.B) {
 					dbBytes += info.Size()
 				}
 
-				b.ReportMetric(17, "schema-version")
+				b.ReportMetric(float64(schemaVersion), "schema-version")
 				b.ReportMetric(float64(afterImport.ResultCount), "imported-results")
 				b.ReportMetric(float64(afterImport.TermCount), "imported-terms")
 				b.ReportMetric(float64(afterImport.ClassSlotCount), "imported-class-slots")

@@ -285,18 +285,18 @@ func (*LLMTokenUsage) Type() *ast.Type {
 	}
 }
 
-func (usage *LLMTokenUsage) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (usage *LLMTokenUsage) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if usage == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted LLM token usage: nil LLM token usage")
 	}
 	return encodePersistedObjectPayload(usage)
 }
 
-func (*LLMTokenUsage) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*LLMTokenUsage) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var usage LLMTokenUsage
 	if err := json.Unmarshal(payload, &usage); err != nil {
 		return nil, fmt.Errorf("decode persisted LLM token usage payload: %w", err)
@@ -3147,18 +3147,18 @@ func (v *LLMVariable) Type() *ast.Type {
 	}
 }
 
-func (v *LLMVariable) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (v *LLMVariable) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if v == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted LLM variable: nil LLM variable")
 	}
 	return encodePersistedObjectPayload(v)
 }
 
-func (*LLMVariable) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*LLMVariable) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var v LLMVariable
 	if err := json.Unmarshal(payload, &v); err != nil {
 		return nil, fmt.Errorf("decode persisted LLM variable payload: %w", err)

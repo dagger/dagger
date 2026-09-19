@@ -201,7 +201,7 @@ type persistedSSHFSVolumePayload struct {
 	ServiceHostResultID      uint64 `json:"serviceHostResultID,omitempty"`
 }
 
-func (vol *Volume) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (vol *Volume) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if vol == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted volume: nil volume")
 	}
@@ -225,7 +225,7 @@ func (vol *Volume) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		if vol.SSHFS == nil {
 			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted volume: missing sshfs config")
 		}
-		privateKeyID, err := encodePersistedObjectRef(cache, vol.SSHFS.PrivateKey, "volume private key")
+		privateKeyID, err := encodePersistedObjectRef(enc, vol.SSHFS.PrivateKey, "volume private key")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -236,14 +236,14 @@ func (vol *Volume) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 			HostKeyAlias:             vol.SSHFS.HostKeyAlias,
 		}
 		if vol.SSHFS.KnownHosts.Self() != nil {
-			knownHostsID, err := encodePersistedObjectRef(cache, vol.SSHFS.KnownHosts, "volume known hosts")
+			knownHostsID, err := encodePersistedObjectRef(enc, vol.SSHFS.KnownHosts, "volume known hosts")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
 			sshfs.KnownHostsResultID = knownHostsID
 		}
 		if vol.SSHFS.ServiceHost.Self() != nil {
-			serviceID, err := encodePersistedObjectRef(cache, vol.SSHFS.ServiceHost, "volume service host")
+			serviceID, err := encodePersistedObjectRef(enc, vol.SSHFS.ServiceHost, "volume service host")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
@@ -256,7 +256,7 @@ func (vol *Volume) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*Volume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Volume) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedVolumePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted volume payload: %w", err)
@@ -279,20 +279,20 @@ func (*Volume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		if persisted.SSHFS == nil {
 			return nil, fmt.Errorf("decode persisted volume: missing sshfs payload")
 		}
-		privateKey, err := loadPersistedObjectResultByResultID[*Secret](ctx, dag, persisted.SSHFS.PrivateKeyResultID, "volume private key")
+		privateKey, err := loadPersistedObjectResultByResultID[*Secret](ctx, dec, persisted.SSHFS.PrivateKeyResultID, "volume private key")
 		if err != nil {
 			return nil, err
 		}
 		var knownHosts dagql.ObjectResult[*Secret]
 		if persisted.SSHFS.KnownHostsResultID != 0 {
-			knownHosts, err = loadPersistedObjectResultByResultID[*Secret](ctx, dag, persisted.SSHFS.KnownHostsResultID, "volume known hosts")
+			knownHosts, err = loadPersistedObjectResultByResultID[*Secret](ctx, dec, persisted.SSHFS.KnownHostsResultID, "volume known hosts")
 			if err != nil {
 				return nil, err
 			}
 		}
 		var serviceHost dagql.ObjectResult[*Service]
 		if persisted.SSHFS.ServiceHostResultID != 0 {
-			serviceHost, err = loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.SSHFS.ServiceHostResultID, "volume service host")
+			serviceHost, err = loadPersistedObjectResultByResultID[*Service](ctx, dec, persisted.SSHFS.ServiceHostResultID, "volume service host")
 			if err != nil {
 				return nil, err
 			}

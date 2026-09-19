@@ -49,18 +49,18 @@ func (*EnvFile) TypeDescription() string {
 	return "A collection of environment variables."
 }
 
-func (ef *EnvFile) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (ef *EnvFile) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if ef == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted env file: nil env file")
 	}
 	return encodePersistedObjectPayload(ef)
 }
 
-func (*EnvFile) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*EnvFile) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var ef EnvFile
 	if err := json.Unmarshal(payload, &ef); err != nil {
 		return nil, fmt.Errorf("decode persisted env file payload: %w", err)

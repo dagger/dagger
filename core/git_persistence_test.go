@@ -29,9 +29,9 @@ func TestGitRepositoryRemotesPersistence(t *testing.T) {
 			Remotes: remotes,
 			Backend: &LocalGitRepository{Directory: dir},
 		}
-		encoded, err := repo.EncodePersistedObject(ctx, cache)
+		encoded, err := repo.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 		require.NoError(t, err)
-		decoded, err := (&GitRepository{}).DecodePersistedObject(ctx, srv, 0, nil, encoded.JSON)
+		decoded, err := (&GitRepository{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, 0, nil), encoded.JSON)
 		require.NoError(t, err)
 		restored := decoded.(*GitRepository)
 		require.Equal(t, repo.URL, restored.URL)

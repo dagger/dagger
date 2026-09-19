@@ -1488,7 +1488,7 @@ func (s *gitSchema) withBundleDirectory(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRepository],
 	args gitWithBundleArgs,
-) (inst dagql.ObjectResult[*core.Directory], _ error) {
+) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -1499,6 +1499,14 @@ func (s *gitSchema) withBundleDirectory(
 	}
 	dir, err := core.ImportGitBundle(ctx, parent.Self(), bundle.Self(), args.PrerequisiteRef)
 	if err != nil {
+		return inst, err
+	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, dir.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
+	if err := core.RecordCompletedProducer(dir, &core.DirectoryGitBundleImportLazy{LazyState: core.NewLazyState(), Repo: parent, Bundle: bundle, PrerequisiteRef: args.PrerequisiteRef}); err != nil {
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
@@ -1809,6 +1817,11 @@ func (s *gitSchema) cleaned(ctx context.Context, parent dagql.ObjectResult[*core
 	if err != nil {
 		return inst, err
 	}
+	if local, ok := parent.Self().Backend.(*core.LocalGitRepository); ok && dir.Self() != local.Directory.Self() {
+		if err := core.RecordCompletedProducer(dir.Self(), &core.DirectoryGitCleanedLazy{LazyState: core.NewLazyState(), Repo: parent}); err != nil {
+			return inst, errors.Join(err, dir.Self().OnRelease(context.WithoutCancel(ctx)))
+		}
+	}
 	return dir, nil
 }
 
@@ -2033,7 +2046,7 @@ type treeArgs struct {
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
-func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -2064,6 +2077,14 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		var dir *core.Directory
 		dir, err = ref.Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
 		if err == nil {
+			defer func() {
+				if rerr != nil {
+					rerr = errors.Join(rerr, dir.OnRelease(context.WithoutCancel(ctx)))
+				}
+			}()
+			if err := core.RecordCompletedProducer(dir, &core.DirectoryGitTreeLazy{LazyState: core.NewLazyState(), Ref: parent, DiscardGitDir: args.DiscardGitDir, Depth: args.Depth, IncludeTags: args.IncludeTags}); err != nil {
+				return inst, err
+			}
 			inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 		}
 	}
@@ -2168,7 +2189,7 @@ type commitTreeArgs struct {
 	IncludeTags   bool `default:"false"`
 }
 
-func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args commitTreeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args commitTreeArgs) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -2187,6 +2208,14 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 
 	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
 	if err != nil {
+		return inst, err
+	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, dir.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
+	if err := core.RecordCompletedProducer(dir, &core.DirectoryGitCommitTreeLazy{LazyState: core.NewLazyState(), Commit: parent, DiscardGitDir: args.DiscardGitDir, Depth: args.Depth, IncludeTags: args.IncludeTags}); err != nil {
 		return inst, err
 	}
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
