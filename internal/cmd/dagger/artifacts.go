@@ -290,9 +290,12 @@ func validateArtifactDimensionFlags(cmd *cobra.Command, defs artifact.Dimensions
 		if err != nil || len(flag.Annotations[artifactDimensionFlag]) == 0 {
 			return
 		}
-		if !slices.ContainsFunc(defs, func(def *artifact.Dimension) bool {
-			return flag.Name == def.Identifier || flag.Name == def.Name || flag.Name == def.QualifiedName
-		}) {
+		var id string
+		id, err = defs.Resolve(flag.Name)
+		if err != nil {
+			return
+		}
+		if !slices.ContainsFunc(defs, func(def *artifact.Dimension) bool { return def.Identifier == id }) {
 			err = fmt.Errorf("unknown flag: --%s", flag.Name)
 		}
 	})
