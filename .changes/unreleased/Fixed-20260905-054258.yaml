@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Preserve completed container parts across engine restarts, including mounted
+  directory writes while other parts remain pending. Restored container
+  snapshots now open individually when demanded. This changes the local cache
+  format; caches from earlier formats reset on startup.
+time: 2026-09-05T05:42:58Z
+custom:
+  Author: sipsma
+  PR: 14050

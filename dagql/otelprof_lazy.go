@@ -139,7 +139,7 @@ func (wcprofLazyParentProcessor) ForceFlush(context.Context) error { return nil 
 // loader's class for that op is "resume <field>" rather than native's
 // profCallClass — a benign divergence because the lazy op's self-time is ~0 and
 // it never ranks in the bottleneck oracle.
-func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, group LazyGroupKey, resultCall *ResultCall) (context.Context, trace.Span, bool) {
+func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, group LazyGroupKey, resultCall *ResultCall, storedPart PartKey) (context.Context, trace.Span, bool) {
 	if clientMD, err := engine.ClientMetadataFromContext(evalCtx); err == nil && clientMD.SessionID != "" {
 		if originalSpanCtx, ok := c.sessionLazySpanContext(clientMD.SessionID, sharedID); ok {
 			spanName := "resume lazy evaluation"
@@ -152,6 +152,9 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 			// today's names byte-for-byte.
 			if group != LazyGroupWhole {
 				spanName += " (" + string(group) + ")"
+			}
+			if storedPart != "" {
+				spanName = "open stored part (" + string(storedPart) + ")"
 			}
 			// Lazy failure attribution: link the resume span back to all API spans
 			// that installed/own this result in the session (dagui interprets
@@ -176,9 +179,13 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 		}
 	}
 	prev := trace.SpanContextFromContext(evalCtx)
+	spanName := profCallClass(resultCall)
+	if storedPart != "" {
+		spanName = "open stored part (" + string(storedPart) + ")"
+	}
 	callbackCtx, lazySpan := Tracer(evalCtx).Start(
 		evalCtx,
-		profCallClass(resultCall),
+		spanName,
 		telemetry.Passthrough(),
 		trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
 	)
@@ -199,7 +206,10 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 // deferred-work vocabulary, so it keeps its error-origin-stamping role
 // (EndWithCause); the non-resume lazy op is pure profiling emission and must
 // never stamp (EndProfSpan).
-func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, partial, abandoned bool, errPtr *error) {
+func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, partial, abandoned bool, storedPart PartKey, errPtr *error) {
+	if storedPart != "" && *errPtr == nil {
+		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
+	}
 	if isResume && partial {
 		span.SetAttributes(attribute.Bool(telemetryattrs.DagPartialAttr, true))
 	}
