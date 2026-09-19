@@ -3,7 +3,7 @@ module github.com/dagger/dagger
 go 1.26.6
 
 require (
-	dagger.io/dagger v0.21.9
+	dagger.io/dagger v1.0.0-beta.14
 	github.com/dagger/dagger/engine/distconsts v0.21.9
 )
 
@@ -138,7 +138,7 @@ require (
 	github.com/pkg/profile v1.7.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/procfs v0.21.1
-	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
+	github.com/psanford/memfs v0.0.0-20241019191636-4ef911798f9b
 	github.com/rs/cors v1.11.1
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
 	github.com/sirupsen/logrus v1.9.4
@@ -256,6 +256,7 @@ require (
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
+	github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20260919032052-b04ae28ac7f0 // indirect
 	github.com/danielgatis/go-ansicode v1.0.14 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
 	github.com/danielgatis/go-utf8 v1.0.1 // indirect
@@ -379,7 +380,10 @@ replace (
 	go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.16.0
 )
 
-tool github.com/matryer/moq
+tool (
+	github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen
+	github.com/matryer/moq
+)
 
 // containerd v2.2.x requires bbolt v1.4.3, which is semver-higher than
 // the main-branch pseudo-version containing the freelist merge fix.
