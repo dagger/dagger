@@ -13,6 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSchemaRecipeLookupCanceled(t *testing.T) {
+	cache, err := NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, hit, err := cache.lookupCacheForSchemaRecipe(ctx, "test-session", noopTypeResolver{}, digest.FromString("canceled-schema"))
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, hit)
+}
+
 func TestSchemaRecipeHitPreservesRequestPolicy(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cache, err := NewCache(ctx, "", nil, nil)

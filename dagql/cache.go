@@ -5118,6 +5118,9 @@ func (c *Cache) lookupCacheForDigests(
 func (c *Cache) lookupCacheForSchemaRecipe(ctx context.Context, sessionID string, resolver TypeResolver, recipeDigest digest.Digest) (AnyResult, bool, error) {
 	rejected := map[sharedResultID]struct{}{}
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
 		res, hit, err := c.lookupCacheForDigestsExcluding(ctx, sessionID, resolver, recipeDigest, nil, rejected)
 		if err != nil || !hit {
 			return res, hit, err
