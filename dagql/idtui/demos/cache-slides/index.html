@@ -218,7 +218,7 @@
       <div class="metrics">
         <article class="metric">
           <div><div class="icon">♻️</div><h2>Cache hits</h2><p>Hits divided by all calls that consulted the cache. Uncached calls are excluded.</p></div>
-          <div class="formula">hits ÷ (hits + executed + joined)</div>
+          <div class="formula">results restored from cache ÷ total cache lookups</div>
         </article>
         <article class="metric">
           <div><div class="icon">⏱</div><h2>Wall time</h2><p>Whole-workflow makespan. Parallel branches are never added together.</p></div>
@@ -234,7 +234,10 @@
         </article>
         <article class="metric">
           <div><div class="icon">⇅</div><h2>Network</h2><p>Received and transmitted bytes are accumulated and compared separately.</p></div>
-          <div class="formula">Σ <span class="cold">rx/tx</span> − Σ <span class="warm">rx/tx</span></div>
+          <div class="formula">
+            RX saved = Σ <span class="cold">cold RX bytes</span> − Σ <span class="warm">warm RX bytes</span><br>
+            TX saved = Σ <span class="cold">cold TX bytes</span> − Σ <span class="warm">warm TX bytes</span>
+          </div>
         </article>
       </div>
 
