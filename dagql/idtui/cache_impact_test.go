@@ -61,7 +61,7 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 	}
 
 	got := strings.Join(warmFE.cacheReport(false), "\n")
-	want := "♻️ Cache hits 1/2 (50%) ⚡ Saved ~2s wall | ~1m CPU | ~4.0 GB memory for 10s | ~800 MB net rx | ~200 MB net tx"
+	want := "♻️ Cache hits 1/2 (50%) ⚡ Saved ~2s wall · ~1m CPU · ~4.0 GB memory for 10s · ~800 MB net rx · ~200 MB net tx"
 	if got != want {
 		t.Fatalf("cache report = %q, want %q", got, want)
 	}
