@@ -2758,7 +2758,10 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 				if i < len(src.Self().ConfigToolchains) {
 					cfg = src.Self().ConfigToolchains[i]
 				}
-				pending := pendingRelatedModule(defaultPathContextSrc, tcSrc.Self(), cfg, false)
+				pending, err := pendingRelatedModule(defaultPathContextSrc, tcSrc.Self(), cfg, false)
+				if err != nil {
+					return err
+				}
 				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pending)
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)

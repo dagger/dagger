@@ -29,7 +29,8 @@ const httpStateCanonicalPath = "contents"
 const httpStateCanonicalPermissions = 0o600
 
 type HTTPState struct {
-	URL string
+	foreignUninitialized bool
+	URL                  string
 
 	mu sync.Mutex
 
@@ -42,6 +43,7 @@ type HTTPState struct {
 }
 
 type persistedHTTPStatePayload struct {
+	Form          string `json:"form"`
 	URL           string `json:"url"`
 	ETag          string `json:"etag,omitempty"`
 	LastModified  string `json:"lastModified,omitempty"`
@@ -175,6 +177,7 @@ func (state *HTTPState) EncodePersistedObject(ctx context.Context, enc *dagql.Pe
 		snapshotID = state.snapshot.SnapshotID()
 	}
 	saved := persistedHTTPStatePayload{URL: state.URL, ETag: state.ETag, LastModified: state.LastModified, ContentDigest: state.ContentDigest.String()}
+	saved.Form = persistedBackingForm(state.foreignUninitialized, snapshotID != "")
 	state.mu.Unlock()
 	var links []dagql.PersistedSnapshotRefLink
 	if snapshotID != "" {
@@ -199,9 +202,10 @@ func (*HTTPState) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		return nil, fmt.Errorf("decode persisted http state payload: %w", err)
 	}
 	state := &HTTPState{
-		URL:          persisted.URL,
-		ETag:         persisted.ETag,
-		LastModified: persisted.LastModified,
+		foreignUninitialized: persisted.Form == foreignUninitialized,
+		URL:                  persisted.URL,
+		ETag:                 persisted.ETag,
+		LastModified:         persisted.LastModified,
 	}
 	if persisted.ContentDigest != "" {
 		dgst, err := digest.Parse(persisted.ContentDigest)
@@ -441,8 +445,8 @@ func (state *HTTPState) fileResult(
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	file.File.setValue(name)
-	file.Snapshot.setValue(snap)
+	file.SetPath(name)
+	file.SetSnapshot(snap)
 	return &HTTPFetchResult{
 		File:          file,
 		ContentDigest: state.ContentDigest,
@@ -555,8 +559,8 @@ func fetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts,
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	file.File.setValue(opts.Filename)
-	file.Snapshot.setValue(snap)
+	file.SetPath(opts.Filename)
+	file.SetSnapshot(snap)
 
 	return &HTTPFetchResult{
 		File:          file,

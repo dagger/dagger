@@ -1565,8 +1565,8 @@ func (svc *Service) runAndSnapshotChanges(
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	snapshot.Dir.setValue(sourceDirPath)
-	snapshot.Snapshot.setValue(immutableRef)
+	snapshot.SetPath(sourceDirPath)
+	snapshot.SetSnapshot(immutableRef)
 
 	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
 	if err != nil {

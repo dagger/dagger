@@ -1583,7 +1583,7 @@ func (s *containerSchema) rootfs(ctx context.Context, parent dagql.ObjectResult[
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.Dir.SetValue("/")
+	dir.SetPath("/")
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
@@ -3330,7 +3330,7 @@ func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.Dir.SetValue(resolvedPath)
+	dir.SetPath(resolvedPath)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
@@ -3363,7 +3363,7 @@ func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		File:     new(core.LazyAccessor[string, *core.File]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
 	}
-	file.File.SetValue(resolvedPath)
+	file.SetPath(resolvedPath)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
@@ -3407,6 +3407,8 @@ func inheritedOwner(parent dagql.ObjectResult[*core.Container], owner string, in
 }
 
 func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult[*core.Container]) (*core.Container, bool, error) {
+	// Foreign shells report pending work here too, so the child's ordinary
+	// producer keeps its parent dependency and delegates unresolved parts.
 	parentPendingLazy := dagql.HasPendingLazyEvaluation(parent)
 
 	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)

@@ -598,9 +598,13 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 	modSrc := mod.Source.Value.Self()
 	switch modSrc.Kind {
 	case ModuleSourceKindLocal:
+		localPath, err := modSrc.LocalContextDirectoryPath()
+		if err != nil {
+			return nil, err
+		}
 		query = query.Select("moduleSource").
 			Arg("refString", filepath.Join(
-				modSrc.Local.ContextDirectoryPath,
+				localPath,
 				modSrc.SourceRootSubpath,
 			))
 	case ModuleSourceKindGit:
@@ -631,6 +635,11 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 	if mod.ContextSource.Valid {
 		contextSrc := mod.ContextSource.Value.Self()
 		if contextSrc != nil {
+			if contextSrc.Kind == ModuleSourceKindLocal {
+				if _, err := contextSrc.LocalContextDirectoryPath(); err != nil {
+					return nil, err
+				}
+			}
 			contextRef := contextSrc.AsString()
 			if contextRef != "" && (contextRef != modSrc.AsString() || contextSrc.Pin() != modSrc.Pin()) {
 				query = query.Arg("defaultPathContextSourceRef", contextRef)

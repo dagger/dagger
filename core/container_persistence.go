@@ -23,11 +23,12 @@ const (
 // Snapshot identity lives in the envelope's ordinary role links. The part
 // record carries the detached value needed to construct its accessor later.
 type persistedContainerPart struct {
-	Kind     string                    `json:"kind"`
-	Role     string                    `json:"role,omitempty"`
-	Path     string                    `json:"path,omitempty"`
-	Platform *Platform                 `json:"platform,omitempty"`
-	Services []persistedServiceBinding `json:"services,omitempty"`
+	ValueKind string                    `json:"valueKind,omitempty"`
+	Kind      string                    `json:"kind"`
+	Role      string                    `json:"role,omitempty"`
+	Path      string                    `json:"path,omitempty"`
+	Platform  *Platform                 `json:"platform,omitempty"`
+	Services  []persistedServiceBinding `json:"services,omitempty"`
 }
 
 type containerStoredPart struct {
@@ -42,6 +43,9 @@ type containerStoredPart struct {
 func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
+	}
+	if container.transferPending != nil {
+		return encodePersistedObjectPayload(container.transferPending)
 	}
 	unlock, err := container.lockForPersistence(enc.Quiescent())
 	if err != nil {
@@ -168,6 +172,10 @@ func (container *Container) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.
 func (container *Container) HasPendingLazyComputation() bool {
 	if container == nil {
 		return false
+	}
+	if container.transferPending != nil {
+		_, err := container.resolveTransferParts(nil)
+		return err != nil
 	}
 	lazy := container.lazyOpForRouting()
 	if lazy == nil {
@@ -584,9 +592,9 @@ func (container *Container) openStoredContainerPart(ctx context.Context, part da
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			Platform: stored.Platform, Services: slices.Clone(stored.Services),
 		}
-		dir.Dir.setValue(stored.Path)
+		dir.SetPath(stored.Path)
 		publish = func(ref bkcache.ImmutableRef) {
-			dir.Snapshot.setValue(ref)
+			dir.SetSnapshot(ref)
 			dest.setValue(dir)
 		}
 	case containerPartFile:
@@ -600,9 +608,9 @@ func (container *Container) openStoredContainerPart(ctx context.Context, part da
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 			Platform: stored.Platform, Services: slices.Clone(stored.Services),
 		}
-		file.File.setValue(stored.Path)
+		file.SetPath(stored.Path)
 		publish = func(ref bkcache.ImmutableRef) {
-			file.Snapshot.setValue(ref)
+			file.SetSnapshot(ref)
 			mnt.FileSource.setValue(file)
 		}
 	default:

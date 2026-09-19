@@ -562,8 +562,9 @@ func TestVisitPersistedCallIDTranslatesHandlesOnly(t *testing.T) {
 	require.Equal(t, "String", decoded.Type().NamedType(), "the exact type wrapper survives translation")
 
 	untouched := recipe
-	changed, err = VisitPersistedCallID(func(*PersistedRef) error {
-		t.Fatal("recipe IDs carry no row references")
+	changed, err = VisitPersistedCallID(func(ref *PersistedRef) error {
+		require.NotNil(t, ref.RecipeID)
+		require.Zero(t, ref.ResultID, "a recipe description is not a row reference")
 		return nil
 	}, PersistedRefChild, nil, &untouched)
 	require.NoError(t, err)

@@ -364,6 +364,9 @@ func (container *Container) consumeLazyOp() {
 // and never demand sibling groups) and then delegates the mapping to
 // the op.
 func (container *Container) ResolveLazyEvalGroups(ctx context.Context, self dagql.AnyResult, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	if container != nil && container.transferPending != nil {
+		return container.resolveTransferParts(parts)
+	}
 	if container == nil {
 		return nil, nil
 	}
@@ -479,6 +482,12 @@ func (container *Container) consumeFinalParentDelegations(ctx context.Context, o
 }
 
 func containerParentPartFinal(ctx context.Context, parent *Container, part dagql.PartKey) (bool, error) {
+	if parent.transferPending != nil {
+		// Only captured metadata and explicitly absent parts are final. A
+		// delegation sweep must never demand a pending foreign snapshot.
+		_, err := parent.resolveTransferParts([]dagql.PartKey{part})
+		return err == nil, nil
+	}
 	lazy := parent.lazyOpForRouting()
 	if lazy == nil {
 		return true, nil
@@ -535,6 +544,10 @@ func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyCo
 // cache-side EvaluateParts. Used by internal reads that hold the
 // container value but not its attached result (metaFileContents).
 func (container *Container) evaluatePartsDirect(ctx context.Context, parts ...dagql.PartKey) error {
+	if container.transferPending != nil {
+		_, err := container.resolveTransferParts(parts)
+		return err
+	}
 	lazy := container.lazyOpForRouting()
 	if lazy == nil {
 		return nil

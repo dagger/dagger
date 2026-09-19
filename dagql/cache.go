@@ -91,10 +91,12 @@ const (
 // cache's live results and symbolic graph. It intentionally models only the
 // existing result, term, and allocated eq-class cardinalities.
 type CacheMetadataEstimate struct {
-	ResultCount    int
-	TermCount      int
-	ClassSlotCount int
-	EstimatedBytes int64
+	ResultCount     int
+	TermCount       int
+	ClassSlotCount  int
+	OfferOwnerCount int
+	OfferOwnerBytes int64
+	EstimatedBytes  int64
 }
 
 // CacheMetadataPruneReport summarizes an automatic structural pruning pass.
@@ -147,12 +149,13 @@ type persistedEdge struct {
 // persisted as result refs. Older snapshots may hold untracked scalar handle
 // strings whose referents were never retained (and whose IDs may have been
 // reused), so they are wiped rather than imported.
-const cachePersistenceSchemaVersion = "19"
+const cachePersistenceSchemaVersion = "20"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
 var ErrCacheSessionNotReleased = errors.New("cache session release not started")
 var ErrCacheClosed = errors.New("cache closed")
+var ErrUnavailablePart = errors.New("imported filesystem part is unavailable")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
 // errAttachRefusedByProducerRelease classifies a dependency-attachment
@@ -1377,6 +1380,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge = persistedEdge{
 			resultID:          res.id,
 			createdAtUnixNano: createdAtUnixNano,
+			expiresAtUnix:     expiresAtUnix,
 		}
 		c.incrementIncomingOwnershipLocked(ctx, res)
 	}
@@ -1499,6 +1503,12 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			continue
 		}
 
+		for _, offer := range res.partOffers {
+			more, err := c.retirePartOfferLocked(ctx, res, offer.record.Address)
+			queue = append(queue, more...)
+			rerr = errors.Join(rerr, err)
+		}
+
 		depIDs := make([]sharedResultID, 0, len(res.deps))
 		for depID := range res.deps {
 			depIDs = append(depIDs, depID)
@@ -1569,6 +1579,9 @@ func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink
 		return snapshotOwnerLinksFromTyped(state.self)
 	}
 
+	if state.snapshotLinkIntent != nil {
+		return slices.Clone(state.snapshotLinkIntent.Links)
+	}
 	if len(state.snapshotOwnerLinks) == 0 {
 		return nil
 	}
@@ -1586,6 +1599,11 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 		}
 
 		links := res.loadSnapshotOwnerLinks()
+		res.payloadMu.RLock()
+		for role := range res.snapshotLeaseCleanupRoles {
+			links = append(links, PersistedSnapshotRefLink{Role: role})
+		}
+		res.payloadMu.RUnlock()
 
 		seen := make(map[snapshotOwnerKey]struct{}, len(links))
 		var rerr error
@@ -1655,6 +1673,12 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	for key, newLink := range newByKey {
 		oldLink, ok := oldByKey[key]
 		if !ok || oldLink.RefKey != newLink.RefKey {
+			res.payloadMu.Lock()
+			if res.snapshotLeaseCleanupRoles == nil {
+				res.snapshotLeaseCleanupRoles = map[string]struct{}{}
+			}
+			res.snapshotLeaseCleanupRoles[key.Role] = struct{}{}
+			res.payloadMu.Unlock()
 			if err := c.snapshotManager.AttachLease(
 				ctx,
 				resultSnapshotLeaseID(res.id, key.Role),
@@ -1797,6 +1821,13 @@ func wipeSQLiteFiles(dbPath string) error {
 }
 
 type Cache struct {
+	testTransferCopied       func(uint64)
+	testTransferPlanPrepared func(int) error
+	testBeforeTransferCommit func()
+	testAfterTransferCommit  func()
+
+	offerOwners      map[offerOwnerID]*offerOwner
+	nextOfferOwnerID offerOwnerID
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
 	callsMu sync.Mutex
 	// sessionMu protects per-session tracked cache-backed results, arbitrary
@@ -2079,6 +2110,13 @@ type cacheUsageMayChange interface {
 
 // sharedResult holds cache-entry state and shared payload published to per-call Result values.
 type sharedResult struct {
+	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
+	imported                    bool
+	partOffers                  map[string]*partOffer
+	transferRevision            uint64
+	dependencyOwnershipRevision uint64
+	// Reverse offer ownership does not propagate lookup requirements.
+	offerParents map[offerOwnerID]struct{}
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
 
@@ -2136,7 +2174,10 @@ type sharedResult struct {
 	// cleanup and debug output. Persistence export for newly encoded objects
 	// derives links from the same object encode pass that produced the payload.
 	// They are not child-result deps.
-	snapshotOwnerLinks []PersistedSnapshotRefLink
+	snapshotOwnerLinks        []PersistedSnapshotRefLink
+	snapshotLinkIntent        *snapshotLinkIntent
+	payloadRevision           uint64
+	snapshotLeaseCleanupRoles map[string]struct{}
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
@@ -2268,7 +2309,12 @@ func (res *sharedResult) attachmentState() resultAttachmentState {
 	}
 }
 
+// A non-nil intent describes the complete desired map, even when empty.
+type snapshotLinkIntent struct{ Links []PersistedSnapshotRefLink }
+
 type sharedResultPayloadState struct {
+	payloadRevision    uint64
+	snapshotLinkIntent *snapshotLinkIntent
 	self               Typed
 	isObject           bool
 	hasValue           bool
@@ -2319,6 +2365,8 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	}
 	res.payloadMu.RLock()
 	state := sharedResultPayloadState{
+		payloadRevision:    res.payloadRevision,
+		snapshotLinkIntent: res.snapshotLinkIntent,
 		self:               res.self,
 		isObject:           res.isObject,
 		hasValue:           res.hasValue,
@@ -2363,6 +2411,7 @@ func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLin
 	}
 	res.payloadMu.Lock()
 	res.snapshotOwnerLinks = slices.Clone(links)
+	res.payloadRevision++
 	res.payloadMu.Unlock()
 }
 
@@ -2924,6 +2973,7 @@ func (c *Cache) addExplicitDependencyLocked(
 	}
 
 	parentRes.deps[depRes.id] = struct{}{}
+	parentRes.dependencyOwnershipRevision++
 	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
@@ -3487,8 +3537,8 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
-func (r Result[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
-	return r.WithContentDigest(ctx, customDigest)
+func (r Result[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest, additionalLabels ...string) (AnyResult, error) {
+	return r.WithContentDigest(ctx, customDigest, additionalLabels...)
 }
 
 func (r Result[T]) WithSessionResourceHandleAny(ctx context.Context, handle SessionResourceHandle) (AnyResult, error) {
@@ -3631,8 +3681,8 @@ func (r ObjectResult[T]) WithSessionResourceHandle(ctx context.Context, handle S
 
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
-func (r ObjectResult[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
-	res, err := r.Result.WithContentDigest(ctx, customDigest)
+func (r ObjectResult[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest, additionalLabels ...string) (AnyResult, error) {
+	res, err := r.Result.WithContentDigest(ctx, customDigest, additionalLabels...)
 	if err != nil {
 		return nil, err
 	}
@@ -4456,11 +4506,15 @@ func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
 		classSlots = 0
 	}
 	estimate := CacheMetadataEstimate{
-		ResultCount:    len(c.resultsByID),
-		TermCount:      len(c.egraphTerms),
-		ClassSlotCount: classSlots,
+		ResultCount:     len(c.resultsByID),
+		TermCount:       len(c.egraphTerms),
+		ClassSlotCount:  classSlots,
+		OfferOwnerCount: len(c.offerOwners),
 	}
-	estimate.EstimatedBytes = cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
+	for _, owner := range c.offerOwners {
+		estimate.OfferOwnerBytes += offerMetadataBytes(owner)
+	}
+	estimate.EstimatedBytes = estimate.OfferOwnerBytes + cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
 		cacheMetadataTermEstimatedBytes*int64(estimate.TermCount) +
 		cacheMetadataClassSlotEstimatedBytes*int64(estimate.ClassSlotCount)
 	return estimate
@@ -5565,6 +5619,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_request_frame", nil, oc.res.loadResultCall())
 			}
 			oc.res.hasValue = true
+			oc.res.payloadRevision++
 
 			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
 				oc.res.onRelease = onReleaser.OnRelease
@@ -5823,6 +5878,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			continue
 		}
 		oc.res.deps[depID] = struct{}{}
+		oc.res.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)

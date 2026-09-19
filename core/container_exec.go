@@ -970,10 +970,8 @@ func prepareMounts(
 			if cacheSrc.Volume.Self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil cache volume source", i)
 			}
-			if cacheSrc.Volume.Self().getSnapshot() == nil {
-				if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
-					return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
-				}
+			if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
+				return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
 			}
 			cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
 			if cacheSnapshot == nil {
@@ -1468,8 +1466,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				Dir:      new(LazyAccessor[string, *Directory]),
 				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			}
-			output.Dir.setValue(dirPath)
-			output.Snapshot.setValue(ref)
+			output.SetPath(dirPath)
+			output.SetSnapshot(ref)
 			if container.FS == nil {
 				container.FS = new(LazyAccessor[*Directory, *Container])
 			}
@@ -1505,8 +1503,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 						Dir:      new(LazyAccessor[string, *Directory]),
 						Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 					}
-					output.Dir.setValue(dirPath)
-					output.Snapshot.setValue(ref)
+					output.SetPath(dirPath)
+					output.SetSnapshot(ref)
 					if container.Mounts[idx].DirectorySource == nil {
 						container.Mounts[idx].DirectorySource = new(LazyAccessor[*Directory, *Container])
 					}
@@ -1529,8 +1527,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 						File:     new(LazyAccessor[string, *File]),
 						Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 					}
-					output.File.setValue(filePath)
-					output.Snapshot.setValue(ref)
+					output.SetPath(filePath)
+					output.SetSnapshot(ref)
 					if container.Mounts[idx].FileSource == nil {
 						container.Mounts[idx].FileSource = new(LazyAccessor[*File, *Container])
 					}
@@ -1811,10 +1809,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				if cacheSrc.Volume.Self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil cache volume source", i))
 				}
-				if cacheSrc.Volume.Self().getSnapshot() == nil {
-					if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
-						return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
-					}
+				if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
+					return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
 				}
 				cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
 				if cacheSnapshot == nil {
@@ -2097,8 +2093,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 							Dir:      new(LazyAccessor[string, *Directory]),
 							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 						}
-						rootDir.Dir.setValue(rootDirPath)
-						rootDir.Snapshot.setValue(rootRef)
+						rootDir.SetPath(rootDirPath)
+						rootDir.SetSnapshot(rootRef)
 						untrackResolvedRef(rootRef)
 						if terminalContainer.FS == nil {
 							terminalContainer.FS = new(LazyAccessor[*Directory, *Container])
@@ -2133,8 +2129,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 							Dir:      new(LazyAccessor[string, *Directory]),
 							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 						}
-						outputDir.Dir.setValue(dirPath)
-						outputDir.Snapshot.setValue(mountRef)
+						outputDir.SetPath(dirPath)
+						outputDir.SetSnapshot(mountRef)
 						untrackResolvedRef(mountRef)
 						if ctrMount.DirectorySource == nil {
 							ctrMount.DirectorySource = new(LazyAccessor[*Directory, *Container])
@@ -2154,8 +2150,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 							File:     new(LazyAccessor[string, *File]),
 							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 						}
-						outputFile.File.setValue(filePath)
-						outputFile.Snapshot.setValue(mountRef)
+						outputFile.SetPath(filePath)
+						outputFile.SetSnapshot(mountRef)
 						untrackResolvedRef(mountRef)
 						if ctrMount.FileSource == nil {
 							ctrMount.FileSource = new(LazyAccessor[*File, *Container])

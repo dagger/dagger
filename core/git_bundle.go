@@ -537,8 +537,8 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	file.File.setValue("/repository.bundle")
-	file.Snapshot.setValue(snapshot)
+	file.SetPath("/repository.bundle")
+	file.SetSnapshot(snapshot)
 	return file, nil
 }
 
@@ -871,9 +871,9 @@ func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepositor
 		return err
 	}
 	bkref = nil
-	dst.Dir.setValue("/")
+	dst.SetPath("/")
 	dst.Services = nil
-	dst.Snapshot.setValue(snapshot)
+	dst.SetSnapshot(snapshot)
 	return nil
 }
 func gitBundlePrerequisiteRef(index int) string {

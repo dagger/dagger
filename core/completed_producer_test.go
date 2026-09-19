@@ -50,15 +50,33 @@ func testRecordCompletedProducerDirectory(t *testing.T) {
 			case "restore":
 				producer = &DirectoryRestoreLazy{LazyState: NewLazyState()}
 			}
-			var original Directory
+			var original *Directory
 			if dir != nil {
-				original = *dir
+				// Snapshot every field without copying the fresh fixture's
+				// zero-valued output mutex. Compare through pointers below.
+				original = &Directory{
+					filesystemOutput: filesystemOutput{
+						OutputRev:       dir.OutputRev,
+						persistenceBody: dir.persistenceBody,
+					},
+					transferPending:     dir.transferPending,
+					Platform:            dir.Platform,
+					Services:            dir.Services,
+					storedDiagnostics:   dir.storedDiagnostics,
+					stored:              dir.stored,
+					Lazy:                dir.Lazy,
+					completedRecipe:     dir.completedRecipe,
+					completedRecipeKind: dir.completedRecipeKind,
+					completedRecipeJSON: dir.completedRecipeJSON,
+					Dir:                 dir.Dir,
+					Snapshot:            dir.Snapshot,
+				}
 			}
 			err := RecordCompletedProducer(dir, producer)
 			if invalid != "" {
 				require.Error(t, err)
 				if dir != nil {
-					require.Equal(t, original, *dir)
+					require.Equal(t, original, dir)
 				}
 				return
 			}
@@ -108,15 +126,32 @@ func testRecordCompletedProducerFile(t *testing.T) {
 			case "restore":
 				producer = &FileRestoreLazy{LazyState: NewLazyState()}
 			}
-			var original File
+			var original *File
 			if file != nil {
-				original = *file
+				// Keep the same full-value comparison without copying a mutex.
+				original = &File{
+					filesystemOutput: filesystemOutput{
+						OutputRev:       file.OutputRev,
+						persistenceBody: file.persistenceBody,
+					},
+					transferPending:     file.transferPending,
+					Platform:            file.Platform,
+					Services:            file.Services,
+					storedDiagnostics:   file.storedDiagnostics,
+					stored:              file.stored,
+					Lazy:                file.Lazy,
+					completedRecipe:     file.completedRecipe,
+					completedRecipeKind: file.completedRecipeKind,
+					completedRecipeJSON: file.completedRecipeJSON,
+					File:                file.File,
+					Snapshot:            file.Snapshot,
+				}
 			}
 			err := RecordCompletedProducer(file, producer)
 			if invalid != "" {
 				require.Error(t, err)
 				if file != nil {
-					require.Equal(t, original, *file)
+					require.Equal(t, original, file)
 				}
 				return
 			}
@@ -195,7 +230,12 @@ func TestMoveProducedOutputs(t *testing.T) {
 	src.Snapshot.setValue(&cacheVolumeTestImmutableRef{release: func(context.Context) error { releases++; return nil }})
 	dst := &Directory{Platform: platform, Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory])}
 	dst.Dir.setValue("preseeded")
+	directoryRevisionBefore, err := dst.PersistedOutputRevision()
+	require.NoError(t, err)
 	require.NoError(t, moveProducedDirectory(dst, src))
+	directoryRevisionAfter, err := dst.PersistedOutputRevision()
+	require.NoError(t, err)
+	require.NotEqual(t, directoryRevisionBefore, directoryRevisionAfter)
 	require.Equal(t, platform, dst.Platform)
 	path, _ := dst.Dir.Peek()
 	require.Equal(t, "/selected", path)
@@ -210,7 +250,12 @@ func TestMoveProducedOutputs(t *testing.T) {
 	file.File.setValue("saved")
 	file.Snapshot.setValue(&cacheVolumeTestImmutableRef{release: func(context.Context) error { releases++; return nil }})
 	output := &File{Platform: platform, File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
+	fileRevisionBefore, err := output.PersistedOutputRevision()
+	require.NoError(t, err)
 	require.NoError(t, moveProducedFile(output, file))
+	fileRevisionAfter, err := output.PersistedOutputRevision()
+	require.NoError(t, err)
+	require.NotEqual(t, fileRevisionBefore, fileRevisionAfter)
 	require.NoError(t, file.OnRelease(t.Context()))
 	require.Equal(t, 1, releases)
 	require.NoError(t, output.OnRelease(t.Context()))

@@ -33,7 +33,9 @@ import (
 
 // File is a content-addressed file.
 type File struct {
-	Platform Platform
+	filesystemOutput
+	transferPending *persistedFilePayload
+	Platform        Platform
 
 	// Services necessary to provision the file.
 	Services ServiceBindings
@@ -106,23 +108,25 @@ func (file *File) AttachDependencyResultsKinds(
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
-	if file == nil || file.Lazy == nil {
+	if file == nil {
+		return nil
+	}
+	file.outputMu.Lock()
+	pending, lazy := file.transferPending != nil, file.Lazy
+	file.outputMu.Unlock()
+	if pending {
+		return func(context.Context) error { return fmt.Errorf("%w: File.snapshot", dagql.ErrUnavailablePart) }
+	}
+	if lazy == nil {
 		return nil
 	}
 	return func(ctx context.Context) error {
-		// Successful lazy evaluation materializes the file into a plain value.
-		// Clearing Lazy keeps Lazy != nil as a truthful signal that the file
-		// still has deferred work.
-		lazy := file.Lazy
 		if err := lazy.Evaluate(ctx, file); err != nil {
 			return err
 		}
-		if _, restored := lazy.(*FileRestoreLazy); !restored {
-			file.completedRecipe = lazy
-		}
-		if file.Lazy == lazy {
-			file.Lazy = nil
-		}
+		file.outputMu.Lock()
+		defer file.outputMu.Unlock()
+		file.finishLazyLocked(lazy)
 		return nil
 	}
 }
@@ -193,22 +197,34 @@ const (
 )
 
 type persistedFilePayload struct {
-	Form     string                    `json:"form"`
-	File     string                    `json:"file,omitempty"`
-	Platform Platform                  `json:"platform"`
-	Services []persistedServiceBinding `json:"services,omitempty"`
-	LazyKind string                    `json:"lazyKind,omitempty"`
-	LazyJSON json.RawMessage           `json:"lazyJSON,omitempty"`
+	ValueKnown    bool                      `json:"valueKnown,omitempty"`
+	ProducerState string                    `json:"producerState,omitempty"`
+	Form          string                    `json:"form"`
+	File          string                    `json:"file,omitempty"`
+	Platform      Platform                  `json:"platform"`
+	Services      []persistedServiceBinding `json:"services,omitempty"`
+	LazyKind      string                    `json:"lazyKind,omitempty"`
+	LazyJSON      json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
 func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if file == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted file: nil file")
 	}
+	unlock, err := file.lockForPersistence()
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	defer unlock()
+	if file.transferPending != nil {
+		return encodePersistedObjectPayload(file.transferPending)
+	}
+	valueKnown := false
 	filePath := ""
 	if file.File != nil {
 		if peekedPath, ok := file.File.Peek(); ok {
 			filePath = peekedPath
+			valueKnown = true
 		}
 	}
 	services, err := encodePersistedServiceBindings(enc, "file", file.Services)
@@ -216,9 +232,10 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload := persistedFilePayload{
-		File:     filePath,
-		Platform: file.Platform,
-		Services: services,
+		ValueKnown: valueKnown,
+		File:       filePath,
+		Platform:   file.Platform,
+		Services:   services,
 	}
 	if identity, ok := file.snapshotIdentity(); ok {
 		payload.Form = persistedFileFormSnapshot
@@ -282,10 +299,24 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	if persisted.File != "" {
-		file.File.setValue(persisted.File)
+	defer func() {
+		file.outputMu.Lock()
+		file.OutputRev++ // private decoded output, before publication
+		file.outputMu.Unlock()
+	}()
+	if persisted.File != "" && persisted.Form != transferPending {
+		file.SetPath(persisted.File)
 	}
 	switch persisted.Form {
+	case transferPending:
+		if err := foreignFamilyCodec("File").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call()}); err != nil {
+			return nil, err
+		}
+		file.transferPending = &persisted
+		if persisted.ValueKnown {
+			file.SetPath(persisted.File)
+		}
+		return file, nil
 	case persistedFileFormSnapshot:
 		link, err := loadPersistedSnapshotLinkByResultID(ctx, dec, "file", snapshotRole)
 		if err != nil {
@@ -295,7 +326,7 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 		file.completedRecipeKind = persisted.LazyKind
 		file.completedRecipeJSON = slices.Clone(persisted.LazyJSON)
 		file.storedDiagnostics = newStoredSnapshotDiagnostics()
-		file.File.setValue(persisted.File)
+		file.SetPath(persisted.File)
 		file.Lazy = &FileRestoreLazy{LazyState: NewLazyState()}
 		return file, nil
 	case persistedFileFormLazy:
@@ -562,8 +593,8 @@ func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
 			return fmt.Errorf("commit blob snapshot: %w", err)
 		}
 		newRef = nil
-		file.File.setValue(filePath)
-		file.Snapshot.setValue(snapshot)
+		file.SetPath(filePath)
+		file.SetSnapshot(snapshot)
 		return nil
 	})
 }
@@ -625,8 +656,8 @@ func (lazy *FileSubfileLazy) Evaluate(ctx context.Context, file *File) error {
 		if err != nil {
 			return err
 		}
-		file.File.setValue(finalPath)
-		file.Snapshot.setValue(reopened)
+		file.SetPath(finalPath)
+		file.SetSnapshot(reopened)
 		return nil
 	})
 }
@@ -773,7 +804,7 @@ func (file *File) WithContents(ctx context.Context, parent dagql.ObjectResult[*D
 	if parentSnapshot == nil {
 		return fmt.Errorf("file withContents: nil parent snapshot")
 	}
-	file.File.setValue(filePath)
+	file.SetPath(filePath)
 	newRef, err := query.SnapshotManager().New(
 		ctx,
 		parentSnapshot,
@@ -828,7 +859,7 @@ func (file *File) WithContents(ctx context.Context, parent dagql.ObjectResult[*D
 	if err != nil {
 		return err
 	}
-	file.Snapshot.setValue(snapshot)
+	file.SetSnapshot(snapshot)
 	return nil
 }
 
@@ -975,7 +1006,7 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 	if err != nil {
 		return err
 	}
-	file.File.setValue(parentPath)
+	file.SetPath(parentPath)
 	parentSnapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 	if err != nil {
 		return err
@@ -1015,7 +1046,7 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 			if err != nil {
 				return err
 			}
-			file.Snapshot.setValue(reopened)
+			file.SetSnapshot(reopened)
 			return nil
 		}
 		return fmt.Errorf("search string not found")
@@ -1095,7 +1126,7 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 	if err != nil {
 		return err
 	}
-	file.Snapshot.setValue(snap)
+	file.SetSnapshot(snap)
 	return nil
 }
 
@@ -1213,7 +1244,7 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 		return err
 	}
 	destPath := filepath.Join(filepath.Dir(sourcePath), filename)
-	file.File.setValue(destPath)
+	file.SetPath(destPath)
 	parentSnapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 	if err != nil {
 		return err
@@ -1254,7 +1285,7 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 	if err != nil {
 		return err
 	}
-	file.Snapshot.setValue(snapshot)
+	file.SetSnapshot(snapshot)
 	return nil
 }
 
@@ -1274,7 +1305,7 @@ func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return err
 	}
-	file.File.setValue(parentPath)
+	file.SetPath(parentPath)
 	parentSnapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 	if err != nil {
 		return err
@@ -1312,7 +1343,7 @@ func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return err
 	}
-	file.Snapshot.setValue(snapshot)
+	file.SetSnapshot(snapshot)
 	return nil
 }
 
@@ -1472,7 +1503,7 @@ func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], o
 	if err != nil {
 		return err
 	}
-	file.File.setValue(parentPath)
+	file.SetPath(parentPath)
 	parentSnapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 	if err != nil {
 		return err
@@ -1524,6 +1555,6 @@ func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], o
 	if err != nil {
 		return err
 	}
-	file.Snapshot.setValue(snapshot)
+	file.SetSnapshot(snapshot)
 	return nil
 }

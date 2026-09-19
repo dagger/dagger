@@ -1151,15 +1151,15 @@ func (src *ModuleSource) NestedLegacyWorkspaceLoadError() error {
 	)
 }
 
-func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, error) {
+func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, error) {
 	// We only allow loading an env file from local modules, for safety
 	if src.Kind != ModuleSourceKindLocal {
-		return nil, "", nil
+		return nil, nil
 	}
 
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if src.Workspace.Self() != nil {
 		envFilePath := path.Join("/", src.SourceRootSubpath, ".env")
@@ -1176,11 +1176,16 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 				},
 			},
 		); status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
-			return nil, "", nil
+			return nil, nil
 		} else if err != nil {
-			return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", envFilePath, err)
+			return nil, fmt.Errorf("failed to load inner env file in %s: %w", envFilePath, err)
 		}
-		return envFile, envFilePath, nil
+		return envFile, nil
+	}
+
+	localPath, err := src.LocalContextDirectoryPath()
+	if err != nil {
+		return nil, err
 	}
 
 	// FIXME: .env must be at the root of the module directory
@@ -1188,8 +1193,8 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 	//  specialized .env, that will be ignored. To fix this, we need access to current workdir on the host,
 	// so that we can findup from there.
 	moduleDirPath := path.Join(
-		src.Local.ContextDirectoryPath, // path of the module's git root, on the host
-		src.SourceRootSubpath,          // path of the module directory, relative to its git root
+		localPath,             // path of the module's git root, on the host
+		src.SourceRootSubpath, // path of the module directory, relative to its git root
 	)
 	// Check if the env file exists
 	var envFileExists bool
@@ -1213,13 +1218,13 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 		// It's possible that the module directory *doesn't exist yet*
 		// (ie. we are called from `dagger init ./FOO` and `FOO` will be populated after we return)
 		// Therefore: if parent directory doesn't exist, just return "no result" without error
-		return nil, "", nil
+		return nil, nil
 	} else if err != nil {
-		return nil, "", fmt.Errorf("failed to check for inner env file in %s: %w",
+		return nil, fmt.Errorf("failed to check for inner env file in %s: %w",
 			moduleDirPath, err)
 	}
 	if !envFileExists {
-		return nil, "", nil
+		return nil, nil
 	}
 	envFilePath := path.Join(moduleDirPath, ".env")
 	var envFile *EnvFile
@@ -1238,9 +1243,9 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 			},
 		},
 	); err != nil {
-		return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", moduleDirPath, err)
+		return nil, fmt.Errorf("failed to load inner env file in %s: %w", moduleDirPath, err)
 	}
-	return envFile, envFilePath, nil
+	return envFile, nil
 }
 
 // runningInsideModule reports whether the caller is module code rather than a
@@ -1379,7 +1384,7 @@ func (src *ModuleSource) LoadUserDefaults(ctx context.Context) (rerr error) {
 		}
 		ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
 	}
-	innerEnvFile, _, err := src.innerEnvFile(ctx)
+	innerEnvFile, err := src.innerEnvFile(ctx)
 	if err != nil {
 		return err
 	}
@@ -1642,6 +1647,10 @@ func (src *ModuleSource) loadContextFromSource(
 	}
 	switch src.Kind {
 	case ModuleSourceKindLocal:
+		ctxPath, err := src.LocalContextDirectoryPath()
+		if err != nil {
+			return inst, err
+		}
 		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get client metadata: %w", err)
@@ -1650,7 +1659,6 @@ func (src *ModuleSource) loadContextFromSource(
 
 		// Retrieve the absolute path to the context directory (.git or module config)
 		// and the module root directory (module config)
-		ctxPath := src.Local.ContextDirectoryPath
 		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
 
 		// If path is not absolute, it's relative to the module root directory.
@@ -1837,6 +1845,10 @@ func (src *ModuleSource) LoadContextFile(
 
 	switch src.Kind {
 	case ModuleSourceKindLocal:
+		ctxPath, err := src.LocalContextDirectoryPath()
+		if err != nil {
+			return inst, err
+		}
 		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get client metadata: %w", err)
@@ -1845,7 +1857,6 @@ func (src *ModuleSource) LoadContextFile(
 
 		// Retrieve the absolute path to the context directory (.git or module config)
 		// and the module root directory (module config)
-		ctxPath := src.Local.ContextDirectoryPath
 		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
 
 		// If path is not absolute, it's relative to the module root directory.
@@ -1935,6 +1946,13 @@ func (src *ModuleSource) LoadContextGit(
 	ctx context.Context,
 	dag *dagql.Server,
 ) (inst dagql.ObjectResult[*GitRepository], err error) {
+	var localPath string
+	if src.Kind == ModuleSourceKindLocal {
+		localPath, err = src.LocalContextDirectoryPath()
+		if err != nil {
+			return inst, err
+		}
+	}
 	if src.Kind == ModuleSourceKindGit && src.Workspace.Self() != nil {
 		ref, ok := src.Workspace.Self().SourceGitRef()
 		if !ok || ref.Self().Repo.Self() == nil {
@@ -2006,7 +2024,7 @@ func (src *ModuleSource) LoadContextGit(
 		clientCtx := engine.ContextWithClientMetadata(ctx, md)
 		// Empty cacheKey: a module context is resolved fresh per load, so key
 		// the reconstruction to the checkout's live ref state.
-		dir, err = MaterializeHostGitCheckout(clientCtx, dag, dir, src.Local.ContextDirectoryPath, "")
+		dir, err = MaterializeHostGitCheckout(clientCtx, dag, dir, localPath, "")
 		if err != nil {
 			// Propagate ErrNoGitContext unchanged: callers degrade optional
 			// contextual git args to null on it.
@@ -2041,6 +2059,7 @@ func (src *ModuleSource) LoadContextGit(
 }
 
 type LocalModuleSource struct {
+	Foreign              bool `json:"foreign,omitempty"`
 	ContextDirectoryPath string
 }
 
@@ -2217,15 +2236,19 @@ func ResolveDepToSource(
 
 		switch parentSrc.Kind {
 		case ModuleSourceKindLocal:
+			parentPath, err := parentSrc.LocalContextDirectoryPath()
+			if err != nil {
+				return inst, err
+			}
 			// parent=local, dep=local
 			// load the dep relative to the parent's source root, from the caller's filesystem
-			depPath := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath, depSrcRef)
-			depRelPath, err := pathutil.LexicalRelativePath(parentSrc.Local.ContextDirectoryPath, depPath)
+			depPath := filepath.Join(parentPath, parentSrc.SourceRootSubpath, depSrcRef)
+			depRelPath, err := pathutil.LexicalRelativePath(parentPath, depPath)
 			if err != nil {
 				return inst, fmt.Errorf("failed to get relative path from context to dep: %w", err)
 			}
 			if !filepath.IsLocal(depRelPath) {
-				return inst, fmt.Errorf("local module dep source path %q escapes context %q", depRelPath, parentSrc.Local.ContextDirectoryPath)
+				return inst, fmt.Errorf("local module dep source path %q escapes context %q", depRelPath, parentPath)
 			}
 
 			selectors := []dagql.Selector{{
@@ -2543,7 +2566,11 @@ func (fs ModuleSourceFS) Stat(ctx context.Context, path string) (string, *Stat, 
 
 	switch fs.src.Kind {
 	case ModuleSourceKindLocal:
-		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		localPath, err := fs.src.LocalContextDirectoryPath()
+		if err != nil {
+			return "", nil, err
+		}
+		path = filepath.Join(localPath, fs.src.SourceRootSubpath, path)
 		return CallerStatFS{fs.bk}.Stat(ctx, path)
 	case ModuleSourceKindGit:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
@@ -2573,7 +2600,11 @@ func (fs ModuleSourceFS) Exists(ctx context.Context, path string) (string, bool,
 
 	switch fs.src.Kind {
 	case ModuleSourceKindLocal:
-		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		localPath, err := fs.src.LocalContextDirectoryPath()
+		if err != nil {
+			return "", false, err
+		}
+		path = filepath.Join(localPath, fs.src.SourceRootSubpath, path)
 		return CallerStatFS{fs.bk}.Exists(ctx, path)
 	case ModuleSourceKindGit:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)

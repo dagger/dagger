@@ -358,11 +358,19 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	if clientMetadata.SessionID == "" {
 		return nil, fmt.Errorf("empty session ID")
 	}
+	installed, err := q.installedSchemaModuleCandidates(ctx, cache)
+	if err != nil {
+		return nil, err
+	}
+	decisions := map[uint64]dagql.ObjectResult[*Module]{}
 	if err := cache.WalkResultCall(rootCall, func(ref *dagql.ResultCallRef, frame *dagql.ResultCall) error {
 		if ref == nil || ref.ResultID == 0 || frame == nil || frame.Type == nil || frame.Type.NamedType != "Module" {
 			return nil
 		}
-		res, err := cache.LoadResultByResultID(ctx, clientMetadata.SessionID, dag, ref.ResultID)
+		if inst, ok := decisions[ref.ResultID]; ok {
+			return appendModule(inst)
+		}
+		res, err := cache.LoadResultByResultIDForSchema(ctx, clientMetadata.SessionID, dag, ref.ResultID, installed)
 		if err != nil {
 			return fmt.Errorf("load module result %d: %w", ref.ResultID, err)
 		}
@@ -370,6 +378,7 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 		if !ok {
 			return fmt.Errorf("result %d is %T, not module result", ref.ResultID, res)
 		}
+		decisions[ref.ResultID] = modInst
 		return appendModule(modInst)
 	}); err != nil {
 		return nil, err

@@ -1440,7 +1440,6 @@ func (c *Cache) associateResultWithTermLocked(
 	c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) teachResultIdentityLocked(
 	ctx context.Context,
 	res *sharedResult,
@@ -1452,6 +1451,23 @@ func (c *Cache) teachResultIdentityLocked(
 ) error {
 	if res == nil || res.id == 0 || requestFrame == nil {
 		return nil
+	}
+	provenance, err := c.inputProvenanceForRefs(requestInputRefs)
+	if err != nil {
+		return err
+	}
+	indexDigest, err := requestFrame.deriveRecipeDigest(c)
+	if err != nil {
+		return err
+	}
+	c.applyPreparedResultIdentityLocked(ctx, res, requestFrame, requestDigest, requestSelf, requestInputs, provenance, indexDigest)
+	return nil
+}
+
+// applyPreparedResultIdentityLocked has no fallible work after its first mutation.
+func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCall, requestDigest, requestSelf digest.Digest, requestInputs []digest.Digest, inputProvenance []egraphInputProvenanceKind, indexDigest digest.Digest) {
+	if res == nil || res.id == 0 || requestFrame == nil {
+		return
 	}
 	c.initEgraphLocked()
 
@@ -1473,7 +1489,7 @@ func (c *Cache) teachResultIdentityLocked(
 		}
 	}
 	if len(rootSet) == 0 {
-		return nil
+		return
 	}
 
 	mergeIDs := make([]eqClassID, 0, len(rootSet))
@@ -1484,12 +1500,12 @@ func (c *Cache) teachResultIdentityLocked(
 		mergeIDs = append(mergeIDs, root)
 	}
 	if len(mergeIDs) == 0 {
-		return nil
+		return
 	}
 	c.traceTeachResultIdentityRootSet(ctx, res, requestDigest.String(), requestSelf.String(), requestInputs, requestFrame, mergeIDs)
 	outputEqID := c.mergeEqClassesLocked(ctx, mergeIDs...)
 	if outputEqID == 0 {
-		return nil
+		return
 	}
 
 	inputEqIDs := c.ensureTermInputEqIDsLocked(ctx, requestInputs)
@@ -1500,18 +1516,10 @@ func (c *Cache) teachResultIdentityLocked(
 	case c.termForResultByDigestLocked(res.id, termDigest) != nil:
 		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 	case existingTerm != nil:
-		inputProvenance, err := c.inputProvenanceForRefs(requestInputRefs)
-		if err != nil {
-			return fmt.Errorf("derive input provenance for request term %s: %w", requestSelf, err)
-		}
 		c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
 		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 	default:
 		mergedOutputEqID := c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
-		inputProvenance, err := c.inputProvenanceForRefs(requestInputRefs)
-		if err != nil {
-			return fmt.Errorf("derive input provenance for request term %s: %w", requestSelf, err)
-		}
 
 		termID := c.nextEgraphTermID
 		c.nextEgraphTermID++
@@ -1548,8 +1556,9 @@ func (c *Cache) teachResultIdentityLocked(
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
 
-	if err := c.indexResultDigestsLocked(res, requestFrame, nil); err != nil {
-		return err
+	c.addResultDigestPostingLocked(res.id, indexDigest.String(), resultDigestPostingExact)
+	for _, extra := range requestFrame.ExtraDigests {
+		c.addResultDigestPostingLocked(res.id, extra.Digest.String(), resultDigestPostingExact)
 	}
 	for termID := range c.resultTerms[res.id] {
 		term := c.egraphTerms[termID]
@@ -1572,8 +1581,6 @@ func (c *Cache) teachResultIdentityLocked(
 			extras[extra] = struct{}{}
 		}
 	}
-
-	return nil
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity

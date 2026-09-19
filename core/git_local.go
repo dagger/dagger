@@ -220,9 +220,9 @@ func (repo *LocalGitRepository) cleanedInto(ctx context.Context, dst *Directory)
 		return false, err
 	}
 	bkref = nil
-	dst.Dir.setValue(repoDirPath)
+	dst.SetPath(repoDirPath)
 	dst.Services = slices.Clone(repo.Directory.Self().Services)
-	dst.Snapshot.setValue(snap)
+	dst.SetSnapshot(snap)
 	return false, nil
 }
 
@@ -404,8 +404,8 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	dir.Dir.setValue("/")
-	dir.Snapshot.setValue(snap)
+	dir.SetPath("/")
+	dir.SetSnapshot(snap)
 	return dir, nil
 }
 

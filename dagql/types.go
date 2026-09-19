@@ -125,7 +125,7 @@ type AnyResult interface {
 	NullableWrapped() AnyResult
 
 	// WithContentDigest returns a new AnyResult with the given content digest.
-	WithContentDigestAny(context.Context, digest.Digest) (AnyResult, error)
+	WithContentDigestAny(context.Context, digest.Digest, ...string) (AnyResult, error)
 	// WithSessionResourceHandle returns a new AnyResult with the given session resource handle.
 	WithSessionResourceHandleAny(context.Context, SessionResourceHandle) (AnyResult, error)
 

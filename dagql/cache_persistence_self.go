@@ -29,7 +29,8 @@ const (
 // the recorded call instead of a flattened element name; object envelopes
 // name their codec family; list items naming another row are result_ref
 // envelopes without a duplicated body.
-const persistedResultEnvelopeVersion = 3
+// 4: root origin and independent pending offer ownership.
+const persistedResultEnvelopeVersion = 4
 
 // PersistedResultEnvelope is the shared on-disk payload envelope for persisted
 // result self values.
@@ -38,8 +39,10 @@ const persistedResultEnvelopeVersion = 3
 // while still carrying enough structured data to decode common SDK-return
 // shapes (scalars, object IDs, lists, nested combinations).
 type PersistedResultEnvelope struct {
-	Version int    `json:"version"`
-	Kind    string `json:"kind"`
+	Imported      bool                 `json:"imported,omitempty"`
+	PendingOffers []PersistedPartOffer `json:"pendingOffers,omitempty"`
+	Version       int                  `json:"version"`
+	Kind          string               `json:"kind"`
 	// TypeName identifies the GraphQL value type of object and scalar
 	// envelopes.
 	TypeName string `json:"typeName,omitempty"`
@@ -120,7 +123,9 @@ func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache Persist
 }
 
 func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
-	return decodePersistedResultEnvelope(ctx, NewPersistDecodeContext(dag, resultID, call), env, true)
+	dec := NewPersistDecodeContext(dag, resultID, call)
+	dec.roles, _ = ctx.Value(copiedDecodeRolesKey{}).(*copiedDecodeRoles)
+	return decodePersistedResultEnvelope(ctx, dec, env, true)
 }
 
 // persistedAbsentEnvelope describes an attached absent value: the row keeps
@@ -135,6 +140,7 @@ func persistedAbsentEnvelope(resultID uint64, handle SessionResourceHandle) Pers
 	}
 }
 
+//nolint:gocyclo // one classification per envelope kind; splitting hides the order of the checks
 func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContext, res AnyResult, root bool) (PersistedResultEncoding, error) {
 	if res == nil {
 		return PersistedResultEncoding{Envelope: PersistedResultEnvelope{
@@ -183,6 +189,13 @@ func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContex
 		family, ok := PersistedObjectFamilyFor(self)
 		if !ok {
 			return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: type %q (%T) has no registered persisted object family", value.Type().Name(), self)
+		}
+		if versions, ok := ctx.Value(capturedOutputVersionsKey{}).(*capturedOutputVersions); ok {
+			if output, ok := self.(PersistedOutputVersion); ok {
+				if err := versions.record(output); err != nil {
+					return PersistedResultEncoding{}, err
+				}
+			}
 		}
 		objectEncoding, err := encoder.EncodePersistedObject(ctx, enc)
 		if err != nil {

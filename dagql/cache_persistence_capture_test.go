@@ -312,8 +312,13 @@ func TestCapturePersistedRecordOwnershipAndCancellation(t *testing.T) {
 				done := make(chan error, 1)
 				go func() { _, err := c.CapturePersistedRecord(captureCtx, res); done <- err }()
 				<-entered
-				// Settled capture does not keep lazyMu while its codec waits.
-				require.False(t, HasPendingLazyEvaluation(res))
+				// Every row is copied under its own lazyMu, including settled
+				// rows. The capture hold still allows session release below.
+				locked := res.cacheSharedResult().lazyMu.TryLock()
+				if locked {
+					res.cacheSharedResult().lazyMu.Unlock()
+				}
+				require.False(t, locked)
 				cacheTestReleaseSession(t, c, ctx)
 				c.egraphMu.RLock()
 				registered := c.resultsByID[res.cacheSharedResult().id]

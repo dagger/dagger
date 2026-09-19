@@ -39,6 +39,12 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		c.egraphMu.Unlock()
 		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
 	}
+	offers, err := shared.pendingOffersLocked()
+	if err != nil {
+		c.egraphMu.Unlock()
+		return PersistedRecord{}, err
+	}
+	imported := shared.imported
 	c.incrementIncomingOwnershipLocked(ctx, shared)
 	c.egraphMu.Unlock()
 	defer func() {
@@ -50,14 +56,24 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		rerr = errors.Join(rerr, decErr, collectErr, runOnReleaseFuncs(cleanupCtx, releases))
 	}()
 
+	version := new(capturedRowRevision)
+	record, err := c.captureHeldPersistedRecord(ctx, shared, imported, offers, version)
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	if err := version.check(shared); err != nil {
+		return PersistedRecord{}, err
+	}
+	return record, nil
+}
+
+// The operation and row ownership are already held by the caller. Only this
+// row's lazyMu is acquired here, never a dependency's mutex or a new admission.
+func (c *Cache) captureHeldPersistedRecord(ctx context.Context, shared *sharedResult, imported bool, offers []PersistedPartOffer, version *capturedRowRevision) (PersistedRecord, error) {
+	var err error
 	shared.lazyMu.Lock()
-	locked := true
-	defer func() {
-		if locked {
-			shared.lazyMu.Unlock()
-		}
-	}()
-	armed := shared.lazyWhole.eval != nil
+	defer shared.lazyMu.Unlock()
+
 	if shared.lazyWhole.attempt != nil || shared.lazyWhole.syncPending {
 		return PersistedRecord{}, fmt.Errorf("%w: result %d whole evaluation", ErrPersistStateNotReady, shared.id)
 	}
@@ -65,10 +81,13 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		if group.attempt != nil || group.syncPending {
 			return PersistedRecord{}, fmt.Errorf("%w: result %d group %q", ErrPersistStateNotReady, shared.id, key)
 		}
-		armed = armed || group.eval != nil
 	}
 
 	payload := shared.loadPayloadState()
+	version.payload = payload
+	if payload.snapshotLinkIntent != nil {
+		payload.snapshotOwnerLinks = slices.Clone(payload.snapshotLinkIntent.Links)
+	}
 	frame := shared.loadResultCall().clone()
 	captured := &sharedResult{
 		id:                    shared.id,
@@ -79,16 +98,12 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 	}
 	captured.storeResultCall(frame)
 	value := Result[Typed]{shared: captured}
-	// Parts may have unstarted work before a cache-side group exists. Consult
-	// the object callback too, but only after ruling out a published attempt.
-	if payload.persistedEnvelope != nil || shared.lazyEvalComplete || (!armed && lazyEvalFuncOfResult(value) == nil) {
-		shared.lazyMu.Unlock()
-		locked = false
-	}
 	if err := context.Cause(ctx); err != nil {
 		return PersistedRecord{}, err
 	}
 
+	versions := &version.outputs
+	ctx = context.WithValue(ctx, capturedOutputVersionsKey{}, versions)
 	var encoding PersistedResultEncoding
 	if payload.persistedEnvelope != nil {
 		encoding = PersistedResultEncoding{
@@ -108,20 +123,33 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 	if err := context.Cause(ctx); err != nil {
 		return PersistedRecord{}, err
 	}
+	encoding.Envelope.Imported, encoding.Envelope.PendingOffers = imported, offers
+	envelope, err := clonePersistedEnvelope(encoding.Envelope)
+	if err != nil {
+		return PersistedRecord{}, err
+	}
 	return PersistedRecord{
 		ResultID:      uint64(shared.id),
-		Envelope:      clonePersistedEnvelope(encoding.Envelope),
+		Envelope:      envelope,
 		Call:          frame,
 		SnapshotLinks: slices.Clone(encoding.SnapshotLinks),
 	}, nil
 }
 
-func clonePersistedEnvelope(env PersistedResultEnvelope) PersistedResultEnvelope {
+func clonePersistedEnvelope(env PersistedResultEnvelope) (PersistedResultEnvelope, error) {
+	var err error
+	env.PendingOffers, err = clonePartOffers(env.PendingOffers)
+	if err != nil {
+		return PersistedResultEnvelope{}, err
+	}
 	env.ObjectJSON = slices.Clone(env.ObjectJSON)
 	env.ScalarJSON = slices.Clone(env.ScalarJSON)
 	env.Items = slices.Clone(env.Items)
 	for i := range env.Items {
-		env.Items[i] = clonePersistedEnvelope(env.Items[i])
+		env.Items[i], err = clonePersistedEnvelope(env.Items[i])
+		if err != nil {
+			return PersistedResultEnvelope{}, err
+		}
 	}
-	return env
+	return env, nil
 }

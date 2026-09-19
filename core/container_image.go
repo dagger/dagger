@@ -76,8 +76,8 @@ func containerImageBlobFile(
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	f.File.setValue(filePath)
-	f.Snapshot.setValue(snap)
+	f.SetPath(filePath)
+	f.SetSnapshot(snap)
 	return f, nil
 }
 
@@ -221,8 +221,8 @@ func (lazy *ContainerFromImageRefLazy) EvaluateContainerGroup(ctx context.Contex
 				Dir:      new(LazyAccessor[string, *Directory]),
 				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			}
-			rootfsDir.Dir.setValue("/")
-			rootfsDir.Snapshot.setValue(rootfs)
+			rootfsDir.SetPath("/")
+			rootfsDir.SetSnapshot(rootfs)
 			container.ensureFSAccessor().setValue(rootfsDir)
 			return nil
 		})
@@ -333,8 +333,8 @@ func (container *Container) FromOCIStore(
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	rootfsDir.Dir.setValue("/")
-	rootfsDir.Snapshot.setValue(rootfs)
+	rootfsDir.SetPath("/")
+	rootfsDir.SetSnapshot(rootfs)
 	if container.FS == nil {
 		container.FS = new(LazyAccessor[*Directory, *Container])
 	}
@@ -410,8 +410,8 @@ func (container *Container) AsTarball(
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	f.File.setValue(filePath)
-	f.Snapshot.setValue(snap)
+	f.SetPath(filePath)
+	f.SetSnapshot(snap)
 	return f, nil
 }
 

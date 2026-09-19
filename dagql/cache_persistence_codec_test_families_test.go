@@ -19,7 +19,7 @@ func init() {
 	for _, family := range []PersistedObjectFamily{
 		{Name: "dagql_test.PersistCodecObj", Typed: (*persistCodecObj)(nil), Visitor: PersistedNoReferences{}},
 		{Name: "dagql_test.PersistConcurrentDecodeObj", Typed: (*persistConcurrentDecodeObj)(nil), Visitor: PersistedNoReferences{}},
-		{Name: "dagql_test.PersistRetryDecodeObj", Typed: (*persistRetryDecodeObj)(nil), Visitor: PersistedNoReferences{}},
+		{Name: "dagql_test.PersistRetryDecodeObj", Typed: (*persistRetryDecodeObj)(nil), Visitor: persistTestSnapshotRoleVisitor{}},
 		{Name: "dagql_test.PersistResourceScopedObj", Typed: (*persistResourceScopedObj)(nil), Visitor: PersistedNoReferences{}},
 		{Name: "dagql_test.PersistSnapshotValue", Typed: (*persistSnapshotValue)(nil), Visitor: persistTestSnapshotRoleVisitor{}},
 	} {

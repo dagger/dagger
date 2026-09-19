@@ -202,8 +202,8 @@ func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckou
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	dir.Dir.setValue("/.git")
-	dir.Snapshot.setValue(snap)
+	dir.SetPath("/.git")
+	dir.SetSnapshot(snap)
 	return dir, nil
 }
 
@@ -291,8 +291,8 @@ func MaterializeGitUncommittedPack(ctx context.Context, tree dagql.ObjectResult[
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	dir.Dir.setValue(treePath)
-	dir.Snapshot.setValue(snap)
+	dir.SetPath(treePath)
+	dir.SetSnapshot(snap)
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
 		_ = dir.OnRelease(context.WithoutCancel(ctx))
