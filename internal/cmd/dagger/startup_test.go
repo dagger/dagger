@@ -26,6 +26,15 @@ func TestCommandStartup(t *testing.T) {
 	}
 	executable, err := os.Executable()
 	require.NoError(t, err)
+	// SDK names must be discovered before Cobra renders help. Listing names
+	// needs only configuration, even when the selected engine is unreachable.
+	sdkDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(sdkDir, "dagger.toml"), []byte(`
+[modules.example-sdk]
+source = "github.com/dagger/go-sdk"
+[sdks.example]
+module = "example-sdk"
+`), 0o600))
 	for _, tc := range []struct {
 		name   string
 		args   []string
@@ -60,6 +69,12 @@ func TestCommandStartup(t *testing.T) {
 		{"help needs no interactive terminal", []string{"--shell-on-error", "check", "--help"}, "Verify your project", 0},
 		{"help needs no tty progress frontend", []string{"--progress=tty", "check", "--help"}, "Verify your project", 0},
 		{"help needs no working directory", []string{"--workdir=/no-such-directory-for-startup-test", "check", "--help"}, "Verify your project", 0},
+		// The shell sends this when completing `dagger -W . api <Tab>`.
+		{"tab completion after workspace selection", []string{"__complete", "-W", ".", "api", ""}, "functions", 0},
+		{"completion skips shared setup", []string{"__complete", "api", ""}, "functions", 0},
+		{"SDK names are discovered for module init help", []string{"--workdir", sdkDir, "module", "init", "--help"}, "example", 0},
+		{"SDK names are discovered for the help command", []string{"--workdir", sdkDir, "help", "module", "init"}, "example", 0},
+		{"SDK names are discovered for client help", []string{"--workdir", sdkDir, "module", "client", "add", "--help"}, "example", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// A profile file would reveal that shared execution setup ran.
