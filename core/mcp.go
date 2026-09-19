@@ -786,7 +786,7 @@ func (m *MCP) summarizeWorkspaceEdits(ctx context.Context, srv *dagql.Server, pr
 		View:  srv.View,
 		Field: "changes",
 		Args: []dagql.NamedInput{
-			{Name: "from", Value: dagql.NewID[*Workspace](prevID)},
+			{Name: "from", Value: dagql.Opt(dagql.NewID[*Workspace](prevID))},
 		},
 	}); err != nil {
 		slog.Warn("failed to compare workspaces; diffing roots instead", "error", err)
