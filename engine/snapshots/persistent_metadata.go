@@ -192,6 +192,18 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 		cm.snapshotOwnerLeases[currentSnapshotID][leaseID] = struct{}{}
 	}
 
+	// AddResource does not check whether a target still exists. GC can finish
+	// between the ancestry walk and attachment. Once attached, surviving
+	// resources cannot be reclaimed by a later GC while this lease exists.
+	for _, currentSnapshotID := range snapshotIDs {
+		if _, err := cm.Snapshotter.Stat(ctx, currentSnapshotID); err != nil {
+			if cerrdefs.IsNotFound(err) {
+				return pkgerrors.Wrap(errNotFound, currentSnapshotID)
+			}
+			return pkgerrors.Wrapf(err, "validate snapshot %s for owner lease %s", currentSnapshotID, leaseID)
+		}
+	}
+
 	return nil
 }
 
