@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
-	"github.com/stretchr/testify/require"
 )
 
 // pausedBodyManager counts native body entries, recognized by their mutable
@@ -57,7 +58,6 @@ func waitWithin[T any](t *testing.T, ch <-chan T) T {
 // the body; an offer arriving after the body starts is refused and the body
 // finishes.
 func TestOfferPartsNativeAdmission(t *testing.T) {
-	testutil.RequireNativeMount(t)
 	platform := Platform{OS: "linux", Architecture: "amd64"}
 	setup := func(t *testing.T, pause bool) (context.Context, *dagql.Cache, dagql.ObjectResult[*File], *pausedBodyManager, func(), dagql.PersistedPartOffer, *testutil.Provider) {
 		t.Helper()
@@ -92,8 +92,7 @@ func TestOfferPartsNativeAdmission(t *testing.T) {
 		require.NoError(t, cache.Evaluate(ctx, result))
 		require.Zero(t, manager.bodies.Load(), "the demand installed the offer instead of entering the body")
 		require.EqualValues(t, 1, provider.Reads.Load())
-		contents, err := result.Self().Contents(ctx, result, nil, nil)
-		require.NoError(t, err)
+		contents := demandedFileContents(t, ctx, result)
 		require.Equal(t, "offered bytes", string(contents))
 		require.Equal(t, "/offered.txt", mustTransferPath(t, ctx, result))
 		record, err := cache.CapturePersistedRecord(ctx, result)
@@ -113,8 +112,7 @@ func TestOfferPartsNativeAdmission(t *testing.T) {
 		require.NoError(t, waitWithin(t, evaluated))
 		require.EqualValues(t, 1, manager.bodies.Load())
 		require.Zero(t, provider.Reads.Load())
-		contents, err := result.Self().Contents(ctx, result, nil, nil)
-		require.NoError(t, err)
+		contents := demandedFileContents(t, ctx, result)
 		require.Equal(t, "operation bytes", string(contents))
 		record, err := cache.CapturePersistedRecord(ctx, result)
 		require.NoError(t, err)
