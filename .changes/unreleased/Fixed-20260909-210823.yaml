@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Keep restored Directory and File snapshots closed until filesystem access is
+  needed. Preserve persisted list element identities across repeated engine restarts.
+time: 2026-09-09T21:08:23Z
+custom:
+  Author: sipsma
+  PR: 14093

@@ -975,3 +975,45 @@ func TestEvaluatePartsEmptyResolutionRetriesPendingBookkeeping(t *testing.T) {
 		}
 	})
 }
+
+type cacheTestWholeStoredOpen struct {
+	Int
+	stored bool
+}
+
+func (v cacheTestWholeStoredOpen) HasPendingLazyComputation() bool { return false }
+
+func (v cacheTestWholeStoredOpen) LazyGroupStoredPart(group LazyGroupKey) PartKey {
+	if v.stored && group == LazyGroupWhole {
+		return "snapshot"
+	}
+	return ""
+}
+
+func TestPendingLazyComputationWholeGroupStoredOpen(t *testing.T) {
+	for name, state := range map[string]lazyGroupState{
+		"armed":       {eval: func(context.Context) error { return nil }},
+		"in flight":   {attempt: &lazyEvalAttempt{}},
+		"bookkeeping": {syncPending: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, stored := range []bool{false, true} {
+				shared := &sharedResult{
+					id: 1, hasValue: true,
+					self: cacheTestWholeStoredOpen{stored: stored}, lazyWhole: state,
+				}
+				res := Result[Typed]{shared: shared}
+				if !HasPendingLazyEvaluation(res) {
+					t.Fatal("unfinished whole group must remain operational work")
+				}
+				if got := HasPendingLazyComputation(res); got != !stored {
+					t.Fatalf("stored=%v: pending computation=%v", stored, got)
+				}
+				shared.lazyEvalComplete = true
+				if HasPendingLazyComputation(res) || HasPendingLazyEvaluation(res) {
+					t.Fatal("completed result still reports pending")
+				}
+			}
+		})
+	}
+}

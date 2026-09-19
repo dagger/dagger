@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 func encodePersistedObjectPayload(payload any) (dagql.PersistedObjectEncoding, error) {
@@ -152,20 +151,4 @@ func loadPersistedSnapshotLinksByResultID(ctx context.Context, dag *dagql.Server
 		return nil, fmt.Errorf("load persisted %s snapshot links: %w", label, err)
 	}
 	return links, nil
-}
-
-func loadPersistedImmutableSnapshotByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label, role string) (bkcache.ImmutableRef, error) {
-	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, label, role)
-	if err != nil {
-		return nil, err
-	}
-	query, err := persistedDecodeQuery(dag)
-	if err != nil {
-		return nil, err
-	}
-	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return nil, fmt.Errorf("load persisted immutable snapshot %q: %w", link.RefKey, err)
-	}
-	return ref, nil
 }

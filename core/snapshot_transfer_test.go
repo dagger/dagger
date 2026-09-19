@@ -127,6 +127,22 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 		loaded[i], err = cache.LoadResultByResultID(ctx, "after", srv, id)
 		require.NoError(t, err)
 	}
+	loadedDirectory := loaded[1].(dagql.ObjectResult[*Directory])
+	loadedFile := loaded[2].(dagql.ObjectResult[*File])
+	for _, res := range []dagql.AnyResult{loadedDirectory, loadedFile} {
+		_, open := storedSnapshotTestOpen(res)
+		require.False(t, open, "typed restore leaves the saved snapshot closed")
+	}
+	directoryPath, err := loadedDirectory.Self().PathOrEval(ctx, loadedDirectory)
+	require.NoError(t, err)
+	require.Equal(t, "/", directoryPath)
+	filePath, err := loadedFile.Self().PathOrEval(ctx, loadedFile)
+	require.NoError(t, err)
+	require.Equal(t, "/dir/b.txt", filePath)
+	for _, res := range []dagql.AnyResult{loadedDirectory, loadedFile} {
+		_, open := storedSnapshotTestOpen(res)
+		require.False(t, open, "saved paths need no handle")
+	}
 	loadedContainer := loaded[0].(dagql.ObjectResult[*Container])
 	require.NoError(t, cache.EvaluateParts(ctx, loadedContainer, ContainerPartFS))
 	restoredRoot, err := loadedContainer.Self().FS.GetOrEval(ctx, loadedContainer.Result)
@@ -134,11 +150,9 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	restoredSnapshot, ok := restoredRoot.Snapshot.Peek()
 	require.True(t, ok)
 	testutil.CheckFile(t, restoredSnapshot, "a.txt", "typed prefix")
-	loadedDirectory := loaded[1].(dagql.ObjectResult[*Directory])
 	entries, err = loadedDirectory.Self().Entries(ctx, loadedDirectory, "dir")
 	require.NoError(t, err)
 	require.Equal(t, []string{"b.txt"}, entries)
-	loadedFile := loaded[2].(dagql.ObjectResult[*File])
 	contents, err = loadedFile.Self().Contents(ctx, loadedFile, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "typed suffix", string(contents))

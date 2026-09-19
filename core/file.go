@@ -38,9 +38,11 @@ type File struct {
 	// Services necessary to provision the file.
 	Services ServiceBindings
 
-	Lazy     Lazy[*File]
-	File     *LazyAccessor[string, *File]
-	Snapshot *LazyAccessor[bkcache.ImmutableRef, *File]
+	storedDiagnostics *storedSnapshotDiagnostics
+	stored            *storedSnapshot
+	Lazy              Lazy[*File]
+	File              *LazyAccessor[string, *File]
+	Snapshot          *LazyAccessor[bkcache.ImmutableRef, *File]
 }
 
 func (*File) Type() *ast.Type {
@@ -137,52 +139,50 @@ func ParseFileOwner(owner string) (*Ownership, error) {
 	return ParseDirectoryOwner(owner)
 }
 
-func (file *File) CacheUsageSize(ctx context.Context, _ dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
+func (file *File) snapshotIdentity() (string, bool) {
+	if file == nil {
+		return "", false
+	}
+	if file.Snapshot != nil {
+		if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
+			return snapshot.SnapshotID(), true
+		}
+	}
+	if file.stored != nil {
+		return file.stored.SnapshotID, true
+	}
+	return "", false
+}
+
+func (file *File) CacheUsageSize(ctx context.Context, provider dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if file == nil {
 		return 0, false, nil
 	}
-	if file.Snapshot == nil {
-		return 0, false, nil
+	if file.Snapshot != nil {
+		if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil && snapshot.SnapshotID() == identity {
+			size, err := snapshot.Size(ctx)
+			return size, err == nil, err
+		}
 	}
-	snapshot, ok := file.Snapshot.Peek()
-	if !ok || snapshot == nil {
-		return 0, false, nil
+	if file.stored != nil && file.stored.SnapshotID == identity && provider != nil {
+		size, err := provider.SnapshotSize(ctx, identity)
+		return size, err == nil, err
 	}
-	if snapshot.SnapshotID() != identity {
-		return 0, false, nil
-	}
-	size, err := snapshot.Size(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	return size, true, nil
+	return 0, false, nil
 }
 
 func (file *File) CacheUsageIdentities() []string {
-	if file == nil || file.Snapshot == nil {
-		return nil
+	if identity, ok := file.snapshotIdentity(); ok {
+		return []string{identity}
 	}
-	snapshot, ok := file.Snapshot.Peek()
-	if !ok || snapshot == nil {
-		return nil
-	}
-	return []string{snapshot.SnapshotID()}
+	return nil
 }
 
 func (file *File) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
-	if file == nil || file.Snapshot == nil {
-		return nil
+	if identity, ok := file.snapshotIdentity(); ok {
+		return []dagql.PersistedSnapshotRefLink{{RefKey: identity, Role: "snapshot"}}
 	}
-	snapshot, ok := file.Snapshot.Peek()
-	if !ok || snapshot == nil {
-		return nil
-	}
-	return []dagql.PersistedSnapshotRefLink{
-		{
-			RefKey: snapshot.SnapshotID(),
-			Role:   "snapshot",
-		},
-	}
+	return nil
 }
 
 const (
@@ -228,21 +228,19 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 		Platform: file.Platform,
 		Services: services,
 	}
-	if file.Snapshot != nil {
-		if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
-			payload.Form = persistedFileFormSnapshot
-			payloadJSON, err := json.Marshal(payload)
-			if err != nil {
-				return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
-			}
-			return dagql.PersistedObjectEncoding{
-				JSON: payloadJSON,
-				SnapshotLinks: []dagql.PersistedSnapshotRefLink{{
-					RefKey: snapshot.SnapshotID(),
-					Role:   "snapshot",
-				}},
-			}, nil
+	if identity, ok := file.snapshotIdentity(); ok {
+		payload.Form = persistedFileFormSnapshot
+		payloadJSON, err := json.Marshal(payload)
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
 		}
+		return dagql.PersistedObjectEncoding{
+			JSON: payloadJSON,
+			SnapshotLinks: []dagql.PersistedSnapshotRefLink{{
+				RefKey: identity,
+				Role:   "snapshot",
+			}},
+		}, nil
 	}
 	if file.Lazy != nil {
 		payload.Form = persistedFileFormLazy
@@ -283,11 +281,14 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server,
 	}
 	switch persisted.Form {
 	case persistedFileFormSnapshot:
-		snapshot, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "file", snapshotRole)
+		link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, "file", snapshotRole)
 		if err != nil {
 			return nil, err
 		}
-		file.Snapshot.setValue(snapshot)
+		file.stored = &storedSnapshot{SnapshotID: link.RefKey}
+		file.storedDiagnostics = newStoredSnapshotDiagnostics()
+		file.File.setValue(persisted.File)
+		file.Lazy = &FileRestoreLazy{LazyState: NewLazyState()}
 		return file, nil
 	case persistedFileFormLazy:
 		if persisted.LazyKind == "" {

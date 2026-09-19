@@ -568,7 +568,9 @@ func persistedEnvelopeObjectTypeNames(env PersistedResultEnvelope, names []strin
 		}
 	case persistedResultKindList:
 		for _, item := range env.Items {
-			names = persistedEnvelopeObjectTypeNames(item, names)
+			if item.ResultID == 0 {
+				names = persistedEnvelopeObjectTypeNames(item, names)
+			}
 		}
 	}
 	return names
