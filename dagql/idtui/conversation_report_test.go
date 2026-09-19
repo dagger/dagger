@@ -915,9 +915,30 @@ type rewindFixture struct {
 	oldPromptID, oldToolID, oldExecID, oldReplyID dagui.SpanID
 	markerID, newPromptID, newReplyID             dagui.SpanID
 	logs                                          map[dagui.SpanID]string
+
+	// marker and resumed are the snapshots newRewindFixtureBeforeRewind
+	// holds back, for tests that render before the rewind lands and then
+	// import it (importRewind).
+	marker  dagui.SpanSnapshot
+	resumed []dagui.SpanSnapshot
 }
 
 func newRewindFixture() *rewindFixture {
+	f := newRewindFixtureBeforeRewind()
+	f.importRewind()
+	return f
+}
+
+// importRewind lands the rewind: the marker span and the resumed turn after
+// it, as a later telemetry batch would.
+func (f *rewindFixture) importRewind() {
+	f.db.ImportSnapshots(append([]dagui.SpanSnapshot{f.marker}, f.resumed...))
+}
+
+// newRewindFixtureBeforeRewind is the fixture as the trace stands just
+// before the rewind: the kept turn and the turn about to be abandoned, with
+// the marker and resumed turn held back for importRewind.
+func newRewindFixtureBeforeRewind() *rewindFixture {
 	db := dagui.NewDB()
 	llmCall := func(digest, field, receiver string) {
 		db.Calls[digest] = &callpbv1.Call{
@@ -980,10 +1001,12 @@ func newRewindFixture() *rewindFixture {
 		oldTool,
 		oldExec,
 		msg(f.oldReplyID, 7, "LLM response", "assistant", "xxh3:old-result"),
-		marker,
+	})
+	f.marker = marker
+	f.resumed = []dagui.SpanSnapshot{
 		msg(f.newPromptID, 9, "LLM prompt", "user", "xxh3:new"),
 		msg(f.newReplyID, 10, "LLM response", "assistant", "xxh3:new"),
-	})
+	}
 	db.SetPrimarySpan(f.loopID)
 	f.logs = map[dagui.SpanID]string{
 		f.keptPromptID: "hello there\n",
