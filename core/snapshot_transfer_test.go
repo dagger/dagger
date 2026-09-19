@@ -63,8 +63,7 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	directory := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]), Platform: platform,
 		Lazy: &ContainerRootFSLazy{LazyState: NewLazyState(), Parent: containerResult}}
 	directoryResult := attachTransferObject(t, ctx, cache, srv, "before", "transferredDirectory", directory)
-	entries, err := directory.Entries(ctx, directoryResult, "")
-	require.NoError(t, err)
+	entries := demandedDirectoryEntries(t, ctx, directoryResult, "")
 	require.Contains(t, entries, "a.txt")
 	opened, err := consumer.Manager.GetBySnapshotID(ctx, imported.SnapshotID())
 	require.NoError(t, err)
@@ -72,8 +71,7 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	file.File.setValue("/dir/b.txt")
 	file.Snapshot.setValue(opened)
 	fileResult := attachTransferObject(t, ctx, cache, srv, "before", "transferredFile", file)
-	contents, err := file.Contents(ctx, fileResult, nil, nil)
-	require.NoError(t, err)
+	contents := demandedFileContents(t, ctx, fileResult)
 	require.Equal(t, "typed suffix", string(contents))
 	results := []dagql.AnyResult{containerResult, directoryResult, fileResult}
 	ids := make([]uint64, len(results))
@@ -150,11 +148,9 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	restoredSnapshot, ok := restoredRoot.Snapshot.Peek()
 	require.True(t, ok)
 	testutil.CheckFile(t, restoredSnapshot, "a.txt", "typed prefix")
-	entries, err = loadedDirectory.Self().Entries(ctx, loadedDirectory, "dir")
-	require.NoError(t, err)
+	entries = demandedDirectoryEntries(t, ctx, loadedDirectory, "dir")
 	require.Equal(t, []string{"b.txt"}, entries)
-	contents, err = loadedFile.Self().Contents(ctx, loadedFile, nil, nil)
-	require.NoError(t, err)
+	contents = demandedFileContents(t, ctx, loadedFile)
 	require.Equal(t, "typed suffix", string(contents))
 	assertTypedSnapshotOwners(t, consumer, imported.SnapshotID(), 3)
 	require.EqualValues(t, 2, provider.Reads.Load())

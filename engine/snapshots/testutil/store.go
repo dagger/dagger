@@ -1,9 +1,9 @@
-// Package testutil builds real local snapshot and content stores for transfer tests.
+// Package testutil builds real local snapshot and content stores for transfer
+// tests. The stores need no privileges: see inplace.go for what that costs.
 package testutil
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -12,14 +12,12 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
-	"github.com/containerd/containerd/v2/core/diff/apply"
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/metadata"
 	"github.com/containerd/containerd/v2/core/mount"
 	ctdsnapshots "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/plugins/content/local"
-	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/containerd/v2/plugins/snapshots/native"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
@@ -48,7 +46,6 @@ type Store struct {
 
 func NewStore(t testing.TB) *Store {
 	t.Helper()
-	requireNativeMount(t)
 	s := &Store{root: t.TempDir()}
 	rawContent, err := local.NewStore(filepath.Join(s.root, "content"))
 	require.NoError(t, err)
@@ -70,35 +67,14 @@ func NewStore(t testing.TB) *Store {
 	return s
 }
 
-func requireNativeMount(t testing.TB) {
-	t.Helper()
-	source := t.TempDir()
-	target, err := os.MkdirTemp("", "snapshot-transfer-mount")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.Remove(target)) }()
-
-	// A writable native bind can use its source directly. Probe the read-only
-	// mount used during export, including cleanup after a partial mount.
-	mountErr := mount.All([]mount.Mount{{Type: "bind", Source: source, Options: []string{"rbind", "ro"}}}, target)
-	unmountErr := mount.UnmountAll(target, 0)
-	if errors.Is(mountErr, os.ErrPermission) {
-		if !errors.Is(unmountErr, os.ErrPermission) {
-			require.NoError(t, unmountErr)
-		}
-		t.Skipf("real native snapshot transfer requires read-only bind mount privileges: %v", mountErr)
-	}
-	require.NoError(t, mountErr)
-	require.NoError(t, unmountErr)
-}
-
 func (s *Store) openManager(t testing.TB) {
 	t.Helper()
 	var err error
 	s.Manager, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter: s.Snapshots, ContentStore: s.Content,
 		LeaseManager:  &observedLeases{Manager: s.Leases, store: s},
-		Applier:       &observedApplier{Applier: apply.NewFileSystemApplier(s.Content), store: s},
-		Differ:        &observedDiffer{Comparer: walking.NewWalkingDiff(s.Content), store: s},
+		Applier:       &observedApplier{Applier: inPlaceApplier{store: s.Content}, store: s},
+		Differ:        &observedDiffer{Comparer: inPlaceDiffer{store: s.Content}, store: s},
 		MountPoolRoot: filepath.Join(s.root, "mounts"),
 	})
 	require.NoError(t, err)
@@ -161,12 +137,7 @@ var FileTime = time.Unix(1700000000, 0).UTC()
 
 func CheckFile(t testing.TB, ref bkcache.ImmutableRef, name, want string) {
 	t.Helper()
-	mounted, err := ref.Mount(context.Background(), true)
-	require.NoError(t, err)
-	mounter := bkcache.LocalMounter(mounted)
-	root, err := mounter.Mount()
-	require.NoError(t, err)
-	defer func() { require.NoError(t, mounter.Unmount()) }()
+	root := Root(t, ref)
 	data, err := os.ReadFile(filepath.Join(root, name))
 	require.NoError(t, err)
 	require.Equal(t, want, string(data))
