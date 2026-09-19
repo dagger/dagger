@@ -48,20 +48,20 @@ run in CI):
 
 ```sh
 # fast subset (~1 minute): the right default while iterating
-dagger --env dev check tla-check:quick
+check tla-check:quick
 
 # chosen configurations, expectations enforced
-dagger --env dev call tla-check some --configs=resources,resources_latedep
+call tla-check some --configs=resources,resources_latedep
 
 # one configuration, raw TLC output, optional probe injection
-dagger --env dev call tla-check one --config=resources
+call tla-check one --config=resources
 
 # the full suite: REQUIRED before pushing changes under dagql/tla,
 # expensive otherwise - well over an hour wall with four TLC JVMs; the
 # largest configurations each exceed 40 million distinct states
 # (resources_requirement_growth ~114M, resources_restart ~110M,
 # lazy_import ~62M, resources_latedep_cascade ~57M, persist ~47M)
-dagger --env dev check tla-check:cache-lifecycle
+dagger call tla-check cache-lifecycle
 ```
 
 Configuration budget: target every configuration under ~20 minutes on a
@@ -222,8 +222,8 @@ names for `Some` and `One`. Existing short names still select `CacheLifecycle`.
 The cache spec and its existing configurations are unchanged.
 
 ```sh
-dagger --env dev call tla-check some --configs=snapshot_import,snapshot_export
-dagger --env dev call tla-check one --config=snapshot_import
+call tla-check some --configs=snapshot_import,snapshot_export
+call tla-check one --config=snapshot_import
 ```
 
 The component separates snapshot/index presence, handles, actual resources,
@@ -251,7 +251,7 @@ Measured on 2026-09-05 with the runner's pinned TLC jar, Java 21, 8 GiB heap,
 and 16 workers: import reached 475,119 distinct states (1,295,189 generated)
 in 4.51 seconds; export reached 5,185,181 (17,628,508 generated) in 24.80 seconds.
 The existing quick set passed all 18 shapes through the changed runner in
-77.19 seconds including Dagger startup, using `dagger --env dev check tla-check:quick`.
+77.19 seconds including Dagger startup, using `check tla-check:quick`.
 The two snapshot short names also passed through `Some` in 74.74 seconds.
 These runner checks preceded the final owner-content refinement; the counts
 above are the direct TLC runs of the final behavioral source. All 42 existing

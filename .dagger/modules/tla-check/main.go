@@ -240,12 +240,11 @@ var quickConfigs = []string{
 //
 // WARNING: the full run is expensive - well over an hour wall with four
 // TLC JVMs, and the largest configurations reach more than 110 million
-// distinct states each. Run it sparingly: it is required before pushing changes
-// under dagql/tla (CI runs Quick only), but for iteration prefer
-// Quick (seconds), Some (chosen configurations with their expectations
-// enforced), or One (a single configuration, raw output, optional probe
-// injection).
-// +check
+// distinct states each. It is not a check, so CI never schedules it: run it
+// by hand, `dagger call tla-check cache-lifecycle`, before pushing changes
+// under dagql/tla. For iteration prefer Quick (seconds, the check CI runs),
+// Some (chosen configurations with their expectations enforced), or One (a
+// single configuration, raw output, optional probe injection).
 func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 	names := make([]string, 0, len(expectedOutcome))
 	for name := range expectedOutcome {
@@ -255,9 +254,9 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 }
 
 // Quick model-checks only the cheap configurations (quickConfigs), with
-// their expectations enforced. It finishes in about a minute and is the
-// right default while iterating; it does not replace the full
-// CacheLifecycle run before a push.
+// their expectations enforced. It finishes in about a minute, is the check
+// CI runs, and is the right default while iterating; it does not replace
+// the full CacheLifecycle run before a push.
 // +check
 func (m *TlaCheck) Quick(ctx context.Context) error {
 	return m.runConfigs(ctx, quickConfigs)
@@ -328,8 +327,8 @@ func (m *TlaCheck) runConfigs(ctx context.Context, names []string) error {
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
 // nested-client ownership, authoritative session teardown, and the final
-// telemetry barrier.
-// +check
+// telemetry barrier. It is not a check, so CI never schedules it: run it
+// by hand, `dagger call tla-check client-lifecycle`.
 func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
 	base := m.base(m.ClientSource)
 
