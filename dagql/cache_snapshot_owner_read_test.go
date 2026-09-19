@@ -3,8 +3,10 @@ package dagql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -65,11 +67,14 @@ func TestSnapshotOwnerSyncInlineRead(t *testing.T) {
 // permits another publication before its caller can validate that revision.
 type changingSnapshotOwnerValue struct {
 	persistSnapshotValue
-	mu        sync.Mutex
-	revision  OutputRevision
-	read      chan struct{}
-	published chan struct{}
-	readOnce  sync.Once
+	mu          sync.Mutex
+	revision    OutputRevision
+	read        chan struct{}
+	published   chan struct{}
+	readOnce    sync.Once
+	publishOnce sync.Once
+	waitCtx     context.Context
+	readErr     error
 }
 
 func (v *changingSnapshotOwnerValue) PersistedOutputRevision() (OutputRevision, error) {
@@ -86,21 +91,81 @@ func (v *changingSnapshotOwnerValue) ReadSnapshotOwner() (OutputRevision, []Pers
 	if v.read != nil {
 		v.readOnce.Do(func() {
 			close(v.read)
-			<-v.published
+			v.readErr = waitSnapshotOwnerSignal(v.waitCtx, v.published, "typed publication")
 		})
 	}
-	return revision, links, nil
+	return revision, links, v.readErr
+}
+
+func waitSnapshotOwnerSignal(ctx context.Context, ch <-chan struct{}, description string) error {
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("waiting for %s: %w", description, context.Cause(ctx))
+	}
+}
+
+// Cleanup releases both handoffs and joins the writer even if an assertion
+// fails before the reader runs. The writer reports errors to the test goroutine.
+func startSnapshotOwnerWriter(t *testing.T, ctx context.Context, value *changingSnapshotOwnerValue, afterPublish func(context.Context) error) func() error {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	value.waitCtx = waitCtx
+	value.read, value.published = make(chan struct{}), make(chan struct{})
+	done := make(chan struct{})
+	var writerErr error
+	go func() {
+		defer close(done)
+		if writerErr = waitSnapshotOwnerSignal(waitCtx, value.read, "snapshot owner read"); writerErr != nil {
+			return
+		}
+		value.mu.Lock()
+		value.revision++
+		value.SnapshotID = "after"
+		value.mu.Unlock()
+		value.publishOnce.Do(func() { close(value.published) })
+		if afterPublish != nil {
+			writerErr = afterPublish(waitCtx)
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		value.publishOnce.Do(func() { close(value.published) })
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cleanupCancel()
+		if err := waitSnapshotOwnerSignal(cleanupCtx, done, "snapshot owner writer cleanup"); err != nil {
+			t.Error(err)
+		}
+	})
+	return func() error {
+		if err := waitSnapshotOwnerSignal(waitCtx, done, "snapshot owner writer completion"); err != nil {
+			return err
+		}
+		return writerErr
+	}
 }
 
 func TestSnapshotOwnerPublicationUsesCoherentRead(t *testing.T) {
-	ctx := cacheTestContext(t.Context())
+	ctx, cancel := context.WithTimeout(cacheTestContext(t.Context()), 5*time.Second)
+	defer cancel()
 	manager := &fakeSnapshotManager{}
 	c, err := NewCache(ctx, "", manager, nil)
 	require.NoError(t, err)
 	session := cacheTestSessionID(t, ctx)
 	t.Cleanup(func() {
-		require.NoError(t, c.ReleaseSession(ctx, session))
-		require.NoError(t, c.Close(ctx))
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cleanupCancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- errors.Join(c.ReleaseSession(cleanupCtx, session), c.Close(cleanupCtx))
+		}()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-cleanupCtx.Done():
+			t.Errorf("snapshot owner cache cleanup: %v", context.Cause(cleanupCtx))
+		}
 	})
 	value := &changingSnapshotOwnerValue{
 		persistSnapshotValue: persistSnapshotValue{SnapshotID: "before"},
@@ -111,24 +176,16 @@ func TestSnapshotOwnerPublicationUsesCoherentRead(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	value.read, value.published = make(chan struct{}), make(chan struct{})
-	writerDone := make(chan error, 1)
-	go func() {
-		<-value.read
-		value.mu.Lock()
-		value.revision++
-		value.SnapshotID = "after"
-		value.mu.Unlock()
-		close(value.published)
+	joinWriter := startSnapshotOwnerWriter(t, ctx, value, func(writerCtx context.Context) error {
 		// A completed writer must still reconcile its own publication.
-		writerDone <- c.SyncResultSnapshotOwnerLeases(ctx, original)
-	}()
+		return c.SyncResultSnapshotOwnerLeases(writerCtx, original)
+	})
 	// Like from(tag) returning from(digest), this call adopts a result
 	// that another consumer can already evaluate and publish into.
 	alias, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: persistCodecFrame("alias", value)}, func(context.Context) (AnyResult, error) {
 		return original, nil
 	})
-	require.NoError(t, <-writerDone)
+	require.NoError(t, joinWriter())
 	require.NoError(t, err, "a later typed publication must not turn a coherent owner read into a call error")
 	require.Same(t, original.cacheSharedResult(), alias.cacheSharedResult())
 	links := original.cacheSharedResult().loadSnapshotOwnerLinks()
@@ -140,20 +197,12 @@ func TestSnapshotOwnerSyncInlinePublication(t *testing.T) {
 	value := &changingSnapshotOwnerValue{
 		persistSnapshotValue: persistSnapshotValue{SnapshotID: "before"},
 		revision:             1,
-		read:                 make(chan struct{}),
-		published:            make(chan struct{}),
 	}
 	self := DynamicResultArrayOutput{Elem: value, Values: []AnyResult{newDetachedResult(nil, value)}}
 	frame := persistCodecFrame("inline", self)
-	go func() {
-		<-value.read
-		value.mu.Lock()
-		value.revision++
-		value.SnapshotID = "after"
-		value.mu.Unlock()
-		close(value.published)
-	}()
+	joinWriter := startSnapshotOwnerWriter(t, t.Context(), value, nil)
 	links, err := collectSnapshotOwnerLinks(self, frame, true)
+	require.NoError(t, joinWriter())
 	require.NoError(t, err)
 	require.Equal(t, []PersistedSnapshotRefLink{{RefKey: "before", Role: "snapshot", OutputPath: PersistedRefPath{}.Field("items").Index(0)}}, links)
 	links, err = collectSnapshotOwnerLinks(self, frame, true)
