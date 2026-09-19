@@ -695,6 +695,7 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	}
 	for _, args := range [][]string{
 		{"list", "--does-not-exist=x"},
+		{"list", "--does-not-exist=x", "--help"},
 		{"types", "--does-not-exist=x"},
 		{"dimensions", "--does-not-exist=x"},
 		{"keys", "missing", "--does-not-exist=x"},

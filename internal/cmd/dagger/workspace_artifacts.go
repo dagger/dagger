@@ -124,6 +124,7 @@ func prepareArtifactDimensionFlags(cmd *cobra.Command, args []string) (bool, err
 	cmd.InitDefaultHelpFlag()
 	flags := copyCommandFlags(cmd, "artifact dimensions")
 	flags.ParseErrorsAllowlist.UnknownFlags = false
+	var names []string
 	for {
 		var help bool
 		err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
@@ -134,11 +135,14 @@ func prepareArtifactDimensionFlags(cmd *cobra.Command, args []string) (bool, err
 		})
 		var unknown *pflag.NotExistError
 		if !errors.As(err, &unknown) || unknown.GetSpecifiedShortnames() != "" {
+			if !help {
+				registerArtifactDimensionFlags(cmd, names)
+			}
 			return help, err
 		}
 		name := unknown.GetSpecifiedName()
-		registerArtifactDimensionFlags(cmd, []string{name})
-		flags.AddFlag(cmd.PersistentFlags().Lookup(name))
+		names = append(names, name)
+		flags.StringArray(name, nil, "")
 	}
 }
 
