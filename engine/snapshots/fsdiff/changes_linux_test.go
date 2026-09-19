@@ -64,6 +64,29 @@ func TestWalkChangesContentModeZeroLengthFile(t *testing.T) {
 	require.NotContains(t, contentAware, "/zero")
 }
 
+func TestInodeOnlyComparisonDoesNotReadContent(t *testing.T) {
+	lower := filepath.Join(t.TempDir(), "file")
+	upper := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(lower, []byte("same"), 0o644))
+	require.NoError(t, os.WriteFile(upper, []byte("same"), 0o644))
+	mt := time.Unix(1775443663, 799549393)
+	require.NoError(t, os.Chtimes(lower, mt, mt))
+	require.NoError(t, os.Chtimes(upper, mt, mt))
+	f1, err := os.Stat(lower)
+	require.NoError(t, err)
+	f2, err := os.Stat(upper)
+	require.NoError(t, err)
+	// Keep only stat data: attempting to inspect either path now fails.
+	require.NoError(t, os.Remove(lower))
+	require.NoError(t, os.Remove(upper))
+	same, err := samePathInfo(f1, f2, lower, upper, CompareInodeOnly)
+	require.NoError(t, err)
+	require.False(t, same, "distinct inodes count conservatively even with identical metadata")
+	same, err = samePathInfo(f1, f1, lower, lower, CompareInodeOnly)
+	require.NoError(t, err)
+	require.True(t, same, "shared backing files need no content inspection")
+}
+
 func collectPaths(paths *[]string) continuityfs.ChangeFunc {
 	return func(kind continuityfs.ChangeKind, path string, _ os.FileInfo, err error) error {
 		if err != nil {

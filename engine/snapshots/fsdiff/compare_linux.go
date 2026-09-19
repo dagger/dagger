@@ -23,13 +23,19 @@ func samePathInfo(
 		return true, nil
 	}
 
-	if comparison == CompareInodeThenContent && sameInode(f1, f2) {
+	if (comparison == CompareInodeThenContent || comparison == CompareInodeOnly) && sameInode(f1, f2) {
 		// Two mounts of snapshots sharing a lineage report different st_dev,
 		// so os.SameFile misses files that resolve to the same backing
 		// inode. Both trees live on the same backing filesystem and
 		// snapshots are immutable, so an equal inode (with matching type,
 		// size, and mtime) means the same file.
 		return true, nil
+	}
+
+	if comparison == CompareInodeOnly {
+		// Directory contents are walked separately. For other distinct
+		// inodes, count a candidate without opening the file or symlink.
+		return f1.IsDir() && f2.IsDir(), nil
 	}
 
 	if !compareSysStat(f1.Sys(), f2.Sys()) {

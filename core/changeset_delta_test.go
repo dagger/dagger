@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -240,5 +241,109 @@ func TestChangesetDeltaMatchesGit(t *testing.T) {
 
 		requireSamePaths(t, before, after)
 		requireSameNumStat(t, before, after)
+	})
+}
+
+func TestChangesetDeltaExceeds(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("agrees with the full count when nothing is fuzzy", func(t *testing.T) {
+		before := t.TempDir()
+		after := t.TempDir()
+		writeDeltaTestFile(t, before, "keep.txt", "same\n")
+		require.NoError(t, os.Link(filepath.Join(before, "keep.txt"), filepath.Join(after, "keep.txt")))
+		writeDeltaTestFile(t, before, "mod.txt", "old\n")
+		writeDeltaTestFile(t, after, "mod.txt", "new\n")
+		writeDeltaTestFile(t, before, "remove.txt", "bye\n")
+		writeDeltaTestFile(t, before, "gone/a.txt", "a\n")
+		writeDeltaTestFile(t, before, "gone/sub/b.txt", "b\n")
+		writeDeltaTestFile(t, after, "add.txt", "hi\n")
+		writeDeltaTestFile(t, after, "fresh/c.txt", "c\n")
+
+		// No renames and no metadata-only changes, so the bound is exact:
+		// 3 added (add.txt, fresh/, fresh/c.txt), 1 modified, 5 removed
+		// (remove.txt, gone/, gone/a.txt, gone/sub/, gone/sub/b.txt).
+		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		require.NoError(t, err)
+		full := changesetPathCount(paths)
+		require.Equal(t, 9, full)
+
+		for _, limit := range []int{0, 1, full - 1} {
+			exceeds, err := changesetDeltaExceeds(ctx, before, after, limit)
+			require.NoError(t, err)
+			require.True(t, exceeds, "limit %d", limit)
+		}
+		for _, limit := range []int{full, full + 1, 1000} {
+			exceeds, err := changesetDeltaExceeds(ctx, before, after, limit)
+			require.NoError(t, err)
+			require.False(t, exceeds, "limit %d", limit)
+		}
+	})
+
+	t.Run("shared backing files never exceed", func(t *testing.T) {
+		before := t.TempDir()
+		after := t.TempDir()
+		writeDeltaTestFile(t, before, "a.txt", "same\n")
+		require.NoError(t, os.Link(filepath.Join(before, "a.txt"), filepath.Join(after, "a.txt")))
+
+		exceeds, err := changesetDeltaExceeds(ctx, before, after, 0)
+		require.NoError(t, err)
+		require.False(t, exceeds)
+	})
+
+	t.Run("counts metadata-only changes as an upper bound", func(t *testing.T) {
+		// An mtime-only change is not a modification to ComputePaths, but
+		// the bounded walk skips content verification and counts it.
+		before := t.TempDir()
+		after := t.TempDir()
+		writeDeltaTestFile(t, before, "f.txt", "same\n")
+		writeDeltaTestFile(t, after, "f.txt", "same\n")
+		past := time.Now().Add(-time.Hour)
+		require.NoError(t, os.Chtimes(filepath.Join(after, "f.txt"), past, past))
+
+		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		require.NoError(t, err)
+		require.Equal(t, 0, changesetPathCount(paths))
+
+		exceeds, err := changesetDeltaExceeds(ctx, before, after, 0)
+		require.NoError(t, err)
+		require.True(t, exceeds, "metadata-differing paths count toward the bound")
+		exceeds, err = changesetDeltaExceeds(ctx, before, after, 1)
+		require.NoError(t, err)
+		require.False(t, exceeds)
+	})
+
+	t.Run("aborts inside a removed tree", func(t *testing.T) {
+		// The walker reports a removed directory once; its children are
+		// expanded by a nested walk that must honor the budget too.
+		before := t.TempDir()
+		after := t.TempDir()
+		for i := range 50 {
+			writeDeltaTestFile(t, before, filepath.Join("gone", "sub", fmt.Sprintf("%d.txt", i)), "x\n")
+		}
+
+		delta, exceeded, err := collectChangesetDeltaBounded(ctx, before, after, 5)
+		require.NoError(t, err)
+		require.True(t, exceeded)
+		require.Nil(t, delta, "no partial delta is handed back")
+
+		delta, exceeded, err = collectChangesetDeltaBounded(ctx, before, after, -1)
+		require.NoError(t, err)
+		require.False(t, exceeded)
+		require.Equal(t, 52, delta.count())
+	})
+
+	t.Run("unbounded collection is unchanged", func(t *testing.T) {
+		before := t.TempDir()
+		after := t.TempDir()
+		writeDeltaTestFile(t, before, "mod.txt", "old\n")
+		writeDeltaTestFile(t, after, "mod.txt", "new\n")
+		writeDeltaTestFile(t, after, "add.txt", "hi\n")
+
+		delta, err := collectChangesetDelta(ctx, before, after)
+		require.NoError(t, err)
+		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
+		require.Equal(t, []string{"mod.txt"}, delta.modifiedCandidates)
+		require.Equal(t, 2, delta.count())
 	})
 }
