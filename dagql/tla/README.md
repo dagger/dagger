@@ -43,25 +43,27 @@ import and leaving the stored set alone at decode install; and
 joiners — fixed by retrying a departed leader's cancellation and the
 post-install lease sync.)
 
-Run the checks (the module is dev-env scoped and deliberately does NOT
-run in CI):
+Run the checks (the module is registered in the default environment; CI
+runs `tla-check:quick`, the fast subset, and the full runs are plain
+functions run by hand):
 
 ```sh
-# fast subset (~1 minute): the right default while iterating
-dagger --env dev check tla-check:quick
+# fast subset (~1 minute): the right default while iterating, and the
+# check CI runs
+dagger check tla-check:quick
 
 # chosen configurations, expectations enforced
-dagger --env dev call tla-check some --configs=resources,resources_latedep
+dagger call tla-check some --configs=resources,resources_latedep
 
 # one configuration, raw TLC output, optional probe injection
-dagger --env dev call tla-check one --config=resources
+dagger call tla-check one --config=resources
 
 # the full suite: REQUIRED before pushing changes under dagql/tla,
 # expensive otherwise - well over an hour wall with four TLC JVMs; the
 # largest configurations each exceed 40 million distinct states
 # (resources_requirement_growth ~114M, resources_restart ~110M,
 # lazy_import ~62M, resources_latedep_cascade ~57M, persist ~47M)
-dagger --env dev check tla-check:cache-lifecycle
+dagger call tla-check cache-lifecycle
 ```
 
 Configuration budget: target every configuration under ~20 minutes on a
@@ -222,8 +224,8 @@ names for `Some` and `One`. Existing short names still select `CacheLifecycle`.
 The cache spec and its existing configurations are unchanged.
 
 ```sh
-dagger --env dev call tla-check some --configs=snapshot_import,snapshot_export
-dagger --env dev call tla-check one --config=snapshot_import
+dagger call tla-check some --configs=snapshot_import,snapshot_export
+dagger call tla-check one --config=snapshot_import
 ```
 
 The component separates snapshot/index presence, handles, actual resources,
@@ -251,7 +253,8 @@ Measured on 2026-09-05 with the runner's pinned TLC jar, Java 21, 8 GiB heap,
 and 16 workers: import reached 475,119 distinct states (1,295,189 generated)
 in 4.51 seconds; export reached 5,185,181 (17,628,508 generated) in 24.80 seconds.
 The existing quick set passed all 18 shapes through the changed runner in
-77.19 seconds including Dagger startup, using `dagger --env dev check tla-check:quick`.
+77.19 seconds including Dagger startup, using `dagger --env dev check tla-check:quick`
+(the module's invocation at the time; it is `dagger check tla-check:quick` now).
 The two snapshot short names also passed through `Some` in 74.74 seconds.
 These runner checks preceded the final owner-content refinement; the counts
 above are the direct TLC runs of the final behavioral source. All 42 existing
@@ -323,3 +326,80 @@ logs. Focused race evidence is in `snapshot-race-20260905T084725`,
 are in `prepared-race-20260905T085744` and `assembled-race-20260905T085911`.
 `final-evidence.md` reconciles source revisions, commands, counts and limitations.
 No full TLA or Go suite was run for this implementation.
+
+## Remote-cache models: `RemoteParts`, `RemoteOwners`, `RemoteSharing`, `RemoteCheckpoint`
+
+Four separate modules, beside `SnapshotChain.tla` and for the same reason: the
+remote-cache mechanisms sit above the snapshot store and beside the cache
+kernel, and keeping them out of `CacheLifecycle.tla` leaves every existing
+configuration's state space exactly as it was. Nothing under
+`CacheLifecycle*` changed for them, so they owe no full-suite run. Each module
+header says what it models, as the code is after batches 4 to 6, what it
+abstracts away (session lookup, publication, bytes, leases), and which
+`CacheLifecycle` invariant discharges each thing it assumes; an assumption with
+no such invariant is named there as a gap with the Go tests that carry it.
+
+- `RemoteParts`: one receiver, two parts, one Lazy evaluation group, a Ready
+  donor and an offered chain for `fs`; output phase separate from group phase
+  and from each demand's result; permits, the recorded drain, the final source
+  check and the seal; Commit's revalidation; owed bookkeeping paid by a joiner;
+  offers refused after the seal; one renewal episode; cancellation; and the
+  reselect progress rule on the receiver's payload revision.
+- `RemoteOwners`: receiver, Service and child; two offer owners, one slot, two
+  sessions of which one holds the Service's handle; replacement, acquisition
+  holds, the cycle rejection, the ordinary hit's filter, Commit's conversion of
+  the owner's rows into dependency edges and requirement, settlement, and
+  collection at zero with ownership recounted from the actual edges and holds.
+- `RemoteSharing`: donor, imported receiver lacking two parts, bystander; one
+  cohort and its successor. Every slot prepared before any commit, members
+  released before any Finish, an encoded receiver's second slot built on the
+  first's prefix and expected revision, a decoded receiver's one slot per pass
+  with the successor taking its holds in the releasing step, a stale revision
+  refusing a slot, independent synchronization, owed bookkeeping paid without
+  pinning again, collection at zero.
+- `RemoteCheckpoint`: receiver, donor and one offer dependency over one clean
+  shutdown and restart. Desired roles recorded at install and applied at
+  synchronization, pins that outlive the process, the checkpoint's complete
+  desired roles, boot attaching every saved owner before releasing old pins,
+  a lost snapshot as a reset and never a repair, the producer run at most once
+  per process, and the receiver's last owner going.
+
+Every configuration is registered in `expectedOutcome`. A `fault` configuration
+sets the module's `Fault` constant to one deliberate break and must violate the
+one invariant it names. A `witness` configuration is a reachability probe: its
+"invariant" is the negation of the state it shows reachable, and it must be
+violated too. None is in the quick set.
+
+Recorded 2026-09-17 with the module's pinned TLC 1.7.4 jar (SHA-256
+`936a2620…0e88`, the same file the runner downloads), Java 21, 16 workers,
+`java -Xmx8g -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -workers auto
+-deadlock -config <cfg> <module>.tla`, each under an explicit `timeout` (180 s
+for the two pass configurations, 60 s for each fault and witness):
+
+| Configuration | Outcome | Distinct states | Wall seconds |
+| --- | --- | ---: | ---: |
+| `remote_parts` | pass | 26,270 | 2.2 |
+| `remote_parts_fault_certify_sibling` | `ServedOutputIsComplete` violated | | 2 |
+| `remote_parts_fault_accept_after_seal` | `OfferAfterSealCannotPublish` violated | | 1 |
+| `remote_parts_fault_wrong_expectation` | `NoProgressIsUnreachable` violated: the progress rule ends a refusal whose counters never move | | 1 |
+| `remote_parts_fault_wrong_expectation_round` | pass, 47,466 states: under that fault the hard error comes only on the second refusal and nothing else breaks | 47,466 | 3 |
+| `remote_parts_witness_downloaded_fs` | `WitnessDownloadedFsPendingMeta` violated | | 1 |
+| `remote_parts_witness_late_offer` | `WitnessLateOfferWinsDuringPreparing` violated | | 1 |
+| `remote_parts_witness_fs_beside_meta` | `WitnessFsAcquiredBesideProducedMeta` violated | | 1 |
+| `remote_owners` | pass | 3,092 | 1.7 |
+| `remote_owners_fault_release_on_replace` | `OwnerLivesWhileHeld` violated | 386 | 1.0 |
+| `remote_owners_fault_offer_resources_in_lookup` | `OrdinaryHitNotGatedByOffers` violated | 76 | 0.9 |
+| `remote_owners_fault_retain_owner_in_retry` | `OwnerLivesWhileHeld` violated | 264 | 1 |
+| `remote_owners_witness_old_acquisition` | `WitnessOldAcquisitionSurvivesReplacement` violated | 451 | 1.0 |
+| `remote_owners_witness_unauthorized_hit` | `WitnessUnauthorizedHitOfferSkipped` violated | 147 | 1.0 |
+| `remote_owners_witness_offer_row_outlives` | `WitnessOfferRowOutlivesItsRetention` violated | 95 | 1.0 |
+
+| `remote_sharing` | pass | 1,293 | 1.1 |
+| `remote_sharing_decoded` | pass | 672 | 1.2 |
+| five `remote_sharing_fault_*`, five `remote_sharing_witness_*` | each violates the invariant `expectedOutcome` names | | about 1 each |
+| `remote_checkpoint` | pass | 2,134 | 1.5 |
+| `remote_checkpoint_fault_drop_operation` | `OperationRetained` violated: the retained operation is one saved and restored bit, and a checkpoint that drops it leaves a pending part nothing to produce it | 154 | 1 |
+| three `remote_checkpoint_fault_*`, four `remote_checkpoint_witness_*` | each violates the invariant `expectedOutcome` names | | about 1 each |
+
+These bounds are small enough that they are the configurations' real bounds,
+not reduced ones. A symbolic model proves no bytes, leases or GC.

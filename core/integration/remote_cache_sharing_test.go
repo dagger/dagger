@@ -32,19 +32,10 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	type running struct {
 		upstream, tunnel *dagger.Service
 		client           *dagger.Client
+		unwatch          func()
 	}
 	stop := func(e *running) {
-		if e.client != nil {
-			require.NoError(t, e.client.Close())
-		}
-		if e.upstream != nil {
-			_, err := e.upstream.Stop(context.WithoutCancel(ctx))
-			require.NoError(t, err)
-		}
-		if e.tunnel != nil {
-			_, err := e.tunnel.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
-		}
+		require.NoError(t, stopNestedEngine(ctx, &e.client, e.unwatch, &e.upstream, &e.tunnel))
 	}
 	start := func(state string, volume *dagger.CacheVolume, workdir string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
@@ -52,6 +43,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		e := &running{upstream: devEngineContainerAsService(ctr)}
+		e.unwatch = watchNestedEngine(t, outer, e.upstream, t.Name()+" state="+state)
 		tunnel, err := outer.Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
 		e.tunnel = tunnel
@@ -165,13 +157,17 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Contains(t, restoredEntries, "notes.txt")
 	var afterRead transferFixtureReport
 	require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &afterRead))
-	// The demand's own task always records its row-level owner-sync; nothing
-	// else may name the row, and nothing may name one of its parts.
+	// The demand's own task records its row-level owner-sync. An optional
+	// sharing probe can also record a diagnostic skip while the restored
+	// row's representation changes; that performs no part operation.
 	for _, event := range afterRead.Parts {
 		if event.ResultID != restoredRow.ResultID {
 			continue
 		}
 		t.Logf("restored read event for row=%d: %+v", restoredRow.ResultID, event)
+		if event.Kind == "share-skipped" {
+			continue
+		}
 		require.Equal(t, "owner-sync", event.Kind, "a read of a restored owned snapshot needs no part operation: %+v", event)
 		require.Empty(t, event.Address.Part, "a read of a restored owned snapshot needs no part operation: %+v", event)
 	}

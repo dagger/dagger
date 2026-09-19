@@ -41,11 +41,11 @@ func (r *TlaCheck) WithGraphQLQuery(q *querybuilder.Selection) *TlaCheck {
 //
 // WARNING: the full run is expensive - well over an hour wall with four
 // TLC JVMs, and the largest configurations reach more than 110 million
-// distinct states each. Run it sparingly: it is required before pushing changes
-// under dagql/tla (it no longer runs in CI), but for iteration prefer
-// Quick (seconds), Some (chosen configurations with their expectations
-// enforced), or One (a single configuration, raw output, optional probe
-// injection).
+// distinct states each. It is not a check, so CI never schedules it: run it
+// by hand, `dagger call tla-check cache-lifecycle`, before pushing changes
+// under dagql/tla. For iteration prefer Quick (seconds, the check CI runs),
+// Some (chosen configurations with their expectations enforced), or One (a
+// single configuration, raw output, optional probe injection).
 func (r *TlaCheck) CacheLifecycle(ctx context.Context) error {
 	if r.cacheLifecycle != nil {
 		return nil
@@ -57,7 +57,8 @@ func (r *TlaCheck) CacheLifecycle(ctx context.Context) error {
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
 // nested-client ownership, authoritative session teardown, and the final
-// telemetry barrier.
+// telemetry barrier. It is not a check, so CI never schedules it: run it
+// by hand, `dagger call tla-check client-lifecycle`.
 func (r *TlaCheck) ClientLifecycle(ctx context.Context) error {
 	if r.clientLifecycle != nil {
 		return nil
@@ -169,9 +170,9 @@ func (r *TlaCheck) One(ctx context.Context, config string, opts ...TlaCheckOneOp
 }
 
 // Quick model-checks only the cheap configurations (quickConfigs), with
-// their expectations enforced. It finishes in about a minute and is the
-// right default while iterating; it does not replace the full
-// CacheLifecycle run before a push.
+// their expectations enforced. It finishes in about a minute, is the check
+// CI runs, and is the right default while iterating; it does not replace
+// the full CacheLifecycle run before a push.
 func (r *TlaCheck) Quick(ctx context.Context) error {
 	if r.quick != nil {
 		return nil

@@ -63,6 +63,9 @@ func (n *snapshotShareNotifications) record(class eqClassID) {
 // one incoming hold per distinct registered member observed for it, and the
 // counted cache operations that keep the cache open while it is outstanding.
 type snapshotShareItem struct {
+	// passID is assigned when the worker takes the item; it names the pass
+	// in fixture observations.
+	passID  uint64
 	class   eqClassID
 	members map[sharedResultID]*sharedResult
 	ops     []cacheOperation
@@ -374,6 +377,8 @@ func (c *Cache) takeSnapshotShareItemLocked() *snapshotShareItem {
 			continue
 		}
 		delete(c.sharePending, class)
+		c.sharePassSeq++
+		item.passID = c.sharePassSeq
 		return item
 	}
 	return nil
@@ -801,6 +806,7 @@ func (c *Cache) traceShareSkip(ctx context.Context, row *sharedResult, address P
 	if c.testShareSkipped != nil {
 		c.testShareSkipped(row.id, address, cause)
 	}
+	c.recordPartFixtureSkip(row, address, cause)
 }
 
 // preflightShareDecode checks, before any shared persisted-decode attempt is
@@ -1079,9 +1085,7 @@ func shareSkipCause(err error, outcome GateOutcome) error {
 // then externally finish every receipt exactly once.
 func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareItem) {
 	states, deferred := c.planSharePass(ctx, item)
-	if c.testBeforeSharePass != nil {
-		c.testBeforeSharePass(item, len(states))
-	}
+	c.reachSharePassTaken(ctx, item, len(states))
 	if c.testAfterSharePass != nil {
 		defer func() { c.testAfterSharePass(item) }()
 	}
@@ -1150,6 +1154,9 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 		prefix[st.receiver] = nextSharePrefix(st, res)
 	}
 
+	// Every selected slot has reported its preparation; none has committed.
+	c.reachSharePass(ctx, FixtureShareAllPrepared, item, len(states))
+
 	// Commit phase.
 	var receipts []*ReadyPartReceipt
 	for i, st := range states {
@@ -1201,10 +1208,9 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 	// the full RunLazyTask result: those two waits would deadlock the
 	// protocol. Every Installed receipt is finished, under cancellation too.
 	releaseMembers()
+	c.reachSharePass(ctx, FixtureShareMembersReleased, item, len(receipts))
 	for _, receipt := range receipts {
-		if c.testBeforeShareFinish != nil {
-			c.testBeforeShareFinish(receipt)
-		}
+		c.reachBeforeShareFinish(ctx, item, receipt)
 		if err := c.FinishReadyPart(context.WithoutCancel(ctx), receipt); err != nil {
 			c.traceShareSkip(ctx, receipt.receiver, PersistedPartAddress{}, err)
 		}
@@ -1348,4 +1354,27 @@ func (c *Cache) releaseSnapshotShareMembers(ctx context.Context, item *snapshotS
 	if err != nil {
 		c.recordShareCleanupError(err)
 	}
+}
+
+// The pass's hook sites. Each calls the in-package test hook that stood here
+// first, then the gated fixture's barrier for the same point: one site, one
+// mechanism. All run on the worker's goroutine outside every lock, and a
+// fixture pause ends with the worker's cancellation.
+
+func (c *Cache) reachSharePassTaken(ctx context.Context, item *snapshotShareItem, planned int) {
+	if c.testBeforeSharePass != nil {
+		c.testBeforeSharePass(item, planned)
+	}
+	c.reachSharePass(ctx, FixtureSharePassTaken, item, planned)
+}
+
+func (c *Cache) reachSharePass(ctx context.Context, point FixtureBarrierPoint, item *snapshotShareItem, count int) {
+	_ = c.fixtureReach(ctx, FixtureBarrierEvent{Point: point, PassID: item.passID, Detail: fmt.Sprintf("count=%d", count)})
+}
+
+func (c *Cache) reachBeforeShareFinish(ctx context.Context, item *snapshotShareItem, receipt *ReadyPartReceipt) {
+	if c.testBeforeShareFinish != nil {
+		c.testBeforeShareFinish(receipt)
+	}
+	_ = c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureBeforeFinish, PassID: item.passID, ResultID: uint64(receipt.receiver.id), TaskGeneration: receipt.task.generation})
 }

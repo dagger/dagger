@@ -22,6 +22,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		upstream := devEngineContainerAsService(ctr)
+		unwatch := watchNestedEngine(t, outer, upstream, t.Name())
 		tunnel, err := outer.Host().Tunnel(upstream).Start(ctx)
 		require.NoError(t, err)
 		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
@@ -29,11 +30,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(t.TempDir()), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			require.NoError(t, client.Close())
-			_, err := upstream.Stop(context.WithoutCancel(ctx))
-			require.NoError(t, err)
-			_, err = tunnel.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
+			require.NoError(t, stopNestedEngine(ctx, &client, unwatch, &upstream, &tunnel))
 		})
 		return client
 	}

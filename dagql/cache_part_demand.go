@@ -228,6 +228,10 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					return err
 				}
 				if source != nil {
+					// The source is selected and held; nothing is prepared.
+					if err := c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureSourceSelected, ResultID: uint64(row.id), Address: &address, Detail: string(source.route)}); err != nil {
+						return errors.Join(err, source.Release(context.WithoutCancel(ctx)))
+					}
 					kind := "selected-ready"
 					if source.readiness == PartDownloadable {
 						kind = "selected-chain"
@@ -398,6 +402,43 @@ func (c *Cache) sourceCheckCurrentLocked(check *SourceCheck) bool {
 	}
 	return true
 }
+
+// beginLazyOriginal seals the decision to run the recorded operation here and
+// reaches the fixture points around it. An offer accepted while the decision
+// is paused at the first point invalidates the final source check
+// BeginOriginal makes; one accepted after the seal is answered
+// ExecutionStarted even while the entry point is paused. The last point is
+// reached immediately before the real private invocation body.
+func (c *Cache) beginLazyOriginal(ctx context.Context, check *SourceCheck, row *sharedResult, address PersistedPartAddress, task *PartTaskToken, codec string) (*OriginalPermit, error) {
+	event := FixtureBarrierEvent{Point: FixtureBeforeBeginOriginal, ResultID: uint64(row.id), Address: &address}
+	if task != nil {
+		event.TaskGeneration = task.generation
+	}
+	if err := c.fixtureReach(ctx, event); err != nil {
+		return nil, err
+	}
+	original, outcome, err := c.BeginOriginal(ctx, check)
+	if err != nil {
+		return nil, err
+	}
+	if outcome != GateGranted {
+		return nil, partRefused("decision: final source check refused")
+	}
+	event.Point = FixtureOriginalSealed
+	if err := c.fixtureReach(ctx, event); err != nil {
+		return nil, err
+	}
+	if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
+		return nil, err
+	}
+	c.recordPartFixture(row, address, "lazy-enter")
+	event.Point, event.Detail = FixtureLazyEntry, codec
+	if err := c.fixtureReach(ctx, event); err != nil {
+		return nil, err
+	}
+	return original, nil
+}
+
 func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, address PersistedPartAddress, route LazyOperationRoute, demand *PartDemandState) error {
 	if err := engine.CheckSnapshotSharePreparation(ctx, "prepare lazy operation"); err != nil {
 		return err
@@ -479,17 +520,10 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 				}
 				return err
 			}
-			original, outcome, err := c.BeginOriginal(ctx, scan.NoSource)
+			original, err := c.beginLazyOriginal(ctx, scan.NoSource, row, address, task, local.Envelope.ObjectCodec)
 			if err != nil {
 				return err
 			}
-			if outcome != GateGranted {
-				return partRefused("decision: final source check refused")
-			}
-			if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
-				return err
-			}
-			c.recordPartFixture(row, address, "lazy-enter")
 			if err := invocation.Run(ctx); err != nil {
 				return err
 			}

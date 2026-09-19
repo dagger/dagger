@@ -133,6 +133,14 @@ legacy-default-path = true
 source = ".dagger/modules/test-split"
 legacy-default-path = true
 
+# The TLA+ model checks. CI discovers one check, `tla-check:quick`, the
+# bounded configurations. The full runs, `dagger call tla-check
+# cache-lifecycle` and `dagger call tla-check client-lifecycle`, take hours;
+# they are plain functions, never scheduled: run them by hand before pushing
+# changes under dagql/tla.
+[modules.tla-check]
+source = ".dagger/modules/tla-check"
+
 [modules.typescript-client]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
@@ -144,14 +152,6 @@ check.skip = ["generate:up-to-date"]
 [modules.go-sdk]
 source = "dagger.io/sdk/go@main"
 check.skip = ["generate:up-to-date"]
-
-# Dev-only: the TLA+ cache-model checks are expensive (the full run takes
-# well over an hour) and deliberately do not run in CI; use
-# `dagger --env dev check tla-check:quick` while iterating and the full
-# `dagger --env dev check tla-check:cache-lifecycle` before pushing
-# changes under dagql/tla.
-[env.dev.modules.tla-check]
-source = ".dagger/modules/tla-check"
 
 [env.dev.modules.engine-lab]
 source = ".dagger/modules/engine-lab"

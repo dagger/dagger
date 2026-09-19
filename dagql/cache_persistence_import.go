@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -704,8 +705,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		if res.persistDecodeWaitCh != nil {
 			waitCh := res.persistDecodeWaitCh
 			res.persistDecodeMu.Unlock()
-			if c.testPersistDecodeJoined != nil {
-				c.testPersistDecodeJoined(uint64(res.id))
+			if err := c.reachDecodeJoined(ctx, res); err != nil {
+				return nil, err
 			}
 
 			select {
@@ -811,6 +812,12 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				roles = state.snapshotLinkIntent.Links
 			}
 			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(roles), Imported: state.imported, Host: c.partHostFor(res)})
+			// The typed preparation has its copies and holds no payload lock:
+			// an encoded Commit or an independent sync can race it from here.
+			if err := c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureDecodeCopied, ResultID: uint64(res.id)}); err != nil {
+				finishPersistDecode(err, false)
+				return nil, err
+			}
 			decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
 			if err != nil {
 				c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
@@ -824,6 +831,14 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				return nil, err
 			}
 
+			// Immediately before the real compare-and-publish.
+			if err := c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureDecodeBeforePublish, ResultID: uint64(res.id)}); err != nil {
+				if release := decoded.cacheSharedResult().onRelease; release != nil {
+					err = errors.Join(err, release(context.WithoutCancel(ctx)))
+				}
+				finishPersistDecode(err, false)
+				return nil, err
+			}
 			res.payloadMu.Lock()
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
 				res.payloadMu.Unlock()
@@ -870,4 +885,13 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		}
 		finishPersistDecode(nil, true)
 	}
+}
+
+// reachDecodeJoined is the joiner's one observation point: the in-process
+// hook, then the gated fixture's barrier. Both are nil off their gates.
+func (c *Cache) reachDecodeJoined(ctx context.Context, res *sharedResult) error {
+	if c.testPersistDecodeJoined != nil {
+		c.testPersistDecodeJoined(uint64(res.id))
+	}
+	return c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureDecodeJoined, ResultID: uint64(res.id)})
 }

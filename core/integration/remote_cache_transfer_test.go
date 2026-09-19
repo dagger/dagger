@@ -134,23 +134,11 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		upstream, tunnel *dagger.Service
 		client           *dagger.Client
 		endpoint         string
+		unwatch          func()
 	}
 	stop := func(t *testctx.T, e *running) {
 		t.Helper()
-		if e.client != nil {
-			require.NoError(t, e.client.Close())
-			e.client = nil
-		}
-		if e.upstream != nil {
-			_, err := e.upstream.Stop(ctx)
-			require.NoError(t, err)
-			e.upstream = nil
-		}
-		if e.tunnel != nil {
-			_, err := e.tunnel.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
-			e.tunnel = nil
-		}
+		require.NoError(t, stopNestedEngine(ctx, &e.client, e.unwatch, &e.upstream, &e.tunnel))
 	}
 	start := func(t *testctx.T, state string, volume *dagger.CacheVolume, checkout string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
@@ -162,6 +150,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		}
 		e := &running{upstream: devEngineContainerAsService(ctr)}
+		e.unwatch = watchNestedEngine(t, outer, e.upstream, t.Name()+" state="+state)
 		var err error
 		e.tunnel, err = outer.Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
@@ -404,7 +393,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			// result from a client with no installed module candidates.
 			writer, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
 			require.NoError(t, err)
-			defer writer.Close()
+			defer func() { require.NoError(t, closeClientBounded(ctx, writer)) }()
 			nativeModule := writer.ModuleSource(".").AsModule().WithDescription("native recorded control")
 			require.NoError(t, nativeModule.Serve(ctx))
 			nativeID := callReport(t, writer, "native recorded control")
@@ -441,7 +430,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.True(t, lowerEquivalent, "the eligible native recorded Module has a lower imported equivalent")
 			bare, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
 			require.NoError(t, err)
-			defer bare.Close()
+			defer func() { require.NoError(t, closeClientBounded(ctx, bare)) }()
 			text := transferContextTool(ctx, t, bare, nativeID)
 			require.Contains(t, text, "consumer directory notes after restart")
 			require.NotContains(t, text, "local module context belongs to another engine")
