@@ -188,6 +188,94 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	cacheTestReleaseSession(t, cB, ctx)
 }
 
+func TestCachePersistenceEmbeddedOutputKeepsInlineProducer(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	handle := cacheTestVolatileSessionResourceHandle("inline-producer-input")
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cacheA)
+	assert.NilError(t, cacheA.BindSessionResource(ctx, "test-session", "dagql-test-client", handle, "bound"))
+
+	input, err := NewResultForCall(NewString("input"), &ResultCall{
+		Kind: ResultCallKindField, Type: NewResultCallType(NewString("").Type()), Field: "input",
+	})
+	assert.NilError(t, err)
+	input, err = input.WithSessionResourceHandle(ctx, handle)
+	assert.NilError(t, err)
+	attachedInput, err := cacheA.AttachResult(ctx, "test-session", noopTypeResolver{}, input)
+	assert.NilError(t, err)
+	inputID := attachedInput.cacheSharedResult().id
+
+	parentCall := cacheTestIntCall("producer")
+	parentCall.Receiver = &ResultCallRef{ResultID: uint64(inputID)}
+	childCall := ChildFieldCall(parentCall, "output", NewInt(0).Type())
+	childCall.Receiver.KeepInline = true
+	// This is the ownership shape of Changeset.merge and its embedded After:
+	// the output's recipe selects it from the producer that owns the output.
+	parentValue := &cacheTestOwnedDepsInt{
+		Int: NewInt(1), ownedResults: []AnyResult{cacheTestIntResult(childCall, 2)},
+	}
+	parent, err := cacheA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall: parentCall, IsPersistable: true,
+	}, ValueFunc(cacheTestDetachedResult(parentCall, parentValue)))
+	assert.NilError(t, err)
+	parentID := parent.cacheSharedResult().id
+	childID := parentValue.ownedResults[0].cacheSharedResult().id
+
+	assertGraph := func(c *Cache) {
+		t.Helper()
+		c.egraphMu.RLock()
+		defer c.egraphMu.RUnlock()
+		parent, child := c.resultsByID[parentID], c.resultsByID[childID]
+		assert.Assert(t, parent != nil && child != nil)
+		_, ownsChild := parent.deps[childID]
+		_, ownsParent := child.deps[parentID]
+		_, ownsInput := child.deps[inputID]
+		assert.Assert(t, ownsChild)
+		assert.Assert(t, !ownsParent, "inline producer must not create an ownership cycle")
+		assert.Assert(t, ownsInput, "inline producer's inputs must remain retained")
+		for _, res := range []*sharedResult{parent, child} {
+			assert.Assert(t, res.requiredSessionResources != nil)
+			var handles []SessionResourceHandle
+			for h := range res.requiredSessionResources.Items() {
+				handles = append(handles, h)
+			}
+			assert.DeepEqual(t, handles, []SessionResourceHandle{handle})
+		}
+		ref := child.loadResultCall().Receiver
+		assert.Assert(t, ref.KeepInline && ref.Call != nil)
+		assert.Equal(t, uint64(0), ref.ResultID)
+	}
+	assertGraph(cacheA)
+	before, err := parentValue.ownedResults[0].RecipeID(ctx)
+	assert.NilError(t, err)
+	cacheTestReleaseSession(t, cacheA, ctx)
+	assert.NilError(t, cacheA.persistCurrentState(ctx))
+	assert.NilError(t, cacheA.Close(context.Background()))
+
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() { assert.NilError(t, cacheB.Close(context.Background())) }()
+	assert.Equal(t, CachePersistenceResetNone, cacheB.PersistenceResetReason())
+	assertGraph(cacheB)
+	ctx = ContextWithCache(ctx, cacheB)
+	assert.NilError(t, cacheB.BindSessionResource(ctx, "test-session", "dagql-test-client", handle, "bound"))
+	child, err := cacheB.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall: childCall,
+	}, func(context.Context) (AnyResult, error) {
+		return nil, errors.New("unexpected output initializer after restart")
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, child.HitCache())
+	assert.Equal(t, 2, cacheTestUnwrapInt(t, child))
+	after, err := child.RecipeID(ctx)
+	assert.NilError(t, err)
+	assert.Equal(t, before.Digest(), after.Digest())
+	cacheTestReleaseSession(t, cacheB, ctx)
+}
+
 func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	t.Parallel()
 
