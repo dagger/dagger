@@ -43,18 +43,20 @@ import and leaving the stored set alone at decode install; and
 joiners — fixed by retrying a departed leader's cancellation and the
 post-install lease sync.)
 
-Run the checks (the module is dev-env scoped and deliberately does NOT
-run in CI):
+Run the checks (the module is registered in the default environment; CI
+runs `tla-check:quick`, the fast subset, and the full runs are plain
+functions run by hand):
 
 ```sh
-# fast subset (~1 minute): the right default while iterating
-check tla-check:quick
+# fast subset (~1 minute): the right default while iterating, and the
+# check CI runs
+dagger check tla-check:quick
 
 # chosen configurations, expectations enforced
-call tla-check some --configs=resources,resources_latedep
+dagger call tla-check some --configs=resources,resources_latedep
 
 # one configuration, raw TLC output, optional probe injection
-call tla-check one --config=resources
+dagger call tla-check one --config=resources
 
 # the full suite: REQUIRED before pushing changes under dagql/tla,
 # expensive otherwise - well over an hour wall with four TLC JVMs; the
@@ -222,8 +224,8 @@ names for `Some` and `One`. Existing short names still select `CacheLifecycle`.
 The cache spec and its existing configurations are unchanged.
 
 ```sh
-call tla-check some --configs=snapshot_import,snapshot_export
-call tla-check one --config=snapshot_import
+dagger call tla-check some --configs=snapshot_import,snapshot_export
+dagger call tla-check one --config=snapshot_import
 ```
 
 The component separates snapshot/index presence, handles, actual resources,
@@ -251,7 +253,8 @@ Measured on 2026-09-05 with the runner's pinned TLC jar, Java 21, 8 GiB heap,
 and 16 workers: import reached 475,119 distinct states (1,295,189 generated)
 in 4.51 seconds; export reached 5,185,181 (17,628,508 generated) in 24.80 seconds.
 The existing quick set passed all 18 shapes through the changed runner in
-77.19 seconds including Dagger startup, using `check tla-check:quick`.
+77.19 seconds including Dagger startup, using `dagger --env dev check tla-check:quick`
+(the module's invocation at the time; it is `dagger check tla-check:quick` now).
 The two snapshot short names also passed through `Some` in 74.74 seconds.
 These runner checks preceded the final owner-content refinement; the counts
 above are the direct TLC runs of the final behavioral source. All 42 existing
