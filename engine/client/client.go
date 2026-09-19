@@ -855,19 +855,22 @@ func (c *Client) Close() (rerr error) {
 		// once it has sent everything. Drain them now, before internalCancel
 		// closes the connections from our side, or the final spans (including
 		// the error that ended the run) never reach the frontend.
+		//
+		// Telemetry transport failures are logged rather than returned: the
+		// run's own work has already completed, and callers join Close errors
+		// into the run's exit status.
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), clientShutdownTimeout())
 		drained := make(chan error, 1)
 		go func() { drained <- c.telemetry.Wait() }()
-		var err error
 		select {
-		case err = <-drained:
+		case err := <-drained:
+			if err != nil {
+				slog.Warn("telemetry drain failed after shutdown", "err", err)
+			}
 		case <-ctx.Done():
-			err = ctx.Err()
+			slog.Warn("telemetry drain timed out after shutdown", "timeout", clientShutdownTimeout())
 		}
 		cancel()
-		if err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
-		}
 	}
 
 	c.closeMu.Lock()
@@ -916,10 +919,11 @@ func (c *Client) Close() (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
-	// Wait for telemetry to finish draining
+	// Wait for telemetry to finish draining. Transport errors are logged, not
+	// returned, for the same reason as the post-shutdown drain above.
 	if c.telemetry != nil {
 		if err := c.telemetry.Wait(); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
+			slog.Warn("telemetry drain failed", "err", err)
 		}
 	}
 

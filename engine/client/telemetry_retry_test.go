@@ -63,7 +63,9 @@ func TestClientCloseAfterLostTelemetryTerminal(t *testing.T) {
 	}
 	select {
 	case err := <-done:
-		require.ErrorIs(t, err, errPermanentTelemetryConnection)
+		// The run's work succeeded; a telemetry transport failure after
+		// /shutdown is logged, not surfaced as the command's exit status.
+		require.NoError(t, err)
 		require.Equal(t, 2, requests)
 	case <-time.After(1500 * time.Millisecond):
 		t.Error("Client.Close remains blocked after successful shutdown and permanent reconnect failure")
@@ -178,10 +180,14 @@ func TestClientCloseBoundsTelemetryDrain(t *testing.T) {
 	defer cancelTelemetry(context.Canceled)
 	require.NoError(t, consumer.Consume(ctx, func([]byte, liveTelemetryEncoding) error { return nil }))
 	done := make(chan error, 1)
+	start := time.Now()
 	go func() { done <- c.Close() }()
 	select {
 	case err := <-done:
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+		// The drain gave up after the 50ms shutdown timeout; the timeout is
+		// logged, not returned, so a slow telemetry tail cannot fail the run.
+		require.NoError(t, err)
+		require.Less(t, time.Since(start), 2*time.Second)
 	case <-time.After(3 * time.Second):
 		cancelInternal(context.Canceled)
 		<-done
