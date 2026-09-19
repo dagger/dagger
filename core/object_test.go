@@ -107,13 +107,15 @@ func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
 		},
 	}
 
-	attachedByDigest := map[string]dagql.AnyResult{}
+	// These synthetic calls only identify cached values; attaching dependencies
+	// does not require exporting them as replayable recipes.
+	attachedByDigest := map[digest.Digest]dagql.AnyResult{}
 	attach := func(res dagql.AnyResult) (dagql.AnyResult, error) {
-		recipeID, err := res.RecipeID(ctx)
+		recipeDigest, err := res.RecipeDigest(ctx)
 		assert.NilError(t, err)
-		attached, err := res.WithContentDigestAny(ctx, digest.FromString(recipeID.Digest().String()))
+		attached, err := res.WithContentDigestAny(ctx, digest.FromString(recipeDigest.String()))
 		assert.NilError(t, err)
-		attachedByDigest[recipeID.Digest().String()] = attached
+		attachedByDigest[recipeDigest] = attached
 		return attached, nil
 	}
 
@@ -123,37 +125,37 @@ func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
 
 	directField, ok := obj.Fields["direct"].(dagql.AnyResult)
 	assert.Assert(t, ok)
-	directRecipeID, err := direct.RecipeID(ctx)
+	directDigest, err := direct.RecipeDigest(ctx)
 	assert.NilError(t, err)
-	expectedDirectID, err := attachedByDigest[directRecipeID.Digest().String()].RecipeID(ctx)
+	expectedDirectDigest, err := attachedByDigest[directDigest].RecipeDigest(ctx)
 	assert.NilError(t, err)
-	actualDirectID, err := directField.RecipeID(ctx)
+	actualDirectDigest, err := directField.RecipeDigest(ctx)
 	assert.NilError(t, err)
-	assert.Equal(t, expectedDirectID.Digest(), actualDirectID.Digest())
+	assert.Equal(t, expectedDirectDigest, actualDirectDigest)
 
 	listField, ok := obj.Fields["list"].([]any)
 	assert.Assert(t, ok)
 	listRes, ok := listField[0].(dagql.AnyResult)
 	assert.Assert(t, ok)
-	listRecipeID, err := listItem.RecipeID(ctx)
+	listDigest, err := listItem.RecipeDigest(ctx)
 	assert.NilError(t, err)
-	expectedListID, err := attachedByDigest[listRecipeID.Digest().String()].RecipeID(ctx)
+	expectedListDigest, err := attachedByDigest[listDigest].RecipeDigest(ctx)
 	assert.NilError(t, err)
-	actualListID, err := listRes.RecipeID(ctx)
+	actualListDigest, err := listRes.RecipeDigest(ctx)
 	assert.NilError(t, err)
-	assert.Equal(t, expectedListID.Digest(), actualListID.Digest())
+	assert.Equal(t, expectedListDigest, actualListDigest)
 
 	nestedField, ok := obj.Fields["nested"].(map[string]any)
 	assert.Assert(t, ok)
 	nestedRes, ok := nestedField["child"].(dagql.AnyResult)
 	assert.Assert(t, ok)
-	nestedRecipeID, err := nested.RecipeID(ctx)
+	nestedDigest, err := nested.RecipeDigest(ctx)
 	assert.NilError(t, err)
-	expectedNestedID, err := attachedByDigest[nestedRecipeID.Digest().String()].RecipeID(ctx)
+	expectedNestedDigest, err := attachedByDigest[nestedDigest].RecipeDigest(ctx)
 	assert.NilError(t, err)
-	actualNestedID, err := nestedRes.RecipeID(ctx)
+	actualNestedDigest, err := nestedRes.RecipeDigest(ctx)
 	assert.NilError(t, err)
-	assert.Equal(t, expectedNestedID.Digest(), actualNestedID.Digest())
+	assert.Equal(t, expectedNestedDigest, actualNestedDigest)
 
 	assert.Equal(t, "unchanged", obj.Fields["scalar"])
 }
@@ -195,11 +197,11 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 	decodedRes, ok := decoded.(dagql.AnyResult)
 	assert.Assert(t, ok)
 	assert.Assert(t, decodedRes != nil)
-	expectedID, err := initial.RecipeID(ctx)
+	expectedDigest, err := initial.RecipeDigest(ctx)
 	assert.NilError(t, err)
-	actualID, err := decodedRes.RecipeID(ctx)
+	actualDigest, err := decodedRes.RecipeDigest(ctx)
 	assert.NilError(t, err)
-	assert.Equal(t, expectedID.Digest(), actualID.Digest())
+	assert.Equal(t, expectedDigest, actualDigest)
 }
 
 func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T) {
