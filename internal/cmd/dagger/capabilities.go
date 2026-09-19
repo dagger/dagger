@@ -166,9 +166,9 @@ func copyCommandFlags(cmd *cobra.Command, name string) *pflag.FlagSet {
 	return flags
 }
 
-// validateFlagCapabilities resolves the selected command and its flags without
-// changing flag values. It must run before parseGlobalFlags, because those
-// values configure the frontend and can terminate the process.
+// validateFlagCapabilities handles commands whose schema owns flag parsing.
+// Their global flags can be checked before the schema is loaded, without
+// consuming module arguments or changing values.
 func validateFlagCapabilities(root *cobra.Command, args []string) error {
 	if isShellCompletionRequest(args) {
 		// A completion request carries the flags of the command being

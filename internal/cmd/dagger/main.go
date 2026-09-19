@@ -21,7 +21,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/google/shlex"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -147,6 +146,7 @@ func maybeWrapWriter(w io.Writer, envName string) io.Writer {
 }
 
 func init() {
+	rootCmd.PersistentPreRunE = prepareRootCommand
 	// Disable logrus output, which only comes from the docker
 	// commandconn library that is used by buildkit's connhelper
 	// and prints unneeded warning logs.
@@ -258,78 +258,92 @@ var rootCmd = &cobra.Command{
 	Short:                 "A tool to run composable workflows in containers",
 	SilenceErrors:         true, // handled in func main() instead
 	DisableFlagsInUseLine: true,
-	Args:                  cobra.ArbitraryArgs,
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// if we got this far, CLI parsing worked just fine; no
-		// need to show usage for runtime errors
-		cmd.SilenceUsage = true
-		if restore := hideUnavailableCompletionFlags(cmd, args); restore != nil {
-			cobra.OnFinalize(restore)
-		}
-		applyCommandProgressDefaults(cmd)
+	Args:                  validateRootArgs,
+	RunE:                  runRoot,
+}
 
-		if cpuprofile != "" {
-			profF, err := os.Create(cpuprofile)
-			if err != nil {
-				return fmt.Errorf("create profile: %w", err)
-			}
-
-			pprof.StartCPUProfile(profF)
-
-			tracePath := cpuprofile + ".trace"
-
-			traceF, err := os.Create(tracePath)
-			if err != nil {
-				return fmt.Errorf("create trace: %w", err)
-			}
-			if err := runtimetrace.Start(traceF); err != nil {
-				return fmt.Errorf("start trace: %w", err)
-			}
-
-			cobra.OnFinalize(func() {
-				pprof.StopCPUProfile()
-				profF.Close()
-				runtimetrace.Stop()
-				traceF.Close()
-			})
-		}
-
-		if pprofAddr != "" {
-			if err := setupDebugHandlers(pprofAddr); err != nil {
-				return fmt.Errorf("start pprof: %w", err)
-			}
-		}
-		if err := validateWorkspaceFlagPolicy(cmd, args); err != nil {
+func prepareRootCommand(cmd *cobra.Command, args []string) error {
+	if restore := hideUnavailableCompletionFlags(cmd, args); restore != nil {
+		cobra.OnFinalize(restore)
+	}
+	if isShellCompletionRequest([]string{cmd.Name()}) {
+		// Completion callbacks may use the workspace and engine, but do not
+		// execute the command whose arguments they complete.
+		if err := changeWorkingDirectory(); err != nil {
 			return err
 		}
-
-		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
-		t := analytics.New(analytics.DefaultConfig(labels))
-		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
-		cobra.OnFinalize(func() {
-			t.Close()
-		})
-
-		// Keep subscription OAuth tokens fresh for as long as this command
-		// runs: `dagger script`/`agent` sessions outlive an hour-long access
-		// token, and refreshing ahead of expiry keeps the round-trip off the
-		// critical path. No-op unless a subscription provider is configured;
-		// the on-demand refresher hook stays the fallback.
-		cobra.OnFinalize(startOAuthTokenRefresher(cmd.Context()))
-
-		checkForUpdates(cmd.Context(), cmd.ErrOrStderr())
-
-		if err := checkCloudToken(cmd.Context(), cmd.OutOrStdout()); err != nil {
-			return err
-		}
-
-		t.Capture(cmd.Context(), "cli_command", map[string]string{
-			"name": commandName(cmd),
-		})
-
+		Frontend = idtui.NewPlain(stderr)
 		return nil
-	},
-	RunE: runRoot,
+	}
+	if (cmd.Parent() == rootCmd && cmd.Name() == "help") || cmd.Annotations[commandGroupAnnotation] == "true" ||
+		(cmd == rootCmd && len(args) == 0 && !hasChangedRootShellFlag(cmd)) {
+		return nil
+	}
+	if err := prepareCommandExecution(cmd, args); err != nil {
+		return err
+	}
+	applyCommandProgressDefaults(cmd)
+
+	if cpuprofile != "" {
+		profF, err := os.Create(cpuprofile)
+		if err != nil {
+			return fmt.Errorf("create profile: %w", err)
+		}
+
+		pprof.StartCPUProfile(profF)
+
+		tracePath := cpuprofile + ".trace"
+
+		traceF, err := os.Create(tracePath)
+		if err != nil {
+			return fmt.Errorf("create trace: %w", err)
+		}
+		if err := runtimetrace.Start(traceF); err != nil {
+			return fmt.Errorf("start trace: %w", err)
+		}
+
+		cobra.OnFinalize(func() {
+			pprof.StopCPUProfile()
+			profF.Close()
+			runtimetrace.Stop()
+			traceF.Close()
+		})
+	}
+
+	if pprofAddr != "" {
+		if err := setupDebugHandlers(pprofAddr); err != nil {
+			return fmt.Errorf("start pprof: %w", err)
+		}
+	}
+	if err := validateWorkspaceFlagPolicy(cmd, args); err != nil {
+		return err
+	}
+
+	labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
+	t := analytics.New(analytics.DefaultConfig(labels))
+	cmd.SetContext(analytics.WithContext(cmd.Context(), t))
+	cobra.OnFinalize(func() {
+		t.Close()
+	})
+
+	// Keep subscription OAuth tokens fresh for as long as this command
+	// runs: `dagger script`/`agent` sessions outlive an hour-long access
+	// token, and refreshing ahead of expiry keeps the round-trip off the
+	// critical path. No-op unless a subscription provider is configured;
+	// the on-demand refresher hook stays the fallback.
+	cobra.OnFinalize(startOAuthTokenRefresher(cmd.Context()))
+
+	checkForUpdates(cmd.Context(), cmd.ErrOrStderr())
+
+	if err := checkCloudToken(cmd.Context(), cmd.OutOrStdout()); err != nil {
+		return err
+	}
+
+	t.Capture(cmd.Context(), "cli_command", map[string]string{
+		"name": commandName(cmd),
+	})
+
+	return nil
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
@@ -993,29 +1007,9 @@ func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
 func Main() {
 	runSSHAskpass()
 	installRootGlobalFlags()
-	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
-		cmd, _ := resolveCommand(rootCmd, os.Args[1:])
-		os.Exit(commandFlagErrorStatus(cmd, err, rootCmd.ErrPrefix()))
-	}
-
-	// Some global flags affect how the client connects, so read them before
-	// Cobra executes the command tree. Cobra still does the normal parse later.
+	// Release selection and SDK discovery determine which command tree Cobra
+	// should parse. Execution setup belongs to the command hooks below.
 	commandArgs := parseGlobalFlags(rootCmd, os.Args[1:])
-	invocationDir, err := pathutil.Getwd()
-	if err != nil {
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-		os.Exit(1)
-	}
-	resolvedWorkdir, err := NormalizeWorkdir(workdir)
-	if err != nil {
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-		os.Exit(1)
-	}
-	if err := os.Chdir(resolvedWorkdir); err != nil {
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), fmt.Errorf("change workdir: %w", err))
-		os.Exit(1)
-	}
-	workdir = resolvedWorkdir
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	exitWithCode := func(code int) {
@@ -1026,9 +1020,18 @@ func Main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
-	if err := prepareModuleSDKCommands(ctx, rootCmd, commandArgs, invocationDir, registerModuleSDKCommands); err != nil {
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-		exitWithCode(1)
+	if _, needed := moduleSDKCommandSelection(commandArgs); needed {
+		invocationDir, err := pathutil.Getwd()
+		if err == nil {
+			err = changeWorkingDirectory()
+		}
+		if err == nil {
+			err = prepareModuleSDKCommands(ctx, rootCmd, commandArgs, invocationDir, registerModuleSDKCommands)
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			exitWithCode(1)
+		}
 	}
 	// A trailing inherited --x-release is known only after SDK discovery.
 	if err := execXRelease(ctx); err != nil {
@@ -1036,81 +1039,6 @@ func Main() {
 		exitWithCode(1)
 	}
 	replayGlobalFlags(rootCmd)
-	opts.Silent = silent                   // show no progress
-	opts.Debug = debugFlag                 // show everything
-	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
-	opts.ExpandCompleted = expandCompleted // leave things expanded as they complete
-	opts.OpenWeb = web
-	opts.NoExit = noExit
-	opts.DotOutputFilePath = dotOutputFilePath
-	opts.DotFocusField = dotFocusField
-	opts.DotShowInternal = dotShowInternal
-	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
-	if progress == "auto" {
-		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
-			progress = env
-		} else if def := commandProgressDefault(os.Args[1:]); def != "" {
-			// The command declares its own default (e.g. `dagger session`
-			// keeps plain progress for its SDK consumers). Checked before
-			// RunningInAgent: an agent-driven SDK program needs the stream
-			// just as much.
-			progress = def
-		} else if idtui.RunningInAgent() {
-			// An AI agent consumes the output as text; the report frontend's
-			// single final render suits it better than the live TUI.
-			progress = "report"
-		} else if hasTTY {
-			progress = "tty"
-		} else {
-			progress = "report"
-		}
-	}
-	if silent {
-		// if silent, don't even bother with the pretty frontend
-		progress = "plain"
-	}
-	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
-	// force it regardless of progress mode / tty (it doesn't need one).
-	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
-		progress = "tty"
-		hasTTY = true
-	}
-	switch progress {
-	case "plain":
-		Frontend = idtui.NewPlain(stderr)
-	case "tty":
-		if !hasTTY {
-			fmt.Fprintf(stderr, "no tty available for progress %q\n", progress)
-			exitWithCode(1)
-		}
-		Frontend = idtui.NewPretty(stderr)
-	case "dots":
-		Frontend = idtui.NewDots(stderr)
-	case "logs":
-		Frontend = idtui.NewLogs(stderr)
-	case "report":
-		Frontend = idtui.NewReporter(stderr)
-	default:
-		fmt.Fprintf(stderr, "unknown progress type %q\n", progress)
-		exitWithCode(1)
-	}
-
-	if shellOnError && !canOpenShellOnError(progress, stdinIsTTY) {
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(),
-			"--shell-on-error needs an interactive terminal, but none is available")
-		exitWithCode(1)
-	}
-
-	// Parse the shell command to support shell-like syntax.
-	parsedCommand, err := shlex.Split(shellCommandOnError)
-	if err != nil {
-		fmt.Fprintf(stderr, "cannot parse --shell-command-on-error: %s", err)
-		exitWithCode(1)
-	}
-	shellCommandOnErrorParsed = parsedCommand
-
-	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
-	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		var exit idtui.ExitError
@@ -1147,6 +1075,7 @@ func RootCommand() *cobra.Command {
 // installRootGlobalFlags installs the global flags on the root command and
 // registers the completions that need a command, not just a flag set.
 func installRootGlobalFlags() {
+	installCommandGroups()
 	installGlobalFlags(rootCmd.PersistentFlags())
 	if err := rootCmd.RegisterFlagCompletionFunc("engine", completeEngineFlag); err != nil {
 		fmt.Fprintln(stderr, "Error registering completion: engine", err)
