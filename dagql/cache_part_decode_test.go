@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
@@ -207,6 +208,11 @@ func TestPartDecodeLosesToInstalledRevision(t *testing.T) {
 	require.EqualValues(t, 1, losing.Load())
 	require.Zero(t, winning.Load())
 	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+	// The obtain attempt can still be exiting after it wakes its caller.
+	// Wait for its session cleanup before dropping the last persisted owner.
+	releaseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	require.NoError(t, c.WaitSessionRelease(releaseCtx, "test-session"))
 	_, err := c.removePersistedEdge(ctx, row.id)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, winning.Load())
