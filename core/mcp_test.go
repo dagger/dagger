@@ -57,6 +57,38 @@ func TestToolResultContentType(t *testing.T) {
 	require.Empty(t, toolResultContentType("prefix\n"+patch))
 }
 
+func TestOversizedChangesetSkipsPatchWork(t *testing.T) {
+	ctx := t.Context()
+	srv, err := dagql.NewServer(ctx, &Query{})
+	require.NoError(t, err)
+	srv.InstallObject(dagql.NewClass[*Changeset](srv))
+	paths := &ChangesetPaths{}
+	for i := range patchSummaryMaxPaths {
+		paths.Added = append(paths.Added, fmt.Sprintf("new/%d", i))
+		paths.AllRemoved = append(paths.AllRemoved, fmt.Sprintf("old/%d", i))
+	}
+	ch := &Changeset{paths: &changesetPathsMemo{paths: paths}}
+	ch.paths.done.Store(true)
+	ch.paths.once.Do(func() {})
+	changes, err := dagql.NewObjectResultForCall(ch, srv, &dagql.ResultCall{
+		Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "oversized",
+		Type: dagql.NewResultCallType(ch.Type()),
+	})
+	require.NoError(t, err)
+
+	// No server is needed on either oversized branch: neither may request
+	// asPatch, diffStats, or an exact per-path summary.
+	out := newMCP().summarizePatch(ctx, nil, changes)
+	require.Contains(t, out, "exceeds the 200-path inspection budget")
+	require.NotContains(t, out, "new/")
+	require.NotContains(t, out, "old/")
+	require.NotContains(t, out, "WARNING")
+	require.Empty(t, toolResultContentType(out))
+	normalized, err := normalizeChangesetToPatch(ctx, nil, changes)
+	require.NoError(t, err)
+	require.Same(t, ch, normalized.Self())
+}
+
 func TestCallMarksPatchResult(t *testing.T) {
 	recorder, ctx := stateRecorderCtx(t)
 	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"

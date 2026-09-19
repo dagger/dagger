@@ -313,6 +313,22 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		require.False(t, exceeds)
 	})
 
+	t.Run("large additions and removals skip rename detection", func(t *testing.T) {
+		before := t.TempDir()
+		after := t.TempDir()
+		for i := range patchSummaryMaxPaths {
+			writeDeltaTestFile(t, before, fmt.Sprintf("old-%03d", i), "same content\n")
+			writeDeltaTestFile(t, after, fmt.Sprintf("new-%03d", i), "same content\n")
+		}
+		// Full path computation would stage both sides and invoke git to
+		// pair renames. The bounded walk must succeed without git at all.
+		t.Setenv("PATH", t.TempDir())
+		delta, exceeded, err := collectChangesetDeltaBounded(ctx, before, after, patchSummaryMaxPaths)
+		require.NoError(t, err)
+		require.True(t, exceeded)
+		require.Nil(t, delta)
+	})
+
 	t.Run("aborts inside a removed tree", func(t *testing.T) {
 		// The walker reports a removed directory once; its children are
 		// expanded by a nested walk that must honor the budget too.
