@@ -74,6 +74,9 @@ func TestResultCallRefForSchemaSnapshot(t *testing.T) {
 		require.Zero(t, ref.ResultID)
 		require.Nil(t, ref.shared)
 		require.NotNil(t, ref.recipeID)
+		id, err := ref.RecipeID(ctx)
+		require.NoError(t, err)
+		require.Same(t, ref.recipeID, id, "schema recipe access must not copy the DAG")
 	}
 	original := refs[0]
 	cloned := original.cloneWith(resultCallCloneMemo{})

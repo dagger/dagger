@@ -74,6 +74,18 @@ type ResultCallRef struct {
 	recipeID *call.ID
 }
 
+// RecipeID returns a portable reference's immutable recipe. Schema snapshots
+// share the memoized ID as well as their call DAG; callers must not mutate it.
+func (ref *ResultCallRef) RecipeID(ctx context.Context) (*call.ID, error) {
+	if ref == nil || ref.Call == nil {
+		return nil, fmt.Errorf("recipe reference: missing inline call")
+	}
+	if ref.recipeID != nil {
+		return ref.recipeID, nil
+	}
+	return ref.Call.RecipeID(ctx)
+}
+
 type ResultCallModule struct {
 	ResultRef *ResultCallRef `json:"resultRef,omitempty"`
 	Name      string         `json:"name,omitempty"`

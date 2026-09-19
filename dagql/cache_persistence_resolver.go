@@ -2,9 +2,12 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
+
+var errCacheResultNotFound = errors.New("missing shared result")
 
 type sharedResultLookupMode uint8
 
@@ -17,6 +20,9 @@ const (
 	// the result whenever no canonical candidate passed the session filter,
 	// omitting the resource checks that request and digest lookups enforce.
 	sharedResultLookupCanonicalEquivalentForSession
+	// Exact value loads retain the requested payload while enforcing the same
+	// resource checks as canonical session loads.
+	sharedResultLookupExactForSession
 )
 
 func (c *Cache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
@@ -82,7 +88,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		}
 		c.egraphMu.RUnlock()
 		if res == nil {
-			return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
+			return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errCacheResultNotFound)
 		}
 		return sharedResultLookup{res: res, requiredGenAtCheck: requiredGenAtCheck}, nil
 	}
@@ -91,9 +97,9 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	res := c.resultsByID[resultID]
 	if res == nil {
 		c.egraphMu.Unlock()
-		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
+		return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errCacheResultNotFound)
 	}
-	if mode != sharedResultLookupExact {
+	if mode == sharedResultLookupCanonicalEquivalent || mode == sharedResultLookupCanonicalEquivalentForSession {
 		// Require clean attachment, as publication adoption does: without it
 		// the canonicalization can redirect an ID load onto a sibling whose
 		// attachment is still open or has failed, and the load then inherits
@@ -101,7 +107,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		// exact result it asked for is settled and healthy.
 		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix(), true)
 	}
-	if mode == sharedResultLookupCanonicalEquivalentForSession &&
+	if (mode == sharedResultLookupCanonicalEquivalentForSession || mode == sharedResultLookupExactForSession) &&
 		!c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
 		c.egraphMu.Unlock()
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: session %q has not bound the session resources this result requires", resultID, sessionID)
@@ -130,12 +136,18 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 	if sessionID != "" {
 		mode = sharedResultLookupCanonicalEquivalentForSession
 	}
+	return c.loadResultByResultIDWithMode(ctx, sessionID, dag, resultID, mode)
+}
 
+func (c *Cache) loadResultByResultIDWithMode(ctx context.Context, sessionID string, dag *Server, resultID uint64, mode sharedResultLookupMode) (AnyResult, error) {
 	lookup, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), mode)
 	if err != nil {
 		return nil, err
 	}
+	return c.loadSharedResultLookup(ctx, sessionID, dag, resultID, lookup)
+}
 
+func (c *Cache) loadSharedResultLookup(ctx context.Context, sessionID string, dag *Server, resultID uint64, lookup sharedResultLookup) (AnyResult, error) {
 	wrapped := Result[Typed]{
 		shared:   lookup.res,
 		hitCache: true,
@@ -171,6 +183,33 @@ func (c *Cache) LoadResultByResultID(ctx context.Context, sessionID string, dag 
 		return nil, fmt.Errorf("load result %d: %w: %q", resultID, ErrCacheSessionReleased, sessionID)
 	}
 	return res, loadErr
+}
+
+// LoadResultByResultIDExact acquires the requested payload for the session,
+// without substituting a content-equivalent result. Schema/runtime bindings
+// need this when content equivalence does not imply identical metadata. A false
+// hit with no error means only that the exact result has been collected.
+func (c *Cache) LoadResultByResultIDExact(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	op, err := c.beginSessionOperation(sessionID)
+	if err != nil {
+		return nil, false, fmt.Errorf("load result %d: %w", resultID, err)
+	}
+	lookup, loadErr := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), sharedResultLookupExactForSession)
+	missing := errors.Is(loadErr, errCacheResultNotFound)
+	var res AnyResult
+	if loadErr == nil {
+		res, loadErr = c.loadSharedResultLookup(ctx, sessionID, dag, resultID, lookup)
+	}
+	if op.finish(loadErr == nil && res != nil) {
+		return nil, false, fmt.Errorf("load result %d: %w: %q", resultID, ErrCacheSessionReleased, sessionID)
+	}
+	if missing {
+		return nil, false, nil
+	}
+	return res, loadErr == nil, loadErr
 }
 
 func (c *Cache) ResultCallByResultID(ctx context.Context, sessionID string, resultID uint64) (*ResultCall, error) {

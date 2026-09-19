@@ -7887,6 +7887,51 @@ func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(bCtx, "loadgrow-b"))
 }
 
+func TestCacheExactResultLoadPreservesPayload(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	srv := cacheTestServer(t)
+	firstFrame, secondFrame := cacheTestIntCall("exact-first"), cacheTestIntCall("exact-second")
+	first, err := c.GetOrInitCall(ctx, "producer", srv, &CallRequest{ResultCall: firstFrame}, ValueFunc(cacheTestIntResult(firstFrame, 1)))
+	assert.NilError(t, err)
+	second, err := c.GetOrInitCall(ctx, "producer", srv, &CallRequest{ResultCall: secondFrame}, ValueFunc(cacheTestIntResult(secondFrame, 2)))
+	assert.NilError(t, err)
+
+	// Merge equivalence only after publication, preserving both payloads.
+	c.egraphMu.Lock()
+	var firstClass, secondClass eqClassID
+	for id := range c.outputEqClassesForResultLocked(first.cacheSharedResult().id) {
+		firstClass = id
+		break
+	}
+	for id := range c.outputEqClassesForResultLocked(second.cacheSharedResult().id) {
+		secondClass = id
+		break
+	}
+	c.mergeEqClassesLocked(ctx, firstClass, secondClass)
+	c.egraphMu.Unlock()
+	secondID := uint64(second.cacheSharedResult().id)
+	canonical, err := c.LoadResultByResultID(ctx, "reader", srv, secondID)
+	assert.NilError(t, err)
+	assert.Equal(t, first.cacheSharedResult().id, canonical.cacheSharedResult().id)
+	exact, found, err := c.LoadResultByResultIDExact(ctx, "reader", srv, secondID)
+	assert.NilError(t, err)
+	assert.Assert(t, found)
+	assert.Equal(t, second.cacheSharedResult().id, exact.cacheSharedResult().id)
+	assert.NilError(t, c.ReleaseSession(ctx, "producer"))
+	assert.NilError(t, c.ReleaseSession(ctx, "reader"))
+	_, found, err = c.LoadResultByResultIDExact(ctx, "later", srv, secondID)
+	assert.NilError(t, err)
+	assert.Assert(t, !found)
+	assert.NilError(t, c.ReleaseSession(ctx, "later"))
+	_, found, err = c.LoadResultByResultIDExact(ctx, "later", srv, secondID)
+	assert.Assert(t, errors.Is(err, ErrCacheSessionReleased))
+	assert.Assert(t, !found)
+}
+
 func TestCacheLoadResultByResultIDIgnoresUncleanCanonicalSiblings(t *testing.T) {
 	t.Parallel()
 
