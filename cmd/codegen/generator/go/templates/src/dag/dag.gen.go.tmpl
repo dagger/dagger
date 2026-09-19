@@ -4,68 +4,6 @@
 
 package dag
 
-{{ if IsCoreLibrary }}
-{{/*
-  This package is deprecated in favor of dagger.io/dagger/core, which
-  provides the same lazy-default-client free functions directly alongside
-  the generated API bindings. Kept as a thin re-export for compatibility.
-*/}}
-
-import (
-	"context"
-
-	"dagger.io/dagger/core"
-)
-
-// Close the engine connection
-//
-// Deprecated: use dagger.io/dagger/core.Close instead.
-func Close() error {
-	return core.Close()
-}
-
-{{ range .Types }}
-{{ if eq .Kind "OBJECT" }}
-
-{{- if eq .Name "Query" }}
-
-{{ range $field := .Fields }}
-{{ $field.Description | Comment }}
-{{- if $field.IsDeprecated }}
-//
-{{ $field.DeprecationReason | FormatDeprecation }}
-{{- end }}
-{{- if $field.Directives.IsExperimental }}
-//
-{{ $field.Directives.ExperimentalReason | FormatExperimental }}
-{{- end }}
-//
-// Deprecated: use dagger.io/dagger/core.{{ CoreConstructorName $field }} instead.
-{{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
-{{ FieldFunction $field true $supportsVoid "core" }} {
-	return core.{{ CoreConstructorName $field }}(
-		{{- if or (not $field.TypeRef.IsObject) (IsNullableObject $field.TypeRef) -}}
-		ctx,
-		{{- end -}}
-		{{- range $arg := $field.Args -}}
-		{{- if not (IsArgOptional $arg) -}}
-		{{ $arg.Name | FormatParamName }},
-		{{- end -}}
-		{{- end -}}
-		{{- if HasOptionals $field.Args -}}
-		opts...,
-		{{- end -}}
-	)
-}
-
-{{ end }}
-{{- end }}
-{{ end }}
-
-{{ end }}
-
-{{ else }}
-
 import (
 	"context"
 	"os"
@@ -159,6 +97,4 @@ func Close() error {
 {{ end }}
 
 {{ end }}
-{{ end }}
-
 {{ end }}

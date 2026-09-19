@@ -37,6 +37,16 @@ type GoClientDev {
     engine.installClient(ctr, engine.service("sdk"))
   }
 
+  """
+  Go container with a Dagger CLI and a dev engine built from this checkout.
+  sdk/go/core selects it with //go:generate:container go-client:generate-env,
+  so that the core bindings match the API of this checkout.
+  """
+  pub generateEnv: Container! {
+    let engine = engineDev(ws: self.ws)
+    engine.installClient(go(ws: self.ws, source: workspaceDir).env, engine.service("sdk"))
+  }
+
   pub source: Directory! {
     workspaceDir.directory(sourcePath)
   }
@@ -50,17 +60,6 @@ type GoClientDev {
       .sync
 
     null
-  }
-
-  """
-  Regenerate the Go SDK API
-  """
-  pub generate: Changeset! @generate {
-    devContainer
-      .withExec(["go", "generate", "-v", "."])
-      .withExec(["go", "mod", "tidy"])
-      .directory("../..") # pop back to repo root
-      .changes(workspaceDir)
   }
 
   """
