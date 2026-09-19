@@ -6,11 +6,57 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSchemaRecipeHitPreservesRequestPolicy(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+	frame := cacheTestIntCall("schema-policy")
+	res, err := cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: frame}, ValueFunc(cacheTestIntResult(frame, 1)))
+	require.NoError(t, err)
+	require.Zero(t, cache.EntryStats().RetainedCalls)
+	t.Cleanup(func() { _ = cache.ReleaseSession(context.Background(), "test-session") })
+
+	evidence := &CacheDecision{}
+	before := time.Now().Unix()
+	hit, err := cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall: frame, recipeOnly: true, TTL: 60, IsPersistable: true, CacheEvidence: evidence,
+	}, ValueFunc(cacheTestIntResult(frame, 2)))
+	require.NoError(t, err)
+	require.True(t, hit.HitCache())
+	require.Equal(t, res.cacheSharedResult().id, hit.cacheSharedResult().id)
+	require.Equal(t, CacheHitRouteRecipe, evidence.HitRoute)
+	require.Equal(t, CacheOutcomeHit, evidence.Outcome)
+	cache.egraphMu.RLock()
+	expiry := hit.cacheSharedResult().expiresAtUnix
+	edge, persisted := cache.persistedEdgesByResult[hit.cacheSharedResult().id]
+	cache.egraphMu.RUnlock()
+	require.True(t, persisted)
+	require.GreaterOrEqual(t, expiry, before+60)
+	require.LessOrEqual(t, expiry, time.Now().Unix()+60)
+	require.Equal(t, expiry, edge.expiresAtUnix)
+
+	// A later, longer policy must not extend the conservative expiry.
+	_, err = cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall: frame, recipeOnly: true, TTL: 120, IsPersistable: true,
+	}, nil)
+	require.NoError(t, err)
+	cache.egraphMu.RLock()
+	laterExpiry := hit.cacheSharedResult().expiresAtUnix
+	laterEdge := cache.persistedEdgesByResult[hit.cacheSharedResult().id]
+	cache.egraphMu.RUnlock()
+	require.Equal(t, expiry, laterExpiry)
+	require.Equal(t, expiry, laterEdge.expiresAtUnix)
+	require.NoError(t, cache.ReleaseSession(ctx, "test-session"))
+	require.Equal(t, 1, cache.EntryStats().RetainedCalls)
+}
 
 func TestSchemaRecipeLoadMemoSeparatesContentHits(t *testing.T) {
 	ctx := cacheTestContext(t.Context())

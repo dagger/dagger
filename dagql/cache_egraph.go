@@ -994,7 +994,27 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, nil
 	}
 	if req.recipeOnly {
-		return c.lookupCacheForSchemaRecipe(ctx, sessionID, resolver, requestDigest)
+		// Capture policy expiry before provenance verification, which can wait
+		// for attachment. Verified hits retain ordinary request policy without
+		// teaching additional identities onto the schema's producing result.
+		expiresAtUnix := candidateSharedResultExpiryUnix(time.Now().Unix(), req.TTL)
+		res, hit, err := c.lookupCacheForSchemaRecipe(ctx, sessionID, resolver, requestDigest)
+		if err != nil || !hit {
+			return res, hit, err
+		}
+		if ev := req.CacheEvidence; ev != nil {
+			ev.HitRoute = CacheHitRouteRecipe
+		}
+		if req.TTL != 0 || req.IsPersistable {
+			shared := res.cacheSharedResult()
+			c.egraphMu.Lock()
+			shared.expiresAtUnix = mergeSharedResultExpiryUnix(shared.expiresAtUnix, expiresAtUnix)
+			if req.IsPersistable {
+				c.upsertPersistedEdgeLocked(ctx, shared, expiresAtUnix, false)
+			}
+			c.egraphMu.Unlock()
+		}
+		return res, true, nil
 	}
 
 	c.egraphMu.Lock()
