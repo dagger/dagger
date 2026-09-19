@@ -45,14 +45,14 @@ type lazyContentIdentity struct {
 
 // SetContentDigestAfterEvaluation schedules content equivalence for a successful
 // output installation. Failed bodies and unfinished cleanup never publish it.
-func (task *PartTaskToken) SetContentDigestAfterEvaluation(contentDigest digest.Digest, labels ...string) error {
-	if task == nil || !task.active.Load() {
+func (t *PartTaskToken) SetContentDigestAfterEvaluation(contentDigest digest.Digest, labels ...string) error {
+	if t == nil || !t.active.Load() {
 		return fmt.Errorf("defer content digest: no active evaluation")
 	}
 	if contentDigest == "" {
 		return fmt.Errorf("defer content digest: empty digest")
 	}
-	task.contentIdentity = &lazyContentIdentity{digest: contentDigest, labels: slices.Clone(labels)}
+	t.contentIdentity = &lazyContentIdentity{digest: contentDigest, labels: slices.Clone(labels)}
 	return nil
 }
 

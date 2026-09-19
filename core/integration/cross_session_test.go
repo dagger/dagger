@@ -572,10 +572,10 @@ func (GitSuite) TestCrossSessionGitRepositoryIdentity(ctx context.Context, t *te
 
 	// Named refs must consult each client's workspace lock. Equal pins may
 	// share a result, but these different pins must resolve to different commits.
-	commit1, err := c1.Git(repoURL).Ref("main").Commit(ctx)
+	commit1, err := c1.Git(repoURL).Ref("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockTestGitBranchCommit, commit1)
-	commit2, err := c2.Git(repoURL).Ref("main").Commit(ctx)
+	commit2, err := c2.Git(repoURL).Ref("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockTestGitStaleCommit, commit2)
 	require.NotEqual(t, commit1, commit2)

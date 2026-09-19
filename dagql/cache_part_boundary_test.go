@@ -125,7 +125,7 @@ func TestPartReadyPreparationBoundaries(t *testing.T) {
 				prepared, err := c.PrepareReadyPart(prepareCtx, receiver, source, permit)
 				if mode == "missing-local-descriptor" {
 					if err == nil || !strings.Contains(err.Error(), "missing-ready-snapshot") {
-						return fmt.Errorf("prepare with a missing descriptor: want the descriptor named, got %v", err)
+						return fmt.Errorf("prepare with a missing descriptor: want the descriptor named, got %w", err)
 					}
 					if prepared != nil {
 						return fmt.Errorf("prepare with a missing descriptor returned a preparation")
