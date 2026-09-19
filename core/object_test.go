@@ -281,6 +281,74 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 	assert.Equal(t, "Choice", decoded.EnumDefs[0].Self().AsEnum.Value.Self().Name)
 }
 
+// A self-calling module lists itself among its deps so its runtime schema
+// carries its own types. The persisted payload can't hold that entry (it would
+// reference the row being encoded), so decode must get it back through
+// BindPersistedSelf once the row's result exists.
+func TestModulePersistedSelfDepRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	sc := cacheIface
+
+	root := &Query{}
+	testSrv := &moduleObjectTestServer{
+		mockServer: &mockServer{},
+		cache:      sc,
+		root:       root,
+	}
+	root.Server = testSrv
+	dag := newCoreDagqlServerForTest(t, root)
+	testSrv.dag = dag
+	installModuleObjectTestModuleClass(dag)
+	ctx = dagql.ContextWithCache(ctx, sc)
+	ctx = ContextWithQuery(ctx, root)
+
+	mod := &Module{
+		NameField:         "Test",
+		OriginalName:      "Test",
+		SDKConfig:         &SDKConfig{},
+		Deps:              NewSchemaBuilder(root, nil),
+		IncludeSelfInDeps: true,
+	}
+	attached := newTypeDefAttachedResult(t, ctx, sc, dag, "selfDepModule", mod)
+	attachedID, err := attached.ID()
+	assert.NilError(t, err)
+	assert.Assert(t, attachedID.EngineResultID() != 0)
+
+	// Attachment appends self to the live module's deps.
+	assert.Equal(t, 1, len(attached.Self().Deps.Mods()))
+
+	payload, err := attached.Self().EncodePersistedObject(ctx, sc)
+	assert.NilError(t, err)
+
+	decodedTyped, err := (&Module{}).DecodePersistedObject(ctx, dag, 0, nil, payload.JSON)
+	assert.NilError(t, err)
+	decoded, ok := decodedTyped.(*Module)
+	assert.Assert(t, ok)
+	assert.Assert(t, decoded.IncludeSelfInDeps)
+	// The self entry is dropped from the payload and not rebuilt by decode.
+	assert.Equal(t, 0, len(decoded.Deps.Mods()))
+
+	assert.NilError(t, decoded.BindPersistedSelf(ctx, attached))
+	deps := decoded.Deps.Mods()
+	assert.Equal(t, 1, len(deps))
+	depID, err := deps[0].ModuleResult().ID()
+	assert.NilError(t, err)
+	assert.Equal(t, attachedID.EngineResultID(), depID.EngineResultID())
+
+	// Binding again is a no-op.
+	assert.NilError(t, decoded.BindPersistedSelf(ctx, attached))
+	assert.Equal(t, 1, len(decoded.Deps.Mods()))
+
+	// Modules that don't include themselves are left alone.
+	plain := &Module{NameField: "Plain", SDKConfig: &SDKConfig{}, Deps: NewSchemaBuilder(root, nil)}
+	assert.NilError(t, plain.BindPersistedSelf(ctx, attached))
+	assert.Equal(t, 0, len(plain.Deps.Mods()))
+}
+
 func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 	t.Parallel()
 

@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  A self-calling module rehydrated from the persisted cache keeps itself in its
+  dependency schema. The persisted module payload leaves the self entry out
+  (it would reference the row being written), and decode never restored it, so
+  a module reached through a persisted ID ran against a deps-only schema. For
+  Dang modules this surfaced as `type <Self> does not implement interface
+  Dagger.Node` on `currentNode.{{... on Dagger.<Self>!}}`.
+time: 2026-09-19T07:00:00Z
+custom:
+  Author: vito
+  PR: ""

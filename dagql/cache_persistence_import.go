@@ -753,7 +753,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			}
 
 			res.payloadMu.Lock()
-			if !res.hasValue && res.persistedEnvelope != nil {
+			installed := !res.hasValue && res.persistedEnvelope != nil
+			if installed {
 				res.self = decoded.Unwrap()
 				res.hasValue = true
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
@@ -768,6 +769,24 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 			}
 			res.payloadMu.Unlock()
+			// Self-referencing payloads get their attached result only now
+			// that it carries the decoded value: the wrapper decode built is
+			// a detached shell with no engine result ID, so it can't stand
+			// in for the row in a dependency graph. A failure here
+			// uninstalls the payload so the next demand re-decodes rather
+			// than serving a half-bound value.
+			if binder, ok := UnwrapAs[PersistedSelfBinder](decoded); ok && installed {
+				if err := bindPersistedSelf(ctx, res, decodeResolver, binder); err != nil {
+					res.payloadMu.Lock()
+					res.self = nil
+					res.hasValue = false
+					res.persistedEnvelope = state.persistedEnvelope
+					res.payloadMu.Unlock()
+					err = fmt.Errorf("decode persisted hit payload: %w", err)
+					finishPersistDecode(err, false)
+					return nil, err
+				}
+			}
 			if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
 				res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), onReleaser.OnRelease)
 			}
