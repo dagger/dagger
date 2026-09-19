@@ -253,11 +253,11 @@
         <div class="timeline">
           <div class="axis"><span>0s</span><span>5s</span><span>10s</span></div>
           <div class="track">
-            <div class="track-label">Branch A</div>
+            <div class="track-label">Container A</div>
             <div class="track-line"><div class="block a">4 GB</div></div>
           </div>
           <div class="track">
-            <div class="track-label">Branch B</div>
+            <div class="track-label">Container B</div>
             <div class="track-line"><div class="block b">3 GB</div></div>
           </div>
           <div class="peak-answer">Non-overlapping peak: <strong>4 GB</strong>, not 7 GB</div>
@@ -273,7 +273,7 @@
         <aside class="memory-notes">
           <h2>What we actually compute</h2>
           <ul>
-            <li>Associate each <code>memory.current</code> sample with its container span.</li>
+            <li>Use each sample’s span ID to recover when that container started and stopped.</li>
             <li>Rebuild intervals and sum only containers active at each point in time.</li>
             <li>Take the maximum aggregate value for each run, then subtract warm from cold.</li>
             <li class="warning">Samples arrive about every 5 seconds, so brief spikes may be missed.</li>
