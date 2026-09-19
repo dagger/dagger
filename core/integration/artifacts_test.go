@@ -941,10 +941,30 @@ source = "dang"
  pub clean(ws: Workspace!): Changeset! @generate { ws.changes(ws) }
  pub dirty(ws: Workspace!): Changeset! @generate { ws.withNewFile("generated", "new").changes(ws) }
  pub broken: Container! { raise "metadata evaluated a leaf" }
+ pub edit(ws: Workspace!): Changeset! { ws.withNewFile("edited", "new").changes(ws) }
+ pub brokenEdit: Changeset! { raise "unmarked Changeset was evaluated" }
 }`)
 	wsID, err := src.AsWorkspace().ID(ctx)
 	require.NoError(t, err)
 	opts := &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}}
+	// Unmarked Changesets retain their addressable stale checks. Directive
+	// selection must not treat these as project checks or evaluate them.
+	unmarked, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+ node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: "dag://{edit,broken-edit}/stale") {
+ items { uri directives }
+ } } } }
+}`, opts)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{"filterUri":{"items":[
+ {"uri":"dag://broken-edit/stale","directives":["check"]},
+ {"uri":"dag://edit/stale","directives":["check"]}
+ ]}}}}`, string(*unmarked))
+	stale := artifactValue[*dagger.Check](ctx, t, c, dagger.Ref[*dagger.Workspace](c, wsID).
+		Artifacts().FilterURI("dag://edit/stale").One())
+	pass, err := stale.Pass(ctx)
+	require.NoError(t, err)
+	require.False(t, pass)
+
 	metadata, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
  node(id: $ws) { ... on Workspace { artifacts { filterDirectives(directives: ["check"]) { items { uri directives } } } } }
 }`, opts)
@@ -979,6 +999,28 @@ source = "dang"
  {"artifact":{"uri":"dag://failing"},"value":null,"error":{"message":"check failed"}},
  {"artifact":{"uri":"dag://passing"},"value":{"pass":true},"error":null}
  ]}}}}`, string(*values))
+
+	base := nativeWorkspaceBase(t, c).WithDirectory(".", src).With(nonNestedDevEngine(c))
+	for _, command := range []string{"generate", "check"} {
+		t.Run(command+" list", func(ctx context.Context, t *testctx.T) {
+			out, err := base.With(daggerNonNestedExec(command, "-l")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "dag://clean")
+			require.Contains(t, out, "dag://dirty")
+			require.NotContains(t, out, "edit")
+		})
+	}
+	for _, flag := range []string{"", "--generate", "--no-generate"} {
+		t.Run("check "+flag, func(ctx context.Context, t *testctx.T) {
+			args := []string{"check", "--skip=failing", "--skip=dirty"}
+			if flag != "" {
+				args = append(args, flag)
+			}
+			out, err := base.With(daggerNonNestedExec(args...)).CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			require.NotContains(t, out, "edit")
+		})
+	}
 }
 
 func artifactValue[T dagger.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *dagger.Artifact) T {
