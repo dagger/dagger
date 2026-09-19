@@ -135,7 +135,11 @@ func TestOTLPConsumerConnectAttemptsDefaultIsBounded(t *testing.T) {
 	consumer := &otlpConsumer{httpClient: &httpClient{inner: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("transport failure")
 	})}}, path: "/v1/traces", reconnectDelay: time.Millisecond}
-	_, err := consumer.connect(t.Context(), 0)
+	resp, err := consumer.connect(t.Context(), 0)
+	if resp != nil {
+		resp.Body.Close()
+		t.Fatal("expected no response after exhausting attempts")
+	}
 	require.ErrorIs(t, err, errPermanentTelemetryConnection)
 	require.ErrorContains(t, err, fmt.Sprintf("giving up after %d attempts", telemetryConnectAttempts))
 }
