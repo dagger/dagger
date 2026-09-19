@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/muesli/termenv"
 
 	"github.com/dagger/dagger/dagql/dagui"
 )
@@ -23,10 +22,9 @@ func (fe *frontendPretty) cacheReport(zoomed bool) []string {
 		return nil
 	}
 
-	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
 	lookups := stats.Lookups()
 	rate := float64(stats.Hits) / float64(lookups) * 100
-	line := fmt.Sprintf("Cache hits %d/%d (%.0f%%)", stats.Hits, lookups, rate)
+	line := fmt.Sprintf("♻️ Cache hits %d/%d (%.0f%%)", stats.Hits, lookups, rate)
 	if impact := fe.cacheImpact; impact != nil && !zoomed {
 		var savings []string
 		if impact.Elapsed > 0 {
@@ -48,10 +46,10 @@ func (fe *frontendPretty) cacheReport(zoomed bool) []string {
 			savings = append(savings, fmt.Sprintf("~%s net tx", humanize.Bytes(uint64(impact.NetworkTxBytes))))
 		}
 		if len(savings) > 0 {
-			line += " · Saved " + strings.Join(savings, " | ")
+			line += " · ⚡ Saved " + strings.Join(savings, " | ")
 		}
 	}
-	return []string{out.String(line).Foreground(termenv.ANSIBrightGreen).String()}
+	return []string{line}
 }
 
 func humanDuration(d time.Duration) string {
