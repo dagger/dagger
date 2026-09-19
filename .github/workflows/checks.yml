@@ -36,6 +36,9 @@ jobs:
           - "test-split/test-module-runtimes"
           - "test-split/test-modules"
           - "test-split/test-remote-cache"
+          # The bounded TLA+ configurations only; the full cache-lifecycle and
+          # client-lifecycle runs take hours and stay manual (see dagger.toml).
+          - "tla-check/quick"
           - "engine-dev/**"
           - "go-sdk/**"
           - "python-sdk/**"
