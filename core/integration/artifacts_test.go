@@ -693,6 +693,18 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.want, out)
 		})
 	}
+	for _, args := range [][]string{
+		{"list", "--does-not-exist=x"},
+		{"types", "--does-not-exist=x"},
+		{"dimensions", "--does-not-exist=x"},
+		{"keys", "missing", "--does-not-exist=x"},
+	} {
+		t.Run(strings.Join(args, " "), func(ctx context.Context, t *testctx.T) {
+			args := append([]string{"-W", "/work/selected", "artifacts"}, args...)
+			_, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
+			requireErrOut(t, err, "unknown flag: --does-not-exist")
+		})
+	}
 	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "--help")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "--type")

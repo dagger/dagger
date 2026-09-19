@@ -8,21 +8,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// ArtifactDimension describes a schema axis, independent of its runtime keys.
-type ArtifactDimension struct {
-	Identifier    string `field:"true" doc:"Exact GraphQL ParentType.field identifier."`
-	Name          string `field:"true" doc:"Short name derived from the author item type."`
-	QualifiedName string `field:"true" doc:"Author parent type and field name, in CLI case."`
-}
-
-func (*ArtifactDimension) Type() *ast.Type {
-	return &ast.Type{NamedType: "ArtifactDimension", NonNull: true}
-}
+type ArtifactDimension = artifact.Dimension
 
 func (a *Artifact) dimensionName(identifier string) string {
 	if name := a.DimensionNames[identifier]; name != "" {
@@ -55,7 +46,7 @@ func (a *Artifact) DimensionDefinitions() []*ArtifactDimension {
 	return dims
 }
 
-func (a *Artifacts) DimensionDefinitions() []*ArtifactDimension {
+func (a *Artifacts) DimensionDefinitions() artifact.Dimensions {
 	dims := map[string]*ArtifactDimension{}
 	for _, artifact := range a.Entries {
 		for _, dim := range artifact.DimensionDefinitions() {
@@ -69,28 +60,6 @@ func (a *Artifacts) DimensionDefinitions() []*ArtifactDimension {
 	return result
 }
 
-func resolveArtifactDimension(dims []*ArtifactDimension, name string) (string, error) {
-	for _, dim := range dims {
-		if dim.Identifier == name {
-			return name, nil
-		}
-	}
-	var matches []string
-	for _, dim := range dims {
-		if dim.Name == name || dim.QualifiedName == name {
-			matches = append(matches, dim.Identifier)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return name, nil
-	case 1:
-		return matches[0], nil
-	default:
-		return "", fmt.Errorf("ambiguous dimension %q: use %s", name, strings.Join(matches, " or "))
-	}
-}
-
 // BindDimensions resolves names using the selected schema paths only. This is
 // delayed until a result is requested, so filter order cannot bind an alias to
 // a dimension that happened to have matching runtime keys.
@@ -100,7 +69,7 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 	bound.Selector.DimensionAlternatives = nil
 	dims := a.DimensionDefinitions()
 	for _, filter := range a.Selector.Dimensions {
-		id, err := resolveArtifactDimension(dims, filter.Dimension)
+		id, err := dims.Resolve(filter.Dimension)
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +78,7 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 	for _, group := range a.Selector.DimensionAlternatives {
 		ids := []string{}
 		for _, name := range group {
-			id, err := resolveArtifactDimension(dims, name)
+			id, err := dims.Resolve(name)
 			if err != nil {
 				return nil, err
 			}
@@ -127,7 +96,7 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 }
 
 func (a *Artifacts) ResolveDimension(name string) (string, error) {
-	return resolveArtifactDimension(a.DimensionDefinitions(), name)
+	return a.DimensionDefinitions().Resolve(name)
 }
 
 func (a *Artifacts) hasCollections() bool {
@@ -243,6 +212,11 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 		if err != nil {
 			return nil, err
 		}
+		dimensionNames := map[string]string{}
+		pathDims := bound.FilterPath(template.Path).DimensionDefinitions()
+		for _, dim := range dims {
+			dimensionNames[dim.Identifier] = pathDims.DisplayName(dim)
+		}
 		for _, node := range nodes {
 			item := template.Clone()
 			item.Node = node
@@ -253,18 +227,7 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 				}
 			}
 			slices.Reverse(item.DimensionKeys)
-			item.DimensionNames = map[string]string{}
-			pathDims := bound.FilterPath(item.Path).DimensionDefinitions()
-			for _, dim := range dims {
-				name := dim.Identifier
-				for _, alias := range []string{dim.Name, dim.QualifiedName} {
-					if resolved, err := resolveArtifactDimension(pathDims, alias); err == nil && resolved == dim.Identifier {
-						name = alias
-						break
-					}
-				}
-				item.DimensionNames[dim.Identifier] = name
-			}
+			item.DimensionNames = dimensionNames
 			result.Entries = append(result.Entries, item)
 		}
 	}
