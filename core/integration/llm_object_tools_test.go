@@ -481,7 +481,7 @@ func (LLMSuite) TestToolReturningUnrelatedWorkspaceIsNotDiffed(ctx context.Conte
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-tool-return")
 
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("swap to an unrelated workspace").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swapToUnrelated"},

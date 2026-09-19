@@ -1325,7 +1325,7 @@ func (LLMSuite) TestMCPServerSnapshotHonorsGitignore(ctx context.Context, t *tes
 
 	// The tool result is a placeholder: the real install tool runs during
 	// replay and its live result flows through.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("install the dependencies").
 		WithResponse([]dagger.LLMContentBlockInput{{
 			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "install",
