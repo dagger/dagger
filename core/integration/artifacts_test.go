@@ -160,7 +160,11 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	source := artifactSource(c)
 	provider, err := source.File("provider/main.dang").Contents(ctx)
 	require.NoError(t, err)
-	source = source.WithNewFile("provider/main.dang", strings.Replace(provider, "pub label:", "pub verify: Void @check { null }\n  pub label:", 1))
+	source = source.WithNewFile("provider/main.dang", strings.Replace(provider, "pub label:", `pub verify: Void @check { null }
+  pub generate(ws: Workspace!): Changeset! @generate { ws.changes(ws) }
+  pub web: Service! @up { container.from("nginx:alpine").asService }
+  pub assistant(base: LLM!): LLM! @agent { base }
+  pub label:`, 1))
 	ref := workspaceSelectionRemoteRef(ctx, t, c, source)
 	base := nativeWorkspaceBase(t, c)
 	out, err := base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
@@ -188,6 +192,33 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "dag://verify\n", out)
 	_, err = base.With(workspaceSelectionDaggerExec("check", "dag://"+ref+":verify")).Sync(ctx)
 	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		args  []string
+		paths []string
+	}{
+		{[]string{"artifact", "list", "base"}, []string{"base"}},
+		{[]string{"check", "-l", "verify"}, []string{"verify"}},
+		{[]string{"generate", "-l", "generate"}, []string{"generate"}},
+		{[]string{"up", "-l", "web"}, []string{"web"}},
+		{[]string{"agent", "-l", "assistant"}, []string{"assistant"}},
+		{[]string{"shell", "-l", "base"}, []string{"base"}},
+		{[]string{"workspace", "containers"}, []string{"base", "broken", "consumer/base"}},
+	} {
+		for _, flag := range []string{"--absolute", "--abs"} {
+			t.Run(strings.Join(tc.args, " ")+" "+flag, func(ctx context.Context, t *testctx.T) {
+				args := append([]string{"-W", ref}, tc.args...)
+				args = append(args, flag)
+				out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
+				require.NoError(t, err)
+				var want []string
+				for _, path := range tc.paths {
+					want = append(want, strings.TrimSuffix(uri, "base")+path)
+				}
+				require.Equal(t, strings.Join(want, "\n")+"\n", out)
+			})
+		}
+	}
 
 	// The current workspace's own absolute address is accepted; any other is reserved.
 	out, err = base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace {

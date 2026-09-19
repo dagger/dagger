@@ -139,6 +139,7 @@ func (f agentSessionFlag) SessionID() string {
 }
 
 func init() {
+	registerArtifactListFlags(agentCmd)
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
 	agentCmd.Flags().VarP(&agentResume, "resume", "r", "Resume a saved session (interactive picker if no id given)")
 	// A bare -r (no value) resolves to the picker keyword, opening the
@@ -256,5 +257,5 @@ func listAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *
 	if err != nil {
 		return err
 	}
-	return listArtifactSelection(ctx, dag, all.FilterDirectives([]string{"agent"}), cmd.OutOrStdout())
+	return listArtifactSelection(ctx, dag, all.FilterDirectives([]string{"agent"}), cmd)
 }

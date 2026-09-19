@@ -77,6 +77,8 @@ dagger agent [options] [address...]
 ### Options
 
 ```
+      --abs                       Alias for --absolute
+      --absolute                  List absolute artifact addresses, including the workspace and revision
       --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
   -l, --list                      List available agents
       --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
@@ -457,6 +459,13 @@ List matching artifact addresses
 dagger artifact list [address...]
 ```
 
+### Options
+
+```
+      --abs        Alias for --absolute
+      --absolute   List absolute artifact addresses, including the workspace and revision
+```
+
 ### Options inherited from parent commands
 
 ```
@@ -522,6 +531,8 @@ dagger check [options] [address...]
 ### Options
 
 ```
+      --abs                  Alias for --absolute
+      --absolute             List absolute artifact addresses, including the workspace and revision
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --eager-runtime        load module runtime eagerly
       --failfast             Cancel remaining checks on first failure
@@ -1233,6 +1244,8 @@ dagger generate [options] [address...]
 ### Options
 
 ```
+      --abs            Alias for --absolute
+      --absolute       List absolute artifact addresses, including the workspace and revision
   -l, --list           List available generators
       --no-apply       Compute and show a summary of generated changes without applying them
       --require-load   Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)
@@ -2401,7 +2414,9 @@ dagger shell [options] [address]
 ### Options
 
 ```
-  -l, --list   List available shells
+      --abs        Alias for --absolute
+      --absolute   List absolute artifact addresses, including the workspace and revision
+  -l, --list       List available shells
 ```
 
 ### Options inherited from parent commands
@@ -2489,7 +2504,9 @@ dagger up [options] [address...]
 ### Options
 
 ```
-  -l, --list   List available services
+      --abs        Alias for --absolute
+      --absolute   List absolute artifact addresses, including the workspace and revision
+  -l, --list       List available services
 ```
 
 ### Options inherited from parent commands

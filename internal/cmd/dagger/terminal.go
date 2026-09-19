@@ -16,6 +16,7 @@ import (
 var terminalListMode bool
 
 func init() {
+	registerArtifactListFlags(shellCmd)
 	shellCmd.Flags().BoolVarP(&terminalListMode, "list", "l", false, "List available shells")
 	shellCmd.Flags().StringP("command", "c", "", "Use 'dagger -c' to run Dagger scripts")
 	legacyCommand := shellCmd.Flags().Lookup("command")
@@ -72,7 +73,7 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 			}
 			terminals := all.FilterTypes([]string{"Container", "Directory"})
 			if terminalListMode {
-				return listArtifactSelection(ctx, dag, terminals, cmd.OutOrStdout())
+				return listArtifactSelection(ctx, dag, terminals, cmd)
 			}
 			id, err := terminals.ID(ctx)
 			if err != nil {

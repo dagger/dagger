@@ -56,16 +56,27 @@ Examples:
 		if strings.HasPrefix(child.use, "keys ") {
 			args = cobra.MinimumNArgs(1)
 		}
-		cmd.AddCommand(&cobra.Command{
+		childCmd := &cobra.Command{
 			Use:               child.use,
 			Short:             child.short,
 			Args:              args,
 			RunE:              runArtifacts,
 			ValidArgsFunction: cobra.NoFileCompletions,
-		})
+		}
+		if strings.HasPrefix(child.use, "list ") {
+			registerArtifactListFlags(childCmd)
+		}
+		cmd.AddCommand(childCmd)
 	}
 	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	return cmd
+}
+
+// Both names share one value, including when either flag is explicitly false.
+func registerArtifactListFlags(cmd *cobra.Command) {
+	absolute := new(bool)
+	cmd.Flags().BoolVar(absolute, "absolute", false, "List absolute artifact addresses, including the workspace and revision")
+	cmd.Flags().BoolVar(absolute, "abs", false, "Alias for --absolute")
 }
 
 func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {
@@ -214,7 +225,8 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 			case "keys":
 				selected, err = artifacts.DimensionKeys(ctx, dimension)
 			default:
-				selected, err = artifactURIs(ctx, ec.Dagger(), artifacts)
+				absolute, _ := cmd.Flags().GetBool("absolute")
+				selected, err = artifactURIs(ctx, ec.Dagger(), artifacts, absolute)
 			}
 			if err != nil {
 				return err
@@ -233,7 +245,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 }
 
 // artifactURIs prints one address per artifact, in the form filterUri accepts.
-func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]string, error) {
+func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, absolute bool) ([]string, error) {
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -244,8 +256,8 @@ func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Art
 		}
 	}
 	err = dag.Do(ctx, &dagger.Request{
-		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { items { uri } } } }`,
-		Variables: map[string]any{"id": id},
+		Query:     `query($id: ID!, $absolute: Boolean!) { node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute) } } } }`,
+		Variables: map[string]any{"id": id, "absolute": absolute},
 	}, &dagger.Response{Data: &res})
 	if err != nil {
 		return nil, err

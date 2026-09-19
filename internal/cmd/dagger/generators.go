@@ -28,6 +28,7 @@ var (
 )
 
 func init() {
+	registerArtifactListFlags(generateCmd)
 	generateCmd.Flags().BoolVarP(&generateListMode, "list", "l", false, "List available generators")
 	generateCmd.Flags().BoolVar(&generateRequireLoad, "require-load", false, "Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)")
 	generateCmd.Flags().BoolVar(&generateNoApply, "no-apply", false, "Compute and show a summary of generated changes without applying them")
@@ -74,7 +75,7 @@ Examples:
 				}
 				generators := all.FilterDirectives([]string{"generate"})
 				if generateListMode {
-					return listArtifactSelection(ctx, dag, generators, cmd.OutOrStdout())
+					return listArtifactSelection(ctx, dag, generators, cmd)
 				}
 				Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
 				failures, err := artifactLoadFailures(ctx, dag, all)
@@ -157,7 +158,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 		if len(sdkPaths) > 0 {
 			// Discovery resolves the active entrypoint, including -m overrides.
 			selected := dag.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterDirectives([]string{"generate"})
-			uris, err := artifactURIs(ctx, dag, selected)
+			uris, err := artifactURIs(ctx, dag, selected, false)
 			if err != nil {
 				return err
 			}
