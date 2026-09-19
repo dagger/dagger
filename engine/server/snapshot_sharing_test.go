@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/stretchr/testify/require"
 )
 
 // Only an engine that can receive imports enables sharing: a configured
@@ -89,5 +89,5 @@ func TestSnapshotSharingPreparationContext(t *testing.T) {
 		_, ok := decodeServer.ObjectType(name)
 		require.True(t, ok, "native decoder class %q resolves on the schema-only fork", name)
 	}
-	var _ call.View = decodeServer.View
+	_ = decodeServer.View
 }

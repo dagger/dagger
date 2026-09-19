@@ -133,22 +133,22 @@ type partProgressSeen struct {
 // InstallReadyPart in the obtain Body, and from a source check that failed
 // before the decision's scans saw it. A loop that handed a recorded refusal on
 // would make the next loop's record of it look like a repeat.
-func (s *PartDemandState) refused(loop string, iteration uint64, address PersistedPartAddress, err error) error {
+func (d *PartDemandState) refused(loop string, iteration uint64, address PersistedPartAddress, err error) error {
 	var refusal *partRefusal
-	if s == nil || !errors.As(err, &refusal) || !refusal.changed {
+	if d == nil || !errors.As(err, &refusal) || !refusal.changed {
 		return nil
 	}
 	key := partProgressKey{site: refusal.site, row: refusal.row, counters: refusal.current}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if first, seen := s.progress[key]; seen {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if first, seen := d.progress[key]; seen {
 		return &PartNoProgressError{Loop: loop, Site: refusal.site, ResultID: uint64(refusal.row), Address: clonePartAddress(address),
 			Expected: refusal.expected.counters(), Current: refusal.current.counters(),
 			FirstLoop: first.loop, FirstIteration: first.iteration, Iteration: iteration}
 	}
-	if s.progress == nil {
-		s.progress = map[partProgressKey]partProgressSeen{}
+	if d.progress == nil {
+		d.progress = map[partProgressKey]partProgressSeen{}
 	}
-	s.progress[key] = partProgressSeen{loop: loop, iteration: iteration}
+	d.progress[key] = partProgressSeen{loop: loop, iteration: iteration}
 	return nil
 }

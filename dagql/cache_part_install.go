@@ -242,20 +242,9 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 		return nil, partRefused("prepare: receiver part already complete")
 	}
 	if base != nil {
-		if base.receiver != row || base.expected.receiver != row {
-			return nil, fmt.Errorf("prepare part: preparation base names another receiver")
+		if current, err = base.recordFor(row, version); err != nil {
+			return nil, err
 		}
-		// The real row must still hold the observation the prefix was built
-		// from: an unexpected representation change aborts this sequence
-		// rather than relabelling a stale envelope with a newer revision.
-		if version.payload.payloadRevision != base.original.payloadRevision ||
-			version.payload.persistedEnvelope != base.original.persistedEnvelope ||
-			version.payload.hasValue != base.original.hasValue {
-			return nil, partRefused("prepare: prefix base no longer matches the receiver")
-		}
-		// Build the next representation from the validated prefix, not from
-		// the real record, so this envelope contains every earlier role.
-		current = base.record
 	}
 	local, err := partRecordAt(current, permit.address.OutputPath)
 	if err != nil {
@@ -302,6 +291,25 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 		return nil, err
 	}
 	return p.seal(row, base)
+}
+
+// recordFor validates that the preparation base still describes row's
+// observed representation and returns the record the next representation is
+// built from: the validated prefix, not the real record, so the envelope
+// contains every earlier role.
+func (base *readyPartPreparationBase) recordFor(row *sharedResult, version capturedRowRevision) (PersistedRecord, error) {
+	if base.receiver != row || base.expected.receiver != row {
+		return PersistedRecord{}, fmt.Errorf("prepare part: preparation base names another receiver")
+	}
+	// The real row must still hold the observation the prefix was built
+	// from: an unexpected representation change aborts this sequence
+	// rather than relabelling a stale envelope with a newer revision.
+	if version.payload.payloadRevision != base.original.payloadRevision ||
+		version.payload.persistedEnvelope != base.original.persistedEnvelope ||
+		version.payload.hasValue != base.original.hasValue {
+		return PersistedRecord{}, partRefused("prepare: prefix base no longer matches the receiver")
+	}
+	return base.record, nil
 }
 
 // preparePartDependenciesLocked computes every fallible graph/requirement
