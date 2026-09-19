@@ -328,6 +328,11 @@ type frontendPretty struct {
 	logsViews     map[logsViewKey]*LogsView
 	renderVersion uint64 // bumped on global render config changes (verbosity, zoom)
 
+	// rewindsKey fingerprints the set of messages rewinds have abandoned as
+	// of the last recalculation, so a change to it can bump renderVersion
+	// (see syncRewindsLocked).
+	rewindsKey string
+
 	// progressExpanded tracks rows whose completed-transfer roll-up has
 	// been expanded into individual rows (the "p" keybind, distinct from
 	// regular tree expansion).
@@ -3917,6 +3922,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.promoteConversationLocked()
 		fe.promoteGeneratorsLocked()
 	}
+	fe.syncRewindsLocked()
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
@@ -4781,6 +4787,33 @@ func (fe *frontendPretty) promoteConversationLocked() {
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
+}
+
+// syncRewindsLocked forces every row to re-render when the set of messages
+// rewinds have abandoned changes. A row's SpanTreeView is memoized on its
+// own span's state, and a rewind changes nothing about the spans it
+// abandons — the marker is a NEW span, and the walk that ties it to the old
+// ones runs over call payloads — so without this the abandoned prompt kept
+// its cached prompt-card render while only rows that happened to repaint
+// for other reasons (a reply still streaming) picked up the collapse.
+func (fe *frontendPretty) syncRewindsLocked() {
+	if fe.db == nil {
+		return
+	}
+	var key strings.Builder
+	for _, rewind := range fe.db.Rewinds() {
+		key.WriteString(rewind.Span.ID.String())
+		key.WriteByte(':')
+		for _, span := range rewind.Abandoned {
+			key.WriteString(span.ID.String())
+			key.WriteByte(',')
+		}
+		key.WriteByte(';')
+	}
+	if fingerprint := key.String(); fingerprint != fe.rewindsKey {
+		fe.rewindsKey = fingerprint
+		fe.renderVersion++
 	}
 }
 

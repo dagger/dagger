@@ -2302,6 +2302,56 @@ func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
 	}
 }
 
+// TestConversationTranscriptRewindRepaintsAbandonedRows is the live-session
+// regression: rows are memoized on their own span's state, and a rewind
+// changes nothing about the spans it abandons — the marker is a new span
+// and the tie to the old ones runs over call payloads. In a real session the
+// abandoned prompt therefore kept its cached prompt card while the reply,
+// still repainting, collapsed; the marker claimed two abandoned messages
+// and only one looked it. Render before the rewind, land it, and the
+// already-rendered prompt must collapse too.
+func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
+	f := newRewindFixtureBeforeRewind()
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, f.db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	f.installLogs(fe, termenv.ANSI, 120)
+
+	// Before the rewind the turn is live: a shaded prompt card.
+	fe.recalculateViewLocked()
+	frame := strings.Join(fe.tui.Frame(), "\n")
+	if !containsStyledLine(frame, "run the tests", "\x1b[100m") {
+		t.Fatalf("prompt not rendered as a live card before the rewind:\n%s", visibleEscapes(frame))
+	}
+	if strings.Contains(stripANSICodes(frame), SupersededMarker) {
+		t.Fatalf("nothing is abandoned before the rewind:\n%s", stripANSICodes(frame))
+	}
+
+	// The rewind lands as a later batch: the marker and the resumed turn.
+	f.importRewind()
+	fe.recalculateViewLocked()
+	frame = strings.Join(fe.tui.Frame(), "\n")
+	plain := stripANSICodes(frame)
+
+	for _, want := range []string{"run the tests", "Bash go test ./...", "All tests pass."} {
+		if !strings.Contains(plain, SupersededMarker+" "+want) {
+			t.Errorf("already-rendered message %q did not collapse after the rewind:\n%s", want, plain)
+		}
+	}
+	if containsStyledLine(frame, "run the tests", "\x1b[100m") {
+		t.Errorf("abandoned prompt kept its cached prompt card:\n%s", visibleEscapes(frame))
+	}
+	if !strings.Contains(plain, RewindMarker+" rewound: 3 messages above abandoned") {
+		t.Errorf("rewind marker missing:\n%s", plain)
+	}
+	if !containsStyledLine(frame, "run the linter instead", "\x1b[100m") {
+		t.Errorf("resumed prompt lost its shaded card:\n%s", visibleEscapes(frame))
+	}
+}
+
 func TestReproMarkdownWrapIndent(t *testing.T) {
 	const width = 50
 	run := func(t *testing.T, nested bool) {
