@@ -38,7 +38,11 @@ func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
 	}
 	for {
 		if host.cache.usesPartAcquisition(value, host.row) {
-			return host.cache.evaluateAcquiredScope(ctx, root, host.row, host.path, parts)
+			err := host.cache.evaluateAcquiredScope(ctx, root, host.row, host.path, parts)
+			if partCanReselect(err) {
+				continue
+			}
+			return err
 		}
 		var groups []LazyGroupKey
 		refined, isRefined := UnwrapAs[HasLazyEvaluationParts](value)
