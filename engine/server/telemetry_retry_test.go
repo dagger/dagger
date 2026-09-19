@@ -52,11 +52,13 @@ func TestSessionLogExporterRetriesOnlyFailedPayloadTargets(t *testing.T) {
 		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"),
 		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	require.Error(t, exporter.Export(t.Context(), []sdklog.Record{record}))
-	require.Equal(t, []string{"parent"}, sess.callPayloadMissingTargets(digest, []string{"child", "parent"}, false))
+	require.Equal(t, []string{"parent"}, sess.callPayloadMissingTargets(digest, []string{"child", "parent"}))
 	require.NoError(t, os.Remove(blocked))
 
-	// Both processors can retry the same record concurrently. The successful
-	// child must not get a duplicate, and the parent must receive exactly one.
+	// The payload processor retries a failed batch, and a fresh closure walk
+	// may re-emit the same digest in the meantime; several such exports can
+	// overlap. The successful child must not get a duplicate, and the parent
+	// must receive exactly one.
 	var wg sync.WaitGroup
 	for range 10 {
 		wg.Go(func() {
@@ -66,6 +68,7 @@ func TestSessionLogExporterRetriesOnlyFailedPayloadTargets(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	require.Empty(t, sess.callPayloadMissingTargets(digest, []string{"child", "parent"}))
 	for _, target := range []string{"child", "parent"} {
 		db, err := dbs.Open(t.Context(), target)
 		require.NoError(t, err)
@@ -87,7 +90,36 @@ func TestSessionLogExporterDoesNotClaimAbortedBatch(t *testing.T) {
 		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
 		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	require.Error(t, exporter.Export(t.Context(), []sdklog.Record{record, {}}))
-	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(digest, []string{"client"}, false))
+	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(digest, []string{"client"}))
+	require.Equal(t, []string{"client"}, sess.takeCallPayloadForWrite(digest, []string{"client"}),
+		"an aborted batch must leave no target stuck in the writing state")
+	sess.settleCallPayload(digest, []string{"client"}, false)
 	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
-	require.Empty(t, sess.callPayloadMissingTargets(digest, []string{"client"}, false))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, []string{"client"}))
+}
+
+// A payload the producer claimed but whose write failed must be claimable
+// again, so that once the payload processor gives up on the record a later
+// closure walk can repair the gap.
+func TestSessionLogExporterReleasesFailedPayloadClaims(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "store")
+	require.NoError(t, os.WriteFile(root, []byte("temporarily unavailable"), 0600))
+	dbs := clientdb.NewDBs(root)
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
+	body, digest := serverCallPayload(t, "lookup", "retry")
+	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+	require.True(t, store.ClaimCallPayload(digest))
+	require.Error(t, exporter.Export(t.Context(), []sdklog.Record{record}))
+	require.True(t, store.ClaimCallPayload(digest),
+		"a failed write must release the producer's claim")
+	require.NoError(t, os.Remove(root))
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
+	require.False(t, store.ClaimCallPayload(digest))
 }

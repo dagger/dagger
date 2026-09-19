@@ -23,7 +23,7 @@ type testCallPayloadSeenKeyStore struct {
 	keys sync.Map
 }
 
-func (s *testCallPayloadSeenKeyStore) CallPayloadNeedsEmission(digest string) bool {
+func (s *testCallPayloadSeenKeyStore) ClaimCallPayload(digest string) bool {
 	_, seen := s.keys.LoadOrStore(digest, struct{}{})
 	return !seen
 }
@@ -40,11 +40,11 @@ func TestCallPayloadDedupeCannotSuppressSpans(t *testing.T) {
 	spanStore := &testSeenKeyStore{}
 	payloadStore := &testCallPayloadSeenKeyStore{}
 
-	if !payloadStore.CallPayloadNeedsEmission("xxh3:a") {
-		t.Fatal("first payload decision must emit")
+	if !payloadStore.ClaimCallPayload("xxh3:a") {
+		t.Fatal("first payload claim must emit")
 	}
 	if !ShouldEmitTelemetry(ctx, spanStore, "xxh3:a", false) {
-		t.Fatal("payload decision suppressed the call's span")
+		t.Fatal("payload claim suppressed the call's span")
 	}
 
 	if !ShouldEmitTelemetry(ctx, spanStore, "xxh3:b", false) {
@@ -53,7 +53,7 @@ func TestCallPayloadDedupeCannotSuppressSpans(t *testing.T) {
 	if ShouldEmitTelemetry(ctx, spanStore, "xxh3:b", false) {
 		t.Fatal("second span must be deduplicated")
 	}
-	if !payloadStore.CallPayloadNeedsEmission("xxh3:b") {
+	if !payloadStore.ClaimCallPayload("xxh3:b") {
 		t.Fatal("span dedupe suppressed the payload of a call it hid")
 	}
 }

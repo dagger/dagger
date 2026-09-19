@@ -145,16 +145,24 @@ func withoutLogOrigin(rec sdklog.Record) sdklog.Record {
 }
 
 // classifyCallPayloadRecord identifies the call-payload log channel and
-// returns the payload's embedded recipe digest. Any record whose content type
-// declares an encoded call belongs to this channel, even when malformed, so it
-// can never fall through as an ordinary log record.
+// returns the payload's recipe digest. Any record whose content type declares
+// an encoded call belongs to this channel, even when malformed, so it can never
+// fall through as an ordinary log record.
+//
+// The digest is read from the attribute the producer stamps alongside the
+// body (telemetryattrs.CallPayloadDigestAttr) precisely so this hot path does
+// not decode every body; the body is only decoded for records that lack it.
 func classifyCallPayloadRecord(rec sdklog.Record) (digest string, payload bool, err error) {
 	claimed := false
 	rec.WalkAttributes(func(attr log.KeyValue) bool {
-		if attr.Key == telemetry.ContentTypeAttr {
+		switch attr.Key {
+		case telemetry.ContentTypeAttr:
 			claimed = attr.Value.Kind() == log.KindString &&
 				attr.Value.AsString() == telemetryattrs.CallPayloadContentType
-			return false
+		case telemetryattrs.CallPayloadDigestAttr:
+			if attr.Value.Kind() == log.KindString {
+				digest = attr.Value.AsString()
+			}
 		}
 		return true
 	})
@@ -163,6 +171,9 @@ func classifyCallPayloadRecord(rec sdklog.Record) (digest string, payload bool, 
 	}
 	if rec.Body().Kind() != log.KindBytes {
 		return "", true, fmt.Errorf("body must be bytes, got %s", rec.Body().Kind())
+	}
+	if digest != "" {
+		return digest, true, nil
 	}
 	decoded := new(callpbv1.Call)
 	if err := proto.Unmarshal(rec.Body().AsBytes(), decoded); err != nil {
@@ -214,19 +225,34 @@ type sessionLogExporter struct {
 	ps   *PubSub
 }
 
-func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
-	exp.sess.logExportMu.Lock()
-	defer exp.sess.logExportMu.Unlock()
+// routedLogRecord is one record with its delivery route resolved and its
+// origin stamp stripped, ready to fan out.
+type routedLogRecord struct {
+	rec    sdklog.Record
+	route  []string
+	digest string // non-empty for call payload records
+}
 
-	byTarget := map[string][]sdklog.Record{}
-	payloadsByTarget := map[string]map[string]struct{}{}
+// Export fans records out to the per-client DBs on each record's route.
+//
+// Call payloads are the exception to plain fan-out: each (digest, target) is
+// written at most once per session. The exporter takes exclusive ownership of
+// the targets that still need a digest under the session's callPayloadMu —
+// atomic per digest, never held across I/O, so exports from the payload
+// processor, the ordinary processor and nested clients' /v1/logs POSTs all
+// proceed in parallel — writes, then settles: delivered on success, released
+// on failure so the payload processor's retry (or a later closure walk) can
+// fill the gap without ever duplicating a row that did land.
+func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	// Resolve every record before taking any payload ownership, so a batch that
+	// cannot be routed at all leaves no target stranded in the writing state.
+	routed := make([]routedLogRecord, 0, len(records))
 	for _, rec := range records {
 		digest, payload, err := classifyCallPayloadRecord(rec)
 		if err != nil {
 			slog.Warn("dropping malformed call payload record", "err", err)
 			continue
 		}
-
 		origin := logOriginClientID(rec)
 		if origin == "" {
 			return fmt.Errorf("log record is missing telemetry origin client ID")
@@ -235,34 +261,38 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if err != nil {
 			return err
 		}
-		if payload {
-			route = exp.sess.callPayloadMissingTargets(digest, route, false)
+		if !payload {
+			digest = ""
 		}
-		if len(route) == 0 {
-			continue
+		routed = append(routed, routedLogRecord{rec: withoutLogOrigin(rec), route: route, digest: digest})
+	}
+
+	byTarget := map[string][]sdklog.Record{}
+	payloadsByTarget := map[string][]string{}
+	for _, r := range routed {
+		route := r.route
+		if r.digest != "" {
+			// Taking is also the in-batch dedupe: a second copy of the same
+			// digest finds its targets already owned by the first.
+			route = exp.sess.takeCallPayloadForWrite(r.digest, route)
 		}
-		rec = withoutLogOrigin(rec)
 		for _, target := range route {
-			if payload {
-				if payloadsByTarget[target] == nil {
-					payloadsByTarget[target] = map[string]struct{}{}
-				}
-				if _, duplicate := payloadsByTarget[target][digest]; duplicate {
-					continue
-				}
-				payloadsByTarget[target][digest] = struct{}{}
+			byTarget[target] = append(byTarget[target], r.rec)
+			if r.digest != "" {
+				payloadsByTarget[target] = append(payloadsByTarget[target], r.digest)
 			}
-			byTarget[target] = append(byTarget[target], rec)
 		}
 	}
+
 	var eg errgroup.Group
 	for target, targetRecords := range byTarget {
 		eg.Go(func() error {
-			if err := exp.ps.Logs(target).Export(ctx, targetRecords); err != nil {
-				return fmt.Errorf("export logs to %s: %w", target, err)
+			err := exp.ps.Logs(target).Export(ctx, targetRecords)
+			for _, digest := range payloadsByTarget[target] {
+				exp.sess.settleCallPayload(digest, []string{target}, err == nil)
 			}
-			for digest := range payloadsByTarget[target] {
-				exp.sess.callPayloadMissingTargets(digest, []string{target}, true)
+			if err != nil {
+				return fmt.Errorf("export logs to %s: %w", target, err)
 			}
 			return nil
 		})

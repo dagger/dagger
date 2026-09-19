@@ -3275,21 +3275,57 @@ func TestCallPayloadDeliveryStore(t *testing.T) {
 
 	sess := &daggerSession{}
 	storeA := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA"}}
-	require.True(t, storeA.CallPayloadNeedsEmission("xxh3:abc"))
-	require.Equal(t, []string{"clientA"}, sess.callPayloadMissingTargets("xxh3:abc", storeA.targets, true))
-	require.False(t, storeA.CallPayloadNeedsEmission("xxh3:abc"))
+	require.True(t, storeA.ClaimCallPayload("xxh3:abc"))
+	require.False(t, storeA.ClaimCallPayload("xxh3:abc"),
+		"a claim must be spent at the producer, before anything is persisted")
+	require.Equal(t, []string{"clientA"}, sess.takeCallPayloadForWrite("xxh3:abc", storeA.targets))
+	sess.settleCallPayload("xxh3:abc", storeA.targets, true)
+	require.False(t, storeA.ClaimCallPayload("xxh3:abc"))
+	require.Empty(t, sess.callPayloadMissingTargets("xxh3:abc", storeA.targets))
 
 	storeB := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB"}}
-	require.True(t, storeB.CallPayloadNeedsEmission("xxh3:abc"),
+	require.True(t, storeB.ClaimCallPayload("xxh3:abc"),
 		"a digest claimed by another client's emission must stay needed for a late client")
 
 	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA", "modClient"}}
-	require.True(t, storeMod.CallPayloadNeedsEmission("xxh3:abc"),
+	require.True(t, storeMod.ClaimCallPayload("xxh3:abc"),
 		"an emission must not be skipped while any route target still needs it")
 	require.Equal(t, []string{"modClient"},
-		sess.callPayloadMissingTargets("xxh3:abc", storeMod.targets, true),
-		"only the missing target must be claimed")
-	require.False(t, storeMod.CallPayloadNeedsEmission("xxh3:abc"))
+		sess.takeCallPayloadForWrite("xxh3:abc", storeMod.targets),
+		"only the missing target must be written")
+	require.False(t, storeMod.ClaimCallPayload("xxh3:abc"))
+}
+
+// A failed write releases its targets so the record's retry — or any later
+// closure walk — can deliver them, while a target another export is writing
+// or has delivered is never handed out twice.
+func TestCallPayloadWriteOwnershipAndRelease(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	route := []string{"parent", "child"}
+	store := &callPayloadDeliveryStore{session: sess, targets: route}
+	require.True(t, store.ClaimCallPayload("xxh3:abc"))
+
+	require.Equal(t, route, sess.takeCallPayloadForWrite("xxh3:abc", route))
+	require.Empty(t, sess.takeCallPayloadForWrite("xxh3:abc", route),
+		"a target being written must not be handed to a concurrent export")
+	require.False(t, store.ClaimCallPayload("xxh3:abc"),
+		"a target being written is still claimed for the producer")
+
+	sess.settleCallPayload("xxh3:abc", []string{"parent"}, true)
+	sess.settleCallPayload("xxh3:abc", []string{"child"}, false)
+	require.Equal(t, []string{"child"}, sess.callPayloadMissingTargets("xxh3:abc", route))
+	require.True(t, store.ClaimCallPayload("xxh3:abc"),
+		"a released target must be claimable by a later walk")
+	require.Equal(t, []string{"child"}, sess.takeCallPayloadForWrite("xxh3:abc", route),
+		"a retry must write only the released target")
+
+	// A span delivering the payload mid-write wins over the write's failure.
+	store.CallPayloadDelivered("xxh3:abc")
+	sess.settleCallPayload("xxh3:abc", []string{"child"}, false)
+	require.Empty(t, sess.callPayloadMissingTargets("xxh3:abc", route))
+	require.False(t, store.ClaimCallPayload("xxh3:abc"))
 }
 
 func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
@@ -3305,7 +3341,7 @@ func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
 		go func() {
 			ready.Done()
 			<-start
-			results <- sess.callPayloadMissingTargets("xxh3:overlap", route, true)
+			results <- sess.claimCallPayload("xxh3:overlap", route)
 		}()
 	}
 	ready.Wait()
@@ -3318,8 +3354,8 @@ func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
 		}
 	}
 	require.Equal(t, map[string]int{"parent": 1, "childA": 1, "childB": 1}, counts,
-		"overlapping decisions must atomically assign each target exactly once")
-	require.Empty(t, sess.callPayloadMissingTargets("xxh3:overlap", []string{"parent", "childA", "childB"}, true))
+		"overlapping claims must atomically assign each target exactly once")
+	require.Empty(t, sess.claimCallPayload("xxh3:overlap", []string{"parent", "childA", "childB"}))
 }
 
 type callPayloadRecordCapture struct {
@@ -3393,6 +3429,26 @@ func TestClassifyCallPayloadRecord(t *testing.T) {
 			scope:      "test.core",
 			body:       otellog.BytesValue(payload),
 			attrs:      []otellog.KeyValue{callType},
+			payload:    true,
+			wantDigest: digest,
+		},
+		{
+			// The producer stamps the digest as an attribute so the export hot
+			// path never has to decode a body.
+			name:  "digest attribute skips body decode",
+			scope: "test.core",
+			body:  otellog.BytesValue([]byte{0xff}),
+			attrs: []otellog.KeyValue{callType,
+				otellog.String(telemetryattrs.CallPayloadDigestAttr, "xxh3:stamped")},
+			payload:    true,
+			wantDigest: "xxh3:stamped",
+		},
+		{
+			name:  "digest attribute of the wrong kind falls back to the body",
+			scope: "test.core",
+			body:  otellog.BytesValue(payload),
+			attrs: []otellog.KeyValue{callType,
+				otellog.Int(telemetryattrs.CallPayloadDigestAttr, 1)},
 			payload:    true,
 			wantDigest: digest,
 		},

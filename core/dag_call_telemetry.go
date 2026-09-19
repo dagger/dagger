@@ -30,27 +30,32 @@ import (
 // transports claim digests from the same delivery-domain store, so the closure
 // walk below publishes logs only for frames a span did not already deliver.
 //
-// The delivery state is scoped per target — the client and its ancestors,
+// The claim store is scoped per target — the client and its ancestors,
 // exactly the per-client DBs telemetry fans out to — NOT to the session. A
-// session-wide decision could let one client's emission permanently satisfy a
-// client that never received it. Producer checks avoid needless recipe work;
-// the session log exporter atomically claims only the missing route targets.
+// session-wide claim could let one client's emission permanently satisfy a
+// client that never received it. Producers CLAIM each frame before doing any
+// recipe work, so concurrent walks over a shared chain (parallel selections,
+// an LLM loop re-sending the same chain) build and encode each frame once for
+// the whole route; the session log exporter then settles those claims per
+// target once persistence succeeds, releasing any target whose write failed.
 
 // recordCallPayloads publishes the missing frames in the transitive closure of
 // a call's ID over the log channel — through receivers, modules, arguments (ID
 // literals inside lists and objects included) and implicit inputs — minus
-// digests already delivered by a span or log in the client's delivery domain.
+// digests already claimed by a span or log in the client's delivery domain.
 //
-// rootOnSpan means the root payload rides a recording span: its delivery route
-// is claimed here and the walk skips its log while still visiting the closure.
+// rootOnSpan means the root payload rides a recording span: the caller marks
+// it delivered and the walk skips its log while still visiting the closure.
 // Otherwise, including when presentation-span deduplication suppresses the
-// call, the root is emitted as a log. Producer checks avoid needless recipe
-// work; span delivery and sessionLogExporter atomically claim their exact route
-// targets, so concurrent closure walks remain safe.
+// call, this function claims the root itself and emits it as a log. A root
+// already claimed short-circuits the whole walk: reachability is transitive,
+// so the claim's own walk already covered every frame this one would.
 //
 // Everything here is best-effort. A payload that cannot be built or encoded is
 // dropped rather than failing the call; the consequence is a client that
-// cannot rebuild that one chain, which is exactly the status quo.
+// cannot rebuild that one chain, which is exactly the status quo. Such a
+// frame stays claimed on purpose: a recipe that cannot be rebuilt fails the
+// same way on every walk, and releasing it would only repeat that work.
 func recordCallPayloadsForSpan(
 	ctx context.Context,
 	store dagql.CallPayloadSeenKeyStore,
@@ -62,7 +67,7 @@ func recordCallPayloadsForSpan(
 		return
 	}
 	if rootOnSpan {
-		if !store.CallPayloadNeedsEmission(callDigest) {
+		if !store.ClaimCallPayload(callDigest) {
 			return
 		}
 		store.CallPayloadDelivered(callDigest)
@@ -80,8 +85,8 @@ func recordCallPayloads(
 	if store == nil || frame == nil {
 		return
 	}
-	if !rootOnSpan && !store.CallPayloadNeedsEmission(callDigest) {
-		// Someone already published this call's payload, and whoever did also
+	if !rootOnSpan && !store.ClaimCallPayload(callDigest) {
+		// Someone already claimed this call's payload, and whoever did also
 		// walked its closure — reachability is transitive, so that walk
 		// covered everything this one would.
 		return
@@ -111,15 +116,15 @@ func recordCallPayloads(
 	logger := telemetry.Logger(ctx, InstrumentationLibrary)
 	emit := func(dgst string, callPB *callpbv1.Call) {
 		if dgst == callDigest {
-			// When the root payload rode the span, only its closure needs the log
-			// fallback. Otherwise its need was checked before rebuilding.
+			// The root was claimed before rebuilding. When its payload rode the
+			// span, only its closure needs the log fallback.
 			if rootOnSpan {
 				return
 			}
 		} else {
-			// Check every other frame before encoding so closure walks avoid work
-			// already delivered everywhere by either transport.
-			if !store.CallPayloadNeedsEmission(dgst) {
+			// Claim every other frame before encoding so concurrent and repeated
+			// closure walks skip payloads already claimed by either transport.
+			if !store.ClaimCallPayload(dgst) {
 				return
 			}
 		}
