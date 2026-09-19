@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -219,6 +220,77 @@ func TestModuleImplementationScopedFieldProvenanceSeparatesImplementations(t *te
 	cachedRecipe, err := results[2].RecipeDigest(f.firstScopedCtx)
 	require.NoError(t, err)
 	require.Equal(t, firstRecipe, cachedRecipe)
+}
+
+func TestModuleImplementationScopedAliasRecipeReplay(t *testing.T) {
+	for _, release := range []bool{false, true} {
+		t.Run(map[bool]string{false: "live alias", true: "released alias"}[release], func(t *testing.T) {
+			f := newImplementationScopedTest(t)
+			_, err := core.NewUserMod(f.parent).ResultCallModule(f.nextScopedCtx)
+			require.NoError(t, err)
+
+			// Aliases share implementation content, but their root constructors have
+			// different names. Keep both parents, and only the original scoped result.
+			renamedMod := f.parent.Self().Clone()
+			renamedMod.NameField = "renamed"
+			renamedCall := implementationScopedTestSyntheticCall("renamed-parent", renamedMod)
+			renamedDetached, err := dagql.NewObjectResultForCall(renamedMod, f.dag, renamedCall)
+			require.NoError(t, err)
+			renamedAny, err := f.cache.GetOrInitCall(f.parentCtx, parentSession, f.dag, &dagql.CallRequest{
+				ResultCall: renamedCall,
+			}, dagql.ValueFunc(renamedDetached))
+			require.NoError(t, err)
+			renamed, ok := renamedAny.(dagql.ObjectResult[*core.Module])
+			require.True(t, ok)
+			obj := &core.ModuleObject{Module: renamed, TypeDef: core.NewObjectTypeDef("Codegen", "", nil)}
+			require.NoError(t, obj.Install(f.firstScopedCtx, f.dag))
+			if release {
+				require.NoError(t, f.cache.ReleaseSession(f.firstScopedCtx, firstScopedSession))
+			}
+
+			result, err := f.dag.Root().Select(f.nextScopedCtx, f.dag, dagql.Selector{Field: "renamed"})
+			require.NoError(t, err)
+			id, err := result.RecipeID(f.nextScopedCtx)
+			require.NoError(t, err)
+			frame, err := result.ResultCall()
+			require.NoError(t, err)
+			require.Equal(t, "renamed", frame.Module.Name)
+
+			// The schema loader mirrors ModDepsForCall: the actual module result,
+			// rather than the display-only Module.Name, determines which constructor
+			// is installed. Use real ModuleObject installation on that module.
+			f.dag.SetResultServerForCall(func(ctx context.Context, frame *dagql.ResultCall) (*dagql.Server, error) {
+				module, err := f.dag.Load(ctx, call.NewEngineResultID(frame.Module.ResultRef.ResultID, call.NewType((&core.Module{}).Type())))
+				if err != nil {
+					return nil, err
+				}
+				actual, ok := module.(dagql.ObjectResult[*core.Module])
+				require.True(t, ok)
+				t.Logf("replay %s uses actual module %s", frame.Field, actual.Self().Name())
+				root, ok := dagql.UnwrapAs[*core.Query](f.dag.Root())
+				require.True(t, ok)
+				reader, err := dagql.NewServer(ctx, root)
+				if err != nil {
+					return nil, err
+				}
+				moduleClass, ok := f.dag.ObjectType("Module")
+				require.True(t, ok)
+				reader.InstallObject(moduleClass)
+				object := &core.ModuleObject{Module: actual, TypeDef: core.NewObjectTypeDef("Codegen", "", nil)}
+				if err := object.Install(ctx, reader); err != nil {
+					return nil, err
+				}
+				return reader, nil
+			})
+			require.NoError(t, f.cache.ReleaseSession(f.nextScopedCtx, nextScopedSession))
+			// Constructors are persistable: evict the warm result so replay must
+			// recover its defining schema. Both module parents remain retained.
+			_, err = f.cache.Prune(f.parentCtx, []dagql.CachePrunePolicy{{All: true}})
+			require.NoError(t, err)
+			_, err = f.dag.Load(f.parentCtx, id)
+			require.NoError(t, err, "a renamed constructor must replay in its defining module schema")
+		})
+	}
 }
 
 func newImplementationScopedTest(t *testing.T) implementationScopedTest {
