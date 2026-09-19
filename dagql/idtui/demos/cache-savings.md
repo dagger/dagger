@@ -35,7 +35,7 @@
 ## Expected output
 
 ```text
-Cache hits 108/266 (41%) · Saved ~23s wall | ~2m42s CPU | ~335 MB memory for 46s | ~120 MB net rx | ~31 MB net tx
+♻️ Cache hits 108/266 (41%) · ⚡ Saved ~23s wall | ~2m42s CPU | ~335 MB memory for 46s | ~120 MB net rx | ~31 MB net tx
 ```
 
 ## No-workspace example
@@ -60,5 +60,5 @@ Cache hits 108/266 (41%) · Saved ~23s wall | ~2m42s CPU | ~335 MB memory for 46
 - Point out the higher warm cache hit rate:
 
   ```text
-  Cache hits 64/94 (68%) · Saved ~9s wall | ...
+  ♻️ Cache hits 64/94 (68%) · ⚡ Saved ~9s wall | ...
   ```

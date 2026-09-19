@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	"github.com/muesli/termenv"
 )
 
 func TestCacheReportRendersExactHitRate(t *testing.T) {
@@ -38,14 +37,12 @@ func TestCacheReportRendersExactHitRate(t *testing.T) {
 	fe := NewWithDB(io.Discard, db)
 	fe.recalculateViewLocked()
 	got := strings.Join(fe.cacheReport(false), "\n")
-	if want := "Cache hits 2/4 (50%)"; got != want {
+	if want := "♻️ Cache hits 2/4 (50%)"; got != want {
 		t.Fatalf("cache report = %q, want %q", got, want)
 	}
 
-	fe.profile = termenv.ANSI
-	got = strings.Join(fe.cacheReport(false), "\n")
-	if !strings.Contains(got, "\x1b[92m") {
-		t.Fatalf("cache report is not light green: %q", got)
+	if strings.Contains(got, "\x1b[") {
+		t.Fatalf("cache report contains ANSI styling: %q", got)
 	}
 }
 
@@ -84,7 +81,7 @@ func TestFinalRenderIncludesCacheReport(t *testing.T) {
 	if err := fe.FinalRender(&buf); err != nil {
 		t.Fatalf("FinalRender: %v", err)
 	}
-	if got := buf.String(); !strings.Contains(got, "Cache hits 1/1 (100%)") {
+	if got := buf.String(); !strings.Contains(got, "♻️ Cache hits 1/1 (100%)") {
 		t.Fatalf("final render missing cache report:\n%s", got)
 	}
 }
