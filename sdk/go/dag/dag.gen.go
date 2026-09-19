@@ -18,7 +18,7 @@ func Close() error {
 // initialize an address to load directories, containers, secrets or other object types.
 //
 // Deprecated: use dagger.io/dagger/core.NewAddress instead.
-func NewAddress(value string) *core.Address {
+func Address(value string) *core.Address {
 	return core.NewAddress(value)
 }
 
@@ -32,21 +32,21 @@ func Blob(name string, contents core.Bytes, opts ...core.BlobOpts) *core.File {
 // Constructs a cache volume for a given cache key.
 //
 // Deprecated: use dagger.io/dagger/core.NewCacheVolume instead.
-func NewCacheVolume(key string, opts ...core.CacheVolumeOpts) *core.CacheVolume {
+func CacheVolume(key string, opts ...core.CacheVolumeOpts) *core.CacheVolume {
 	return core.NewCacheVolume(key, opts...)
 }
 
 // Creates an empty changeset
 //
 // Deprecated: use dagger.io/dagger/core.NewChangeset instead.
-func NewChangeset() *core.Changeset {
+func Changeset() *core.Changeset {
 	return core.NewChangeset()
 }
 
 // Dagger Cloud configuration and state
 //
 // Deprecated: use dagger.io/dagger/core.NewCloud instead.
-func NewCloud() *core.Cloud {
+func Cloud() *core.Cloud {
 	return core.NewCloud()
 }
 
@@ -55,7 +55,7 @@ func NewCloud() *core.Cloud {
 // To pull an image, follow up with the "from" function.
 //
 // Deprecated: use dagger.io/dagger/core.NewContainer instead.
-func NewContainer(opts ...core.ContainerOpts) *core.Container {
+func Container(opts ...core.ContainerOpts) *core.Container {
 	return core.NewContainer(opts...)
 }
 
@@ -71,7 +71,7 @@ func CurrentFunctionCall() *core.FunctionCall {
 // The module currently being served in the session, if any.
 //
 // Deprecated: use dagger.io/dagger/core.NewCurrentModule instead.
-func NewCurrentModule() *core.CurrentModule {
+func CurrentModule() *core.CurrentModule {
 	return core.NewCurrentModule()
 }
 
@@ -115,14 +115,14 @@ func DefaultPlatform(ctx context.Context) (core.Platform, error) {
 // Creates an empty directory.
 //
 // Deprecated: use dagger.io/dagger/core.NewDirectory instead.
-func NewDirectory() *core.Directory {
+func Directory() *core.Directory {
 	return core.NewDirectory()
 }
 
 // The Dagger engine container configuration and state
 //
 // Deprecated: use dagger.io/dagger/core.NewEngine instead.
-func NewEngine() *core.Engine {
+func Engine() *core.Engine {
 	return core.NewEngine()
 }
 
@@ -136,35 +136,35 @@ func EngineVolume(name string, opts ...core.EngineVolumeOpts) *core.Volume {
 // Initialize an environment file
 //
 // Deprecated: use dagger.io/dagger/core.NewEnvFile instead.
-func NewEnvFile(opts ...core.EnvFileOpts) *core.EnvFile {
+func EnvFile(opts ...core.EnvFileOpts) *core.EnvFile {
 	return core.NewEnvFile(opts...)
 }
 
 // Create a new error.
 //
 // Deprecated: use dagger.io/dagger/core.NewError instead.
-func NewError(message string) *core.Error {
+func Error(message string) *core.Error {
 	return core.NewError(message)
 }
 
 // Creates a file with the specified contents.
 //
 // Deprecated: use dagger.io/dagger/core.NewFile instead.
-func NewFile(name string, contents string, opts ...core.FileOpts) *core.File {
+func File(name string, contents string, opts ...core.FileOpts) *core.File {
 	return core.NewFile(name, contents, opts...)
 }
 
 // Creates a function.
 //
 // Deprecated: use dagger.io/dagger/core.NewFunction instead.
-func NewFunction(name string, returnType *core.TypeDef) *core.Function {
+func Function(name string, returnType *core.TypeDef) *core.Function {
 	return core.NewFunction(name, returnType)
 }
 
 // Create a code generation result, given a directory containing the generated code.
 //
 // Deprecated: use dagger.io/dagger/core.NewGeneratedCode instead.
-func NewGeneratedCode(code *core.Directory) *core.GeneratedCode {
+func GeneratedCode(code *core.Directory) *core.GeneratedCode {
 	return core.NewGeneratedCode(code)
 }
 
@@ -178,7 +178,7 @@ func Git(url string, opts ...core.GitOpts) *core.GitRepository {
 // Queries the host environment.
 //
 // Deprecated: use dagger.io/dagger/core.NewHost instead.
-func NewHost() *core.Host {
+func Host() *core.Host {
 	return core.NewHost()
 }
 
@@ -192,14 +192,14 @@ func HTTP(url string, opts ...core.HTTPOpts) *core.File {
 // A unique identifier for this Query.
 //
 // Deprecated: use dagger.io/dagger/core.NewID instead.
-func NewID(ctx context.Context) (core.ID, error) {
+func ID(ctx context.Context) (core.ID, error) {
 	return core.NewID(ctx)
 }
 
 // Initialize a JSON value
 //
 // Deprecated: use dagger.io/dagger/core.NewJSON instead.
-func NewJSON() *core.JSONValue {
+func JSON() *core.JSONValue {
 	return core.NewJSON()
 }
 
@@ -208,42 +208,42 @@ func NewJSON() *core.JSONValue {
 // Experimental: LLM support is not yet stabilized
 //
 // Deprecated: use dagger.io/dagger/core.NewLLM instead.
-func NewLLM(opts ...core.LLMOpts) *core.LLM {
+func LLM(opts ...core.LLMOpts) *core.LLM {
 	return core.NewLLM(opts...)
 }
 
 // Create a new module.
 //
 // Deprecated: use dagger.io/dagger/core.NewModule instead.
-func NewModule() *core.Module {
+func Module() *core.Module {
 	return core.NewModule()
 }
 
 // Create a new module source instance from a source ref string
 //
 // Deprecated: use dagger.io/dagger/core.NewModuleSource instead.
-func NewModuleSource(refString string, opts ...core.ModuleSourceOpts) *core.ModuleSource {
+func ModuleSource(refString string, opts ...core.ModuleSourceOpts) *core.ModuleSource {
 	return core.NewModuleSource(refString, opts...)
 }
 
 // Load any object by its ID.
 //
 // Deprecated: use dagger.io/dagger/core.NewNode instead.
-func NewNode(ctx context.Context, id core.ID) (core.Node, error) {
+func Node(ctx context.Context, id core.ID) (core.Node, error) {
 	return core.NewNode(ctx, id)
 }
 
 // Load a GraphQL introspection schema for merging.
 //
 // Deprecated: use dagger.io/dagger/core.NewSchema instead.
-func NewSchema(json core.JSON) *core.Schema {
+func Schema(json core.JSON) *core.Schema {
 	return core.NewSchema(json)
 }
 
 // Creates a new secret.
 //
 // Deprecated: use dagger.io/dagger/core.NewSecret instead.
-func NewSecret(uri string, opts ...core.SecretOpts) *core.Secret {
+func Secret(uri string, opts ...core.SecretOpts) *core.Secret {
 	return core.NewSecret(uri, opts...)
 }
 
@@ -268,7 +268,7 @@ func SetSecret(name string, plaintext string) *core.Secret {
 // Creates source map metadata.
 //
 // Deprecated: use dagger.io/dagger/core.NewSourceMap instead.
-func NewSourceMap(filename string, line int, column int) *core.SourceMap {
+func SourceMap(filename string, line int, column int) *core.SourceMap {
 	return core.NewSourceMap(filename, line, column)
 }
 
@@ -282,7 +282,7 @@ func SshfsVolume(endpoint string, privateKey *core.Secret, opts ...core.SshfsVol
 // Create a new TypeDef.
 //
 // Deprecated: use dagger.io/dagger/core.NewTypeDef instead.
-func NewTypeDef() *core.TypeDef {
+func TypeDef() *core.TypeDef {
 	return core.NewTypeDef()
 }
 
