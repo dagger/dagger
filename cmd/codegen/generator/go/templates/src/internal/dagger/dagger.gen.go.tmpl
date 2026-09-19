@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"reflect"
 	"strconv"
 
 	"github.com/Khan/genqlient/graphql"
@@ -89,33 +88,11 @@ func Tracer() trace.Tracer {
 	return core.Tracer()
 }
 
-// assertNotNil panic if the given value is nil.
-// This function is used to validate that input with pointer type are not nil.
-// See https://github.com/dagger/dagger/issues/5696 for more context.
-func assertNotNil(argName string, value any) {
-	// We use reflect because just comparing value to nil is not working since
-	// the value is wrapped into a type when passed as parameter.
-	// E.g., nil become (*dagger.File)(nil).
-	if reflect.ValueOf(value).IsNil() {
-		panic(fmt.Sprintf("unexpected nil pointer for argument %q", argName))
-	}
-}
-
-// selectNode returns a query selection for node(id:) scoped to the
-// given type via an inline fragment.
-func selectNode(q *querybuilder.Selection, id any, typeName string) *querybuilder.Selection {
-	return q.Select("node").Arg("id", id).InlineFragment(typeName)
-}
-
-// reassigned at runtime after the span is initialized
-var marshalCtx = context.Background()
-
 // SetMarshalContext is a hack that lets us set the ctx to use for
-// MarshalJSON implementations that get an object's ID. It keeps this
-// package's own marshalCtx (used by dependency-contributed types, which are
-// generated directly into this package) in sync with core's.
+// MarshalJSON implementations that get an object's ID. Every type carrying
+// such an implementation is declared in internal/dagger/core, so this only
+// has to forward.
 func SetMarshalContext(ctx context.Context) {
-	marshalCtx = ctx
 	core.SetMarshalContext(ctx)
 }
 
