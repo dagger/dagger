@@ -153,40 +153,40 @@ check.skip = ["generate:up-to-date"]
 [env.dev.modules.tla-check]
 source = ".dagger/modules/tla-check"
 
-[env.dev.modules.engine-lab]
+[modules.engine-lab]
 source = ".dagger/modules/engine-lab"
 
-[env.dev.modules.engine-lab.settings]
+[modules.engine-lab.settings]
 cloudCredentials = "file://~/.config/dagger/credentials.json"
 daggerConfig = "file://~/.config/dagger/config.toml"
 
-[env.dev.modules.tui-qa]
+[modules.tui-qa]
 source = ".dagger/modules/tui-qa"
 
-[env.dev.modules.tui-qa.settings]
+[modules.tui-qa.settings]
 cloudCredentials = "file://~/.config/dagger/credentials.json"
 daggerConfig = "file://~/.config/dagger/config.toml"
 
-[env.dev.modules.mcp-lab]
+[modules.mcp-lab]
 source = ".dagger/modules/mcp-lab"
 
-[env.dev.modules.editor]
+[modules.editor]
 source = "github.com/vito/editor"
 
-[env.dev.modules.go-cli]
+[modules.go-cli]
 source = ".dagger/modules/go-cli"
 
-[env.dev.modules.contributor]
+[modules.contributor]
 source = "github.com/vito/agents/contributor"
 
-[env.dev.modules.contributor.settings]
+[modules.contributor.settings]
 githubToken = "cmd://gh auth token"
 remote = "dagger/dagger"
 
-[env.dev.modules.staff]
+[modules.staff]
 source = "github.com/vito/agents/staff"
 
-[env.dev.modules.committer]
+[modules.committer]
 source = "github.com/vito/agents/committer"
 
 [sdks.dang]
