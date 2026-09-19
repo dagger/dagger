@@ -46,7 +46,7 @@ func (fe *frontendPretty) cacheReport(zoomed bool) []string {
 			savings = append(savings, fmt.Sprintf("~%s net tx", humanize.Bytes(uint64(impact.NetworkTxBytes))))
 		}
 		if len(savings) > 0 {
-			line += " · ⚡ Saved " + strings.Join(savings, " | ")
+			line += " ⚡ Saved " + strings.Join(savings, " | ")
 		}
 	}
 	return []string{line}
