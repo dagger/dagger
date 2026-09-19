@@ -512,6 +512,12 @@ func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artif
 			var skip []string
 			switch directive {
 			case "check":
+				// Changeset.stale is addressable for every Changeset, but only
+				// declared generators contribute staleness checks to the project.
+				source := artifact.Node.Parent
+				if artifact.Node.Name == "stale" && source.ObjectType().Name == "Changeset" && !slices.Contains(source.Directives, "generate") {
+					continue
+				}
 				skip = entry.Check.Skip
 			case "up":
 				skip = entry.Up.Skip
