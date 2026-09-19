@@ -27,6 +27,15 @@ func get(t *testing.T, rt http.RoundTripper, url string, header map[string]strin
 	return rt.RoundTrip(req)
 }
 
+// closeResponse closes the body of a response the transport produced; a
+// failed round trip produces none.
+func closeResponse(t *testing.T, resp *http.Response) {
+	t.Helper()
+	if resp != nil && resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+}
+
 func TestFixtureTransport(t *testing.T) {
 	current.Store(nil)
 	t.Cleanup(func() { current.Store(nil) })
@@ -83,8 +92,9 @@ func TestFixtureTransport(t *testing.T) {
 	require.Equal(t, "0123", string(body), "the bytes before the truncation are real")
 	require.NoError(t, resp.Body.Close())
 
-	_, err = get(t, rt, "https://content.remote-cache.invalid/down", nil)
+	resp, err = get(t, rt, "https://content.remote-cache.invalid/down", nil)
 	require.ErrorIs(t, err, ErrFault)
+	closeResponse(t, resp)
 	resp, err = get(t, rt, "https://origin.remote-cache.invalid/gone", nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -101,14 +111,16 @@ func TestFixtureTransport(t *testing.T) {
 	require.False(t, gone().Closed)
 	require.NoError(t, resp.Body.Close())
 	require.True(t, gone().Closed)
-	_, err = get(t, rt, "https://origin.remote-cache.invalid/unknown", nil)
+	resp, err = get(t, rt, "https://origin.remote-cache.invalid/unknown", nil)
 	require.ErrorIs(t, err, ErrUnscripted, "an unknown fixture URL fails explicitly")
+	closeResponse(t, resp)
 	require.Zero(t, base.calls, "no fixture-host request ever reaches the delegate")
 
 	resp, err = get(t, rt, "https://registry.example.com/v2/", nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusTeapot, resp.StatusCode, "every other host uses the original transport")
 	require.Equal(t, 1, base.calls)
+	closeResponse(t, resp)
 
 	report := d.Report()
 	require.Equal(t, uint64(1), report.Delegated)
@@ -124,8 +136,10 @@ func TestFixtureTransport(t *testing.T) {
 	require.NotEmpty(t, report.Requests[5].Error)
 
 	d.SetObservationCap(1)
-	_, _ = get(t, rt, "https://origin.remote-cache.invalid/gone", nil)
-	_, _ = get(t, rt, "https://origin.remote-cache.invalid/gone", nil)
+	resp, _ = get(t, rt, "https://origin.remote-cache.invalid/gone", nil)
+	closeResponse(t, resp)
+	resp, _ = get(t, rt, "https://origin.remote-cache.invalid/gone", nil)
+	closeResponse(t, resp)
 	report = d.Report()
 	require.Len(t, report.Requests, 1)
 	require.True(t, report.Overflowed, "overflow is reported, never silent")

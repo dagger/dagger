@@ -157,7 +157,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 	if err := p.version.check(row); err != nil {
 		return nil, err
 	}
-	if _, err := p.seal(row, nil); err != nil {
+	if err := p.seal(row, nil); err != nil {
 		return nil, err
 	}
 	if err := c.reachPrepared(ctx, p); err != nil {

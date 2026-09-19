@@ -289,7 +289,7 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 		dirty := s.a.client.Container().From(alpineImage).WithDirectory("/repo", clean).
 			WithExec([]string{"sh", "-ec", "cd /repo && echo dirty > tracked && rm deleted && echo stray > untracked"}).Directory("/repo")
 		cleaned := dirty.AsGit().Uncommitted().Before()
-		read := func(client *dagger.Client, dir *dagger.Directory) map[string]string {
+		read := func(dir *dagger.Directory) map[string]string {
 			out := map[string]string{}
 			for _, name := range []string{"tracked", "deleted"} {
 				contents, err := dir.File(name).Contents(ctx)
@@ -301,14 +301,14 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 			out["entries"] = strings.Join(entries, ",")
 			return out
 		}
-		want := read(s.a.client, cleaned)
+		want := read(cleaned)
 		require.Equal(t, "second\n", want["tracked"], "the cleaned tree restores the tracked file")
 		require.Equal(t, "gone\n", want["deleted"], "and the deleted one")
 		require.NotContains(t, want["entries"], "untracked")
 
 		handle, rowID, repoHandle := transferWithRepo(ctx, t, s, dirty, cleaned)
 		failTreeChain(t, s, "cleaned", rowID)
-		got := read(s.b.client, dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(handle)))
+		got := read(dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(handle)))
 		require.Equal(t, want, got, "the re-evaluated cleaned tree equals the eager one")
 		ranOnce(t, s, "cleaned", rowID)
 
