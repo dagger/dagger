@@ -7792,6 +7792,14 @@ func TestCacheHitRechecksSessionResourcesAfterAttachBarrier(t *testing.T) {
 }
 
 func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
+	for _, exact := range []bool{false, true} {
+		t.Run(map[bool]string{false: "canonical", true: "exact"}[exact], func(t *testing.T) {
+			testCacheLoadResultByResultIDRechecksAfterAttachBarrier(t, exact)
+		})
+	}
+}
+
+func testCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T, exact bool) {
 	t.Parallel()
 
 	baseCtx := t.Context()
@@ -7851,7 +7859,13 @@ func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
 
 	bDone := make(chan callOutcome, 1)
 	go func() {
-		res, err := c.LoadResultByResultID(bCtx, "loadgrow-b", srv, uint64(parentID))
+		var res AnyResult
+		var err error
+		if exact {
+			res, _, err = c.LoadResultByResultIDExact(bCtx, "loadgrow-b", srv, uint64(parentID))
+		} else {
+			res, err = c.LoadResultByResultID(bCtx, "loadgrow-b", srv, uint64(parentID))
+		}
 		bDone <- callOutcome{res: res, err: err}
 	}()
 
@@ -7880,6 +7894,7 @@ func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
 	bOut := <-bDone
 	assert.Assert(t, bOut.err != nil,
 		"session B's load must be refused once the required set grew past its bound set")
+	assert.Assert(t, bOut.res == nil, "a refused load must not expose the result")
 	assert.ErrorContains(t, bOut.err, "has not bound the session resources this result requires")
 
 	assertCacheRequiredSessionResourcesExact(t, c)
