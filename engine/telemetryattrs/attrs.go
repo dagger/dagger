@@ -283,6 +283,25 @@ const (
 	// the projected state, and most commits do not change the state while
 	// every commit changes the snapshot. (string)
 	AgentSnapshotDigestAttr = "dagger.io/agent.snapshot.digest"
+
+	// AgentRewindFromDigestAttr and AgentRewindToDigestAttr mark a REWIND
+	// marker span: a conversation message span the engine emits beneath the
+	// loop span when Agent.reseed replaces the committed conversation with
+	// one of its own ancestors (inline prompt editing). From is the RECIPE
+	// digest of the conversation being abandoned, To the recipe digest of the
+	// one adopted — the LLM state just before the edited prompt.
+	//
+	// They are recipe digests rather than portable ones, unlike
+	// AgentSnapshotDigestAttr, because their consumer is the transcript, not
+	// resume: every message span carries the recipe digest of the LLM call
+	// it belongs to (LLMCallDigestAttr), so a client walks the call payloads
+	// from From back to To and marks every message on that stretch as no
+	// longer part of the conversation. Without this the trace renders a
+	// linear transcript while the model's history has forked. A reseed that
+	// is not a rewind (compaction, a workspace rebind, a model change) emits
+	// no marker: nothing the transcript shows was abandoned. (string)
+	AgentRewindFromDigestAttr = "dagger.io/agent.rewind.from"
+	AgentRewindToDigestAttr   = "dagger.io/agent.rewind.to"
 )
 
 // wcprof × OTel vocabulary.

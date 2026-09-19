@@ -2174,9 +2174,33 @@ func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM
 			rt.consumed = nil
 			rt.turnOpen = false
 		}
+		rt.publishRewindLocked(ctx, next)
 		rt.commitLast(ctx, next)
 	})
 	return nil
+}
+
+// publishRewindLocked emits a rewind marker beneath the loop span when the
+// conversation about to be committed is an ancestor of the one committed now
+// — the shape inline prompt editing produces. Must be called with rt.mu held,
+// BEFORE commitLast replaces rt.last: the marker records the conversation
+// being abandoned, which only rt.last knows.
+//
+// The marker is what lets a transcript renderer show which messages the
+// model no longer remembers (engine/telemetryattrs, AgentRewindFromDigestAttr).
+// Like every other publication here it is best-effort: a conversation whose
+// recipe cannot be rebuilt still reseeds, it just leaves no marker.
+func (rt *AgentRuntime) publishRewindLocked(ctx context.Context, next dagql.ObjectResult[*LLM]) {
+	if rt.spanCtx == nil {
+		// The loop never started, so no message span was ever emitted and
+		// there is nothing in a transcript to mark as abandoned.
+		return
+	}
+	from, to, ok := rewindDigests(ctx, rt.last, next)
+	if !ok {
+		return
+	}
+	emitAgentRewind(rt.spanCtx, from, to)
 }
 
 // Stop ends the agent's loop and waits for the tombstone. Graceful stop

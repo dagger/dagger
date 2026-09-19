@@ -1646,8 +1646,9 @@ func (h *focusedEditShellHandler) EditFromID(_ context.Context, encoded string) 
 
 // TestPromptEditTarget covers the frontend half of rewind/reword/resume: the
 // post-withPrompt digest is rewound through its receiver, same-boundary prompts
-// map oldest-to-newest, reply rows edit their originating prompt, and a nested
-// worker row cannot be routed into the focused chief.
+// map oldest-to-newest, only user prompt rows are edit targets (a reply row
+// must not rewind the turn it belongs to), and a nested worker row cannot be
+// routed into the focused chief.
 func TestPromptEditTarget(t *testing.T) {
 	db := dagui.NewDB()
 	base := &callpbv1.Call{
@@ -1705,9 +1706,10 @@ func TestPromptEditTarget(t *testing.T) {
 	require.Equal(t, "second wording", prompt)
 	require.NotEmpty(t, encoded)
 
-	prompt, _, ok = fe.promptEditTarget(db.Spans.Map[replyID])
-	require.True(t, ok)
-	require.Equal(t, "second wording", prompt, "reply edits its originating prompt")
+	_, _, ok = fe.promptEditTarget(db.Spans.Map[replyID])
+	require.False(t, ok, "a reply row must not rewind the turn it belongs to")
+	require.False(t, fe.editablePrompt(db.Spans.Map[replyID]), "e must not be offered on a reply row")
+	require.True(t, fe.editablePrompt(db.Spans.Map[secondID]))
 
 	_, _, ok = fe.promptEditTarget(db.Spans.Map[workerReplyID])
 	require.False(t, ok, "nested worker must not rewind the focused chief")
@@ -1725,8 +1727,8 @@ func TestPromptEditTarget(t *testing.T) {
 	live.setupTUI()
 	live.startShell(context.Background(), handler)
 	live.enterNavMode()
-	live.FocusedSpan = replyID
-	_, wantEncoded, ok := live.promptEditTarget(db.Spans.Map[replyID])
+	live.FocusedSpan = secondID
+	_, wantEncoded, ok := live.promptEditTarget(db.Spans.Map[secondID])
 	require.True(t, ok)
 
 	live.editPrompt()
@@ -2227,6 +2229,127 @@ func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
 
 func stripANSICodes(s string) string {
 	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, "")
+}
+
+// TestConversationTranscriptCollapsesRewoundMessages covers the live-shell
+// half of a rewind: after `e` rewinds past a turn, that turn's prompt, tool
+// call and reply collapse to dim struck one-liners (SGR 90;9) behind a
+// marker — the prompt loses its shaded card entirely — and a loud yellow
+// marker row says how many messages the model no longer has and that the
+// conversation resumes there. The kept and resumed turns keep their normal
+// styling, so the transcript reads as the fork it is rather than as one
+// linear conversation.
+func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
+	f := newRewindFixture()
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, f.db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	f.installLogs(fe, termenv.ANSI, 120)
+
+	fe.recalculateViewLocked()
+
+	frame := strings.Join(fe.tui.Frame(), "\n")
+	plain := stripANSICodes(frame)
+
+	// Each abandoned message is one struck, dimmed line behind the marker.
+	for _, want := range []string{"run the tests", "Bash go test ./...", "All tests pass."} {
+		if !strings.Contains(plain, SupersededMarker+" "+want) {
+			t.Errorf("abandoned message %q not collapsed behind %s:\n%s", want, SupersededMarker, plain)
+		}
+		if !containsStyledLine(frame, want, "\x1b[90;9m") {
+			t.Errorf("abandoned message %q is not struck and dimmed:\n%s", want, visibleEscapes(frame))
+		}
+	}
+	if !strings.Contains(plain, "All tests pass. (+2 lines)") {
+		t.Errorf("abandoned reply not elided behind a line count:\n%s", plain)
+	}
+	// The abandoned prompt is no longer a shaded card...
+	if containsStyledLine(frame, "run the tests", "\x1b[100m") {
+		t.Errorf("abandoned prompt still drawn as a shaded prompt block:\n%s", visibleEscapes(frame))
+	}
+	// ...and none of the abandoned turn's remaining content leaks.
+	for _, leak := range []string{"Nothing else to report", "github.com/example/pkg"} {
+		if strings.Contains(plain, leak) {
+			t.Errorf("abandoned content %q leaked into the transcript:\n%s", leak, plain)
+		}
+	}
+
+	// The marker is unmistakable: yellow (SGR 33), with the count.
+	marker := RewindMarker + " rewound: 3 messages above abandoned; the conversation resumes here"
+	if !strings.Contains(plain, marker) {
+		t.Fatalf("rewind marker missing:\n%s", plain)
+	}
+	if !containsStyledLine(frame, "rewound: 3 messages", "\x1b[33m") {
+		t.Errorf("rewind marker is not yellow:\n%s", visibleEscapes(frame))
+	}
+
+	// Kept and resumed prompts keep their shaded card; replies stay plain.
+	for _, want := range []string{"hello there", "run the linter instead"} {
+		if !containsStyledLine(frame, want, "\x1b[100m") {
+			t.Errorf("live prompt %q lost its shaded background:\n%s", want, visibleEscapes(frame))
+		}
+	}
+	for _, want := range []string{"hi, what can I do?", "Linting now."} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("live reply %q missing:\n%s", want, plain)
+		}
+		if containsStyledLine(frame, want, "\x1b[90;9m") {
+			t.Errorf("live reply %q rendered as abandoned:\n%s", want, visibleEscapes(frame))
+		}
+	}
+}
+
+// TestConversationTranscriptRewindRepaintsAbandonedRows is the live-session
+// regression: rows are memoized on their own span's state, and a rewind
+// changes nothing about the spans it abandons — the marker is a new span
+// and the tie to the old ones runs over call payloads. In a real session the
+// abandoned prompt therefore kept its cached prompt card while the reply,
+// still repainting, collapsed; the marker claimed two abandoned messages
+// and only one looked it. Render before the rewind, land it, and the
+// already-rendered prompt must collapse too.
+func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
+	f := newRewindFixtureBeforeRewind()
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, f.db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	f.installLogs(fe, termenv.ANSI, 120)
+
+	// Before the rewind the turn is live: a shaded prompt card.
+	fe.recalculateViewLocked()
+	frame := strings.Join(fe.tui.Frame(), "\n")
+	if !containsStyledLine(frame, "run the tests", "\x1b[100m") {
+		t.Fatalf("prompt not rendered as a live card before the rewind:\n%s", visibleEscapes(frame))
+	}
+	if strings.Contains(stripANSICodes(frame), SupersededMarker) {
+		t.Fatalf("nothing is abandoned before the rewind:\n%s", stripANSICodes(frame))
+	}
+
+	// The rewind lands as a later batch: the marker and the resumed turn.
+	f.importRewind()
+	fe.recalculateViewLocked()
+	frame = strings.Join(fe.tui.Frame(), "\n")
+	plain := stripANSICodes(frame)
+
+	for _, want := range []string{"run the tests", "Bash go test ./...", "All tests pass."} {
+		if !strings.Contains(plain, SupersededMarker+" "+want) {
+			t.Errorf("already-rendered message %q did not collapse after the rewind:\n%s", want, plain)
+		}
+	}
+	if containsStyledLine(frame, "run the tests", "\x1b[100m") {
+		t.Errorf("abandoned prompt kept its cached prompt card:\n%s", visibleEscapes(frame))
+	}
+	if !strings.Contains(plain, RewindMarker+" rewound: 3 messages above abandoned") {
+		t.Errorf("rewind marker missing:\n%s", plain)
+	}
+	if !containsStyledLine(frame, "run the linter instead", "\x1b[100m") {
+		t.Errorf("resumed prompt lost its shaded card:\n%s", visibleEscapes(frame))
+	}
 }
 
 func TestReproMarkdownWrapIndent(t *testing.T) {

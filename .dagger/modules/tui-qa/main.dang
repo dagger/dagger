@@ -129,11 +129,17 @@ type TuiQa {
   """
   Start a live dagger TUI session and expose it for QA.
 
-  Builds the `dagger` CLI from the workspace source, runs it inside a container
-  that has a from-source engine bound (so real commands execute), and serves its
-  live pretty TUI over HTTP via DAGGER_TUI_CONSOLE. After calling this, use
-  `screen` to read the rendered terminal and `key`/`type`/`resize`/`zoom` to
-  drive it. Call `stop` when done.
+  Builds the `dagger` CLI from the workspace source, runs it inside a client
+  container, and serves its live pretty TUI over HTTP via DAGGER_TUI_CONSOLE.
+  After calling this, use `screen` to read the rendered terminal and
+  `key`/`type`/`resize`/`zoom` to drive it. Call `stop` when done.
+
+  ONLY THE CLI IS FROM SOURCE BY DEFAULT. Without `engineAddress` the client
+  talks to this session's own engine via nesting — the stock engine the session
+  runs on, not one built from the workspace. Changes under core/, engine/ or
+  anything else engine-side are invisible in that mode. To QA an engine change,
+  run the engine-lab start tool first and pass its tcp://<host>:1234 endpoint
+  as `engineAddress`, so the TUI drives an engine built from the workspace.
 
   args is the dagger subcommand to run, already tokenized, WITHOUT the leading
   "dagger" — e.g. ["call", "test"] or ["check"].
@@ -154,12 +160,14 @@ type TuiQa {
     """
     port: Int! = defaultPort,
     """
-    Address of an already-running engine to attach to instead of building and
-    binding a fresh one — e.g. the tcp://<host>:1234 endpoint the engine-lab
-    start tool prints. The TUI session then runs against THAT engine, so its
-    debug endpoints and logs observe exactly what the TUI is driving. Note:
-    the attached runner has no LLM auth inherited via nesting, so prefer the
-    default for `args: ["agent"]` sessions.
+    Address of an already-running engine to attach to instead of the session's
+    own — e.g. the tcp://<host>:1234 endpoint the engine-lab start tool
+    prints. The TUI session then runs against THAT engine, so engine-side
+    changes built from the workspace take effect, and its debug endpoints and
+    logs observe exactly what the TUI is driving. Required for QA'ing engine
+    changes. Nesting is off in this mode, so LLM auth is whatever that engine
+    itself is configured with; if an `agent` session cannot authenticate, fall
+    back to the default (outer engine, inherited auth) for CLI-only checks.
     """
     engineAddress: String! = "",
     """
