@@ -281,3 +281,41 @@ build-backend = "uv_build"
 	requireErrOut(t, err, "lockfile")
 	requireErrOut(t, err, "needs to be updated")
 }
+
+// TestPreSplitCommittedBindingsRun covers the upgrade path for modules that
+// were generated before the bindings were split into internal/dagger/core:
+// their committed internal/dagger/dagger.gen.go is a self-contained monolith
+// with no core subpackage, and since a dagger-module.toml module builds from
+// committed files rather than regenerating, that layout has to keep working
+// as-is.
+//
+// Concretely, this is why requireGeneratedFiles must not grow a check for
+// internal/dagger/core/core.gen.go: adding it looks like an obvious
+// completeness fix, and would reject every module generated before the split.
+func (RuntimeCodegenSuite) TestPreSplitCommittedBindingsRun(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// This fixture's generated files were committed by an older engine, so
+	// they are in the pre-split layout.
+	base := goGitBase(t, c).
+		With(withTestdataFixture(t, c, ".", "test-blueprint", "hello"))
+
+	// Guard against the fixture being regenerated into the split layout,
+	// which would silently make this test vacuous.
+	entries, err := base.Directory("internal/dagger").Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "dagger.gen.go")
+	require.NotContains(t, entries, "core/")
+
+	out, err := base.
+		WithoutFile("dagger.json").
+		With(configFile(".", &modules.ModuleConfig{
+			Name:          "hello",
+			EngineVersion: modules.EngineVersionLatest,
+			SDK:           &modules.SDK{Source: "go"},
+		})).
+		With(daggerCall("message")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello from blueprint")
+}
