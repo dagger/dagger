@@ -611,6 +611,17 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 			return err
 		}
 		slog.Debug("containerd garbage collect after dagql prune", "stats", stats)
+		// The collection above deletes snapshots without telling the snapshot
+		// manager, whose records and metadata are in-memory only. Reconcile
+		// them here, while the deletions have just happened and are visible.
+		// Best-effort: the prune itself has already succeeded, and the next
+		// cycle sweeps whatever this one could not.
+		pruned, err := srv.workerCache.PruneStaleRecords(ctx)
+		if err != nil {
+			slog.Warn("failed to prune stale snapshot records", "error", err, "records", pruned)
+		} else if pruned > 0 {
+			slog.Debug("pruned stale snapshot records after containerd garbage collect", "records", pruned)
+		}
 		return nil
 	}
 	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC)
