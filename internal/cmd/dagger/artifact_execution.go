@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"dagger.io/dagger"
@@ -60,7 +61,7 @@ func artifactWorkspaceConfig(ctx context.Context, ws *dagger.Workspace) (*worksp
 }
 
 // commandArtifacts keeps each address's filters scoped to its own path.
-func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, addresses []string, strict bool) (*dagger.Artifacts, error) {
+func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, addresses []string, strict bool, keys ...dagaddress.Pair) (*dagger.Artifacts, error) {
 	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
 		return nil, err
@@ -79,32 +80,37 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 			return nil, fmt.Errorf("workspace modules could not be loaded: %s", strings.Join(messages, "\n"))
 		}
 	}
-	filtered := false
+	filtered := len(keys) > 0
 	for _, address := range parsed {
 		filtered = filtered || len(address.Types) > 0 || len(address.Query) > 0
 	}
 	if !filtered {
 		return all, nil
 	}
-	var paths []string
+	var selected *dagger.Artifacts
 	for _, address := range parsed {
 		selection := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{address})})
-		filter := *address
-		filter.Path = ""
-		filter.Absolute = false
-		uris, err := artifactURIs(ctx, dag, selection.FilterURI(filter.String()), false)
-		if err != nil {
-			return nil, err
-		}
-		for _, uri := range uris {
-			parsed, err := dagaddress.Parse(uri)
+		if len(address.Query) > 0 {
+			defs, err := artifactDimensions(ctx, dag, selection)
 			if err != nil {
 				return nil, err
 			}
-			paths = append(paths, parsed.Path)
+			if err := bindArtifactDimensions(address.Query, defs); err != nil {
+				return nil, err
+			}
+		}
+		filter := *address
+		filter.Path = ""
+		filter.Absolute = false
+		filter.Query = append(slices.Clone(address.Query), keys...)
+		selection = selection.FilterURI(filter.String())
+		if selected == nil {
+			selected = selection
+		} else {
+			selected = selected.WithArtifacts(selection)
 		}
 	}
-	return all.FilterURI("dag://{" + strings.Join(paths, ",") + "}"), nil
+	return selected, nil
 }
 
 type artifactLoadFailure struct{ URI, LoadError string }

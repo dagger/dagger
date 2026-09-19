@@ -188,6 +188,17 @@ Go module generation may run twice. The first pass can create `go.mod`, initial
 `dagger.gen.go`, and starter `main.go`. After the package can be loaded, the
 second pass renders full bindings and static `invoke` dispatch.
 
+For the built-in Go SDK, `codegen prepare-go-runtime` adds a private base field
+to each collection struct and its generated JSON methods before the runtime build. This pass
+runs only in the runtime container. It does not change exported author source
+or schema. A real struct field preserves the base through value receivers and
+struct copies. The pass also extends positional collection literals with the
+field's zero value, so newly constructed collections start without a base.
+
+This pass covers the in-repo runtime. The external 1.0 SDKs have their own
+codegen. Each needs collection metadata support and hidden base state transport.
+Updates to the in-repo codegen do not update those SDKs.
+
 Go codegen splits output by dependency:
 
 - Most files render against the core schema with dependency types excluded.

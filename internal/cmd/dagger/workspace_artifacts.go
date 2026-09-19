@@ -2,12 +2,14 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"dagger.io/dagger"
 	"github.com/iancoleman/strcase"
 	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
@@ -32,20 +34,34 @@ func workspaceArtifactCommands(types []string) map[string]string {
 	return commands
 }
 
-func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []string) error {
-	helping := false
+func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, rawArgs []string) error {
+	discover := false
 	if len(args) > 0 {
 		switch args[0] {
 		case "help", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
-			helping = true
+			discover = true
 			args = args[1:]
 		}
 	}
 	cmd, commandArgs := resolveCommand(root, args)
-	if cmd != workspaceCmd && cmd != artifactsCmd && cmd.Parent() != artifactsCmd {
+	if cmd != workspaceCmd && cmd != artifactsCmd && cmd.Parent() != artifactsCmd && cmd != checksCmd {
 		return nil
 	}
 	if cmd != workspaceCmd {
+		if !discover {
+			_, rawCommandArgs := resolveCommand(root, rawArgs)
+			var err error
+			discover, err = prepareArtifactDimensionFlags(cmd, rawCommandArgs)
+			if err != nil {
+				return err
+			}
+		}
+		if !discover {
+			if cmd == checksCmd {
+				return nil
+			}
+			return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
+		}
 		// parseGlobalFlags already removed flags and their values.
 		paths := commandArgs
 		if cmd.Name() == "keys" && len(paths) > 0 {
@@ -60,14 +76,21 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 			return err
 		}
 		if err := withEngineSilent(ctx, params, func(ctx context.Context, ec *client.Client) error {
-			dimensions, err := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}).Dimensions(ctx)
+			definitions, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}))
 			if err != nil {
 				return err
 			}
-			registerArtifactDimensionFlags(artifactsCmd, dimensions)
+			var names []string
+			for _, def := range definitions {
+				names = append(names, def.Name, def.QualifiedName, def.Identifier)
+			}
+			registerArtifactDimensionFlags(cmd, names)
 			return nil
 		}); err != nil {
 			return err
+		}
+		if cmd == checksCmd {
+			return nil
 		}
 		return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
 	}
@@ -93,11 +116,40 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 	})
 	// Type shortcuts are optional for group help and completion. Keep errors
 	// for actual shortcut invocations, where discovery is required to execute.
-	if err != nil && (helping || len(commandArgs) == 0) {
+	if err != nil && (discover || len(commandArgs) == 0) {
 		slog.Debug("skip workspace artifact commands", "error", err)
 		return nil
 	}
 	return err
+}
+
+// Register supplied dimension flags without loading the workspace. runArtifacts
+// validates them against the schema inside the command's visible engine session.
+// Only help and completion need the full flag list before the command runs.
+func prepareArtifactDimensionFlags(cmd *cobra.Command, args []string) (bool, error) {
+	cmd.InitDefaultHelpFlag()
+	flags := copyCommandFlags(cmd, "artifact dimensions")
+	flags.ParseErrorsAllowlist.UnknownFlags = false
+	var names []string
+	for {
+		var help bool
+		err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+			if flag.Name == "help" && value == "true" {
+				help = true
+			}
+			return nil
+		})
+		var unknown *pflag.NotExistError
+		if !errors.As(err, &unknown) || unknown.GetSpecifiedShortnames() != "" {
+			if !help {
+				registerArtifactDimensionFlags(cmd, names)
+			}
+			return help, err
+		}
+		name := unknown.GetSpecifiedName()
+		names = append(names, name)
+		flags.StringArray(name, nil, "")
+	}
 }
 
 func runWorkspaceArtifacts(cmd *cobra.Command, typeName string) error {

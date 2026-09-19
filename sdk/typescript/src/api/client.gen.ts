@@ -4080,25 +4080,6 @@ export function WorkspaceCommitPickStatusNameToValue(
       return name as WorkspaceCommitPickStatus
   }
 }
-export type __DirectiveArgsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __FieldArgsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeEnumValuesOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeFieldsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeInputFieldsOpts = {
-  includeDeprecated?: boolean
-}
 
 /**
  * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
@@ -4781,6 +4762,91 @@ export class Artifact extends BaseClient {
   }
 }
 
+export class ArtifactDimension extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _identifier?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _qualifiedName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _identifier?: string,
+    _name?: string,
+    _qualifiedName?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._identifier = _identifier
+    this._name = _name
+    this._qualifiedName = _qualifiedName
+  }
+
+  /**
+   * A unique identifier for this ArtifactDimension.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Exact GraphQL ParentType.field identifier.
+   */
+  identifier = async (): Promise<string> => {
+    if (this._identifier) {
+      return this._identifier
+    }
+
+    const ctx = this._ctx.select("identifier")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Short name derived from the author item type.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Author parent type and field name, in CLI case.
+   */
+  qualifiedName = async (): Promise<string> => {
+    if (this._qualifiedName) {
+      return this._qualifiedName
+    }
+
+    const ctx = this._ctx.select("qualifiedName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
 export class ArtifactDimensionKey extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _dimension?: string = undefined
@@ -4937,6 +5003,24 @@ export class Artifacts extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+   */
+  dimensionDefinitions = async (): Promise<ArtifactDimension[]> => {
+    type dimensionDefinitions = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("dimensionDefinitions").select("id")
+
+    const response: Awaited<dimensionDefinitions[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new ArtifactDimension(ctx.copy().selectNode(r.id, "ArtifactDimension")),
+    )
   }
 
   /**
@@ -5610,6 +5694,114 @@ export class Cloud extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+}
+
+export class CollectionDelta extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this CollectionDelta.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Current keys absent from the original collection, in current order.
+   */
+  addedKeys = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("addedKeys")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Original keys absent from the current collection, in original order.
+   */
+  removedKeys = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("removedKeys")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
+export class CollectionTypeDef extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this CollectionTypeDef.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The type of batch operations, or null when there are none.
+   */
+  batchType = async (): Promise<TypeDef | null> => {
+    const ctx = this._ctx.select("batchType").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new TypeDef(ctx.copy().selectNode(response, "TypeDef"))
+  }
+
+  /**
+   * The type of collection keys.
+   */
+  keyType = (): TypeDef => {
+    const ctx = this._ctx.select("keyType")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * The object type returned by get.
+   */
+  valueType = (): TypeDef => {
+    const ctx = this._ctx.select("valueType")
+    return new TypeDef(ctx)
   }
 }
 
@@ -16012,6 +16204,22 @@ export class TypeDef extends BaseClient {
   }
 
   /**
+   * Collection metadata, or null if this object is not a collection.
+   */
+  asCollection = async (): Promise<CollectionTypeDef | null> => {
+    const ctx = this._ctx.select("asCollection").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new CollectionTypeDef(
+      ctx.copy().selectNode(response, "CollectionTypeDef"),
+    )
+  }
+
+  /**
    * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
    */
   asEnum = async (): Promise<EnumTypeDef | null> => {
@@ -16140,6 +16348,38 @@ export class TypeDef extends BaseClient {
     const response: Awaited<boolean> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Mark this object as a collection.
+   */
+  withCollection = (): TypeDef => {
+    const ctx = this._ctx.select("withCollection")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Select the field that receives changes from the original collection.
+   */
+  withCollectionDelta = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionDelta", { name })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Select the item lookup function for this collection.
+   */
+  withCollectionGet = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionGet", { name })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Select the stored keys field for this collection.
+   */
+  withCollectionKeys = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionKeys", { name })
+    return new TypeDef(ctx)
   }
 
   /**

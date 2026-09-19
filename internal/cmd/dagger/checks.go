@@ -27,6 +27,7 @@ var (
 
 func init() {
 	registerArtifactListFlags(checksCmd)
+	checksCmd.Flags().StringArray("dimension-key", nil, "Keep a dimension key: DIMENSION=KEY (repeat for alternatives)")
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
 	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
@@ -42,6 +43,10 @@ var checksCmd = &cobra.Command{
 	Short: "Verify your project — tests, linters, type checks, security scans, etc.",
 	Long: `Verify your project — tests, linters, type checks, security scans, etc.
 
+Use dimension flags, such as --go-module, to select collection items.
+Repeat a flag to select multiple keys. Use --dimension-key DIMENSION=KEY
+if a dimension name conflicts with another flag.
+
 Examples:
   dagger check                                      # Run all checks
   dagger check -l                                   # List all available checks
@@ -54,11 +59,15 @@ Examples:
 }
 
 func runChecksCommand(cmd *cobra.Command, args []string) error {
+	keys, err := artifactKeyFlags(cmd)
+	if err != nil {
+		return err
+	}
 	params := client.Params{
 		EnableCloudScaleOut:  checksScaleOut,
 		SkipWorkspaceModules: true,
 	}
-	params, err := artifactClientParams(params, args)
+	params, err = artifactClientParams(params, args)
 	if err != nil {
 		return err
 	}
@@ -68,7 +77,23 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			ws := dag.CurrentWorkspace()
-			artifacts, err := commandArtifacts(ctx, dag, ws, args, false)
+			if len(keys) > 0 {
+				addresses, err := parseArtifactAddresses(args)
+				if err != nil {
+					return err
+				}
+				defs, err := artifactDimensions(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}))
+				if err != nil {
+					return err
+				}
+				if err := validateArtifactDimensionFlags(cmd, defs); err != nil {
+					return err
+				}
+				if err := bindArtifactDimensions(keys, defs); err != nil {
+					return err
+				}
+			}
+			artifacts, err := commandArtifacts(ctx, dag, ws, args, false, keys...)
 			if err != nil {
 				return err
 			}

@@ -120,7 +120,11 @@ export function serializeIntrospection(
   const types: IntrospectionType[] = []
 
   for (const object of Object.values(module.objects)) {
-    types.push(introspectObject(object, moduleName, localTypeNames))
+    if (object.isCollection) {
+      types.push(...introspectCollection(object, moduleName, localTypeNames))
+    } else {
+      types.push(introspectObject(object, moduleName, localTypeNames))
+    }
   }
   for (const iface of Object.values(module.interfaces)) {
     types.push(introspectInterface(iface, moduleName, localTypeNames))
@@ -198,6 +202,94 @@ function introspectObject(
     interfaces: [],
     fields,
   }
+}
+
+function introspectCollection(
+  object: DaggerObjectBase,
+  moduleName: string,
+  local: Set<string>,
+): IntrospectionType[] {
+  const properties = Object.values(object.properties)
+  const methods = Object.values(object.methods)
+  const keys =
+    properties.find((p) => p.isCollectionKeys) ??
+    properties.find(
+      (p) => p.isExposed && toLowerCamel(p.alias ?? p.name) === "keys",
+    )
+  const get =
+    methods.find((m) => m.isCollectionGet) ??
+    methods.find((m) => toLowerCamel(m.alias ?? m.name) === "get")
+  if (!keys || !get) {
+    throw new Error(
+      `collection "${object.name}" requires a stored keys field and a get method`,
+    )
+  }
+  const lookup = introspectMethod(get, moduleName, local)
+  if (lookup.args.length !== 1) {
+    throw new Error(
+      `collection "${object.name}" get method requires one argument`,
+    )
+  }
+  lookup.name = "get"
+  lookup.args[0].name = "key"
+  const name = introspectTypeName(object.name, moduleName)
+  const keyList = introspectProperty(keys, moduleName, local)
+  keyList.name = "keys"
+  const objectRef = (name: string): TypeRef => ({
+    kind: TypeKind.NonNull,
+    ofType: { kind: TypeKind.Object, name },
+  })
+  const collection: IntrospectionType = {
+    kind: TypeKind.Object,
+    name,
+    description: trim(object.description),
+    interfaces: [],
+    fields: [
+      keyList,
+      {
+        name: "list",
+        description: "",
+        args: [],
+        type: {
+          kind: TypeKind.NonNull,
+          ofType: { kind: TypeKind.List, ofType: lookup.type },
+        },
+      },
+      lookup,
+      {
+        name: "subset",
+        description: "",
+        type: objectRef(name),
+        args: [{ name: "keys", description: "", type: keyList.type }],
+      },
+      nodeIDField(name),
+    ],
+  }
+  const batchMethods = methods.filter((method) => method !== get)
+  if (batchMethods.length === 0) {
+    return [collection]
+  }
+  const batchName = name + "_Batch"
+  collection.fields!.push({
+    name: "batch",
+    description: "",
+    args: [],
+    type: objectRef(batchName),
+  })
+  return [
+    collection,
+    {
+      kind: TypeKind.Object,
+      name: batchName,
+      interfaces: [],
+      fields: [
+        ...batchMethods.map((method) =>
+          introspectMethod(method, moduleName, local),
+        ),
+        nodeIDField(batchName),
+      ],
+    },
+  ]
 }
 
 function introspectInterface(

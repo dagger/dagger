@@ -328,6 +328,10 @@ func (sdk *goSDK) Runtime(
 	runtimeSelectors := []dagql.Selector{
 		{
 			Field: "withExec",
+			Args:  []dagql.NamedInput{{Name: "args", Value: dagql.ArrayInput[dagql.String]{"codegen", "prepare-go-runtime"}}},
+		},
+		{
+			Field: "withExec",
 			Args: []dagql.NamedInput{
 				{
 					Name: "args",

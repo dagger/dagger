@@ -866,7 +866,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}()
 
-	parentJSON, err := json.Marshal(opts.ParentFields)
+	parentFields := opts.ParentFields
+	if receiver, ok := dagql.UnwrapAs[*ModuleObject](opts.ParentTyped); ok {
+		parentFields, err = receiver.collectionSDKFields(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	parentJSON, err := json.Marshal(parentFields)
 	if err != nil {
 		return nil, fmt.Errorf("marshal parent value: %w", err)
 	}
