@@ -83,6 +83,53 @@ func NewModFunction(
 	}, nil
 }
 
+// forFieldCall binds an installed function to the calling session without
+// changing the shared schema closure. Direct/internal function calls deliberately
+// do not use this path: their CurrentCall may belong to another module.
+func (fn *ModuleFunction) forFieldCall(ctx context.Context, frame *dagql.ResultCall) (*ModuleFunction, error) {
+	mod, err := moduleForFieldCall(ctx, frame)
+	if err != nil {
+		return nil, err
+	}
+	if sameAttachedResult(mod, fn.mod) {
+		return fn, nil
+	}
+	objDef := moduleObjectDef(mod, fn.objDef)
+	metadata := fn.metadata
+	if objDef != nil {
+		if metadata.OriginalName == "" && objDef.Constructor.Valid {
+			metadata = objDef.Constructor.Value.Self()
+		} else if current, ok := objDef.FunctionByName(metadata.Name); ok {
+			metadata = current
+		}
+	}
+	bound, err := NewModFunction(ctx, mod, objDef, metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := bound.mergeUserDefaultsTypeDefs(ctx); err != nil {
+		return nil, err
+	}
+	return bound, nil
+}
+
+func (fn *ModuleFunction) callForField(ctx context.Context, opts *CallOpts) (dagql.AnyResult, error) {
+	bound, err := fn.forFieldCall(ctx, dagql.CurrentCall(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("bind function %q: %w", fn.metadata.Name, err)
+	}
+	return bound.Call(ctx, opts)
+}
+
+func (fn *ModuleFunction) dynamicInputsForFieldCall(ctx context.Context, parent dagql.AnyResult, args map[string]dagql.Input, view call.View, req *dagql.CallRequest) error {
+	// preselect has not installed this request as CurrentCall yet.
+	bound, err := fn.forFieldCall(ctx, req.ResultCall)
+	if err != nil {
+		return fmt.Errorf("bind function %q inputs: %w", fn.metadata.Name, err)
+	}
+	return bound.DynamicInputsForCall(ctx, parent, args, view, req)
+}
+
 type CallOpts struct {
 	Inputs         []CallInput
 	ParentTyped    dagql.AnyResult

@@ -1137,9 +1137,13 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		dag.Root().ObjectType().Extend(
 			spec,
 			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
+				mod, err := moduleForFieldCall(ctx, dagql.CurrentCall(ctx))
+				if err != nil {
+					return nil, err
+				}
 				return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
-					Module:  obj.Module,
-					TypeDef: objDef,
+					Module:  mod,
+					TypeDef: moduleObjectDef(mod, objDef),
 					Fields:  map[string]any{},
 				})
 			},
@@ -1178,7 +1182,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		spec.Description = formatGqlDescription(mod.Description)
 	}
 	spec.Module = moduleID
-	spec.GetDynamicInput = fn.DynamicInputsForCall
+	spec.GetDynamicInput = fn.dynamicInputsForFieldCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, fn.cacheImplicitInputs()...)
 
 	dag.Root().ObjectType().Extend(
@@ -1191,7 +1195,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Value: v,
 				})
 			}
-			return fn.Call(ctx, &CallOpts{
+			return fn.callForField(ctx, &CallOpts{
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
@@ -1403,7 +1407,7 @@ func orderedNamedInputs(specs []dagql.InputSpec, args map[string]dagql.Input) []
 
 func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*ModuleObject], err error) {
 	for _, field := range obj.TypeDef.Fields {
-		objField, err := objField(ctx, obj.Module, field.Self())
+		objField, err := objField(ctx, obj.Module, obj.TypeDef, field.Self())
 		if err != nil {
 			return nil, err
 		}
@@ -1424,7 +1428,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	return
 }
 
-func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
+func objField(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *ObjectTypeDef, field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
 	moduleID, err := NewUserMod(mod).ResultCallModule(ctx)
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve module identity for field %q: %w", field.Name, err)
@@ -1446,7 +1450,15 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *Field
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			modType, ok, err := NewUserMod(mod).ModTypeFor(ctx, field.TypeDef.Self(), true)
+			liveMod, err := moduleForFieldCall(ctx, dagql.CurrentCall(ctx))
+			if err != nil {
+				return nil, err
+			}
+			liveField := field
+			if current, ok := moduleObjectDef(liveMod, objDef).FieldByOriginalName(field.OriginalName); ok {
+				liveField = current
+			}
+			modType, ok, err := NewUserMod(liveMod).ModTypeFor(ctx, liveField.TypeDef.Self(), true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
 			}
@@ -1507,7 +1519,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 		return f, fmt.Errorf("failed to resolve module identity for function %q: %w", fun.Name, err)
 	}
 	spec.Module = moduleID
-	spec.GetDynamicInput = modFun.DynamicInputsForCall
+	spec.GetDynamicInput = modFun.dynamicInputsForFieldCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
 
 	return dagql.Field[*ModuleObject]{
@@ -1529,7 +1541,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 			sort.Slice(opts.Inputs, func(i, j int) bool {
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
-			return modFun.Call(ctx, opts)
+			return modFun.callForField(ctx, opts)
 		},
 	}, nil
 }

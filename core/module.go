@@ -348,6 +348,63 @@ func ImplementationScopedModule(
 	return scoped, nil
 }
 
+// moduleForFieldCall returns the session-owned module behind an installed
+// field. Schema closures may outlive their original module result; the call's
+// provenance has already been resolved by dagql before dispatch. Load the
+// original parent of the implementation-scoped result, not another copy of its
+// recipe, so execution keeps the live source, defaults, and runtime references.
+func moduleForFieldCall(ctx context.Context, frame *dagql.ResultCall) (dagql.ObjectResult[*Module], error) {
+	var zero dagql.ObjectResult[*Module]
+	if frame == nil || frame.Module == nil || frame.Module.ResultRef == nil || frame.Module.ResultRef.ResultID == 0 {
+		return zero, fmt.Errorf("module field call: missing resolved module provenance")
+	}
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return zero, err
+	}
+	load := func(resultID uint64) (dagql.ObjectResult[*Module], error) {
+		res, err := dag.Load(ctx, call.NewEngineResultID(resultID, call.NewType((&Module{}).Type())))
+		if err != nil {
+			return zero, err
+		}
+		mod, ok := res.(dagql.ObjectResult[*Module])
+		if !ok {
+			return zero, fmt.Errorf("module field call: expected Module, got %T", res)
+		}
+		return mod, nil
+	}
+	mod, err := load(frame.Module.ResultRef.ResultID)
+	if err != nil {
+		return zero, err
+	}
+	modCall, err := mod.ResultCall()
+	if err != nil {
+		return zero, err
+	}
+	if modCall.Field == "_implementationScoped" && modCall.Receiver != nil && modCall.Receiver.ResultID != 0 {
+		return load(modCall.Receiver.ResultID)
+	}
+	return mod, nil
+}
+
+// moduleObjectDef refreshes a schema's immutable type description from the
+// live module when it is a declared object. Generated schema-only objects may
+// not appear in ObjectDefs and retain their installed description.
+func moduleObjectDef(mod dagql.ObjectResult[*Module], installed *ObjectTypeDef) *ObjectTypeDef {
+	if installed == nil {
+		return nil
+	}
+	for _, def := range mod.Self().ObjectDefs {
+		if def.Self().AsObject.Valid {
+			obj := def.Self().AsObject.Value.Self()
+			if obj.OriginalName == installed.OriginalName {
+				return obj
+			}
+		}
+	}
+	return installed
+}
+
 func (mod *Module) RuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Container]] {
 	if mod.Runtime.Valid {
 		return mod.Runtime
