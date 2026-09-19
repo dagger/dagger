@@ -89,10 +89,10 @@ type PreparedReadyPart struct {
 // receiver must carry its prepared store instead. A preparation that breaks
 // this is a construction defect and is reported as one: answering it with a
 // reselect would send its caller round an unbounded retry.
-func (p *PreparedReadyPart) seal(row *sharedResult, base *readyPartPreparationBase) (*PreparedReadyPart, error) {
+func (p *PreparedReadyPart) seal(row *sharedResult, base *readyPartPreparationBase) error {
 	observed := p.version.payload
 	if observed.hasValue != (p.store != nil) {
-		return nil, fmt.Errorf("prepare part: typed receiver %t but prepared store %t", observed.hasValue, p.store != nil)
+		return fmt.Errorf("prepare part: typed receiver %t but prepared store %t", observed.hasValue, p.store != nil)
 	}
 	p.expectedRepresentation = readyPartRepresentation{
 		receiver:        row,
@@ -109,7 +109,7 @@ func (p *PreparedReadyPart) seal(row *sharedResult, base *readyPartPreparationBa
 		p.published = &env
 	}
 	p.sealed = true
-	return p, nil
+	return nil
 }
 
 // readyPartRepresentation is the receiver stamp a Commit must find: the
@@ -193,6 +193,25 @@ func (p *PreparedReadyPart) release(ctx context.Context, published bool) error {
 	return err
 }
 
+// holdSourceDependencies takes incoming ownership of every exact reference
+// the source depends on and prepares them for the receiver, under the graph
+// lock; a reference no longer in the graph refuses the preparation.
+func (p *PreparedReadyPart) holdSourceDependencies(ctx context.Context, row *sharedResult) error {
+	c := p.cache
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	for _, id := range c.partSourceDependenciesLocked(p.source) {
+		dep := c.resultsByID[sharedResultID(id)]
+		if dep == nil {
+			return fmt.Errorf("prepare part: missing exact reference %d", id)
+		}
+		c.incrementIncomingOwnershipLocked(ctx, dep)
+		p.deps = append(p.deps, dep)
+	}
+	_, err := c.preparePartDependenciesLocked(row, p.deps)
+	return err
+}
+
 // PrepareReadyPart is the public single-demand preparation: the nil-base
 // wrapper over prepareReadyPartFromBase, which records an empty predecessor
 // list and the ordinary observed-representation guard.
@@ -258,21 +277,7 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 		return nil, fmt.Errorf("prepare part: incompatible output family")
 	}
 
-	c.egraphMu.Lock()
-	for _, id := range c.partSourceDependenciesLocked(source) {
-		dep := c.resultsByID[sharedResultID(id)]
-		if dep == nil {
-			err = fmt.Errorf("prepare part: missing exact reference %d", id)
-			break
-		}
-		c.incrementIncomingOwnershipLocked(ctx, dep)
-		p.deps = append(p.deps, dep)
-	}
-	if err == nil {
-		_, err = c.preparePartDependenciesLocked(row, p.deps)
-	}
-	c.egraphMu.Unlock()
-	if err != nil {
+	if err := p.holdSourceDependencies(ctx, row); err != nil {
 		return nil, err
 	}
 	if err := p.pinReadySource(ctx, version.payload.hasValue); err != nil {
@@ -290,7 +295,7 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 	if err := version.check(row); err != nil {
 		return nil, err
 	}
-	if _, err := p.seal(row, base); err != nil {
+	if err := p.seal(row, base); err != nil {
 		return nil, err
 	}
 	if err := c.reachPrepared(ctx, p); err != nil {

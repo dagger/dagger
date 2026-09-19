@@ -146,6 +146,8 @@ func fixtureControls(q *core.Query) (core.RemoteCacheFixtureControls, error) {
 
 // runFixtureControl handles every operation batch 7 added. ids are the
 // already-decoded handles of the field's ids argument.
+//
+//nolint:gocyclo // one case per fixture control; splitting the dispatcher would hurt clarity
 func runFixtureControl(ctx context.Context, q *core.Query, cache *dagql.Cache, sessionID, path string, args remoteCacheFixtureArgs, ids []*call.ID) (any, error) {
 	switch args.Operation {
 	case "exportSelected":
