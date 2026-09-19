@@ -2,7 +2,7 @@
 A module for running the `go` CLI.
 """
 type GoCli {
-  sandbox: Container!
+  let sandbox: Container!
 
   new(
     base: Container! = container.from("golang:1.26"),
