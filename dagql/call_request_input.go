@@ -76,6 +76,17 @@ func resultCallRefFromResult(ctx context.Context, res AnyResult) (*ResultCallRef
 // through the digest helpers (e.g. recipeDigestWithVisiting).
 type recipeCallMemo map[digest.Digest]*ResultCall
 
+// resultCallRefFromRecipeID builds self-contained provenance for metadata that
+// can outlive a cache session, such as installed field specifications. Unlike a
+// result-backed ref, this carries no cache-local result IDs. Resolve it to an
+// attached result before using it as a live call's module dependency.
+func resultCallRefFromRecipeID(ctx context.Context, id *call.ID) (*ResultCallRef, error) {
+	if id == nil || id.IsHandle() || id.Type() == nil {
+		return nil, fmt.Errorf("result call ref requires a typed recipe-form ID")
+	}
+	return resultCallRefFromIDInput(ctx, id, recipeCallMemo{})
+}
+
 func resultCallRefFromIDInput(ctx context.Context, id *call.ID, memo recipeCallMemo) (*ResultCallRef, error) {
 	if id == nil {
 		return nil, fmt.Errorf("nil ID input")

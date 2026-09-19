@@ -4,12 +4,194 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSchemaRecipeLookupCanceled(t *testing.T) {
+	cache, err := NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, hit, err := cache.lookupCacheForSchemaRecipe(ctx, "test-session", noopTypeResolver{}, digest.FromString("canceled-schema"))
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, hit)
+}
+
+func TestSchemaRecipeHitPreservesRequestPolicy(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+	frame := cacheTestIntCall("schema-policy")
+	res, err := cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: frame}, ValueFunc(cacheTestIntResult(frame, 1)))
+	require.NoError(t, err)
+	require.Zero(t, cache.EntryStats().RetainedCalls)
+	t.Cleanup(func() { _ = cache.ReleaseSession(context.Background(), "test-session") })
+
+	evidence := &CacheDecision{}
+	before := time.Now().Unix()
+	hit, err := cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall: frame, recipeOnly: true, TTL: 60, IsPersistable: true, CacheEvidence: evidence,
+	}, ValueFunc(cacheTestIntResult(frame, 2)))
+	require.NoError(t, err)
+	require.True(t, hit.HitCache())
+	require.Equal(t, res.cacheSharedResult().id, hit.cacheSharedResult().id)
+	require.Equal(t, CacheHitRouteRecipe, evidence.HitRoute)
+	require.Equal(t, CacheOutcomeHit, evidence.Outcome)
+	cache.egraphMu.RLock()
+	expiry := hit.cacheSharedResult().expiresAtUnix
+	edge, persisted := cache.persistedEdgesByResult[hit.cacheSharedResult().id]
+	cache.egraphMu.RUnlock()
+	require.True(t, persisted)
+	require.GreaterOrEqual(t, expiry, before+60)
+	require.LessOrEqual(t, expiry, time.Now().Unix()+60)
+	require.Equal(t, expiry, edge.expiresAtUnix)
+
+	// A later, longer policy must not extend the conservative expiry.
+	_, err = cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall: frame, recipeOnly: true, TTL: 120, IsPersistable: true,
+	}, nil)
+	require.NoError(t, err)
+	cache.egraphMu.RLock()
+	laterExpiry := hit.cacheSharedResult().expiresAtUnix
+	laterEdge := cache.persistedEdgesByResult[hit.cacheSharedResult().id]
+	cache.egraphMu.RUnlock()
+	require.Equal(t, expiry, laterExpiry)
+	require.Equal(t, expiry, laterEdge.expiresAtUnix)
+	require.NoError(t, cache.ReleaseSession(ctx, "test-session"))
+	require.Equal(t, 1, cache.EntryStats().RetainedCalls)
+}
+
+func TestSchemaRecipeLoadMemoSeparatesContentHits(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+	srv := cacheTestServer(t)
+	content := digest.FromString("schema-equivalent-implementation")
+	calls := 0
+	Fields[cacheTestQuery]{
+		Func("fullSchema", func(context.Context, cacheTestQuery, struct{}) (Int, error) {
+			calls++
+			return Int(2), nil
+		}),
+	}.Install(srv)
+	bootstrap, err := NewResultForCall(Int(1), cacheTestIntCall("bootstrap-schema"))
+	require.NoError(t, err)
+	bootstrap, err = bootstrap.WithContentDigest(ctx, content)
+	require.NoError(t, err)
+	_, err = cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: cacheTestIntCall("bootstrap-schema")}, ValueFunc(bootstrap))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cache.ReleaseSession(context.Background(), "test-session") })
+
+	state := &recipeLoadState{ctx: ctx, srv: srv, cache: cache, sessionID: "test-session", loads: make(map[recipeLoadKey]*recipeLoadFuture)}
+	id := call.New().Append(Int(0).Type(), "fullSchema", call.WithContentDigest(content))
+	normal, err := state.load(id, false)
+	require.NoError(t, err)
+	require.Equal(t, Int(1), normal.Unwrap())
+	strict, err := state.load(id, true)
+	require.NoError(t, err)
+	require.Equal(t, Int(2), strict.Unwrap())
+	require.Equal(t, 1, calls)
+	normal, err = state.load(id, false)
+	require.NoError(t, err)
+	require.Equal(t, Int(1), normal.Unwrap(), "schema loads must not replace normal content-hit futures")
+}
+
+func TestResultCallRefFromRecipeID(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	for _, id := range []*call.ID{nil, call.New(), call.NewEngineResultID(1, call.NewType(Int(0).Type()))} {
+		_, err := resultCallRefFromRecipeID(ctx, id)
+		require.ErrorContains(t, err, "typed recipe-form ID")
+	}
+
+	// Preserve shared inputs as a DAG, not one expanded tree per reference.
+	shared := call.New().Append(Int(0).Type(), "shared")
+	extra := call.ExtraDigest{Digest: digest.FromString("module-content")}
+	id := shared.Append(Int(0).Type(), "module",
+		call.WithArgs(call.NewArgument("input", call.NewLiteralID(shared), false)),
+		call.WithExtraDigest(extra),
+	)
+	ref, err := resultCallRefFromRecipeID(ctx, id)
+	require.NoError(t, err)
+	require.Zero(t, ref.ResultID)
+	require.NotNil(t, ref.Call)
+	require.Nil(t, ref.shared)
+	require.Same(t, ref.Call.Receiver.Call, ref.Call.Args[0].Value.ResultRef.Call)
+	require.Equal(t, []call.ExtraDigest{extra}, ref.Call.ExtraDigests)
+
+	// Reconstruction must not need a cache: schema provenance has no live IDs.
+	rebuilt, err := ref.Call.recipeID(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, id.Digest(), rebuilt.Digest())
+	require.Equal(t, id.ExtraDigests(), rebuilt.ExtraDigests())
+}
+
+func TestResultCallRefForSchemaSnapshot(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+	res, err := NewResultForCall(Int(1), cacheTestIntCall("module-a"))
+	require.NoError(t, err)
+
+	// A failed capture must not poison the memo for a later valid context.
+	_, err = ResultCallRefForSchema(context.Background(), res)
+	require.Error(t, err)
+
+	const fields = 16
+	refs := make([]*ResultCallRef, fields)
+	var wg sync.WaitGroup
+	for i := range fields {
+		wg.Go(func() {
+			ref, err := ResultCallRefForSchema(ctx, res)
+			if err != nil {
+				t.Errorf("capture schema provenance: %v", err)
+				return
+			}
+			refs[i] = ref
+		})
+	}
+	wg.Wait()
+	for _, ref := range refs {
+		require.Same(t, refs[0], ref, "fields must share one immutable recipe DAG")
+		require.Zero(t, ref.ResultID)
+		require.Nil(t, ref.shared)
+		require.NotNil(t, ref.recipeID)
+		id, err := ref.RecipeID(ctx)
+		require.NoError(t, err)
+		require.Same(t, ref.recipeID, id, "schema recipe access must not copy the DAG")
+	}
+	original := refs[0]
+	cloned := original.cloneWith(resultCallCloneMemo{})
+	require.Nil(t, cloned.recipeID, "cloned calls may be edited")
+
+	// Captures follow newly published provenance, while already-installed
+	// fields keep the immutable implementation they were defined against.
+	res.shared.storeResultCall(cacheTestIntCall("module-b"))
+	updated, err := ResultCallRefForSchema(ctx, res)
+	require.NoError(t, err)
+	require.NotSame(t, original, updated)
+	require.Equal(t, "module-a", original.Call.Field)
+	require.Equal(t, "module-b", updated.Call.Field)
+	require.NotEqual(t, original.recipeID.Digest(), updated.recipeID.Digest())
+
+	res.shared.storeResultCall(nil)
+	require.Nil(t, res.shared.schemaRef, "release must drop the snapshot memo")
+	_, err = ResultCallRefForSchema(ctx, res)
+	require.ErrorContains(t, err, "missing result call")
+	rebuilt, err := original.Call.recipeID(ctx, nil)
+	require.NoError(t, err, "installed provenance survives collection")
+	require.Equal(t, original.recipeID.Digest(), rebuilt.Digest())
+}
 
 func TestResultCallDigestErrorsDoNotPanic(t *testing.T) {
 	t.Parallel()

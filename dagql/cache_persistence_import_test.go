@@ -1533,6 +1533,10 @@ func TestCacheLoadResultByResultIDRefusesUnboundSession(t *testing.T) {
 	_, err = cacheB.LoadResultByResultID(ctx, "unbound-session", srvB, topID)
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "has not bound the session resources")
+	_, found, err := cacheB.LoadResultByResultIDExact(ctx, "unbound-session", srvB, topID)
+	assert.Assert(t, err != nil)
+	assert.Assert(t, !found)
+	assert.ErrorContains(t, err, "has not bound the session resources")
 
 	cacheB.sessionMu.Lock()
 	_, recorded := cacheB.sessionResultIDsBySession["unbound-session"][sharedResultID(topID)]
@@ -1558,6 +1562,10 @@ func TestCacheLoadResultByResultIDRefusesUnboundSession(t *testing.T) {
 	obj, ok := UnwrapAs[*persistResourceScopedObj](loaded.Unwrap())
 	assert.Assert(t, ok)
 	assert.Equal(t, "level-1", obj.Name)
+	exact, found, err := cacheB.LoadResultByResultIDExact(ctx, "bound-session", srvB, topID)
+	assert.NilError(t, err)
+	assert.Assert(t, found)
+	assert.Equal(t, sharedResultID(topID), exact.cacheSharedResult().id)
 	assertCacheRequiredSessionResourcesExact(t, cacheB)
 	assert.NilError(t, cacheB.ReleaseSession(ctx, "bound-session"))
 }
