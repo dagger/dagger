@@ -82,6 +82,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 					return runWorkspaceArtifacts(cmd, typeName)
 				},
 			}
+			registerArtifactListFlags(cmd)
 			setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace)
 			workspaceCmd.AddCommand(cmd)
 		}
@@ -91,7 +92,8 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 
 func runWorkspaceArtifacts(cmd *cobra.Command, typeName string) error {
 	return withEngine(cmd.Context(), client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
-		lines, err := artifactURIs(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts().FilterTypes([]string{typeName}))
+		absolute, _ := cmd.Flags().GetBool("absolute")
+		lines, err := artifactURIs(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts().FilterTypes([]string{typeName}), absolute)
 		if err != nil {
 			return err
 		}

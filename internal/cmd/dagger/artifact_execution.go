@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/spf13/cobra"
 )
 
 type artifactValueResult struct {
@@ -92,7 +92,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 		filter := *address
 		filter.Path = ""
 		filter.Absolute = false
-		uris, err := artifactURIs(ctx, dag, selection.FilterURI(filter.String()))
+		uris, err := artifactURIs(ctx, dag, selection.FilterURI(filter.String()), false)
 		if err != nil {
 			return nil, err
 		}
@@ -132,7 +132,7 @@ func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *da
 	return failures, nil
 }
 
-func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, out io.Writer) error {
+func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, cmd *cobra.Command) error {
 	ctx, span := Tracer().Start(ctx, "list artifacts", telemetry.Encapsulate())
 	defer span.End()
 	id, err := selection.ID(ctx)
@@ -144,9 +144,10 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 			Items []struct{ URI, Description string }
 		}
 	}
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!) {
-		node(id: $id) { ... on Artifacts { items { uri description } } }
-	}`, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
+	absolute, _ := cmd.Flags().GetBool("absolute")
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
+		node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute) description } } }
+	}`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
 	if err != nil {
 		return err
 	}
@@ -154,5 +155,5 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	for _, item := range response.Node.Items {
 		items = append(items, commandListItem{Name: item.URI, Comment: firstDescriptionLine(item.Description)})
 	}
-	return writeCommandList(out, items)
+	return writeCommandList(cmd.OutOrStdout(), items)
 }

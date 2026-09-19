@@ -26,6 +26,7 @@ var (
 )
 
 func init() {
+	registerArtifactListFlags(checksCmd)
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
 	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
@@ -88,7 +89,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 				for _, address := range parsed {
 					address.Path = strings.TrimSuffix(address.Path, "/stale")
 				}
-				changesets, err := artifactURIs(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}).FilterTypes([]string{"Changeset"}))
+				changesets, err := artifactURIs(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}).FilterTypes([]string{"Changeset"}), false)
 				if err != nil {
 					return err
 				}
@@ -128,7 +129,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 				checks = checks.WithoutURI(address.String())
 			}
 			if checksListMode {
-				return listArtifactSelection(ctx, dag, checks, cmd.OutOrStdout())
+				return listArtifactSelection(ctx, dag, checks, cmd)
 			}
 			return runChecks(ctx, dag, checks, cmd, args)
 		},

@@ -21,6 +21,7 @@ import (
 var upListMode bool
 
 func init() {
+	registerArtifactListFlags(upCmd)
 	upCmd.Flags().BoolVarP(&upListMode, "list", "l", false, "List available services")
 }
 
@@ -60,7 +61,7 @@ Examples:
 				}
 				services := all.FilterDirectives([]string{"up"})
 				if upListMode {
-					return listArtifactSelection(ctx, dag, services, cmd.OutOrStdout())
+					return listArtifactSelection(ctx, dag, services, cmd)
 				}
 				return runServices(ctx, dag, services, cmd)
 			},
