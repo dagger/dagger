@@ -19,6 +19,7 @@ package daggercmd
 // the page after a focus switch shows the newly focused agent.
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -150,9 +151,85 @@ type contextVizSnapshot struct {
 	AutoCompact      bool          `json:"autoCompact"`
 	GeneratedAt      string        `json:"generatedAt"`
 	Skills           []vizSkill    `json:"skills,omitempty"`
+	Tools            []vizTool     `json:"tools"`
+	ToolsError       string        `json:"toolsError,omitempty"`
 	Categories       []vizCategory `json:"categories"`
 	Items            []vizItem     `json:"items"`
 	Calls            []vizCall     `json:"calls"`
+}
+
+// vizTool is an available tool, not a transcript entry. Calls counts only
+// TOOL_CALL blocks in the retained conversation, including calls without usage.
+type vizTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Schema      json.RawMessage `json:"schema"`
+	Calls       int             `json:"calls"`
+}
+
+// parseVizTools reads core.LLM.ToolsDoc's format, not arbitrary Markdown:
+// ## name\n\ndescription\n\n + json.MarshalIndent(schema, "", "  ") + \n\n.
+// Headings alone do not delimit tools: only a complete, canonically indented
+// schema object followed by another header (or EOF) does. Fenced examples are
+// description text. The upstream format does not escape descriptions, so an
+// unfenced example reproducing an entire schema/header boundary is inherently
+// indistinguishable from another tool. Keep the raw document for that reason,
+// and fail the whole inventory rather than returning partial results on errors.
+func parseVizTools(doc string) ([]vizTool, error) {
+	tools := []vizTool{}
+	seen := map[string]bool{}
+	for doc != "" {
+		header, body, ok := strings.Cut(doc, "\n\n")
+		name := strings.TrimPrefix(header, "## ")
+		if !ok || name == header || name == "" || strings.ContainsAny(name, " \t\r\n") {
+			return nil, fmt.Errorf("invalid tool documentation header")
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("duplicate tool %q in documentation", name)
+		}
+
+		found := false
+		var fence byte
+		var fenceLen int
+		for start := 0; start < len(body); {
+			line, _, _ := strings.Cut(body[start:], "\n")
+			trimmed := strings.TrimLeft(line, " ")
+			if len(line)-len(trimmed) <= 3 && len(trimmed) >= 3 && (trimmed[0] == '`' || trimmed[0] == '~') {
+				n := 0
+				for n < len(trimmed) && trimmed[n] == trimmed[0] {
+					n++
+				}
+				if n >= 3 {
+					if fence == 0 {
+						fence, fenceLen = trimmed[0], n
+					} else if fence == trimmed[0] && n >= fenceLen && strings.TrimSpace(trimmed[n:]) == "" {
+						fence = 0
+					}
+				}
+			}
+			if fence == 0 && start >= 2 && body[start-2:start] == "\n\n" && strings.HasPrefix(line, "{") {
+				var schema json.RawMessage
+				dec := json.NewDecoder(strings.NewReader(body[start:]))
+				if err := dec.Decode(&schema); err == nil {
+					end := start + int(dec.InputOffset())
+					var indented bytes.Buffer
+					err := json.Indent(&indented, schema, "", "  ")
+					rest, terminated := strings.CutPrefix(body[end:], "\n\n")
+					if err == nil && bytes.Equal(schema, indented.Bytes()) && terminated && (rest == "" || strings.HasPrefix(rest, "## ")) {
+						tools = append(tools, vizTool{Name: name, Description: body[:start-2], Schema: schema})
+						seen[name] = true
+						doc, found = rest, true
+						break
+					}
+				}
+			}
+			start += len(line) + 1
+		}
+		if !found {
+			return nil, fmt.Errorf("missing or invalid schema for tool %q", name)
+		}
+	}
+	return tools, nil
 }
 
 // vizCategory is one classification bucket, totalled across the items that
@@ -323,6 +400,8 @@ func buildContextVizSnapshot(conv *vizConversation) *contextVizSnapshot {
 		AutoCompact:   conv.AutoCompact,
 		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
 		Skills:        conv.Skills,
+		Tools:         []vizTool{},
+		Items:         []vizItem{},
 		Calls:         []vizCall{},
 	}
 	if conv.ContextWindow != nil {
@@ -346,15 +425,24 @@ func buildContextVizSnapshot(conv *vizConversation) *contextVizSnapshot {
 	var prevContext int64 // occupied context as of the last calibrated call
 	var unattributed int64
 
-	// Tool schemas ride along on every API call, before any message.
+	// Tool schemas ride along on every API call, before any message. The
+	// inventory is a second view of this same context, not additional tokens.
+	toolsByName := map[string]int{}
 	if conv.Tools != "" {
-		toolCount := strings.Count(conv.Tools, "\n## ")
-		if strings.HasPrefix(conv.Tools, "## ") {
-			toolCount++
+		label := "Tool schemas"
+		tools, err := parseVizTools(conv.Tools)
+		if err != nil {
+			snap.ToolsError = err.Error()
+		} else {
+			snap.Tools = tools
+			label = fmt.Sprintf("Tool schemas (%d tools)", len(tools))
+			for i, tool := range tools {
+				toolsByName[tool.Name] = i
+			}
 		}
 		window = append(window, addItem(vizItem{
 			Category: vizCatTools,
-			Label:    fmt.Sprintf("Tool schemas (%d tools)", toolCount),
+			Label:    label,
 			Tokens:   vizEstimateTokens(len(conv.Tools)),
 			Text:     conv.Tools,
 			Fixed:    true,
@@ -392,6 +480,9 @@ func buildContextVizSnapshot(conv *vizConversation) *contextVizSnapshot {
 				item.Tokens = vizEstimateTokens(len(block.Text))
 				item.Text = block.Text
 			case "TOOL_CALL":
+				if i, ok := toolsByName[block.ToolName]; ok {
+					snap.Tools[i].Calls++
+				}
 				callTool[block.CallID] = block.ToolName
 				item.Category = vizCatToolCall
 				item.ToolName = block.ToolName
