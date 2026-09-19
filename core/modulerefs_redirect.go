@@ -134,7 +134,12 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 	cache, cacheErr := dagql.EngineCache(ctx)
 	clientMetadata, mdErr := engine.ClientMetadataFromContext(ctx)
 	if cacheErr != nil || mdErr != nil {
-		return refString, nil //nolint:nilerr // deliberate: no session infrastructure means no probe, keep parsing network-free
+		// No session infrastructure means no probe: keep parsing network-free.
+		// A locked URL still applies, with the caller's version unchanged.
+		if lockedURL != "" {
+			return sourceURLWithVersion(lockedURL, version), nil
+		}
+		return refString, nil //nolint:nilerr // deliberate: see above
 	}
 
 	res, err := cache.GetOrInitArbitrary(

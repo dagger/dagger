@@ -398,7 +398,13 @@ func TestResolveDaggerGetRedirectPreservesDestinationVersion(t *testing.T) {
 				locked, ok = lock.GetLookup(workspace.CoreLockNamespace, workspace.LockOperationVanityURL, []any{ref})
 				require.True(t, ok)
 				require.Equal(t, destination, locked, "refresh must use the same destination format as creation")
-				require.EqualValues(t, 2, requests.Load())
+				// The refresh probes one time for the URL entry, and one time for
+				// the version entry that a ref with a version creates.
+				wantRequests := 2
+				if inputSuffix != "" {
+					wantRequests = 3
+				}
+				require.EqualValues(t, wantRequests, requests.Load())
 			})
 		}
 	}
