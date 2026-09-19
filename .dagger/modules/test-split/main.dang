@@ -70,6 +70,7 @@ type TestSplit {
         "^TestPHP$",
         "^TestProvision$",
         "^TestPython$",
+        "^TestRemoteCacheTransferSuite$",
         "^TestShell$",
         "^TestTelemetry$",
         "^TestTypescript$",
@@ -132,6 +133,13 @@ type TestSplit {
   """
   pub testLocalCache: Void @check {
     testCliEngineSpecific(["TestLocalCache"])
+  }
+
+  """
+  Test remote cache: the transfer suite, which starts its own nested engines
+  """
+  pub testRemoteCache: Void @check {
+    testSpecific(["^TestRemoteCacheTransferSuite$"])
   }
 
   """
