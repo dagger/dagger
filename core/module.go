@@ -1136,7 +1136,10 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	if err != nil {
 		return nil, fmt.Errorf("decode persisted module query: %w", err)
 	}
-	deps, err := query.DefaultDeps(ctx)
+	// Under a sharing preparation marker this returns a fresh builder from
+	// the registered core descriptors instead of asking the engine root for
+	// a client's defaults; every other caller keeps Query.DefaultDeps.
+	deps, err := persistedDecodeDefaultDeps(ctx, dec, query)
 	if err != nil {
 		return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 	}

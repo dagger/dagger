@@ -67,8 +67,63 @@ type PartSourceLease struct {
 	facts            partSourceFacts
 	lookup           partLookup
 	sessionID        string
-	once             sync.Once
-	releaseErr       error
+	// A sessionless share validates the donated address alone. donated holds
+	// the per-address facts observed at admission; receiverID/receiverOwnGen
+	// hold the receiver's original structural admission, so Commit can refuse
+	// an actual change to Own(R) without refusing an unrelated sibling change.
+	donated        partDonatedFacts
+	receiverID     sharedResultID
+	receiverOwnGen uint64
+	once           sync.Once
+	releaseErr     error
+}
+
+// partDonatedFacts are the donor facts that belong to one full address. A
+// sibling publication, an offer attached elsewhere or a whole-payload revision
+// change leaves every field unchanged; a real change to this address's
+// publication, ownership link or offer slot changes one of them.
+type partDonatedFacts struct {
+	output     partOutputState
+	offerOwner offerOwnerID
+	ownerLink  bool
+	expires    int64
+}
+
+// partDonatedFactsLocked reads the donor's facts for one full address. The
+// applied owner link is the design's "applied role naming the same B-local
+// SnapshotID": a desired link or an accessor preseed is not one. E is held; P
+// is taken under it, following the encoded installer's E -> G -> P order.
+func (c *Cache) partDonatedFactsLocked(row *sharedResult, key string, address PersistedPartAddress, snapshotID string) partDonatedFacts {
+	f := partDonatedFacts{expires: row.expiresAtUnix}
+	if gate := row.partGate.gate.Load(); gate != nil {
+		gate.mu.Lock()
+		f.output = gate.outputs[key]
+		gate.mu.Unlock()
+	}
+	if offer := row.partOffers[key]; offer != nil && offer.owner != nil {
+		f.offerOwner = offer.owner.id
+	}
+	if snapshotID != "" {
+		want, err := canonicalPath(address.OutputPath)
+		if err == nil {
+			row.payloadMu.RLock()
+			for _, link := range row.snapshotOwnerLinks {
+				if link.RefKey != snapshotID {
+					continue
+				}
+				if got, err := canonicalPath(link.OutputPath); err == nil && got == want {
+					f.ownerLink = true
+					break
+				}
+			}
+			row.payloadMu.RUnlock()
+		}
+	}
+	return f
+}
+
+func partRowExpired(row *sharedResult, now int64) bool {
+	return row != nil && row.expiresAtUnix != 0 && row.expiresAtUnix <= now
 }
 
 func (s *PartSourceLease) Descriptor() PartDescriptor {
@@ -324,6 +379,78 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 	}
 	return record, version, probe, nil
 }
+
+// probeAllParts describes every declared part of one row, outside E, with the
+// same nonblocking capture and gate reads probePart uses for one address. It
+// performs no typed decode, open, hash, content request or evaluation.
+func (c *Cache) probeAllParts(ctx context.Context, row *sharedResult) (PersistedRecord, capturedRowRevision, []PartProbe, error) {
+	var version capturedRowRevision
+	record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
+	if err != nil {
+		return record, version, nil, err
+	}
+	var probes []PartProbe
+	err = walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		d, ok := f.Transfer.(PersistedPartDescriber)
+		if !ok {
+			return v.Payload, nil
+		}
+		found, err := d.DescribeParts(v)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range found {
+			p.Descriptor.Family = f.Name
+			p.DescriptorRev = version.payload.payloadRevision
+			p.captured = &partProbeCapture{row: row, record: record, version: version}
+			probes = append(probes, p)
+		}
+		return v.Payload, nil
+	})
+	if err != nil {
+		return record, version, nil, err
+	}
+	if err = version.check(row); err != nil {
+		return record, version, nil, err
+	}
+	if gate := row.partGate.gate.Load(); gate != nil {
+		gate.mu.Lock()
+		for i := range probes {
+			key, err := partAddressKey(probes[i].Descriptor.Address)
+			if err != nil {
+				continue
+			}
+			state := gate.outputs[key]
+			probes[i].Busy = state.phase == PartOutputInstalled
+			probes[i].OutputRev = OutputRevision(state.installation)
+			for _, group := range gate.groups {
+				if group.phase == LazyEvaluationRunning && containsPart(group.writeSet, probes[i].Descriptor.Address) {
+					probes[i].Busy = true
+				}
+			}
+			for _, writer := range gate.writers {
+				if containsPart([]PersistedPartAddress{writer.address}, probes[i].Descriptor.Address) {
+					probes[i].Busy = true
+				}
+			}
+		}
+		gate.mu.Unlock()
+	}
+	// An active row-wide lease reconciliation makes every part of the row
+	// busy for this pass. The observation never blocks: a reconciliation that
+	// holds the row's lease guard is simply seen. One that finished during the
+	// probe advanced the payload revision, which the version check above or
+	// the constructor's and Commit's revalidation under E catches.
+	if !row.leaseSyncMu.TryLock() {
+		for i := range probes {
+			probes[i].Busy = true
+		}
+	} else {
+		row.leaseSyncMu.Unlock()
+	}
+	return record, version, probes, nil
+}
+
 func (c *Cache) AcquireEquivalentPartSource(ctx context.Context, receiver AnyResult, address PersistedPartAddress) (*PartSourceLease, error) {
 	source, _, err := c.scanPartSources(ctx, receiver, address, partDemandFromContext(ctx))
 	return source, err
@@ -433,7 +560,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		candidate := &candidates[i]
 		if candidate.probe != nil {
 			if err := candidate.version.check(candidate.row); err != nil {
-				return nil, candidates, partRefused("scan: candidate version")
+				return nil, candidates, candidate.version.changed("scan: candidate version", candidate.row)
 			}
 		}
 	}
@@ -507,6 +634,8 @@ type PartDemandState struct {
 	// revision changes only on exhaustion; SourceCheck treats a change as stale.
 	revision uint64
 	renewals map[renewalEpisodeKey]*renewalEpisode
+	// progress is what the progress rule has recorded for this demand.
+	progress map[partProgressKey]partProgressSeen
 }
 
 func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) string {
@@ -599,6 +728,13 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 	if receiver == nil || donor == nil || !receiver.imported || c.resultsByID[receiver.id] != receiver || c.resultsByID[donor.id] != donor {
 		return nil, fmt.Errorf("sessionless part source requires registered rows and an imported receiver")
 	}
+	// Expiry blocks new sharing for either row. The candidate collector already
+	// excludes an expired donor, but it deliberately exempts the receiver,
+	// which for an ordinary demand is also the first candidate.
+	now := time.Now().Unix()
+	if partRowExpired(receiver, now) || partRowExpired(donor, now) {
+		return nil, partRefused("sessionless source: row expired")
+	}
 	if _, err := partAddressKey(target); err != nil {
 		return nil, err
 	}
@@ -628,20 +764,38 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 		}
 	}
 	source.offerRev = source.facts.offers
+	source.receiverID = receiver.id
+	source.receiverOwnGen = receiver.requiredSessionResourcesGen.Load()
+	source.donated = c.partDonatedFactsLocked(donor, key, address, source.descriptor.SnapshotID)
+	// A donated snapshot must be owned by the donor now, not merely desired.
+	if source.descriptor.SnapshotID != "" && !source.donated.ownerLink {
+		return nil, partRefused("sessionless source: donor does not own the snapshot")
+	}
 	c.incrementIncomingOwnershipLocked(ctx, donor)
 	return source, nil
 }
 
 func (c *Cache) sessionlessPartEquivalentLocked(receiver, donor *sharedResult, lookup partLookup) (CacheHitRoute, bool) {
+	route, ok := c.sessionlessPartEquivalentsLocked(receiver, lookup)[donor]
+	return route, ok
+}
+
+// sessionlessPartEquivalentsLocked collects, once, every ordinary equivalent
+// of receiver whose own resource requirements fit inside the receiver's, with
+// the route that found it. It validates the receiver's frame against the
+// prepared lookup and excludes expired candidates, as the single-donor form
+// does. E is held.
+func (c *Cache) sessionlessPartEquivalentsLocked(receiver *sharedResult, lookup partLookup) map[*sharedResult]CacheHitRoute {
 	if receiver.loadResultCall() != lookup.frame {
-		return "", false
+		return nil
 	}
-	for _, candidate := range c.collectPartCandidatesWithAdmissionLocked(receiver, lookup, func(row *sharedResult) bool { return c.ownPartRequirementsFitLocked(receiver, row) }) {
-		if candidate.row == donor {
-			return candidate.route, true
-		}
+	candidates := c.collectPartCandidatesWithAdmissionLocked(receiver, lookup, func(row *sharedResult) bool { return c.ownPartRequirementsFitLocked(receiver, row) })
+	out := make(map[*sharedResult]CacheHitRoute, len(candidates))
+	// The collector already keeps one entry per row, with its first route.
+	for _, candidate := range candidates {
+		out[candidate.row] = candidate.route
 	}
-	return "", false
+	return out
 }
 
 func (c *Cache) partSourceReferenceAllowedLocked(receiver *sharedResult, source *PartSourceLease, dep *sharedResult) bool {

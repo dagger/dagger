@@ -216,10 +216,157 @@ func TestPartLazyOperationMissingOutputStopsOnce(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }})
+		return c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }}, nil)
 	}})
 	require.ErrorContains(t, err, "left required output snapshot unset")
 	require.Equal(t, 1, calls)
+}
+
+// A lazy operation's publication is prepared by prepareEvaluatedParts, not by
+// PrepareReadyPart. Whichever constructor built it, a preparation must reach
+// Commit with the representation it observed and, for an encoded receiver, the
+// envelope Commit installs. A constructor that skips either once made Commit
+// answer reselect forever, which publishEvaluatedParts retries without a
+// bound, and then would have installed a nil envelope.
+func TestPartLazyOperationPublishesOverObservedRepresentation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		encoded bool
+	}{{"encoded receiver", true}, {"typed receiver", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, c, srv, _ := shareTestCache(t)
+			srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+			receiver := persistedListTestResult(t, ctx, c, srv, "lazy-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+			row := receiver.cacheSharedResult()
+			if tc.encoded {
+				shareTestEncodedReceiver(t, ctx, c, receiver)
+			} else {
+				c.egraphMu.Lock()
+				row.imported = true
+				c.egraphMu.Unlock()
+			}
+			evaluated := persistedListTestResult(t, ctx, c, srv, "lazy-evaluated", newShareTestValue("evaluated", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+			address := PersistedPartAddress{Part: "fs"}
+			before := row.loadPayloadState()
+			require.Equal(t, !tc.encoded, before.hasValue)
+
+			// Bounded: a Commit that can never succeed ends the publication
+			// loop with this deadline instead of spinning.
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			var published sharedResultPayloadState
+			err := c.RunLazyTask(ctx, receiver, "lazy:publishes", LazyTaskSpec{Body: func(ctx context.Context) error {
+				drain, _, err := c.PrepareOriginal(ctx, receiver, LazyGroupAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, PartTaskFromContext(ctx))
+				if err != nil {
+					return err
+				}
+				if err = drain.Wait(ctx); err != nil {
+					return err
+				}
+				scan, err := c.CheckPartSources(ctx, receiver, address, drain, &PartDemandState{})
+				if err != nil {
+					return err
+				}
+				original, _, err := c.BeginOriginal(ctx, scan.NoSource)
+				if err != nil {
+					return err
+				}
+				var version capturedRowRevision
+				produced, err := c.capturePartRecord(ctx, evaluated.cacheSharedResult(), false, nil, &version)
+				if err != nil {
+					return err
+				}
+				err = c.publishEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }}, nil)
+				// Observed before the owner synchronization that follows the
+				// Body applies the link and advances the revision again.
+				published = row.loadPayloadState()
+				return err
+			}})
+			require.NoError(t, err)
+			require.Equal(t, before.payloadRevision+1, published.payloadRevision, "one Commit advances the payload revision once")
+			require.Equal(t, before.hasValue, published.hasValue)
+			if tc.encoded {
+				require.NotNil(t, published.persistedEnvelope, "an encoded Commit installs an envelope")
+				require.NotSame(t, before.persistedEnvelope, published.persistedEnvelope)
+			} else {
+				value, ok := receiver.Unwrap().(*shareTestValue)
+				require.True(t, ok)
+				require.Equal(t, "fs-snap", value.Parts["fs"].Snapshot, "the typed store published the evaluated part")
+			}
+			_, _, probe, err := c.probePart(context.WithoutCancel(ctx), row, address)
+			require.NoError(t, err)
+			require.NotNil(t, probe)
+			require.True(t, probe.LocalComplete, "the published representation contains the evaluated part")
+			require.Equal(t, "fs-snap", probe.Descriptor.SnapshotID)
+			require.True(t, shareTestHasLink(receiver, "fs-snap"), "and the row owns its snapshot")
+		})
+	}
+}
+
+// A preparation that reaches Commit without what its constructor's seal
+// establishes is a construction defect. Commit names it in an error; it never
+// answers reselect, which a caller's retry loop would take for a changed
+// source and retry forever.
+func TestCommitReadyPartRejectsBrokenPreparation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		breaks func(*PreparedReadyPart)
+		want   string
+	}{
+		{"unsealed", func(p *PreparedReadyPart) { p.sealed = false }, "not sealed"},
+		{"encoded without envelope", func(p *PreparedReadyPart) { p.published = nil }, "no envelope to install"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, c, srv, manager := shareTestCache(t)
+			srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+			receiver := persistedListTestResult(t, ctx, c, srv, "broken-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+			shareTestEncodedReceiver(t, ctx, c, receiver)
+			evaluated := persistedListTestResult(t, ctx, c, srv, "broken-evaluated", newShareTestValue("evaluated", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+			address := PersistedPartAddress{Part: "fs"}
+			row := receiver.cacheSharedResult()
+			before := row.loadPayloadState()
+
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			var outcome PartInstallOutcome
+			err := c.RunLazyTask(ctx, receiver, "lazy:broken", LazyTaskSpec{Body: func(ctx context.Context) error {
+				drain, _, err := c.PrepareOriginal(ctx, receiver, LazyGroupAddress{Group: LazyGroupWhole}, []PersistedPartAddress{address}, PartTaskFromContext(ctx))
+				if err != nil {
+					return err
+				}
+				if err = drain.Wait(ctx); err != nil {
+					return err
+				}
+				scan, err := c.CheckPartSources(ctx, receiver, address, drain, &PartDemandState{})
+				if err != nil {
+					return err
+				}
+				original, _, err := c.BeginOriginal(ctx, scan.NoSource)
+				if err != nil {
+					return err
+				}
+				var version capturedRowRevision
+				produced, err := c.capturePartRecord(ctx, evaluated.cacheSharedResult(), false, nil, &version)
+				if err != nil {
+					return err
+				}
+				prepared, err := c.prepareEvaluatedParts(ctx, receiver, address, produced, original, &partCleanup{fn: func(context.Context) error { return nil }})
+				if err != nil {
+					return err
+				}
+				tc.breaks(prepared)
+				_, outcome, err = c.CommitReadyPart(ctx, prepared)
+				return err
+			}})
+			require.ErrorContains(t, err, tc.want)
+			require.False(t, partCanReselect(err), "a construction defect is never a reselect")
+			require.Equal(t, PartInstallRefused, outcome)
+			after := row.loadPayloadState()
+			require.Equal(t, before.payloadRevision, after.payloadRevision, "nothing was published")
+			require.Same(t, before.persistedEnvelope, after.persistedEnvelope)
+			require.Equal(t, manager.pins.Load(), manager.released.Load(), "the refused preparation released its pin")
+		})
+	}
 }
 
 // CheckSessionlessRestoredDirectoryForTest is test-only so the external test

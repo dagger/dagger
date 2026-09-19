@@ -345,7 +345,11 @@ func (c *Cache) ImportValues(ctx context.Context, input ValueBundle) ([]Imported
 		c.testBeforeTransferCommit()
 	}
 	c.egraphMu.Lock()
+	notify, notifyOwner := c.beginShareNotificationsLocked()
 	if err := checkRoots(); err != nil {
+		// A failed root validation publishes nothing, so no private plan can
+		// enqueue.
+		c.discardShareNotificationsLocked(notify, notifyOwner)
 		c.egraphMu.Unlock()
 		return nil, err
 	}
@@ -366,7 +370,16 @@ func (c *Cache) ImportValues(ctx context.Context, input ValueBundle) ([]Imported
 	for _, plan := range plans {
 		c.applyPreparedResultIdentityLocked(ctx, plan.row, plan.row.loadResultCall(), plan.recipe, plan.self, plan.inputs, plan.provenance, plan.recipe)
 	}
+	// After every identity application: notify each final class the imported
+	// rows now belong to, together with the interval's union and membership
+	// records. Coalescing absorbs the duplicates.
+	for _, plan := range plans {
+		c.queueSnapshotShareRowLocked(ctx, plan.row)
+	}
+	c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
+	duplicates := c.takeShareDuplicateHoldsLocked()
 	c.egraphMu.Unlock()
+	c.releaseShareDuplicateHolds(ctx, duplicates)
 	if c.testAfterTransferCommit != nil {
 		c.testAfterTransferCommit()
 	}
