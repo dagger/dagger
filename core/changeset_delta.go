@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -29,6 +30,9 @@ type changesetDelta struct {
 	removedFiles       []string
 	addedDirs          []string
 	removedDirs        []string
+	// limit, when non-negative, is the entry budget a bounded walk aborts
+	// past; see collectChangesetDeltaBounded.
+	limit int
 }
 
 // computeChangesetPathsDelta computes ChangesetPaths by walking filesystem
@@ -162,7 +166,21 @@ func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string,
 // files to the same backing file), and distinct files whose stat happens to
 // match are content-compared rather than trusted.
 func collectChangesetDelta(ctx context.Context, beforeDir, afterDir string) (*changesetDelta, error) {
-	delta := &changesetDelta{}
+	delta, _, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, -1)
+	return delta, err
+}
+
+// errDeltaLimitExceeded aborts a bounded delta walk once its entry budget is
+// spent. It never escapes collectChangesetDeltaBounded.
+var errDeltaLimitExceeded = errors.New("changeset delta entry limit exceeded")
+
+// collectChangesetDeltaBounded is collectChangesetDelta with an entry budget:
+// a non-negative limit aborts the walk as soon as more than limit entries have
+// been collected, returning exceeded=true and no delta rather than finishing a
+// walk whose result the caller has already decided is too big. A negative
+// limit walks everything.
+func collectChangesetDeltaBounded(ctx context.Context, beforeDir, afterDir string, limit int) (_ *changesetDelta, exceeded bool, _ error) {
+	delta := &changesetDelta{limit: limit}
 	err := fsdiff.WalkChanges(ctx, beforeDir, afterDir, fsdiff.CompareInodeThenContent, func(kind continuityfs.ChangeKind, path string, f os.FileInfo, prevErr error) error {
 		if prevErr != nil {
 			return prevErr
@@ -188,9 +206,12 @@ func collectChangesetDelta(ctx context.Context, beforeDir, afterDir string) (*ch
 				return fmt.Errorf("stat removed path %s: %w", rel, err)
 			}
 			if fi.IsDir() {
-				return delta.appendRemovedTree(beforeDir, rel)
+				if err := delta.appendRemovedTree(beforeDir, rel); err != nil {
+					return err
+				}
+			} else {
+				delta.removedFiles = append(delta.removedFiles, rel)
 			}
-			delta.removedFiles = append(delta.removedFiles, rel)
 		case continuityfs.ChangeKindModify:
 			if f == nil {
 				return nil
@@ -217,16 +238,40 @@ func collectChangesetDelta(ctx context.Context, beforeDir, afterDir string) (*ch
 				delta.modifiedCandidates = append(delta.modifiedCandidates, rel)
 			}
 		}
-		return nil
+		return delta.checkLimit()
 	})
-	if err != nil {
-		return nil, err
+	if errors.Is(err, errDeltaLimitExceeded) {
+		return nil, true, nil
 	}
-	return delta, nil
+	if err != nil {
+		return nil, false, err
+	}
+	return delta, false, nil
+}
+
+// count is the number of entries collected so far. It matches the number of
+// paths computeChangesetPathsDelta would report from this delta, except that
+// modified candidates are counted before content verification, so it is an
+// upper bound on that.
+func (d *changesetDelta) count() int {
+	return len(d.addedFiles) + len(d.modifiedCandidates) + len(d.removedFiles) +
+		len(d.addedDirs) + len(d.removedDirs)
+}
+
+// checkLimit returns errDeltaLimitExceeded once a bounded walk has collected
+// more entries than its limit allows.
+func (d *changesetDelta) checkLimit() error {
+	if d.limit >= 0 && d.count() > d.limit {
+		return errDeltaLimitExceeded
+	}
+	return nil
 }
 
 func (d *changesetDelta) appendRemovedTree(root, rel string) error {
 	d.removedDirs = append(d.removedDirs, rel+"/")
+	if err := d.checkLimit(); err != nil {
+		return err
+	}
 	return filepath.WalkDir(filepath.Join(root, rel), func(p string, ent fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -244,8 +289,22 @@ func (d *changesetDelta) appendRemovedTree(root, rel string) error {
 		} else {
 			d.removedFiles = append(d.removedFiles, sub)
 		}
-		return nil
+		return d.checkLimit()
 	})
+}
+
+// changesetDeltaExceeds reports whether the metadata delta between the two
+// trees has more than limit entries, stopping the walk as soon as that is
+// known. The count is an upper bound on what computeChangesetPathsDelta would
+// report (see changesetDelta.count), so true means the trees definitely differ
+// in more than limit changed or metadata-differing paths, while false is
+// exact.
+func changesetDeltaExceeds(ctx context.Context, beforeDir, afterDir string, limit int) (bool, error) {
+	_, exceeded, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, limit)
+	if err != nil {
+		return false, fmt.Errorf("collect delta: %w", err)
+	}
+	return exceeded, nil
 }
 
 // verifyModifiedFiles filters metadata-suspect candidates down to files whose

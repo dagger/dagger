@@ -11,6 +11,7 @@ import (
 
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -998,6 +999,245 @@ func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
 	cp.mountPoints = slices.Clone(ws.mountPoints)
 	return &cp
+}
+
+// WorkspaceRelationKind classifies how two workspaces relate, so a caller
+// swapping one for the other can decide what "what changed" should mean: a
+// file diff only describes anything when the two share a base.
+type WorkspaceRelationKind int
+
+const (
+	// WorkspaceRelationUnrelated: nothing ties the two workspaces together
+	// (different repositories, or a synthetic directory on either side).
+	WorkspaceRelationUnrelated WorkspaceRelationKind = iota
+	// WorkspaceRelationSameOrigin: different bases that come from the same
+	// git remote — a branch switch, a checkout of an older commit, a local
+	// clone replaced by a remote ref of the same repository.
+	WorkspaceRelationSameOrigin
+	// WorkspaceRelationSameBase: the same underlying source, differing at
+	// most in overlay edits (and cwd or mounts).
+	WorkspaceRelationSameBase
+)
+
+func (k WorkspaceRelationKind) String() string {
+	switch k {
+	case WorkspaceRelationSameBase:
+		return "same-base"
+	case WorkspaceRelationSameOrigin:
+		return "same-origin"
+	default:
+		return "unrelated"
+	}
+}
+
+// WorkspaceRelation classifies next relative to prev. Overlays are stripped
+// to their base on both sides: a workspace plus its own edits is SameBase
+// with itself. Bases compare by what identifies them — host path (and client)
+// for local checkouts, root content for directories, repository and commit
+// for git refs. Anything short of that falls through to origin matching, and
+// an unknown origin (see WorkspaceOrigin) matches nothing.
+func WorkspaceRelation(ctx context.Context, prev, next *Workspace) WorkspaceRelationKind {
+	if prev == nil || next == nil {
+		return WorkspaceRelationUnrelated
+	}
+	if sameWorkspaceBase(ctx, prev, next) {
+		return WorkspaceRelationSameBase
+	}
+	if origin := WorkspaceOrigin(prev); origin != "" && origin == WorkspaceOrigin(next) {
+		return WorkspaceRelationSameOrigin
+	}
+	return WorkspaceRelationUnrelated
+}
+
+func sameWorkspaceBase(ctx context.Context, prev, next *Workspace) bool {
+	switch a := prev.BaseSource().(type) {
+	case *WorkspaceSourceClientLocal:
+		b, ok := next.BaseSource().(*WorkspaceSourceClientLocal)
+		return ok && sameLocalWorkspaceBase(prev, next, a.HostPath, b.HostPath)
+	case *WorkspaceSourceRootlessLocal:
+		b, ok := next.BaseSource().(*WorkspaceSourceRootlessLocal)
+		return ok && sameLocalWorkspaceBase(prev, next, a.HostPath, b.HostPath)
+	case *WorkspaceSourceDirectory:
+		b, ok := next.BaseSource().(*WorkspaceSourceDirectory)
+		return ok && sameDirectoryResult(ctx, a.Root, b.Root)
+	case *WorkspaceSourceGitRef:
+		b, ok := next.BaseSource().(*WorkspaceSourceGitRef)
+		return ok && sameGitRefBase(a.Ref.Self(), b.Ref.Self())
+	default:
+		return false
+	}
+}
+
+// sameLocalWorkspaceBase compares two host-backed bases. The client matters as
+// much as the path: the same path on two clients is two different trees.
+func sameLocalWorkspaceBase(prev, next *Workspace, prevPath, nextPath string) bool {
+	if prevPath == "" {
+		prevPath = prev.HostPath()
+	}
+	if nextPath == "" {
+		nextPath = next.HostPath()
+	}
+	return prevPath != "" && prevPath == nextPath && prev.ClientID == next.ClientID
+}
+
+// sameDirectoryResult reports whether two directory results denote the same
+// tree: by content when the cache can tell, else by result handle, else (for
+// detached results) by value identity.
+func sameDirectoryResult(ctx context.Context, a, b dagql.ObjectResult[*Directory]) bool {
+	if a.Self() == nil || b.Self() == nil {
+		return false
+	}
+	if aDig, err := a.ContentPreferredDigest(ctx); err == nil {
+		if bDig, err := b.ContentPreferredDigest(ctx); err == nil {
+			return aDig == bDig
+		}
+	}
+	if aID, err := a.ID(); err == nil {
+		if bID, err := b.ID(); err == nil {
+			return stableIDDigest(aID) == stableIDDigest(bID)
+		}
+	}
+	return a.Self() == b.Self()
+}
+
+// sameGitRefBase reports whether two git refs denote the same commit of the
+// same repository. Repository URLs compare in normalized form so spellings of
+// one remote match; a remote that does not normalize (a local path) compares
+// verbatim rather than colliding with every other such remote.
+func sameGitRefBase(a, b *GitRef) bool {
+	if a == nil || b == nil || a.Ref == nil || b.Ref == nil {
+		return false
+	}
+	if a.Ref.SHA == "" || a.Ref.SHA != b.Ref.SHA {
+		return false
+	}
+	aURL, bURL := gitRefRepoURL(a), gitRefRepoURL(b)
+	if aNorm, bNorm := workspacepkg.NormalizeGitRemote(aURL), workspacepkg.NormalizeGitRemote(bURL); aNorm != "" || bNorm != "" {
+		return aNorm == bNorm
+	}
+	return aURL == bURL
+}
+
+func gitRefRepoURL(ref *GitRef) string {
+	if ref == nil || ref.Repo.Self() == nil || !ref.Repo.Self().URL.Valid {
+		return ""
+	}
+	return ref.Repo.Self().URL.Value.String()
+}
+
+// WorkspaceOrigin returns the normalized git remote a workspace comes from
+// (the same key user-level config is matched on), or "" when unknown: a
+// synthetic directory, a checkout without a usable origin, or a client that
+// resolved no user-config key. Unknown origins are never treated as equal.
+func WorkspaceOrigin(ws *Workspace) string {
+	if ws == nil {
+		return ""
+	}
+	if ref, ok := ws.SourceGitRef(); ok {
+		return workspacepkg.NormalizeGitRemote(gitRefRepoURL(ref.Self()))
+	}
+	return ws.UserConfigKey()
+}
+
+// WorkspaceIdentity describes where a workspace comes from in terms a reader
+// can act on, for notices about a workspace being swapped out.
+type WorkspaceIdentity struct {
+	// Address is the workspace's canonical address: file:// for local
+	// checkouts, a git address for remote ones, or an opaque digest-based
+	// identity for synthetic workspaces.
+	Address string
+	// Origin is the normalized git remote (see WorkspaceOrigin), or "".
+	Origin string
+	// Repo is the raw repository URL when the workspace is a git ref, kept
+	// for remotes that have no normalized form (local paths).
+	Repo string
+	// SHA is the commit the workspace was built from, when known.
+	SHA string
+	// Ref is the short branch or tag name the commit was resolved from, when
+	// it was not requested by bare SHA.
+	Ref string
+}
+
+// DescribeWorkspace returns the identity of a workspace from what the
+// workspace value itself carries; it makes no calls. Local checkouts get no
+// SHA here — see WorkspaceIdentity.WithGitRef for filling one in from
+// Workspace.git.head.
+func DescribeWorkspace(ws *Workspace) WorkspaceIdentity {
+	if ws == nil {
+		return WorkspaceIdentity{}
+	}
+	id := WorkspaceIdentity{
+		Address: ws.Address,
+		Origin:  WorkspaceOrigin(ws),
+	}
+	if ref, ok := ws.SourceGitRef(); ok {
+		id = id.WithGitRef(ref.Self())
+	}
+	return id
+}
+
+// WithGitRef fills in the repository, commit and ref name from a git ref,
+// e.g. the checkout's HEAD for a local workspace.
+func (id WorkspaceIdentity) WithGitRef(ref *GitRef) WorkspaceIdentity {
+	if ref == nil {
+		return id
+	}
+	if url := gitRefRepoURL(ref); url != "" {
+		id.Repo = url
+		if id.Origin == "" {
+			id.Origin = workspacepkg.NormalizeGitRemote(url)
+		}
+	}
+	if ref.Ref != nil {
+		id.SHA = ref.Ref.SHA
+		id.Ref = ""
+		if ref.Ref.Name != "" && !gitutil.IsCommitSHA(ref.Ref.Name) {
+			id.Ref = ref.Ref.ShortName()
+		}
+	}
+	return id
+}
+
+// Location names the repository or place the workspace comes from, without
+// its revision: the origin when known, else the raw repository URL, else the
+// address.
+func (id WorkspaceIdentity) Location() string {
+	switch {
+	case id.Origin != "":
+		return id.Origin
+	case id.Repo != "":
+		return id.Repo
+	case id.Address != "":
+		return id.Address
+	default:
+		return "(unknown)"
+	}
+}
+
+// Revision renders the commit and ref name, e.g. "@abc123 (main)", or "" when
+// no commit is known.
+func (id WorkspaceIdentity) Revision() string {
+	if id.SHA == "" {
+		return ""
+	}
+	if id.Ref != "" {
+		return fmt.Sprintf("@%s (%s)", id.SHA, id.Ref)
+	}
+	return "@" + id.SHA
+}
+
+// String renders the full identity: the location, the revision when known,
+// and the address when it adds information (a local path alongside its
+// origin).
+func (id WorkspaceIdentity) String() string {
+	out := id.Location()
+	if rev := id.Revision(); rev != "" {
+		out += " " + rev
+	}
+	if id.Address != "" && id.Address != id.Location() {
+		out += " [" + id.Address + "]"
+	}
+	return out
 }
 
 // WorkspaceGit represents the git state associated with a workspace.

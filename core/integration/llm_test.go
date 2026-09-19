@@ -1236,3 +1236,121 @@ func (LLMSuite) TestNestedClientInheritsSessionConfig(ctx context.Context, t *te
 		requireErrOut(t, err, `secret env var not found: "ANT..."`)
 	})
 }
+
+// mcpFixtureServer is a minimal stdio MCP server (newline-delimited JSON-RPC,
+// as ServiceMCPTransport speaks) with one tool, install, that writes into its
+// working directory the way a package manager would: a lockfile worth keeping,
+// a node_modules tree the workspace's .gitignore ignores, and git metadata.
+// It writes by absolute path, as real servers do (they resolve their root once
+// at startup): the workspace is bind-mounted over the working directory after
+// the process starts, so relative paths would still resolve to the covered
+// directory the process's cwd points at.
+const mcpFixtureServer = `
+import json, os, sys
+
+ROOT = "/work"
+
+def reply(id, result=None, error=None):
+    msg = {"jsonrpc": "2.0", "id": id}
+    if error is not None:
+        msg["error"] = error
+    else:
+        msg["result"] = result
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
+
+def write(path, content):
+    path = os.path.join(ROOT, path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(content)
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    line = line.strip()
+    if not line:
+        continue
+    req = json.loads(line)
+    id = req.get("id")
+    method = req.get("method")
+    if id is None:
+        continue  # notification
+    if method == "initialize":
+        reply(id, {
+            "protocolVersion": req["params"]["protocolVersion"],
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "fixture", "version": "0.0.0"},
+        })
+    elif method == "ping":
+        reply(id, {})
+    elif method == "tools/list":
+        reply(id, {"tools": [{
+            "name": "install",
+            "description": "Install dependencies into the working directory.",
+            "inputSchema": {"type": "object", "properties": {}},
+        }]})
+    elif method == "tools/call":
+        write("package-lock.json", "{}\n")
+        write("node_modules/dep/index.js", "module.exports = 1\n")
+        write("node_modules/dep/package.json", "{}\n")
+        write("src/app.js", "require('dep')\n")
+        write(".git/HEAD", "ref: refs/heads/main\n")
+        write(".git/objects/info/packs", "\n")
+        reply(id, {"content": [{"type": "text", "text": "installed"}]})
+    else:
+        reply(id, error={"code": -32601, "message": "method not found: %s" % method})
+`
+
+// TestMCPServerSnapshotHonorsGitignore locks in that edits an external MCP
+// server makes to its synced working directory are overlaid onto the agent's
+// workspace the way git status would see them: additions the workspace's
+// .gitignore rules ignore (node_modules/, build output) and the repository's
+// own .git metadata are left out, while everything else lands. Without this,
+// one `npm install` overlays tens of thousands of files onto the workspace.
+func (LLMSuite) TestMCPServerSnapshotHonorsGitignore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	server := c.Container().From(pythonImage).
+		WithNewFile("/srv/mcp.py", mcpFixtureServer).
+		WithExec([]string{"mkdir", "-p", "/work"}).
+		WithWorkdir("/work").
+		AsService(dagger.ContainerAsServiceOpts{Args: []string{"python3", "-u", "/srv/mcp.py"}})
+
+	ws := c.Directory().
+		WithNewFile(".gitignore", "node_modules/\n").
+		WithNewFile("src/app.js", "// placeholder\n").
+		AsWorkspace()
+
+	// The tool result is a placeholder: the real install tool runs during
+	// replay and its live result flows through.
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("install the dependencies").
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "install",
+			Arguments: dagger.JSON(`{}`),
+		}}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+
+	after := c.LLM(dagger.LLMOpts{Model: model}).
+		WithWorkspace(ws).
+		WithMCPServer("fixture", server).
+		WithPrompt("install the dependencies").
+		Loop().
+		Workspace()
+
+	// Tracked-looking writes land...
+	lock, err := after.File("package-lock.json").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "{}\n", lock)
+	app, err := after.File("src/app.js").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "require('dep')\n", app)
+
+	// ...while ignored additions and VCS metadata do not.
+	entries, err := after.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{".gitignore", "package-lock.json", "src/"}, entries)
+}

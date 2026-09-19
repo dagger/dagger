@@ -23,6 +23,16 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
+func TestGitMetaPathCount(t *testing.T) {
+	paths := &ChangesetPaths{
+		Added:    []string{".git/", ".git/HEAD", ".git/objects/", "src/a.go", "sub/.git/config"},
+		Modified: []string{".git/index", "README.md"},
+		Removed:  []string{".gitignore"},
+	}
+	require.Equal(t, 4, gitMetaPathCount(paths))
+	require.Equal(t, 0, gitMetaPathCount(&ChangesetPaths{Added: []string{"a"}}))
+}
+
 func TestCallPreservesHeaderArgs(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
 	result, failed := newMCP().Call(ctx, []LLMTool{{
@@ -55,6 +65,47 @@ func TestToolResultContentType(t *testing.T) {
 	require.Equal(t, gitDiffContentType, toolResultContentType(patch))
 	require.Empty(t, toolResultContentType("main.go | 1 +\n"))
 	require.Empty(t, toolResultContentType("prefix\n"+patch))
+}
+
+func TestSummarizeChangesetPaths(t *testing.T) {
+	paths := &ChangesetPaths{
+		Added: []string{
+			"sdk/", // directories are not files; not counted
+			"sdk/go/a.go", "sdk/go/b.go", "sdk/python/c.py",
+			"core/new.go",
+			"moved.go", // renamed: counted once, as a rename
+		},
+		Modified: []string{"core/mcp.go", "README.md"},
+		Removed:  []string{"old/", "orig.go"},
+		AllRemoved: []string{
+			"old/", "old/x.go", "old/y.go",
+			"orig.go", // the rename's old name; not a removal
+		},
+		Renamed: map[string]string{"moved.go": "orig.go"},
+	}
+
+	out := summarizeChangesetPaths(paths)
+	lines := strings.Split(out, "\n")
+	require.Equal(t, "9 files changed (4 added, 2 modified, 2 removed, 1 renamed).", lines[0])
+	require.Contains(t, lines[1], "too large to show in full")
+	// Buckets sort by count descending, then by name; root files land in "./".
+	require.Equal(t, []string{
+		"  sdk/  3 files",
+		"  ./    2 files",
+		"  core/ 2 files",
+		"  old/  2 files",
+	}, lines[2:])
+	require.Empty(t, toolResultContentType(out))
+}
+
+func TestSummarizeChangesetPathsCapsBuckets(t *testing.T) {
+	paths := &ChangesetPaths{}
+	for i := range patchSummaryMaxBuckets + 5 {
+		paths.Modified = append(paths.Modified, fmt.Sprintf("dir%02d/file.txt", i))
+	}
+	out := summarizeChangesetPaths(paths)
+	require.Contains(t, out, "… and 5 more directories")
+	require.Equal(t, patchSummaryMaxBuckets, strings.Count(out, " 1 files"), out)
 }
 
 func TestCallMarksPatchResult(t *testing.T) {

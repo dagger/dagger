@@ -23,6 +23,12 @@ const (
 	KindRenamed  = "RENAMED"
 )
 
+// MaxEntries caps the per-file rows Summarize renders. Entries beyond it (after
+// folding and sorting) collapse into a trailing "… and K more files" line, so a
+// change touching thousands of files stays a screenful. The footer totals still
+// count every entry.
+const MaxEntries = 50
+
 // SummarizeString returns a plain-text diff summary (no ANSI colors).
 func SummarizeString(entries []Entry, maxWidth int) string {
 	var buf strings.Builder
@@ -32,7 +38,8 @@ func SummarizeString(entries []Entry, maxWidth int) string {
 }
 
 // Summarize writes a colored diff summary to out. Removed files under removed
-// directories are folded into a single entry. Does nothing if entries is empty.
+// directories are folded into a single entry, and at most MaxEntries rows are
+// listed. Does nothing if entries is empty.
 func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 	if len(entries) == 0 {
 		return
@@ -43,15 +50,26 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		return strings.Compare(a.Path, b.Path)
 	})
 
-	maxDiffstatLen := 0
+	var totalAdded, totalRemoved int
 	for _, e := range entries {
+		totalAdded += e.Added
+		totalRemoved += e.Removed
+	}
+
+	shown := entries
+	if len(shown) > MaxEntries {
+		shown = shown[:MaxEntries]
+	}
+
+	maxDiffstatLen := 0
+	for _, e := range shown {
 		if l := diffstatLen(e); l > maxDiffstatLen {
 			maxDiffstatLen = l
 		}
 	}
 	maxFilenameLen := max(maxWidth-maxDiffstatLen, 10)
 	longestFilenameLen := 0
-	for _, e := range entries {
+	for _, e := range shown {
 		if l := len(entryLabel(e)); l > longestFilenameLen {
 			longestFilenameLen = l
 		}
@@ -60,8 +78,7 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		longestFilenameLen = maxFilenameLen
 	}
 
-	var totalAdded, totalRemoved int
-	for _, e := range entries {
+	for _, e := range shown {
 		filename := truncateLabel(e, maxFilenameLen)
 
 		var color termenv.Color
@@ -74,9 +91,6 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 			color = termenv.ANSIYellow
 		}
 
-		totalAdded += e.Added
-		totalRemoved += e.Removed
-
 		out.WriteString(out.String(filename).Foreground(color).String())
 		if len(filename) < longestFilenameLen {
 			out.WriteString(strings.Repeat(" ", longestFilenameLen-len(filename)))
@@ -88,6 +102,14 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 			fmt.Fprintf(out, " %s", out.String(fmt.Sprintf("-%d", e.Removed)).Foreground(termenv.ANSIRed))
 		}
 		out.WriteString("\n")
+	}
+
+	if hidden := len(entries) - len(shown); hidden > 0 {
+		fileWord := "files"
+		if hidden == 1 {
+			fileWord = "file"
+		}
+		fmt.Fprintf(out, "… and %d more %s\n", hidden, fileWord)
 	}
 
 	fileWord := "files"
