@@ -1033,6 +1033,63 @@ func TestSnapshotSharingSelectsRestoredFrame(t *testing.T) {
 	require.Zero(t, pending, "the graph lock is free again")
 }
 
+// Completed imported rows can be queued even though they need no donated
+// part. A representation change during their optional probe is diagnostic;
+// an ordinary read still uses the snapshot they already own.
+func TestSnapshotSharingCompletedRowCaptureRefusal(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	barrier := newSharePassBarrier(c)
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	value := newShareTestValue("completed", map[string]sharePartState{"fs": {Snapshot: "owned-snapshot"}})
+	receiver := persistedListTestResult(t, ctx, c, srv, "completed", value)
+	row := receiver.cacheSharedResult()
+	require.True(t, shareTestHasLink(receiver, "owned-snapshot"))
+	links := shareTestAppliedLinks(receiver)
+	c.egraphMu.Lock()
+	row.imported = true
+	c.egraphMu.Unlock()
+	c.EnableTransferFixtureParts()
+
+	// Model a representation publication between the probe's payload copy
+	// and revision check. The output and its applied owner links stay final.
+	var change sync.Once
+	value.beforeEncode = func() {
+		change.Do(func() {
+			row.payloadMu.Lock()
+			row.payloadRevision++
+			row.payloadMu.Unlock()
+		})
+	}
+	c.notifySnapshotShareCompletion(ctx, row)
+	require.Zero(t, barrier.awaitPass(t), "the unstable probe plans no slot")
+	causes := barrier.skipCauses()
+	require.Len(t, causes, 1)
+	require.ErrorIs(t, causes[0], ErrPersistStateNotReady)
+	require.ErrorContains(t, causes[0], "representation changed during capture")
+	require.Equal(t, links, shareTestAppliedLinks(receiver), "a refused probe leaves ownership intact")
+
+	released := armLazyAttemptReleased(c)
+	require.NoError(t, c.demandPart(ctx, receiver, PersistedPartAddress{Part: "fs"}))
+	waitLazyAttemptReleased(t, released)
+	require.Zero(t, barrier.awaitPass(t), "the demand's completion probes the already complete row again")
+	require.Empty(t, barrier.skipCauses(), "the stable later probe succeeds")
+	require.Equal(t, links, shareTestAppliedLinks(receiver))
+	require.Zero(t, manager.pins.Load(), "no share or demand needs a new snapshot")
+	require.Zero(t, manager.opens.Load())
+
+	events, _ := c.partFixtureEvents()
+	require.Len(t, events, 2)
+	for _, event := range events {
+		require.Equal(t, uint64(row.id), event.ResultID)
+		require.Empty(t, event.Address.Part)
+	}
+	require.Equal(t, "share-skipped", events[0].Kind)
+	require.Contains(t, events[0].Detail, "representation changed during capture")
+	require.Equal(t, "owner-sync", events[1].Kind, "the demand needs only its ordinary owner synchronization")
+}
+
 // A slot runs as the ordinary obtain task of its address, so an ordinary
 // demand for that address joins the slot's generation. When the slot is then
 // refused, the demand must see batch 4's reselect and finish by its ordinary

@@ -157,13 +157,17 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Contains(t, restoredEntries, "notes.txt")
 	var afterRead transferFixtureReport
 	require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &afterRead))
-	// The demand's own task always records its row-level owner-sync; nothing
-	// else may name the row, and nothing may name one of its parts.
+	// The demand's own task records its row-level owner-sync. An optional
+	// sharing probe can also record a diagnostic skip while the restored
+	// row's representation changes; that performs no part operation.
 	for _, event := range afterRead.Parts {
 		if event.ResultID != restoredRow.ResultID {
 			continue
 		}
 		t.Logf("restored read event for row=%d: %+v", restoredRow.ResultID, event)
+		if event.Kind == "share-skipped" {
+			continue
+		}
 		require.Equal(t, "owner-sync", event.Kind, "a read of a restored owned snapshot needs no part operation: %+v", event)
 		require.Empty(t, event.Address.Part, "a read of a restored owned snapshot needs no part operation: %+v", event)
 	}

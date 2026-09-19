@@ -38,6 +38,9 @@ type shareTestValue struct {
 	// afterStoreUnlock runs when a prepared store that published is unlocked:
 	// the first point after a typed Commit's publication that test code sees.
 	afterStoreUnlock func()
+	// beforeEncode can change a row's representation after capture takes its
+	// payload snapshot, without changing this value's completed outputs.
+	beforeEncode func()
 }
 
 type shareTestEncoded struct {
@@ -77,6 +80,9 @@ func (*shareTestValue) Type() *ast.Type {
 }
 
 func (v *shareTestValue) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
+	if v.beforeEncode != nil {
+		v.beforeEncode()
+	}
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	raw, err := json.Marshal(v.payloadLocked())
