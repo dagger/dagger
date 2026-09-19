@@ -60,9 +60,10 @@ import (
 // WITH THAT BUMP, since a decode boundary that answers for its own optional
 // fields is the real fix and duplicating it here only hides the next one.
 //
-// The transport is somebody else's problem: slice 5's Cloud SSE client decodes
-// protojson into these three request types and feeds them here, and slice 4's
-// tests feed a canned capture instead. Nothing below knows which.
+// The transport is somebody else's problem: internal/cloud's OTLP stream
+// client decodes Cloud's binary frames into these three request types and
+// feeds them here, and slice 4's tests feed a canned capture instead. Nothing
+// below knows which.
 
 // TraceImportSinks are the exporters an imported trace lands in — the live
 // frontend's own (Frontend.SpanExporter, LogExporter, MetricExporter), which
@@ -81,6 +82,15 @@ type TraceImportSinks struct {
 // Safe for concurrent use: the three streams arrive on separate connections.
 type TraceImporter struct {
 	sinks TraceImportSinks
+
+	// KeepRoots leaves the imported trace's parentless spans as real roots
+	// instead of stamping them passthrough (§5.1.1). Set it when the imported
+	// trace IS the session: `dagger trace` renders nothing else, and its root
+	// becomes the primary span the whole view hangs from -- a passthrough
+	// zoomed span renders only its revealed spans (dagui.DB.RowsView), not
+	// its children. A resume leaves it unset: there the live root is primary
+	// and the imported one has to get out of the way.
+	KeepRoots bool
 
 	mu sync.Mutex
 	// unfinished holds every span seen with no end time, keyed by span ID, so
@@ -138,7 +148,7 @@ func (imp *TraceImporter) ImportSpans(ctx context.Context, req *coltracepb.Expor
 
 func (imp *TraceImporter) noteLocked(resource *tracepb.ResourceSpans, scope *tracepb.ScopeSpans, span *tracepb.Span) {
 	parentless := len(span.GetParentSpanId()) == 0
-	if parentless {
+	if parentless && !imp.KeepRoots {
 		// §5.1.1. Stamped on every parentless span rather than on "the" root:
 		// a capture may hold more than one (a partial fetch, a trace whose
 		// real root never reached Cloud), and each is a second root as far as

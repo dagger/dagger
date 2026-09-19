@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,11 +57,14 @@ import (
 // its conversation, so everything the trace carries is streamed and handed to
 // the sink.
 //
-// It lives here rather than in the CLI because `dagger trace` is a plausible
-// second consumer later, and it does NOT replace the GraphQL-SSE client in
-// trace.go: that one answers "render a huge trace cheaply" with incremental,
-// lazy loading, and this one answers "rebuild a complete DAG and show all of
-// it". Different requirements, both wanted.
+// The same endpoints also take a SELECTION (api/otlp/stream_options.go on the
+// server): the traces stream can be narrowed to the priority spans and to
+// listened subtrees, the logs stream to one span's own or rolled-up records.
+// FetchSpans and FetchLogs expose that for `dagger trace`, which renders a
+// huge trace cheaply by loading lazily, the way the GraphQL-SSE client in
+// trace.go did before these endpoints could select -- with the difference
+// that these are addressed by trace ID and token alone, no org. The GraphQL
+// client stays for `dagger cloud logs`.
 //
 // What this deliberately does not do is convert anything. §5.1 originally said
 // to re-export through telemetry.SpansFromPB / ReexportLogsFromPB /
@@ -309,6 +313,137 @@ func (c *OTLPClient) FetchTrace(ctx context.Context, traceID string, sink TraceI
 	return errors.Join(streamErr, sealErr)
 }
 
+// SpanSelection narrows a /v1/traces stream. It mirrors the server's
+// parseTraceStreamOptions (api/otlp/stream_options.go in dagger.io), which
+// shares its query layer with the spansUpdated GraphQL subscription, so
+// these have the semantics the Cloud web UI drives:
+//
+//   - Root selects the root span(s) and their visible children; the roots
+//     also anchor completion, so a stream with Root set ends once every root
+//     has been over for a few seconds. The zero value is the server's
+//     default (true), spelled out on the wire either way.
+//   - Listen adds each span, its children and their passthrough descendants,
+//     and anchors completion on them too. At most 256 per request.
+//   - Incremental forces the priority-only selection regardless of trace
+//     size; without it a trace under the server's threshold comes back
+//     whole even when Listen is set.
+//   - Before/After bound spans by their Cloud-side update time. Before also
+//     bounds the STREAM: one poll, then the terminal frame -- which is what
+//     makes a backfill on a still-running span return instead of follow.
+//   - DagUIView asks for the dagger.io/ui.* egress attributes (child count,
+//     has-logs, partial, update time; engine/telemetryattrs) an incremental,
+//     lazily-expanding view needs and the OTLP span form otherwise lacks.
+type SpanSelection struct {
+	NoRoot      bool
+	Listen      []string
+	Incremental bool
+	Before      *time.Time
+	After       *time.Time
+	DagUIView   bool
+}
+
+func (s SpanSelection) query() url.Values {
+	q := url.Values{}
+	q.Set("root", strconv.FormatBool(!s.NoRoot))
+	for _, id := range s.Listen {
+		q.Add("listen", id)
+	}
+	if s.Incremental {
+		q.Set("incremental", "true")
+	}
+	if s.Before != nil {
+		q.Set("before", s.Before.UTC().Format(time.RFC3339Nano))
+	}
+	if s.After != nil {
+		q.Set("after", s.After.UTC().Format(time.RFC3339Nano))
+	}
+	if s.DagUIView {
+		q.Set("view", "dagui")
+	}
+	return q
+}
+
+// Log record classes a /v1/logs stream can be narrowed to (the server's
+// `records` parameter). The zero value is every record.
+const (
+	// LogRecordsAll is every log row: text output and the semantic records
+	// riding the log channel (call payloads, progress, agent state, span
+	// names).
+	LogRecordsAll = ""
+	// LogRecordsLogs is text output only, with the global/verbose records
+	// dropped -- what a rolled-up "show me this span's output" wants. It
+	// requires a span ID.
+	LogRecordsLogs = "logs"
+	// LogRecordsCallPayloads is the dagql call payload records alone.
+	LogRecordsCallPayloads = "call_payloads"
+)
+
+// LogSelection narrows a /v1/logs stream to one span's records, mirroring
+// the server's parseLogStreamOptions and the logsEmitted subscription:
+//
+//   - SpanID selects the span; Descendants rolls its subtree up too, walking
+//     past boundary/encapsulated/internal spans the way the UI does. The
+//     stream ends once the selected span has ended.
+//   - After bounds records by timestamp.
+//   - Records picks the record class (LogRecords*).
+type LogSelection struct {
+	SpanID      string
+	Descendants bool
+	After       *time.Time
+	Records     string
+}
+
+func (s LogSelection) query() url.Values {
+	q := url.Values{}
+	if s.SpanID != "" {
+		q.Set("span_id", s.SpanID)
+	}
+	if s.Descendants {
+		q.Set("descendants", "true")
+	}
+	if s.After != nil {
+		q.Set("after", s.After.UTC().Format(time.RFC3339Nano))
+	}
+	if s.Records != LogRecordsAll {
+		q.Set("records", s.Records)
+	}
+	return q
+}
+
+// FetchSpans streams the spans sel selects from traceID to cb, one export
+// request per data frame, until the server's terminal frame. Unlike
+// FetchTrace it neither seals nor touches logs and metrics: the caller is
+// assembling a view incrementally and owns that bookkeeping.
+func (c *OTLPClient) FetchSpans(ctx context.Context, traceID string, sel SpanSelection, cb func(context.Context, *coltracepb.ExportTraceServiceRequest) error) error {
+	if traceID == "" {
+		return errors.New("no trace ID to fetch")
+	}
+	return c.consumeStream(ctx, otlpTraces, traceID, sel.query(), func(data []byte) error {
+		var req coltracepb.ExportTraceServiceRequest
+		if err := proto.Unmarshal(data, &req); err != nil {
+			return fmt.Errorf("unmarshal traces: %w", err)
+		}
+		c.stats.addRecords(otlpTraces, countSpans(&req))
+		return cb(ctx, &req)
+	})
+}
+
+// FetchLogs streams the log records sel selects from traceID to cb, one
+// export request per data frame, until the server's terminal frame.
+func (c *OTLPClient) FetchLogs(ctx context.Context, traceID string, sel LogSelection, cb func(context.Context, *collogspb.ExportLogsServiceRequest) error) error {
+	if traceID == "" {
+		return errors.New("no trace ID to fetch")
+	}
+	return c.consumeStream(ctx, otlpLogs, traceID, sel.query(), func(data []byte) error {
+		var req collogspb.ExportLogsServiceRequest
+		if err := proto.Unmarshal(data, &req); err != nil {
+			return fmt.Errorf("unmarshal logs: %w", err)
+		}
+		c.stats.addRecords(otlpLogs, countLogRecords(&req))
+		return cb(ctx, &req)
+	})
+}
+
 // serializedTraceImportSink preserves TraceImportSink's synchronous callback
 // contract while FetchTrace overlaps the three network streams.
 type serializedTraceImportSink struct {
@@ -341,7 +476,7 @@ func (s *serializedTraceImportSink) Seal(ctx context.Context) error {
 }
 
 func (c *OTLPClient) streamTraces(ctx context.Context, traceID string, sink TraceImportSink) error {
-	return c.consumeStream(ctx, otlpTraces, traceID, func(data []byte) error {
+	return c.consumeStream(ctx, otlpTraces, traceID, nil, func(data []byte) error {
 		var req coltracepb.ExportTraceServiceRequest
 		if err := proto.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal traces: %w", err)
@@ -352,7 +487,7 @@ func (c *OTLPClient) streamTraces(ctx context.Context, traceID string, sink Trac
 }
 
 func (c *OTLPClient) streamLogs(ctx context.Context, traceID string, sink TraceImportSink) error {
-	return c.consumeStream(ctx, otlpLogs, traceID, func(data []byte) error {
+	return c.consumeStream(ctx, otlpLogs, traceID, nil, func(data []byte) error {
 		var req collogspb.ExportLogsServiceRequest
 		if err := proto.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal logs: %w", err)
@@ -363,7 +498,7 @@ func (c *OTLPClient) streamLogs(ctx context.Context, traceID string, sink TraceI
 }
 
 func (c *OTLPClient) streamMetrics(ctx context.Context, traceID string, sink TraceImportSink) error {
-	return c.consumeStream(ctx, otlpMetrics, traceID, func(data []byte) error {
+	return c.consumeStream(ctx, otlpMetrics, traceID, nil, func(data []byte) error {
 		var req colmetricspb.ExportMetricsServiceRequest
 		if err := proto.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal metrics: %w", err)
@@ -435,19 +570,21 @@ func closeResponseError(endpoint string, resp *http.Response) error {
 	return err
 }
 
-// consumeStream connects to one of the OTLP endpoints and feeds every data
-// frame's payload to cb.
+// consumeStream connects to one of the OTLP endpoints, narrowed by query when
+// given, and feeds every data frame's payload to cb.
 //
 // End of trace is the TERMINAL frame, and only the terminal frame: a
 // connection that ends without one was truncated — half a trace must fail
 // the restore (§12) rather than be restored from silently — and a server
 // that answers in some other protocol entirely is refused by Content-Type
 // before a byte of it is parsed.
-func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, cb func([]byte) error) error {
+func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, query url.Values, cb func([]byte) error) error {
 	// JoinPath, not an assignment to u.Path: a DAGGER_CLOUD_URL with a path
 	// prefix (a proxy, a test server on a subpath) would otherwise have its
 	// prefix silently dropped.
-	endpoint := c.u.JoinPath("/v1/", kind, traceID).String()
+	u := c.u.JoinPath("/v1/", kind, traceID)
+	u.RawQuery = query.Encode()
+	endpoint := u.String()
 
 	slog.Debug("connecting to cloud OTLP stream", "url", endpoint, "kind", kind)
 

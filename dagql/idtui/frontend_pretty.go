@@ -1894,8 +1894,9 @@ func (fe *frontendPretty) RequestZoomLogs(id dagui.SpanID, descendants bool) {
 // failed representative for a check, the (failing-preferred) case for a test
 // -- so the drill-in commands the report suggests land on the span it
 // described, rather than an arbitrary same-named span (a passing retry, a
-// boundary-contained fixture). Returns false when the name isn't in the
-// loaded view, letting the caller fall back to a raw span lookup.
+// boundary-contained fixture). Names the surfaced view hides (e.g. a
+// boundary-contained fixture's check) fall back to a raw scan of every loaded
+// span. Returns false when the name isn't in the trace at all.
 func (fe *frontendPretty) ResolveSpanTarget(check, test string) (dagui.SpanID, bool) {
 	var id dagui.SpanID
 	var found bool
@@ -1919,30 +1920,37 @@ func (fe *frontendPretty) ResolveSpanTarget(check, test string) (dagui.SpanID, b
 			if node := find(fe.db.SurfacedChecks()); node != nil && node.Span != nil {
 				id = node.Span.ID
 				found = true
+				return
+			}
+			if span := fe.db.FindCheckSpan(check); span != nil {
+				id, found = span.ID, true
 			}
 		case test != "":
 			tv := fe.db.TestView()
-			if tv == nil {
-				return
+			if tv != nil {
+				var candidate *dagui.TestNode
+				for _, node := range tv.CasesByName[test] {
+					if node == nil || node.Span == nil {
+						continue
+					}
+					// Prefer a failing case, so the hint a failing report prints
+					// resolves to the failure the user is chasing.
+					if node.Category == dagui.TestCategoryFailing {
+						candidate = node
+						break
+					}
+					if candidate == nil {
+						candidate = node
+					}
+				}
+				if candidate != nil {
+					id = candidate.Span.ID
+					found = true
+					return
+				}
 			}
-			var candidate *dagui.TestNode
-			for _, node := range tv.CasesByName[test] {
-				if node == nil || node.Span == nil {
-					continue
-				}
-				// Prefer a failing case, so the hint a failing report prints
-				// resolves to the failure the user is chasing.
-				if node.Category == dagui.TestCategoryFailing {
-					candidate = node
-					break
-				}
-				if candidate == nil {
-					candidate = node
-				}
-			}
-			if candidate != nil {
-				id = candidate.Span.ID
-				found = true
+			if span := fe.db.FindTestSpan(test); span != nil {
+				id, found = span.ID, true
 			}
 		}
 	})
@@ -2124,10 +2132,10 @@ func (fe *frontendPretty) requestSubtree(id dagui.SpanID) {
 }
 
 // ImportSnapshots folds a batch of span snapshots into the DB and refreshes the
-// view. It's the snapshot-based counterpart to the OTLP ExportSpans path, used
-// by 'dagger trace' which receives spans as snapshots from Cloud (carrying
-// ChildCount and Partial, which the OTLP form drops). Mirrors the post-import
-// bookkeeping ExportSpans does so logs and test views stay in sync.
+// view. It's the snapshot-based counterpart to the OTLP ExportSpans path, for
+// callers that already hold dagui snapshots (a remote frontend, tests).
+// Mirrors the post-import bookkeeping ExportSpans does so logs and test views
+// stay in sync.
 func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 	if len(snapshots) == 0 {
 		return

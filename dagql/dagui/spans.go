@@ -612,6 +612,18 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetryattrs.UIResumeOutputAttr:
 		snapshot.ResumeOutput = val.(string)
 
+	case telemetryattrs.UIChildCountAttr:
+		// Cloud's incremental view: children exist that this snapshot's
+		// stream did not carry, so the span stays expandable.
+		snapshot.ChildCount = int(asInt64(val))
+
+	case telemetryattrs.UIHasLogsAttr:
+		snapshot.HasLogs = val.(bool)
+
+	case telemetryattrs.UIPartialAttr, telemetryattrs.UIUpdateTimeUnixNanoAttr:
+		// Fetch bookkeeping for the client driving the incremental stream,
+		// not span state.
+
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)
 

@@ -59,7 +59,11 @@ func newLogoutCmd(hidden bool) *cobra.Command {
 	}
 }
 
-type CloudCLI struct{}
+type CloudCLI struct {
+	// otlpClient, when set, stands in for cloudOTLPClient's credential
+	// resolution: tests aim it at a fake Cloud.
+	otlpClient *cloud.OTLPClient
+}
 
 func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()

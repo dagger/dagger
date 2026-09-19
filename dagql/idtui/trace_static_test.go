@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/internal/cloud"
 )
 
 // staticSource is an in-memory traceSource for offline smoke tests: a fixed span
@@ -16,8 +15,8 @@ type staticSource struct {
 	id       string
 	priority []dagui.SpanSnapshot
 	childOf  map[string][]dagui.SpanSnapshot
-	own      map[string][]cloud.LogMessage
-	roll     map[string][]cloud.LogMessage
+	own      map[string][]traceLog
+	roll     map[string][]traceLog
 }
 
 func (s *staticSource) traceID() string                   { return s.id }
@@ -25,7 +24,7 @@ func (s *staticSource) loadInitial() []dagui.SpanSnapshot { return s.priority }
 func (s *staticSource) children(id dagui.SpanID) []dagui.SpanSnapshot {
 	return s.childOf[id.String()]
 }
-func (s *staticSource) logs(id dagui.SpanID, descendants bool) []cloud.LogMessage {
+func (s *staticSource) logs(id dagui.SpanID, descendants bool) []traceLog {
 	if descendants {
 		return s.roll[id.String()]
 	}
@@ -67,7 +66,7 @@ func TestTraceSessionLazyFetch(t *testing.T) {
 			}},
 		},
 		// A failing leaf test rolls up its descendants (descendants=true).
-		roll: map[string][]cloud.LogMessage{
+		roll: map[string][]traceLog{
 			caseID.String(): {
 				{Body: "=== RUN unit failure\n"},
 				{Body: "    assertion failed: boom\n"},
