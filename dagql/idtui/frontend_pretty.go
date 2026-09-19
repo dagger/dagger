@@ -6249,9 +6249,12 @@ func (fe *frontendPretty) enterInsertMode() {
 	}
 }
 
-// editablePrompt reports whether span belongs to the focused agent and its LLM
-// recipe can be traced back to an addressable withPrompt call. Reply and tool
-// rows are accepted too: e edits the prompt that originated their current turn.
+// editablePrompt reports whether span is a user prompt row of the focused
+// agent whose LLM recipe can be traced back to an addressable withPrompt call.
+// Only prompt rows qualify: `e` is a bare, unconfirmed key that rewinds the
+// conversation, and accepting reply or tool rows too meant that a stray
+// keypress with the newest reply focused — where focus usually rests —
+// silently threw away the whole turn.
 func (fe *frontendPretty) editablePrompt(span *dagui.Span) bool {
 	promptCall := fe.promptEditCall(span)
 	return promptCall != nil && promptCall.ReceiverDigest != ""
@@ -6262,6 +6265,11 @@ func (fe *frontendPretty) editablePrompt(span *dagui.Span) bool {
 // every render; promptEditTarget pays for that only after e is pressed.
 func (fe *frontendPretty) promptEditCall(span *dagui.Span) *callpbv1.Call {
 	if fe.shell == nil || fe.serialRunning || span == nil || !fe.spanBelongsToFocusedAgent(span) {
+		return nil
+	}
+	if span.LLMRole != telemetry.LLMRoleUser || span.Internal || span.LLMEventOriginMessage() {
+		// Not a prompt the user submitted: a reply, a tool call, the system
+		// prompt, or an engine event (a rewind marker included).
 		return nil
 	}
 	digest := spanLLMCallDigest(span)
@@ -6276,28 +6284,26 @@ func (fe *frontendPretty) promptEditCall(span *dagui.Span) *callpbv1.Call {
 		return nil
 	}
 
-	if span.LLMRole == telemetry.LLMRoleUser && !span.Internal {
-		var peers []*dagui.Span
-		for _, candidate := range fe.db.Spans.Order {
-			if candidate != nil && !candidate.Internal &&
-				candidate.LLMRole == telemetry.LLMRoleUser &&
-				candidate.LLMCallDigest == digest &&
-				fe.sameNearestAgent(candidate, span) {
-				peers = append(peers, candidate)
-			}
+	var peers []*dagui.Span
+	for _, candidate := range fe.db.Spans.Order {
+		if candidate != nil && !candidate.Internal &&
+			candidate.LLMRole == telemetry.LLMRoleUser &&
+			candidate.LLMCallDigest == digest &&
+			fe.sameNearestAgent(candidate, span) {
+			peers = append(peers, candidate)
 		}
-		slices.SortFunc(peers, func(a, b *dagui.Span) int {
-			return a.StartTime.Compare(b.StartTime)
-		})
-		selected := slices.Index(peers, span)
-		if selected < 0 {
+	}
+	slices.SortFunc(peers, func(a, b *dagui.Span) int {
+		return a.StartTime.Compare(b.StartTime)
+	})
+	selected := slices.Index(peers, span)
+	if selected < 0 {
+		return nil
+	}
+	for range len(peers) - selected - 1 {
+		promptCall = fe.db.Call(promptCall.ReceiverDigest)
+		if promptCall == nil || promptCall.Field != "withPrompt" {
 			return nil
-		}
-		for range len(peers) - selected - 1 {
-			promptCall = fe.db.Call(promptCall.ReceiverDigest)
-			if promptCall == nil || promptCall.Field != "withPrompt" {
-				return nil
-			}
 		}
 	}
 	return promptCall
