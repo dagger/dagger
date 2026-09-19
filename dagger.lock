@@ -20,6 +20,7 @@
 ["","git-sha",["github.com/dagger/PsScriptAnalyzer","refs/heads/main"],"497fe769161aa50c8dc87a84d9026fe62c7a14b2"]
 ["","git-sha",["github.com/dagger/dagger","HEAD"],"7c35e6274737acff0f6bd76614abb5e04efa7d12"]
 ["","git-sha",["github.com/dagger/dagger","v1.0.0-beta.13"],"6bf59d50654ce9244ebeee1cc090b7dce3fe3083"]
+["","git-sha",["github.com/dagger/dagger","v1.0.0-beta.14"],"06660c3cde2d9da65d8b009531efd04cfc5578ed"]
 ["","git-sha",["github.com/dagger/dang-sdk","main"],"6dde4a9ca2cb598bf281ba36778d2428ad53aa48"]
 ["","git-sha",["github.com/dagger/dang-sdk","refs/tags/v0.1"],"29090a071374b5adaa5ad5b3ce00524afe01dcc2"]
 ["","git-sha",["github.com/dagger/dang-sdk","refs/tags/v1.0.1"],"6dde4a9ca2cb598bf281ba36778d2428ad53aa48"]

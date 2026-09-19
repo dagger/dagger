@@ -1,5 +1,5 @@
 name = "go-cli"
-engineVersion = "latest"
+engineVersion = "v1.0.0-beta.14"
 
 [runtime]
   source = "dang"

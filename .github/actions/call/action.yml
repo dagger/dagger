@@ -18,7 +18,7 @@ inputs:
 
   version:
     description: "Dagger version to run against"
-    default: "v1.0.0-beta.13"
+    default: "v1.0.0-beta.14"
     required: false
 
   commit:

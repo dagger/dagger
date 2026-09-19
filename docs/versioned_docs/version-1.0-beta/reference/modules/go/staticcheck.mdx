@@ -1,0 +1,101 @@
+---
+title: "Staticcheck"
+slug: /reference/modules/go/staticcheck
+description: "Analyze Go modules across a workspace with Staticcheck."
+---
+
+# Staticcheck
+
+The Staticcheck module analyzes Go source as a Dagger check. It discovers
+`go.mod` files and runs Staticcheck separately in each selected Go module,
+using the same configuration locally and in CI.
+
+## Add it to your workspace
+
+```bash
+dagger module install dagger.io/go/staticcheck
+```
+
+`dagger module recommend` suggests this module when it finds `staticcheck.conf`
+in the workspace.
+
+## Run the check
+
+```bash
+dagger check                      # run every check in the workspace
+dagger check staticcheck:lint-all # analyze the selected Go modules
+```
+
+`lint-all` discovers Go modules at or below the working directory, including
+the enclosing module when run from a subdirectory. Run it from the workspace
+root to check every module. It runs `staticcheck ./...` in each selected module
+and fails if any module has diagnostics. Test files are analyzed too; tests and
+generators are not executed.
+
+The module includes `staticcheck.conf` files with their directory structure
+intact, preserving configuration inheritance. Go and native sources, embedded
+assets, and local `go.mod` replacement dependencies within the workspace are
+included automatically. Go module, build, and Staticcheck caches are shared
+between runs.
+
+## Module discovery
+
+`lint-all` finds Go modules by looking for `go.mod` files:
+
+- Every directory at or below the directory `dagger` runs from that holds a
+  `go.mod` is a Go module. Run `dagger` from the workspace root to cover the
+  whole repository.
+- When `dagger` runs from a directory inside a Go module, that enclosing module
+  is included as well.
+- Every `go.mod` counts, including those under `vendor/`, `testdata/`,
+  `examples/`, hidden directories, and directories listed in `.gitignore`.
+- A directory is a module when its `go.mod` parses and it holds at least one
+  Go file, so an empty module or a placeholder `go.mod` is left out.
+
+Exclude a module with the `lint` setting, which selects module roots by path
+from the workspace root. `"!vendor"` excludes the module at `vendor` and any
+module below it, and exclusions always win. The pattern rules are the same as
+the Go module's `test` setting, listed under
+[Module discovery](../go.mdx#module-discovery).
+
+## Configure it
+
+List the current settings with `dagger module settings staticcheck`, then
+change one with `dagger module settings staticcheck <key> <value>`. Settings
+live in `dagger.toml` under `[modules.staticcheck.settings]`:
+
+- `version` (default `v0.8.1`) selects the Staticcheck release every module is
+  checked with. It is installed into the lint container unless that container
+  already carries Staticcheck.
+- `goVersion` sets one Go toolchain for every module, overriding the `go`
+  directive in each module's `go.mod`. Without it, each module is checked in
+  `golang:<version>-alpine` for the version its own `go.mod` asks for. It is
+  separate from the Go module's `version`, which applies to tests and
+  generators.
+- `base` is an optional container to run Staticcheck in. It must carry a Go
+  toolchain and any C/C++ dependencies the modules need, and Staticcheck is
+  installed into it unless it already has one. It supplies its own toolchain,
+  so `goVersion` is ignored alongside it.
+- `includeExtraFiles` (default empty) adds workspace-root path patterns for
+  files that automatic source discovery misses.
+- `lint` (default `["**"]`) selects module roots to analyze. A bare path or
+  `path/**` includes that module and its descendants; `!path` excludes them.
+  Exclusions always win. `"**"` and `"*"` match every module. With no positive
+  pattern, every module is included unless excluded; `["!**"]` skips all
+  modules. Other glob forms are not supported by this setting.
+
+Edit list-valued settings directly in `dagger.toml`:
+
+```toml
+[modules.staticcheck.settings]
+version = "v0.8.1"
+goVersion = "1.26"
+lint = ["**", "!legacy-service"]
+includeExtraFiles = ["shared-assets/**"]
+```
+
+## Working with other modules
+
+Use this module alongside [Go](../go.mdx) for tests and code generation.
+
+[source code](https://github.com/dagger/go/tree/main/staticcheck)
