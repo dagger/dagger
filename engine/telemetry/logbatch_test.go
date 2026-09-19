@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"strconv"
 	"sync"
@@ -299,6 +300,164 @@ func TestCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
 	flushes, shutdowns := exp.lifecycleCounts()
 	require.Zero(t, flushes, "the payload processor does not own the shared exporter")
 	require.Zero(t, shutdowns, "the payload processor does not own the shared exporter")
+}
+
+func TestWithoutCallPayloadsKeepsPayloadsOffOrdinaryPath(t *testing.T) {
+	t.Parallel()
+
+	ordinaryExp := &countingLogExporter{}
+	payloadExp := &countingLogExporter{}
+	payloadProc := NewCallPayloadBatchProcessor(payloadExp)
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(payloadProc),
+		sdklog.WithProcessor(WithoutCallPayloads(sdklog.NewSimpleProcessor(ordinaryExp))),
+	)
+	logger := provider.Logger("test.core")
+
+	var payload logapi.Record
+	payload.SetBody(logapi.BytesValue([]byte("payload")))
+	payload.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	var ordinary logapi.Record
+	ordinary.SetBody(logapi.StringValue("exec output"))
+	for range 3 {
+		logger.Emit(t.Context(), payload)
+		logger.Emit(t.Context(), ordinary)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, provider.ForceFlush(ctx))
+	require.Equal(t, 3, ordinaryExp.count(),
+		"ordinary logs must still reach the ordinary processor")
+	require.Equal(t, 3, payloadExp.count(),
+		"payloads must be exported exactly once, by the payload processor")
+	require.NoError(t, provider.Shutdown(ctx))
+}
+
+// flakyLogExporter fails the first failures exports, then records every
+// record body it is handed in order.
+type flakyLogExporter struct {
+	mu       sync.Mutex
+	failures int
+	attempts int
+	bodies   []string
+	batches  []int
+}
+
+func (e *flakyLogExporter) Export(_ context.Context, recs []sdklog.Record) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.attempts++
+	if e.attempts <= e.failures {
+		return errors.New("client db unavailable")
+	}
+	e.batches = append(e.batches, len(recs))
+	for _, rec := range recs {
+		e.bodies = append(e.bodies, string(rec.Body().AsBytes()))
+	}
+	return nil
+}
+
+func (e *flakyLogExporter) stats() (int, []string, []int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.attempts, append([]string(nil), e.bodies...), append([]int(nil), e.batches...)
+}
+
+func (*flakyLogExporter) Shutdown(context.Context) error   { return nil }
+func (*flakyLogExporter) ForceFlush(context.Context) error { return nil }
+
+func payloadRecordWithBody(body string) logapi.Record {
+	var rec logapi.Record
+	rec.SetBody(logapi.BytesValue([]byte(body)))
+	rec.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	return rec
+}
+
+// The payload processor is the only transport for payload records, so a
+// failed export must be retried by the processor itself — in order, so a
+// root never lands after the dependencies emitted behind it — with records
+// emitted during the backoff queued behind the failed batch.
+func TestCallPayloadBatchProcessorRetriesFailedBatchInOrder(t *testing.T) {
+	t.Parallel()
+
+	exp := &flakyLogExporter{failures: 2}
+	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	logger := provider.Logger("test.core")
+
+	const first = LogExportMaxBatchSize + 1
+	for i := range first {
+		logger.Emit(t.Context(), payloadRecordWithBody(strconv.Itoa(i)))
+	}
+	require.Eventually(t, func() bool {
+		attempts, _, _ := exp.stats()
+		return attempts >= 1
+	}, time.Second, time.Millisecond, "the first batch must reach the exporter")
+	// Emitted while the failed batch is waiting for its retry.
+	logger.Emit(t.Context(), payloadRecordWithBody("late"))
+
+	require.Eventually(t, func() bool {
+		_, bodies, _ := exp.stats()
+		return len(bodies) == first+1
+	}, 5*time.Second, 5*time.Millisecond, "every record must land once the exporter recovers")
+
+	attempts, bodies, batches := exp.stats()
+	require.Equal(t, 2+2, attempts, "two failed attempts, then the two batches in one drain")
+	want := make([]string, 0, first+1)
+	for i := range first {
+		want = append(want, strconv.Itoa(i))
+	}
+	want = append(want, "late")
+	require.Equal(t, want, bodies, "retries must preserve emission order and never duplicate")
+	require.Equal(t, []int{LogExportMaxBatchSize, 2}, batches)
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, proc.Shutdown(ctx))
+}
+
+// A batch that never lands must eventually be dropped rather than wedge the
+// queue: the session exporter has released its records' delivery claims, so a
+// later closure walk can still repair them.
+func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
+	t.Parallel()
+
+	exp := &flakyLogExporter{failures: CallPayloadMaxExportAttempts}
+	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	logger := provider.Logger("test.core")
+	logger.Emit(t.Context(), payloadRecordWithBody("doomed"))
+
+	// Each explicit flush is one attempt, without waiting out the backoff.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var err error
+	for range CallPayloadMaxExportAttempts {
+		err = proc.ForceFlush(ctx)
+		require.Error(t, err)
+	}
+	require.ErrorContains(t, err, "dropping 1 call payload records")
+	attempts, bodies, _ := exp.stats()
+	require.Equal(t, CallPayloadMaxExportAttempts, attempts)
+	require.Empty(t, bodies)
+
+	// The queue is clear: a later record exports on the first try.
+	logger.Emit(t.Context(), payloadRecordWithBody("repaired"))
+	require.NoError(t, proc.ForceFlush(ctx))
+	_, bodies, _ = exp.stats()
+	require.Equal(t, []string{"repaired"}, bodies)
+	require.NoError(t, proc.Shutdown(ctx))
+}
+
+func TestCallPayloadRetryDelayBackoff(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, CallPayloadRetryBaseDelay, callPayloadRetryDelay(1))
+	require.Equal(t, 2*CallPayloadRetryBaseDelay, callPayloadRetryDelay(2))
+	require.Equal(t, 4*CallPayloadRetryBaseDelay, callPayloadRetryDelay(3))
+	require.Equal(t, CallPayloadRetryMaxDelay, callPayloadRetryDelay(CallPayloadMaxExportAttempts))
+	require.Equal(t, CallPayloadRetryMaxDelay, callPayloadRetryDelay(100))
 }
 
 type blockingLogExporter struct {

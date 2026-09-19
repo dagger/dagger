@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -14,7 +15,23 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-const CallPayloadExportDelay = 5 * time.Millisecond
+const (
+	// CallPayloadExportDelay is how long the first payload of a burst waits
+	// for the rest of its recipe closure before the batch is exported.
+	CallPayloadExportDelay = 5 * time.Millisecond
+
+	// CallPayloadRetryBaseDelay is the backoff after the first failed export
+	// of a payload batch; it doubles per consecutive failure up to
+	// CallPayloadRetryMaxDelay.
+	CallPayloadRetryBaseDelay = 50 * time.Millisecond
+	CallPayloadRetryMaxDelay  = 2 * time.Second
+	// CallPayloadMaxExportAttempts bounds how often one batch is retried
+	// before it is dropped. The session exporter releases every target a
+	// failed write left behind, so a dropped record can still be repaired by
+	// a later closure walk; this bound only keeps a dead client DB from
+	// wedging the queue forever.
+	CallPayloadMaxExportAttempts = 8
+)
 
 // CallPayloadBatchProcessor gives immutable call payloads a short, on-demand
 // path to the session exporter while the ordinary log processor retains its
@@ -26,14 +43,20 @@ const CallPayloadExportDelay = 5 * time.Millisecond
 // root's per-target claim suppresses every later closure walk that could repair
 // it. Recipe bursts are finite and deduplicated per delivery target; bounding
 // exporter batches, rather than ingress, keeps each persistence operation
-// bounded. The ordinary processor later exports the same records, but the
-// session exporter's per-target claims make those copies no-ops.
+// bounded.
+//
+// This is the ONLY transport for payload records (WithoutCallPayloads keeps
+// them out of the ordinary processor), so it owns their retries too: a batch
+// whose export fails goes back to the head of the queue, in order, and is
+// retried with exponential backoff until it lands or
+// CallPayloadMaxExportAttempts is spent.
 type CallPayloadBatchProcessor struct {
 	exporter sdklog.Exporter
 
-	mu      sync.Mutex
-	queue   []sdklog.Record
-	stopped bool
+	mu       sync.Mutex
+	queue    []sdklog.Record
+	failures int // consecutive failed exports of the batch at the queue head
+	stopped  bool
 
 	wake     chan struct{}
 	flush    chan callPayloadBatchRequest
@@ -60,7 +83,7 @@ func NewCallPayloadBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchPro
 }
 
 func (processor *CallPayloadBatchProcessor) OnEmit(_ context.Context, record *sdklog.Record) error {
-	if record == nil || !isCallPayloadRecord(*record) {
+	if record == nil || !IsCallPayloadRecord(*record) {
 		return nil
 	}
 
@@ -137,60 +160,153 @@ func (processor *CallPayloadBatchProcessor) Shutdown(ctx context.Context) error 
 	}
 }
 
+// run is the single worker. Between exports it sleeps on the wake signal; a
+// wake arms the coalescing delay, a failed export arms the retry backoff
+// instead, and an explicit flush or shutdown exports immediately either way.
 func (processor *CallPayloadBatchProcessor) run() {
 	defer close(processor.done)
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	arm := func(delay time.Duration) {
+		if timer != nil {
+			stopTimer(timer)
+		}
+		timer = time.NewTimer(delay)
+		timerC = timer.C
+	}
+	disarm := func() {
+		if timer != nil {
+			stopTimer(timer)
+			timer = nil
+		}
+		timerC = nil
+	}
+	export := func(ctx context.Context) error {
+		disarm()
+		retryIn, err := processor.exportQueued(ctx)
+		if retryIn > 0 {
+			arm(retryIn)
+		}
+		return err
+	}
 	for {
 		select {
 		case <-processor.wake:
-			timer := time.NewTimer(CallPayloadExportDelay)
-			select {
-			case <-timer.C:
-				if err := processor.exportQueued(context.Background()); err != nil {
-					otel.Handle(err)
-				}
-			case request := <-processor.flush:
-				stopTimer(timer)
-				request.done <- processor.exportQueued(request.ctx)
-			case request := <-processor.shutdown:
-				stopTimer(timer)
-				request.done <- processor.exportQueued(request.ctx)
-				return
+			if timerC == nil {
+				arm(CallPayloadExportDelay)
+			}
+			// A pending retry backoff keeps its schedule; the new records
+			// queue up behind the failed batch and export with it.
+		case <-timerC:
+			if err := export(context.Background()); err != nil {
+				otel.Handle(err)
 			}
 		case request := <-processor.flush:
-			request.done <- processor.exportQueued(request.ctx)
+			request.done <- export(request.ctx)
 		case request := <-processor.shutdown:
-			request.done <- processor.exportQueued(request.ctx)
+			request.done <- export(request.ctx)
 			return
 		}
 	}
 }
 
-// exportQueued drains every record currently queued in back-to-back bounded
-// exporter calls. Records arriving during an export are picked up by the same
-// drain; ForceFlush and Shutdown likewise continue until they observe the queue
-// empty.
-func (processor *CallPayloadBatchProcessor) exportQueued(ctx context.Context) error {
-	var errs error
+// exportQueued drains the queue in bounded exporter batches, in order. On a
+// failed export the unexported tail (failed batch first) goes back to the
+// head of the queue and retryIn says how long to back off before trying
+// again; 0 means the queue is empty or the batch was given up on. Records
+// arriving during a successful drain are picked up by the same drain, so
+// ForceFlush and Shutdown return only once they observe the queue empty.
+func (processor *CallPayloadBatchProcessor) exportQueued(ctx context.Context) (retryIn time.Duration, err error) {
 	for {
 		processor.mu.Lock()
 		queued := processor.queue
 		processor.queue = nil
+		failures := processor.failures
 		processor.mu.Unlock()
 		if len(queued) == 0 {
-			return errs
+			return 0, err
 		}
 
 		for len(queued) > 0 {
 			batchSize := min(len(queued), LogExportMaxBatchSize)
 			batch := queued[:batchSize]
-			errs = errors.Join(errs, processor.exporter.Export(ctx, batch))
+			exportErr := processor.exporter.Export(ctx, batch)
+			if exportErr == nil {
+				failures = 0
+				clear(batch)
+				queued = queued[batchSize:]
+				continue
+			}
+			failures++
+			if failures < CallPayloadMaxExportAttempts {
+				processor.mu.Lock()
+				processor.queue = append(queued, processor.queue...)
+				processor.failures = failures
+				processor.mu.Unlock()
+				return callPayloadRetryDelay(failures), errors.Join(err, exportErr)
+			}
+			// Give up on this batch alone; the exporter released its records'
+			// delivery claims, so a later walk can still repair them. The rest
+			// of the queue gets a fresh start.
+			err = errors.Join(err, fmt.Errorf("dropping %d call payload records after %d failed exports: %w", batchSize, failures, exportErr))
+			failures = 0
 			clear(batch)
 			queued = queued[batchSize:]
 		}
+		processor.mu.Lock()
+		processor.failures = 0
+		processor.mu.Unlock()
 	}
 }
 
-func isCallPayloadRecord(record sdklog.Record) bool {
+func callPayloadRetryDelay(failures int) time.Duration {
+	delay := CallPayloadRetryBaseDelay
+	for i := 1; i < failures && delay < CallPayloadRetryMaxDelay; i++ {
+		delay *= 2
+	}
+	return min(delay, CallPayloadRetryMaxDelay)
+}
+
+// WithoutCallPayloads wraps a log processor so call payload records never
+// reach it. Payloads have their own lossless transport
+// (CallPayloadBatchProcessor); letting them into the ordinary bounded queue as
+// well would clone and export every payload twice and, worse, let a recipe
+// burst evict exec output from that queue.
+func WithoutCallPayloads(next sdklog.Processor) sdklog.Processor {
+	return withoutCallPayloadsProcessor{next: next}
+}
+
+type withoutCallPayloadsProcessor struct {
+	next sdklog.Processor
+}
+
+func (p withoutCallPayloadsProcessor) OnEmit(ctx context.Context, record *sdklog.Record) error {
+	if record != nil && IsCallPayloadRecord(*record) {
+		return nil
+	}
+	return p.next.OnEmit(ctx, record)
+}
+
+func (p withoutCallPayloadsProcessor) Enabled(ctx context.Context, params sdklog.EnabledParameters) bool {
+	if enabler, ok := p.next.(interface {
+		Enabled(context.Context, sdklog.EnabledParameters) bool
+	}); ok {
+		return enabler.Enabled(ctx, params)
+	}
+	return true
+}
+
+func (p withoutCallPayloadsProcessor) Shutdown(ctx context.Context) error {
+	return p.next.Shutdown(ctx)
+}
+
+func (p withoutCallPayloadsProcessor) ForceFlush(ctx context.Context) error {
+	return p.next.ForceFlush(ctx)
+}
+
+// IsCallPayloadRecord reports whether a record is on the call payload channel:
+// a bytes body whose content type attribute names an encoded call.
+func IsCallPayloadRecord(record sdklog.Record) bool {
 	if record.Body().Kind() != log.KindBytes {
 		return false
 	}
