@@ -207,7 +207,7 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 	req.MinimumEngineVersion = engine.MinimumEngineVersion
 	req.TraceID = trace.SpanContextFromContext(ctx).TraceID().String()
 	engineSpec := &EngineSpec{
-		Image:         "registry.dagger.io/engine:" + tag,
+		Image:         requestedEngineImage(tag),
 		EngineRequest: req,
 	}
 	b, err := json.Marshal(engineSpec)
@@ -243,4 +243,11 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 
 	err = body.Decode(engineSpec)
 	return engineSpec, err
+}
+
+func requestedEngineImage(tag string) string {
+	if image := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_ENGINE_IMAGE"); image != "" {
+		return image
+	}
+	return "registry.dagger.io/engine:" + tag
 }

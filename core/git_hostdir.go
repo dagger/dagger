@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	iofs "io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -205,6 +208,173 @@ func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckou
 	dir.Dir.setValue("/.git")
 	dir.Snapshot.setValue(snap)
 	return dir, nil
+}
+
+// MaterializeWorkspaceSnapshotPack fetches a client-produced synthetic commit
+// through negotiated upload-pack (or the compatibility bundle) and checks its
+// tree out into an immutable engine snapshot. The temporary repository is
+// removed before the snapshot is committed.
+func MaterializeWorkspaceSnapshotPack(ctx context.Context, pack *engineutil.WorkspaceSnapshotPack, remoteRepo *RemoteGitRepository) (_ *Directory, rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bkref, err := query.SnapshotManager().New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("git workspace snapshot"))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
+		initArgs := []string{"init", "-q", "--initial-branch=main"}
+		if pack.ObjectFormat != "" && pack.ObjectFormat != "sha1" {
+			initArgs = append(initArgs, "--object-format="+pack.ObjectFormat)
+		}
+		if _, err := runGitEnv(ctx, root, initArgs...); err != nil {
+			return fmt.Errorf("initialize workspace snapshot repository: %w", err)
+		}
+		if pack.BaseSHA != "" {
+			if remoteRepo == nil {
+				return fmt.Errorf("workspace snapshot base %s has no remote repository", pack.BaseSHA)
+			}
+			base, err := remoteRepo.Get(ctx, &gitutil.Ref{Name: pack.BaseRef, SHA: pack.BaseSHA})
+			if err != nil {
+				return fmt.Errorf("fetch workspace snapshot base %s: %w", pack.BaseSHA, err)
+			}
+			if err := remoteRepo.mount(ctx, 1, false, []GitRefBackend{base}, func(source *gitutil.GitCLI) error {
+				sourceURL, err := source.URL(ctx)
+				if err != nil {
+					return err
+				}
+				_, err = runGitEnv(ctx, root, "fetch", "--quiet", "--depth=1", "--no-tags", sourceURL, pack.BaseSHA+":refs/dagger/workspace-base")
+				return err
+			}); err != nil {
+				return fmt.Errorf("materialize workspace snapshot base %s: %w", pack.BaseSHA, err)
+			}
+		}
+		if pack.UploadPack != nil {
+			if err := fetchWorkspaceUploadPack(ctx, root, pack); err != nil {
+				return fmt.Errorf("fetch workspace snapshot from client: %w", err)
+			}
+		} else if err := fetchGitBundleRefspecs(ctx, root, pack.BundlePath, []string{"+refs/dagger/workspace:refs/dagger/workspace"}); err != nil {
+			return fmt.Errorf("fetch workspace snapshot bundle: %w", err)
+		}
+		resolved, err := runGitEnv(ctx, root, "rev-parse", "refs/dagger/workspace^{commit}")
+		if err != nil {
+			return fmt.Errorf("resolve workspace snapshot commit: %w", err)
+		}
+		if strings.TrimSpace(resolved) != pack.CommitSHA {
+			return fmt.Errorf("workspace snapshot resolved to %s, expected %s", strings.TrimSpace(resolved), pack.CommitSHA)
+		}
+		if _, err := runGitEnv(ctx, root, "read-tree", pack.CommitSHA); err != nil {
+			return fmt.Errorf("read workspace snapshot tree: %w", err)
+		}
+		if _, err := runGitEnv(ctx, root, "checkout-index", "-a", "-f"); err != nil {
+			return fmt.Errorf("check out workspace snapshot tree: %w", err)
+		}
+		if err := os.RemoveAll(filepath.Join(root, ".git")); err != nil {
+			return fmt.Errorf("remove workspace snapshot repository: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bkref = nil
+	dir := &Directory{
+		Platform: query.Platform(),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.Dir.setValue("/")
+	dir.Snapshot.setValue(snap)
+	return dir, nil
+}
+
+// fetchWorkspaceUploadPack exposes one loopback git:// connection and bridges
+// it to the client's upload-pack stream. Native git performs the negotiation
+// and writes the received pack directly into the materialization repository.
+func fetchWorkspaceUploadPack(ctx context.Context, root string, pack *engineutil.WorkspaceSnapshotPack) error {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("listen for workspace upload-pack: %w", err)
+	}
+	defer listener.Close()
+
+	proxyDone := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			proxyDone <- err
+			return
+		}
+		defer conn.Close()
+
+		// git:// begins with a daemon service request. The client-side process
+		// is already an upload-pack for the selected checkout, so consume that
+		// routing packet before transparently proxying the protocol.
+		header := make([]byte, 4)
+		if _, err := io.ReadFull(conn, header); err != nil {
+			proxyDone <- fmt.Errorf("read git daemon request header: %w", err)
+			return
+		}
+		size, err := strconv.ParseUint(string(header), 16, 16)
+		if err != nil || size < 4 || size > 64*1024 {
+			proxyDone <- fmt.Errorf("invalid git daemon request length %q", header)
+			return
+		}
+		request := make([]byte, int(size)-4)
+		if _, err := io.ReadFull(conn, request); err != nil {
+			proxyDone <- fmt.Errorf("read git daemon request: %w", err)
+			return
+		}
+		if !strings.HasPrefix(string(request), "git-upload-pack /workspace\x00") {
+			proxyDone <- fmt.Errorf("unexpected git daemon service request")
+			return
+		}
+
+		errCh := make(chan error, 2)
+		go func() {
+			_, err := io.Copy(pack.UploadPack, conn)
+			_ = pack.UploadPack.Close()
+			errCh <- err
+		}()
+		go func() {
+			_, err := io.Copy(conn, pack.UploadPack)
+			if tcp, ok := conn.(*net.TCPConn); ok {
+				_ = tcp.CloseWrite()
+			}
+			errCh <- err
+		}()
+		first := <-errCh
+		second := <-errCh
+		proxyDone <- errors.Join(first, second)
+	}()
+
+	addr := listener.Addr().(*net.TCPAddr)
+	remote := fmt.Sprintf("git://127.0.0.1:%d/workspace", addr.Port)
+	if _, err := runGitEnv(ctx, root, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", remote, "+refs/dagger/workspace:refs/dagger/workspace"); err != nil {
+		_ = pack.UploadPack.Close()
+		return err
+	}
+	select {
+	case err := <-proxyDone:
+		return err
+	case <-ctx.Done():
+		_ = pack.UploadPack.Close()
+		return context.Cause(ctx)
+	}
 }
 
 // MaterializeGitUncommittedPack applies a client-produced binary patch of
