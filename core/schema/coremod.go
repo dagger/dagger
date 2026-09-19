@@ -179,8 +179,8 @@ func (m *CoreMod) View() (call.View, bool) {
 	return m.view, true
 }
 
-func (m *CoreMod) ResultCallModule(context.Context) (*dagql.ResultCallModule, error) {
-	return nil, nil
+func (m *CoreMod) FieldModule() (*dagql.ResultCallModule, dagql.FieldModuleProvider, error) {
+	return nil, nil, nil
 }
 
 func (m *CoreMod) ModuleResult() dagql.ObjectResult[*core.Module] {

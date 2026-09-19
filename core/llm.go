@@ -1820,6 +1820,19 @@ func (llm *LLM) AttachDependencyResults(
 		deps = append(deps, attached)
 	}
 	for i, bound := range llm.mcp.boundTools {
+		// The binding dispatches through its composition-time class, whose
+		// resolvers and module provider use the module that installed it.
+		// Own that module for eager and lazy bindings alike: a lazy binding
+		// keeps its class without ever loading the receiver, and an eager one
+		// deliberately rewraps the receiver in this class even when the
+		// receiver was loaded through another same-named class.
+		if classModule, ok := ModuleObjectTypeModule(bound.objType); ok {
+			attached, err := attach(classModule)
+			if err != nil {
+				return nil, fmt.Errorf("attach llm bound tool module: %w", err)
+			}
+			deps = append(deps, attached)
+		}
 		if bound.object == nil {
 			// A lazy binding (restored from a persisted session) has no loaded
 			// object to attach; it is loaded on first dispatch instead.

@@ -87,6 +87,20 @@ type PersistedObjectDecoder interface {
 	DecodePersistedObject(context.Context, *PersistDecodeContext, json.RawMessage) (Typed, error)
 }
 
+// HasDecodedDependencyResults is implemented by decoded object payloads that
+// capture attached results supplied by the decoding server rather than by the
+// persisted bytes (for example the module a module object class was installed
+// from). Such results are owned only by the decoding session, while the decoded
+// payload lives as long as its row. When a decoded payload is installed on its
+// row, the cache adds an ordinary explicit dependency edge from the row to each
+// attached result returned here, before the payload is published, so the row
+// retains them. A detached result here is an error: it cannot be owned, so the
+// decode fails rather than install a payload that outlives what it captured.
+// Dependency attachment hooks are not rerun for decoded payloads.
+type HasDecodedDependencyResults interface {
+	DecodedDependencyResults() []AnyResult
+}
+
 // PersistedSelfCodec is the shared interface used to encode/decode result self
 // payloads for disk persistence.
 type PersistedSelfCodec interface {
