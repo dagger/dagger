@@ -2574,7 +2574,9 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 		}
 		var sourceModuleName dagql.Optional[dagql.String]
 		if fieldSpec, ok := queryObjType.FieldSpec(introspectionField.Name, dag.View); ok {
-			if fieldSpec.Module != nil && fieldSpec.Module.ResultRef != nil {
+			// Module fields carry static module provenance; core fields carry
+			// none. The result reference is only supplied per call.
+			if fieldSpec.Module != nil {
 				sourceModuleName = core.OptSourceModuleName(fieldSpec.Module.Name)
 			}
 		}

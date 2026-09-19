@@ -263,7 +263,9 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// names (e.g. "ModuleAOverlay" -> "ModuleAoverlay"). This mirrors how objects
 	// are installed (see ModuleObject.TypeDefinition, which uses TypeDef.Name as-is).
 	ifaceName := ifaceTypeDef.Name
-	moduleID, err := NewUserMod(iface.mod).ResultCallModule(ctx)
+	// Interface field specs only describe their module: calls dispatch through
+	// the concrete object's class, whose fields carry the module provider.
+	moduleID, _, err := NewUserMod(iface.mod).FieldModule()
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for interface %q: %w", ifaceName, err)
 	}

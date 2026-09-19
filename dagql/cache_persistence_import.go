@@ -574,6 +574,52 @@ func persistedEnvelopeObjectTypeNames(env PersistedResultEnvelope, names []strin
 	return names
 }
 
+// retainDecodedDependencyResults records the explicit dependency edges from a
+// row to the attached results its decoded payload captured from the decoding
+// server (see HasDecodedDependencyResults), before that payload is installed
+// on the row. The decoding session still holds those results here, so the
+// edges land before that session can release them. A persisted list decodes
+// its items inline under the list row, so their captured results are owned by
+// the list row. Only edges are added: no attachment hook is rerun, so this
+// cannot re-enter a decode.
+func (c *Cache) retainDecodedDependencyResults(ctx context.Context, res *sharedResult, decoded AnyResult) error {
+	var deps []AnyResult
+	collectDecodedDependencyResults(decoded, &deps)
+	if len(deps) == 0 {
+		return nil
+	}
+	parent := Result[Typed]{shared: res}
+	for _, dep := range deps {
+		depShared := dep.cacheSharedResult()
+		if depShared == nil || depShared.id == 0 {
+			return fmt.Errorf("decoded payload of result %d declares a detached %T dependency", res.id, dep)
+		}
+		if err := c.addExplicitDependency(ctx, parent, dep, "decoded_dependency_result"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func collectDecodedDependencyResults(decoded AnyResult, deps *[]AnyResult) {
+	if decoded == nil {
+		return
+	}
+	if list, ok := UnwrapAs[DynamicResultArrayOutput](decoded); ok {
+		for _, item := range list.Values {
+			collectDecodedDependencyResults(item, deps)
+		}
+		return
+	}
+	if withDeps, ok := UnwrapAs[HasDecodedDependencyResults](decoded); ok {
+		for _, dep := range withDeps.DecodedDependencyResults() {
+			if dep != nil {
+				*deps = append(*deps, dep)
+			}
+		}
+	}
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver TypeResolver, hit AnyResult) (AnyResult, error) {
 	if resolver == nil {
@@ -748,6 +794,17 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			}
 			if decoded == nil || decoded.Unwrap() == nil {
 				err := fmt.Errorf("decode persisted hit payload: decoded nil payload for object result %d", res.id)
+				finishPersistDecode(err, false)
+				return nil, err
+			}
+
+			// Ownership lands before the payload is published: once hasValue
+			// is set, the fast path above serves the value to any caller, and
+			// a failure here must fail the decode attempt as a whole (a later
+			// demand re-decodes) rather than leave an installed payload whose
+			// captured results only the decoding session holds.
+			if err := c.retainDecodedDependencyResults(ctx, res, decoded); err != nil {
+				err = fmt.Errorf("decode persisted hit payload: retain decoded dependencies: %w", err)
 				finishPersistDecode(err, false)
 				return nil, err
 			}
