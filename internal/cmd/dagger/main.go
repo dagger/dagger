@@ -947,6 +947,11 @@ const (
 )
 
 func commandShowsFinalProgress(cmd *cobra.Command) bool {
+	if cmd.CommandPath() == "dagger up" || cmd.CommandPath() == "dagger agent" {
+		if list, _ := cmd.Flags().GetBool("list"); list {
+			return false
+		}
+	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Annotations[showFinalProgressKey] == "true" {
 			return true

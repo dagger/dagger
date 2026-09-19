@@ -67,3 +67,33 @@ func TestApplyCommandProgressDefaults(t *testing.T) {
 		t.Fatalf("inherited show final progress verbosity = %d, want %d", opts.Verbosity, dagui.ShowCompletedVerbosity)
 	}
 }
+
+// Listing services and agents must have the same quiet default as listing checks.
+func TestArtifactListProgressDefaults(t *testing.T) {
+	oldOpts, oldVerbose, oldQuiet := opts, verbose, quiet
+	t.Cleanup(func() { opts, verbose, quiet = oldOpts, oldVerbose, oldQuiet })
+	for _, cmd := range []*cobra.Command{checksCmd, upCmd, agentCmd} {
+		t.Run(cmd.Name(), func(t *testing.T) {
+			list := cmd.Flags().Lookup("list")
+			oldList := list.Value.String()
+			t.Cleanup(func() { _ = list.Value.Set(oldList) })
+			for _, tc := range []struct {
+				list    string
+				verbose int
+				want    int
+			}{
+				{"true", 0, dagui.HideCompletedVerbosity},
+				{"true", 1, dagui.ShowCompletedVerbosity},
+			} {
+				if err := list.Value.Set(tc.list); err != nil {
+					t.Fatal(err)
+				}
+				opts, verbose, quiet = dagui.FrontendOpts{}, tc.verbose, 0
+				applyCommandProgressDefaults(cmd)
+				if opts.Verbosity != tc.want {
+					t.Fatalf("list=%s verbose=%d: verbosity=%d, want %d", tc.list, tc.verbose, opts.Verbosity, tc.want)
+				}
+			}
+		})
+	}
+}
