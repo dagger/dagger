@@ -166,9 +166,9 @@ func copyCommandFlags(cmd *cobra.Command, name string) *pflag.FlagSet {
 	return flags
 }
 
-// validateFlagCapabilities resolves the selected command and its flags without
-// changing flag values. It must run before parseGlobalFlags, because those
-// values configure the frontend and can terminate the process.
+// validateFlagCapabilities handles commands whose schema owns flag parsing.
+// Their global flags can be checked before the schema is loaded, without
+// consuming module arguments or changing values.
 func validateFlagCapabilities(root *cobra.Command, args []string) error {
 	if isShellCompletionRequest(args) {
 		// A completion request carries the flags of the command being
@@ -190,13 +190,21 @@ func validateFlagCapabilities(root *cobra.Command, args []string) error {
 	// the flags that it can parse without changing their values.
 	_ = parsed.Parse(commandArgs)
 
+	return validateParsedFlagCapabilities(cmd, parsed)
+}
+
+// validateParsedFlagCapabilities checks parsed flags against the selected
+// command's capabilities.
+func validateParsedFlagCapabilities(cmd *cobra.Command, parsed *pflag.FlagSet) error {
 	// Bare `dagger` prints usage, but shell-style root invocations run the
 	// script command, so they get the script command's capabilities.
 	effective := rootShellFallbackCommand(cmd, parsed)
 
+	// TraverseChildren may parse inherited flags on a parent. Their Changed
+	// state is shared, but they are absent from this flag set's Visit list.
 	var unsupported []string
-	parsed.Visit(func(flag *pflag.Flag) {
-		if !FlagAvailableForCommand(effective, flag) {
+	parsed.VisitAll(func(flag *pflag.Flag) {
+		if flag.Changed && !FlagAvailableForCommand(effective, flag) {
 			unsupported = append(unsupported, "--"+flag.Name)
 		}
 	})

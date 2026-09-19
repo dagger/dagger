@@ -764,6 +764,50 @@ func TestCapabilityScopedFlagValidation(t *testing.T) {
 	require.Equal(t, "auto", value)
 }
 
+func TestParsedFlagCapabilityValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		args   []string
+		render bool
+		shadow bool
+		run    bool
+		err    bool
+	}{
+		{"unsupported flag before command", []string{"--progress=report", "child"}, false, false, false, true},
+		{"unsupported flag after command", []string{"child", "--progress=report"}, false, false, false, true},
+		{"supported inherited flag", []string{"--progress=report", "child"}, true, false, true, false},
+		{"local flag shadows inherited flag", []string{"child", "--progress=local"}, false, true, true, false},
+		{"help skips execution policy", []string{"--progress=report", "child", "--help"}, false, false, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := &cobra.Command{Use: "root", TraverseChildren: true, SilenceErrors: true, SilenceUsage: true}
+			root.SetOut(&bytes.Buffer{})
+			root.PersistentFlags().String("progress", "auto", "Progress output format")
+			setFlagSetCapabilities(root.PersistentFlags(), mayRenderPipeline)
+			root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+				return validateParsedFlagCapabilities(cmd, cmd.Flags())
+			}
+			ran := false
+			child := &cobra.Command{Use: "child", Run: func(*cobra.Command, []string) { ran = true }}
+			if tc.render {
+				setCommandCapabilities(child, mayRenderPipeline)
+			}
+			if tc.shadow {
+				child.Flags().String("progress", "local", "Local progress value")
+			}
+			root.AddCommand(child)
+			root.SetArgs(tc.args)
+			err := root.Execute()
+			if tc.err {
+				require.ErrorContains(t, err, `flag --progress is not supported by command "root child"`)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.run, ran)
+		})
+	}
+}
+
 func TestGlobalFlagParsingRespectsLocalShadow(t *testing.T) {
 	oldQuiet := quiet
 	oldXRelease := xRelease

@@ -36,9 +36,9 @@ func versionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print dagger version",
-		// Disable version hook here to avoid double version check
-		PersistentPreRun: func(*cobra.Command, []string) {},
-		Args:             cobra.NoArgs,
+		// Prepare execution without the shared update/authentication hooks.
+		PersistentPreRunE: prepareCommandExecution,
+		Args:              cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			out := cmd.OutOrStdout()
 			if versionQuiet {
