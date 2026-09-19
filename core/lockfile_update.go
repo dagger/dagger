@@ -241,7 +241,8 @@ func updateVanityURLLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 	if !ok || sourceURL == "" {
 		return "", fmt.Errorf("invalid %s source URL %v", entry.Operation, required[0])
 	}
-	resolved := daggerGetProbe(ctx, sourceURL)
+	// A default version from the host has its own vanity-version entry.
+	resolved := daggerGetProbeVersion(ctx, sourceURL, "").SourceURL
 	if resolved == sourceURL {
 		return "", fmt.Errorf("refresh vanity-url %q: no valid redirect received", sourceURL)
 	}
