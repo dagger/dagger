@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 )
 
@@ -900,6 +901,171 @@ func TestConversationReportStylesMessageOrigins(t *testing.T) {
 	}
 	if strings.Contains(joined, "all done") {
 		t.Fatalf("event payload leaked into the transcript:\n%s", joined)
+	}
+}
+
+// rewindFixture is a rewound conversation: a kept turn, an abandoned turn
+// (prompt, tool call with its execution, reply), the rewind marker, and the
+// resumed turn. Message spans carry the LLM call digests of a recipe chain
+// whose payloads are registered in the DB, exactly as the engine publishes
+// them, so the transcript has to derive the fork rather than be told.
+type rewindFixture struct {
+	db                                            *dagui.DB
+	loopID, keptPromptID, keptReplyID             dagui.SpanID
+	oldPromptID, oldToolID, oldExecID, oldReplyID dagui.SpanID
+	markerID, newPromptID, newReplyID             dagui.SpanID
+	logs                                          map[dagui.SpanID]string
+}
+
+func newRewindFixture() *rewindFixture {
+	db := dagui.NewDB()
+	llmCall := func(digest, field, receiver string) {
+		db.Calls[digest] = &callpbv1.Call{
+			Digest: digest, Field: field, ReceiverDigest: receiver,
+			Type: &callpbv1.Type{NamedType: "LLM"},
+		}
+	}
+	llmCall("xxh3:llm", "llm", "")
+	llmCall("xxh3:kept", "withPrompt", "xxh3:llm")
+	llmCall("xxh3:kept-reply", "withResponse", "xxh3:kept")
+	llmCall("xxh3:old", "withPrompt", "xxh3:kept-reply")
+	llmCall("xxh3:old-tool", "withResponse", "xxh3:old")
+	llmCall("xxh3:old-result", "withToolResult", "xxh3:old-tool")
+	llmCall("xxh3:tip", "withResponse", "xxh3:old-result")
+	llmCall("xxh3:new", "withPrompt", "xxh3:kept-reply")
+
+	f := &rewindFixture{
+		db:           db,
+		loopID:       prettyTestSpanID(1),
+		keptPromptID: prettyTestSpanID(2),
+		keptReplyID:  prettyTestSpanID(3),
+		oldPromptID:  prettyTestSpanID(4),
+		oldToolID:    prettyTestSpanID(5),
+		oldExecID:    prettyTestSpanID(6),
+		oldReplyID:   prettyTestSpanID(7),
+		markerID:     prettyTestSpanID(8),
+		newPromptID:  prettyTestSpanID(9),
+		newReplyID:   prettyTestSpanID(10),
+	}
+	start := time.Unix(100, 0)
+	msg := func(id dagui.SpanID, n byte, name, role, digest string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id, TraceID: prettyTestTraceID(), ParentID: f.loopID,
+			Name: name, LLMRole: role, Message: "sent", LLMCallDigest: digest,
+			StartTime: start.Add(time.Duration(n) * time.Second),
+			EndTime:   start.Add(time.Duration(n+1) * time.Second), Final: true,
+		}
+	}
+	oldTool := msg(f.oldToolID, 5, "Bash", "assistant", "xxh3:old")
+	oldTool.Message = ""
+	oldTool.LLMTool = "Bash"
+	oldTool.LLMToolArgNames = []string{"command"}
+	oldTool.LLMToolArgValues = []string{"go test ./..."}
+	oldExec := msg(f.oldExecID, 6, "Bash", "", "")
+	oldExec.Message = ""
+	oldExec.ParentID = f.oldToolID
+	oldExec.LLMTool = "Bash"
+	marker := msg(f.markerID, 8, "conversation rewound", "user", "")
+	marker.LLMOriginKind = "EVENT"
+	marker.AgentRewindFrom, marker.AgentRewindTo = "xxh3:tip", "xxh3:kept-reply"
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: f.loopID, TraceID: prettyTestTraceID(), Name: "agent loop",
+			Agent: true, AgentID: "chief", AgentName: "chief",
+			StartTime: start, EndTime: start.Add(20 * time.Second), Final: true,
+		},
+		msg(f.keptPromptID, 1, "LLM prompt", "user", "xxh3:kept"),
+		msg(f.keptReplyID, 2, "LLM response", "assistant", "xxh3:kept"),
+		msg(f.oldPromptID, 4, "LLM prompt", "user", "xxh3:old"),
+		oldTool,
+		oldExec,
+		msg(f.oldReplyID, 7, "LLM response", "assistant", "xxh3:old-result"),
+		marker,
+		msg(f.newPromptID, 9, "LLM prompt", "user", "xxh3:new"),
+		msg(f.newReplyID, 10, "LLM response", "assistant", "xxh3:new"),
+	})
+	db.SetPrimarySpan(f.loopID)
+	f.logs = map[dagui.SpanID]string{
+		f.keptPromptID: "hello there\n",
+		f.keptReplyID:  "hi, what can I do?\n",
+		f.oldPromptID:  "run the tests\n",
+		f.oldExecID:    "ok  \tgithub.com/example/pkg\n",
+		f.oldReplyID:   "All tests pass.\n\nNothing else to report.\n",
+		f.markerID:     "Conversation rewound: the messages above it are no longer part of the conversation.\n",
+		f.newPromptID:  "run the linter instead\n",
+		f.newReplyID:   "Linting now.\n",
+	}
+	return f
+}
+
+// installLogs streams each message's content as Markdown, matching how live
+// conversation messages arrive (text/markdown), so rows render on the same
+// path as a real session.
+func (f *rewindFixture) installLogs(fe *frontendPretty, profile termenv.Profile, width int) {
+	for id, content := range f.logs {
+		v := NewVterm(profile)
+		v.SetWidth(width)
+		if id == f.oldExecID {
+			// Tool output is terminal content, not Markdown.
+			_, _ = v.Write([]byte(content))
+		} else {
+			_, _ = v.WriteMarkdown([]byte(content))
+		}
+		fe.logs.Logs[id] = v
+	}
+}
+
+// TestConversationReportCollapsesRewoundMessages covers the report half of a
+// rewind (what `dagger trace` shows): the abandoned turn's prompt, tool call
+// and reply each collapse to a struck one-liner behind a marker, a marker row
+// says how many messages the model no longer has and that the conversation
+// resumes there, and the kept and resumed turns render in full.
+func TestConversationReportCollapsesRewoundMessages(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	f := newRewindFixture()
+	fe := NewWithDB(io.Discard, f.db)
+	f.installLogs(fe, termenv.Ascii, 120)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.conversationReport(tuist.Context{Width: 120}, r, false)
+	joined := strings.Join(lines, "\n")
+
+	for _, want := range []string{
+		SupersededMarker + " run the tests",
+		SupersededMarker + " Bash go test ./...",
+		SupersededMarker + " All tests pass. (+2 lines)",
+		RewindMarker + " rewound: 3 messages above abandoned; the conversation resumes here",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("report missing %q:\n%s", want, joined)
+		}
+	}
+	// The abandoned turn's content beyond its first line, and its tool's
+	// output, stay out of the transcript.
+	for _, leak := range []string{"Nothing else to report", "github.com/example/pkg"} {
+		if strings.Contains(joined, leak) {
+			t.Errorf("abandoned content %q leaked into the report:\n%s", leak, joined)
+		}
+	}
+	// Kept and resumed turns are untouched.
+	for _, want := range []string{"hello there", "hi, what can I do?", "run the linter instead", "Linting now."} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("report missing live content %q:\n%s", want, joined)
+		}
+		if strings.Contains(joined, SupersededMarker+" "+want) {
+			t.Errorf("live content %q rendered as abandoned:\n%s", want, joined)
+		}
+	}
+	// The fork reads in order: abandoned turn, marker, resumed turn.
+	order := []string{SupersededMarker + " run the tests", RewindMarker + " rewound", "run the linter instead"}
+	last := -1
+	for _, want := range order {
+		idx := strings.Index(joined, want)
+		if idx <= last {
+			t.Fatalf("expected %q after the previous marker in:\n%s", want, joined)
+		}
+		last = idx
 	}
 }
 
