@@ -16,7 +16,8 @@ type GoCli {
   """
   @agent
   agent(base: LLM!): LLM! {
-    base.withTools(currentNode)
+    # Other modules share the cached base, but it is not an agent tool.
+    base.withTools(currentNode, except: ["base"])
   }
 
   """
