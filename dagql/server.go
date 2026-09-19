@@ -1277,7 +1277,7 @@ func (s *Server) ObjectTypeAndServerForID(ctx context.Context, id *call.ID) (Obj
 	// A same-named type in the caller's schema may belong to an older module
 	// revision. In particular, rebinding a state-returning tool after reload
 	// must not replace its new toolset with that older definition.
-	moduleResult, err := s.LoadType(ctx, id.Module().ID())
+	moduleResult, err := s.LoadTypeForSchema(ctx, id.Module().ID())
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("resolve object type %q module: %w", typeName, err)
 	}
@@ -1389,7 +1389,18 @@ func beginLoadTypeCacheOperation(ctx context.Context, id *call.ID) (*Cache, cach
 	return cache, cacheOp, clientMetadata.SessionID, nil
 }
 
-func (s *Server) LoadType(ctx context.Context, id *call.ID) (ret AnyResult, rerr error) {
+func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	return s.loadType(ctx, id, false)
+}
+
+// LoadTypeForSchema loads the defining recipe rather than substituting a result
+// with equivalent implementation content. Such results can expose different
+// schemas (for example, a module before and after initialization).
+func (s *Server) LoadTypeForSchema(ctx context.Context, id *call.ID) (AnyResult, error) {
+	return s.loadType(ctx, id, true)
+}
+
+func (s *Server) loadType(ctx context.Context, id *call.ID, forSchema bool) (ret AnyResult, rerr error) {
 	ctx = srvToContext(ctx, s)
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
@@ -1398,7 +1409,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (ret AnyResult, rerr
 		return nil, fmt.Errorf("load type: invalid recipe ID")
 	}
 	if c := s.canonical; c != nil {
-		return c.LoadType(ctx, id)
+		return c.loadType(ctx, id, forSchema)
 	}
 
 	leaseCtx, release, err := withOperationLease(ctx)
@@ -1423,7 +1434,11 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (ret AnyResult, rerr
 		}
 	}()
 	if id.IsHandle() {
-		res, err := cache.loadResultByResultID(ctx, sessionID, s, id.EngineResultID())
+		mode := sharedResultLookupCanonicalEquivalentForSession
+		if forSchema {
+			mode = sharedResultLookupExactForSession
+		}
+		res, err := cache.loadResultByResultIDWithMode(ctx, sessionID, s, id.EngineResultID(), mode)
 		if err != nil {
 			return nil, err
 		}
@@ -1451,9 +1466,14 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (ret AnyResult, rerr
 		srv:       s,
 		cache:     cache,
 		sessionID: sessionID,
-		loads:     make(map[string]*recipeLoadFuture),
+		loads:     make(map[recipeLoadKey]*recipeLoadFuture),
 	}
-	return state.load(id)
+	return state.load(id, forSchema)
+}
+
+type recipeLoadKey struct {
+	digest    string
+	forSchema bool
 }
 
 type recipeLoadFuture struct {
@@ -1469,21 +1489,21 @@ type recipeLoadState struct {
 	sessionID string
 
 	mu    sync.Mutex
-	loads map[string]*recipeLoadFuture
+	loads map[recipeLoadKey]*recipeLoadFuture
 }
 
-func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
+func (state *recipeLoadState) load(id *call.ID, forSchema bool) (AnyResult, error) {
 	if id == nil {
 		return nil, nil
 	}
 	if id.IsHandle() {
-		return state.srv.LoadType(state.ctx, id)
+		return state.srv.loadType(state.ctx, id, forSchema)
 	}
 	if id.Type() == nil {
 		return nil, fmt.Errorf("load recipe: invalid ID")
 	}
 
-	key := id.Digest().String()
+	key := recipeLoadKey{digest: id.Digest().String(), forSchema: forSchema}
 	state.mu.Lock()
 	if future := state.loads[key]; future != nil {
 		state.mu.Unlock()
@@ -1494,14 +1514,28 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 	state.loads[key] = future
 	state.mu.Unlock()
 
-	future.res, future.err = state.loadRecipeVertex(id)
+	future.res, future.err = state.loadRecipeVertex(id, forSchema)
 	close(future.done)
 	return future.res, future.err
 }
 
-func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
+func (state *recipeLoadState) loadRecipeVertex(id *call.ID, forSchema bool) (AnyResult, error) {
 	callCtx := state.ctx
-	if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
+	extraDigests := id.ExtraDigests()
+	if forSchema {
+		// Content equivalence does not imply schema equivalence. Other input
+		// types (such as module sources) still share ordinary cached content.
+		extraDigests = nil
+	}
+	var hit AnyResult
+	var ok bool
+	var err error
+	if forSchema {
+		hit, ok, err = state.cache.lookupCacheForSchemaRecipe(callCtx, state.sessionID, state.srv, id.Digest())
+	} else {
+		hit, ok, err = state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), extraDigests)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
 		return hit, nil
@@ -1512,7 +1546,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		if receiver == nil {
 			return nil, fmt.Errorf("load %s: nth selection missing receiver", idInputDebugString(id))
 		}
-		parent, err := state.load(receiver)
+		parent, err := state.load(receiver, forSchema)
 		if err != nil {
 			return nil, fmt.Errorf("load %s: receiver: %w", idInputDebugString(id), err)
 		}
@@ -1524,7 +1558,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	// when the bootstrap schema has a field or return type with the same name.
 	srv := state.srv
 	if mod := id.Module(); mod != nil && mod.ID() != nil && srv.resultServerForCall != nil {
-		moduleResult, err := state.load(mod.ID())
+		moduleResult, err := state.load(mod.ID(), true)
 		if err != nil {
 			return nil, fmt.Errorf("load %s: module: %w", idInputDebugString(id), err)
 		}
@@ -1550,7 +1584,14 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	for _, inputID := range inputIDs {
 		inputID := inputID
 		eg.Go(func() error {
-			res, err := state.load(inputID)
+			// The module also appears among direct inputs. Reuse its strict
+			// load, never overwrite it with a content-equivalent representative.
+			isModule := id.Module() != nil && id.Module().ID() != nil && inputID.Digest() == id.Module().ID().Digest()
+			// A schema can itself have been installed from an implementation-
+			// scoped result. Preserve same-type construction inputs as well, so
+			// replaying nested scopes cannot substitute a bootstrap receiver.
+			isSchemaInput := forSchema && inputID.Type() != nil && inputID.Type().NamedType() == id.Type().NamedType()
+			res, err := state.load(inputID, isModule || isSchemaInput)
 			if err != nil {
 				return err
 			}
@@ -1581,12 +1622,14 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load %s: build result call: %w", idInputDebugString(id), err)
 	}
+	frame.ExtraDigests = extraDigests
 	callCtx = ContextWithCall(callCtx, frame)
 	sel, err := selectorFromLoadedCall(callCtx, frame, baseObj, id, lazyRefs)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
 	}
-	req := &CallRequest{ResultCall: frame}
+	sel.ForSchema = forSchema
+	req := &CallRequest{ResultCall: frame, recipeOnly: forSchema}
 	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.sessionID, srv, req); err != nil {
 		return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
@@ -2652,6 +2695,10 @@ type Selector struct {
 	Args  []NamedInput
 	Nth   int
 	View  call.View
+
+	// ForSchema requires the actual producing recipe, not a content-equivalent
+	// result whose schema may differ. Ordinary value selections leave this off.
+	ForSchema bool
 }
 
 func (sel Selector) String() string {

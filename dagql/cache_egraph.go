@@ -993,6 +993,9 @@ func (c *Cache) lookupCacheForRequest(
 	if req == nil || req.ResultCall == nil {
 		return nil, false, nil
 	}
+	if req.recipeOnly {
+		return c.lookupCacheForSchemaRecipe(ctx, sessionID, resolver, requestDigest)
+	}
 
 	c.egraphMu.Lock()
 	retRes, hit, persistedEdgeExpiresAtUnix, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)

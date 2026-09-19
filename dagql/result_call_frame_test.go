@@ -12,6 +12,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSchemaRecipeLoadMemoSeparatesContentHits(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+	srv := cacheTestServer(t)
+	content := digest.FromString("schema-equivalent-implementation")
+	calls := 0
+	Fields[cacheTestQuery]{
+		Func("fullSchema", func(context.Context, cacheTestQuery, struct{}) (Int, error) {
+			calls++
+			return Int(2), nil
+		}),
+	}.Install(srv)
+	bootstrap, err := NewResultForCall(Int(1), cacheTestIntCall("bootstrap-schema"))
+	require.NoError(t, err)
+	bootstrap, err = bootstrap.WithContentDigest(ctx, content)
+	require.NoError(t, err)
+	_, err = cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: cacheTestIntCall("bootstrap-schema")}, ValueFunc(bootstrap))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cache.ReleaseSession(context.Background(), "test-session") })
+
+	state := &recipeLoadState{ctx: ctx, srv: srv, cache: cache, sessionID: "test-session", loads: make(map[recipeLoadKey]*recipeLoadFuture)}
+	id := call.New().Append(Int(0).Type(), "fullSchema", call.WithContentDigest(content))
+	normal, err := state.load(id, false)
+	require.NoError(t, err)
+	require.Equal(t, Int(1), normal.Unwrap())
+	strict, err := state.load(id, true)
+	require.NoError(t, err)
+	require.Equal(t, Int(2), strict.Unwrap())
+	require.Equal(t, 1, calls)
+	normal, err = state.load(id, false)
+	require.NoError(t, err)
+	require.Equal(t, Int(1), normal.Unwrap(), "schema loads must not replace normal content-hit futures")
+}
+
 func TestResultCallRefFromRecipeID(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

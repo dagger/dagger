@@ -399,7 +399,7 @@ func (binding *moduleFieldBinding) load(ctx context.Context) (dagql.ObjectResult
 		return zero, err
 	}
 	if !found {
-		res, err = dag.LoadType(ctx, binding.recipe)
+		res, err = dag.LoadTypeForSchema(ctx, binding.recipe)
 		if err != nil {
 			return zero, err
 		}
@@ -2418,8 +2418,12 @@ func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModu
 		return nil, fmt.Errorf("module provenance: module %q has no source", self.Name())
 	}
 
-	scoped, err := ImplementationScopedModule(ctx, mod.res)
+	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
+		return nil, fmt.Errorf("module provenance: current dagql server: %w", err)
+	}
+	var scoped dagql.ObjectResult[*Module]
+	if err := dag.Select(ctx, mod.res, &scoped, dagql.Selector{Field: "_implementationScoped", ForSchema: true}); err != nil {
 		return nil, fmt.Errorf("module provenance: implementation-scoped module %q: %w", self.Name(), err)
 	}
 	// Installed fields and cached object classes can outlive the session that

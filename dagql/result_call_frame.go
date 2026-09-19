@@ -169,7 +169,7 @@ func (mod *ResultCallModule) resolveForCall(ctx context.Context, srv *Server) (*
 			return nil, err
 		}
 	}
-	res, err := srv.LoadType(ctx, id)
+	res, err := srv.LoadTypeForSchema(ctx, id)
 	if err != nil {
 		return nil, err
 	}

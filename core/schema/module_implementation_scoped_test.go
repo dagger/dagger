@@ -299,6 +299,153 @@ func TestModuleImplementationScopedAliasRecipeReplay(t *testing.T) {
 	}
 }
 
+type implementationScopedReplayServer struct {
+	*currentTypeDefsTestServer
+	defaultDeps *core.SchemaBuilder
+}
+
+func (s *implementationScopedReplayServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
+	return s.defaultDeps, nil
+}
+
+func TestModuleImplementationScopedBootstrapRecipeReplay(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(map[bool]string{false: "parent definition", true: "scoped definition"}[nested], func(t *testing.T) {
+			testModuleImplementationScopedBootstrapRecipeReplay(t, nested)
+		})
+	}
+}
+
+func testModuleImplementationScopedBootstrapRecipeReplay(t *testing.T, nested bool) {
+	f := newImplementationScopedTest(t)
+	root, ok := dagql.UnwrapAs[*core.Query](f.dag.Root())
+	require.True(t, ok)
+	root.Server = &implementationScopedReplayServer{
+		currentTypeDefsTestServer: root.Server.(*currentTypeDefsTestServer),
+		defaultDeps:               core.NewSchemaBuilder(root, nil),
+	}
+	bootstrap, err := core.ImplementationScopedModule(f.parentCtx, f.parent)
+	require.NoError(t, err)
+	require.Empty(t, bootstrap.Self().ObjectDefs)
+
+	// Initialization adds the schema without changing implementation content.
+	// Retain both parents and the bootstrap scope, but not the full scope.
+	dagql.Fields[*core.ObjectTypeDef]{}.Install(f.dag)
+	dagql.Fields[*core.TypeDef]{}.Install(f.dag)
+	obj := core.NewObjectTypeDef("Codegen", "", nil)
+	objDef, err := dagql.NewObjectResultForCall(obj, f.dag, implementationScopedTestSyntheticCall("full-object", obj))
+	require.NoError(t, err)
+	typ := (&core.TypeDef{}).WithObjectTypeDef(objDef)
+	typeDef, err := dagql.NewObjectResultForCall(typ, f.dag, implementationScopedTestSyntheticCall("full-type", typ))
+	require.NoError(t, err)
+	fullMod := f.parent.Self().Clone()
+	fullMod.ObjectDefs = dagql.ObjectResultArray[*core.TypeDef]{typeDef}
+	fullCall := implementationScopedTestSyntheticCall("full-parent", fullMod)
+	fullDetached, err := dagql.NewObjectResultForCall(fullMod, f.dag, fullCall)
+	require.NoError(t, err)
+	fullAny, err := f.cache.GetOrInitCall(f.parentCtx, parentSession, f.dag, &dagql.CallRequest{ResultCall: fullCall}, dagql.ValueFunc(fullDetached))
+	require.NoError(t, err)
+	full, ok := fullAny.(dagql.ObjectResult[*core.Module])
+	require.True(t, ok)
+	fullParent := full
+	if nested {
+		// Reconstructed schemas install the scoped module itself, so capturing
+		// their field provenance adds another scope to the defining recipe.
+		full, err = core.ImplementationScopedModule(f.firstScopedCtx, full)
+		require.NoError(t, err)
+	}
+	require.NoError(t, (&core.ModuleObject{Module: full, TypeDef: obj}).Install(f.firstScopedCtx, f.dag))
+	spec, ok := f.dag.Root().ObjectType().FieldSpec("codegen", "")
+	require.True(t, ok)
+	bootstrapCall, err := bootstrap.ResultCall()
+	require.NoError(t, err)
+	require.Equal(t, bootstrapCall.ContentDigest(), spec.Module.ResultRef.Call.ContentDigest())
+	require.NoError(t, f.cache.ReleaseSession(f.firstScopedCtx, firstScopedSession))
+	moduleRecipe, err := spec.Module.ResultRef.Call.RecipeID(f.nextScopedCtx)
+	require.NoError(t, err)
+	// Reinstalling a schema after collection must not capture the surviving
+	// bootstrap representative's recipe in the first place.
+	const captureSession = "implementation-scoped-recapture"
+	captureCtx := engine.ContextWithClientMetadata(f.parentCtx, &engine.ClientMetadata{ClientID: captureSession, SessionID: captureSession})
+	t.Cleanup(func() { _ = f.cache.ReleaseSession(context.Background(), captureSession) })
+	recaptured, err := core.NewUserMod(fullParent).ResultCallModule(captureCtx)
+	require.NoError(t, err)
+	recapturedID, err := recaptured.ResultRef.RecipeID(captureCtx)
+	require.NoError(t, err)
+	parentRecipe, err := fullParent.RecipeID(captureCtx)
+	require.NoError(t, err)
+	require.Equal(t, parentRecipe.Digest(), recapturedID.Receiver().Digest())
+	require.NoError(t, f.cache.ReleaseSession(captureCtx, captureSession))
+
+	// Omitting the content hint forces an ordinary structural hit, which
+	// teaches the full recipe digest onto the bootstrap result. Schema loads
+	// must verify producing provenance, not trust even an exact digest posting.
+	contentHit, err := f.dag.LoadType(f.nextScopedCtx, moduleRecipe.With(call.WithContentDigest("")))
+	require.NoError(t, err)
+	contentModule, ok := dagql.UnwrapAs[*core.Module](contentHit)
+	require.True(t, ok)
+	require.Empty(t, contentModule.ObjectDefs, "ordinary loads must still reuse implementation content")
+	strictHit, err := f.dag.LoadTypeForSchema(f.nextScopedCtx, moduleRecipe)
+	require.NoError(t, err)
+	strictModule, ok := dagql.UnwrapAs[*core.Module](strictHit)
+	require.True(t, ok)
+	require.Len(t, strictModule.ObjectDefs, 1, "strict recipe loading must retain initialized definitions")
+
+	result, err := f.dag.Root().Select(f.nextScopedCtx, f.dag, dagql.Selector{Field: "codegen"})
+	require.NoError(t, err)
+	actualObj, ok := dagql.UnwrapAs[*core.ModuleObject](result)
+	require.True(t, ok)
+	require.Len(t, actualObj.Module.Self().ObjectDefs, 1, "dispatch must not bind the bootstrap module")
+	id, err := result.RecipeID(f.nextScopedCtx)
+	require.NoError(t, err)
+	require.Equal(t, moduleRecipe.Digest(), id.Module().ID().Digest(), "dispatch must retain its actual defining recipe")
+
+	replays := 0
+	f.dag.SetResultServerForCall(func(ctx context.Context, frame *dagql.ResultCall) (*dagql.Server, error) {
+		deps, err := root.ModDepsForCall(ctx, frame)
+		if err != nil {
+			return nil, err
+		}
+		module, ok := deps.Lookup("codegen")
+		require.True(t, ok)
+		actual := module.ModuleResult()
+		require.Len(t, actual.Self().ObjectDefs, 1, "replay must install the full defining schema")
+		replays++
+		reader, err := dagql.NewServer(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		moduleClass, ok := f.dag.ObjectType("Module")
+		require.True(t, ok)
+		reader.InstallObject(moduleClass)
+		for _, def := range actual.Self().ObjectDefs {
+			if err := (&core.ModuleObject{Module: actual, TypeDef: def.Self().AsObject.Value.Self()}).Install(ctx, reader); err != nil {
+				return nil, err
+			}
+		}
+		return reader, nil
+	})
+	require.NoError(t, f.cache.ReleaseSession(f.nextScopedCtx, nextScopedSession))
+	_, err = f.cache.Prune(f.parentCtx, []dagql.CachePrunePolicy{{All: true}})
+	require.NoError(t, err)
+	// Lazy type discovery must load the full schema without evaluating the
+	// object: this deliberately names a constructor that does not exist.
+	typeOnlyID := call.New().Append(result.Type(), "missingConstructor", call.WithModule(id.Module()))
+	const typeSession = "implementation-scoped-type-discovery"
+	typeCtx := engine.ContextWithClientMetadata(f.parentCtx, &engine.ClientMetadata{ClientID: typeSession, SessionID: typeSession})
+	t.Cleanup(func() { _ = f.cache.ReleaseSession(context.Background(), typeSession) })
+	_, _, ok, err = f.dag.ObjectTypeAndServerForID(typeCtx, typeOnlyID)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, 1, replays)
+	require.NoError(t, f.cache.ReleaseSession(typeCtx, typeSession))
+	_, err = f.cache.Prune(f.parentCtx, []dagql.CachePrunePolicy{{All: true}})
+	require.NoError(t, err)
+	_, err = f.dag.Load(f.parentCtx, id)
+	require.NoError(t, err)
+	require.Equal(t, 2, replays, "the pruned constructor must replay its defining schema")
+}
+
 func newImplementationScopedTest(t *testing.T) implementationScopedTest {
 	t.Helper()
 	ctx := t.Context()

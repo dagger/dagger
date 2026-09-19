@@ -5107,6 +5107,44 @@ func (c *Cache) lookupCacheForDigests(
 	recipeDigest digest.Digest,
 	extraDigests []call.ExtraDigest,
 ) (AnyResult, bool, error) {
+	return c.lookupCacheForDigestsExcluding(ctx, sessionID, resolver, recipeDigest, extraDigests, nil)
+}
+
+// lookupCacheForSchemaRecipe rejects recipes taught onto a content-equivalent
+// result by ordinary structural cache hits. Validate the producing frame outside
+// egraphMu, after acquiring session ownership so its provenance cannot disappear.
+// Rejected candidates keep that session edge until release, like resource-recheck
+// misses; this is bounded by the recipe's candidate set.
+func (c *Cache) lookupCacheForSchemaRecipe(ctx context.Context, sessionID string, resolver TypeResolver, recipeDigest digest.Digest) (AnyResult, bool, error) {
+	rejected := map[sharedResultID]struct{}{}
+	for {
+		res, hit, err := c.lookupCacheForDigestsExcluding(ctx, sessionID, resolver, recipeDigest, nil, rejected)
+		if err != nil || !hit {
+			return res, hit, err
+		}
+		ref, err := ResultCallRefForSchema(ctx, res)
+		if err != nil {
+			return nil, false, err
+		}
+		id, err := ref.RecipeID(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		if id.Digest() == recipeDigest {
+			return res, true, nil
+		}
+		rejected[res.cacheSharedResult().id] = struct{}{}
+	}
+}
+
+func (c *Cache) lookupCacheForDigestsExcluding(
+	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
+	recipeDigest digest.Digest,
+	extraDigests []call.ExtraDigest,
+	rejected map[sharedResultID]struct{},
+) (AnyResult, bool, error) {
 	if sessionID == "" {
 		return nil, false, errors.New("lookup cache for digests: empty session ID")
 	}
@@ -5121,6 +5159,13 @@ func (c *Cache) lookupCacheForDigests(
 	now := time.Now()
 	nowUnix := now.Unix()
 	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
+	if match.candidates != nil {
+		for resID := range rejected {
+			if res := c.resultsByID[resID]; res != nil {
+				match.candidates.Remove(res)
+			}
+		}
+	}
 	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 	if hitRes == nil {
