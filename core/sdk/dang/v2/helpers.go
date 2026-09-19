@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/iancoleman/strcase"
@@ -121,6 +124,7 @@ func evalDangSource(
 		// runtime has to ask for it explicitly.
 		stdioCtx := trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))
 		stdio := telemetry.SpanStdio(stdioCtx, core.InstrumentationLibrary)
+		defer stdio.Close()
 		ctx = ioctx.StdoutToContext(ctx, stdio.Stdout)
 		ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
 
@@ -143,16 +147,69 @@ func evalDangSource(
 
 			env, err = runSource(ctx, modSrcDir)
 			if err != nil {
+				if isDangSourceError(err) {
+					return reportDangSourceError(stdio.Stderr, err)
+				}
 				return fmt.Errorf("run dir: %w", err)
 			}
 			return nil
 		})
 		if err != nil {
+			if errors.As(err, new(*dangSourceError)) {
+				// Already reported to stderr; the message is intentionally
+				// short, so don't bury it under mount plumbing.
+				return nil, err
+			}
 			return nil, fmt.Errorf("mount source: %w", err)
 		}
 
 		return withEnv(ctx, env)
 	})
+}
+
+// dangSourceError is the span error for a module whose Dang source failed to
+// parse, infer, or evaluate. Dang renders those failures as full reports —
+// multi-line, ANSI-colored source excerpts, one per inference error — and an
+// error string is copied verbatim into tool results and the TUI's error line,
+// where a report of that size is unreadable. The report goes to the
+// user-facing span's stderr instead (reportDangSourceError); this error only
+// points at it. The original error stays reachable through Unwrap so
+// errors.As-based handling (e.g. dangshared.ConvertError extracting a GraphQL
+// error raised during top-level evaluation) keeps working.
+type dangSourceError struct {
+	err error
+}
+
+func (e *dangSourceError) Error() string {
+	return "Dang module failed to load; see logs"
+}
+
+func (e *dangSourceError) Unwrap() error {
+	return e.err
+}
+
+// isDangSourceError reports whether err is one Dang renders as a source
+// report: inference errors, source-located parse/eval errors, or an uncaught
+// raise. Anything else (a missing source dir, I/O failures) is infrastructure
+// whose plain message should surface as-is.
+func isDangSourceError(err error) bool {
+	var (
+		inferErrs *dang.InferenceErrors
+		inferErr  *dang.InferError
+		srcErr    *dang.SourceError
+		raised    *dang.RaisedError
+	)
+	return errors.As(err, &inferErrs) ||
+		errors.As(err, &inferErr) ||
+		errors.As(err, &srcErr) ||
+		errors.As(err, &raised)
+}
+
+// reportDangSourceError writes Dang's rendered report for err to stderr and
+// returns the short dangSourceError to surface as the span error.
+func reportDangSourceError(stderr io.Writer, err error) error {
+	fmt.Fprint(stderr, strings.TrimRight(err.Error(), "\n")+"\n")
+	return &dangSourceError{err: err}
 }
 
 // ensureModuleSelfTypes makes each of the module's own declared object,
@@ -286,6 +343,10 @@ func moduleDeclaredTypeNames(modSrcDir, moduleName string) []string {
 func runDangDirForModuleTypes(ctx context.Context, dirPath string) (dang.ValueScope, error) {
 	env, err := dang.DeclareDir(ctx, dirPath, false)
 	if err != nil {
+		if isDangSourceError(err) {
+			// Rendered verbatim to stderr; a prefix would mangle the report.
+			return nil, err
+		}
 		return nil, fmt.Errorf("declare Dang module types: %w", err)
 	}
 	return env, nil

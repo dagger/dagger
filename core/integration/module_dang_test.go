@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -526,6 +528,70 @@ func (DangSuite) TestSelfCallReturningOwnType(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "constructed via api", strings.TrimSpace(out))
+	})
+}
+
+// TestLoadErrorReport locks in where a Dang load failure lands. Dang renders
+// inference and evaluation failures as full reports — multi-line, colored
+// source excerpts — and the runtime used to return them as the span error,
+// which is copied verbatim into tool results and the TUI's error line. The
+// report belongs in the function call's stderr; the error only points at it.
+func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
+	const shortMessage = "Dang module failed to load; see logs"
+
+	writeModule := func(t *testctx.T, source string) string {
+		t.Helper()
+		modDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "dagger.json"),
+			[]byte(`{"name":"broken","engineVersion":"v1.0.0","sdk":"dang"}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.dang"), []byte(source), 0o644))
+		return modDir
+	}
+
+	// requireReported asserts that the report reached the logs but not the
+	// error: the error is the short pointer, and the source excerpt (the
+	// location arrow Dang prints under the message) only shows up in logs.
+	requireReported := func(t *testctx.T, c *dagger.Client, logs *safeBuffer, err error, marker string) {
+		t.Helper()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), shortMessage)
+		require.NotContains(t, err.Error(), marker)
+		require.NotContains(t, err.Error(), "--> ")
+		require.NoError(t, c.Close()) // close + flush logs
+		require.Contains(t, logs.String(), marker)
+		require.Contains(t, logs.String(), "main.dang:")
+	}
+
+	t.Run("inference error in a function body surfaces at call time", func(ctx context.Context, t *testctx.T) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+
+		// Body inference is deferred past the declaration-only ModuleTypes
+		// pass, so the module loads and the failure lands on the call.
+		modDir := writeModule(t, `type Broken {
+  hello: String! { intentionallyUndefinedSymbol }
+}
+`)
+		mod, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		require.NoError(t, err)
+		require.NoError(t, mod.Serve(ctx))
+
+		_, err = testutil.QueryWithClient[struct {
+			Broken struct{ Hello string }
+		}](c, t, `{ broken { hello } }`, nil)
+		requireReported(t, c, &logs, err, "intentionallyUndefinedSymbol")
+	})
+
+	t.Run("declaration error surfaces when loading the module", func(ctx context.Context, t *testctx.T) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+
+		modDir := writeModule(t, `type Broken {
+  hello: IntentionallyUndefinedType! { "hi" }
+}
+`)
+		_, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		requireReported(t, c, &logs, err, "IntentionallyUndefinedType")
 	})
 }
 
