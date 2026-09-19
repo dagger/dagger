@@ -288,7 +288,7 @@ func workspaceEntrypointModuleName(ctx context.Context) (string, bool) {
 
 // isBareRefShaped reports whether addr looks like a module reference in the
 // old "<module>:<function>" form: exactly one ":", no "://", and no "/". A
-// value without the dag:// scheme keeps its external meaning, so such a string
+// value without the dag:// scheme keeps its external meaning in v1, so a string
 // that fails external decoding most often meant a workspace artifact; callers
 // wrap the fallback error with moduleRefHint.
 func isBareRefShaped(addr string) bool {
@@ -301,8 +301,11 @@ func isBareRefShaped(addr string) bool {
 // moduleRefHint builds the near-miss hint appended to fallback errors for
 // bare-ref-shaped addresses. Kept identical between the .service() and
 // .container() decoders.
-func moduleRefHint(addr string) string {
-	module, function, _ := strings.Cut(addr, ":")
+func moduleRefHint(address *core.Address) string {
+	module, function, _ := strings.Cut(address.Value, ":")
+	if address.BoundWorkspace.Self() == nil {
+		return fmt.Sprintf("no installed module matches %q; check the [modules.X] keys in dagger.toml", module)
+	}
 	return fmt.Sprintf("if you meant to wire in another module's output, write it as a DAG address: dag://%s/%s", module, function)
 }
 
@@ -570,11 +573,8 @@ func (s *addressSchema) container(
 ) {
 	addr := r.Self().Value
 	if matched, err := resolveModuleRef(ctx, r.Self(), "Container", &inst); matched {
-		// The address named an installed module: it is committed as a
-		// module reference. Any failure here is hard and must not fall
-		// through to image interpretation. An image ref shadowed by a module
-		// name can be forced with a fully-qualified registry path, which
-		// never matches an installed module name.
+		// A DAG address, or a matched legacy module reference, must not
+		// fall through to image interpretation when evaluation fails.
 		return inst, err
 	}
 	q := []dagql.Selector{
@@ -601,10 +601,10 @@ func (s *addressSchema) container(
 	err = coreSrv.Select(ctx, coreSrv.Root(), &inst, q...)
 	if err != nil {
 		// A bare-ref-shaped address that fell through to image resolution and
-		// failed is most often a mistyped module ref; add a hint pointing at
-		// dagger.toml. Keep wording consistent with the .service() decoder.
+		// failed may be a mistyped module reference. Use the same view-aware
+		// hint as the .service() decoder.
 		if isBareRefShaped(addr) && (!r.Self().ExternalOnly || r.Self().BoundWorkspace.Self() != nil) {
-			return inst, fmt.Errorf("%w (%s)", err, moduleRefHint(addr))
+			return inst, fmt.Errorf("%w (%s)", err, moduleRefHint(r.Self()))
 		}
 		return inst, err
 	}
@@ -833,18 +833,16 @@ func (s *addressSchema) service(
 		protocol core.NetworkProtocol
 	)
 	addr := r.Self().Value
-	// A bare "<module>:<function>" naming an installed module is
-	// committed as a module reference; any failure here is hard and does not
-	// fall through to tcp:///udp:// interpretation.
+	// A DAG address, or a matched legacy module reference, must not
+	// fall through to tcp:///udp:// interpretation when evaluation fails.
 	if matched, err := resolveModuleRef(ctx, r.Self(), "Service", &inst); matched {
 		return inst, err
 	}
 	// wrapFallback annotates fallback URL/host-port parse failures for
-	// bare-ref-shaped addresses (e.g. a mistyped "docusarus:serve") with a hint
-	// pointing at dagger.toml. Kept consistent with the .container() decoder.
+	// bare-ref-shaped addresses with the same view-aware hint as .container().
 	wrapFallback := func(err error) error {
 		if isBareRefShaped(addr) && (!r.Self().ExternalOnly || r.Self().BoundWorkspace.Self() != nil) {
-			return fmt.Errorf("%w (%s)", err, moduleRefHint(addr))
+			return fmt.Errorf("%w (%s)", err, moduleRefHint(r.Self()))
 		}
 		return err
 	}
@@ -923,7 +921,7 @@ func (s *addressSchema) workspace(
 	if matched, err := resolveModuleRef(ctx, r.Self(), "Workspace", &inst); matched {
 		return inst, err
 	}
-	return inst, fmt.Errorf("workspace address %q must reference an installed module as <module>:<function>", addr)
+	return inst, fmt.Errorf("workspace address %q must be a DAG address such as dag://<module>/<function>", addr)
 }
 
 func (s *addressSchema) volume(

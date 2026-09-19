@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func workspaceArtifactCommands(types []string) map[string]string {
@@ -32,9 +33,11 @@ func workspaceArtifactCommands(types []string) map[string]string {
 }
 
 func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []string) error {
+	helping := false
 	if len(args) > 0 {
 		switch args[0] {
 		case "help", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+			helping = true
 			args = args[1:]
 		}
 	}
@@ -68,7 +71,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 		}
 		return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
 	}
-	return withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
+	err := withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
 		types, err := ec.Dagger().CurrentWorkspace().Artifacts().Types(ctx)
 		if err != nil {
 			return err
@@ -88,6 +91,13 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 		}
 		return nil
 	})
+	// Type shortcuts are optional for group help and completion. Keep errors
+	// for actual shortcut invocations, where discovery is required to execute.
+	if err != nil && (helping || len(commandArgs) == 0) {
+		slog.Debug("skip workspace artifact commands", "error", err)
+		return nil
+	}
+	return err
 }
 
 func runWorkspaceArtifacts(cmd *cobra.Command, typeName string) error {

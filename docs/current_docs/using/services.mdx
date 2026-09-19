@@ -38,7 +38,7 @@ Service containers have three key properties:
 
 ## Wiring a service into another module
 
-Generic modules can compose through workspace settings. If a module's constructor accepts an optional `Service`, you can wire another module's service into it with a plain module reference. No glue module required.
+Generic modules can compose through workspace settings. If a module's constructor accepts an optional `Service`, you can wire another module's service into it with a DAG address. No glue module required.
 
 For example, a `docusaurus` module knows how to serve a documentation site, and a `playwright` module knows how to run browser tests against any web app it's given. Connect them in `dagger.toml`:
 
@@ -53,9 +53,9 @@ source = "github.com/example/playwright@v1.0"
 app = "dag://docusaurus/serve"
 ```
 
-The setting is a `dag://<module>/<function>` DAG address. The leading path segment is a module's install name, the `[modules.X]` key in the same `dagger.toml`. The rest names a zero-arg function on it. Any function returning a matching type works, and Dagger injects the value it returns. `dagger artifact list --type Service` is a convenient place to find and copy a service's address, but the address is valid because it resolves to a `Service`, not because the function is listed there. When Dagger constructs `playwright`, it resolves the reference and passes the service as the `app` argument.
+The setting selects a `Service` artifact by its `dag://` address. In this example, `docusaurus` is the module's install name, the `[modules.docusaurus]` key in `dagger.toml`. The selected function must return a non-null `Service` and be reachable without required user input. Use `dagger artifact list --type Service` to find and copy an available address. When Dagger constructs `playwright`, it evaluates that artifact and passes the service as the `app` argument.
 
-This also works for `Container` constructor arguments. Point the setting at any module function that returns a `Container`, for example to share a common base image across modules.
+This also works for `Container` constructor arguments. Select a `Container` artifact to share a common base image across modules.
 
 Because a module reference is an ordinary address string, the same value works as a CLI flag with no `dagger.toml` entry:
 
