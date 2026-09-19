@@ -499,9 +499,35 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 
 func NoopDone(res AnyResult, cached bool, rerr *error) {}
 
+// FieldModuleProvider supplies the module provenance for one call to a field.
+// It runs while the call is prepared, with the calling context and the server
+// the selection was made through, and returns a result-backed module reference
+// that is valid in the calling session.
+//
+// Contract: a schema can outlive the session that installed it, so the provider
+// must not capture that session or any result only that session owns. It may
+// rely only on results the field's holder keeps alive (for module classes, the
+// operational module that every cached module object and tool binding owns
+// explicitly) and on results it acquires in the calling session.
+type FieldModuleProvider func(ctx context.Context, srv *Server) (*ResultCallModule, error)
+
+func (spec *FieldSpec) resolveModule(ctx context.Context, srv *Server) (*ResultCallModule, error) {
+	if spec.ModuleProvider == nil {
+		return spec.Module.clone(), nil
+	}
+	module, err := spec.ModuleProvider(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	if module == nil || module.ResultRef == nil {
+		return nil, fmt.Errorf("module provider returned no result reference")
+	}
+	return module, nil
+}
+
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
-	r, preselectResult, err := r.preselect(ctx, sel)
+	r, preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -527,7 +553,7 @@ func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.Vi
 	})
 }
 
-func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectResult[T], *preselectResult, error) {
+func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selector) (ObjectResult[T], *preselectResult, error) {
 	view := sel.View
 	field, ok := r.class.Field(sel.Field, view)
 	if !ok {
@@ -592,6 +618,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 		}
 		return r, nil, fmt.Errorf("failed to resolve receiver for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
+	module, err := field.Spec.resolveModule(ctx, srv)
+	if err != nil {
+		return r, nil, fmt.Errorf("failed to resolve module for %s.%s: %w", r.class.TypeName(), sel.Field, err)
+	}
 	req := &CallRequest{
 		ResultCall: &ResultCall{
 			Kind:           ResultCallKindField,
@@ -600,7 +630,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 			View:           view,
 			Nth:            int64(sel.Nth),
 			Receiver:       receiverRef,
-			Module:         field.Spec.Module.clone(),
+			Module:         module,
 			Args:           frameArgs,
 			ImplicitInputs: implicitInputs,
 		},
@@ -904,8 +934,13 @@ type FieldSpec struct {
 	// ExperimentalReason marks the field as experimental and provides a reason.
 	ExperimentalReason string
 	// Module is frame-native provenance for the module that provides the field's
-	// implementation.
+	// implementation. When ModuleProvider is set it only describes the module
+	// (name, ref, pin) statically and carries no result reference.
 	Module *ResultCallModule
+	// ModuleProvider, if set, supplies the module's result reference each time
+	// a call to the field is prepared, in the calling session. See
+	// FieldModuleProvider for the contract.
+	ModuleProvider FieldModuleProvider
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
 
