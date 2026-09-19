@@ -149,7 +149,7 @@ type Tool {
 
 	t.Run("module function base", func(ctx context.Context, t *testctx.T) {
 		result := base.With(workspaceSelectionDaggerExec(
-			"-W", workspace, "ws", "exec", "--auto-apply", "--from=tool:base",
+			"-W", workspace, "ws", "exec", "--auto-apply", "--from=dag://tool/base",
 			"sh", "-c", `printf '%s\n' "$WS_EXEC_BASE" > module-base.txt`,
 		))
 		out, err := result.File("/selected/sub/module-base.txt").Contents(ctx)

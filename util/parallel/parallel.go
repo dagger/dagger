@@ -4,10 +4,10 @@ import (
 	"context"
 	"slices"
 
+	telemetry "github.com/dagger/otel-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -157,12 +157,7 @@ func (job Job) Runner(ctx context.Context) func() error {
 		var span trace.Span
 		if job.Tracing {
 			ctx, span = job.startSpan(ctx)
-			defer func() {
-				if rerr != nil {
-					span.SetStatus(codes.Error, rerr.Error())
-				}
-				span.End()
-			}()
+			defer telemetry.EndWithCause(span, &rerr)
 		}
 		if job.Func == nil {
 			return nil

@@ -13,7 +13,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,6 +44,19 @@ func installAgents(t *testctx.T, c *dagger.Client, names ...string) (*dagger.Con
 	return env.WithWorkdir("app").WithNewFile("dagger.toml", toml), nil
 }
 
+func agentFixtureWorkspace(container *dagger.Container) *dagger.Workspace {
+	return container.Directory("/work").AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "modules/app"})
+}
+
+func agentFixtureTools(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace, selection *dagger.Artifacts) (string, error) {
+	t.Helper()
+	llm, err := composeArtifactAgents(ctx, c, ws, selection)
+	if err != nil {
+		return "", err
+	}
+	return llm.Tools(ctx)
+}
+
 func (AgentsSuite) TestListAcrossModules(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "editor", "godoc")
@@ -52,10 +64,10 @@ func (AgentsSuite) TestListAcrossModules(ctx context.Context, t *testctx.T) {
 
 	out, err := modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "editor:agent")
+	require.Contains(t, out, "dag://editor/agent")
 	// godoc's base argument is named `llm`, not `base`; it must still be
 	// discovered, since the base is matched by type rather than name.
-	require.Contains(t, out, "godoc:agent")
+	require.Contains(t, out, "dag://godoc/agent")
 }
 
 // TestSDKAgents covers the @agent marker in the SDKs that carry their own
@@ -78,11 +90,9 @@ func (AgentsSuite) TestSDKAgents(ctx context.Context, t *testctx.T) {
 
 			out, err := modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, tc.module+":agent")
+			require.Contains(t, out, "dag://"+tc.module+"/agent")
 
-			out, err = modGen.
-				With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
-				Stdout(ctx)
+			out, err = agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), nil)
 			require.NoError(t, err)
 			require.Contains(t, out, "## "+tc.tool)
 			// The @agent entrypoint is auto-excluded from the toolset.
@@ -98,8 +108,8 @@ func (AgentsSuite) TestSelection(ctx context.Context, t *testctx.T) {
 
 	out, err := modGen.With(daggerExec("agent", "-l", "editor")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "editor:agent")
-	require.NotContains(t, out, "godoc:agent")
+	require.Contains(t, out, "dag://editor/agent")
+	require.NotContains(t, out, "dag://godoc/agent")
 }
 
 func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
@@ -111,7 +121,7 @@ func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
 	// Nested.tools; the rollup recurses through functions, so it is discoverable.
 	out, err := modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "nested:tools:agent")
+	require.Contains(t, out, "dag://nested/tools/agent")
 }
 
 func (AgentsSuite) TestValidationRejectsExtraRequiredArg(ctx context.Context, t *testctx.T) {
@@ -155,9 +165,7 @@ func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
 	modGen, err := installAgents(t, c, "editor", "godoc")
 	require.NoError(t, err)
 
-	out, err := modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
-		Stdout(ctx)
+	out, err := agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), nil)
 	require.NoError(t, err)
 	// The @agent entrypoint is auto-excluded from the toolset, so authors don't
 	// need `except: ["agent"]`.
@@ -179,9 +187,7 @@ func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
 
 	// A module with no collisions keeps its bare tool names — namespacing only
 	// kicks in when toolsets actually conflict.
-	out, err = modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents(include:["editor"]){compose{tools}}}}`)).
-		Stdout(ctx)
+	out, err = agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), agentFixtureWorkspace(modGen).Artifacts().FilterURI("editor/**"))
 	require.NoError(t, err)
 	require.Contains(t, out, "## readFile")
 	require.Contains(t, out, "## shared")
@@ -198,9 +204,7 @@ func (AgentsSuite) TestComposeExclude(ctx context.Context, t *testctx.T) {
 
 	// Excluding godoc removes its whole toolset; editor's remains — and with
 	// the collision partner gone, editor keeps its bare tool names.
-	out, err := modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents(exclude:["godoc"]){compose{tools}}}}`)).
-		Stdout(ctx)
+	out, err := agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), agentFixtureWorkspace(modGen).Artifacts().WithoutURI("godoc/**"))
 	require.NoError(t, err)
 	require.Contains(t, out, "## readFile")
 	require.Contains(t, out, "## shared")
@@ -210,9 +214,7 @@ func (AgentsSuite) TestComposeExclude(ctx context.Context, t *testctx.T) {
 
 	// Exclude composes with include: the intersection here selects nothing,
 	// folding over no agents into the bare workspace-bound LLM.
-	out, err = modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents(include:["editor"], exclude:["editor"]){compose{tools}}}}`)).
-		Stdout(ctx)
+	out, err = agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), agentFixtureWorkspace(modGen).Artifacts().FilterURI("editor/**").WithoutURI("editor/**"))
 	require.NoError(t, err)
 	require.NotContains(t, out, "## readFile")
 	require.NotContains(t, out, "## goDoc")
@@ -231,9 +233,9 @@ func (AgentsSuite) TestComposeSeedIsWorkspaceBound(ctx context.Context, t *testc
 	// Reading the bound workspace back out proves the seed bound one, and the
 	// entries prove it's the env workspace the group was rolled up from (its
 	// root carries the fixture module tree).
-	out, err := modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{workspace{directory(path:"/"){entries}}}}}}`)).
-		Stdout(ctx)
+	llm, err := composeArtifactAgents(ctx, c, agentFixtureWorkspace(modGen), nil)
+	require.NoError(t, err)
+	out, err := llm.Workspace().Directory("/").Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "modules/")
 }
@@ -249,9 +251,7 @@ func (AgentsSuite) TestAgentReadsSeedWorkspace(ctx context.Context, t *testctx.T
 	// wsaware:agent derives its system prompt from
 	// base.workspace.file("dagger.toml"), so composing succeeds only when the
 	// seed is workspace-bound (compose runs each leaf eagerly).
-	_, err = modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
-		Stdout(ctx)
+	_, err = agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), nil)
 	require.NoError(t, err)
 }
 
@@ -308,7 +308,7 @@ func (AgentsSuite) TestOverlayModuleSourceIsResolvedThroughOverlay(ctx context.C
 // with nothing exported to disk. The edit is staged and the toolset selected in
 // a single query, off the Workspace returned by withNewFile.
 // workspaceOverlayModules re-resolves the module through the overlay for
-// composition (Workspace.agents), and the resulting binding pins that module's
+// composition (Workspace.artifacts), and the resulting binding pins that module's
 // schema (boundTool.definingSchema), so LLM.tools renders from the
 // overlay-loaded definition rather than the served (on-disk) one.
 func (AgentsSuite) TestOverlayModuleSourceEdit(ctx context.Context, t *testctx.T) {
@@ -318,21 +318,14 @@ func (AgentsSuite) TestOverlayModuleSourceEdit(ctx context.Context, t *testctx.T
 
 	const marker = "OVERLAY EDITED DOC MARKER"
 
-	out, err := modGen.
-		With(daggerQuery(
-			`{workspace: currentWorkspace{withNewFile(path:"/modules/editor/main.dang", contents:%s){agents{compose{tools}}}}}`,
-			strconv.Quote(editorSourceWithDoc(marker)),
-		)).
-		Stdout(ctx)
+	out, err := agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen).WithNewFile("/modules/editor/main.dang", editorSourceWithDoc(marker)), nil)
 	require.NoError(t, err)
 	require.Contains(t, out, "## readFile")
 	require.Contains(t, out, marker)
 	require.NotContains(t, out, "Read a file (stub).")
 
 	// Control: the un-staged workspace still composes the on-disk source.
-	out, err = modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
-		Stdout(ctx)
+	out, err = agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), nil)
 	require.NoError(t, err)
 	require.Contains(t, out, "Read a file (stub).")
 	require.NotContains(t, out, marker)
@@ -364,7 +357,8 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 	))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLoadWorkspaceModules())
-	composed := c.CurrentWorkspace().Agents().Compose()
+	composed, err := composeArtifactAgents(ctx, c, c.CurrentWorkspace(), nil)
+	require.NoError(t, err)
 	baseline, err := composed.Tools(ctx)
 	require.NoError(t, err)
 	require.Contains(t, baseline, "## readFile")
@@ -380,7 +374,7 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 
 	// Explicit reload remains strict: it must report the bad source rather than
 	// claim that the invalid composition succeeded.
-	_, err = broken.Agents().Compose().Tools(ctx)
+	_, err = composeArtifactAgents(ctx, c, broken, nil)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "load from workspace overlay")
 
@@ -395,7 +389,9 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 
 	// Explicit recomposition is the reload boundary. It strictly resolves the
 	// repaired overlay and binds the edited module schema into the returned LLM.
-	reloaded, err := repaired.Agents().Compose().Tools(ctx)
+	composed, err = composeArtifactAgents(ctx, c, repaired, nil)
+	require.NoError(t, err)
+	reloaded, err := composed.Tools(ctx)
 	require.NoError(t, err)
 	require.Contains(t, reloaded, marker)
 	require.NotContains(t, reloaded, "Read a file (stub).")
@@ -412,9 +408,7 @@ func (AgentsSuite) TestOverlayWithModule(ctx context.Context, t *testctx.T) {
 	modGen, err := installAgents(t, c, "editor")
 	require.NoError(t, err)
 
-	out, err := modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{withModule(ref:"../godoc"){agents{compose{tools}}}}}`)).
-		Stdout(ctx)
+	out, err := agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen).WithModule("../godoc"), nil)
 	require.NoError(t, err)
 	// Both fixtures define `shared`, so the collision namespaces both toolsets
 	// — the same shape TestComposeToolset asserts for the on-disk install.
@@ -434,46 +428,12 @@ func (AgentsSuite) TestOverlayUnrelatedEditKeepsToolset(ctx context.Context, t *
 	modGen, err := installAgents(t, c, "editor", "godoc")
 	require.NoError(t, err)
 
-	baseline, err := modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
-		Stdout(ctx)
+	baseline, err := agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), nil)
 	require.NoError(t, err)
 
-	out, err := modGen.
-		With(daggerQuery(
-			`{workspace: currentWorkspace{withNewFile(path:"/README.md", contents:%s){agents{compose{tools}}}}}`,
-			strconv.Quote("unrelated overlay edit\n"),
-		)).
-		Stdout(ctx)
+	out, err := agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen).WithNewFile("/README.md", "unrelated edit"), nil)
 	require.NoError(t, err)
-	require.Equal(t, agentToolsFromQuery(t, baseline), agentToolsFromQuery(t, out))
-}
-
-// agentToolsFromQuery digs the composed `tools` string out of a
-// `dagger query` response, whatever wrapper fields the query nested it under.
-func agentToolsFromQuery(t *testctx.T, out string) string {
-	t.Helper()
-	var res any
-	require.NoError(t, json.Unmarshal([]byte(out), &res))
-	var find func(any) (string, bool)
-	find = func(v any) (string, bool) {
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return "", false
-		}
-		if tools, ok := obj["tools"].(string); ok {
-			return tools, true
-		}
-		for _, child := range obj {
-			if tools, ok := find(child); ok {
-				return tools, true
-			}
-		}
-		return "", false
-	}
-	tools, ok := find(res)
-	require.True(t, ok, "no tools field in %s", out)
-	return tools
+	require.Equal(t, baseline, out)
 }
 
 func (AgentsSuite) TestEmptySelectionComposesBareLLM(ctx context.Context, t *testctx.T) {
@@ -483,9 +443,7 @@ func (AgentsSuite) TestEmptySelectionComposesBareLLM(ctx context.Context, t *tes
 
 	// A selection matching no agent folds over nothing and returns the bare
 	// workspace-bound LLM (builtins only) — no error, and no editor tools.
-	out, err := modGen.
-		With(daggerQuery(`{workspace: currentWorkspace{agents(include:["does-not-exist"]){compose{tools}}}}`)).
-		Stdout(ctx)
+	out, err := agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), agentFixtureWorkspace(modGen).Artifacts().FilterURI("does-not-exist/**"))
 	require.NoError(t, err)
 	require.NotContains(t, out, "## readFile")
 }

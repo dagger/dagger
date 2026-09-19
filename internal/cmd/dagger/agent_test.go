@@ -24,7 +24,7 @@ func (c agentTestConn) Do(req *http.Request) (*http.Response, error) {
 	return c.do(req)
 }
 
-func TestComposeAgentsSnapshotFallback(t *testing.T) {
+func TestSnapshotWorkspaceFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		captureErr string
@@ -44,7 +44,7 @@ func TestComposeAgentsSnapshotFallback(t *testing.T) {
 			if tc.captureErr != "" {
 				wantWorkspace = "current-workspace"
 			}
-			snapshots, liveReads, composed := 0, 0, false
+			snapshots, liveReads := 0, 0
 			dag, err := dagger.Connect(ctx, dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
 				var query dagger.Request
 				require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
@@ -61,12 +61,7 @@ func TestComposeAgentsSnapshotFallback(t *testing.T) {
 					} else {
 						payload = map[string]any{"data": map[string]any{"currentWorkspace": map[string]any{"snapshot": map[string]string{"id": wantWorkspace}}}}
 					}
-				case query.OpName == "ComposeAgents":
-					composed = true
-					vars := query.Variables.(map[string]any)
-					require.Equal(t, wantWorkspace, vars["workspace"])
-					require.Equal(t, []any{"editor"}, vars["include"])
-					payload = map[string]any{"data": map[string]any{"workspace": map[string]any{"agents": map[string]any{"compose": map[string]string{"id": "composed-agent"}}}}}
+
 				case strings.Contains(query.Query, "currentWorkspace"):
 					liveReads++
 					payload = map[string]any{"data": map[string]any{"currentWorkspace": map[string]string{"id": "current-workspace"}}}
@@ -80,18 +75,18 @@ func TestComposeAgentsSnapshotFallback(t *testing.T) {
 			}}))
 			require.NoError(t, err)
 			defer dag.Close()
-			id, err := composeAgents(ctx, dag, []string{"editor"})
+			ws, err := snapshotWorkspace(ctx, dag)
 			require.Equal(t, 1, snapshots)
 			if tc.cancel {
 				require.ErrorIs(t, err, context.Canceled)
-				require.False(t, composed)
 				require.Zero(t, liveReads)
 				require.Empty(t, warnings.String())
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, "composed-agent", id)
-			require.True(t, composed)
+			id, err := ws.ID(ctx)
+			require.NoError(t, err)
+			require.Equal(t, wantWorkspace, string(id))
 			if tc.captureErr != "" {
 				require.Equal(t, 1, liveReads)
 				require.Contains(t, warnings.String(), "level=WARN")

@@ -23,18 +23,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return all agent middlewares from modules loaded in the workspace.
+     * Discover static object artifacts from workspace modules without evaluating their values.
      */
-    public function agents(?array $include = null, ?array $exclude = null): AgentMiddlewareGroup
+    public function artifacts(?array $include = null): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agents');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifacts');
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        if (null !== $exclude) {
-        $innerQueryBuilder->setArgument('exclude', $exclude);
-        }
-        return new \Dagger\AgentMiddlewareGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -49,31 +46,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('from', $from);
         }
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all checks from modules loaded in the workspace.
-     */
-    public function checks(
-        ?array $include = null,
-        ?array $skip = null,
-        ?bool $noGenerate = null,
-        ?bool $onlyGenerate = null,
-    ): CheckGroup {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $skip) {
-        $innerQueryBuilder->setArgument('skip', $skip);
-        }
-        if (null !== $noGenerate) {
-        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
-        }
-        if (null !== $onlyGenerate) {
-        $innerQueryBuilder->setArgument('onlyGenerate', $onlyGenerate);
-        }
-        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -114,11 +86,14 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * If key points to a table, returns flattened dotted-key output.
      */
-    public function configRead(?string $key = ''): string
+    public function configRead(?string $key = '', ?bool $effective = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configRead');
         if (null !== $key) {
         $leafQueryBuilder->setArgument('key', $key);
+        }
+        if (null !== $effective) {
+        $leafQueryBuilder->setArgument('effective', $effective);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'configRead');
     }
@@ -262,18 +237,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return all generators from modules loaded in the workspace.
-     */
-    public function generators(?array $include = null): GeneratorGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Git state for this workspace. Errors if the workspace is not in a git repository.
      */
     public function git(): WorkspaceGit
@@ -371,6 +334,22 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Resolve an address in this workspace.
+     *
+     * A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+     *
+     * A value without the dag:// scheme keeps its external meaning, such as a container image reference.
+     *
+     * The Address retains this workspace across module calls and ID reloads.
+     */
+    public function resolve(string $value): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolve');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * An installed SDK, by name.
      */
     public function sdk(string $name): WorkspaceSDK
@@ -445,18 +424,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return all services from modules loaded in the workspace.
-     */
-    public function services(?array $include = null): UpGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Return a snapshot of this workspace as a stable value.
      *
      * Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
@@ -471,18 +438,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('snapshot');
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all terminal targets from modules loaded in the workspace.
-     */
-    public function terminals(?array $include = null): TerminalGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminals');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\TerminalGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

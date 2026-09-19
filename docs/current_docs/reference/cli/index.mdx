@@ -23,6 +23,7 @@ dagger [options] [subcommand | file...]
 
 * [dagger agent](#dagger-agent)	 - Compose your installed agent modules and drop into an interactive prompt.
 * [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
 * [dagger check](#dagger-check)	 - Verify your project — tests, linters, type checks, security scans, etc.
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
 * [dagger generate](#dagger-generate)	 - Generate derived files for your project — code, SDKs, types, docs, etc.
@@ -37,7 +38,7 @@ dagger [options] [subcommand | file...]
 * [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger update](#dagger-update)	 - Update installed module versions and lockfile state
 * [dagger version](#dagger-version)	 - Print dagger version
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger agent
 
@@ -61,21 +62,23 @@ enqueued but never consumed are not in the trace at all, so they are not
 restored; anything a turn actually consumed is part of its conversation and is.
 
 Examples:
-  dagger agent                    # Compose all installed agents and start the prompt
-  dagger agent -l                 # List all available agents
-  dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=&lt;session&gt;       # Resume a specific saved session
-  dagger agent --trace &lt;id&gt;       # Restore a past session from its Dagger Cloud trace
+  dagger agent                               # Compose all installed agents and start the prompt
+  dagger agent -l                            # List all available agents
+  dagger agent dag://editor dag://dagger-go  # Compose only the 'editor' and 'dagger-go' agents
+  dagger agent -r                            # Resume a saved session (interactive picker)
+  dagger agent -r=&lt;session&gt;                  # Resume a specific saved session
+  dagger agent --trace &lt;id&gt;                  # Restore a past session from its Dagger Cloud trace
 
 
 ```
-dagger agent [options] [name...]
+dagger agent [options] [address...]
 ```
 
 ### Options
 
 ```
+      --abs                       Alias for --absolute
+      --absolute                  List absolute artifact addresses, including the workspace and revision
       --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
   -l, --list                      List available agents
       --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
@@ -345,6 +348,166 @@ dagger api with-session python main.py
 
 * [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
 
+## dagger artifact
+
+List and filter workspace artifacts
+
+### Synopsis
+
+List artifact addresses without evaluating their values.
+
+An address selects that path and its children. Use / between fields; : is
+also accepted. The dag:// scheme is optional. Glob patterns work as with
+check and up. Quote them to keep the shell from expanding them.
+
+Use --type to select a GraphQL type. Each dimension adds a flag with its name,
+such as --go-module. Repeat a flag to match any of its values. Different filters
+must all match. Use --dimension-key DIMENSION=KEY if a dimension name
+conflicts with an existing flag. A query in the address has the same meaning
+as these flags: dag://&lt;path&gt;?&lt;dimension&gt;=&lt;key&gt;.
+
+Examples:
+  dagger artifact list
+  dagger artifact list engine-dev --type Container
+  dagger artifact list 'go*/**' --type Container --type Directory
+  dagger artifact list 'dag://golang/modules/tests/container?go-module=sdk/go'
+  dagger artifact types
+  dagger artifact dimensions
+  dagger artifact keys go-test --go-module=sdk/go
+
+### Options
+
+```
+      --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
+  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string         Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger artifact dimensions](#dagger-artifact-dimensions)	 - List dimensions of matching artifacts
+* [dagger artifact keys](#dagger-artifact-keys)	 - List keys in a dimension of matching artifacts
+* [dagger artifact list](#dagger-artifact-list)	 - List matching artifact addresses
+* [dagger artifact types](#dagger-artifact-types)	 - List types of matching artifacts
+
+## dagger artifact dimensions
+
+List dimensions of matching artifacts
+
+```
+dagger artifact dimensions [address...]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                       Enable engine and trace diagnostics
+      --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
+      --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string                  Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
+  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string            Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
+
+## dagger artifact keys
+
+List keys in a dimension of matching artifacts
+
+```
+dagger artifact keys DIMENSION [address...]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                       Enable engine and trace diagnostics
+      --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
+      --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string                  Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
+  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string            Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
+
+## dagger artifact list
+
+List matching artifact addresses
+
+```
+dagger artifact list [address...]
+```
+
+### Options
+
+```
+      --abs        Alias for --absolute
+      --absolute   List absolute artifact addresses, including the workspace and revision
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                       Enable engine and trace diagnostics
+      --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
+      --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string                  Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
+  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string            Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
+
+## dagger artifact types
+
+List types of matching artifacts
+
+```
+dagger artifact types [address...]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                       Enable engine and trace diagnostics
+      --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
+      --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string                  Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
+  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string            Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger artifact](#dagger-artifact)	 - List and filter workspace artifacts
+
 ## dagger check
 
 Verify your project — tests, linters, type checks, security scans, etc.
@@ -354,20 +517,22 @@ Verify your project — tests, linters, type checks, security scans, etc.
 Verify your project — tests, linters, type checks, security scans, etc.
 
 Examples:
-  dagger check                    # Run all checks
-  dagger check -l                 # List all available checks
-  dagger check go:lint            # Run the go:lint check and any subchecks
-  dagger check --skip '**e2e'     # Run all checks except those matching '**e2e'
-  dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
+  dagger check                                      # Run all checks
+  dagger check -l                                   # List all available checks
+  dagger check dag://go/lint                        # Run the dag://go/lint check and any subchecks
+  dagger check --skip '**e2e'                       # Run all checks except those matching '**e2e'
+  dagger -W github.com/acme/ws check dag://go/lint  # Run check(s) against explicit workspace
 
 
 ```
-dagger check [options] [pattern...]
+dagger check [options] [address...]
 ```
 
 ### Options
 
 ```
+      --abs                  Alias for --absolute
+      --absolute             List absolute artifact addresses, including the workspace and revision
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --eager-runtime        load module runtime eagerly
       --failfast             Cancel remaining checks on first failure
@@ -1065,20 +1230,22 @@ Generate derived files for your project — code, SDKs, types, docs, etc.
 Generate derived files for your project — code, SDKs, types, docs, etc.
 
 Examples:
-  dagger generate                            # Generate all assets
-  dagger generate -l                         # List all available generators
-  dagger generate --no-apply                 # Show generated changes without applying them
-  dagger generate go:bin                     # Generate by selecting the generator function
-  dagger -W github.com/acme/ws generate go:bin  # Generate against explicit workspace
+  dagger generate                                     # Generate all assets
+  dagger generate -l                                  # List all available generators
+  dagger generate --no-apply                          # Show generated changes without applying them
+  dagger generate dag://go/bin                        # Generate by selecting the generator function
+  dagger -W github.com/acme/ws generate dag://go/bin  # Generate against explicit workspace
 
 
 ```
-dagger generate [options] [pattern...]
+dagger generate [options] [address...]
 ```
 
 ### Options
 
 ```
+      --abs            Alias for --absolute
+      --absolute       List absolute artifact addresses, including the workspace and revision
   -l, --list           List available generators
       --no-apply       Compute and show a summary of generated changes without applying them
       --require-load   Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)
@@ -2235,19 +2402,21 @@ Open a terminal for a container or directory in your project
 Open a terminal for a container or directory in your project.
 
 Examples:
-  dagger shell -l                   # List all available shells
-  dagger shell go:dev               # Open the go:dev shell
-  dagger sh go:dev                  # Use the short command alias
+  dagger shell -l            # List all available shells
+  dagger shell dag://go/dev  # Open the dag://go/dev shell
+  dagger sh dag://go/dev     # Use the short command alias
 
 
 ```
-dagger shell [options] [pattern]
+dagger shell [options] [address]
 ```
 
 ### Options
 
 ```
-  -l, --list   List available shells
+      --abs        Alias for --absolute
+      --absolute   List absolute artifact addresses, including the workspace and revision
+  -l, --list       List available shells
 ```
 
 ### Options inherited from parent commands
@@ -2323,19 +2492,21 @@ Run your project's services for local development — databases, APIs, dev serve
 Run your project's services for local development — databases, APIs, dev servers, etc.
 
 Examples:
-  dagger up                       # Start all services
-  dagger up -l                    # List all available services
-  dagger up web                   # Start only the 'web' service
+  dagger up            # Start all services
+  dagger up -l         # List all available services
+  dagger up dag://web  # Start only the 'web' service
 
 
 ```
-dagger up [options] [pattern...]
+dagger up [options] [address...]
 ```
 
 ### Options
 
 ```
-  -l, --list   List available services
+      --abs        Alias for --absolute
+      --absolute   List absolute artifact addresses, including the workspace and revision
+  -l, --list       List available services
 ```
 
 ### Options inherited from parent commands
@@ -2428,7 +2599,7 @@ dagger version
 
 ## dagger workspace
 
-Inspect or configure your workspace (cwd, remotes, config, etc.)
+Inspect workspace files, config, and artifacts
 
 ### Synopsis
 
@@ -2440,6 +2611,11 @@ settings. Most commands (install, check, generate, up, settings, ...)
 operate on the workspace reachable from the current directory. The -W
 flag selects a different workspace (local path or git ref); --env
 applies a named overlay; dagger.toml is the source of truth.
+
+List artifact addresses with a plural type name, such as containers,
+directories, files, or services. Use kebab case for multiword types,
+such as git-repositories. If plural names conflict, use the exact GraphQL
+type name. Help and tab completion list the available types.
 
 ### Options inherited from parent commands
 
@@ -2496,7 +2672,7 @@ dagger workspace activity [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace cat
 
@@ -2527,7 +2703,7 @@ dagger workspace cat PATH [PATH...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace config
 
@@ -2572,7 +2748,7 @@ dagger workspace config [key] [value] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace config-file
 
@@ -2594,7 +2770,7 @@ dagger workspace config-file [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace cwd
 
@@ -2616,7 +2792,7 @@ dagger workspace cwd [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace entrypoint
 
@@ -2654,7 +2830,7 @@ dagger workspace entrypoint [NAME] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace exec
 
@@ -2711,7 +2887,7 @@ dagger workspace exec [OPTIONS] [--] COMMAND [ARGS...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace export
 
@@ -2760,7 +2936,7 @@ dagger workspace export [PATH] -o DEST [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace find
 
@@ -2801,7 +2977,7 @@ dagger workspace find [PATH...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace git
 
@@ -2826,7 +3002,7 @@ They do not load installed modules.
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 * [dagger workspace git dirty](#dagger-workspace-git-dirty)	 - Print whether the workspace has uncommitted changes
 * [dagger workspace git log](#dagger-workspace-git-log)	 - Print the workspace commit history
 * [dagger workspace git ref](#dagger-workspace-git-ref)	 - Print the resolved ref name, or commit hash if unnamed
@@ -3041,7 +3217,7 @@ dagger workspace grep PATTERN [PATH...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace ls
 
@@ -3074,7 +3250,7 @@ dagger workspace ls [PATH...] [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace migrate
 
@@ -3121,7 +3297,7 @@ dagger workspace migrate [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace remote
 
@@ -3140,7 +3316,7 @@ dagger workspace remote [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace remotes
 
@@ -3162,7 +3338,7 @@ dagger workspace remotes [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace root
 
@@ -3184,7 +3360,7 @@ dagger workspace root [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 
 ## dagger workspace update
 
@@ -3223,5 +3399,5 @@ dagger workspace update [flags]
 
 ### SEE ALSO
 
-* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files, config, and artifacts
 

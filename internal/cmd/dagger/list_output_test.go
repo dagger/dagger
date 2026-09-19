@@ -19,8 +19,13 @@ func TestWriteCommandList(t *testing.T) {
 	require.Equal(t, "web      # Start the web server\nworker\ndb       # Start postgres\n", out.String())
 }
 
-func TestGeneratedCheckComment(t *testing.T) {
-	require.Equal(t, `Did you "generate assets"?`, generatedCheckComment("Generate assets."))
-	require.Equal(t, `Did you "regenerate docs"?`, generatedCheckComment("Regenerate docs:\nwith details"))
-	require.Empty(t, generatedCheckComment(""))
+func TestArtifactAddressesRemainWhole(t *testing.T) {
+	var out bytes.Buffer
+	err := writeCommandList(&out, []commandListItem{
+		{Name: "dag://golang/test/lint", Comment: "Run lint"},
+		{Name: "dag://assets/generate/stale", Comment: "Check generated files"},
+	})
+	require.NoError(t, err)
+	require.Regexp(t, `(?m)^dag://golang/test/lint +# Run lint$`, out.String())
+	require.Regexp(t, `(?m)^dag://assets/generate/stale +# Check generated files$`, out.String())
 }

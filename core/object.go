@@ -1300,39 +1300,44 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 
 		methodName := proxySpec.Name
 		methodArgs := proxySpec.Args.Inputs(dag.View)
-		dag.Root().ObjectType().Extend(
-			proxySpec,
-			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-				// Prevent dag.Select from marking the inner constructor
-				// and method calls as internal — they are the real
-				// user-facing calls and should appear in telemetry.
-				ctx = dagql.WithNonInternalTelemetry(ctx)
-				// Desugar through the canonical server where the real
-				// constructor lives (not shadowed by proxy fields).
-				canonical := dag.Canonical()
-				// Read constructor args from the Query (set by `with`).
-				query, _ := dagql.UnwrapAs[*Query](self)
-				var ctorNamedArgs []dagql.NamedInput
-				if query != nil && query.ConstructorArgs != nil {
-					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
-				}
-				ctorNamedArgs = WithBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
-				var result dagql.AnyResult
-				if err := canonical.Select(ctx, canonical.Root(), &result,
-					dagql.Selector{
-						Field: constructorName,
-						Args:  ctorNamedArgs,
-					},
-					dagql.Selector{
-						Field: methodName,
-						Args:  orderedNamedInputs(methodArgs, args),
-					},
-				); err != nil {
-					return nil, err
-				}
-				return result, nil
-			},
-		)
+		proxy := func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+			// Prevent dag.Select from marking the inner constructor
+			// and method calls as internal — they are the real
+			// user-facing calls and should appear in telemetry.
+			ctx = dagql.WithNonInternalTelemetry(ctx)
+			// Desugar through the canonical server where the real
+			// constructor lives (not shadowed by proxy fields).
+			canonical := dag.Canonical()
+			// Read constructor args from the Query (set by `with`).
+			query, _ := dagql.UnwrapAs[*Query](self)
+			var ctorNamedArgs []dagql.NamedInput
+			if query != nil && query.ConstructorArgs != nil {
+				ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
+			}
+			ctorNamedArgs = WithBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
+			var result dagql.AnyResult
+			if err := canonical.Select(ctx, canonical.Root(), &result,
+				dagql.Selector{
+					Field: constructorName,
+					Args:  ctorNamedArgs,
+				},
+				dagql.Selector{
+					Field: methodName,
+					Args:  orderedNamedInputs(methodArgs, args),
+				},
+			); err != nil {
+				return nil, err
+			}
+			return result, nil
+		}
+		if fun.Self().CheckReturnType.Self() != nil {
+			legacy := proxySpec
+			legacy.Type = fun.Self().CheckReturnType.Self().ToTyped()
+			legacy.ViewFilter = BeforeVersion("v1.0.0-0")
+			dag.Root().ObjectType().Extend(legacy, proxy)
+			proxySpec.ViewFilter = AfterVersion("v1.0.0-0")
+		}
+		dag.Root().ObjectType().Extend(proxySpec, proxy)
 	}
 
 	for _, field := range obj.TypeDef.Fields {
@@ -1412,16 +1417,51 @@ func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*Modu
 	return fields, nil
 }
 
-func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
-	objDef := obj.TypeDef
-	for _, fun := range obj.TypeDef.Functions {
-		objFun, err := objFun(ctx, obj.Module, objDef, fun.Self(), dag)
+func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]dagql.Field[*ModuleObject], error) {
+	var fields []dagql.Field[*ModuleObject]
+	for _, fn := range obj.TypeDef.Functions {
+		fun := fn.Self()
+		authored := fun
+		if fun.CheckReturnType.Self() != nil {
+			authored = fun.Clone()
+			authored.ReturnType = fun.CheckReturnType
+		}
+		field, err := objFun(ctx, obj.Module, obj.TypeDef, authored, dag)
 		if err != nil {
 			return nil, err
 		}
-		fields = append(fields, objFun)
+		if fun.CheckReturnType.Self() == nil {
+			fields = append(fields, field)
+			continue
+		}
+		legacySpec := *field.Spec
+		legacySpec.ViewFilter = BeforeVersion("v1.0.0-0")
+		legacy := field
+		legacy.Spec = &legacySpec
+		fields = append(fields, legacy)
+
+		projectionSpec := *field.Spec
+		projectionSpec.Type = fun.ReturnType.Self().ToTyped()
+		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
+		projectionSpec.IsPersistable = false
+		projectionSpec.TTL = 0
+		fields = append(fields, dagql.Field[*ModuleObject]{
+			Spec: &projectionSpec,
+			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
+				workspace, _ := WorkspaceFromContext(ctx)
+				var inputs []CallInput
+				for name, value := range args {
+					inputs = append(inputs, CallInput{Name: name, Value: value})
+				}
+				sort.Slice(inputs, func(i, j int) bool { return inputs[i].Name < inputs[j].Name })
+				return dagql.NewObjectResultForCurrentCall(ctx, dag, &Check{
+					Assertion: dagql.NonNull(dagql.String(fun.Description)),
+					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
+				})
+			},
+		})
 	}
-	return
+	return fields, nil
 }
 
 func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
@@ -1529,6 +1569,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 			sort.Slice(opts.Inputs, func(i, j int) bool {
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
+
 			return modFun.Call(ctx, opts)
 		},
 	}, nil

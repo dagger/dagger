@@ -50,7 +50,11 @@ func NewModFunction(
 	metadata *Function,
 ) (*ModuleFunction, error) {
 	modInst := NewUserMod(mod)
-	returnType, ok, err := modInst.ModTypeFor(ctx, metadata.ReturnType.Self(), true)
+	authoredReturnType := metadata.ReturnType
+	if metadata.CheckReturnType.Self() != nil {
+		authoredReturnType = metadata.CheckReturnType
+	}
+	returnType, ok, err := modInst.ModTypeFor(ctx, authoredReturnType.Self(), true)
 	if err != nil {
 		return nil, fmt.Errorf("get mod type for function %q return type: %w", metadata.Name, err)
 	}
@@ -455,12 +459,7 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		return nil, fmt.Errorf("access main client: %w", err)
 	}
 	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
-	// Resolve object from user-supplied "address" against the schema served to
-	// the main client, which carries the workspace's installed modules as root
-	// fields. The context-stamped server (dagql.CurrentDagqlServer) may be a
-	// standalone per-module server — e.g. under `dagger check`'s ModTree path —
-	// whose root lacks sibling workspace modules, so module refs like
-	// "pulse:serve" would silently fall through to legacy address decoding.
+	// Module settings belong to the caller's workspace.
 	servedDeps, err := query.Server.CurrentServedDeps(mainCtx)
 	if err != nil {
 		return nil, fmt.Errorf("get main client served deps: %w", err)
@@ -471,17 +470,14 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	}
 
 	resolveOne := func(userInput, typename string) (any, error) {
+		addr, err := resolveUserAddress(mainCtx, srv, userInput)
+		if err != nil {
+			return nil, ud.errorf(err, "resolve address")
+		}
 		var result dagql.AnyObjectResult
-		if err := srv.Select(mainCtx, srv.Root(), &result,
+		if err := srv.Select(mainCtx, addr, &result,
 			dagql.Selector{
-				Field: "address",
-				Args: []dagql.NamedInput{{
-					Name:  "value",
-					Value: dagql.NewString(userInput),
-				}},
-			},
-			dagql.Selector{
-				Field: strings.ToLower(typename),
+				Field: gqlFieldName(typename),
 			},
 		); err != nil {
 			return nil, ud.errorf(err, "resolve object (%q)", typename)
@@ -1015,15 +1011,7 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 
 // loadContainerFromAddress loads a Container from a given address using the Address API.
 func loadContainerFromAddress(ctx context.Context, dag *dagql.Server, address string) (dagql.IDType, error) {
-	var addr dagql.ObjectResult[*Address]
-	err := dag.Select(ctx, dag.Root(), &addr,
-		dagql.Selector{
-			Field: "address",
-			Args: []dagql.NamedInput{
-				{Name: "value", Value: dagql.String(address)},
-			},
-		},
-	)
+	addr, err := resolveUserAddress(ctx, dag, address)
 	if err != nil {
 		return nil, fmt.Errorf("load address %q for container default: %w", address, err)
 	}

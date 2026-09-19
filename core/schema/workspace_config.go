@@ -169,7 +169,8 @@ func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Co
 }
 
 type configReadArgs struct {
-	Key string `default:""`
+	Key       string `default:""`
+	Effective bool   `default:"false"`
 }
 
 func (s *workspaceSchema) configRead(
@@ -177,6 +178,14 @@ func (s *workspaceSchema) configRead(
 	parent *core.Workspace,
 	args configReadArgs,
 ) (dagql.String, error) {
+	if args.Effective {
+		cfg, err := workspaceEffectiveConfig(ctx, parent)
+		if err != nil {
+			return "", err
+		}
+		value, err := workspace.ReadConfigValue(workspace.SerializeConfig(cfg), args.Key)
+		return dagql.String(value), err
+	}
 	if parent.ConfigFile == "" {
 		if envName, ok := selectedWorkspaceEnv(ctx, parent); ok {
 			return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)

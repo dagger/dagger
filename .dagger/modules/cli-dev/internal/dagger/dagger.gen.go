@@ -200,6 +200,23 @@ type LLMContentBlockInput struct {
 	ToolName string `json:"toolName,omitempty"`
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// The provenance of a message delivered through an agent mailbox.
+type LLMMessageOriginInput struct {
+	// The display name of the sending or observed agent.
+	AgentName string `json:"agentName,omitempty"`
+
+	// Who put this message on the record.
+	Kind LLMMessageOriginKind `json:"kind"`
+
+	// The message's short ref within the receiving agent's runtime, e.g. "#3".
+	Ref string `json:"ref,omitempty"`
+
+	// The ref of the message this one answers, if any.
+	ReplyTo string `json:"replyTo,omitempty"`
+}
+
 // Key value object that represents a pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -444,12 +461,24 @@ func (r *Address) AsNode() Node {
 	}
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
 type Agent struct {
 	query *querybuilder.Selection
 
-	description *string
-	id          *ID
-	name        *string
+	error  *string
+	handle *string
+	id     *ID
+	name   *string
+	notify *ID
+	pause  *ID
+	reseed *ID
+	resume *ID
+	send   *ID
+	state  *AgentState
+	stop   *ID
+	wait   *ID
 }
 
 func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
@@ -458,12 +487,33 @@ func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
 	}
 }
 
-// The description of the agent
-func (r *Agent) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
+// Why the loop failed, for a FAILED agent; empty otherwise.
+//
+// The snapshot holds the completed prefix — send or resume retries from it.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Error(ctx context.Context) (string, error) {
+	if r.error != nil {
+		return *r.error, nil
 	}
-	q := r.query.Select("description")
+	q := r.query.Select("error")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The opaque runtime handle minted by the spawn that created this agent.
+//
+// It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Handle(ctx context.Context) (string, error) {
+	if r.handle != nil {
+		return *r.handle, nil
+	}
+	q := r.query.Select("handle")
 
 	var response string
 
@@ -520,7 +570,25 @@ func (r *Agent) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// Return the command name of the agent. Entrypoint targets omit the module prefix.
+// Look up a previously sent message by its ref.
+//
+// This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
+//
+// Fails if the agent has no runtime entry in this session, or no record of the given ref.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Message(ref string) *AgentMessage {
+	q := r.query.Select("message")
+	q = q.Arg("ref", ref)
+
+	return &AgentMessage{
+		query: q,
+	}
+}
+
+// Display label for the agent; carries no identity.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -533,23 +601,224 @@ func (r *Agent) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The original module in which the agent has been defined
-func (r *Agent) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
+// AgentNotifyOpts contains options for Agent.Notify
+type AgentNotifyOpts struct {
+	// The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+	//
+	// Default: [IDLE,FAILED]
+	On []AgentState
+}
 
-	return &Module{
+// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+//
+// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+//
+// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+//
+// Idempotent per subscriber; re-subscribing replaces the state set.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNotifyOpts) (*Agent, error) {
+	assertNotNil("subscriber", subscriber)
+	q := r.query.Select("notify")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `on` optional argument
+		if !querybuilder.IsZeroValue(opts[i].On) {
+			q = q.Arg("on", opts[i].On)
+		}
+	}
+	q = q.Arg("subscriber", subscriber)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// AgentPauseOpts contains options for Agent.Pause
+type AgentPauseOpts struct {
+	// Preempt the in-flight step instead of letting it finish. All completed steps are kept and the interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step. On an idle, never-started, or failed agent there is nothing to preempt, so this is a plain pause.
+	Interrupt bool
+}
+
+// Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.
+//
+// Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
+//
+// Pausing a never-started agent leaves it paused for its eventual resume; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Pause(ctx context.Context, opts ...AgentPauseOpts) (*Agent, error) {
+	q := r.query.Select("pause")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `interrupt` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interrupt) {
+			q = q.Arg("interrupt", opts[i].Interrupt)
+		}
+	}
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.
+//
+// This is the continuity verb. Compaction, a workspace rebind, a model change, or rewinding an interrupted prompt produce a new conversation value for the SAME agent; reseed swaps it in place, where a stop-and-respawn would mint a successor instance and split the agent across two roster entries. It is the client-facing form of what a continuation tool already does mid-turn: the agent adopts a new conversation without changing who it is.
+//
+// The next turn continues from the reseeded conversation, and queued messages drain onto it. A FAILED agent keeps its error — resume retries from the new conversation.
+//
+// Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
+	assertNotNil("conversation", conversation)
+	q := r.query.Select("reseed")
+	q = q.Arg("conversation", conversation)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
+//
+// Resuming a never-started agent starts its evaluation loop, detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations. Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
+//
+// No-op on a running or idle agent.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("resume")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// AgentSendOpts contains options for Agent.Send
+type AgentSendOpts struct {
+	// The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
+	ReplyTo string
+}
+
+// Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
+//
+// Never blocks, never drops; concurrent sends queue in order.
+//
+// The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
+//
+// Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts) (*AgentMessage, error) {
+	q := r.query.Select("send")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `replyTo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReplyTo) {
+			q = q.Arg("replyTo", opts[i].ReplyTo)
+		}
+	}
+	q = q.Arg("message", message)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &AgentMessage{
+		query: selectNode(q.Root(), id, "AgentMessage"),
+	}, nil
+}
+
+// The conversation as of the last committed step: immutable, branchable, persistable.
+//
+// The seed conversation if the agent never stepped.
+//
+// Branching from it does not affect the agent.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Snapshot() *LLM {
+	q := r.query.Select("snapshot")
+
+	return &LLM{
 		query: q,
 	}
 }
 
-// The path of the agent within its module
-func (r *Agent) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
+// Computed lifecycle state; never stored.
+//
+// An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) State(ctx context.Context) (AgentState, error) {
+	if r.state != nil {
+		return *r.state, nil
+	}
+	q := r.query.Select("state")
 
-	var response []string
+	var response AgentState
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AgentStopOpts contains options for Agent.Stop
+type AgentStopOpts struct {
+	// Cancel the loop immediately instead of letting an in-flight step finish. Either way the completed steps are preserved in the snapshot.
+	Kill bool
+}
+
+// Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error) {
+	q := r.query.Select("stop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kill` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kill) {
+			q = q.Arg("kill", opts[i].Kill)
+		}
+	}
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+//
+// Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Wait(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("wait")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // AsNode returns this Agent as a Node.
@@ -560,26 +829,288 @@ func (r *Agent) AsNode() Node {
 	}
 }
 
-type AgentGroup struct {
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// A message delivered to an agent's mailbox.
+type AgentMessage struct {
+	query *querybuilder.Selection
+
+	delivery *AgentMessageDelivery
+	id       *ID
+	ref      *string
+	response *string
+}
+
+func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage {
+	return &AgentMessage{
+		query: q,
+	}
+}
+
+// How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
+//
+// Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMessage) Delivery(ctx context.Context) (AgentMessageDelivery, error) {
+	if r.delivery != nil {
+		return *r.delivery, nil
+	}
+	q := r.query.Select("delivery")
+
+	var response AgentMessageDelivery
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this AgentMessage.
+func (r *AgentMessage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *AgentMessage) XXX_GraphQLType() string {
+	return "AgentMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *AgentMessage) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *AgentMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *AgentMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *AgentMessage) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = AgentMessage{query: selectNode(dag.query, id, "AgentMessage")}
+	return nil
+}
+
+// The message's short ref within the receiving agent's runtime, e.g. "#3".
+//
+// This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMessage) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
+//
+// Idempotent: cancel and request the response again freely; concurrent waiters share the result.
+//
+// Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, requesting the response again returns the real reply.
+//
+// Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMessage) Response(ctx context.Context) (string, error) {
+	if r.response != nil {
+		return *r.response, nil
+	}
+	q := r.query.Select("response")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this AgentMessage as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *AgentMessage) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// An agent middleware contributed by a module.
+type AgentMiddleware struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	name        *string
+}
+
+func (r *AgentMiddleware) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddleware {
+	return &AgentMiddleware{
+		query: q,
+	}
+}
+
+// The description of the agent
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMiddleware) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this AgentMiddleware.
+func (r *AgentMiddleware) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *AgentMiddleware) XXX_GraphQLType() string {
+	return "AgentMiddleware"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *AgentMiddleware) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *AgentMiddleware) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *AgentMiddleware) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *AgentMiddleware) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = AgentMiddleware{query: selectNode(dag.query, id, "AgentMiddleware")}
+	return nil
+}
+
+// Return the command name of the agent. Entrypoint targets omit the module prefix.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original module in which the agent has been defined
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMiddleware) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the agent within its module
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMiddleware) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this AgentMiddleware as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *AgentMiddleware) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// A group of agent middlewares composable onto a base LLM.
+type AgentMiddlewareGroup struct {
 	query *querybuilder.Selection
 
 	id *ID
 }
 
-func (r *AgentGroup) WithGraphQLQuery(q *querybuilder.Selection) *AgentGroup {
-	return &AgentGroup{
+func (r *AgentMiddlewareGroup) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddlewareGroup {
+	return &AgentMiddlewareGroup{
 		query: q,
 	}
 }
 
-// AgentGroupComposeOpts contains options for AgentGroup.Compose
-type AgentGroupComposeOpts struct {
+// AgentMiddlewareGroupComposeOpts contains options for AgentMiddlewareGroup.Compose
+type AgentMiddlewareGroupComposeOpts struct {
 	// The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
 	Base *LLM
 }
 
 // Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
-func (r *AgentGroup) Compose(opts ...AgentGroupComposeOpts) *LLM {
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMiddlewareGroup) Compose(opts ...AgentMiddlewareGroupComposeOpts) *LLM {
 	q := r.query.Select("compose")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `base` optional argument
@@ -593,8 +1124,8 @@ func (r *AgentGroup) Compose(opts ...AgentGroupComposeOpts) *LLM {
 	}
 }
 
-// A unique identifier for this AgentGroup.
-func (r *AgentGroup) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this AgentMiddlewareGroup.
+func (r *AgentMiddlewareGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -607,17 +1138,17 @@ func (r *AgentGroup) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *AgentGroup) XXX_GraphQLType() string {
-	return "AgentGroup"
+func (r *AgentMiddlewareGroup) XXX_GraphQLType() string {
+	return "AgentMiddlewareGroup"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *AgentGroup) XXX_GraphQLIDType() string {
+func (r *AgentMiddlewareGroup) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *AgentGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *AgentMiddlewareGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -625,25 +1156,27 @@ func (r *AgentGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *AgentGroup) MarshalJSON() ([]byte, error) {
+func (r *AgentMiddlewareGroup) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(id)
 }
-func (r *AgentGroup) UnmarshalJSON(bs []byte) error {
+func (r *AgentMiddlewareGroup) UnmarshalJSON(bs []byte) error {
 	var id string
 	err := json.Unmarshal(bs, &id)
 	if err != nil {
 		return err
 	}
-	*r = AgentGroup{query: selectNode(dag.query, id, "AgentGroup")}
+	*r = AgentMiddlewareGroup{query: selectNode(dag.query, id, "AgentMiddlewareGroup")}
 	return nil
 }
 
 // Return a list of individual agents and their details
-func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMiddlewareGroup) List(ctx context.Context) ([]AgentMiddleware, error) {
 	q := r.query.Select("list")
 
 	q = q.Select("id")
@@ -652,12 +1185,12 @@ func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
 		Id ID
 	}
 
-	convert := func(fields []list) []Agent {
-		out := []Agent{}
+	convert := func(fields []list) []AgentMiddleware {
+		out := []AgentMiddleware{}
 
 		for i := range fields {
-			val := Agent{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Agent")
+			val := AgentMiddleware{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "AgentMiddleware")
 			out = append(out, val)
 		}
 
@@ -675,9 +1208,9 @@ func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
 	return convert(response), nil
 }
 
-// AsNode returns this AgentGroup as a Node.
+// AsNode returns this AgentMiddlewareGroup as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *AgentGroup) AsNode() Node {
+func (r *AgentMiddlewareGroup) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -859,6 +1392,35 @@ func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// ChangesetFilterOpts contains options for Changeset.Filter
+type ChangesetFilterOpts struct {
+	// Only include changes at paths matching these patterns. Empty includes all paths.
+	Include []string
+	// Exclude changes at paths matching these patterns.
+	Exclude []string
+}
+
+// Select changes matching the supplied glob patterns, preserving their original baseline.
+//
+// Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+func (r *Changeset) Filter(opts ...ChangesetFilterOpts) *Changeset {
+	q := r.query.Select("filter")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // A unique identifier for this Changeset.
@@ -1070,7 +1632,7 @@ func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	}
 }
 
-// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded
 func (r *Check) CheckType(ctx context.Context) (string, error) {
 	if r.checkType != nil {
 		return *r.checkType, nil
@@ -6707,6 +7269,8 @@ func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
 }
 
 // Returns the function with a flag indicating it is an agent middleware.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Function) WithAgent() *Function {
 	q := r.query.Select("withAgent")
 
@@ -8191,6 +8755,29 @@ func (r *GitCommit) AuthoredDate(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// GitCommitChangesOpts contains options for GitCommit.Changes
+type GitCommitChangesOpts struct {
+	// Use this commit as the comparison base instead of the first parent. The comparison commit may belong to an unrelated history or repository.
+	Against *GitCommit
+}
+
+// Returns the changes from the first parent to this commit, excluding Git metadata.
+//
+// Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+func (r *GitCommit) Changes(opts ...GitCommitChangesOpts) *Changeset {
+	q := r.query.Select("changes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `against` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Against) {
+			q = q.Arg("against", opts[i].Against)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Git committer date, in RFC3339 format.
 func (r *GitCommit) CommittedDate(ctx context.Context) (string, error) {
 	if r.committedDate != nil {
@@ -8426,6 +9013,132 @@ func (r *GitCommit) AsNode() Node {
 	}
 }
 
+// A receipt for a completed Git push. Reading or replaying the receipt does not push again.
+type GitPushResult struct {
+	query *querybuilder.Selection
+
+	disposition *GitPushDisposition
+	id          *ID
+	previousSHA *string
+	ref         *string
+	sha         *string
+}
+
+func (r *GitPushResult) WithGraphQLQuery(q *querybuilder.Selection) *GitPushResult {
+	return &GitPushResult{
+		query: q,
+	}
+}
+
+// How the remote ref was updated.
+func (r *GitPushResult) Disposition(ctx context.Context) (GitPushDisposition, error) {
+	if r.disposition != nil {
+		return *r.disposition, nil
+	}
+	q := r.query.Select("disposition")
+
+	var response GitPushDisposition
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this GitPushResult.
+func (r *GitPushResult) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitPushResult) XXX_GraphQLType() string {
+	return "GitPushResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitPushResult) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitPushResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitPushResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GitPushResult) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GitPushResult{query: selectNode(dag.query, id, "GitPushResult")}
+	return nil
+}
+
+// The previous remote object ID; empty when the ref was created.
+func (r *GitPushResult) PreviousSHA(ctx context.Context) (string, error) {
+	if r.previousSHA != nil {
+		return *r.previousSHA, nil
+	}
+	q := r.query.Select("previousSHA")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The fully qualified remote ref.
+func (r *GitPushResult) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The object ID pushed to the remote.
+func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitPushResult as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitPushResult) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A git ref (tag, branch, or commit).
 type GitRef struct {
 	query *querybuilder.Selection
@@ -8447,6 +9160,17 @@ func (r *GitRef) With(f WithGitRefFunc) *GitRef {
 
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	return &GitRef{
+		query: q,
+	}
+}
+
+// Return this ref's repository with HEAD pinned to the selected commit.
+//
+// Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+func (r *GitRef) AsRepository() *GitRepository {
+	q := r.query.Select("asRepository")
+
+	return &GitRepository{
 		query: q,
 	}
 }
@@ -8634,6 +9358,49 @@ func (r *GitRef) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// GitRefPushOpts contains options for GitRef.Push
+type GitRefPushOpts struct {
+	// Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has no remote URL.
+	To *GitRepository
+	// Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead.
+	Remote string
+	// Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+	Branch string
+	// Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+	ExpectedRemoteSHA string
+}
+
+// Push this ref's commit and history to a remote repository using the destination's credentials.
+//
+// The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+//
+// A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+func (r *GitRef) Push(opts ...GitRefPushOpts) *GitPushResult {
+	q := r.query.Select("push")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `to` optional argument
+		if !querybuilder.IsZeroValue(opts[i].To) {
+			q = q.Arg("to", opts[i].To)
+		}
+		// `remote` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Remote) {
+			q = q.Arg("remote", opts[i].Remote)
+		}
+		// `branch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Branch) {
+			q = q.Arg("branch", opts[i].Branch)
+		}
+		// `expectedRemoteSHA` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExpectedRemoteSHA) {
+			q = q.Arg("expectedRemoteSHA", opts[i].ExpectedRemoteSHA)
+		}
+	}
+
+	return &GitPushResult{
+		query: q,
+	}
+}
+
 // The resolved ref name at this ref.
 //
 // Deprecated: Use "name" instead.
@@ -8693,6 +9460,61 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	}
 }
 
+// GitRefWithCommitOpts contains options for GitRef.WithCommit
+type GitRefWithCommitOpts struct {
+	// Committer name. Defaults to authorName.
+	CommitterName string
+	// Committer email. Defaults to authorEmail.
+	CommitterEmail string
+	// RFC3339 committer date. Defaults to date.
+	CommitterDate string
+	// Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+	AllowEmpty bool
+	// Add a Signed-off-by trailer using the commit author's name and email.
+	Signoff bool
+}
+
+// Create a single-parent commit on this ref by applying a changeset's edits.
+//
+// Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+//
+// Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+func (r *GitRef) WithCommit(changes *Changeset, message string, date string, authorName string, authorEmail string, opts ...GitRefWithCommitOpts) *GitRef {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `committerName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterName) {
+			q = q.Arg("committerName", opts[i].CommitterName)
+		}
+		// `committerEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterEmail) {
+			q = q.Arg("committerEmail", opts[i].CommitterEmail)
+		}
+		// `committerDate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterDate) {
+			q = q.Arg("committerDate", opts[i].CommitterDate)
+		}
+		// `allowEmpty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AllowEmpty) {
+			q = q.Arg("allowEmpty", opts[i].AllowEmpty)
+		}
+		// `signoff` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Signoff) {
+			q = q.Arg("signoff", opts[i].Signoff)
+		}
+	}
+	q = q.Arg("changes", changes)
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+	q = q.Arg("authorName", authorName)
+	q = q.Arg("authorEmail", authorEmail)
+
+	return &GitRef{
+		query: q,
+	}
+}
+
 // AsNode returns this GitRef as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *GitRef) AsNode() Node {
@@ -8731,7 +9553,9 @@ type GitRepositoryAsWorkspaceOpts struct {
 	Cwd string
 }
 
-// Creates a synthetic workspace from this git repository.
+// Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+//
+// Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
 func (r *GitRepository) AsWorkspace(opts ...GitRepositoryAsWorkspaceOpts) *Workspace {
 	q := r.query.Select("asWorkspace")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -8972,6 +9796,48 @@ func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithB
 		}
 	}
 	q = q.Arg("bundle", bundle)
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+//
+// Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+//
+// The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+func (r *GitRepository) WithContents(directory *Directory) *GitRepository {
+	assertNotNil("directory", directory)
+	q := r.query.Select("withContents")
+	q = q.Arg("directory", directory)
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// GitRepositoryWithRemoteOpts contains options for GitRepository.WithRemote
+type GitRepositoryWithRemoteOpts struct {
+	// Push destination, when pushes go somewhere other than url. Empty uses url.
+	PushURL string
+}
+
+// Register a named remote on this repository, replacing any registered remote of the same name.
+//
+// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.
+//
+// Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+func (r *GitRepository) WithRemote(name string, url string, opts ...GitRepositoryWithRemoteOpts) *GitRepository {
+	q := r.query.Select("withRemote")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `pushUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PushURL) {
+			q = q.Arg("pushUrl", opts[i].PushURL)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("url", url)
 
 	return &GitRepository{
 		query: q,
@@ -9774,6 +10640,7 @@ type LLM struct {
 	provider        *string
 	reasoningEffort *string
 	replay          *ID
+	spawn           *ID
 	sync            *ID
 	tools           *string
 	transcript      *string
@@ -9789,6 +10656,21 @@ func (r *LLM) With(f WithLLMFunc) *LLM {
 
 func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	return &LLM{
+		query: q,
+	}
+}
+
+// Reconstruct a spawned agent from its runtime handle.
+//
+// This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLM) Agent(handle string, name string) *Agent {
+	q := r.query.Select("agent")
+	q = q.Arg("handle", handle)
+	q = q.Arg("name", name)
+
+	return &Agent{
 		query: q,
 	}
 }
@@ -10062,6 +10944,61 @@ func (r *LLM) Skills(ctx context.Context) ([]LLMSkill, error) {
 	return convert(response), nil
 }
 
+// LLMSpawnOpts contains options for LLM.Spawn
+type LLMSpawnOpts struct {
+	// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
+	Name string
+	// The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.
+	Handle string
+	// The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
+	//
+	// RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.
+	//
+	// Default: IDLE
+	State AgentState
+	// The loop error to create the agent with, for state FAILED. Refused with any other state.
+	Error string
+}
+
+// Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+//
+// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+//
+// The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.
+//
+// With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
+	q := r.query.Select("spawn")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `handle` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Handle) {
+			q = q.Arg("handle", opts[i].Handle)
+		}
+		// `state` optional argument
+		if !querybuilder.IsZeroValue(opts[i].State) {
+			q = q.Arg("state", opts[i].State)
+		}
+		// `error` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Error) {
+			q = q.Arg("error", opts[i].Error)
+		}
+	}
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
 // LLMStepOpts contains options for LLM.Step
 type LLMStepOpts struct {
 	// Cap the model's output tokens for this step. Defaults to the model's maximum.
@@ -10165,9 +11102,21 @@ func (r *LLM) WithModel(model string, opts ...LLMWithModelOpts) *LLM {
 	}
 }
 
+// LLMWithPromptOpts contains options for LLM.WithPrompt
+type LLMWithPromptOpts struct {
+	// The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time.
+	Origin LLMMessageOriginInput
+}
+
 // Queue a user prompt, to be sent to the model on the next step or loop.
-func (r *LLM) WithPrompt(prompt string) *LLM {
+func (r *LLM) WithPrompt(prompt string, opts ...LLMWithPromptOpts) *LLM {
 	q := r.query.Select("withPrompt")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `origin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Origin) {
+			q = q.Arg("origin", opts[i].Origin)
+		}
+	}
 	q = q.Arg("prompt", prompt)
 
 	return &LLM{
@@ -10247,6 +11196,15 @@ func (r *LLM) WithSkills(directory *Directory) *LLM {
 	assertNotNil("directory", directory)
 	q := r.query.Select("withSkills")
 	q = q.Arg("directory", directory)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model.
+func (r *LLM) WithSmallModel() *LLM {
+	q := r.query.Select("withSmallModel")
 
 	return &LLM{
 		query: q,
@@ -10624,6 +11582,27 @@ func (r *LLMMessage) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// Who put this message on the record, when it arrived through an agent mailbox.
+//
+// Null for the user's own prompts and for everything the model or tools produced.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessage) Origin(ctx context.Context) (*LLMMessageOrigin, error) {
+	q := r.query.Select("origin")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &LLMMessageOrigin{
+		query: selectNode(q.Root(), *objectID, "LLMMessageOrigin"),
+	}, nil
+}
+
 // The role that produced this message.
 func (r *LLMMessage) Role(ctx context.Context) (LLMMessageRole, error) {
 	if r.role != nil {
@@ -10649,6 +11628,142 @@ func (r *LLMMessage) TokenUsage() *LLMTokenUsage {
 // AsNode returns this LLMMessage as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *LLMMessage) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// The recorded provenance of a message that arrived through an agent mailbox.
+type LLMMessageOrigin struct {
+	query *querybuilder.Selection
+
+	agentName *string
+	id        *ID
+	kind      *LLMMessageOriginKind
+	ref       *string
+	replyTo   *string
+}
+
+func (r *LLMMessageOrigin) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessageOrigin {
+	return &LLMMessageOrigin{
+		query: q,
+	}
+}
+
+// The display name of the sending agent (for AGENT origins) or the observed agent (for EVENT origins).
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessageOrigin) AgentName(ctx context.Context) (string, error) {
+	if r.agentName != nil {
+		return *r.agentName, nil
+	}
+	q := r.query.Select("agentName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMMessageOrigin.
+func (r *LLMMessageOrigin) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMMessageOrigin) XXX_GraphQLType() string {
+	return "LLMMessageOrigin"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMMessageOrigin) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMMessageOrigin) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMMessageOrigin) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *LLMMessageOrigin) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = LLMMessageOrigin{query: selectNode(dag.query, id, "LLMMessageOrigin")}
+	return nil
+}
+
+// Who put this message on the record.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessageOrigin) Kind(ctx context.Context) (LLMMessageOriginKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response LLMMessageOriginKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo) and the message lookup takes.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessageOrigin) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The ref of the message this one answers, in the sender's own runtime, if any.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessageOrigin) ReplyTo(ctx context.Context) (string, error) {
+	if r.replyTo != nil {
+		return *r.replyTo, nil
+	}
+	q := r.query.Select("replyTo")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this LLMMessageOrigin as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMMessageOrigin) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -12824,9 +13939,11 @@ func (r *Port) AsNode() Node {
 type Query struct {
 	query *querybuilder.Selection
 
-	defaultPlatform *Platform
-	id              *ID
-	version         *string
+	currentTimestamp *string
+	defaultPlatform  *Platform
+	id               *ID
+	serveModule      *Void
+	version          *string
 }
 
 func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
@@ -12977,6 +14094,16 @@ func (r *Query) CurrentNode() Node {
 	return &NodeClient{
 		query: q,
 	}
+}
+
+// The current UTC time in RFC3339 format. Never cached.
+func (r *Query) CurrentTimestamp(ctx context.Context) (string, error) {
+	q := r.query.Select("currentTimestamp")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
@@ -13429,6 +14556,28 @@ func (r *Query) Secret(uri string, opts ...SecretOpts) *Secret {
 	return &Secret{
 		query: q,
 	}
+}
+
+// ServeModuleOpts contains options for Query.ServeModule
+type ServeModuleOpts struct {
+	// The pinned version of a remote module address.
+	RefPin string
+}
+
+// Load the module at the given address and serve its API in the current session.
+//
+// A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+func (r *Query) ServeModule(ctx context.Context, address string, opts ...ServeModuleOpts) error {
+	q := r.query.Select("serveModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `refPin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RefPin) {
+			q = q.Arg("refPin", opts[i].RefPin)
+		}
+	}
+	q = q.Arg("address", address)
+
+	return q.Execute(ctx)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.
@@ -16065,19 +17214,27 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 type WorkspaceAgentsOpts struct {
 	// Only include agents matching the specified patterns
 	Include []string
+	// Exclude agents matching the specified patterns
+	Exclude []string
 }
 
 // Return all agent middlewares from modules loaded in the workspace.
-func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentGroup {
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentMiddlewareGroup {
 	q := r.query.Select("agents")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
 	}
 
-	return &AgentGroup{
+	return &AgentMiddlewareGroup{
 		query: q,
 	}
 }
@@ -16142,6 +17299,65 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	return &CheckGroup{
 		query: q,
 	}
+}
+
+// WorkspaceCompareCommitsFromOpts contains options for Workspace.CompareCommitsFrom
+type WorkspaceCompareCommitsFromOpts struct {
+	// Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
+	Commits []string
+	// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+	//
+	// Default: 100
+	MaxCommits int
+}
+
+// Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+//
+// Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+//
+// A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+func (r *Workspace) CompareCommitsFrom(ctx context.Context, source *Workspace, opts ...WorkspaceCompareCommitsFromOpts) ([]WorkspaceCommitPick, error) {
+	assertNotNil("source", source)
+	q := r.query.Select("compareCommitsFrom")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `commits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Commits) {
+			q = q.Arg("commits", opts[i].Commits)
+		}
+		// `maxCommits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxCommits) {
+			q = q.Arg("maxCommits", opts[i].MaxCommits)
+		}
+	}
+	q = q.Arg("source", source)
+
+	q = q.Select("id")
+
+	type compareCommitsFrom struct {
+		Id ID
+	}
+
+	convert := func(fields []compareCommitsFrom) []WorkspaceCommitPick {
+		out := []WorkspaceCommitPick{}
+
+		for i := range fields {
+			val := WorkspaceCommitPick{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceCommitPick")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []compareCommitsFrom
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Selected native workspace config file relative to the workspace cwd, if any.
@@ -16280,14 +17496,34 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Write this workspace's pending changes to its local Git workspace on the current client's host.
+// WorkspaceExportOpts contains options for Workspace.Export
+type WorkspaceExportOpts struct {
+	// Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
+	Path string
+	// Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
+	From *Workspace
+}
+
+// Write this workspace's commits and pending changes to a checkout on the calling client.
 //
-// Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
-func (r *Workspace) Export(ctx context.Context) error {
+// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+//
+// Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
+func (r *Workspace) Export(ctx context.Context, opts ...WorkspaceExportOpts) error {
 	if r.export != nil {
 		return nil
 	}
 	q := r.query.Select("export")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+		// `from` optional argument
+		if !querybuilder.IsZeroValue(opts[i].From) {
+			q = q.Arg("from", opts[i].From)
+		}
+	}
 
 	return q.Execute(ctx)
 }
@@ -16576,15 +17812,6 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	return convert(response), nil
 }
 
-// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-func (r *Workspace) Reloaded() *Workspace {
-	q := r.query.Select("reloaded")
-
-	return &Workspace{
-		query: q,
-	}
-}
-
 // An installed SDK, by name.
 func (r *Workspace) SDK(name string) *WorkspaceSDK {
 	q := r.query.Select("sdk")
@@ -16753,6 +17980,25 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 }
 
+// Return a snapshot of this workspace as a stable value.
+//
+// Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
+//
+// Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.
+//
+// Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
+//
+// The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+//
+// Experimental: Best-effort capture for resumable sessions; capture and fallback behavior may change.
+func (r *Workspace) Snapshot() *Workspace {
+	q := r.query.Select("snapshot")
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceTerminalsOpts contains options for Workspace.Terminals
 type WorkspaceTerminalsOpts struct {
 	// Only include terminal targets matching the specified patterns
@@ -16815,6 +18061,86 @@ func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *
 	}
 }
 
+// WorkspaceWithCommitOpts contains options for Workspace.WithCommit
+type WorkspaceWithCommitOpts struct {
+	// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+	AuthorName string
+	// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+	AuthorEmail string
+	// Add a Signed-off-by trailer using the commit author's name and email.
+	Signoff bool
+}
+
+// Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
+//
+// The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.
+//
+// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
+//
+// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+func (r *Workspace) WithCommit(changes *Changeset, message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `authorName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorName) {
+			q = q.Arg("authorName", opts[i].AuthorName)
+		}
+		// `authorEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorEmail) {
+			q = q.Arg("authorEmail", opts[i].AuthorEmail)
+		}
+		// `signoff` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Signoff) {
+			q = q.Arg("signoff", opts[i].Signoff)
+		}
+	}
+	q = q.Arg("changes", changes)
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithCommitsFromOpts contains options for Workspace.WithCommitsFrom
+type WorkspaceWithCommitsFromOpts struct {
+	// Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
+	Commits []string
+	// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+	//
+	// Default: 100
+	MaxCommits int
+}
+
+// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+//
+// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.
+//
+// A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
+//
+// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+func (r *Workspace) WithCommitsFrom(source *Workspace, opts ...WorkspaceWithCommitsFromOpts) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withCommitsFrom")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `commits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Commits) {
+			q = q.Arg("commits", opts[i].Commits)
+		}
+		// `maxCommits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxCommits) {
+			q = q.Arg("maxCommits", opts[i].MaxCommits)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
 type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
@@ -16831,6 +18157,27 @@ func (r *Workspace) WithConfigEnv(name string, opts ...WorkspaceWithConfigEnvOpt
 		}
 	}
 	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Select the config environment carried by this workspace.
+func (r *Workspace) WithConfigEnvironment(name string) *Workspace {
+	q := r.query.Select("withConfigEnvironment")
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+func (r *Workspace) WithConfigPaths(configFile string, lockFile string) *Workspace {
+	q := r.query.Select("withConfigPaths")
+	q = q.Arg("configFile", configFile)
+	q = q.Arg("lockFile", lockFile)
 
 	return &Workspace{
 		query: q,
@@ -17068,6 +18415,34 @@ func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceW
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("contents", contents)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithResetOpts contains options for Workspace.WithReset
+type WorkspaceWithResetOpts struct {
+	// Discard uncommitted changes, resetting the working tree to the commit.
+	Hard bool
+}
+
+// Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+//
+// A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+//
+// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+//
+// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+func (r *Workspace) WithReset(commit string, opts ...WorkspaceWithResetOpts) *Workspace {
+	q := r.query.Select("withReset")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `hard` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Hard) {
+			q = q.Arg("hard", opts[i].Hard)
+		}
+	}
+	q = q.Arg("commit", commit)
 
 	return &Workspace{
 		query: q,
@@ -17334,6 +18709,18 @@ func (r *Workspace) WithoutModule(name string, opts ...WorkspaceWithoutModuleOpt
 	}
 }
 
+// Return this workspace with the content mounted at the given path unmounted.
+//
+// Removes directory and file mounts at or below the path, revealing the underlying workspace content. Other mounts and pending changes are preserved.
+func (r *Workspace) WithoutMount(path string) *Workspace {
+	q := r.query.Select("withoutMount")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithoutSDKOpts contains options for Workspace.WithoutSDK
 type WorkspaceWithoutSDKOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
@@ -17364,6 +18751,123 @@ func (r *Workspace) AsNode() Node {
 	}
 }
 
+// A source commit classified against the receiving workspace.
+type WorkspaceCommitPick struct {
+	query *querybuilder.Selection
+
+	id     *ID
+	reason *WorkspaceCommitPickReason
+	status *WorkspaceCommitPickStatus
+}
+
+func (r *WorkspaceCommitPick) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceCommitPick {
+	return &WorkspaceCommitPick{
+		query: q,
+	}
+}
+
+// The commit in the source workspace.
+func (r *WorkspaceCommitPick) Commit() *GitCommit {
+	q := r.query.Select("commit")
+
+	return &GitCommit{
+		query: q,
+	}
+}
+
+// Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+func (r *WorkspaceCommitPick) ConflictPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("conflictPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceCommitPick.
+func (r *WorkspaceCommitPick) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceCommitPick) XXX_GraphQLType() string {
+	return "WorkspaceCommitPick"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceCommitPick) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceCommitPick) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceCommitPick) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *WorkspaceCommitPick) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = WorkspaceCommitPick{query: selectNode(dag.query, id, "WorkspaceCommitPick")}
+	return nil
+}
+
+// Why the commit conflicts, or NONE.
+func (r *WorkspaceCommitPick) Reason(ctx context.Context) (WorkspaceCommitPickReason, error) {
+	if r.reason != nil {
+		return *r.reason, nil
+	}
+	q := r.query.Select("reason")
+
+	var response WorkspaceCommitPickReason
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether this commit can be applied.
+func (r *WorkspaceCommitPick) Status(ctx context.Context) (WorkspaceCommitPickStatus, error) {
+	if r.status != nil {
+		return *r.status, nil
+	}
+	q := r.query.Select("status")
+
+	var response WorkspaceCommitPickStatus
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceCommitPick as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceCommitPick) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Local git state for a workspace.
 type WorkspaceGit struct {
 	query *querybuilder.Selection
@@ -17373,6 +18877,19 @@ type WorkspaceGit struct {
 
 func (r *WorkspaceGit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceGit {
 	return &WorkspaceGit{
+		query: q,
+	}
+}
+
+// Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
+//
+// Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
+//
+// This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
+func (r *WorkspaceGit) Directory() *Directory {
+	q := r.query.Select("directory")
+
+	return &Directory{
 		query: q,
 	}
 }
@@ -17864,18 +19381,33 @@ func (r *WorkspaceModule) AsNode() Node {
 type WorkspaceModuleSetting struct {
 	query *querybuilder.Selection
 
-	description *string
-	id          *ID
-	isList      *bool
-	isObject    *bool
-	key         *string
-	value       *string
+	defaultValue *string
+	description  *string
+	id           *ID
+	isList       *bool
+	isObject     *bool
+	isString     *bool
+	key          *string
+	value        *string
 }
 
 func (r *WorkspaceModuleSetting) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModuleSetting {
 	return &WorkspaceModuleSetting{
 		query: q,
 	}
+}
+
+// The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+func (r *WorkspaceModuleSetting) DefaultValue(ctx context.Context) (string, error) {
+	if r.defaultValue != nil {
+		return *r.defaultValue, nil
+	}
+	q := r.query.Select("defaultValue")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The constructor argument description.
@@ -17966,6 +19498,19 @@ func (r *WorkspaceModuleSetting) IsObject(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
+func (r *WorkspaceModuleSetting) IsString(ctx context.Context) (bool, error) {
+	if r.isString != nil {
+		return *r.isString, nil
+	}
+	q := r.query.Select("isString")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The setting key.
 func (r *WorkspaceModuleSetting) Key(ctx context.Context) (string, error) {
 	if r.key != nil {
@@ -17979,7 +19524,7 @@ func (r *WorkspaceModuleSetting) Key(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The configured value after applying the selected workspace environment, or empty when unset.
+// The value stored in workspace config after applying the selected workspace environment, or empty when unset.
 func (r *WorkspaceModuleSetting) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
@@ -18475,6 +20020,159 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 	}
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// How a message landed in an agent's evaluation.
+type AgentMessageDelivery string
+
+func (AgentMessageDelivery) IsEnum() {}
+
+func (v AgentMessageDelivery) Name() string {
+	switch v {
+	case AgentMessageDeliveryStarted:
+		return "STARTED"
+	case AgentMessageDeliverySteered:
+		return "STEERED"
+	case AgentMessageDeliveryQueued:
+		return "QUEUED"
+	default:
+		return ""
+	}
+}
+
+func (v AgentMessageDelivery) Value() string {
+	return string(v)
+}
+
+func (v *AgentMessageDelivery) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AgentMessageDelivery) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "QUEUED":
+		*v = AgentMessageDeliveryQueued
+	case "STARTED":
+		*v = AgentMessageDeliveryStarted
+	case "STEERED":
+		*v = AgentMessageDeliverySteered
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The message opened a new turn: the agent was idle or newly started.
+	AgentMessageDeliveryStarted AgentMessageDelivery = "STARTED"
+
+	// The message was absorbed into the in-flight turn at a step boundary, steering it.
+	AgentMessageDeliverySteered AgentMessageDelivery = "STEERED"
+
+	// The message is queued: the agent is paused or failed, and a resume will drain it.
+	AgentMessageDeliveryQueued AgentMessageDelivery = "QUEUED"
+)
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// Computed lifecycle state of an agent.
+type AgentState string
+
+func (AgentState) IsEnum() {}
+
+func (v AgentState) Name() string {
+	switch v {
+	case AgentStateIdle:
+		return "IDLE"
+	case AgentStateRunning:
+		return "RUNNING"
+	case AgentStateWaitingInput:
+		return "WAITING_INPUT"
+	case AgentStatePaused:
+		return "PAUSED"
+	case AgentStateStopped:
+		return "STOPPED"
+	case AgentStateFailed:
+		return "FAILED"
+	default:
+		return ""
+	}
+}
+
+func (v AgentState) Value() string {
+	return string(v)
+}
+
+func (v *AgentState) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AgentState) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAILED":
+		*v = AgentStateFailed
+	case "IDLE":
+		*v = AgentStateIdle
+	case "PAUSED":
+		*v = AgentStatePaused
+	case "RUNNING":
+		*v = AgentStateRunning
+	case "STOPPED":
+		*v = AgentStateStopped
+	case "WAITING_INPUT":
+		*v = AgentStateWaitingInput
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Mailbox empty, turn complete; blocked in receive.
+	AgentStateIdle AgentState = "IDLE"
+
+	// A model request or tool evaluation is in flight.
+	AgentStateRunning AgentState = "RUNNING"
+
+	// Blocked on input from the user (derived; see waitingOn).
+	AgentStateWaitingInput AgentState = "WAITING_INPUT"
+
+	// Mailbox accepting but not draining, until resume.
+	AgentStatePaused AgentState = "PAUSED"
+
+	// Runtime released; snapshot remains readable.
+	AgentStateStopped AgentState = "STOPPED"
+
+	// The loop failed; snapshot holds the completed prefix. Resume retries.
+	AgentStateFailed AgentState = "FAILED"
+)
+
 // Sharing mode of the cache volume.
 type CacheSharingMode string
 
@@ -18953,6 +20651,77 @@ const (
 	FunctionCachePolicyNever FunctionCachePolicy = "Never"
 )
 
+// How a Git push updated the remote ref.
+type GitPushDisposition string
+
+func (GitPushDisposition) IsEnum() {}
+
+func (v GitPushDisposition) Name() string {
+	switch v {
+	case GitPushDispositionCreated:
+		return "CREATED"
+	case GitPushDispositionFastForward:
+		return "FAST_FORWARD"
+	case GitPushDispositionForced:
+		return "FORCED"
+	case GitPushDispositionUpToDate:
+		return "UP_TO_DATE"
+	default:
+		return ""
+	}
+}
+
+func (v GitPushDisposition) Value() string {
+	return string(v)
+}
+
+func (v *GitPushDisposition) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *GitPushDisposition) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CREATED":
+		*v = GitPushDispositionCreated
+	case "FAST_FORWARD":
+		*v = GitPushDispositionFastForward
+	case "FORCED":
+		*v = GitPushDispositionForced
+	case "UP_TO_DATE":
+		*v = GitPushDispositionUpToDate
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The remote ref was created.
+	GitPushDispositionCreated GitPushDisposition = "CREATED"
+
+	// The remote ref was fast-forwarded.
+	GitPushDispositionFastForward GitPushDisposition = "FAST_FORWARD"
+
+	// The remote ref was replaced under an explicit lease.
+	GitPushDispositionForced GitPushDisposition = "FORCED"
+
+	// The remote ref already pointed to this commit.
+	GitPushDispositionUpToDate GitPushDisposition = "UP_TO_DATE"
+)
+
 // Compression algorithm to use for image layers.
 type ImageLayerCompression string
 
@@ -19153,6 +20922,72 @@ const (
 
 	// A tool/function result.
 	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+)
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// Who put a message on the conversation record.
+type LLMMessageOriginKind string
+
+func (LLMMessageOriginKind) IsEnum() {}
+
+func (v LLMMessageOriginKind) Name() string {
+	switch v {
+	case LLMMessageOriginKindUser:
+		return "USER"
+	case LLMMessageOriginKindAgent:
+		return "AGENT"
+	case LLMMessageOriginKindEvent:
+		return "EVENT"
+	default:
+		return ""
+	}
+}
+
+func (v LLMMessageOriginKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMMessageOriginKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMMessageOriginKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "AGENT":
+		*v = LLMMessageOriginKindAgent
+	case "EVENT":
+		*v = LLMMessageOriginKindEvent
+	case "USER":
+		*v = LLMMessageOriginKindUser
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The user: a prompt submitted by a client rather than sent by an agent.
+	LLMMessageOriginKindUser LLMMessageOriginKind = "USER"
+
+	// Another agent: the message was sent from within that agent's turn.
+	LLMMessageOriginKindAgent LLMMessageOriginKind = "AGENT"
+
+	// The engine, reporting a subscribed agent's lifecycle transition.
+	LLMMessageOriginKindEvent LLMMessageOriginKind = "EVENT"
 )
 
 // The role that generated a message.
@@ -19752,6 +21587,141 @@ const (
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
+)
+
+// Why a source commit cannot be pulled.
+type WorkspaceCommitPickReason string
+
+func (WorkspaceCommitPickReason) IsEnum() {}
+
+func (v WorkspaceCommitPickReason) Name() string {
+	switch v {
+	case WorkspaceCommitPickReasonNone:
+		return "NONE"
+	case WorkspaceCommitPickReasonContent:
+		return "CONTENT"
+	case WorkspaceCommitPickReasonDirty:
+		return "DIRTY"
+	default:
+		return ""
+	}
+}
+
+func (v WorkspaceCommitPickReason) Value() string {
+	return string(v)
+}
+
+func (v *WorkspaceCommitPickReason) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *WorkspaceCommitPickReason) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CONTENT":
+		*v = WorkspaceCommitPickReasonContent
+	case "DIRTY":
+		*v = WorkspaceCommitPickReasonDirty
+	case "NONE":
+		*v = WorkspaceCommitPickReasonNone
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// No conflict.
+	WorkspaceCommitPickReasonNone WorkspaceCommitPickReason = "NONE"
+
+	// The patch conflicts with committed content.
+	WorkspaceCommitPickReasonContent WorkspaceCommitPickReason = "CONTENT"
+
+	// The commit touches uncommitted paths in the receiving workspace.
+	WorkspaceCommitPickReasonDirty WorkspaceCommitPickReason = "DIRTY"
+)
+
+// Whether a source commit can be pulled.
+type WorkspaceCommitPickStatus string
+
+func (WorkspaceCommitPickStatus) IsEnum() {}
+
+func (v WorkspaceCommitPickStatus) Name() string {
+	switch v {
+	case WorkspaceCommitPickStatusPickable:
+		return "PICKABLE"
+	case WorkspaceCommitPickStatusPicked:
+		return "PICKED"
+	case WorkspaceCommitPickStatusRedundant:
+		return "REDUNDANT"
+	case WorkspaceCommitPickStatusConflict:
+		return "CONFLICT"
+	default:
+		return ""
+	}
+}
+
+func (v WorkspaceCommitPickStatus) Value() string {
+	return string(v)
+}
+
+func (v *WorkspaceCommitPickStatus) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *WorkspaceCommitPickStatus) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CONFLICT":
+		*v = WorkspaceCommitPickStatusConflict
+	case "PICKABLE":
+		*v = WorkspaceCommitPickStatusPickable
+	case "PICKED":
+		*v = WorkspaceCommitPickStatusPicked
+	case "REDUNDANT":
+		*v = WorkspaceCommitPickStatusRedundant
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The commit can be applied.
+	WorkspaceCommitPickStatusPickable WorkspaceCommitPickStatus = "PICKABLE"
+
+	// The commit is already present by hash or cherry-pick origin.
+	WorkspaceCommitPickStatusPicked WorkspaceCommitPickStatus = "PICKED"
+
+	// The patch is already present, or applying it would be empty.
+	WorkspaceCommitPickStatusRedundant WorkspaceCommitPickStatus = "REDUNDANT"
+
+	// The commit cannot be applied; see reason and conflictPaths.
+	WorkspaceCommitPickStatusConflict WorkspaceCommitPickStatus = "CONFLICT"
 )
 
 type Client struct {

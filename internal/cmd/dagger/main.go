@@ -186,6 +186,7 @@ func init() {
 	apiCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
+	artifactsCmd.GroupID = "toolbox"
 
 	versionRoot := versionCmd()
 	versionRoot.GroupID = "utility"
@@ -205,6 +206,7 @@ func init() {
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
+		artifactsCmd,
 		moduleCmd,
 		sdkCmd,
 		installAliasCmd,
@@ -945,6 +947,11 @@ const (
 )
 
 func commandShowsFinalProgress(cmd *cobra.Command) bool {
+	if cmd.CommandPath() == "dagger up" || cmd.CommandPath() == "dagger agent" {
+		if list, _ := cmd.Flags().GetBool("list"); list {
+			return false
+		}
+	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Annotations[showFinalProgressKey] == "true" {
 			return true
@@ -990,6 +997,59 @@ func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
 	return progress == "tty" && stdinIsTTY
 }
 
+// resolveProgressFrontend settles the progress mode and builds the matching
+// frontend. It reads and writes the progress and hasTTY globals, which the rest
+// of the CLI also consults.
+func resolveProgressFrontend() error {
+	if progress == "auto" {
+		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
+			progress = env
+		} else if def := commandProgressDefault(os.Args[1:]); def != "" {
+			// The command declares its own default (e.g. `dagger session`
+			// keeps plain progress for its SDK consumers). Checked before
+			// RunningInAgent: an agent-driven SDK program needs the stream
+			// just as much.
+			progress = def
+		} else if idtui.RunningInAgent() {
+			// An AI agent consumes the output as text; the report frontend's
+			// single final render suits it better than the live TUI.
+			progress = "report"
+		} else if hasTTY {
+			progress = "tty"
+		} else {
+			progress = "report"
+		}
+	}
+	if silent {
+		// if silent, don't even bother with the pretty frontend
+		progress = "plain"
+	}
+	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
+	// force it regardless of progress mode / tty (it doesn't need one).
+	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
+		progress = "tty"
+		hasTTY = true
+	}
+	switch progress {
+	case "plain":
+		Frontend = idtui.NewPlain(stderr)
+	case "tty":
+		if !hasTTY {
+			return fmt.Errorf("no tty available for progress %q", progress)
+		}
+		Frontend = idtui.NewPretty(stderr)
+	case "dots":
+		Frontend = idtui.NewDots(stderr)
+	case "logs":
+		Frontend = idtui.NewLogs(stderr)
+	case "report":
+		Frontend = idtui.NewReporter(stderr)
+	default:
+		return fmt.Errorf("unknown progress type %q", progress)
+	}
+	return nil
+}
+
 func Main() {
 	runSSHAskpass()
 	installRootGlobalFlags()
@@ -1030,6 +1090,10 @@ func Main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
+	if err := prepareArtifactCommands(ctx, rootCmd, commandArgs); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
 	// A trailing inherited --x-release is known only after SDK discovery.
 	if err := execXRelease(ctx); err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -1046,52 +1110,8 @@ func Main() {
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
 	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
-	if progress == "auto" {
-		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
-			progress = env
-		} else if def := commandProgressDefault(os.Args[1:]); def != "" {
-			// The command declares its own default (e.g. `dagger session`
-			// keeps plain progress for its SDK consumers). Checked before
-			// RunningInAgent: an agent-driven SDK program needs the stream
-			// just as much.
-			progress = def
-		} else if idtui.RunningInAgent() {
-			// An AI agent consumes the output as text; the report frontend's
-			// single final render suits it better than the live TUI.
-			progress = "report"
-		} else if hasTTY {
-			progress = "tty"
-		} else {
-			progress = "report"
-		}
-	}
-	if silent {
-		// if silent, don't even bother with the pretty frontend
-		progress = "plain"
-	}
-	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
-	// force it regardless of progress mode / tty (it doesn't need one).
-	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
-		progress = "tty"
-		hasTTY = true
-	}
-	switch progress {
-	case "plain":
-		Frontend = idtui.NewPlain(stderr)
-	case "tty":
-		if !hasTTY {
-			fmt.Fprintf(stderr, "no tty available for progress %q\n", progress)
-			exitWithCode(1)
-		}
-		Frontend = idtui.NewPretty(stderr)
-	case "dots":
-		Frontend = idtui.NewDots(stderr)
-	case "logs":
-		Frontend = idtui.NewLogs(stderr)
-	case "report":
-		Frontend = idtui.NewReporter(stderr)
-	default:
-		fmt.Fprintf(stderr, "unknown progress type %q\n", progress)
+	if err := resolveProgressFrontend(); err != nil {
+		fmt.Fprintf(stderr, "%s\n", err)
 		exitWithCode(1)
 	}
 

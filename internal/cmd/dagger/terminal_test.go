@@ -23,7 +23,7 @@ func TestShellCommandWithoutTargetShowsGuidance(t *testing.T) {
 	require.Equal(t, `Choose a shell to open.
 
   dagger shell -l       List available shells
-  dagger shell <NAME>   Open a shell from that list
+  dagger shell <ADDRESS>   Open a shell from that list
 `, out.String())
 }
 

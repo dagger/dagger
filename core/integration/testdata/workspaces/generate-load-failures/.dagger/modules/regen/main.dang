@@ -4,6 +4,9 @@ type Regen {
   generator regenerating a module's files.
   """
   pub generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
-    workdir.withNewFile(".dagger/modules/stale-build/generated.txt", "regenerated").changes(workdir)
+    workdir
+      .withNewFile(".dagger/modules/stale-build/generated.txt", "regenerated")
+      .withNewFile(".dagger/modules/ungenerated/generated.txt", "incomplete repair")
+      .changes(workdir)
   }
 }
