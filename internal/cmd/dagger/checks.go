@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -67,8 +68,8 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 		params,
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			ws := dag.CurrentWorkspace()
-			checks := ws.Checks(dagger.WorkspaceChecksOpts{
+			ws := core.NewQuery(dag).CurrentWorkspace()
+			checks := ws.Checks(core.WorkspaceChecksOpts{
 				Include:      args,
 				Skip:         checksSkip,
 				NoGenerate:   checksNoGenerate,
@@ -135,7 +136,7 @@ type groupListItem struct {
 	CheckType   string
 }
 
-func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
+func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *core.CheckGroup) (*CheckGroupInfo, error) {
 	items, err := loadGroupListDetails(ctx, dag, "fetch check information",
 		func(ctx context.Context) (any, error) { return checkgroup.ID(ctx) },
 		loadChecksQuery, "CheckGroupListDetails",
@@ -165,7 +166,7 @@ type CheckInfo struct {
 }
 
 // 'dagger checks -l'
-func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
+func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *core.CheckGroup, cmd *cobra.Command) error {
 	info, err := loadCheckGroupInfo(ctx, dag, checkgroup)
 	if err != nil {
 		return err
@@ -190,7 +191,7 @@ func writeCheckList(w io.Writer, checks []*CheckInfo) error {
 }
 
 // 'dagger checks' (runs by default)
-func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, _ *cobra.Command, include []string) error {
+func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *core.CheckGroup, _ *cobra.Command, include []string) error {
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})

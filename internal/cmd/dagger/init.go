@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -57,7 +58,7 @@ func runInit(cmd *cobra.Command, _ []string) error {
 }
 
 func initializeWorkspaceConfig(ctx context.Context, dag *dagger.Client) (*initState, error) {
-	current := dag.CurrentWorkspace()
+	current := core.NewQuery(dag).CurrentWorkspace()
 	configFile, err := current.ConfigFile(ctx)
 	if err != nil {
 		return nil, err

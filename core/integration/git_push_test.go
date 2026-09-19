@@ -9,17 +9,18 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 type gitPushReceipt struct {
-	ID                                 dagger.ID
+	ID                                 core.ID
 	Ref, PreviousSHA, SHA, Disposition string
 }
 
-func pushGitRef(ctx context.Context, c *dagger.Client, source *dagger.GitRef, destination *dagger.GitRepository, branch string, expected *string) (gitPushReceipt, error) {
+func pushGitRef(ctx context.Context, c *dagger.Client, source *core.GitRef, destination *core.GitRepository, branch string, expected *string) (gitPushReceipt, error) {
 	var response struct{ Node struct{ Push gitPushReceipt } }
 	id, err := source.ID(ctx)
 	if err != nil {
@@ -39,9 +40,9 @@ func pushGitRef(ctx context.Context, c *dagger.Client, source *dagger.GitRef, de
 	return response.Node.Push, err
 }
 
-func pushRemoteSHA(ctx context.Context, t *testctx.T, c *dagger.Client, service *dagger.Service, url, ref string) string {
+func pushRemoteSHA(ctx context.Context, t *testctx.T, c *dagger.Client, service *core.Service, url, ref string) string {
 	t.Helper()
-	out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+	out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
 		WithServiceBinding("remote", service).WithEnvVariable("CACHEBUST", identity.NewID()).
 		WithExec([]string{"git", "ls-remote", url, ref}).Stdout(ctx)
 	require.NoError(t, err)
@@ -54,10 +55,10 @@ func pushRemoteSHA(ctx context.Context, t *testctx.T, c *dagger.Client, service 
 
 func (GitSuite) TestPushWorkspaces(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base", "base"))
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base", "base"))
 	_, err := service.Start(ctx)
 	require.NoError(t, err)
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	baseRef := repo.Branch("main")
 	baseSHA, err := baseRef.CommitSHA(ctx)
 	require.NoError(t, err)
@@ -65,7 +66,7 @@ func (GitSuite) TestPushWorkspaces(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "UP_TO_DATE", result.Disposition)
 	require.Equal(t, "refs/heads/main", result.Ref)
-	ws := baseRef.AsWorkspace().WithNewFile("committed", "yes").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	ws := baseRef.AsWorkspace().WithNewFile("committed", "yes").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "new commit", workspaceCommitDate)
 	}).WithNewFile("pending", "not pushed")
 	sha, err := ws.Git().Head().CommitSHA(ctx)
@@ -114,8 +115,8 @@ func (GitSuite) TestPushWorkspaces(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestPushValidationAndIsolation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base", "base"))
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base", "base"))
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	base := repo.Branch("main")
 	sha, err := base.CommitSHA(ctx)
 	require.NoError(t, err)
@@ -127,7 +128,7 @@ func (GitSuite) TestPushValidationAndIsolation(ctx context.Context, t *testctx.T
 	require.ErrorContains(t, err, "explicit branch")
 	// A directory-backed source may contain arbitrary checkout configuration.
 	// The temporary push repository must not inherit it or run its hooks.
-	dir := base.Tree().WithNewFile(".git/hooks/pre-push", "#!/bin/sh\nexit 1\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
+	dir := base.Tree().WithNewFile(".git/hooks/pre-push", "#!/bin/sh\nexit 1\n", core.DirectoryWithNewFileOpts{Permissions: 0o755}).
 		WithNewFile(".git/config", "[core]\nrepositoryformatversion = 0\n[push]\nfollowTags = true\n[remote \"origin\"]\npushurl = file:///not-a-destination\n")
 	local := dir.AsGit()
 	_, err = pushGitRef(ctx, c, local.Head(), local, "main", nil)
@@ -142,46 +143,46 @@ func (GitSuite) TestPushValidationAndIsolation(ctx context.Context, t *testctx.T
 
 func (GitSuite) TestPushGoSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base", "base"))
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base", "base"))
 	_, err := service.Start(ctx)
 	require.NoError(t, err)
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	base := repo.Branch("main")
 	baseSHA, err := base.CommitSHA(ctx)
 	require.NoError(t, err)
-	tip := base.AsWorkspace().WithNewFile("next", "next").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	tip := base.AsWorkspace().WithNewFile("next", "next").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "next", workspaceCommitDate)
 	}).Git().Head()
 	tipSHA, err := tip.CommitSHA(ctx)
 	require.NoError(t, err)
-	opts := dagger.GitRefPushOpts{To: repo, Branch: "sdk", ExpectedRemoteSHA: ""}
+	opts := core.GitRefPushOpts{To: repo, Branch: "sdk", ExpectedRemoteSHA: ""}
 	disposition, err := base.Push(opts).Disposition(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.GitPushDispositionCreated, disposition)
+	require.Equal(t, core.GitPushDispositionCreated, disposition)
 	disposition, err = tip.Push(opts).Disposition(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.GitPushDispositionFastForward, disposition)
+	require.Equal(t, core.GitPushDispositionFastForward, disposition)
 	_, err = base.Push(opts).Disposition(ctx)
 	require.ErrorContains(t, err, "rejected")
 	opts.ExpectedRemoteSHA = tipSHA
 	disposition, err = base.Push(opts).Disposition(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.GitPushDispositionForced, disposition)
+	require.Equal(t, core.GitPushDispositionForced, disposition)
 	opts.ExpectedRemoteSHA = baseSHA
 	disposition, err = tip.Push(opts).Disposition(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.GitPushDispositionFastForward, disposition)
+	require.Equal(t, core.GitPushDispositionFastForward, disposition)
 }
 
 func (GitSuite) TestPushHTTPAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	service, url := gitPushHTTPService(ctx, t, c)
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service, HTTPAuthUsername: "writer", HTTPAuthToken: c.SetSecret("push-token", "push-test-password")})
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service, HTTPAuthUsername: "writer", HTTPAuthToken: core.NewQuery(c).SetSecret("push-token", "push-test-password")})
 	base := repo.Branch("main")
-	ws := base.AsWorkspace().WithNewFile("new", "new").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	ws := base.AsWorkspace().WithNewFile("new", "new").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "HTTP push", workspaceCommitDate)
 	})
-	bad := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service, HTTPAuthUsername: "writer", HTTPAuthToken: c.SetSecret("push-wrong", "wrong-push-password")})
+	bad := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service, HTTPAuthUsername: "writer", HTTPAuthToken: core.NewQuery(c).SetSecret("push-wrong", "wrong-push-password")})
 	_, err := pushGitRef(ctx, c, ws.Git().Head(), bad, "new", nil)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "wrong-push-password")
@@ -193,7 +194,7 @@ func (GitSuite) TestPushHTTPAuth(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "refs/heads/http-default", result.Ref)
 	// Anonymous reads must not imply anonymous writes, nor inherit the source's token.
-	anonymous := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	anonymous := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	_, err = pushGitRef(ctx, c, base, anonymous, "anonymous", nil)
 	require.Error(t, err)
 	// Routing metadata must not transfer source credentials, even when the
@@ -213,19 +214,19 @@ func (GitSuite) TestPushHTTPAuth(ctx context.Context, t *testctx.T) {
 	}, &dagger.Response{Data: &routed})
 	require.Error(t, err, "a push URL is not a credential grant")
 	require.NotContains(t, err.Error(), "push-test-password")
-	header := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service,
-		HTTPAuthHeader: c.SetSecret("push-header", "Basic "+base64.StdEncoding.EncodeToString([]byte("writer:push-test-password")))})
+	header := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service,
+		HTTPAuthHeader: core.NewQuery(c).SetSecret("push-header", "Basic "+base64.StdEncoding.EncodeToString([]byte("writer:push-test-password")))})
 	_, err = pushGitRef(ctx, c, base, header, "header", nil)
 	require.NoError(t, err)
 }
 
-func gitPushHTTPService(ctx context.Context, t *testctx.T, c *dagger.Client) (*dagger.Service, string) {
+func gitPushHTTPService(ctx context.Context, t *testctx.T, c *dagger.Client) (*core.Service, string) {
 	t.Helper()
 	// Public upload-pack, authenticated receive-pack.
-	dir := makeGitDir(c, c.Directory().WithNewFile("base", "base"), "main")
-	dir = c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).WithDirectory("/repos", dir).
+	dir := makeGitDir(c, core.NewQuery(c).Directory().WithNewFile("base", "base"), "main")
+	dir = core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).WithDirectory("/repos", dir).
 		WithExec([]string{"git", "--git-dir=/repos/repo.git", "config", "http.receivepack", "true"}).Directory("/repos")
-	service, url := gitSmartHTTPServiceDirAuth(ctx, t, c, "", dir, "writer", c.SetSecret("push-password", "push-test-password"), true)
+	service, url := gitSmartHTTPServiceDirAuth(ctx, t, c, "", dir, "writer", core.NewQuery(c).SetSecret("push-password", "push-test-password"), true)
 	url += "/repo.git"
 	_, err := service.Start(ctx)
 	require.NoError(t, err)
@@ -240,7 +241,7 @@ func (GitSuite) TestPushHTTPCallerCredentials(ctx context.Context, t *testctx.T)
 	// the caller's credential helper from a valid, independent working directory.
 	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", config))
 	service, url := gitPushHTTPService(ctx, t, c)
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	result, err := pushGitRef(ctx, c, repo.Branch("main"), nil, "implicit", nil)
 	require.NoError(t, err)
 	require.Equal(t, "CREATED", result.Disposition)
@@ -251,12 +252,12 @@ func (GitSuite) TestPushCallerURLRewrite(ctx context.Context, t *testctx.T) {
 	config := filepath.Join(workdir, "gitconfig")
 	require.NoError(t, os.WriteFile(config, nil, 0o600))
 	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", config))
-	fetchService, fetchURL := gitService(ctx, t, c, c.Directory().WithNewFile("base", "fetch"))
+	fetchService, fetchURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base", "fetch"))
 	_, err := fetchService.Start(ctx)
 	require.NoError(t, err)
 	pushService, pushURL := gitPushHTTPService(ctx, t, c)
-	fetchRepo := c.Git(fetchURL, dagger.GitOpts{ExperimentalServiceHost: fetchService})
-	head := fetchRepo.Branch("main").AsWorkspace().WithNewFile("change", "committed").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	fetchRepo := core.NewQuery(c).Git(fetchURL, core.GitOpts{ExperimentalServiceHost: fetchService})
+	head := fetchRepo.Branch("main").AsWorkspace().WithNewFile("change", "committed").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "push rewrite", workspaceCommitDate)
 	}).Git().Head()
 	sha, err := head.CommitSHA(ctx)
@@ -267,11 +268,11 @@ func (GitSuite) TestPushCallerURLRewrite(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.WriteFile(config, []byte(configText), 0o600))
 	for _, explicit := range []bool{false, true} {
 		branch := fmt.Sprintf("rewrite-%v", explicit)
-		var to *dagger.GitRepository
+		var to *core.GitRepository
 		if explicit {
 			// No explicit service/auth capability: use owner push routing just
 			// like an explicit HTTPS destination supplied by a contributor tool.
-			to = c.Git(fetchURL)
+			to = core.NewQuery(c).Git(fetchURL)
 		}
 		result, err := pushGitRef(ctx, c, head, to, branch, nil)
 		require.NoError(t, err)
@@ -283,18 +284,18 @@ func (GitSuite) TestPushCallerURLRewrite(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	fetchService, fetchURL := gitService(ctx, t, c, c.Directory().WithNewFile("base", "fetch"))
-	pushService, pushURL := gitService(ctx, t, c, c.Directory().WithNewFile("base", "divergent push history"))
+	fetchService, fetchURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base", "fetch"))
+	pushService, pushURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base", "divergent push history"))
 	_, err := fetchService.Start(ctx)
 	require.NoError(t, err)
 	_, err = pushService.Start(ctx)
 	require.NoError(t, err)
-	fetchRepo := c.Git(fetchURL, dagger.GitOpts{ExperimentalServiceHost: fetchService})
+	fetchRepo := core.NewQuery(c).Git(fetchURL, core.GitOpts{ExperimentalServiceHost: fetchService})
 	fetchSHA, err := fetchRepo.Branch("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	pushSHA := pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/main")
 
-	checkout := c.Container().From(golangImage).
+	checkout := core.NewQuery(c).Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithServiceBinding("fetch", fetchService).
@@ -305,12 +306,12 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	// client. Routing data must survive without carrying any authorization.
 	recipe, err := checkout.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | snapshot) | portable-id`)).Stdout(ctx)
 	require.NoError(t, err)
-	frozen := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(recipe))).Workspace()
+	frozen := core.Ref[*core.LLM](core.NewQuery(c), core.ID(strings.TrimSpace(recipe))).Workspace()
 	head, err := frozen.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, fetchSHA, head, "push URL must not change the fetch source")
 	// Exercise propagation through both commit and pull repository rebuilds.
-	committed := frozen.WithNewFile("new", "committed").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	committed := frozen.WithNewFile("new", "committed").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "commit before push", workspaceCommitDate)
 	})
 	updated := snapshotWorkspace(ctx, t, c, frozen.WithCommitsFrom(committed))
@@ -335,7 +336,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	multiRecipe, err := checkout.WithExec([]string{"git", "config", "--add", "remote.origin.pushurl", fetchURL}).
 		With(daggerShell(`llm | with-workspace --workspace $(current-workspace | snapshot) | portable-id`)).Stdout(ctx)
 	require.NoError(t, err)
-	multi := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(multiRecipe))).Workspace()
+	multi := core.Ref[*core.LLM](core.NewQuery(c), core.ID(strings.TrimSpace(multiRecipe))).Workspace()
 	multiHead, err := multi.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	_, err = pushGitRef(ctx, c, multi.Git().Head(), nil, "multiple", nil)
@@ -346,7 +347,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	// A registered remote can be pushed to by name, without an explicit to.
-	pushByName := func(source *dagger.GitRef, remote, branch string) (gitPushReceipt, error) {
+	pushByName := func(source *core.GitRef, remote, branch string) (gitPushReceipt, error) {
 		var response struct{ Node struct{ Push gitPushReceipt } }
 		id, err := source.ID(ctx)
 		require.NoError(t, err)
@@ -356,7 +357,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 		}, &dagger.Response{Data: &response})
 		return response.Node.Push, err
 	}
-	mirror := fetchRepo.WithRemote("mirror", fetchURL, dagger.GitRepositoryWithRemoteOpts{PushURL: pushURL}).Branch("main")
+	mirror := fetchRepo.WithRemote("mirror", fetchURL, core.GitRepositoryWithRemoteOpts{PushURL: pushURL}).Branch("main")
 	named, err := pushByName(mirror, "mirror", "named-remote")
 	require.NoError(t, err)
 	require.Equal(t, "CREATED", named.Disposition)
@@ -371,7 +372,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	// Omitting pushUrl replaces any previous override and falls back to the
 	// registered URL, including when origin replaces a remote backend's URL.
 	for _, remote := range []string{"origin", "mirror"} {
-		fallback := fetchRepo.WithRemote(remote, fetchURL, dagger.GitRepositoryWithRemoteOpts{PushURL: fetchURL}).
+		fallback := fetchRepo.WithRemote(remote, fetchURL, core.GitRepositoryWithRemoteOpts{PushURL: fetchURL}).
 			WithRemote(remote, pushURL).Branch("main")
 		branch := "fallback-" + remote
 		_, err := pushByName(fallback, remote, branch)

@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -32,19 +32,19 @@ func (AgentRuntimeSuite) TestNotifyDeliversLifecycleEvents(ctx context.Context, 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	workerModel := cannedRecordingModel(ctx, t, c, c.LLM().
+	workerModel := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("do the thing").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "done"},
 		}))
 	// The chief's whole conversation is the event: its arrival OPENS the
 	// turn (the chief is idle until then), which is the wake-on-event
 	// contract. The recording must hold the rendered wire text — header
 	// plus the engine's event body — exactly as the model receives it.
-	chiefModel := cannedRecordingModel(ctx, t, c, c.LLM().
+	chiefModel := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt(agentIdleEventText("w", "done")).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "noted"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "noted"},
 		}))
 
 	chief := spawnAgent(ctx, t, c, spawnOpts{model: chiefModel, name: "chief"})
@@ -134,18 +134,18 @@ func (AgentRuntimeSuite) TestResumeRetryEmitsNoStaleIdle(ctx context.Context, t 
 
 	// One recorded exchange: the worker's second turn exhausts the
 	// recording and FAILS, and every resume-retry fails the same way.
-	workerModel := cannedRecordingModel(ctx, t, c, c.LLM().
+	workerModel := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("do the thing").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "done"},
 		}))
 	// The chief's recording holds exactly ONE exchange: the real
 	// completion. A stale idle event would open a second chief turn this
 	// recording cannot serve, failing the chief — loudly visible below.
-	chiefModel := cannedRecordingModel(ctx, t, c, c.LLM().
+	chiefModel := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt(agentIdleEventText("w", "done")).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "noted"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "noted"},
 		}))
 
 	chief := spawnAgent(ctx, t, c, spawnOpts{model: chiefModel, name: "chief"})

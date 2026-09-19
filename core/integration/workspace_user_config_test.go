@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -398,18 +398,18 @@ entrypoint = true
 [modules.aws.settings]
 region = "us-east-1"
 `)
-	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Host().Directory(hostDir))
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Host().Directory(hostDir))
 
-	userConfigDaggerExec := func(ctr *dagger.Container, args ...string) *dagger.Container {
-		return ctr.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+	userConfigDaggerExec := func(ctr *core.Container, args ...string) *core.Container {
+		return ctr.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithDirectory("/cfg", c.Directory()).
+		WithDirectory("/cfg", core.NewQuery(c).Directory()).
 		WithEnvVariable("DAGGER_CONFIG", "/cfg/config.toml").
 		WithWorkdir("/empty")
 

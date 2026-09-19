@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -28,9 +28,9 @@ func TestContextualWorkspace(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ContextualWorkspaceSuite{})
 }
 
-func daggerReportCall(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+func daggerReportCall(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
@@ -69,7 +69,7 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceSelection(ctx context.Con
   "engineVersion": "v1.0.0",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("repo.txt", "hello from compat workspace").
 				WithNewFile("ci/main.dang", `
@@ -125,7 +125,7 @@ type Myapp {
   "name": "standalone",
   "engineVersion": "v1.0.0",
   "sdk": {"source": "dang"}
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.WithNewFile("main.dang", `
 type Standalone {
   pub workspacePath: String!
@@ -150,7 +150,7 @@ type Standalone {
   "name": "outer",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Outer {
@@ -213,10 +213,10 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceShape(ctx context.Context
 func (ContextualWorkspaceSuite) TestContextualWorkspaceCaching(ctx context.Context, t *testctx.T) {
 	const marker = "FUNCTION_EXECUTED"
 
-	daggerCallWithLogs := func(args ...string) dagger.WithContainerFunc {
-		return func(ctr *dagger.Container) *dagger.Container {
+	daggerCallWithLogs := func(args ...string) core.WithContainerFunc {
+		return func(ctr *core.Container) *core.Container {
 			execArgs := append([]string{"dagger", "--progress=logs", "call"}, args...)
-			return ctr.WithExec(execArgs, dagger.ContainerWithExecOpts{
+			return ctr.WithExec(execArgs, core.ContainerWithExecOpts{
 				UseEntrypoint: true,
 			})
 		}

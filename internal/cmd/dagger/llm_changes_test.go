@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/util/patchpreview"
@@ -72,7 +73,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceWithoutGitBaseline(ctx context.Context, 
 			s, err := NewLLMSession(ctx, dag, "", nil, &idtui.FrontendMock{
 				SetSidebarContentFunc: func(section idtui.SidebarSection) { changes = section },
 				SetStatusLineFunc:     func(idtui.StatusLineData) {},
-			}, dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline))
+			}, core.NewQuery(dag).LLM(core.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline))
 			require.NoError(t, err)
 			waitRefresh := func() {
 				t.Helper()
@@ -120,7 +121,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	t.Cleanup(func() { require.NoError(t, dag.Close()) })
 	baseline, err := snapshotWorkspace(ctx, dag)
 	require.NoError(t, err)
-	start := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline)
+	start := core.NewQuery(dag).LLM(core.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline)
 	var changes idtui.SidebarSection
 	// Startup and preview must work entirely from the checkpoint even when
 	// the host Git repository is unavailable. The old throwaway LLM and live
@@ -152,16 +153,16 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	}
 	waitRefresh(s)
 	require.Empty(t, changes.Body(80), "initial dirt must not appear as an agent change")
-	unbound, err := NewLLMSession(ctx, dag, "", nil, s.frontend, dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}))
+	unbound, err := NewLLMSession(ctx, dag, "", nil, s.frontend, core.NewQuery(dag).LLM(core.LLMOpts{Model: "openai/gpt-4o"}))
 	require.NoError(t, err, "a conversational LLM need not have a workspace")
 	require.Nil(t, unbound.Target().lastSynced())
 	waitRefresh(unbound)
 	const date = "2026-09-05T12:00:00Z"
-	id, err := baseline.WithNewFile("saved.txt", "committed\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	id, err := baseline.WithNewFile("saved.txt", "committed\n").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "agent commit", date)
 	}).ID(ctx)
 	require.NoError(t, err)
-	committed := dagger.Ref[*dagger.Workspace](dag, id)
+	committed := core.Ref[*core.Workspace](core.NewQuery(dag), id)
 	s.Target().llm = start.WithWorkspace(committed)
 	require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
 	require.Contains(t, changes.Body(80), "Commits to save (1)")
@@ -176,7 +177,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	// the checkpoint. Even undoing a committed addition is a pending deletion.
 	for _, tc := range []struct {
 		name string
-		ws   *dagger.Workspace
+		ws   *core.Workspace
 		want patchpreview.Entry
 	}{
 		{"addition", committed.WithNewFile("pending.txt", "new\n"), patchpreview.Entry{Path: "pending.txt", Kind: "ADDED", Added: 1}},
@@ -235,7 +236,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	hostSHA := git("rev-parse", "HEAD")
 	require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
 	require.Empty(t, changes.Body(80), "host commits must not change the sidebar")
-	s.Target().llm = s.Target().llm.WithWorkspace(s.Target().llm.Workspace().WithNewFile("agent.txt", "agent\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	s.Target().llm = s.Target().llm.WithWorkspace(s.Target().llm.Workspace().WithNewFile("agent.txt", "agent\n").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "divergent agent", date)
 	}))
 	require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
@@ -259,7 +260,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.Equal(t, savedHostSHA, git("rev-parse", "HEAD"), "saving twice must not duplicate cherry-picked commits")
 
 	// A second save from the original agent history only contributes new work.
-	s.Target().llm = s.Target().llm.WithWorkspace(s.Target().llm.Workspace().WithNewFile("later.txt", "later\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	s.Target().llm = s.Target().llm.WithWorkspace(s.Target().llm.Workspace().WithNewFile("later.txt", "later\n").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "later agent", date)
 	}))
 	unsyncedLLM := s.Target().llm
@@ -295,11 +296,11 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	// checkpoint baseline, even though nonconflicting divergence is accepted.
 	baselineID, err := s.Target().lastSynced().ID(ctx)
 	require.NoError(t, err)
-	conflictingID, err := s.Target().llm.Workspace().WithNewFile("agent.txt", "another agent edit\n").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	conflictingID, err := s.Target().llm.Workspace().WithNewFile("agent.txt", "another agent edit\n").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "conflicting agent", date)
 	}).ID(ctx)
 	require.NoError(t, err)
-	s.Target().llm = s.Target().llm.WithWorkspace(dagger.Ref[*dagger.Workspace](dag, conflictingID))
+	s.Target().llm = s.Target().llm.WithWorkspace(core.Ref[*core.Workspace](core.NewQuery(dag), conflictingID))
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "agent.txt"), []byte("user edit\n"), 0o644))
 	git("commit", "-am", "conflicting user")
 	hostSHA = git("rev-parse", "HEAD")
@@ -317,8 +318,8 @@ func (DaggerCMDSuite) TestAgentToolsetFollowsFocusAndSnapshot(ctx context.Contex
 	dag, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dag.Close()) })
-	directoryLLM := dag.LLM().WithTools(dag.Directory())
-	containerLLM := dag.LLM().WithTools(dag.Container())
+	directoryLLM := core.NewQuery(dag).LLM().WithTools(core.NewQuery(dag).Directory())
+	containerLLM := core.NewQuery(dag).LLM().WithTools(core.NewQuery(dag).Container())
 	directoryTools, err := directoryLLM.Tools(ctx)
 	require.NoError(t, err)
 	containerTools, err := containerLLM.Tools(ctx)

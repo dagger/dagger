@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -413,7 +414,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceOverlayAndExport(ctx context.Context, 
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	baseID, err := c.CurrentWorkspace().ID(ctx)
+	baseID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 	require.NoError(t, err)
 	stageQuery := `query StageWorkspace($from: ID!) {
   currentWorkspace {
@@ -476,7 +477,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceSparseOverlayDiff(ctx context.Context,
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "existing.txt"), []byte("one\ntwo\nthree\n"), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	baseID, err := c.CurrentWorkspace().ID(ctx)
+	baseID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 	require.NoError(t, err)
 	query := `query SparseModify($from: ID!) {
   currentWorkspace {
@@ -531,7 +532,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceSparseOverlayDiff(ctx context.Context,
 func (WorkspaceAPISuite) TestWorkspaceChangesFrom(ctx context.Context, t *testctx.T) {
 	t.Run("keeps cumulative changes for clients that omit the baseline", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		changed := c.Directory().
+		changed := core.NewQuery(c).Directory().
 			AsWorkspace().
 			WithNewFile("generated.txt", "generated")
 
@@ -546,7 +547,7 @@ func (WorkspaceAPISuite) TestWorkspaceChangesFrom(ctx context.Context, t *testct
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, "existing.txt"), []byte("before"), 0o644))
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		base := c.CurrentWorkspace()
+		base := core.NewQuery(c).CurrentWorkspace()
 		initialized := base.
 			WithNewFile("scaffold.txt", "scaffold").
 			WithNewFile("existing.txt", "initialized")
@@ -554,7 +555,7 @@ func (WorkspaceAPISuite) TestWorkspaceChangesFrom(ctx context.Context, t *testct
 			WithNewFile("generated.txt", "generated").
 			WithoutFile("scaffold.txt")
 
-		changes := generated.Changes(dagger.WorkspaceChangesOpts{From: initialized})
+		changes := generated.Changes(core.WorkspaceChangesOpts{From: initialized})
 		added, err := changes.AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"generated.txt"}, added)
@@ -568,12 +569,12 @@ func (WorkspaceAPISuite) TestWorkspaceChangesFrom(ctx context.Context, t *testct
 
 	t.Run("works for in-engine workspace values", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := c.Directory().WithNewFile("existing.txt", "before").AsWorkspace()
+		base := core.NewQuery(c).Directory().WithNewFile("existing.txt", "before").AsWorkspace()
 		after := base.
 			WithNewFile("existing.txt", "after").
 			WithNewFile("new.txt", "new")
 
-		changes := after.Changes(dagger.WorkspaceChangesOpts{From: base})
+		changes := after.Changes(core.WorkspaceChangesOpts{From: base})
 		added, err := changes.AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"new.txt"}, added)
@@ -584,12 +585,12 @@ func (WorkspaceAPISuite) TestWorkspaceChangesFrom(ctx context.Context, t *testct
 
 	t.Run("returns paths relative to the receiving workspace cwd", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := c.Directory().WithNewFile("app/existing.txt", "existing").AsWorkspace(
-			dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"},
+		base := core.NewQuery(c).Directory().WithNewFile("app/existing.txt", "existing").AsWorkspace(
+			core.DirectoryAsWorkspaceOpts{Cwd: "/app"},
 		)
 		after := base.WithNewFile("generated.txt", "generated")
 
-		added, err := after.Changes(dagger.WorkspaceChangesOpts{From: base}).AddedPaths(ctx)
+		added, err := after.Changes(core.WorkspaceChangesOpts{From: base}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"generated.txt"}, added)
 	})
@@ -601,9 +602,9 @@ func (WorkspaceAPISuite) TestWorkspaceChangesFrom(ctx context.Context, t *testct
 		initGitRepo(ctx, t, secondDir)
 
 		c := connect(ctx, t, dagger.WithWorkdir(firstDir))
-		first := c.CurrentWorkspace()
-		second := c.Host().Directory(secondDir).AsWorkspace()
-		_, err := second.Changes(dagger.WorkspaceChangesOpts{From: first}).IsEmpty(ctx)
+		first := core.NewQuery(c).CurrentWorkspace()
+		second := core.NewQuery(c).Host().Directory(secondDir).AsWorkspace()
+		_, err := second.Changes(core.WorkspaceChangesOpts{From: first}).IsEmpty(ctx)
 		require.ErrorContains(t, err, "cannot compare workspaces with different host roots")
 	})
 }
@@ -615,11 +616,11 @@ func (WorkspaceAPISuite) TestWorkspaceChangesFrom(ctx context.Context, t *testct
 func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) {
 	t.Run("mounted directory reads, listings and changes", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := c.Directory().
+		base := core.NewQuery(c).Directory().
 			WithNewFile("base.txt", "base").
 			AsWorkspace()
 		ws := base.
-			WithMountedDirectory(".refs/deps", c.Directory().WithNewFile("vendored.txt", "vendored"))
+			WithMountedDirectory(".refs/deps", core.NewQuery(c).Directory().WithNewFile("vendored.txt", "vendored"))
 
 		contents, err := ws.File(".refs/deps/vendored.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -642,15 +643,15 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 		require.Contains(t, entries, ".refs/")
 
 		// But it never rides along with the pending changeset.
-		isEmpty, err := ws.Changes(dagger.WorkspaceChangesOpts{From: base}).IsEmpty(ctx)
+		isEmpty, err := ws.Changes(core.WorkspaceChangesOpts{From: base}).IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, isEmpty)
 	})
 
 	t.Run("mounted file reads", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		note := c.Directory().WithNewFile("note.txt", "mounted note").File("note.txt")
-		ws := c.Directory().
+		note := core.NewQuery(c).Directory().WithNewFile("note.txt", "mounted note").File("note.txt")
+		ws := core.NewQuery(c).Directory().
 			WithNewFile("base.txt", "base").
 			AsWorkspace().
 			WithMountedFile(".refs/note.txt", note)
@@ -666,10 +667,10 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 
 	t.Run("mounts shadow the source", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ws := c.Directory().
+		ws := core.NewQuery(c).Directory().
 			WithNewFile("shadowed/real.txt", "real").
 			AsWorkspace().
-			WithMountedDirectory("shadowed", c.Directory().WithNewFile("vendored.txt", "vendored"))
+			WithMountedDirectory("shadowed", core.NewQuery(c).Directory().WithNewFile("vendored.txt", "vendored"))
 
 		entries, err := ws.Directory("shadowed").Entries(ctx)
 		require.NoError(t, err)
@@ -678,23 +679,23 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 
 	t.Run("mounted content is read-only", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ws := c.Directory().
+		ws := core.NewQuery(c).Directory().
 			AsWorkspace().
-			WithMountedDirectory(".refs/deps", c.Directory().WithNewFile("vendored.txt", "vendored"))
+			WithMountedDirectory(".refs/deps", core.NewQuery(c).Directory().WithNewFile("vendored.txt", "vendored"))
 
-		_, err := ws.WithNewFile(".refs/deps/hack.txt", "nope").Changes(dagger.WorkspaceChangesOpts{From: ws}).IsEmpty(ctx)
+		_, err := ws.WithNewFile(".refs/deps/hack.txt", "nope").Changes(core.WorkspaceChangesOpts{From: ws}).IsEmpty(ctx)
 		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
 
-		_, err = ws.WithoutDirectory(".refs/deps").Changes(dagger.WorkspaceChangesOpts{From: ws}).IsEmpty(ctx)
+		_, err = ws.WithoutDirectory(".refs/deps").Changes(core.WorkspaceChangesOpts{From: ws}).IsEmpty(ctx)
 		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
 	})
 
 	t.Run("mounting over the workspace root is rejected", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := c.Directory().AsWorkspace()
+		base := core.NewQuery(c).Directory().AsWorkspace()
 		_, err := base.
-			WithMountedDirectory(".", c.Directory().WithNewFile("vendored.txt", "vendored")).
-			Changes(dagger.WorkspaceChangesOpts{From: base}).IsEmpty(ctx)
+			WithMountedDirectory(".", core.NewQuery(c).Directory().WithNewFile("vendored.txt", "vendored")).
+			Changes(core.WorkspaceChangesOpts{From: base}).IsEmpty(ctx)
 		require.ErrorContains(t, err, "cannot mount over the workspace root")
 	})
 
@@ -736,16 +737,16 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 
 func (WorkspaceAPISuite) TestWorkspaceWithoutMount(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	base := c.Directory().
+	base := core.NewQuery(c).Directory().
 		WithNewFile("deps/source.txt", "source").
 		WithNewFile("note.txt", "source note").
 		AsWorkspace()
 	overlay := base.WithNewFile("deps/pending.txt", "pending")
 	mounted := overlay.
-		WithMountedDirectory("deps", c.Directory().WithNewFile("mounted.txt", "mounted")).
-		WithMountedDirectory("deps/nested", c.Directory().WithNewFile("nested.txt", "nested")).
-		WithMountedDirectory("deps-other", c.Directory().WithNewFile("sibling.txt", "sibling")).
-		WithMountedFile("note.txt", c.Directory().WithNewFile("note.txt", "mounted note").File("note.txt"))
+		WithMountedDirectory("deps", core.NewQuery(c).Directory().WithNewFile("mounted.txt", "mounted")).
+		WithMountedDirectory("deps/nested", core.NewQuery(c).Directory().WithNewFile("nested.txt", "nested")).
+		WithMountedDirectory("deps-other", core.NewQuery(c).Directory().WithNewFile("sibling.txt", "sibling")).
+		WithMountedFile("note.txt", core.NewQuery(c).Directory().WithNewFile("note.txt", "mounted note").File("note.txt"))
 
 	t.Run("directory restores source and pending changes", func(ctx context.Context, t *testctx.T) {
 		ws := mounted.WithoutMount("deps")
@@ -758,7 +759,7 @@ func (WorkspaceAPISuite) TestWorkspaceWithoutMount(ctx context.Context, t *testc
 		contents, err = ws.File("deps/pending.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "pending", contents)
-		empty, err := ws.Changes(dagger.WorkspaceChangesOpts{From: overlay}).IsEmpty(ctx)
+		empty, err := ws.Changes(core.WorkspaceChangesOpts{From: overlay}).IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, empty)
 		// Both the removed mount and nested mount are writable again.
@@ -810,8 +811,8 @@ func (WorkspaceAPISuite) TestWorkspaceWithoutMount(ctx context.Context, t *testc
 
 	t.Run("ancestor removes mounts beneath it", func(ctx context.Context, t *testctx.T) {
 		ws := base.
-			WithMountedDirectory("refs/a", c.Directory().WithNewFile("a.txt", "a")).
-			WithMountedFile("refs/b.txt", c.Directory().WithNewFile("b.txt", "b").File("b.txt")).
+			WithMountedDirectory("refs/a", core.NewQuery(c).Directory().WithNewFile("a.txt", "a")).
+			WithMountedFile("refs/b.txt", core.NewQuery(c).Directory().WithNewFile("b.txt", "b").File("b.txt")).
 			WithoutMount("refs")
 		entries, err := ws.Directory("/").Entries(ctx)
 		require.NoError(t, err)
@@ -819,7 +820,7 @@ func (WorkspaceAPISuite) TestWorkspaceWithoutMount(ctx context.Context, t *testc
 	})
 
 	t.Run("missing mount is a no-op", func(ctx context.Context, t *testctx.T) {
-		for _, ws := range []*dagger.Workspace{base, mounted} {
+		for _, ws := range []*core.Workspace{base, mounted} {
 			before, err := ws.Directory("/").Entries(ctx)
 			require.NoError(t, err)
 			after, err := ws.WithoutMount("missing").Directory("/").Entries(ctx)
@@ -841,16 +842,16 @@ func (WorkspaceAPISuite) TestWorkspaceWithoutMount(ctx context.Context, t *testc
 func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context, t *testctx.T) {
 	// valueWorkspace mounts content at .refs/deps (whose parents exist only
 	// through the mount) and over the source directory shadowed/.
-	valueWorkspace := func(c *dagger.Client) *dagger.Workspace {
-		return c.Directory().
+	valueWorkspace := func(c *dagger.Client) *core.Workspace {
+		return core.NewQuery(c).Directory().
 			WithNewFile("src/hay.txt", "needle in source\n").
 			WithNewFile("shadowed/real.txt", "needle shadowed\n").
 			AsWorkspace().
-			WithMountedDirectory(".refs/deps", c.Directory().WithNewFile("vendored.txt", "needle vendored\n")).
-			WithMountedDirectory("shadowed", c.Directory().WithNewFile("mounted.txt", "needle mounted\n"))
+			WithMountedDirectory(".refs/deps", core.NewQuery(c).Directory().WithNewFile("vendored.txt", "needle vendored\n")).
+			WithMountedDirectory("shadowed", core.NewQuery(c).Directory().WithNewFile("mounted.txt", "needle mounted\n"))
 	}
 
-	searchFilePaths := func(ctx context.Context, t *testctx.T, results []dagger.SearchResult) []string {
+	searchFilePaths := func(ctx context.Context, t *testctx.T, results []core.SearchResult) []string {
 		t.Helper()
 		paths := make([]string, 0, len(results))
 		for _, r := range results {
@@ -863,7 +864,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 
 	t.Run("value workspace search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{Literal: true})
+		results, err := valueWorkspace(c).Search(ctx, "needle", core.WorkspaceSearchOpts{Literal: true})
 		require.NoError(t, err)
 		paths := searchFilePaths(ctx, t, results)
 		require.Contains(t, paths, "src/hay.txt")
@@ -874,7 +875,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 
 	t.Run("value workspace search scoped to a mounted path", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+		results, err := valueWorkspace(c).Search(ctx, "needle", core.WorkspaceSearchOpts{
 			Literal: true,
 			Paths:   []string{"shadowed"},
 		})
@@ -888,7 +889,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 		// mounts tree. Passing it to ripgrep as a path operand against the
 		// source rootfs hard-errored the whole search.
 		c := connect(ctx, t)
-		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+		results, err := valueWorkspace(c).Search(ctx, "needle", core.WorkspaceSearchOpts{
 			Literal: true,
 			Paths:   []string{".refs/deps"},
 		})
@@ -899,7 +900,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 
 	t.Run("value workspace search scoped to source and mount paths", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+		results, err := valueWorkspace(c).Search(ctx, "needle", core.WorkspaceSearchOpts{
 			Literal: true,
 			Paths:   []string{"src", ".refs/deps"},
 		})
@@ -912,7 +913,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 		// .refs exists in the workspace view only because the mount at
 		// .refs/deps materializes its parents; scoping to it must not error.
 		c := connect(ctx, t)
-		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+		results, err := valueWorkspace(c).Search(ctx, "needle", core.WorkspaceSearchOpts{
 			Literal: true,
 			Paths:   []string{".refs"},
 		})
@@ -925,7 +926,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 		c := connect(ctx, t)
 		results, err := valueWorkspace(c).
 			WithNewFile(".refs/local.txt", "needle in source\n").
-			Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Search(ctx, "needle", core.WorkspaceSearchOpts{
 				Literal: true,
 				Paths:   []string{".refs"},
 			})
@@ -935,9 +936,9 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 
 	t.Run("value workspace search scoped to a mounted file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		results, err := c.Directory().AsWorkspace().
-			WithMountedFile("refs/note.txt", c.Directory().WithNewFile("note.txt", "needle in mount\n").File("note.txt")).
-			Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+		results, err := core.NewQuery(c).Directory().AsWorkspace().
+			WithMountedFile("refs/note.txt", core.NewQuery(c).Directory().WithNewFile("note.txt", "needle in mount\n").File("note.txt")).
+			Search(ctx, "needle", core.WorkspaceSearchOpts{
 				Literal: true,
 				Paths:   []string{"refs/note.txt"},
 			})
@@ -947,7 +948,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 
 	t.Run("value workspace search still rejects nonexistent paths", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		_, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+		_, err := valueWorkspace(c).Search(ctx, "needle", core.WorkspaceSearchOpts{
 			Literal: true,
 			Paths:   []string{"no/such/dir"},
 		})
@@ -968,26 +969,26 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 		c := connect(ctx, t)
 		ws := valueWorkspace(c)
 
-		found, err := ws.FindUp(ctx, "vendored.txt", dagger.WorkspaceFindUpOpts{From: ".refs/deps"})
+		found, err := ws.FindUp(ctx, "vendored.txt", core.WorkspaceFindUpOpts{From: ".refs/deps"})
 		require.NoError(t, err)
 		require.Equal(t, "/.refs/deps/vendored.txt", found, "mounted content must be findable")
 
 		// A mount point is findable as a directory even though its parents
 		// exist only through the mount.
-		found, err = ws.FindUp(ctx, "deps", dagger.WorkspaceFindUpOpts{From: ".refs"})
+		found, err = ws.FindUp(ctx, "deps", core.WorkspaceFindUpOpts{From: ".refs"})
 		require.NoError(t, err)
 		require.Equal(t, "/.refs/deps", found)
 
 		// The walk falls back to the source on its way up out of the mount.
-		found, err = ws.FindUp(ctx, "src", dagger.WorkspaceFindUpOpts{From: ".refs/deps"})
+		found, err = ws.FindUp(ctx, "src", core.WorkspaceFindUpOpts{From: ".refs/deps"})
 		require.NoError(t, err)
 		require.Equal(t, "/src", found)
 
-		found, err = ws.FindUp(ctx, "mounted.txt", dagger.WorkspaceFindUpOpts{From: "shadowed"})
+		found, err = ws.FindUp(ctx, "mounted.txt", core.WorkspaceFindUpOpts{From: "shadowed"})
 		require.NoError(t, err)
 		require.Equal(t, "/shadowed/mounted.txt", found)
 
-		found, err = ws.FindUp(ctx, "real.txt", dagger.WorkspaceFindUpOpts{From: "shadowed"})
+		found, err = ws.FindUp(ctx, "real.txt", core.WorkspaceFindUpOpts{From: "shadowed"})
 		require.NoError(t, err)
 		require.Empty(t, found, "sources shadowed by a mount must not resurface")
 	})
@@ -997,9 +998,9 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 
 		// Mount sources are engine-side directories, so their IDs load in
 		// the nested session.
-		depsID, err := c.Directory().WithNewFile("vendored.txt", "needle vendored\n").ID(ctx)
+		depsID, err := core.NewQuery(c).Directory().WithNewFile("vendored.txt", "needle vendored\n").ID(ctx)
 		require.NoError(t, err)
-		shadowID, err := c.Directory().WithNewFile("mounted.txt", "needle mounted\n").ID(ctx)
+		shadowID, err := core.NewQuery(c).Directory().WithNewFile("mounted.txt", "needle mounted\n").ID(ctx)
 		require.NoError(t, err)
 
 		base := workspaceBase(t, c).
@@ -1225,7 +1226,7 @@ func (WorkspaceAPISuite) TestWorkspaceConfigBuildersStageOverlay(ctx context.Con
 	initGitRepo(ctx, t, workdir)
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	baseID, err := c.CurrentWorkspace().ID(ctx)
+	baseID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 	require.NoError(t, err)
 	query := `query ConfigBuilders($from: ID!) {
   currentWorkspace {
@@ -1310,7 +1311,7 @@ source = "./demo"
 
 func (WorkspaceAPISuite) TestSyntheticWorkspaceModuleBuildersUseWorkspaceSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	workspaceID, err := c.Directory().
+	workspaceID, err := core.NewQuery(c).Directory().
 		WithNewFile("modules/demo/dagger.json", `{
   "name": "demo",
   "engineVersion": "latest",
@@ -1390,7 +1391,7 @@ func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySna
 	initGitRepo(ctx, t, workdir)
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
 
-	ws := c.CurrentWorkspace()
+	ws := core.NewQuery(c).CurrentWorkspace()
 	updated := ws.
 		WithNewFile("modules/demo/dagger.json", `{
   "name": "demo",
@@ -1404,7 +1405,7 @@ func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySna
 	name, err := updated.Module("demo").Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "demo", name)
-	added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+	added, err := updated.Changes(core.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"dagger.toml", "modules/", "modules/demo/", "modules/demo/dagger.json", "modules/demo/main.go"}, added)
 
@@ -1415,7 +1416,7 @@ func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySna
 func (WorkspaceAPISuite) TestModuleSourceResolvesWorkspacePaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := c.Directory().
+	base := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "\n").
 		WithNewFile("sub/dagger-module.toml", `name = "submod"
 engineVersion = "latest"
@@ -1432,7 +1433,7 @@ engineVersion = "latest"
 		src := base.AsWorkspace().ModuleSource("sub")
 		kind, err := src.Kind(ctx)
 		require.NoError(t, err)
-		require.Equal(t, dagger.ModuleSourceKindDirSource, kind)
+		require.Equal(t, core.ModuleSourceKindDirSource, kind)
 		exists, err := src.ConfigExists(ctx)
 		require.NoError(t, err)
 		require.True(t, exists)
@@ -1442,14 +1443,14 @@ engineVersion = "latest"
 	})
 
 	t.Run("relative path resolves from a nested cwd", func(ctx context.Context, t *testctx.T) {
-		ws := base.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/nested"})
+		ws := base.AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/nested"})
 		name, err := ws.ModuleSource("../sub").ModuleOriginalName(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "submod", name)
 	})
 
 	t.Run("absolute path resolves from the workspace root regardless of cwd", func(ctx context.Context, t *testctx.T) {
-		ws := base.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/nested"})
+		ws := base.AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/nested"})
 		name, err := ws.ModuleSource("/sub").ModuleOriginalName(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "submod", name)
@@ -1469,7 +1470,7 @@ engineVersion = "latest"
 
 	t.Run("directory sources preserve distinct dependencies", func(ctx context.Context, t *testctx.T) {
 		ws := base.AsWorkspace()
-		withDeps := ws.ModuleSource("sub").WithDependencies([]*dagger.ModuleSource{
+		withDeps := ws.ModuleSource("sub").WithDependencies([]*core.ModuleSource{
 			ws.ModuleSource("dep-a"),
 			ws.ModuleSource("dep-b"),
 		})
@@ -1508,30 +1509,30 @@ engineVersion = "latest"
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, path), []byte(contents), 0o600))
 	}
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	ws := c.CurrentWorkspace()
+	ws := core.NewQuery(c).CurrentWorkspace()
 
 	parent := ws.ModuleSource("modules/parent")
 	kind, err := parent.Kind(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.ModuleSourceKindLocalSource, kind)
+	require.Equal(t, core.ModuleSourceKindLocalSource, kind)
 	configuredDeps, err := parent.Dependencies(ctx)
 	require.NoError(t, err)
 	require.Len(t, configuredDeps, 1)
 	configuredDepKind, err := configuredDeps[0].Kind(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.ModuleSourceKindLocalSource, configuredDepKind)
+	require.Equal(t, core.ModuleSourceKindLocalSource, configuredDepKind)
 
 	staged := ws.WithNewFile("modules/parent/dagger-module.toml", `name = "staged-parent"
 engineVersion = "latest"
 `).ModuleSource("modules/parent")
 	stagedKind, err := staged.Kind(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.ModuleSourceKindLocalSource, stagedKind)
+	require.Equal(t, core.ModuleSourceKindLocalSource, stagedKind)
 	stagedName, err := staged.ModuleOriginalName(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "staged-parent", stagedName)
 
-	withDeps := parent.WithDependencies([]*dagger.ModuleSource{
+	withDeps := parent.WithDependencies([]*core.ModuleSource{
 		ws.ModuleSource("modules/dep-a"),
 		ws.ModuleSource("modules/dep-b"),
 	})
@@ -1573,7 +1574,7 @@ engineVersion = "latest"
 	}
 
 	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(workdir, "a", "b", "app")))
-	deps, err := c.CurrentWorkspace().ModuleSource(".").Dependencies(ctx)
+	deps, err := core.NewQuery(c).CurrentWorkspace().ModuleSource(".").Dependencies(ctx)
 	require.NoError(t, err)
 	require.Len(t, deps, 1)
 	name, err := deps[0].ModuleOriginalName(ctx)
@@ -1583,16 +1584,16 @@ engineVersion = "latest"
 
 func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePreservesKind(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	source := c.Directory().WithNewFile("module/dagger-module.toml", `name = "git-module"
+	source := core.NewQuery(c).Directory().WithNewFile("module/dagger-module.toml", `name = "git-module"
 engineVersion = "latest"
 `)
 	gitDaemon, repoURL := gitService(ctx, t, c, source)
-	ws := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head().AsWorkspace()
+	ws := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).Head().AsWorkspace()
 
 	src := ws.ModuleSource("module")
 	kind, err := src.Kind(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.ModuleSourceKindGitSource, kind)
+	require.Equal(t, core.ModuleSourceKindGitSource, kind)
 	name, err := src.ModuleOriginalName(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "git-module", name)
@@ -1600,7 +1601,7 @@ engineVersion = "latest"
 
 func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePreservesGitContext(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	moduleDir := c.Directory().
+	moduleDir := core.NewQuery(c).Directory().
 		WithNewFile("module/dagger-module.toml", `name = "git-module"
 engineVersion = "latest"
 source = "."
@@ -1671,8 +1672,8 @@ func head(repo *dagger.GitRepository) *dagger.GitRef {
 `)
 	moduleDir = moduleDir.WithDirectory("module", moduleDir.Directory("module").
 		AsModuleSource().GeneratedContextDirectory())
-	source := c.Directory().WithDirectory("module", moduleDir.Directory("module"))
-	repoCtr := c.Container().From(alpineImage).
+	source := core.NewQuery(c).Directory().WithDirectory("module", moduleDir.Directory("module"))
+	repoCtr := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/repo", source).
 		WithWorkdir("/repo").
@@ -1695,7 +1696,7 @@ func head(repo *dagger.GitRepository) *dagger.GitRef {
 
 	source = repoCtr.Directory("/repo")
 	gitDaemon, repoURL := gitService(ctx, t, c, source)
-	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	repo := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})
 	ref := repo.Branch("workspace-ref")
 
 	src := ref.AsWorkspace().ModuleSource("module")
@@ -1714,7 +1715,7 @@ func head(repo *dagger.GitRepository) *dagger.GitRef {
 
 func (WorkspaceAPISuite) TestSyntheticWorkspaceGitModuleStagesConfigAndLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	workspaceID, err := c.Directory().AsWorkspace().ID(ctx)
+	workspaceID, err := core.NewQuery(c).Directory().AsWorkspace().ID(ctx)
 	require.NoError(t, err)
 
 	var got struct {
@@ -1755,14 +1756,14 @@ func (WorkspaceAPISuite) TestSyntheticWorkspaceGitModuleStagesConfigAndLock(ctx 
 
 func (WorkspaceAPISuite) TestSyntheticWorkspaceDetectsExistingConfigAndLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("app/dagger.toml", `# keep this comment
 [modules.existing]
 source = "../modules/existing"
 `).
 		WithNewFile("app/dagger.lock", "").
 		WithNewFile("app/nested/marker", "nested").
-		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app/nested"})
+		AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/app/nested"})
 
 	configFile, err := ws.ConfigFile(ctx)
 	require.NoError(t, err)
@@ -1771,7 +1772,7 @@ source = "../modules/existing"
 	updated := ws.WithModule("github.com/dagger/dagger/modules/wolfi@v0.20.2")
 	// withModule updates the discovered config above the nested cwd. Inspect
 	// that root-scoped operation from the workspace root.
-	modified, err := updated.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: ws}).ModifiedPaths(ctx)
+	modified, err := updated.WithWorkdir(".").Changes(core.WorkspaceChangesOpts{From: ws}).ModifiedPaths(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"app/dagger.lock", "app/dagger.toml"}, modified)
 
@@ -1795,7 +1796,7 @@ source = "go"
 `), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	baseID, err := c.CurrentWorkspace().ID(ctx)
+	baseID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 	require.NoError(t, err)
 	query := `query SDKReaders($from: ID!) {
   currentWorkspace {
@@ -1883,7 +1884,7 @@ module = "dagger-go-sdk"
 `), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	_, err := c.CurrentWorkspace().WithoutSDK("go").ID(ctx)
+	_, err := core.NewQuery(c).CurrentWorkspace().WithoutSDK("go").ID(ctx)
 	require.NoError(t, err)
 }
 
@@ -2005,7 +2006,7 @@ func (WorkspaceAPISuite) TestWorkspaceExportFailureBySource(ctx context.Context,
 
 	t.Run("remote git ref", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Directory().
 			WithNewFile("base.txt", "base"))
 		workdir := t.TempDir()
 		queryPath := writeQueryDoc(t, workdir, "remote-export.graphql", `{
@@ -2027,13 +2028,13 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsChain(ctx context
 	initGitRepo(ctx, t, workdir)
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	baseID, err := c.CurrentWorkspace().ID(ctx)
+	baseID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 	require.NoError(t, err)
 
-	sourceID, err := c.Directory().WithNewFile("nested.txt", "nested").ID(ctx)
+	sourceID, err := core.NewQuery(c).Directory().WithNewFile("nested.txt", "nested").ID(ctx)
 	require.NoError(t, err)
 
-	baseDir := c.Directory().WithNewFile("base.txt", "base")
+	baseDir := core.NewQuery(c).Directory().WithNewFile("base.txt", "base")
 	changedDir := baseDir.WithNewFile("changed.txt", "changed")
 	changesID, err := changedDir.Changes(baseDir).ID(ctx)
 	require.NoError(t, err)
@@ -2111,7 +2112,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalRemoves(ctx context.Context,
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "sub", "inner.txt"), []byte("inner"), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	baseID, err := c.CurrentWorkspace().ID(ctx)
+	baseID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -2186,10 +2187,10 @@ func (WorkspaceAPISuite) TestHostWorkspaceOverlayReads(ctx context.Context, t *t
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
 
 	// A changeset that modifies edited.txt and removes doomed.txt.
-	baseDir := c.Directory().
+	baseDir := core.NewQuery(c).Directory().
 		WithNewFile("edited.txt", "before").
 		WithNewFile("doomed.txt", "doomed")
-	changedDir := c.Directory().WithNewFile("edited.txt", "after")
+	changedDir := core.NewQuery(c).Directory().WithNewFile("edited.txt", "after")
 	changesID, err := changedDir.Changes(baseDir).ID(ctx)
 	require.NoError(t, err)
 
@@ -2283,10 +2284,10 @@ func (WorkspaceAPISuite) TestHostWorkspaceOverlaySearchAndGlob(ctx context.Conte
 
 	// A changeset that modifies edited.txt and removes doomed.txt. It is built
 	// from engine-side directories, so its ID loads in the nested session.
-	baseDir := c.Directory().
+	baseDir := core.NewQuery(c).Directory().
 		WithNewFile("edited.txt", "needle before edit\n").
 		WithNewFile("doomed.txt", "needle doomed\n")
-	changedDir := c.Directory().WithNewFile("edited.txt", "needle after edit\n")
+	changedDir := core.NewQuery(c).Directory().WithNewFile("edited.txt", "needle after edit\n")
 	changesID, err := changedDir.Changes(baseDir).ID(ctx)
 	require.NoError(t, err)
 
@@ -2381,7 +2382,7 @@ func (WorkspaceAPISuite) TestWorkspaceConfigBuildersAfterUnrelatedEdit(ctx conte
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte("[modules.existing]\nsource = \"./existing\"\n"), 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	baseID, err := c.CurrentWorkspace().ID(ctx)
+	baseID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
 	require.NoError(t, err)
 	query := `query ConfigBuildersAfterEdit($from: ID!) {
   currentWorkspace {

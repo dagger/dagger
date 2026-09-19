@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -27,30 +28,29 @@ func TestChecks(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ChecksSuite{})
 }
 
-func checksTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
+func checksTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 	return specificTestEnv(t, c, "checks")
 }
 
-func specificTestEnv(t *testctx.T, c *dagger.Client, subfolder string) (*dagger.Container, error) {
+func specificTestEnv(t *testctx.T, c *dagger.Client, subfolder string) (*core.Container, error) {
 	// java SDK is not embedded in the engine, so we mount the java sdk to be able
 	// to test non released features
 	javaSdkSrc, err := filepath.Abs("../../sdk/java")
 	if err != nil {
 		return nil, err
 	}
-	return c.Container().
-			From(alpineImage).
-			// init git in a directory containing both the modules and the java SDK
-			// that way dagger sees this directory as the root
-			WithWorkdir("/work").
-			WithExec([]string{"apk", "add", "git"}).
-			WithExec([]string{"git", "init"}).
-			WithWorkdir("/work/modules/").
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory(".", c.Host().Directory("./testdata/"+subfolder)).
-			WithMountedDirectory("/work/sdk/java", c.Host().Directory(javaSdkSrc)).
-			WithDirectory("app", c.Directory()),
-		nil
+	return core.NewQuery(c).Container().
+		From(alpineImage).
+		// init git in a directory containing both the modules and the java SDK
+		// that way dagger sees this directory as the root
+		WithWorkdir("/work").
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
+		WithWorkdir("/work/modules/").
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithDirectory(".", core.NewQuery(c).Host().Directory("./testdata/"+subfolder)).
+		WithMountedDirectory("/work/sdk/java", core.NewQuery(c).Host().Directory(javaSdkSrc)).
+		WithDirectory("app", core.NewQuery(c).Directory()), nil
 }
 
 func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
@@ -463,14 +463,14 @@ source = "hello-with-generate-checks"
 
 func (ChecksSuite) TestWorkspaceCheckSkipRemote(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.hello-with-checks]
 source = ".dagger/modules/hello-with-checks"
 check.skip = ["failing-check", "failing-container"]
 `).
-		WithDirectory(".dagger/modules/hello-with-checks", c.Host().Directory(testDataPath(t, "checks", "hello-with-checks"))))
+		WithDirectory(".dagger/modules/hello-with-checks", core.NewQuery(c).Host().Directory(testDataPath(t, "checks", "hello-with-checks"))))
 
-	out, err := c.Container().From(alpineImage).
+	out, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/empty").
 		With(workspaceSelectionDaggerExec("-W", remoteRef, "check", "-l")).
@@ -686,7 +686,7 @@ name = "beta"
 
 	// generated returns the fixture with config applied and every SDK scope
 	// already generated, which is the state a derived check passes in.
-	generated := func(ctx context.Context, t *testctx.T, config string) *dagger.Container {
+	generated := func(ctx context.Context, t *testctx.T, config string) *core.Container {
 		t.Helper()
 		ctr := workspaceFixture(t, c, "sdk-generate-check").
 			WithNewFile("dagger.toml", config).

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -115,9 +116,9 @@ source = 'github.com/does/notexist/tools@v2'
 
 func (WorkspaceModulesSuite) TestWorkspaceModuleVersionUpdate(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	content := c.Directory().WithNewFile("dagger.json", `{"name":"tools","engineVersion":"v1.0.0","sdk":"go"}`).
+	content := core.NewQuery(c).Directory().WithNewFile("dagger.json", `{"name":"tools","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("main.go", "package main\ntype Tools struct{}\n")
-	repo := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+	repo := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 		WithDirectory("/src", content).WithWorkdir("/src").WithExec([]string{"git", "init", "-b", "main"}).
 		WithExec([]string{"git", "add", "."}).WithExec([]string{"git", "commit", "-m", "first"}).
 		WithExec([]string{"git", "tag", "v1.0.0"}).

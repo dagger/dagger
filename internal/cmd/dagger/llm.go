@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
@@ -130,7 +131,7 @@ func NewLLMSession(
 	llmModel string,
 	shellHandler *shellCallHandler,
 	frontend idtui.Frontend,
-	initialLLM *dagger.LLM,
+	initialLLM *core.LLM,
 ) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:        dag,
@@ -171,7 +172,7 @@ func NewLLMSession(
 		if err != nil {
 			return nil, err
 		}
-		initialLLM = dag.LLM(dagger.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
+		initialLLM = core.NewQuery(dag).LLM(core.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
 	}
 	if err := own.setInitialLLM(initialLLM); err != nil {
 		return nil, err
@@ -201,7 +202,7 @@ func (s *LLMSession) tools(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		llm = dagger.Ref[*dagger.LLM](s.dag, id)
+		llm = core.Ref[*core.LLM](core.NewQuery(s.dag), id)
 	}
 	if llm == nil {
 		return "", fmt.Errorf("no LLM session active")
@@ -315,7 +316,7 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	}
 	rt := liveAgent{
 		dag:   s.dag,
-		agent: dagger.Ref[*dagger.Agent](s.dag, dagger.ID(encodedID)),
+		agent: core.Ref[*core.Agent](core.NewQuery(s.dag), core.ID(encodedID)),
 	}
 	snapID, err := rt.SnapshotID(ctx)
 	if err != nil {
@@ -326,7 +327,7 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	}
 	attached := s.newAgent(name)
 	attached.bindRuntime(rt, agentHandle, encodedID, owned)
-	snapshot := dagger.Ref[*dagger.LLM](s.dag, snapID)
+	snapshot := core.Ref[*core.LLM](core.NewQuery(s.dag), snapID)
 	// An attached/trace-restored conversation does not carry the checkpoint it
 	// originally synchronized from. Its current snapshot workspace is the safe
 	// best-effort baseline: it is portable with the snapshot and cannot trigger
@@ -705,7 +706,7 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existin
 	// restored workspace when this field is absent.
 	var workspaceBaselineID string
 	if baseline := a.lastSynced(); baseline != nil {
-		portable, err := a.session.dag.LLM().WithWorkspace(baseline).PortableID(ctx)
+		portable, err := core.NewQuery(a.session.dag).LLM().WithWorkspace(baseline).PortableID(ctx)
 		if err != nil {
 			slog.Debug("could not persist workspace synchronization baseline", "error", err)
 		} else {
@@ -778,8 +779,8 @@ func (a *sessionAgent) LoadSession(ctx, historyCtx context.Context, sessionID st
 		return fmt.Errorf("invalid session data: missing LLM ID")
 	}
 
-	loadedLLM := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.LLMID))
-	var baseline *dagger.Workspace
+	loadedLLM := core.Ref[*core.LLM](core.NewQuery(a.session.dag), core.ID(metadata.LLMID))
+	var baseline *core.Workspace
 	fallback := loadedLLM.Workspace()
 	if _, err := fallback.ID(ctx); err != nil {
 		slog.Debug("restored conversation has no workspace synchronization baseline", "error", err)
@@ -791,7 +792,7 @@ func (a *sessionAgent) LoadSession(ctx, historyCtx context.Context, sessionID st
 		// LLM wrapper written by AutoSaveSession. Resolve its bound workspace now;
 		// if an old/corrupt save cannot rebuild it, retain the safe same-workspace
 		// fallback instead of failing resume or comparing unrelated host roots.
-		portable := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.WorkspaceBaselineID))
+		portable := core.Ref[*core.LLM](core.NewQuery(a.session.dag), core.ID(metadata.WorkspaceBaselineID))
 		candidate := portable.Workspace()
 		if _, err := candidate.ID(ctx); err != nil {
 			slog.Debug("could not restore workspace synchronization baseline", "error", err)
@@ -832,11 +833,11 @@ func (a *sessionAgent) LoadSession(ctx, historyCtx context.Context, sessionID st
 // for sessions that flushed their changes before saving: the changeset is
 // empty and nothing is searched. Best-effort throughout; a failed check must
 // not block loading the session.
-func conflictMarkerCue(ctx context.Context, llm *dagger.LLM, before *dagger.Workspace) string {
+func conflictMarkerCue(ctx context.Context, llm *core.LLM, before *core.Workspace) string {
 	if llm == nil || before == nil {
 		return ""
 	}
-	changes := llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: before})
+	changes := llm.Workspace().Changes(core.WorkspaceChangesOpts{From: before})
 	added, err := changes.AddedPaths(ctx)
 	if err != nil {
 		slog.Debug("skipping conflict-marker check", "error", err)
@@ -851,7 +852,7 @@ func conflictMarkerCue(ctx context.Context, llm *dagger.LLM, before *dagger.Work
 	if len(paths) == 0 {
 		return ""
 	}
-	results, err := changes.After().Search(ctx, "<<<<<<< workspace", dagger.DirectorySearchOpts{
+	results, err := changes.After().Search(ctx, "<<<<<<< workspace", core.DirectorySearchOpts{
 		Literal:   true,
 		FilesOnly: true,
 		Paths:     paths,

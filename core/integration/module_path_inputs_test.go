@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -40,7 +41,7 @@ func (ModuleSuite) TestContextDirectory(ctx context.Context, t *testctx.T) {
 
 import (
   "context"
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct {}
@@ -49,10 +50,10 @@ func (t *Test) Dirs(
   ctx context.Context,
 
   // +defaultPath="/"
-  root *dagger.Directory,
+  root *core.Directory,
 
   // +defaultPath="."
-  relativeRoot *dagger.Directory,
+  relativeRoot *core.Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
   if err != nil {
@@ -71,11 +72,11 @@ func (t *Test) DirsIgnore(
 
   // +defaultPath="/"
   // +ignore=["**", "!backend", "!frontend"]
-  root *dagger.Directory,
+  root *core.Directory,
 
   // +defaultPath="."
   // +ignore=["dagger.json", "LICENSE"]
-  relativeRoot *dagger.Directory,
+  relativeRoot *core.Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
   if err != nil {
@@ -92,13 +93,13 @@ func (t *Test) RootDirPath(
   ctx context.Context,
 
   // +defaultPath="/backend"
-  backend *dagger.Directory,
+  backend *core.Directory,
 
   // +defaultPath="/frontend"
-  frontend *dagger.Directory,
+  frontend *core.Directory,
 
   // +defaultPath="/ci/dagger/sub"
-  modSrcDir *dagger.Directory,
+  modSrcDir *core.Directory,
 ) ([]string, error) {
   backendFiles, err := backend.Entries(ctx)
   if err != nil {
@@ -122,10 +123,10 @@ func (t *Test) RelativeDirPath(
   ctx context.Context,
 
   // +defaultPath="./dagger/sub"
-  modSrcDir *dagger.Directory,
+  modSrcDir *core.Directory,
 
   // +defaultPath="../backend"
-  backend *dagger.Directory,
+  backend *core.Directory,
 ) ([]string, error) {
   modSrcDirFiles, err := modSrcDir.Entries(ctx)
   if err != nil {
@@ -143,10 +144,10 @@ func (t *Test) Files(
   ctx context.Context,
 
   // +defaultPath="/ci/LICENSE"
-  license *dagger.File,
+  license *core.File,
 
   // +defaultPath="./dagger/sub/sub.txt"
-  index *dagger.File,
+  index *core.File,
 ) ([]string, error) {
   licenseName, err := license.Name(ctx)
   if err != nil {
@@ -297,8 +298,8 @@ export class Test {
 				modGen := goGitBase(t, c).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
-					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
+					WithDirectory("/work/backend", core.NewQuery(c).Directory().WithNewFile("foo.txt", "foo")).
+					WithDirectory("/work/frontend", core.NewQuery(c).Directory().WithNewFile("bar.txt", "bar")).
 					With(withModuleFixture(t, c, "/work/ci", tc.fixture)).
 					WithWorkdir("/work")
 
@@ -358,7 +359,7 @@ export class Test {
 
 import (
   "context"
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct {}
@@ -367,10 +368,10 @@ func (t *Test) Dirs(
   ctx context.Context,
 
   // +defaultPath="/"
-  root *dagger.Directory,
+  root *core.Directory,
 
   // +defaultPath="."
-  relativeRoot *dagger.Directory,
+  relativeRoot *core.Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
   if err != nil {
@@ -388,13 +389,13 @@ func (t *Test) RootDirPath(
   ctx context.Context,
 
   // +defaultPath="/backend"
-  backend *dagger.Directory,
+  backend *core.Directory,
 
   // +defaultPath="/frontend"
-  frontend *dagger.Directory,
+  frontend *core.Directory,
 
   // +defaultPath="/dagger/sub"
-  modSrcDir *dagger.Directory,
+  modSrcDir *core.Directory,
 ) ([]string, error) {
   backendFiles, err := backend.Entries(ctx)
   if err != nil {
@@ -418,10 +419,10 @@ func (t *Test) RelativeDirPath(
   ctx context.Context,
 
   // +defaultPath="./dagger/sub"
-  modSrcDir *dagger.Directory,
+  modSrcDir *core.Directory,
 
   // +defaultPath="./backend"
-  backend *dagger.Directory,
+  backend *core.Directory,
 ) ([]string, error) {
   modSrcDirFiles, err := modSrcDir.Entries(ctx)
   if err != nil {
@@ -439,10 +440,10 @@ func (t *Test) Files(
   ctx context.Context,
 
   // +defaultPath="/LICENSE"
-  license *dagger.File,
+  license *core.File,
 
   // +defaultPath="./dagger.json"
-  index *dagger.File,
+  index *core.File,
 ) ([]string, error) {
   licenseName, err := license.Name(ctx)
   if err != nil {
@@ -573,8 +574,8 @@ export class Test {
 				modGen := goGitBase(t, c).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
-					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
+					WithDirectory("/work/backend", core.NewQuery(c).Directory().WithNewFile("foo.txt", "foo")).
+					WithDirectory("/work/frontend", core.NewQuery(c).Directory().WithNewFile("bar.txt", "bar")).
 					With(withModuleFixture(t, c, "/work", tc.fixture)).
 					WithWorkdir("/work")
 
@@ -621,7 +622,7 @@ export class Test {
 
 import (
 	"context"
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct {}
@@ -630,7 +631,7 @@ func (t *Test) TooHighRelativeDirPath(
 	ctx context.Context,
 
 	// +defaultPath="../../../"
-	backend *dagger.Directory,
+	backend *core.Directory,
 ) ([]string, error) {
   // The engine should throw an error
 	return []string{}, nil
@@ -640,7 +641,7 @@ func (t *Test) NonExistingPath(
 	ctx context.Context,
 
 	// +defaultPath="/invalid"
-	dir *dagger.Directory,
+	dir *core.Directory,
 ) ([]string, error) {
   // The engine should throw an error
 	return []string{}, nil
@@ -650,7 +651,7 @@ func (t *Test) TooHighRelativeFilePath(
 	ctx context.Context,
 
 	// +defaultPath="../../../file.txt"
-	backend *dagger.File,
+	backend *core.File,
 ) (string, error) {
   // The engine should throw an error
 	return "", nil
@@ -660,7 +661,7 @@ func (t *Test) NonExistingFile(
 	ctx context.Context,
 
 	// +defaultPath="/invalid"
-	file *dagger.File,
+	file *core.File,
 ) (string, error) {
   // The engine should throw an error
 	return "", nil
@@ -843,7 +844,7 @@ export class Test {
 func (ModuleSuite) TestDefaultPathAndIgnoreUseRemoteModuleSource(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	remoteModule := c.Directory().
+	remoteModule := core.NewQuery(c).Directory().
 		WithNewFile("source.txt", "module source").
 		WithNewFile("filtered/keep.txt", "module keep").
 		WithNewFile("filtered/drop.txt", "module drop").
@@ -853,7 +854,7 @@ func (ModuleSuite) TestDefaultPathAndIgnoreUseRemoteModuleSource(ctx context.Con
 import (
 	"context"
 
-	"dagger/reader/internal/dagger"
+	"dagger/reader/internal/dagger/core"
 )
 
 type Reader struct{}
@@ -863,7 +864,7 @@ func (m *Reader) ReadDefaultFile(
 	ctx context.Context,
 
 	// +defaultPath="/source.txt"
-	source *dagger.File,
+	source *core.File,
 ) (string, error) {
 	return source.Contents(ctx)
 }
@@ -873,7 +874,7 @@ func (m *Reader) ReadDefaultDirectoryFile(
 	ctx context.Context,
 
 	// +defaultPath="/filtered"
-	filtered *dagger.Directory,
+	filtered *core.Directory,
 ) (string, error) {
 	return filtered.File("keep.txt").Contents(ctx)
 }
@@ -884,7 +885,7 @@ func (m *Reader) ListIgnoredDefaultDirectory(
 
 	// +defaultPath="/filtered"
 	// +ignore=["drop.txt"]
-	filtered *dagger.Directory,
+	filtered *core.Directory,
 ) ([]string, error) {
 	return filtered.Entries(ctx)
 }
@@ -922,7 +923,7 @@ entrypoint = true
 	require.Equal(t, "keep.txt\n", out)
 
 	t.Run("direct remote module from empty cwd", func(ctx context.Context, t *testctx.T) {
-		emptyCtr := c.Container().From(alpineImage).
+		emptyCtr := core.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/empty")
 
@@ -961,7 +962,7 @@ func resolveServiceIP(ctx context.Context, t *testctx.T, c *dagger.Client, hostn
 	// host component. Auto-generated service hostnames are dot-less, but they
 	// are registered in the session DNS via search-domain expansion. Resolve
 	// them to an IP so the URL is both parser-compatible and reachable.
-	getentOut, err := c.Container().From(alpineImage).
+	getentOut, err := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"getent", "hosts", hostname}).
 		Stdout(ctx)
 	require.NoError(t, err, "could not resolve git service hostname %q", hostname)
@@ -1019,7 +1020,7 @@ func (ModuleSuite) TestContextGit(ctx context.Context, t *testctx.T) {
 
 import (
 	"context"
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct{}
@@ -1027,7 +1028,7 @@ type Test struct{}
 func (m *Test) TestRepoLocal(
 	ctx context.Context,
 	// +defaultPath="./.git"
-	git *dagger.GitRepository,
+	git *core.GitRepository,
 ) (string, error) {
 	return m.commitAndRef(ctx, git.Head())
 }
@@ -1035,7 +1036,7 @@ func (m *Test) TestRepoLocal(
 func (m *Test) TestRepoLocalAbs(
 	ctx context.Context,
 	// +defaultPath="/"
-	git *dagger.GitRepository,
+	git *core.GitRepository,
 ) (string, error) {
 	return m.commitAndRef(ctx, git.Head())
 }
@@ -1043,7 +1044,7 @@ func (m *Test) TestRepoLocalAbs(
 func (m *Test) TestRepoRemote(
 	ctx context.Context,
 	// +defaultPath="https://github.com/dagger/dagger.git"
-	git *dagger.GitRepository,
+	git *core.GitRepository,
 ) (string, error) {
 	return m.commitAndRef(ctx, git.Tag("v0.18.2"))
 }
@@ -1051,7 +1052,7 @@ func (m *Test) TestRepoRemote(
 func (m *Test) TestRefLocal(
 	ctx context.Context,
 	// +defaultPath="./.git"
-	git *dagger.GitRef,
+	git *core.GitRef,
 ) (string, error) {
 	return m.commitAndRef(ctx, git)
 }
@@ -1059,12 +1060,12 @@ func (m *Test) TestRefLocal(
 func (m *Test) TestRefRemote(
 	ctx context.Context,
 	// +defaultPath="https://github.com/dagger/dagger.git#v0.18.3"
-	git *dagger.GitRef,
+	git *core.GitRef,
 ) (string, error) {
 	return m.commitAndRef(ctx, git)
 }
 
-func (m *Test) commitAndRef(ctx context.Context, ref *dagger.GitRef) (string, error) {
+func (m *Test) commitAndRef(ctx context.Context, ref *core.GitRef) (string, error) {
 	commit, err := ref.Commit(ctx)
 	if err != nil {
 		return "", err
@@ -1223,7 +1224,7 @@ public class Test {
 				// defaultPath("/") proves here.
 				sdkSrc, err := filepath.Abs("../../sdk/java")
 				require.NoError(t, err)
-				modGen = modGen.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
+				modGen = modGen.WithMountedDirectory("sdk/java", core.NewQuery(c).Host().Directory(sdkSrc))
 			}
 
 			modGen = modGen.
@@ -1277,15 +1278,15 @@ func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T)
 	// files are covered by TestContextGitSubmodule/TestContextGitWorktree.)
 
 	// A module in a plain directory: no git checkout anywhere.
-	noGit := func(c *dagger.Client) *dagger.Container {
-		return c.Container().From(golangImage).
+	noGit := func(c *dagger.Client) *core.Container {
+		return core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "go/path-context-git-optional"))
 	}
 	// A submodule-shaped checkout whose real git dir is gone: worktree files
 	// present, .git is a pointer file at a dead path.
-	brokenGit := func(c *dagger.Client) *dagger.Container {
+	brokenGit := func(c *dagger.Client) *core.Container {
 		return moduleFixture(t, c, "go/path-context-git-optional").
 			WithExec([]string{"sh", "-c", "rm -rf .git && echo 'gitdir: ../../.git/modules/work' > .git"})
 	}
@@ -1512,7 +1513,7 @@ func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 
 	remoteModule := "github.com/dagger/dagger-test-modules"
 	remoteRef := "context-git"
-	g := c.Git(remoteModule).Ref(remoteRef)
+	g := core.NewQuery(c).Git(remoteModule).Ref(remoteRef)
 	commit, err := g.CommitSHA(ctx)
 	require.NoError(t, err)
 	fullref, err := g.Name(ctx)
@@ -1560,7 +1561,7 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 
 	for _, version := range []string{"", "main", "context-git", "v1.2.3"} {
 		t.Run("version="+version, func(ctx context.Context, t *testctx.T) {
-			g := c.Git(remoteRepo).Ref(cmp.Or(version, "HEAD"))
+			g := core.NewQuery(c).Git(remoteRepo).Ref(cmp.Or(version, "HEAD"))
 			fullref, err := g.Name(ctx)
 			require.NoError(t, err)
 			require.Contains(t, fullref, version)
@@ -1636,7 +1637,7 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 	// code path as branches, without the risk of a branch being pruned.
 	pin := "v1.2.3"
 
-	g := c.Git(remoteRepo).Ref(pin)
+	g := core.NewQuery(c).Git(remoteRepo).Ref(pin)
 	fullref, err := g.Name(ctx)
 	require.NoError(t, err)
 
@@ -1680,8 +1681,8 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 	modGen := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar")).
-		WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
+		WithDirectory("/work/backend", core.NewQuery(c).Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar")).
+		WithDirectory("/work/frontend", core.NewQuery(c).Directory().WithNewFile("bar.txt", "bar")).
 		With(withModuleFixture(t, c, "/work", "go/path-ignore")).
 		WithWorkdir("/work")
 
@@ -1804,7 +1805,7 @@ func (ModuleSuite) TestIgnorePrefiltersExplicitDirectoryArgs(ctx context.Context
 				source: `package main
 
 import (
-	"dagger/test/internal/dagger"
+	"dagger/test/internal/dagger/core"
 )
 
 type Test struct {}
@@ -1814,8 +1815,8 @@ func (t *Test) Call(
   //   "foo.txt",
   //   "bar"
   // ]
-  dir *dagger.Directory,
-) *dagger.Directory {
+  dir *core.Directory,
+) *core.Directory {
  return dir
 }`,
 			},
@@ -1860,11 +1861,11 @@ class Test:
 				modGen := goGitBase(t, c).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					WithDirectory("/work/input", c.
+					WithDirectory("/work/input", core.NewQuery(c).
 						Directory().
 						WithNewFile("foo.txt", "foo").
 						WithNewFile("bar.txt", "bar").
-						WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz"))).
+						WithDirectory("bar", core.NewQuery(c).Directory().WithNewFile("baz.txt", "baz"))).
 					With(withModuleFixture(t, c, "/work", tc.fixture))
 
 				out, err := modGen.With(daggerCall("test", "--dir", "./input", "entries")).Stdout(ctx)
@@ -1924,10 +1925,10 @@ func (ModuleSuite) TestContextParallel(ctx context.Context, t *testctx.T) {
 	c1 := connect(ctx, t)
 	c2 := connect(ctx, t)
 
-	getCtr := func(c *dagger.Client, r string) *dagger.Container {
+	getCtr := func(c *dagger.Client, r string) *core.Container {
 		workdir := "/" + r
 		return goGitBase(t, c).
-			WithMountedDirectory(workdir, c.Host().Directory("../..")).
+			WithMountedDirectory(workdir, core.NewQuery(c).Host().Directory("../..")).
 			WithWorkdir(workdir).
 			WithoutDirectory(filepath.Join(workdir, ".dagger")).
 			WithoutFile(filepath.Join(workdir, "dagger.json")).
@@ -1962,7 +1963,7 @@ func (ModuleSuite) TestDefaultPathNoCache(ctx context.Context, t *testctx.T) {
 		// it's critical that we re-use a single session here like shell/prompt
 		c := connect(ctx, t)
 
-		err = c.ModuleSource(modDir).AsModule().Serve(ctx)
+		err = core.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
 		res1, err := testutil.QueryWithClient[struct {

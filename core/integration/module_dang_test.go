@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -529,12 +530,12 @@ func (DangSuite) TestSelfCallReturningOwnType(_ context.Context, t *testctx.T) {
 	})
 }
 
-func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
+func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *core.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/dang", moduleName))
 	require.NoError(t, err)
 
 	return goGitBase(t, c).
-		WithDirectory("testdata/modules/dang/"+moduleName, c.Host().Directory(modSrc)).
+		WithDirectory("testdata/modules/dang/"+moduleName, core.NewQuery(c).Host().Directory(modSrc)).
 		WithWorkdir("/work/testdata/modules/dang/" + moduleName)
 }

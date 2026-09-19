@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/core/gitref"
@@ -53,7 +54,7 @@ var workspaceRootCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			ws := engineClient.Dagger().CurrentWorkspace()
+			ws := core.NewQuery(engineClient.Dagger()).CurrentWorkspace()
 			address, err := ws.Address(ctx)
 			if err != nil {
 				return fmt.Errorf("load workspace address: %w", err)
@@ -80,7 +81,7 @@ var workspaceCwdCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			cwd, err := engineClient.Dagger().CurrentWorkspace().Cwd(ctx)
+			cwd, err := core.NewQuery(engineClient.Dagger()).CurrentWorkspace().Cwd(ctx)
 			if err != nil {
 				return fmt.Errorf("load workspace cwd: %w", err)
 			}
@@ -109,11 +110,11 @@ With multiple paths, list targets in argument order and label directories.`,
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			ws := engineClient.Dagger().CurrentWorkspace()
+			ws := core.NewQuery(engineClient.Dagger()).CurrentWorkspace()
 			var errs []error
 			var printed bool
 			for _, target := range args {
-				entries, err := ws.Directory(target, dagger.WorkspaceDirectoryOpts{
+				entries, err := ws.Directory(target, core.WorkspaceDirectoryOpts{
 					Include: []string{"*"},
 					Exclude: []string{"*/*"},
 				}).Entries(ctx)
@@ -165,7 +166,7 @@ The output preserves line endings and does not add a final newline.`,
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			ws := engineClient.Dagger().CurrentWorkspace()
+			ws := core.NewQuery(engineClient.Dagger()).CurrentWorkspace()
 			var errs []error
 			for _, target := range args {
 				contents, err := ws.File(target).Contents(ctx)
@@ -190,7 +191,7 @@ var workspaceConfigFileCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			configFile, err := engineClient.Dagger().CurrentWorkspace().ConfigFile(ctx)
+			configFile, err := core.NewQuery(engineClient.Dagger()).CurrentWorkspace().ConfigFile(ctx)
 			if err != nil {
 				return fmt.Errorf("load workspace config file: %w", err)
 			}
@@ -302,10 +303,10 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
-		ws := engineClient.Dagger().CurrentWorkspace()
+		ws := core.NewQuery(engineClient.Dagger()).CurrentWorkspace()
 
 		if workspaceConfigUnset {
-			return ws.WithoutConfigValue(args[0], dagger.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).Export(ctx)
+			return ws.WithoutConfigValue(args[0], core.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).Export(ctx)
 		}
 
 		switch len(args) {
@@ -321,8 +322,8 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key string) error {
-	value, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{Key: key})
+func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *core.Workspace, key string) error {
+	value, err := ws.ConfigRead(ctx, core.WorkspaceConfigReadOpts{Key: key})
 	if err != nil {
 		return err
 	}
@@ -336,7 +337,7 @@ func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspa
 	return err
 }
 
-func writeWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key, value string) error {
+func writeWorkspaceConfig(ctx context.Context, out io.Writer, ws *core.Workspace, key, value string) error {
 	envName := writtenConfigEnvName(key)
 	target := ws
 	creates := false
@@ -347,7 +348,7 @@ func writeWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspa
 			return err
 		}
 	}
-	if err := target.WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).Export(ctx); err != nil {
+	if err := target.WithConfigValue(key, value, core.WorkspaceWithConfigValueOpts{Here: workspaceHere}).Export(ctx); err != nil {
 		return err
 	}
 	if creates {
@@ -382,8 +383,8 @@ func writtenConfigEnvName(key string) string {
 // --here target and the selected config share a directory (or --here is off),
 // the write lands in the selected config, where the env is new iff EnvList (read
 // from that same config) doesn't already list it.
-func workspaceEnvWriteCreates(ctx context.Context, ws *dagger.Workspace, name string, here bool) (bool, *dagger.Workspace, error) {
-	staged := ws.WithConfigEnv(name, dagger.WorkspaceWithConfigEnvOpts{Here: here})
+func workspaceEnvWriteCreates(ctx context.Context, ws *core.Workspace, name string, here bool) (bool, *core.Workspace, error) {
+	staged := ws.WithConfigEnv(name, core.WorkspaceWithConfigEnvOpts{Here: here})
 	if here {
 		configFile, err := ws.ConfigFile(ctx)
 		if err != nil {
@@ -432,7 +433,7 @@ func workspaceEnvWriteCreates(ctx context.Context, ws *dagger.Workspace, name st
 }
 
 func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string, here bool) error {
-	current := dag.CurrentWorkspace()
+	current := core.NewQuery(dag).CurrentWorkspace()
 	previousConfig, err := current.ConfigFile(ctx)
 	if err != nil {
 		return err
@@ -448,7 +449,7 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 			return err
 		}
 	}
-	updated, err := materializeWorkspace(ctx, dag, target.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: name, Here: here}))
+	updated, err := materializeWorkspace(ctx, dag, target.WithModule(ref, core.WorkspaceWithModuleOpts{Name: name, Here: here}))
 	if err != nil {
 		return err
 	}
@@ -466,7 +467,7 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	}
 	// The workspace config may be above the current directory. Use the workspace
 	// root so changes() includes it.
-	isEmpty, err := updated.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: target}).IsEmpty(ctx)
+	isEmpty, err := updated.WithWorkdir(".").Changes(core.WorkspaceChangesOpts{From: target}).IsEmpty(ctx)
 	if err != nil {
 		return err
 	}
@@ -519,7 +520,7 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	return err
 }
 
-func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.Workspace, ref, requestedName string) (string, error) {
+func workspaceInstalledModuleName(ctx context.Context, current, updated *core.Workspace, ref, requestedName string) (string, error) {
 	if requestedName != "" {
 		return requestedName, nil
 	}
@@ -588,7 +589,7 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 
 func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, selection workspacepkg.ModuleSelection, here bool) error {
 	name := selection.Name
-	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutModule(name, dagger.WorkspaceWithoutModuleOpts{Here: here}))
+	updated, err := materializeWorkspace(ctx, dag, core.NewQuery(dag).CurrentWorkspace().WithoutModule(name, core.WorkspaceWithoutModuleOpts{Here: here}))
 	if err != nil {
 		return err
 	}
@@ -613,7 +614,7 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 	return err
 }
 
-func workspaceConfigHostPath(ctx context.Context, ws *dagger.Workspace) (string, error) {
+func workspaceConfigHostPath(ctx context.Context, ws *core.Workspace) (string, error) {
 	configFile, err := ws.ConfigFile(ctx)
 	if err != nil {
 		return "", fmt.Errorf("workspace config file: %w", err)
@@ -1178,7 +1179,7 @@ type workspaceRemoteRow struct {
 }
 
 func loadWorkspaceRemoteRows(ctx context.Context, dag *dagger.Client, remote workspaceRemoteAddress) ([]*workspaceRemoteRow, error) {
-	repo := dag.Git(remote.CloneRef)
+	repo := core.NewQuery(dag).Git(remote.CloneRef)
 	branches, err := repo.Branches(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list branches for %s: %w", remote.CloneRef, err)

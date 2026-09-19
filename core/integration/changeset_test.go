@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -30,13 +31,13 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory with multiple files
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "content1").
 			WithNewFile("dir/file2.txt", "content2").
 			WithNewFile("removed.txt", "to be removed")
 
 		// Create new directory without one of the files
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "content1").
 			WithNewFile("dir/file2.txt", "content2")
 
@@ -54,14 +55,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory with subdirectories and nested files
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep").
 			WithNewFile("remove-dir/file.txt", "remove").
 			WithNewFile("remove-dir/subdir/nested.txt", "nested").
 			WithNewDirectory("empty-dir")
 
 		// Create new directory without the subdirectories
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep")
 
 		changes := newDir.Changes(oldDir)
@@ -86,14 +87,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory with mix of files and directories
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep").
 			WithNewFile("remove-file.txt", "remove me").
 			WithNewFile("remove-dir/file.txt", "in dir").
 			WithNewFile("keep-dir/file.txt", "keep dir")
 
 		// Create new directory keeping some files and directories
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep").
 			WithNewFile("keep-dir/file.txt", "keep dir")
 
@@ -119,12 +120,12 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory with some files
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("existing.txt", "content1").
 			WithNewFile("dir/existing2.txt", "content2")
 
 		// Create new directory with additional files
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("existing.txt", "content1").
 			WithNewFile("dir/existing2.txt", "content2").
 			WithNewFile("added.txt", "new content").
@@ -149,11 +150,11 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("addedFiles excludes directories", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep").
 			WithNewFile("old-dir/file.txt", "new")
 
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep").
 			WithNewFile("old-dir/new-file.txt", "new").
 			WithNewFile("new-dir/file.txt", "new").
@@ -180,14 +181,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("unchanged.txt", "same content").
 			WithNewFile("changed.txt", "original content").
 			WithNewFile("dir/changed2.txt", "original content2").
 			WithNewFile("will-be-removed.txt", "remove me")
 
 		// Create new directory with changes
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("unchanged.txt", "same content").
 			WithNewFile("changed.txt", "modified content").
 			WithNewFile("dir/changed2.txt", "modified content2").
@@ -216,7 +217,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create identical directories
-		dir := c.Directory().
+		dir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "content1").
 			WithNewFile("dir/file2.txt", "content2")
 
@@ -232,10 +233,10 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("modifiedPaths excludes directories", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("dir/file.txt", "old content")
 
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("dir/file.txt", "new content").
 			WithNewFile("dir/added.txt", "added content")
 
@@ -255,11 +256,11 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("diffStats basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("mod.txt", "one\nold\n").
 			WithNewFile("remove.txt", "gone\n")
 
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("mod.txt", "one\nnew\n").
 			WithNewFile("add.txt", "hello\n")
 
@@ -270,7 +271,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			AddedLines   int    `json:"addedLines"`
 			RemovedLines int    `json:"removedLines"`
 		}
-		err := c.QueryBuilder().
+		err := core.NewQuery(c).QueryBuilder().
 			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
 			InlineFragment("Changeset").
@@ -297,10 +298,10 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("diffStats rename includes oldPath", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("old.txt", "same\ncontent\n")
 
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("new.txt", "same\ncontent\n")
 
 		var diffStats []struct {
@@ -310,7 +311,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			AddedLines   int    `json:"addedLines"`
 			RemovedLines int    `json:"removedLines"`
 		}
-		err := c.QueryBuilder().
+		err := core.NewQuery(c).QueryBuilder().
 			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
 			InlineFragment("Changeset").
@@ -331,13 +332,13 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		// This tests whether DiffStats emits entries for every nested
 		// file and subdirectory (current behavior via AllRemoved) or
 		// only the top-level collapsed directory.
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "stay\n").
 			WithNewFile("dir/file1.txt", "one\ntwo\n").
 			WithNewFile("dir/file2.txt", "three\n").
 			WithNewFile("dir/sub/deep.txt", "deep\n")
 
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "stay\n")
 
 		var diffStats []struct {
@@ -346,7 +347,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			AddedLines   int    `json:"addedLines"`
 			RemovedLines int    `json:"removedLines"`
 		}
-		err := c.QueryBuilder().
+		err := core.NewQuery(c).QueryBuilder().
 			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
 			InlineFragment("Changeset").
@@ -402,14 +403,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("unchanged.txt", "same content").
 			WithNewFile("changed.txt", "original content").
 			WithNewFile("dir/changed2.txt", "original content2").
 			WithNewFile("will-be-removed.txt", "remove me")
 
 		// Create new directory with changes
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("unchanged.txt", "same content").
 			WithNewFile("changed.txt", "modified content").
 			WithNewFile("dir/changed2.txt", "modified content2").
@@ -453,12 +454,12 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory with some files
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("existing.txt", "content1").
 			WithNewFile("dir/existing2.txt", "content2")
 
 		// Create new directory with additional files (no modifications)
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("existing.txt", "content1").
 			WithNewFile("dir/existing2.txt", "content2").
 			WithNewFile("added.txt", "new content").
@@ -497,13 +498,13 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory with files to be removed and modified
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("keep-and-change.txt", "original").
 			WithNewFile("remove-me.txt", "will be removed").
 			WithNewFile("remove-dir/file.txt", "in removed dir")
 
 		// Create new directory without removed files but with changes
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("keep-and-change.txt", "modified").
 			WithNewFile("new-file.txt", "newly added")
 
@@ -531,7 +532,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create identical directories
-		dir := c.Directory().
+		dir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "content1").
 			WithNewFile("dir/file2.txt", "content2")
 
@@ -549,14 +550,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory with nested structure
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("root.txt", "root content").
 			WithNewFile("level1/file.txt", "level1 original").
 			WithNewFile("level1/level2/file.txt", "level2 original").
 			WithNewFile("level1/level2/level3/deep.txt", "deep original")
 
 		// Create new directory with changes at various levels
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("root.txt", "root content").                       // unchanged
 			WithNewFile("level1/file.txt", "level1 modified").             // changed
 			WithNewFile("level1/level2/file.txt", "level2 original").      // unchanged
@@ -613,12 +614,12 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("layer is scoped to subdirectory changes", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
-			WithDirectory("public", c.Directory())
+		oldDir := core.NewQuery(c).Directory().
+			WithDirectory("public", core.NewQuery(c).Directory())
 
 		newDir := oldDir.
 			WithNewFile("Gemfile", "source \"https://rubygems.org\"").
-			WithDirectory("public", c.Directory().
+			WithDirectory("public", core.NewQuery(c).Directory().
 				WithNewFile("asset_foo", "foo").
 				WithNewFile("asset_bar", "bar"))
 
@@ -635,8 +636,8 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("layer ignores out-of-scope changes when scoped to subdirectory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
-			WithDirectory("public", c.Directory())
+		oldDir := core.NewQuery(c).Directory().
+			WithDirectory("public", core.NewQuery(c).Directory())
 
 		newDir := oldDir.
 			WithNewFile("Gemfile", "source \"https://rubygems.org\"")
@@ -652,14 +653,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("layer is relative to nested scoped path", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
-			WithDirectory("assets", c.Directory().
-				WithDirectory("public", c.Directory()))
+		oldDir := core.NewQuery(c).Directory().
+			WithDirectory("assets", core.NewQuery(c).Directory().
+				WithDirectory("public", core.NewQuery(c).Directory()))
 
 		newDir := oldDir.
 			WithNewFile("Gemfile", "source \"https://rubygems.org\"").
-			WithDirectory("assets", c.Directory().
-				WithDirectory("public", c.Directory().
+			WithDirectory("assets", core.NewQuery(c).Directory().
+				WithDirectory("public", core.NewQuery(c).Directory().
 					WithNewFile("asset_foo", "foo").
 					WithNewFile("asset_bar", "bar")))
 
@@ -676,11 +677,11 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("scoped layer can be applied at explicit destination", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
-			WithDirectory("public", c.Directory())
+		oldDir := core.NewQuery(c).Directory().
+			WithDirectory("public", core.NewQuery(c).Directory())
 
 		newDir := oldDir.
-			WithDirectory("public", c.Directory().
+			WithDirectory("public", core.NewQuery(c).Directory().
 				WithNewFile("asset_foo", "foo").
 				WithNewFile("asset_bar", "bar"))
 
@@ -690,7 +691,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"asset_foo", "asset_bar"}, entries)
 
-		applied := c.Directory().WithDirectory("public", layer)
+		applied := core.NewQuery(c).Directory().WithDirectory("public", layer)
 		publicEntries, err := applied.Directory("public").Entries(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"asset_foo", "asset_bar"}, publicEntries)
@@ -700,11 +701,11 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory with a single file
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "content1")
 
 		// Create new directory with multiple files
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "content1").
 			WithNewFile("file2.txt", "content2") // new file
 
@@ -723,7 +724,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.Empty(t, removedFiles)
 
 		// apply changes to a subdirectory
-		d := c.Directory().WithNewDirectory("subdir").Directory("/subdir").WithChanges(changes)
+		d := core.NewQuery(c).Directory().WithNewDirectory("subdir").Directory("/subdir").WithChanges(changes)
 
 		entries, err := d.Entries(ctx)
 		require.NoError(t, err)
@@ -743,14 +744,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 	t.Run("test changes are restricted to subdir", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		oldDir := c.Directory().
+		oldDir := core.NewQuery(c).Directory().
 			WithNewFile("ignored.txt", "").
 			WithNewDirectory("new-dir").
 			Directory("/new-dir").
 			WithNewFile("file1.txt", "content1").
 			WithTimestamps(0) // without this file1.txt will have different timestamps, which would cause it to show up as being modified
 
-		newDir := c.Directory().
+		newDir := core.NewQuery(c).Directory().
 			WithNewDirectory("new-dir").
 			Directory("/new-dir").
 			WithNewFile("file1.txt", "content1").
@@ -772,7 +773,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.Empty(t, removedFiles)
 
 		// re-create the same "new-dir" directory structure, and apply changes to it
-		d := c.Directory().WithNewDirectory("new-dir").Directory("/new-dir").WithChanges(changes)
+		d := core.NewQuery(c).Directory().WithNewDirectory("new-dir").Directory("/new-dir").WithChanges(changes)
 
 		// make sure we only got file2.txt added
 		entries, err := d.Entries(ctx)
@@ -846,7 +847,7 @@ func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
 }
 
 func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
-	s.testChangeApplying(t, func(dest *dagger.Directory, source *dagger.Changeset) *dagger.Directory {
+	s.testChangeApplying(t, func(dest *core.Directory, source *core.Changeset) *core.Directory {
 		return dest.WithChanges(source)
 	}, false)
 	s.testWithChangesSymlinks(t)
@@ -863,10 +864,10 @@ func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
 func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngineContainer(c))).Start(ctx)
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngineContainer(c))).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { engineSvc.Stop(ctx) })
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	keeper, err := dagger.Connect(ctx,
@@ -875,8 +876,8 @@ func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx conte
 	require.NoError(t, err)
 	t.Cleanup(func() { keeper.Close() })
 
-	parentOf := func(cl *dagger.Client) *dagger.Directory {
-		return cl.Directory().WithNewFile("marker.txt", "shared parent")
+	parentOf := func(cl *dagger.Client) *core.Directory {
+		return core.NewQuery(cl).Directory().WithNewFile("marker.txt", "shared parent")
 	}
 
 	// keeper takes shared ownership of the parent's cache entry so it outlives
@@ -890,7 +891,7 @@ func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx conte
 		dagger.WithRunnerHost(endpoint),
 		dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
-	_, err = parentOf(secondSession).WithChanges(secondSession.Changeset()).Sync(ctx)
+	_, err = parentOf(secondSession).WithChanges(core.NewQuery(secondSession).Changeset()).Sync(ctx)
 	require.NoError(t, err)
 	require.NoError(t, secondSession.Close())
 
@@ -901,7 +902,7 @@ func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx conte
 	// the derived entry is collected.
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		require.NoError(t, keeper.Engine().LocalCache().Prune(ctx))
+		require.NoError(t, core.NewQuery(keeper).Engine().LocalCache().Prune(ctx))
 		// Vary the pattern so each call is a fresh (uncached) evaluation that
 		// has to mount the parent snapshot.
 		pattern := fmt.Sprintf("*%d*", time.Now().UnixNano())
@@ -915,17 +916,17 @@ func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx conte
 }
 
 func (s ChangesetSuite) TestChangesAsPatch(ctx context.Context, t *testctx.T) {
-	s.testChangeApplying(t, func(dest *dagger.Directory, source *dagger.Changeset) *dagger.Directory {
+	s.testChangeApplying(t, func(dest *core.Directory, source *core.Changeset) *core.Directory {
 		return dest.WithPatchFile(source.AsPatch())
 	}, true)
 }
 
-func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Directory, *dagger.Changeset) *dagger.Directory, leaveDirs bool) {
+func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*core.Directory, *core.Changeset) *core.Directory, leaveDirs bool) {
 	t.Run("basic usage with added, changed, and removed files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create base directory
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "unchanged").
 			WithNewFile("change.txt", "original").
 			WithNewFile("remove.txt", "will be removed").
@@ -935,7 +936,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		beforeDir := baseDir
 
 		// Create after directory with changes
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "unchanged").           // unchanged
 			WithNewFile("change.txt", "modified").          // changed
 			WithNewFile("add.txt", "newly added").          // added
@@ -1000,13 +1001,13 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		// to" lines still carried the a/ b/ dirs (unlike the stripped ---/+++
 		// lines), producing a patch git apply rejected with "inconsistent old
 		// filename". Applying such a changeset must still land the rename.
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "unchanged").
 			WithNewFile("old-name.txt", "same content across the rename\n")
 
 		beforeDir := baseDir
 
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "unchanged").
 			WithNewFile("new-name.txt", "same content across the rename\n")
 
@@ -1029,7 +1030,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		c := connect(ctx, t)
 
 		// Create base directory with some files
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("existing.txt", "existing content")
 
 		// Create before directory (same as base)
@@ -1072,7 +1073,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		c := connect(ctx, t)
 
 		// Create base directory
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "original 1").
 			WithNewFile("dir/file2.txt", "original 2")
 
@@ -1080,7 +1081,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		beforeDir := baseDir
 
 		// Create after directory with modifications
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "modified 1").
 			WithNewFile("dir/file2.txt", "modified 2")
 
@@ -1104,7 +1105,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		c := connect(ctx, t)
 
 		// Create base directory
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep this").
 			WithNewFile("remove1.txt", "remove this").
 			WithNewFile("dir/remove2.txt", "remove this too")
@@ -1113,7 +1114,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		beforeDir := baseDir
 
 		// Create after directory with files removed
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep this")
 		// Note: remove1.txt and dir/remove2.txt are not included
 
@@ -1138,7 +1139,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		c := connect(ctx, t)
 
 		// Create base directory
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("file1.txt", "content1").
 			WithNewFile("dir/file2.txt", "content2")
 
@@ -1175,12 +1176,12 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		c := connect(ctx, t)
 
 		// Create before directory
-		beforeDir := c.Directory().
+		beforeDir := core.NewQuery(c).Directory().
 			WithNewFile("common.txt", "before").
 			WithNewFile("only-in-before.txt", "before only")
 
 		// Create after directory with changes
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("common.txt", "after").
 			WithNewFile("only-in-after.txt", "after only")
 		// Note: only-in-before.txt is removed
@@ -1189,7 +1190,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		changes := afterDir.Changes(beforeDir)
 
 		// Apply changes to a different base directory
-		differentBaseDir := c.Directory().
+		differentBaseDir := core.NewQuery(c).Directory().
 			WithNewFile("common.txt", "base version").
 			WithNewFile("only-in-before.txt", "base has this too").
 			WithNewFile("base-specific.txt", "only in base")
@@ -1223,7 +1224,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		c := connect(ctx, t)
 
 		// Create complex base directory
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("root.txt", "root content").
 			WithNewFile("level1/file1.txt", "level1 content").
 			WithNewFile("level1/level2/file2.txt", "level2 content").
@@ -1283,7 +1284,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		c := connect(ctx, t)
 
 		// Create base directory with nested structure
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep this").
 			WithNewFile("removedir/file1.txt", "remove me").
 			WithNewFile("removedir/subdir/file2.txt", "remove me too").
@@ -1293,7 +1294,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		beforeDir := baseDir
 
 		// Create after directory without the directories
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep this")
 
 		// Create changes
@@ -1319,7 +1320,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		c := connect(ctx, t)
 
 		// Create base directory with empty directories
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("file.txt", "content").
 			WithNewDirectory("empty1").
 			WithNewDirectory("empty2")
@@ -1327,7 +1328,7 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		beforeDir := baseDir
 
 		// Create after directory removing one empty dir and adding another
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("file.txt", "content").
 			WithNewDirectory("empty2").
 			WithNewDirectory("new-empty")
@@ -1356,18 +1357,18 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 	t.Run("empty directories in subdirectory target", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		beforeDir := c.Directory().
+		beforeDir := core.NewQuery(c).Directory().
 			WithNewDirectory("base").
 			Directory("/base")
 
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewDirectory("base").
 			Directory("/base").
 			WithNewDirectory("new-empty")
 
 		changes := afterDir.Changes(beforeDir)
 
-		resultDir := c.Directory().
+		resultDir := core.NewQuery(c).Directory().
 			WithNewDirectory("subdir").
 			Directory("/subdir").
 			WithChanges(changes)
@@ -1384,15 +1385,15 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 	t.Run("file replaced by empty directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		beforeDir := c.Directory().
+		beforeDir := core.NewQuery(c).Directory().
 			WithNewFile("node", "file")
 
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewDirectory("node")
 
 		changes := afterDir.Changes(beforeDir)
 
-		baseDir := c.Directory().
+		baseDir := core.NewQuery(c).Directory().
 			WithNewFile("node", "different base file")
 
 		resultDir := baseDir.WithChanges(changes)
@@ -1409,17 +1410,17 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 	t.Run("file replaced by directory hides older lower directory contents", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		seed := c.Container().
-			WithDirectory("/node", c.Directory().WithNewFile("hidden.txt", "hidden")).
+		seed := core.NewQuery(c).Container().
+			WithDirectory("/node", core.NewQuery(c).Directory().WithNewFile("hidden.txt", "hidden")).
 			WithoutDirectory("/node").
 			WithNewFile("/node", "file")
 
 		seedRef, err := seed.Publish(ctx, registryRef("with-changes-file-to-dir-opaque-seed"))
 		require.NoError(t, err)
 
-		baseDir := c.Container().From(seedRef).Rootfs()
-		beforeDir := c.Directory()
-		afterDir := c.Directory().WithNewFile("node/new.txt", "new")
+		baseDir := core.NewQuery(c).Container().From(seedRef).Rootfs()
+		beforeDir := core.NewQuery(c).Directory()
+		afterDir := core.NewQuery(c).Directory().WithNewFile("node/new.txt", "new")
 		changes := afterDir.Changes(beforeDir)
 
 		resultDir := baseDir.WithChanges(changes)
@@ -1432,24 +1433,24 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 	t.Run("directory replaced by file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		beforeDir := c.Directory().
+		beforeDir := core.NewQuery(c).Directory().
 			WithNewFile("node/old.txt", "old")
 
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("node", "now file")
 
 		changes := afterDir.Changes(beforeDir)
 
 		resultDir := beforeDir.WithChanges(changes)
 
-		stat, err := resultDir.Stat(ctx, "node", dagger.DirectoryStatOpts{
+		stat, err := resultDir.Stat(ctx, "node", core.DirectoryStatOpts{
 			DoNotFollowSymlinks: true,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, stat)
 		fileType, err := stat.FileType(ctx)
 		require.NoError(t, err)
-		require.Equal(t, dagger.FileTypeRegularType, fileType)
+		require.Equal(t, core.FileTypeRegularType, fileType)
 
 		contents, err := resultDir.File("node").Contents(ctx)
 		require.NoError(t, err)
@@ -1461,7 +1462,7 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 	t.Run("symlink changes", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		beforeDir := c.Directory().
+		beforeDir := core.NewQuery(c).Directory().
 			WithNewFile("target-old.txt", "old").
 			WithNewFile("target-new.txt", "new").
 			WithNewFile("keep-target.txt", "keep").
@@ -1472,7 +1473,7 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 			WithNewFile("link-dir-target/file.txt", "dir target").
 			WithSymlink("link-dir-target", "remove-dir-link")
 
-		afterDir := c.Directory().
+		afterDir := core.NewQuery(c).Directory().
 			WithNewFile("target-old.txt", "old").
 			WithNewFile("target-new.txt", "new").
 			WithNewFile("keep-target.txt", "keep").
@@ -1485,8 +1486,8 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 
 		resultDir := beforeDir.WithChanges(afterDir.Changes(beforeDir))
 
-		assertFileType := func(p string, expected dagger.FileType) {
-			stat, err := resultDir.Stat(ctx, p, dagger.DirectoryStatOpts{
+		assertFileType := func(p string, expected core.FileType) {
+			stat, err := resultDir.Stat(ctx, p, core.DirectoryStatOpts{
 				DoNotFollowSymlinks: true,
 			})
 			require.NoError(t, err)
@@ -1496,11 +1497,11 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 			require.Equal(t, expected, fileType, p)
 		}
 
-		assertFileType("retarget", dagger.FileTypeSymlinkType)
-		assertFileType("file-to-link", dagger.FileTypeSymlinkType)
-		assertFileType("new-link", dagger.FileTypeSymlinkType)
-		assertFileType("dangling-link", dagger.FileTypeSymlinkType)
-		assertFileType("link-to-file", dagger.FileTypeRegularType)
+		assertFileType("retarget", core.FileTypeSymlinkType)
+		assertFileType("file-to-link", core.FileTypeSymlinkType)
+		assertFileType("new-link", core.FileTypeSymlinkType)
+		assertFileType("dangling-link", core.FileTypeSymlinkType)
+		assertFileType("link-to-file", core.FileTypeRegularType)
 
 		contents, err := resultDir.File("retarget").Contents(ctx)
 		require.NoError(t, err)
@@ -1518,7 +1519,7 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "now regular", contents)
 
-		exists, err := resultDir.Exists(ctx, "remove-link", dagger.DirectoryExistsOpts{
+		exists, err := resultDir.Exists(ctx, "remove-link", core.DirectoryExistsOpts{
 			DoNotFollowSymlinks: true,
 		})
 		require.NoError(t, err)
@@ -1528,7 +1529,7 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "keep", contents)
 
-		exists, err = resultDir.Exists(ctx, "remove-dir-link", dagger.DirectoryExistsOpts{
+		exists, err = resultDir.Exists(ctx, "remove-dir-link", core.DirectoryExistsOpts{
 			DoNotFollowSymlinks: true,
 		})
 		require.NoError(t, err)
@@ -1543,7 +1544,7 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 func (ChangesetSuite) TestEmpty(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	baseDir := c.Directory().
+	baseDir := core.NewQuery(c).Directory().
 		WithNewFile("file.txt", "content")
 
 	// empty
@@ -1581,7 +1582,7 @@ func (ChangesetSuite) TestEmpty(ctx context.Context, t *testctx.T) {
 func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	baseDir := c.Directory().
+	baseDir := core.NewQuery(c).Directory().
 		WithNewFile("filea.txt", "initial file a content").
 		WithNewFile("fileb.txt", "initial file b content").
 		WithNewFile("filec.txt", "initial file c content").
@@ -1653,8 +1654,8 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 
 		t.Run("fail early", func(ctx context.Context, t *testctx.T) {
 			// FAIL_EARLY checks file-level conflicts before attempting merge
-			_, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-				OnConflict: dagger.ChangesetMergeConflictFailEarly,
+			_, err := original.WithChangeset(other, core.ChangesetWithChangesetOpts{
+				OnConflict: core.ChangesetMergeConflictFailEarly,
 			}).Sync(ctx)
 			require.ErrorContains(t, err, "filea.txt")
 			require.ErrorContains(t, err, "fileb.txt")
@@ -1667,15 +1668,15 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 			_, err := original.WithChangeset(other).Sync(ctx)
 			require.Error(t, err)
 			// explicit FAIL
-			_, err = original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-				OnConflict: dagger.ChangesetMergeConflictFail,
+			_, err = original.WithChangeset(other, core.ChangesetWithChangesetOpts{
+				OnConflict: core.ChangesetMergeConflictFail,
 			}).Sync(ctx)
 			require.Error(t, err)
 		})
 
 		t.Run("leave conflict markers", func(ctx context.Context, t *testctx.T) {
-			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-				OnConflict: dagger.ChangesetMergeConflictLeaveConflictMarkers,
+			res, err := original.WithChangeset(other, core.ChangesetWithChangesetOpts{
+				OnConflict: core.ChangesetMergeConflictLeaveConflictMarkers,
 			}).Sync(ctx)
 			require.NoError(t, err)
 
@@ -1703,8 +1704,8 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("prefer ours", func(ctx context.Context, t *testctx.T) {
-			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-				OnConflict: dagger.ChangesetMergeConflictPreferOurs,
+			res, err := original.WithChangeset(other, core.ChangesetWithChangesetOpts{
+				OnConflict: core.ChangesetMergeConflictPreferOurs,
 			}).Sync(ctx)
 			require.NoError(t, err)
 
@@ -1740,8 +1741,8 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("prefer theirs", func(ctx context.Context, t *testctx.T) {
-			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-				OnConflict: dagger.ChangesetMergeConflictPreferTheirs,
+			res, err := original.WithChangeset(other, core.ChangesetWithChangesetOpts{
+				OnConflict: core.ChangesetMergeConflictPreferTheirs,
 			}).Sync(ctx)
 			require.NoError(t, err)
 
@@ -1845,7 +1846,7 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	baseDir := c.Directory().
+	baseDir := core.NewQuery(c).Directory().
 		WithNewFile("filea.txt", "initial file a content").
 		WithNewFile("fileb.txt", "initial file b content").
 		WithNewFile("filec.txt", "initial file c content").
@@ -1859,7 +1860,7 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			Changes(baseDir)
 
 		// WithChangesets with empty array should return unchanged changeset
-		res, err := original.WithChangesets([]*dagger.Changeset{}).Sync(ctx)
+		res, err := original.WithChangesets([]*core.Changeset{}).Sync(ctx)
 		require.NoError(t, err)
 
 		// Verify the changeset is unchanged
@@ -1883,7 +1884,7 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			Changes(baseDir)
 
 		// WithChangesets with single element should work like WithChangeset
-		res, err := original.WithChangesets([]*dagger.Changeset{other}).Sync(ctx)
+		res, err := original.WithChangesets([]*core.Changeset{other}).Sync(ctx)
 		require.NoError(t, err)
 
 		modifiedPaths, err := res.ModifiedPaths(ctx)
@@ -1921,18 +1922,18 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 
 		for _, tc := range []struct {
 			name  string
-			build func() (*dagger.Changeset, error)
+			build func() (*core.Changeset, error)
 		}{
 			{
 				name: "from original",
-				build: func() (*dagger.Changeset, error) {
-					return original.WithChangesets([]*dagger.Changeset{changeset1, changeset2, changeset3}).Sync(ctx)
+				build: func() (*core.Changeset, error) {
+					return original.WithChangesets([]*core.Changeset{changeset1, changeset2, changeset3}).Sync(ctx)
 				},
 			},
 			{
 				name: "merge array",
-				build: func() (*dagger.Changeset, error) {
-					return c.Changeset().WithChangesets([]*dagger.Changeset{original, changeset1, changeset2, changeset3}).Sync(ctx)
+				build: func() (*core.Changeset, error) {
+					return core.NewQuery(c).Changeset().WithChangesets([]*core.Changeset{original, changeset1, changeset2, changeset3}).Sync(ctx)
 				},
 			},
 		} {
@@ -1989,8 +1990,8 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			Changes(baseDir)
 
 		// FAIL_EARLY should detect conflicts before attempting merge
-		_, err := original.WithChangesets([]*dagger.Changeset{changeset1, changeset2}, dagger.ChangesetWithChangesetsOpts{
-			OnConflict: dagger.ChangesetsMergeConflictFailEarly,
+		_, err := original.WithChangesets([]*core.Changeset{changeset1, changeset2}, core.ChangesetWithChangesetsOpts{
+			OnConflict: core.ChangesetsMergeConflictFailEarly,
 		}).Sync(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "filea.txt")
@@ -2011,8 +2012,8 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			Changes(baseDir)
 
 		// FAIL_EARLY should detect conflicts between any pair of changesets
-		_, err := original.WithChangesets([]*dagger.Changeset{changeset1, changeset2}, dagger.ChangesetWithChangesetsOpts{
-			OnConflict: dagger.ChangesetsMergeConflictFailEarly,
+		_, err := original.WithChangesets([]*core.Changeset{changeset1, changeset2}, core.ChangesetWithChangesetsOpts{
+			OnConflict: core.ChangesetsMergeConflictFailEarly,
 		}).Sync(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "fileb.txt")
@@ -2029,12 +2030,12 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			Changes(baseDir)
 
 		// FAIL is the default - attempts merge and fails if conflicts occur
-		_, err := original.WithChangesets([]*dagger.Changeset{changeset1}).Sync(ctx)
+		_, err := original.WithChangesets([]*core.Changeset{changeset1}).Sync(ctx)
 		require.Error(t, err)
 
 		// explicit FAIL
-		_, err = original.WithChangesets([]*dagger.Changeset{changeset1}, dagger.ChangesetWithChangesetsOpts{
-			OnConflict: dagger.ChangesetsMergeConflictFail,
+		_, err = original.WithChangesets([]*core.Changeset{changeset1}, core.ChangesetWithChangesetsOpts{
+			OnConflict: core.ChangesetsMergeConflictFail,
 		}).Sync(ctx)
 		require.Error(t, err)
 	})
@@ -2064,7 +2065,7 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 
 		// Octopus merge
-		octopusResult, err := original.WithChangesets([]*dagger.Changeset{changeset1, changeset2}).Sync(ctx)
+		octopusResult, err := original.WithChangesets([]*core.Changeset{changeset1, changeset2}).Sync(ctx)
 		require.NoError(t, err)
 
 		// Both should have the same paths
@@ -2104,7 +2105,7 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 		// Test with many changesets (simulating the 10-20 changeset use case)
 		original := baseDir.Changes(baseDir) // empty changeset
 
-		changesets := make([]*dagger.Changeset, 10)
+		changesets := make([]*core.Changeset, 10)
 		for i := range 10 {
 			changesets[i] = baseDir.
 				WithNewFile(fmt.Sprintf("newfile%d.txt", i), fmt.Sprintf("content from changeset %d", i)).
@@ -2138,7 +2139,7 @@ func (ChangesetSuite) TestSameFileRegionMerge(ctx context.Context, t *testctx.T)
 	for i := range lines {
 		lines[i] = fmt.Sprintf("line%d", i+1)
 	}
-	base := c.Directory().WithNewFile("f.txt", strings.Join(lines, "\n")+"\n")
+	base := core.NewQuery(c).Directory().WithNewFile("f.txt", strings.Join(lines, "\n")+"\n")
 
 	withLine := func(in []string, n int, text string) []string {
 		out := slices.Clone(in)
@@ -2148,7 +2149,7 @@ func (ChangesetSuite) TestSameFileRegionMerge(ctx context.Context, t *testctx.T)
 	fileContent := func(in []string) string {
 		return strings.Join(in, "\n") + "\n"
 	}
-	edit := func(n int, text string) *dagger.Changeset {
+	edit := func(n int, text string) *core.Changeset {
 		return base.
 			WithNewFile("f.txt", fileContent(withLine(lines, n, text))).
 			Changes(base)
@@ -2169,8 +2170,8 @@ func (ChangesetSuite) TestSameFileRegionMerge(ctx context.Context, t *testctx.T)
 	})
 
 	t.Run("octopus", func(ctx context.Context, t *testctx.T) {
-		merged, err := c.Changeset().
-			WithChangesets([]*dagger.Changeset{top, mid, bot}).
+		merged, err := core.NewQuery(c).Changeset().
+			WithChangesets([]*core.Changeset{top, mid, bot}).
 			Sync(ctx)
 		require.NoError(t, err)
 		content, err := merged.After().File("f.txt").Contents(ctx)
@@ -2205,7 +2206,7 @@ func (ChangesetSuite) TestSameFileRegionMerge(ctx context.Context, t *testctx.T)
 func (ChangesetSuite) TestMergePhantomStatOnlyChanges(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	baseDir := c.Directory().
+	baseDir := core.NewQuery(c).Directory().
 		WithNewFile(".git/HEAD", "ref: refs/heads/master\n").
 		WithNewFile("app.txt", "original app content").
 		WithNewFile("other.txt", "untouched content")
@@ -2265,9 +2266,9 @@ func (ChangesetSuite) TestMergePhantomStatOnlyChanges(ctx context.Context, t *te
 
 func (ChangesetSuite) TestFilter(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	before := c.Directory().WithNewFile("src/edit.txt", "old").WithNewFile("src/delete.txt", "delete").WithNewFile("docs/readme.txt", "docs")
+	before := core.NewQuery(c).Directory().WithNewFile("src/edit.txt", "old").WithNewFile("src/delete.txt", "delete").WithNewFile("docs/readme.txt", "docs")
 	all := before.WithNewFile("src/edit.txt", "new").WithoutFile("src/delete.txt").WithNewFile("src/add.txt", "added").WithNewFile("docs/readme.txt", "new docs").Changes(before)
-	selected := all.Filter(dagger.ChangesetFilterOpts{Include: []string{"src/**"}, Exclude: []string{"src/add.txt"}})
+	selected := all.Filter(core.ChangesetFilterOpts{Include: []string{"src/**"}, Exclude: []string{"src/add.txt"}})
 	added, err := selected.AddedPaths(ctx)
 	require.NoError(t, err)
 	require.Empty(t, added)
@@ -2292,9 +2293,9 @@ func (ChangesetSuite) TestFilter(ctx context.Context, t *testctx.T) {
 // must treat it as one file removal, not a directory removal.
 func (ChangesetSuite) TestFilterDeletionKeepsSiblings(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	before := c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b")
+	before := core.NewQuery(c).Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b")
 	all := before.WithoutFile("src/a.txt").WithNewFile("other.txt", "other").Changes(before)
-	selected := all.Filter(dagger.ChangesetFilterOpts{Include: []string{"src/a.txt"}})
+	selected := all.Filter(core.ChangesetFilterOpts{Include: []string{"src/a.txt"}})
 
 	removed, err := selected.RemovedPaths(ctx)
 	require.NoError(t, err)
@@ -2314,12 +2315,12 @@ func (ChangesetSuite) TestFilterDeletionKeepsSiblings(ctx context.Context, t *te
 	// A directory that really is gone on the after side still reports as
 	// removed, and applying the selection removes it.
 	t.Run("whole directory", func(ctx context.Context, t *testctx.T) {
-		before := c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b").WithNewFile("keep.txt", "keep")
+		before := core.NewQuery(c).Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b").WithNewFile("keep.txt", "keep")
 		all := before.WithoutDirectory("src").WithNewFile("other.txt", "other").Changes(before)
 		unfiltered, err := all.RemovedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"src/"}, unfiltered)
-		selected := all.Filter(dagger.ChangesetFilterOpts{Include: []string{"src/**"}})
+		selected := all.Filter(core.ChangesetFilterOpts{Include: []string{"src/**"}})
 		removed, err := selected.RemovedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, unfiltered, removed)
@@ -2331,37 +2332,37 @@ func (ChangesetSuite) TestFilterDeletionKeepsSiblings(ctx context.Context, t *te
 
 func (ChangesetSuite) TestFilterRemovedDirectoryKeepsUnselectedEntries(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	before := c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b").
+	before := core.NewQuery(c).Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b").
 		WithNewFile("src/nested/c.txt", "c").WithNewFile("src/nested/d.txt", "d").
 		WithNewDirectory("src/empty").WithNewFile("keep.txt", "keep")
 	all := before.WithoutDirectory("src").WithNewFile("other.txt", "other").Changes(before)
 	for _, tc := range []struct {
 		name    string
-		filter  dagger.ChangesetFilterOpts
+		filter  core.ChangesetFilterOpts
 		removed []string
-		after   *dagger.Directory
+		after   *core.Directory
 	}{
 		{
 			name:    "include one file",
-			filter:  dagger.ChangesetFilterOpts{Include: []string{"src/a.txt"}},
+			filter:  core.ChangesetFilterOpts{Include: []string{"src/a.txt"}},
 			removed: []string{"src/a.txt"},
 			after:   before.WithoutFile("src/a.txt"),
 		},
 		{
 			name:    "exclude siblings",
-			filter:  dagger.ChangesetFilterOpts{Include: []string{"src/**"}, Exclude: []string{"src/b.txt", "src/nested", "src/empty"}},
+			filter:  core.ChangesetFilterOpts{Include: []string{"src/**"}, Exclude: []string{"src/b.txt", "src/nested", "src/empty"}},
 			removed: []string{"src/a.txt"},
 			after:   before.WithoutFile("src/a.txt"),
 		},
 		{
 			name:    "nested file",
-			filter:  dagger.ChangesetFilterOpts{Include: []string{"src/nested/c.txt"}},
+			filter:  core.ChangesetFilterOpts{Include: []string{"src/nested/c.txt"}},
 			removed: []string{"src/nested/c.txt"},
 			after:   before.WithoutFile("src/nested/c.txt"),
 		},
 		{
 			name:    "whole subdirectory",
-			filter:  dagger.ChangesetFilterOpts{Include: []string{"src/nested/**"}},
+			filter:  core.ChangesetFilterOpts{Include: []string{"src/nested/**"}},
 			removed: []string{"src/nested/"},
 			after:   before.WithoutDirectory("src/nested"),
 		},

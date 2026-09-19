@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/engine/client"
@@ -46,7 +46,7 @@ relative to PATH. They cannot be used with a file.`,
 			return withEngine(cmd.Context(), client.Params{
 				SkipWorkspaceModules: true,
 			}, func(ctx context.Context, engineClient *client.Client) error {
-				finalPath, err := exportWorkspacePath(ctx, engineClient.Dagger().CurrentWorkspace(), target, opts)
+				finalPath, err := exportWorkspacePath(ctx, core.NewQuery(engineClient.Dagger()).CurrentWorkspace(), target, opts)
 				if err != nil {
 					return err
 				}
@@ -61,10 +61,10 @@ relative to PATH. They cannot be used with a file.`,
 	return cmd
 }
 
-func exportWorkspacePath(ctx context.Context, ws *dagger.Workspace, target string, opts workspaceExportOptions) (string, error) {
+func exportWorkspacePath(ctx context.Context, ws *core.Workspace, target string, opts workspaceExportOptions) (string, error) {
 	dir := ws.Directory(target)
 	if _, dirErr := dir.Sync(ctx); dirErr == nil {
-		return ws.Directory(target, dagger.WorkspaceDirectoryOpts{
+		return ws.Directory(target, core.WorkspaceDirectoryOpts{
 			Include: opts.include,
 			Exclude: opts.exclude,
 		}).Export(ctx, opts.output)
@@ -76,6 +76,6 @@ func exportWorkspacePath(ctx context.Context, ws *dagger.Workspace, target strin
 		if len(opts.include) > 0 || len(opts.exclude) > 0 {
 			return "", fmt.Errorf("--include and --exclude can only be used with a directory")
 		}
-		return file.Export(ctx, opts.output, dagger.FileExportOpts{AllowParentDirPath: true})
+		return file.Export(ctx, opts.output, core.FileExportOpts{AllowParentDirPath: true})
 	}
 }

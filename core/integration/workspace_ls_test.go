@@ -4,14 +4,14 @@ import (
 	"context"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 func (WorkspaceSuite) TestLsCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.broken]\nsource = \"does-not-exist\"\n").
 		WithNewFile("root.txt", "root").
 		WithNewFile("items/.hidden", "hidden").
@@ -19,7 +19,7 @@ func (WorkspaceSuite) TestLsCLI(ctx context.Context, t *testctx.T) {
 		WithNewFile("items/file with spaces.txt", "spaces").
 		WithNewFile("items/sub/deep/nested.txt", "nested").
 		WithNewFile("items/z.txt", "z")
-	base := c.Container().From(alpineImage).
+	base := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithNewFile("/caller/local-only.txt", "caller").
 		WithWorkdir("/caller")
@@ -76,9 +76,9 @@ func (WorkspaceSuite) TestLsCLI(ctx context.Context, t *testctx.T) {
 			}
 
 			t.Run("missing path", func(ctx context.Context, t *testctx.T) {
-				result := ctr.WithExec([]string{"dagger", "-W", workspace, "workspace", "ls", "missing"}, dagger.ContainerWithExecOpts{
+				result := ctr.WithExec([]string{"dagger", "-W", workspace, "workspace", "ls", "missing"}, core.ContainerWithExecOpts{
 					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect:                        core.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)
@@ -89,9 +89,9 @@ func (WorkspaceSuite) TestLsCLI(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("continue after missing path", func(ctx context.Context, t *testctx.T) {
-				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "ls", "missing", "a.txt", "sub"}, dagger.ContainerWithExecOpts{
+				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "ls", "missing", "a.txt", "sub"}, core.ContainerWithExecOpts{
 					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect:                        core.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)

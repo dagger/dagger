@@ -52,7 +52,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 
 	c := &Client{
 		Query: &Query{
-			query: dag.QueryBuilder(),
+			query: querybuilder.Query().Client(dag.GraphQLClient()),
 		},
 		client: dag.GraphQLClient(),
 		dag:    dag,

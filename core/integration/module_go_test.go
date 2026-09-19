@@ -194,7 +194,7 @@ func (GoSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
 		require.JSONEq(t, `{"read":"bar"}`, out)
 	})
 
-	t.Run("func ReadPointer(ctx, *dagger.Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
+	t.Run("func ReadPointer(ctx, *core.Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQueryAt(".", fmt.Sprintf(`{readPointer(dir: "%s")}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"readPointer":"bar"}`, out)
@@ -480,9 +480,10 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
 
-		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
-		// when evaluating the query against the engine GQL schema.
-		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
+		// Container's real definition now lives in internal/dagger/core;
+		// internal/dagger only holds an alias, and Go does not allow adding
+		// methods to a type from outside its own package.
+		require.Contains(t, logs.String(), `cannot define new methods on non-local type Container`)
 	})
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
@@ -496,11 +497,9 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		// With self calls always enabled for Go, a module type shadowing a
-		// core type no longer fails the load; the core type keeps winning in
-		// the client schema, so the extension method is simply absent — same
-		// engine-side validation error as the different-mod-name case.
-		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
+		// Same Go-level restriction as the different-mod-name case: Container
+		// can't gain new methods from outside its own package.
+		require.Contains(t, logs.String(), `cannot define new methods on non-local type Container`)
 	})
 }
 

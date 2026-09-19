@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -296,7 +297,7 @@ func (PHPSuite) TestCheck(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
+func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *core.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/php", moduleName))
 	require.NoError(t, err)
@@ -305,7 +306,7 @@ func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Contai
 	require.NoError(t, err)
 
 	return goGitBase(t, c).
-		WithDirectory("modules/"+moduleName, c.Host().Directory(modSrc)).
-		WithDirectory("sdk/php", c.Host().Directory(sdkSrc)).
+		WithDirectory("modules/"+moduleName, core.NewQuery(c).Host().Directory(modSrc)).
+		WithDirectory("sdk/php", core.NewQuery(c).Host().Directory(sdkSrc)).
 		WithWorkdir("/work/modules/" + moduleName)
 }

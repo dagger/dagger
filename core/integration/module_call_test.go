@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type CallSuite struct{}
@@ -487,7 +488,7 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 	t.Run("build args", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("Dockerfile", `
@@ -770,7 +771,7 @@ func (CallSuite) TestSocketArg(ctx context.Context, t *testctx.T) {
 		defer cleanup()
 
 		_, err := moduleFixture(t, c, "go/call-socket-nested").
-			WithUnixSocket("/nested.sock", c.Host().UnixSocket(sockPath)).
+			WithUnixSocket("/nested.sock", core.NewQuery(c).Host().UnixSocket(sockPath)).
 			With(daggerCallAt(".", "fn", "--sock", "/nested.sock")).
 			Sync(ctx)
 		require.NoError(t, err)
@@ -1098,7 +1099,7 @@ func (CallSuite) TestSaveOutput(ctx context.Context, t *testctx.T) {
 umask 027
 exec "$@"
 `,
-				dagger.ContainerWithNewFileOpts{Permissions: 0o750},
+				core.ContainerWithNewFileOpts{Permissions: 0o750},
 			).
 			WithEntrypoint([]string{"/entrypoint.sh"}).
 			With(daggerCallAt(".", "hello", "-o", "/tmp/foo/bar.txt")).
@@ -1182,7 +1183,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 	t.Run("named local dependency rejects absolute source", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		ctr := c.Container().From(golangImage).
+		ctr := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			With(withModuleFixture(t, c, "/work", "go/call-by-name-outside-root")).
 			WithWorkdir("/work")
@@ -1356,11 +1357,11 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 }
 
 func (CallSuite) TestFindup(ctx context.Context, t *testctx.T) {
-	prep := func(t *testctx.T) (*dagger.Client, *safeBuffer, *dagger.Container) {
+	prep := func(t *testctx.T) (*dagger.Client, *safeBuffer, *core.Container) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-		mod := c.Container().From(golangImage).
+		mod := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			With(withModuleFixture(t, c, "/work", "go/call-findup")).
 			WithWorkdir("/work")
@@ -1380,7 +1381,7 @@ func (CallSuite) TestFindup(ctx context.Context, t *testctx.T) {
 	t.Run("explicit subdir", func(ctx context.Context, t *testctx.T) {
 		c, _, mod := prep(t)
 		out, err := mod.
-			WithDirectory("/work/some/subdir", c.Directory()).
+			WithDirectory("/work/some/subdir", core.NewQuery(c).Directory()).
 			With(daggerCallAt("some/subdir", "container-echo", "--string-arg", "yo", "stdout")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -1534,7 +1535,7 @@ func (CallSuite) TestExit(ctx context.Context, t *testctx.T) {
 		With(daggerCallAt(".", "quit")).
 		Sync(ctx)
 
-	var exErr *dagger.ExecError
+	var exErr *core.ExecError
 	require.ErrorAs(t, err, &exErr)
 	require.Equal(t, 6, exErr.ExitCode)
 }
@@ -1592,7 +1593,7 @@ func (CallSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
 func (CallSuite) TestErrNoModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	out, err := c.Container().From(golangImage).
+	out, err := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerCall()).

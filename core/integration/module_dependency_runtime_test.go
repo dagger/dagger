@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -101,7 +102,7 @@ func (ModuleSuite) TestUseLocalDependencySchemaIsolation(ctx context.Context, t 
 	}
 }
 
-func testModuleWithLocalDep(t *testctx.T, c *dagger.Client, fixture string) *dagger.Container {
+func testModuleWithLocalDep(t *testctx.T, c *dagger.Client, fixture string) *core.Container {
 	return moduleFixture(t, c, fixture)
 }
 

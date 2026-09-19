@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/querybuilder"
@@ -84,7 +85,7 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	// explicitly so the toolset served over MCP exposes the workspace's
 	// schema. The engine binds each workspace module's main object as tools
 	// for the served MCP toolset (see LLM.MCP / MCP.bindWorkspaceModuleTools).
-	wsID, err := engineClient.Dagger().CurrentWorkspace().ID(ctx)
+	wsID, err := core.NewQuery(engineClient.Dagger()).CurrentWorkspace().ID(ctx)
 	if err != nil {
 		return fmt.Errorf("resolve current workspace: %w", err)
 	}

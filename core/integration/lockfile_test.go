@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
@@ -195,7 +196,7 @@ func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Contex
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", remote.commitRef, "query", "--doc", queryPath)
 	require.NoError(t, err)
-	committedLock, err := c.Git(remote.repoURL).Commit(remote.commit).Tree().File(workspace.LockFileName).Contents(ctx)
+	committedLock, err := core.NewQuery(c).Git(remote.repoURL).Commit(remote.commit).Tree().File(workspace.LockFileName).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockContents, committedLock)
 }
@@ -358,16 +359,16 @@ type remoteLockWorkspace struct {
 
 func newRemoteLockWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, lockContents string) remoteLockWorkspace {
 	t.Helper()
-	return newRemoteWorkspace(ctx, t, c, c.Directory().
+	return newRemoteWorkspace(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "").
 		WithNewFile(workspace.LockFileName, lockContents))
 }
 
-func newRemoteWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) remoteLockWorkspace {
+func newRemoteWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, content *core.Directory) remoteLockWorkspace {
 	t.Helper()
 	branchRef := workspaceSelectionRemoteRef(ctx, t, c, content)
 	repoURL := strings.TrimSuffix(branchRef, "@main")
-	commit, err := c.Git(repoURL).Branch("main").CommitSHA(ctx)
+	commit, err := core.NewQuery(c).Git(repoURL).Branch("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Len(t, commit, 40)
 	return remoteLockWorkspace{

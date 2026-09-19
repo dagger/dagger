@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +41,7 @@ Changes are written to the selected dagger.toml.`,
 			SkipWorkspaceModules:           true,
 			SuppressCompatWorkspaceWarning: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			ws := engineClient.Dagger().CurrentWorkspace()
+			ws := core.NewQuery(engineClient.Dagger()).CurrentWorkspace()
 			if !write {
 				name, err := ws.Entrypoint(ctx)
 				if err != nil || name == "" {
@@ -64,7 +64,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceEntrypointCmd)
 }
 
-func writeWorkspaceEntrypoint(ctx context.Context, ws *dagger.Workspace, name string) error {
+func writeWorkspaceEntrypoint(ctx context.Context, ws *core.Workspace, name string) error {
 	if name == "" {
 		return ws.WithoutEntrypoint().Export(ctx)
 	}

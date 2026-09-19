@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ source = '../sdk'
 module = 'writer'
 `
 	base := goGitBase(t, c).
-		WithDirectory("/work/sdk", c.Host().Directory(sdkPath)).
+		WithDirectory("/work/sdk", core.NewQuery(c).Host().Directory(sdkPath)).
 		WithNewFile("/work/app/dagger.toml", config).
 		WithWorkdir("/work/app").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
@@ -151,7 +152,7 @@ module = 'writer'
 		require.False(t, exists)
 	})
 	t.Run("controls retain inferred name when SDK chooses a different basename", func(ctx context.Context, t *testctx.T) {
-		source, err := c.Host().File(filepath.Join(sdkPath, "main.dang")).Contents(ctx)
+		source, err := core.NewQuery(c).Host().File(filepath.Join(sdkPath, "main.dang")).Contents(ctx)
 		require.NoError(t, err)
 		for _, flag := range []string{"--install=false", "--entrypoint=false"} {
 			initialized := base.WithNewFile("/work/sdk/main.dang", strings.Replace(source, `"generated/" + name`, `"generated/api"`, 1)).

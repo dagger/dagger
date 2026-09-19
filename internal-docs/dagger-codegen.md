@@ -16,7 +16,7 @@ output, also read `version-gating.md`.
 |---------|---------|-------------|-----------|
 | In-module bindings | `dagger develop`, `dagger call`, generated context loading | SDK-specific module source changes such as Go `internal/dagger/dagger.gen.go` | `core/schema/modulesource.go`, `core/sdk.go`, `core/sdk/*` |
 | Runtime dispatch | Module execution | Dispatch entrypoint that calls user functions | Go: `cmd/codegen/generator/go/templates/modules.go`; TypeScript: `cmd/codegen generate-entrypoint` |
-| SDK libraries | Repo SDK generation | Shipped SDK packages such as `sdk/go/dagger.gen.go` | `cmd/codegen generate-library`, `sdk/go/generate.go`, SDK-specific generators |
+| SDK libraries | Repo SDK generation | Shipped SDK packages such as `sdk/go/core/core.gen.go` | `cmd/codegen generate-library`, `sdk/go/generate.go`, SDK-specific generators |
 | Generated clients | `dagger client install` / configured module clients | Client bindings for regular programs outside module runtime | `ClientGenerator`, `cmd/dagger/client.go`, `cmd/codegen generate-client` |
 
 Decide which surface you are editing before changing templates. Similar output
@@ -152,6 +152,8 @@ Go templates live under `cmd/codegen/generator/go/templates/src/`:
 ```text
 src/
 |-- dagger.gen.go.tmpl
+|-- core/
+|   `-- core.gen.go.tmpl
 |-- dag/
 |   `-- dag.gen.go.tmpl
 |-- internal/dagger/
@@ -176,6 +178,19 @@ Important helper functions are exposed by
 
 - `IsModuleCode`: module generation mode.
 - `IsStandaloneClient`: generated-client mode.
+- `IsCoreLibrary`: plain library generation (sdk/go itself), i.e. neither of
+  the above. In this mode the generated API bindings render into
+  `core/core.gen.go` (package `core`) instead of top-level `dagger.gen.go`,
+  because `dagger.io/dagger/core` needs to import `dagger.io/dagger` and so
+  cannot be aliased back into the `dagger` package without a cycle. `Ref`/
+  `Load` take a `*Query` instead of a `*Client` in this mode.
+- `CoreConstructorName`: in `IsCoreLibrary` mode, the Go name for a top-level
+  Query field's free function. Query field names often match their own return
+  type (e.g. "container" -> `Container`, returning `*Container`), which is
+  fine as a function in a separate package (`dag.Container()` returning
+  `*dagger.Container`) but would redeclare the type if placed in the same
+  package. `CoreConstructorName` returns `NewX` instead of `X` when that
+  collision would occur.
 - `IsPartial`: first pass of two-pass Go module generation.
 - `ModuleMainSrc`: generated Go module `main` and `invoke` dispatch.
 - `IsArgOptional` and `HasOptionals`: optional argument checks. Use these

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 type PlatformSuite struct{}
@@ -30,13 +31,13 @@ func TestPlatform(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(PlatformSuite{})
 }
 
-var platformToUname = map[dagger.Platform]string{
+var platformToUname = map[core.Platform]string{
 	"linux/amd64": "x86_64",
 	"linux/arm64": "aarch64",
 	"linux/s390x": "s390x",
 }
 
-var platformToFileArch = map[dagger.Platform]string{
+var platformToFileArch = map[core.Platform]string{
 	"linux/amd64": "x86-64",
 	"linux/arm64": "aarch64",
 	"linux/s390x": "IBM S/390",
@@ -45,9 +46,9 @@ var platformToFileArch = map[dagger.Platform]string{
 func (PlatformSuite) TestEmulatedExecAndPush(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
+	variants := make([]*core.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
-		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+		ctr := core.NewQuery(c).Container(core.ContainerOpts{Platform: platform}).
 			From(alpineImage).
 			WithExec([]string{"uname", "-m"})
 		variants = append(variants, ctr)
@@ -63,13 +64,13 @@ func (PlatformSuite) TestEmulatedExecAndPush(ctx context.Context, t *testctx.T) 
 	}
 
 	testRef := registryRef("platform-emulated-exec-and-push")
-	_, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
+	_, err := core.NewQuery(c).Container().Publish(ctx, testRef, core.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
 
 	for platform, uname := range platformToUname {
-		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+		ctr := core.NewQuery(c).Container(core.ContainerOpts{Platform: platform}).
 			From(testRef).
 			WithExec([]string{"uname", "-m"})
 		output, err := ctr.Stdout(ctx)
@@ -84,17 +85,17 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 
 	const registryHost = "registry:5000"
 
-	registrySvc := c.Container().
+	registrySvc := core.NewQuery(c).Container().
 		From("registry:3").
-		WithMountedCache("/var/lib/registry", c.CacheVolume("platform-single-tag-registry-"+identity.NewID())).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithMountedCache("/var/lib/registry", core.NewQuery(c).CacheVolume("platform-single-tag-registry-"+identity.NewID())).
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		AsService()
 
 	startFreshEngine := func(ctx context.Context, t *testctx.T) (*dagger.Client, func()) {
 		t.Helper()
 
 		devEngine := devEngineContainer(c,
-			func(ctr *dagger.Container) *dagger.Container {
+			func(ctr *core.Container) *core.Container {
 				return ctr.WithServiceBinding("registry", registrySvc)
 			},
 			engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg engineconfig.Config) engineconfig.Config {
@@ -105,10 +106,10 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 			}),
 		)
 
-		engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+		engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 		require.NoError(t, err)
 
-		endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 
 		nestedClient, err := dagger.Connect(ctx,
@@ -128,17 +129,17 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 		return nestedClient, cleanup
 	}
 
-	platforms := []dagger.Platform{"linux/amd64", "linux/arm64"}
-	refs := make(map[dagger.Platform]string, len(platforms))
-	markers := make(map[dagger.Platform]string, len(platforms))
+	platforms := []core.Platform{"linux/amd64", "linux/arm64"}
+	refs := make(map[core.Platform]string, len(platforms))
+	markers := make(map[core.Platform]string, len(platforms))
 
 	pushClient, cleanupPushEngine := startFreshEngine(ctx, t)
 	for _, platform := range platforms {
 		marker := "hello from " + string(platform)
 		ref := registryHost + "/platform-single-tag-" + strings.ReplaceAll(string(platform), "/", "-") + ":" + identity.NewID()
 
-		_, err := pushClient.Container(dagger.ContainerOpts{Platform: platform}).
-			WithRootfs(pushClient.Directory().WithNewFile("platform.txt", marker)).
+		_, err := core.NewQuery(pushClient).Container(core.ContainerOpts{Platform: platform}).
+			WithRootfs(core.NewQuery(pushClient).Directory().WithNewFile("platform.txt", marker)).
 			Publish(ctx, ref)
 		require.NoError(t, err)
 
@@ -153,7 +154,7 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 			pullClient, cleanupPullEngine := startFreshEngine(ctx, t)
 			defer cleanupPullEngine()
 
-			ctr := pullClient.Container().From(refs[platform])
+			ctr := core.NewQuery(pullClient).Container().From(refs[platform])
 			ctrPlatform, err := ctr.Platform(ctx)
 			require.NoError(t, err)
 			require.Equal(t, platform, ctrPlatform)
@@ -170,17 +171,17 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 
 	const registryHost = "registry:5000"
 
-	registrySvc := c.Container().
+	registrySvc := core.NewQuery(c).Container().
 		From("registry:3").
-		WithMountedCache("/var/lib/registry", c.CacheVolume("platform-multi-tag-registry-"+identity.NewID())).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithMountedCache("/var/lib/registry", core.NewQuery(c).CacheVolume("platform-multi-tag-registry-"+identity.NewID())).
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		AsService()
 
 	startFreshEngine := func(ctx context.Context, t *testctx.T) (*dagger.Client, func()) {
 		t.Helper()
 
 		devEngine := devEngineContainer(c,
-			func(ctr *dagger.Container) *dagger.Container {
+			func(ctr *core.Container) *core.Container {
 				return ctr.WithServiceBinding("registry", registrySvc)
 			},
 			engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg engineconfig.Config) engineconfig.Config {
@@ -191,10 +192,10 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 			}),
 		)
 
-		engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+		engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 		require.NoError(t, err)
 
-		endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 
 		nestedClient, err := dagger.Connect(ctx,
@@ -214,26 +215,26 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 		return nestedClient, cleanup
 	}
 
-	platforms := []dagger.Platform{"linux/amd64", "linux/arm64"}
-	markers := make(map[dagger.Platform]string, len(platforms))
-	variants := make([]*dagger.Container, 0, len(platforms))
+	platforms := []core.Platform{"linux/amd64", "linux/arm64"}
+	markers := make(map[core.Platform]string, len(platforms))
+	variants := make([]*core.Container, 0, len(platforms))
 
 	pushClient, cleanupPushEngine := startFreshEngine(ctx, t)
 	for _, platform := range platforms {
 		marker := "hello from " + string(platform)
-		variants = append(variants, pushClient.Container(dagger.ContainerOpts{Platform: platform}).
-			WithRootfs(pushClient.Directory().WithNewFile("platform.txt", marker)))
+		variants = append(variants, core.NewQuery(pushClient).Container(core.ContainerOpts{Platform: platform}).
+			WithRootfs(core.NewQuery(pushClient).Directory().WithNewFile("platform.txt", marker)))
 		markers[platform] = marker
 	}
 
 	ref := registryHost + "/platform-multi-tag:" + identity.NewID()
-	_, err := pushClient.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
+	_, err := core.NewQuery(pushClient).Container().Publish(ctx, ref, core.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
 	cleanupPushEngine()
 
-	assertPulled := func(ctx context.Context, t *testctx.T, ctr *dagger.Container, expectedPlatform dagger.Platform) {
+	assertPulled := func(ctx context.Context, t *testctx.T, ctr *core.Container, expectedPlatform core.Platform) {
 		t.Helper()
 
 		ctrPlatform, err := ctr.Platform(ctx)
@@ -249,11 +250,11 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 		pullClient, cleanupPullEngine := startFreshEngine(ctx, t)
 		defer cleanupPullEngine()
 
-		defaultPlatform, err := pullClient.DefaultPlatform(ctx)
+		defaultPlatform, err := core.NewQuery(pullClient).DefaultPlatform(ctx)
 		require.NoError(t, err)
 		require.Contains(t, markers, defaultPlatform)
 
-		assertPulled(ctx, t, pullClient.Container().From(ref), defaultPlatform)
+		assertPulled(ctx, t, core.NewQuery(pullClient).Container().From(ref), defaultPlatform)
 	})
 
 	for _, platform := range platforms {
@@ -262,7 +263,7 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 			pullClient, cleanupPullEngine := startFreshEngine(ctx, t)
 			defer cleanupPullEngine()
 
-			assertPulled(ctx, t, pullClient.Container(dagger.ContainerOpts{Platform: platform}).From(ref), platform)
+			assertPulled(ctx, t, core.NewQuery(pullClient).Container(core.ContainerOpts{Platform: platform}).From(ref), platform)
 		})
 	}
 }
@@ -271,21 +272,21 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir("../.."))
 
 	// cross compile the dagger binary for each platform
-	defaultPlatform, err := c.DefaultPlatform(ctx)
+	defaultPlatform, err := core.NewQuery(c).DefaultPlatform(ctx)
 	require.NoError(t, err)
-	variants := make([]*dagger.Container, len(platformToFileArch))
+	variants := make([]*core.Container, len(platformToFileArch))
 	i := 0
 	var eg errgroup.Group
 	for platform := range platformToUname {
 		i++
 		i := i - 1
 		eg.Go(func() error {
-			ctr := c.Container().
+			ctr := core.NewQuery(c).Container().
 				From("crazymax/goxx:latest").
-				WithMountedCache("/go/pkg/mod", c.CacheVolume("gomod")).
-				WithMountedCache("/root/.cache/go-build", c.CacheVolume("gobuild")).
-				WithMountedDirectory("/src", c.Host().Directory(".")).
-				WithMountedDirectory("/out", c.Directory()).
+				WithMountedCache("/go/pkg/mod", core.NewQuery(c).CacheVolume("gomod")).
+				WithMountedCache("/root/.cache/go-build", core.NewQuery(c).CacheVolume("gobuild")).
+				WithMountedDirectory("/src", core.NewQuery(c).Host().Directory(".")).
+				WithMountedDirectory("/out", core.NewQuery(c).Directory()).
 				WithWorkdir("/src").
 				WithEnvVariable("TARGETPLATFORM", string(platform)).
 				WithEnvVariable("CGO_ENABLED", "0").
@@ -314,7 +315,7 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 			}
 
 			out := ctr.Directory("/out")
-			variants[i] = c.Container(dagger.ContainerOpts{Platform: platform}).WithRootfs(out)
+			variants[i] = core.NewQuery(c).Container(core.ContainerOpts{Platform: platform}).WithRootfs(out)
 			return nil
 		})
 	}
@@ -330,17 +331,17 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 
 	// push a multiplatform image
 	testRef := registryRef("platform-cross-compile")
-	_, err = c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
+	_, err = core.NewQuery(c).Container().Publish(ctx, testRef, core.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
 
 	// pull the images, mount them all into a container and ensure the binaries are the right platform
-	ctr := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "file"})
+	ctr := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "file"})
 
 	cmds := make([]string, 0, len(platformToFileArch))
 	for platform, uname := range platformToFileArch {
-		pulledDir := c.Container(dagger.ContainerOpts{Platform: platform}).
+		pulledDir := core.NewQuery(c).Container(core.ContainerOpts{Platform: platform}).
 			From(testRef).
 			Rootfs()
 		ctr = ctr.WithMountedDirectory("/"+string(platform), pulledDir)
@@ -357,14 +358,14 @@ func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 
 	randomID := identity.NewID()
 
-	cache := c.CacheVolume("test-platform-cache-mount")
+	cache := core.NewQuery(c).CacheVolume("test-platform-cache-mount")
 
 	saveCacheMount := preventCacheMountPrune(c, t, cache)
 
 	// make sure cache mounts are inherently platform-agnostic
 	cmds := make([]string, 0, len(platformToUname))
 	for platform := range platformToUname {
-		_, err := c.Container(dagger.ContainerOpts{Platform: platform}).
+		_, err := core.NewQuery(c).Container(core.ContainerOpts{Platform: platform}).
 			From(alpineImage).
 			With(saveCacheMount).
 			WithMountedCache("/cache", cache).
@@ -377,7 +378,7 @@ func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 		cmds = append(cmds, fmt.Sprintf(`cat /cache/%s%s/uname | grep '%s'`, randomID, platform, platformToUname[platform]))
 	}
 
-	_, err := c.Container().
+	_, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCacheMount).
 		WithMountedCache("/cache", cache).
@@ -389,7 +390,7 @@ func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 func (PlatformSuite) TestInvalid(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	_, err := c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
+	_, err := core.NewQuery(c).Container(core.ContainerOpts{Platform: "windows98"}).ID(ctx)
 	requireErrOut(t, err, "unknown operating system or architecture")
 }
 
@@ -397,7 +398,7 @@ func (PlatformSuite) TestWindows(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// It's not possible to exec, but we can pull and read files
-	ents, err := c.Container(dagger.ContainerOpts{Platform: "windows/amd64"}).
+	ents, err := core.NewQuery(c).Container(core.ContainerOpts{Platform: "windows/amd64"}).
 		From("mcr.microsoft.com/windows/nanoserver:ltsc2022").
 		Rootfs().
 		Entries(ctx)

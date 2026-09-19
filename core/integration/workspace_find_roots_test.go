@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -14,8 +15,8 @@ import (
 // Config files are named deno.json, not dagger.json, so the fixtures are not
 // mistaken for real modules.
 
-func findRootsSource(c *dagger.Client) *dagger.Directory {
-	return c.Directory().
+func findRootsSource(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile("deno.json", "{}").
 		WithNewFile("dir/coucou.txt", "x").
 		WithNewFile("sub/deno.json", "{}").
@@ -40,7 +41,7 @@ func (WorkspaceSuite) TestWorkspaceFindRootsWalkDown(ctx context.Context, t *tes
 // beneath it are returned, and the workspace-root project is not.
 func (WorkspaceSuite) TestWorkspaceFindRootsSubdir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := findRootsSource(c).AsWorkspace(dagger.DirectoryAsWorkspaceOpts{
+	ws := findRootsSource(c).AsWorkspace(core.DirectoryAsWorkspaceOpts{
 		Cwd: "/sub",
 	})
 
@@ -55,7 +56,7 @@ func (WorkspaceSuite) TestWorkspaceFindRootsStart(ctx context.Context, t *testct
 	c := connect(ctx, t)
 	ws := findRootsSource(c).AsWorkspace()
 
-	dirs, err := ws.FindRoots(ctx, []string{"deno.json"}, dagger.WorkspaceFindRootsOpts{
+	dirs, err := ws.FindRoots(ctx, []string{"deno.json"}, core.WorkspaceFindRootsOpts{
 		Start: "sub",
 	})
 	require.NoError(t, err)
@@ -67,7 +68,7 @@ func (WorkspaceSuite) TestWorkspaceFindRootsStart(ctx context.Context, t *testct
 // that resolves through other workspace APIs unchanged.
 func (WorkspaceSuite) TestWorkspaceFindRootsAncestor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := findRootsSource(c).AsWorkspace(dagger.DirectoryAsWorkspaceOpts{
+	ws := findRootsSource(c).AsWorkspace(core.DirectoryAsWorkspaceOpts{
 		Cwd: "/dir",
 	})
 
@@ -92,7 +93,7 @@ func (WorkspaceSuite) TestWorkspaceFindRootsExclude(ctx context.Context, t *test
 	require.NoError(t, err)
 	require.Contains(t, dirs, "sub/node_modules/pkg")
 
-	dirs, err = ws.FindRoots(ctx, []string{"deno.json"}, dagger.WorkspaceFindRootsOpts{
+	dirs, err = ws.FindRoots(ctx, []string{"deno.json"}, core.WorkspaceFindRootsOpts{
 		Exclude: []string{"**/node_modules/**"},
 	})
 	require.NoError(t, err)
@@ -103,7 +104,7 @@ func (WorkspaceSuite) TestWorkspaceFindRootsExclude(ctx context.Context, t *test
 // filenames matches, and a directory holding several of them is returned once.
 func (WorkspaceSuite) TestWorkspaceFindRootsMultipleMarkers(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("deno.json", "{}").
 		WithNewFile("deno.jsonc", "{}").
 		WithNewFile("a/deno.jsonc", "{}").
@@ -119,11 +120,11 @@ func (WorkspaceSuite) TestWorkspaceFindRootsMultipleMarkers(ctx context.Context,
 // a closer one written with a different filename.
 func (WorkspaceSuite) TestWorkspaceFindRootsNearestMixedMarker(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("deno.json", "{}").
 		WithNewFile("a/deno.jsonc", "{}").
 		WithNewFile("a/b/keep.txt", "x").
-		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{
+		AsWorkspace(core.DirectoryAsWorkspaceOpts{
 			Cwd: "/a/b",
 		})
 
@@ -137,10 +138,10 @@ func (WorkspaceSuite) TestWorkspaceFindRootsNearestMixedMarker(ctx context.Conte
 // uses a different filename: the walk-down already covers the cwd.
 func (WorkspaceSuite) TestWorkspaceFindRootsCwdShadowsAncestor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("deno.json", "{}").
 		WithNewFile("sub/deno.jsonc", "{}").
-		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{
+		AsWorkspace(core.DirectoryAsWorkspaceOpts{
 			Cwd: "/sub",
 		})
 

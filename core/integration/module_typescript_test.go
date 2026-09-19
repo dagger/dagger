@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -33,7 +33,7 @@ var tsSyntax string
 func (TypescriptSuite) TestSyntaxSupport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-syntax")).
@@ -70,7 +70,7 @@ var tsSignatures string
 func (TypescriptSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-minimal")).
@@ -174,7 +174,7 @@ var tsSignaturesBuiltin string
 func (TypescriptSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-minimal")).
@@ -219,7 +219,7 @@ var tsSignaturesUnexported string
 func (TypescriptSuite) TestSignatureUnexported(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-minimal")).
@@ -235,7 +235,7 @@ func (TypescriptSuite) TestSignatureUnexported(ctx context.Context, t *testctx.T
 func (TypescriptSuite) TestDocs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-minimal")).
@@ -281,7 +281,7 @@ var tsOptional string
 func (TypescriptSuite) TestOptional(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-minimal")).
@@ -303,7 +303,7 @@ func (TypescriptSuite) TestOptional(ctx context.Context, t *testctx.T) {
 func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-runtime-detection")).
@@ -368,7 +368,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should detect package-lock.json", func(ctx context.Context, t *testctx.T) {
-		modGen := c.Container().From("node:20-alpine").
+		modGen := core.NewQuery(c).Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-runtime-detection")).
@@ -392,7 +392,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should detect bun.lockb", func(ctx context.Context, t *testctx.T) {
-		modGen := c.Container().From("oven/bun:1.0.27-alpine").
+		modGen := core.NewQuery(c).Container().From("oven/bun:1.0.27-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-runtime-detection")).
@@ -416,7 +416,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should detect bun.lock", func(ctx context.Context, t *testctx.T) {
-		modGen := c.Container().From("oven/bun:1.2.4-alpine").
+		modGen := core.NewQuery(c).Container().From("oven/bun:1.2.4-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-runtime-detection")).
@@ -440,7 +440,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should prioritize package.json config over file detection", func(ctx context.Context, t *testctx.T) {
-		modGen := c.Container().From("node:20-alpine").
+		modGen := core.NewQuery(c).Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-runtime-detection")).
@@ -525,7 +525,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should detect deno.json", func(ctx context.Context, t *testctx.T) {
-		modGen := c.Container().From("node:20-alpine").
+		modGen := core.NewQuery(c).Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/deno.json", `{}`).
@@ -549,7 +549,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should detect specific pinned deno version", func(ctx context.Context, t *testctx.T) {
-		modGen := c.Container().From("node:20-alpine").
+		modGen := core.NewQuery(c).Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/deno.json", `{
@@ -601,7 +601,7 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 	t.Run("should use custom base image if base image is set - bun", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -621,7 +621,7 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 	t.Run("should use custom base image if base image is set - node", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -823,7 +823,7 @@ func (TypescriptSuite) TestAliases(ctx context.Context, t *testctx.T) {
 	t.Run("alias in function", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-alias")).
@@ -847,7 +847,7 @@ export class Alias {
 	t.Run("nested alias in function", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-alias")).
@@ -887,7 +887,7 @@ export class Alias {
 	t.Run("nested alias in field", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-alias")).
@@ -940,7 +940,7 @@ func (TypescriptSuite) TestPrototype(ctx context.Context, t *testctx.T) {
 	t.Run("keep class prototype inside module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -994,7 +994,7 @@ func (TypescriptSuite) TestModuleSubPathLoading(ctx context.Context, t *testctx.
 	t.Run("load from subpath", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/sub").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1009,7 +1009,7 @@ func (TypescriptSuite) TestPrimitiveType(ctx context.Context, t *testctx.T) {
 	t.Run("should throw error on String", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1032,7 +1032,7 @@ export class Test {
 	t.Run("should throw error on Number", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1055,7 +1055,7 @@ export class Test {
 	t.Run("should throw error on Boolean", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1079,7 +1079,7 @@ export class Test {
 func (TypescriptSuite) TestNativeEnumType(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1134,7 +1134,7 @@ export class Test {
 func (TypescriptSuite) TestReferencedDefaultValue(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1206,7 +1206,7 @@ export class Test {
 func (TypescriptSuite) TestTelemetryImport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1238,7 +1238,7 @@ func (TypescriptSuite) TestTypeKeyword(ctx context.Context, t *testctx.T) {
 	t.Run("wrap primitive type", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1323,7 +1323,7 @@ export class Test {
 	t.Run("object type definition", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1377,7 +1377,7 @@ export class Test {
 	t.Run("nested object type definition", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1452,7 +1452,7 @@ export class Test {
 	t.Run("nested IDable object type definition", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1509,7 +1509,7 @@ func (TypescriptSuite) TestDeprecatedFieldDecorator(ctx context.Context, t *test
 	t.Run("@field still working", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1536,7 +1536,7 @@ func (TypescriptSuite) TestNonExportedFunctionBackwardsCompatibility(ctx context
 	t.Run("non-exported function", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1563,7 +1563,7 @@ func (TypescriptSuite) TestInterface(ctx context.Context, t *testctx.T) {
 	t.Run("doc", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1610,7 +1610,7 @@ func (TypescriptSuite) TestFloatReturnTypeSuggestion(ctx context.Context, t *tes
 	t.Run("suggest to use float instead of number if function returns a float", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1634,7 +1634,7 @@ export class Test {
 func (TypescriptSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1677,7 +1677,7 @@ class Test {
 
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := core.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(withModuleFixture(t, c, ".", "typescript/base-test")).
@@ -1691,7 +1691,7 @@ class Test {
 	_, err := modGen.With(daggerCallAt(".", "version")).Sync(ctx)
 	requireErrOut(t, err, "exit code: 1")
 
-	var execErr *dagger.ExecError
+	var execErr *core.ExecError
 	require.ErrorAs(t, err, &execErr)
 	require.NotContains(
 		t,
@@ -1703,10 +1703,10 @@ class Test {
 func (TypescriptSuite) TestGenerateEntrypointTypedefOnlyDoesNotConnect(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().From(golangImage).
+	ctr := core.NewQuery(c).Container().From(golangImage).
 		With(goCache(c)).
 		WithExec([]string{"apk", "add", "git"}).
-		WithMountedDirectory("/src", c.Host().Directory("../..")).
+		WithMountedDirectory("/src", core.NewQuery(c).Host().Directory("../..")).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "build", "-o", "/work/codegen", "./cmd/codegen"}).
 		WithWorkdir("/work").
