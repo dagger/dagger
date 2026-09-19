@@ -208,6 +208,15 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 	return nil
 }
 
+// WrapClient returns c wrapped so that engine errors are classified into
+// more specific types, e.g. a failing exec into *ExecError. NewQuery does
+// this for its own query root; the connect-layer package (internal/dagger)
+// needs it too, so that Client.GraphQLClient() hands callers a client that
+// classifies.
+func WrapClient(c graphql.Client) graphql.Client {
+	return errorWrappedClient{c}
+}
+
 // dag is this package's own connection, used only by the generated
 // UnmarshalJSON methods above to build a query root when deserializing an
 // object from its ID. It lives here, self-contained, rather than reusing
