@@ -236,7 +236,18 @@ func TestCachePersistenceEmbeddedOutputKeepsInlineProducer(t *testing.T) {
 		assert.Assert(t, ownsChild)
 		assert.Assert(t, !ownsParent, "inline producer must not create an ownership cycle")
 		assert.Assert(t, ownsInput, "inline producer's inputs must remain retained")
-		for _, res := range []*sharedResult{parent, child} {
+		ref := child.loadResultCall().Receiver
+		assert.Assert(t, ref.KeepInline && ref.Call != nil)
+		assert.Equal(t, uint64(0), ref.ResultID)
+	}
+	assertGraph(cacheA)
+	// Verify attachment propagates input requirements independently of when
+	// the persistence importer recomputes them for restored results.
+	func() {
+		cacheA.egraphMu.RLock()
+		defer cacheA.egraphMu.RUnlock()
+		for _, id := range []sharedResultID{parentID, childID} {
+			res := cacheA.resultsByID[id]
 			assert.Assert(t, res.requiredSessionResources != nil)
 			var handles []SessionResourceHandle
 			for h := range res.requiredSessionResources.Items() {
@@ -244,11 +255,7 @@ func TestCachePersistenceEmbeddedOutputKeepsInlineProducer(t *testing.T) {
 			}
 			assert.DeepEqual(t, handles, []SessionResourceHandle{handle})
 		}
-		ref := child.loadResultCall().Receiver
-		assert.Assert(t, ref.KeepInline && ref.Call != nil)
-		assert.Equal(t, uint64(0), ref.ResultID)
-	}
-	assertGraph(cacheA)
+	}()
 	before, err := parentValue.ownedResults[0].RecipeID(ctx)
 	assert.NilError(t, err)
 	cacheTestReleaseSession(t, cacheA, ctx)
