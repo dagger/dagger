@@ -241,7 +241,7 @@ var quickConfigs = []string{
 // WARNING: the full run is expensive - well over an hour wall with four
 // TLC JVMs, and the largest configurations reach more than 110 million
 // distinct states each. Run it sparingly: it is required before pushing changes
-// under dagql/tla (it no longer runs in CI), but for iteration prefer
+// under dagql/tla (CI runs Quick only), but for iteration prefer
 // Quick (seconds), Some (chosen configurations with their expectations
 // enforced), or One (a single configuration, raw output, optional probe
 // injection).
