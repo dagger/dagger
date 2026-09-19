@@ -36,6 +36,57 @@ func TestResultCallDigestErrorsDoNotPanic(t *testing.T) {
 	require.ErrorContains(t, err, `result call frame "broken" args: failed to write argument "bad" to hash`)
 }
 
+func TestResultCallRecipeIDRejectsSyntheticOperations(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	t.Cleanup(func() { cacheTestReleaseSession(t, c, ctx) })
+
+	synthetic := &ResultCall{
+		Kind:        ResultCallKindSynthetic,
+		SyntheticOp: "snapshot_only",
+		Type:        NewResultCallType(Int(0).Type()),
+	}
+	// Synthetic identity remains usable by the cache, including when the
+	// result is already attached. Only exporting an executable recipe fails.
+	_, err = c.RecipeDigestForCall(synthetic)
+	require.NoError(t, err)
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: synthetic}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(synthetic, 42), nil
+	})
+	require.NoError(t, err)
+
+	_, err = res.RecipeID(ctx)
+	require.ErrorContains(t, err, `synthetic operation "snapshot_only" has no replayable API`)
+
+	for name, ref := range map[string]*ResultCallRef{
+		"inline": {Call: synthetic},
+		"cached": {ResultID: uint64(res.cacheSharedResult().id)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			arg := &ResultCallArg{
+				Name:  "input",
+				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindResultRef, ResultRef: ref},
+			}
+			for name, frame := range map[string]*ResultCall{
+				"root":     synthetic,
+				"receiver": {Kind: ResultCallKindField, Field: "child", Receiver: ref},
+				"argument": {Kind: ResultCallKindField, Field: "child", Args: []*ResultCallArg{arg}},
+				"implicit": {Kind: ResultCallKindField, Field: "child", ImplicitInputs: []*ResultCallArg{arg}},
+				"module":   {Kind: ResultCallKindField, Field: "child", Module: &ResultCallModule{ResultRef: ref}},
+			} {
+				t.Run(name, func(t *testing.T) {
+					id, err := c.RecipeIDForCall(ctx, frame)
+					require.ErrorContains(t, err, `synthetic operation "snapshot_only" has no replayable API`)
+					require.Nil(t, id)
+				})
+			}
+		})
+	}
+}
+
 func TestResultCallSelfDigestAndInputRefsPreserveInputKinds(t *testing.T) {
 	t.Parallel()
 
