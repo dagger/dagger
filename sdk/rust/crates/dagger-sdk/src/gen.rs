@@ -1275,6 +1275,30 @@ pub struct Artifacts {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsFilterDirectivesOpts {
+    /// Remove the matching artifacts instead.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsFilterParentDirectivesOpts {
+    /// Remove the matching artifacts instead.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsFilterParentTypesOpts {
+    /// Remove the matching artifacts instead.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsFilterTypesOpts {
+    /// Remove the matching artifacts instead.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsValuesOpts {
     /// Field arguments applied to each artifact, as a JSON object.
     #[builder(setter(into, strip_option), default)]
@@ -1356,6 +1380,10 @@ impl Artifacts {
         }
     }
     /// Keep artifacts with any listed directive.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn filter_directives(&self, directives: Vec<impl Into<String>>) -> Artifacts {
         let mut query = self.selection.select("filterDirectives");
         query = query.arg(
@@ -1365,6 +1393,121 @@ impl Artifacts {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts with any listed directive.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_directives_opts(
+        &self,
+        directives: Vec<impl Into<String>>,
+        opts: ArtifactsFilterDirectivesOpts,
+    ) -> Artifacts {
+        let mut query = self.selection.select("filterDirectives");
+        query = query.arg(
+            "directives",
+            directives
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_parent_directives(&self, directives: Vec<impl Into<String>>) -> Artifacts {
+        let mut query = self.selection.select("filterParentDirectives");
+        query = query.arg(
+            "directives",
+            directives
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_parent_directives_opts(
+        &self,
+        directives: Vec<impl Into<String>>,
+        opts: ArtifactsFilterParentDirectivesOpts,
+    ) -> Artifacts {
+        let mut query = self.selection.select("filterParentDirectives");
+        query = query.arg(
+            "directives",
+            directives
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_parent_types(&self, types: Vec<impl Into<String>>) -> Artifacts {
+        let mut query = self.selection.select("filterParentTypes");
+        query = query.arg(
+            "types",
+            types.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_parent_types_opts(
+        &self,
+        types: Vec<impl Into<String>>,
+        opts: ArtifactsFilterParentTypesOpts,
+    ) -> Artifacts {
+        let mut query = self.selection.select("filterParentTypes");
+        query = query.arg(
+            "types",
+            types.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
         Artifacts {
             proc: self.proc.clone(),
             selection: query,
@@ -1385,12 +1528,40 @@ impl Artifacts {
         }
     }
     /// Keep artifacts of any listed concrete GraphQL type.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn filter_types(&self, types: Vec<impl Into<String>>) -> Artifacts {
         let mut query = self.selection.select("filterTypes");
         query = query.arg(
             "types",
             types.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts of any listed concrete GraphQL type.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_types_opts(
+        &self,
+        types: Vec<impl Into<String>>,
+        opts: ArtifactsFilterTypesOpts,
+    ) -> Artifacts {
+        let mut query = self.selection.select("filterTypes");
+        query = query.arg(
+            "types",
+            types.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
         Artifacts {
             proc: self.proc.clone(),
             selection: query,
@@ -1503,6 +1674,22 @@ impl Artifacts {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
+    }
+    /// Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
+    pub fn with_artifacts(&self, artifacts: impl IntoID<Id>) -> Artifacts {
+        let mut query = self.selection.select("withArtifacts");
+        query = query.arg_lazy(
+            "artifacts",
+            Box::new(move || {
+                let artifacts = artifacts.clone();
+                Box::pin(async move { artifacts.into_id().await.unwrap().quote() })
+            }),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Remove artifacts selected by a DAG address.
     pub fn without_uri(&self, uri: impl Into<String>) -> Artifacts {

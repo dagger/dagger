@@ -73,12 +73,50 @@ defmodule Dagger.Artifacts do
   @doc """
   Keep artifacts with any listed directive.
   """
-  @spec filter_directives(t(), [String.t()]) :: Dagger.Artifacts.t()
-  def filter_directives(%__MODULE__{} = artifacts, directives) do
+  @spec filter_directives(t(), [String.t()], [{:exclude, boolean() | nil}]) ::
+          Dagger.Artifacts.t()
+  def filter_directives(%__MODULE__{} = artifacts, directives, optional_args \\ []) do
     query_builder =
       artifacts.query_builder
       |> QB.select("filterDirectives")
       |> QB.put_arg("directives", directives)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
+  Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+  """
+  @spec filter_parent_directives(t(), [String.t()], [{:exclude, boolean() | nil}]) ::
+          Dagger.Artifacts.t()
+  def filter_parent_directives(%__MODULE__{} = artifacts, directives, optional_args \\ []) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("filterParentDirectives")
+      |> QB.put_arg("directives", directives)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
+  Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+  """
+  @spec filter_parent_types(t(), [String.t()], [{:exclude, boolean() | nil}]) ::
+          Dagger.Artifacts.t()
+  def filter_parent_types(%__MODULE__{} = artifacts, types, optional_args \\ []) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("filterParentTypes")
+      |> QB.put_arg("types", types)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -103,10 +141,13 @@ defmodule Dagger.Artifacts do
   @doc """
   Keep artifacts of any listed concrete GraphQL type.
   """
-  @spec filter_types(t(), [String.t()]) :: Dagger.Artifacts.t()
-  def filter_types(%__MODULE__{} = artifacts, types) do
+  @spec filter_types(t(), [String.t()], [{:exclude, boolean() | nil}]) :: Dagger.Artifacts.t()
+  def filter_types(%__MODULE__{} = artifacts, types, optional_args \\ []) do
     query_builder =
-      artifacts.query_builder |> QB.select("filterTypes") |> QB.put_arg("types", types)
+      artifacts.query_builder
+      |> QB.select("filterTypes")
+      |> QB.put_arg("types", types)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -226,6 +267,22 @@ defmodule Dagger.Artifacts do
          }
        end}
     end
+  end
+
+  @doc """
+  Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
+  """
+  @spec with_artifacts(t(), Dagger.Artifacts.t()) :: Dagger.Artifacts.t()
+  def with_artifacts(%__MODULE__{} = artifacts_, artifacts) do
+    query_builder =
+      artifacts_.query_builder
+      |> QB.select("withArtifacts")
+      |> QB.put_arg("artifacts", Dagger.ID.id!(artifacts))
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts_.client
+    }
   end
 
   @doc """

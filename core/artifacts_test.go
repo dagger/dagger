@@ -40,3 +40,21 @@ func TestArtifactAbsoluteURI(t *testing.T) {
 		}
 	}
 }
+
+func TestArtifactParentDirectivesAreImmediate(t *testing.T) {
+	parent := &ModTreeNode{Directives: []string{"generate"}}
+	child := &ModTreeNode{Parent: parent}
+	grandchild := &ModTreeNode{Parent: child}
+	artifacts := &Artifacts{Entries: []*Artifact{
+		{Path: []string{"child"}, Node: child},
+		{Path: []string{"child", "grandchild"}, Node: grandchild},
+		{Path: []string{"load"}},
+	}}
+	included := artifacts.FilterParentDirectives([]string{"generate"}, false)
+	require.Len(t, included.Entries, 1)
+	require.Equal(t, []string{"child"}, included.Entries[0].Path)
+	excluded := artifacts.FilterParentDirectives([]string{"generate"}, true)
+	require.Len(t, excluded.Entries, 2)
+	require.Equal(t, []string{"child", "grandchild"}, excluded.Entries[0].Path)
+	require.Equal(t, []string{"load"}, excluded.Entries[1].Path)
+}

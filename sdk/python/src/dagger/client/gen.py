@@ -1768,12 +1768,69 @@ class Artifacts(Type):
         _ctx = self._select("filterDimensions", _args)
         return Artifacts(_ctx)
 
-    def filter_directives(self, directives: list[str]) -> Self:
-        """Keep artifacts with any listed directive."""
+    def filter_directives(
+        self,
+        directives: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts with any listed directive.
+
+        Parameters
+        ----------
+        directives:
+        exclude:
+            Remove the matching artifacts instead.
+        """
         _args = [
             Arg("directives", directives),
+            Arg("exclude", exclude, False),
         ]
         _ctx = self._select("filterDirectives", _args)
+        return Artifacts(_ctx)
+
+    def filter_parent_directives(
+        self,
+        directives: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts whose immediate parent has any listed directive.
+        Artifacts without a parent do not match.
+
+        Parameters
+        ----------
+        directives:
+        exclude:
+            Remove the matching artifacts instead.
+        """
+        _args = [
+            Arg("directives", directives),
+            Arg("exclude", exclude, False),
+        ]
+        _ctx = self._select("filterParentDirectives", _args)
+        return Artifacts(_ctx)
+
+    def filter_parent_types(
+        self,
+        types: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts whose immediate parent has any listed object type.
+        Artifacts without a typed parent do not match.
+
+        Parameters
+        ----------
+        types:
+        exclude:
+            Remove the matching artifacts instead.
+        """
+        _args = [
+            Arg("types", types),
+            Arg("exclude", exclude, False),
+        ]
+        _ctx = self._select("filterParentTypes", _args)
         return Artifacts(_ctx)
 
     def filter_path(self, path: list[str]) -> Self:
@@ -1784,10 +1841,23 @@ class Artifacts(Type):
         _ctx = self._select("filterPath", _args)
         return Artifacts(_ctx)
 
-    def filter_types(self, types: list[str]) -> Self:
-        """Keep artifacts of any listed concrete GraphQL type."""
+    def filter_types(
+        self,
+        types: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts of any listed concrete GraphQL type.
+
+        Parameters
+        ----------
+        types:
+        exclude:
+            Remove the matching artifacts instead.
+        """
         _args = [
             Arg("types", types),
+            Arg("exclude", exclude, False),
         ]
         _ctx = self._select("filterTypes", _args)
         return Artifacts(_ctx)
@@ -1917,6 +1987,16 @@ class Artifacts(Type):
         ]
         _ctx = self._select("values", _args)
         return await _ctx.execute_object_list(ArtifactResult)
+
+    def with_artifacts(self, artifacts: Self) -> Self:
+        """Combine two selections, keeping each workspace address once. Different
+        addresses remain distinct even if they return the same object.
+        """
+        _args = [
+            Arg("artifacts", artifacts),
+        ]
+        _ctx = self._select("withArtifacts", _args)
+        return Artifacts(_ctx)
 
     def without_uri(self, uri: str) -> Self:
         """Remove artifacts selected by a DAG address."""

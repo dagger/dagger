@@ -1419,10 +1419,66 @@ func (r *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
 	}
 }
 
+// ArtifactsFilterDirectivesOpts contains options for Artifacts.FilterDirectives
+type ArtifactsFilterDirectivesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
 // Keep artifacts with any listed directive.
-func (r *Artifacts) FilterDirectives(directives []string) *Artifacts {
+func (r *Artifacts) FilterDirectives(directives []string, opts ...ArtifactsFilterDirectivesOpts) *Artifacts {
 	q := r.query.Select("filterDirectives")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
 	q = q.Arg("directives", directives)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// ArtifactsFilterParentDirectivesOpts contains options for Artifacts.FilterParentDirectives
+type ArtifactsFilterParentDirectivesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+func (r *Artifacts) FilterParentDirectives(directives []string, opts ...ArtifactsFilterParentDirectivesOpts) *Artifacts {
+	q := r.query.Select("filterParentDirectives")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("directives", directives)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// ArtifactsFilterParentTypesOpts contains options for Artifacts.FilterParentTypes
+type ArtifactsFilterParentTypesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+func (r *Artifacts) FilterParentTypes(types []string, opts ...ArtifactsFilterParentTypesOpts) *Artifacts {
+	q := r.query.Select("filterParentTypes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("types", types)
 
 	return &Artifacts{
 		query: q,
@@ -1439,9 +1495,21 @@ func (r *Artifacts) FilterPath(path []string) *Artifacts {
 	}
 }
 
+// ArtifactsFilterTypesOpts contains options for Artifacts.FilterTypes
+type ArtifactsFilterTypesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
 // Keep artifacts of any listed concrete GraphQL type.
-func (r *Artifacts) FilterTypes(types []string) *Artifacts {
+func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts) *Artifacts {
 	q := r.query.Select("filterTypes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
 	q = q.Arg("types", types)
 
 	return &Artifacts{
@@ -1617,6 +1685,17 @@ func (r *Artifacts) Values(ctx context.Context, opts ...ArtifactsValuesOpts) ([]
 	}
 
 	return convert(response), nil
+}
+
+// Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
+func (r *Artifacts) WithArtifacts(artifacts *Artifacts) *Artifacts {
+	assertNotNil("artifacts", artifacts)
+	q := r.query.Select("withArtifacts")
+	q = q.Arg("artifacts", artifacts)
+
+	return &Artifacts{
+		query: q,
+	}
 }
 
 // Remove artifacts selected by a DAG address.

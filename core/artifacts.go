@@ -201,22 +201,108 @@ func (a *Artifacts) exactPaths() []string {
 	return slices.Compact(paths)
 }
 
-func (a *Artifacts) FilterDirectives(directives []string) *Artifacts {
+func (a *Artifacts) FilterDirectives(directives []string, exclude bool) *Artifacts {
 	selected := a.filter(func(artifact *Artifact) bool {
-		return slices.ContainsFunc(artifact.Directives, func(dir string) bool { return slices.Contains(directives, dir) })
+		return slices.ContainsFunc(artifact.Directives, func(dir string) bool { return slices.Contains(directives, dir) }) != exclude
 	})
 	selected.Selector.Paths = selected.exactPaths()
 	return selected
 }
 
-func (a *Artifacts) FilterTypes(types []string) *Artifacts {
-	selected := a.filter(func(artifact *Artifact) bool { return slices.Contains(types, artifact.TypeName) })
+func (a *Artifacts) FilterTypes(types []string, exclude bool) *Artifacts {
+	selected := a.filter(func(artifact *Artifact) bool { return slices.Contains(types, artifact.TypeName) != exclude })
+	if exclude {
+		selected.Selector.Paths = selected.exactPaths()
+		return selected
+	}
 	if a.Selector.Types == nil {
 		selected.Selector.Types = slices.Clone(types)
 	} else {
 		selected.Selector.Types = slices.DeleteFunc(selected.Selector.Types, func(typ string) bool { return !slices.Contains(types, typ) })
 	}
 	return selected
+}
+
+// Parent filters inspect the immediately preceding object in the schema path.
+// A root or module-load failure has no typed parent and does not match.
+func (a *Artifacts) FilterParentTypes(types []string, exclude bool) *Artifacts {
+	selected := a.filter(func(artifact *Artifact) bool {
+		match := false
+		if artifact.Node != nil {
+			if parent := artifact.Node.Parent.ObjectType(); parent != nil {
+				match = slices.Contains(types, parent.Name)
+			}
+		}
+		return match != exclude
+	})
+	selected.Selector.Paths = selected.exactPaths()
+	return selected
+}
+
+func (a *Artifacts) FilterParentDirectives(directives []string, exclude bool) *Artifacts {
+	selected := a.filter(func(artifact *Artifact) bool {
+		match := false
+		if artifact.Node != nil && artifact.Node.Parent != nil {
+			match = slices.ContainsFunc(artifact.Node.Parent.Directives, func(dir string) bool { return slices.Contains(directives, dir) })
+		}
+		return match != exclude
+	})
+	selected.Selector.Paths = selected.exactPaths()
+	return selected
+}
+
+// identity distinguishes addresses in different workspaces, even if their
+// values happen to be the same object.
+func (a *Artifact) identity() (string, error) {
+	var workspaceID uint64
+	if a.Workspace.Self() != nil {
+		id, err := a.Workspace.ID()
+		if err != nil {
+			return "", err
+		}
+		workspaceID = id.EngineResultID()
+	}
+	uri, err := a.URI(ArtifactURIOpts{DimensionKeys: true})
+	return fmt.Sprintf("%d:%s", workspaceID, uri), err
+}
+
+func (a *Artifacts) WithArtifacts(other *Artifacts) (*Artifacts, error) {
+	selected := &Artifacts{Entries: []*Artifact{}}
+	seen := map[string]bool{}
+	for _, artifact := range slices.Concat(a.Entries, other.Entries) {
+		key, err := artifact.identity()
+		if err != nil {
+			return nil, err
+		}
+		if !seen[key] {
+			seen[key] = true
+			selected.Entries = append(selected.Entries, artifact.Clone())
+		}
+	}
+	slices.SortStableFunc(selected.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
+	selected.Selector.Paths = selected.exactPaths()
+	return selected, nil
+}
+
+func (a *Artifacts) WithoutArtifacts(other *Artifacts) (*Artifacts, error) {
+	excluded := map[string]bool{}
+	for _, artifact := range other.Entries {
+		key, err := artifact.identity()
+		if err != nil {
+			return nil, err
+		}
+		excluded[key] = true
+	}
+	var matchErr error
+	selected := a.filter(func(artifact *Artifact) bool {
+		key, err := artifact.identity()
+		if err != nil {
+			matchErr = err
+		}
+		return !excluded[key]
+	})
+	selected.Selector.Paths = selected.exactPaths()
+	return selected, matchErr
 }
 
 // FilterTypeNames keeps artifacts whose type has any of the listed CLI-case
@@ -231,7 +317,7 @@ func (a *Artifacts) FilterTypeNames(names []string) *Artifacts {
 	if types == nil {
 		types = []string{}
 	}
-	return a.FilterTypes(types)
+	return a.FilterTypes(types, false)
 }
 
 func (a *Artifacts) Types() []string {
@@ -667,11 +753,5 @@ func (a *Artifacts) WithoutURI(address *dagaddress.Address) (*Artifacts, error) 
 	if err != nil {
 		return nil, err
 	}
-	paths := map[string]bool{}
-	for _, artifact := range excluded.Entries {
-		paths[strings.Join(artifact.Path, "/")] = true
-	}
-	selected := a.filter(func(artifact *Artifact) bool { return !paths[strings.Join(artifact.Path, "/")] })
-	selected.Selector.Paths = selected.exactPaths()
-	return selected, nil
+	return a.WithoutArtifacts(excluded)
 }

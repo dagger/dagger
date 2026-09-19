@@ -81,41 +81,22 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("no-generate") && !cmd.Flags().Changed("generate") && cfg.CheckGenerated != nil {
 				noGenerate = !*cfg.CheckGenerated
 			}
-			if noGenerate || checksOnlyGenerate {
-				parsed, err := parseArtifactAddresses(args)
+			regular := checks.FilterParentTypes([]string{"Changeset"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true})
+			generated := checks.FilterParentTypes([]string{"Changeset"}).FilterParentDirectives([]string{"generate"})
+			switch {
+			case checksOnlyGenerate:
+				checks = generated
+				failures, err := artifactLoadFailures(ctx, dag, regular)
 				if err != nil {
 					return err
 				}
-				for _, address := range parsed {
-					address.Path = strings.TrimSuffix(address.Path, "/stale")
+				for _, failure := range failures {
+					checks = checks.WithArtifacts(regular.FilterURI(failure.URI))
 				}
-				changesets, err := artifactURIs(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}).FilterTypes([]string{"Changeset"}), false)
-				if err != nil {
-					return err
-				}
-				paths := make([]string, len(changesets))
-				for i, uri := range changesets {
-					paths[i] = strings.TrimPrefix(uri, "dag://") + "/stale"
-				}
-				if checksOnlyGenerate {
-					failures, err := artifactLoadFailures(ctx, dag, artifacts)
-					if err != nil {
-						return err
-					}
-					for _, failure := range failures {
-						address, err := dagaddress.Parse(failure.URI)
-						if err != nil {
-							return err
-						}
-						paths = append(paths, address.Path)
-					}
-				}
-				selector := "dag://{" + strings.Join(paths, ",") + "}"
-				if noGenerate {
-					checks = checks.WithoutURI(selector)
-				} else {
-					checks = checks.FilterURI(selector)
-				}
+			case noGenerate:
+				checks = regular
+			default:
+				checks = regular.WithArtifacts(generated)
 			}
 			for _, skip := range checksSkip {
 				address, err := dagaddress.Parse(skip)

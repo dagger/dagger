@@ -500,13 +500,43 @@ type Artifacts implements Node {
   filterDimensions(dimensions: [String!]!): Artifacts!
 
   """Keep artifacts with any listed directive."""
-  filterDirectives(directives: [String!]!): Artifacts!
+  filterDirectives(
+    directives: [String!]!
+
+    """Remove the matching artifacts instead."""
+    exclude: Boolean = false
+  ): Artifacts!
+
+  """
+  Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+  """
+  filterParentDirectives(
+    directives: [String!]!
+
+    """Remove the matching artifacts instead."""
+    exclude: Boolean = false
+  ): Artifacts!
+
+  """
+  Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+  """
+  filterParentTypes(
+    types: [String!]!
+
+    """Remove the matching artifacts instead."""
+    exclude: Boolean = false
+  ): Artifacts!
 
   """Match one complete, ordered field sequence exactly."""
   filterPath(path: [String!]!): Artifacts!
 
   """Keep artifacts of any listed concrete GraphQL type."""
-  filterTypes(types: [String!]!): Artifacts!
+  filterTypes(
+    types: [String!]!
+
+    """Remove the matching artifacts instead."""
+    exclude: Boolean = false
+  ): Artifacts!
 
   """
   Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
@@ -548,6 +578,12 @@ type Artifacts implements Node {
     """Field arguments applied to each artifact, as a JSON object."""
     arguments: JSON = "{}"
   ): [ArtifactResult!]!
+
+  """
+  Combine two selections, keeping each workspace address once. Different
+  addresses remain distinct even if they return the same object.
+  """
+  withArtifacts(artifacts: ID! @expectedType(name: "Artifacts")): Artifacts!
 
   """Remove artifacts selected by a DAG address."""
   withoutUri(uri: String!): Artifacts!

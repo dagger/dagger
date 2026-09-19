@@ -34,9 +34,12 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Artifacts]{
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).DoNotCache("Evaluate each value with its own cache policy.").Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
 		dagql.Func("types", s.types).Doc("List concrete GraphQL types represented in this selection, sorted with no duplicates."),
-		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive."),
+		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
+		dagql.Func("filterParentTypes", s.filterParentTypes).Doc("Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
+		dagql.Func("filterParentDirectives", s.filterParentDirectives).Doc("Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
+		dagql.Func("withArtifacts", s.withArtifacts).Doc("Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object."),
 		dagql.Func("withoutUri", s.withoutURI).Doc("Remove artifacts selected by a DAG address."),
-		dagql.Func("filterTypes", s.filterTypes).Doc("Keep artifacts of any listed concrete GraphQL type."),
+		dagql.Func("filterTypes", s.filterTypes).Doc("Keep artifacts of any listed concrete GraphQL type.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterPath", s.filterPath).Doc("Match one complete, ordered field sequence exactly."),
 		dagql.Func("filterDimensions", s.filterDimensions).Doc("Keep artifacts selected through any listed dimension."),
 		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension."),
@@ -73,8 +76,39 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 func (*artifactsSchema) types(_ context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
 	return parent.Types(), nil
 }
-func (*artifactsSchema) filterTypes(_ context.Context, parent *core.Artifacts, args struct{ Types []string }) (*core.Artifacts, error) {
-	return parent.FilterTypes(args.Types), nil
+
+type artifactTypeFilterArgs struct {
+	Types   []string
+	Exclude bool `default:"false"`
+}
+
+type artifactDirectiveFilterArgs struct {
+	Directives []string
+	Exclude    bool `default:"false"`
+}
+
+func (*artifactsSchema) filterTypes(_ context.Context, parent *core.Artifacts, args artifactTypeFilterArgs) (*core.Artifacts, error) {
+	return parent.FilterTypes(args.Types, args.Exclude), nil
+}
+
+func (*artifactsSchema) filterParentTypes(_ context.Context, parent *core.Artifacts, args artifactTypeFilterArgs) (*core.Artifacts, error) {
+	return parent.FilterParentTypes(args.Types, args.Exclude), nil
+}
+
+func (*artifactsSchema) filterParentDirectives(_ context.Context, parent *core.Artifacts, args artifactDirectiveFilterArgs) (*core.Artifacts, error) {
+	return parent.FilterParentDirectives(args.Directives, args.Exclude), nil
+}
+
+func (*artifactsSchema) withArtifacts(ctx context.Context, parent *core.Artifacts, args struct{ Artifacts dagql.ID[*core.Artifacts] }) (*core.Artifacts, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	other, err := args.Artifacts.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithArtifacts(other.Self())
 }
 func (*artifactsSchema) filterPath(_ context.Context, parent *core.Artifacts, args struct{ Path []string }) (*core.Artifacts, error) {
 	return parent.FilterPath(args.Path), nil
@@ -109,9 +143,11 @@ func checkArtifactAddressWorkspace(entries []*core.Artifact, addr *dagaddress.Ad
 	if len(entries) == 0 {
 		return notSupported
 	}
-	address, commit, err := entries[0].Workspace.Self().GitAddress()
-	if err != nil || address != addr.Workspace || commit != addr.Version {
-		return notSupported
+	for _, artifact := range entries {
+		address, commit, err := artifact.Workspace.Self().GitAddress()
+		if err != nil || address != addr.Workspace || commit != addr.Version {
+			return notSupported
+		}
 	}
 	return nil
 }
@@ -133,6 +169,17 @@ func (*artifactsSchema) one(_ context.Context, parent *core.Artifacts, _ struct{
 	return parent.One()
 }
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
+	var workspaceID uint64
+	for i, artifact := range parent.Entries {
+		id, err := artifact.Workspace.ID()
+		if err != nil {
+			return "", err
+		}
+		if i > 0 && id.EngineResultID() != workspaceID {
+			return "", fmt.Errorf("a selection from multiple workspaces has no single DAG address; use the individual artifact addresses")
+		}
+		workspaceID = id.EngineResultID()
+	}
 	return parent.URI(), nil
 }
 func (*artifactsSchema) artifactURI(_ context.Context, parent *core.Artifact, args struct {
@@ -301,6 +348,9 @@ func artifactInputs(ctx context.Context, artifact *core.Artifact, raw core.JSON)
 func (*artifactsSchema) withoutURI(_ context.Context, parent *core.Artifacts, args struct{ URI string }) (*core.Artifacts, error) {
 	address, err := dagaddress.Parse(args.URI)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkArtifactAddressWorkspace(parent.Entries, address, args.URI); err != nil {
 		return nil, err
 	}
 	return parent.WithoutURI(address)
@@ -481,9 +531,12 @@ func artifactGeneratorPolicies(ctx context.Context, entries []*core.Artifact, cf
 	return policies, wrappers, nil
 }
 
-func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artifacts, args struct{ Directives []string }) (*core.Artifacts, error) {
-	selected := parent.FilterDirectives(args.Directives)
+func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artifacts, args artifactDirectiveFilterArgs) (*core.Artifacts, error) {
+	selected := parent.FilterDirectives(args.Directives, false)
 	if len(selected.Entries) == 0 {
+		if args.Exclude {
+			return parent.WithoutArtifacts(selected)
+		}
 		return selected, nil
 	}
 	cfg, err := workspaceEffectiveConfig(ctx, selected.Entries[0].Workspace.Self())
@@ -512,12 +565,6 @@ func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artif
 			var skip []string
 			switch directive {
 			case "check":
-				// Changeset.stale is addressable for every Changeset, but only
-				// declared generators contribute staleness checks to the project.
-				source := artifact.Node.Parent
-				if artifact.Node.Name == "stale" && source.ObjectType().Name == "Changeset" && !slices.Contains(source.Directives, "generate") {
-					continue
-				}
 				skip = entry.Check.Skip
 			case "up":
 				skip = entry.Up.Skip
@@ -548,6 +595,9 @@ func (*artifactsSchema) filterDirectives(ctx context.Context, parent *core.Artif
 				return nil, err
 			}
 		}
+	}
+	if args.Exclude {
+		return parent.WithoutArtifacts(selected)
 	}
 	return selected, nil
 }
