@@ -56,10 +56,39 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Keep artifacts with any listed directive.
      */
-    public function filterDirectives(array $directives): Artifacts
+    public function filterDirectives(array $directives, ?bool $exclude = false): Artifacts
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDirectives');
         $innerQueryBuilder->setArgument('directives', $directives);
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+     */
+    public function filterParentDirectives(array $directives, ?bool $exclude = false): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterParentDirectives');
+        $innerQueryBuilder->setArgument('directives', $directives);
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+     */
+    public function filterParentTypes(array $types, ?bool $exclude = false): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterParentTypes');
+        $innerQueryBuilder->setArgument('types', $types);
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -76,10 +105,13 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Keep artifacts of any listed concrete GraphQL type.
      */
-    public function filterTypes(array $types): Artifacts
+    public function filterTypes(array $types, ?bool $exclude = false): Artifacts
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterTypes');
         $innerQueryBuilder->setArgument('types', $types);
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -153,6 +185,16 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
         $leafQueryBuilder->setArgument('arguments', $arguments);
         }
         return (array)$this->queryLeaf($leafQueryBuilder, 'values');
+    }
+
+    /**
+     * Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
+     */
+    public function withArtifacts(Artifacts $artifacts): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifacts');
+        $innerQueryBuilder->setArgument('artifacts', $artifacts);
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

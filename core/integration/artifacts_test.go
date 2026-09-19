@@ -947,8 +947,8 @@ source = "dang"
 	wsID, err := src.AsWorkspace().ID(ctx)
 	require.NoError(t, err)
 	opts := &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}}
-	// Unmarked Changesets retain their addressable stale checks. Directive
-	// selection must not treat these as project checks or evaluate them.
+	// Both discovery and directive filtering retain unmarked Changesets'
+	// stale checks. The command selects generator checks through parent filters.
 	unmarked, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: "dag://{edit,broken-edit}/stale") {
  items { uri directives }
@@ -970,35 +970,43 @@ source = "dang"
 }`, opts)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{"filterDirectives":{"items":[
+ {"uri":"dag://broken-edit/stale","directives":["check"]},
  {"uri":"dag://clean/stale","directives":["check"]},
  {"uri":"dag://dirty/stale","directives":["check"]},
+ {"uri":"dag://edit/stale","directives":["check"]},
  {"uri":"dag://failing","directives":["check"]},
  {"uri":"dag://passing","directives":["check"]}
  ]}}}}`, string(*metadata))
-	results, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
- node(id: $ws) { ... on Workspace { artifacts { filterDirectives(directives: ["check"]) {
+	checks := dagger.Ref[*dagger.Workspace](c, wsID).Artifacts().FilterDirectives([]string{"check"})
+	selected := checks.FilterParentTypes([]string{"Changeset"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true}).
+		WithArtifacts(checks.FilterParentTypes([]string{"Changeset"}).FilterParentDirectives([]string{"generate"}))
+	selectionID, err := selected.ID(ctx)
+	require.NoError(t, err)
+	opts = &testutil.QueryOptions{Variables: map[string]any{"selection": selectionID}}
+	results, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($selection: ID!) {
+ node(id: $selection) { ... on Artifacts {
  items { uri value { ... on Check { pass error { message } } } }
- } } } }
+ } }
 }`, opts)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"node":{"artifacts":{"filterDirectives":{"items":[
+	require.JSONEq(t, `{"node":{"items":[
  {"uri":"dag://clean/stale","value":{"pass":true,"error":null}},
  {"uri":"dag://dirty/stale","value":{"pass":false,"error":{"message":"generated files are not up to date"}}},
  {"uri":"dag://failing","value":{"pass":false,"error":{"message":"check failed"}}},
  {"uri":"dag://passing","value":{"pass":true,"error":null}}
- ]}}}}`, string(*results))
-	values, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
- node(id: $ws) { ... on Workspace { artifacts { filterDirectives(directives: ["check"]) {
+ ]}}`, string(*results))
+	values, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($selection: ID!) {
+ node(id: $selection) { ... on Artifacts {
  values { artifact { uri } error { message } value { ... on Check { pass } } }
- } } } }
+ } }
 }`, opts)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"node":{"artifacts":{"filterDirectives":{"values":[
+	require.JSONEq(t, `{"node":{"values":[
  {"artifact":{"uri":"dag://clean/stale"},"value":{"pass":true},"error":null},
  {"artifact":{"uri":"dag://dirty/stale"},"value":null,"error":{"message":"generated files are not up to date"}},
  {"artifact":{"uri":"dag://failing"},"value":null,"error":{"message":"check failed"}},
  {"artifact":{"uri":"dag://passing"},"value":{"pass":true},"error":null}
- ]}}}}`, string(*values))
+ ]}}`, string(*values))
 
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", src).With(nonNestedDevEngine(c))
 	for _, command := range []string{"generate", "check"} {
@@ -1021,6 +1029,93 @@ source = "dang"
 			require.NotContains(t, out, "edit")
 		})
 	}
+}
+
+func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := artifactSource(c)
+	provider, err := source.File("provider/main.dang").Contents(ctx)
+	require.NoError(t, err)
+	source = source.WithNewFile("provider/main.dang", strings.Replace(provider, "pub label:", `pub gen: Changeset! @generate { raise "metadata evaluated generator" }
+  pub edit: Changeset! { raise "metadata evaluated edit" }
+  pub label:`, 1))
+	all := source.AsWorkspace().Artifacts()
+	uris := func(ctx context.Context, t *testctx.T, selection *dagger.Artifacts) []string {
+		id, err := selection.ID(ctx)
+		require.NoError(t, err)
+		got, err := testutil.QueryWithClient[struct {
+			Node struct{ Items []struct{ URI string } }
+		}](c, t, `query($id: ID!) { node(id: $id) { ... on Artifacts { items { uri } } } }`,
+			&testutil.QueryOptions{Variables: map[string]any{"id": id}})
+		require.NoError(t, err)
+		result := []string{}
+		for _, item := range got.Node.Items {
+			result = append(result, item.URI)
+		}
+		return result
+	}
+	allURIs := uris(ctx, t, all)
+	for _, tc := range []struct {
+		name   string
+		filter func([]string, bool) *dagger.Artifacts
+		match  string
+		want   []string
+	}{
+		{"types", func(names []string, exclude bool) *dagger.Artifacts {
+			return all.FilterTypes(names, dagger.ArtifactsFilterTypesOpts{Exclude: exclude})
+		}, "Changeset", []string{"dag://edit", "dag://gen"}},
+		{"directives", func(names []string, exclude bool) *dagger.Artifacts {
+			return all.FilterDirectives(names, dagger.ArtifactsFilterDirectivesOpts{Exclude: exclude})
+		}, "check", []string{"dag://edit/stale", "dag://gen/stale"}},
+		{"parent types", func(names []string, exclude bool) *dagger.Artifacts {
+			return all.FilterParentTypes(names, dagger.ArtifactsFilterParentTypesOpts{Exclude: exclude})
+		}, "Changeset", []string{"dag://edit/stale", "dag://gen/stale"}},
+		{"parent directives", func(names []string, exclude bool) *dagger.Artifacts {
+			return all.FilterParentDirectives(names, dagger.ArtifactsFilterParentDirectivesOpts{Exclude: exclude})
+		}, "generate", []string{"dag://gen/stale"}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			included := tc.filter([]string{tc.match}, false)
+			excluded := tc.filter([]string{tc.match}, true)
+			require.Equal(t, tc.want, uris(ctx, t, included))
+			for _, uri := range uris(ctx, t, excluded) {
+				require.NotContains(t, tc.want, uri)
+			}
+			require.Equal(t, allURIs, uris(ctx, t, included.WithArtifacts(excluded)))
+			for _, names := range [][]string{{}, {"Unknown"}} {
+				require.Empty(t, uris(ctx, t, tc.filter(names, false)))
+				require.Equal(t, allURIs, uris(ctx, t, tc.filter(names, true)))
+			}
+		})
+	}
+	t.Run("union preserves addresses and clears branch filters", func(ctx context.Context, t *testctx.T) {
+		containers := all.FilterTypes([]string{"Container"})
+		directories := all.FilterTypes([]string{"Directory"})
+		joined := containers.WithArtifacts(directories).WithArtifacts(containers)
+		want := append(uris(ctx, t, containers), uris(ctx, t, directories)...)
+		slices.Sort(want)
+		require.Equal(t, want, uris(ctx, t, joined))
+		uri, err := joined.URI(ctx)
+		require.NoError(t, err)
+		require.Equal(t, want, uris(ctx, t, all.FilterURI(uri)))
+		require.Equal(t, uris(ctx, t, directories), uris(ctx, t, joined.FilterTypes([]string{"Directory"})))
+		require.Equal(t, allURIs, uris(ctx, t, all))
+	})
+	t.Run("union preserves workspace identity", func(ctx context.Context, t *testctx.T) {
+		first := all.FilterPath([]string{"base"})
+		second := source.WithNewFile("marker.txt", "other").AsWorkspace().Artifacts().FilterPath([]string{"base"})
+		joined := first.WithArtifacts(second).WithArtifacts(first)
+		items, err := joined.Items(ctx)
+		require.NoError(t, err)
+		require.Len(t, items, 2)
+		for i, want := range []string{"configured:original", "configured:other"} {
+			out, err := artifactValue[*dagger.Container](ctx, t, c, &items[i]).File("/marker").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, want, out)
+		}
+		_, err = joined.URI(ctx)
+		require.ErrorContains(t, err, "multiple workspaces")
+	})
 }
 
 func artifactValue[T dagger.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *dagger.Artifact) T {

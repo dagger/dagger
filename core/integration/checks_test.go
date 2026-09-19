@@ -464,6 +464,16 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 
 	base := workspaceFixture(t, c, "generators-broken")
 
+	t.Run("generate-only mode retains load failures", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "--generate")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bad/load")
+		require.NotContains(t, out, "good/verify")
+		out, err = base.With(daggerExecFail("check", "--generate", "--progress=report")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `bad/load.*ERROR`, out)
+	})
+
 	t.Run("listing succeeds and names the module that could not be loaded", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerExec("check", "-l")).

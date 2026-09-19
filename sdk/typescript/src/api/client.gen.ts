@@ -228,6 +228,34 @@ export type ArtifactValueOpts = {
   arguments: JSON
 }
 
+export type ArtifactsFilterDirectivesOpts = {
+  /**
+   * Remove the matching artifacts instead.
+   */
+  exclude?: boolean
+}
+
+export type ArtifactsFilterParentDirectivesOpts = {
+  /**
+   * Remove the matching artifacts instead.
+   */
+  exclude?: boolean
+}
+
+export type ArtifactsFilterParentTypesOpts = {
+  /**
+   * Remove the matching artifacts instead.
+   */
+  exclude?: boolean
+}
+
+export type ArtifactsFilterTypesOpts = {
+  /**
+   * Remove the matching artifacts instead.
+   */
+  exclude?: boolean
+}
+
 export type ArtifactsValuesOpts = {
   /**
    * Cancel remaining work after the first failure.
@@ -5106,9 +5134,40 @@ export class Artifacts extends BaseClient {
 
   /**
    * Keep artifacts with any listed directive.
+   * @param opts.exclude Remove the matching artifacts instead.
    */
-  filterDirectives = (directives: string[]): Artifacts => {
-    const ctx = this._ctx.select("filterDirectives", { directives })
+  filterDirectives = (
+    directives: string[],
+    opts?: ArtifactsFilterDirectivesOpts,
+  ): Artifacts => {
+    const ctx = this._ctx.select("filterDirectives", { directives, ...opts })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+   * @param opts.exclude Remove the matching artifacts instead.
+   */
+  filterParentDirectives = (
+    directives: string[],
+    opts?: ArtifactsFilterParentDirectivesOpts,
+  ): Artifacts => {
+    const ctx = this._ctx.select("filterParentDirectives", {
+      directives,
+      ...opts,
+    })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+   * @param opts.exclude Remove the matching artifacts instead.
+   */
+  filterParentTypes = (
+    types: string[],
+    opts?: ArtifactsFilterParentTypesOpts,
+  ): Artifacts => {
+    const ctx = this._ctx.select("filterParentTypes", { types, ...opts })
     return new Artifacts(ctx)
   }
 
@@ -5122,9 +5181,13 @@ export class Artifacts extends BaseClient {
 
   /**
    * Keep artifacts of any listed concrete GraphQL type.
+   * @param opts.exclude Remove the matching artifacts instead.
    */
-  filterTypes = (types: string[]): Artifacts => {
-    const ctx = this._ctx.select("filterTypes", { types })
+  filterTypes = (
+    types: string[],
+    opts?: ArtifactsFilterTypesOpts,
+  ): Artifacts => {
+    const ctx = this._ctx.select("filterTypes", { types, ...opts })
     return new Artifacts(ctx)
   }
 
@@ -5207,6 +5270,14 @@ export class Artifacts extends BaseClient {
     return response.map(
       (r) => new ArtifactResult(ctx.copy().selectNode(r.id, "ArtifactResult")),
     )
+  }
+
+  /**
+   * Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
+   */
+  withArtifacts = (artifacts: Artifacts): Artifacts => {
+    const ctx = this._ctx.select("withArtifacts", { artifacts })
+    return new Artifacts(ctx)
   }
 
   /**
