@@ -157,6 +157,8 @@ type Server struct {
 	// dagql cache
 	//
 	engineCache *dagql.Cache
+	// remoteCacheAdapter is nil unless an integration is configured.
+	remoteCacheAdapter *RemoteCacheAdapter
 
 	//
 	// session+client state
@@ -185,6 +187,8 @@ type NewServerOpts struct {
 	Name           string
 	Config         *config.Config
 	BuildkitConfig *bkconfig.Config
+	// RemoteCacheIntegration is nil, and remote cache renewal off, by default.
+	RemoteCacheIntegration *RemoteCacheIntegrationConfig
 }
 
 const (
@@ -193,6 +197,9 @@ const (
 )
 
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
+	if err := validateRemoteCacheIntegration(opts.RemoteCacheIntegration); err != nil {
+		return nil, err
+	}
 	cfg := opts.Config
 	bkcfg := opts.BuildkitConfig
 	ociCfg := bkcfg.Workers.OCI
@@ -465,6 +472,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// initialize the secret salt
 	srv.secretSalt, err = loadSecretSalt(srv.rootDir)
 	if err != nil {
+		return nil, err
+	}
+
+	// The integration attaches after local cache initialization and before
+	// the server dispatches any request.
+	if err := srv.startRemoteCacheIntegration(opts.RemoteCacheIntegration); err != nil {
 		return nil, err
 	}
 
@@ -841,6 +854,14 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 	srv.daggerSessionsMu.Unlock()
 
+	// Decide the integration's stop outcome before draining sessions or closing
+	// the cache, and join Run outside gcmu and every cache lock. A failed stop
+	// keeps the cache checkpoint dirty and is returned.
+	adapterStopErr := srv.stopRemoteCacheIntegration(ctx)
+	if adapterStopErr != nil {
+		slog.Error("failed to stop remote cache integration", "error", adapterStopErr)
+	}
+
 	if srv.engineCache != nil {
 		srv.gcmu.Lock()
 		defer srv.gcmu.Unlock()
@@ -876,7 +897,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 
 	if srv.engineCache != nil {
-		if closeErr := srv.engineCache.Close(ctx); closeErr != nil {
+		if closeErr := srv.engineCache.CloseWithShutdownError(ctx, adapterStopErr); closeErr != nil {
 			slog.Error("failed to close base dagql cache", "error", closeErr)
 			err = errors.Join(err, closeErr)
 		}
@@ -935,10 +956,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}()
 
 	select {
-	case err := <-doneClosingCh:
-		return err
+	case dbCloseErr := <-doneClosingCh:
+		return errors.Join(adapterStopErr, dbCloseErr)
 	case <-ctx.Done():
-		return ctx.Err()
+		return errors.Join(adapterStopErr, ctx.Err())
 	}
 }
 

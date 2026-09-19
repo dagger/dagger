@@ -28,8 +28,8 @@ func TestPartFixedProviderAndContentExhaustion(t *testing.T) {
 	descriptor := ocispec.Descriptor{Digest: digest.FromString(body), Size: int64(len(body))}
 	address := PersistedPartAddress{OutputPath: PersistedRefPath{}.Field("items").Index(0), Part: "snapshot"}
 	offer := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}, Chain: OfferedChain{Layers: []snapshots.ExportLayer{{Descriptor: descriptor}}, Addresses: map[digest.Digest]BlobAddress{descriptor.Digest: {URL: server.URL}}}}
-	source := fixedPartContentSource{}
-	require.True(t, source.Available(offer, time.Now().Unix()))
+	source := NewPartContentSource(nil)
+	require.True(t, source.Available(offer, time.Now()))
 	provider := source.Provider(t.Context(), offer, &PartDemandState{})
 	_, err := provider.Info(t.Context(), descriptor.Digest)
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestPartFixedProviderAndContentExhaustion(t *testing.T) {
 	_, err = reader.ReadAt(make([]byte, 2), 0)
 	require.ErrorIs(t, err, context.Canceled)
 	offer.Chain.Addresses[descriptor.Digest] = BlobAddress{URL: server.URL, ExpiresAtUnix: 1}
-	require.False(t, source.Available(offer, time.Now().Unix()))
+	require.False(t, source.Available(offer, time.Now()))
 	_, err = source.Provider(t.Context(), offer, &PartDemandState{}).ReaderAt(t.Context(), descriptor)
 	require.Error(t, err)
 	require.EqualValues(t, 1, requests.Load())
@@ -114,7 +114,7 @@ func TestPartFixedProviderMultiBuffer(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
 				if r.Header.Get("Range") == "" {
-					t.Error("Range must remain the first choice")
+					t.Error("every request names the remainder it needs")
 				}
 				if ranges {
 					http.ServeContent(w, r, "blob", time.Time{}, strings.NewReader(body))
@@ -125,7 +125,7 @@ func TestPartFixedProviderMultiBuffer(t *testing.T) {
 			defer server.Close()
 			descriptor := ocispec.Descriptor{Digest: digest.FromString(body), Size: int64(len(body))}
 			offer := PersistedPartOffer{Chain: OfferedChain{Layers: []snapshots.ExportLayer{{Descriptor: descriptor}}, Addresses: map[digest.Digest]BlobAddress{descriptor.Digest: {URL: server.URL}}}}
-			reader, err := (fixedPartContentSource{}).Provider(t.Context(), offer, nil).ReaderAt(t.Context(), descriptor)
+			reader, err := (*PartContentSource)(nil).Provider(t.Context(), offer, nil).ReaderAt(t.Context(), descriptor)
 			require.NoError(t, err)
 			defer reader.Close()
 			const bufferSize = 16 * 1024
@@ -142,10 +142,9 @@ func TestPartFixedProviderMultiBuffer(t *testing.T) {
 				off += n
 				reads++
 			}
+			// Batch 5 keeps one sequential response for contiguous reads, whether
+			// the endpoint answers the open-ended Range with 206 or with 200.
 			want := int64(1)
-			if ranges {
-				want = reads
-			}
 			require.Equal(t, want, requests.Load())
 			// A nonsequential offset starts a fresh Range request; a 200 response
 			// discards just the prefix and then resumes sequential consumption.
@@ -156,10 +155,7 @@ func TestPartFixedProviderMultiBuffer(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, body[68:99], string(buffer[:n]))
 			extra := int64(1)
-			if ranges {
-				extra = 2
-			}
-			require.Equal(t, want+extra, requests.Load())
+			require.Equal(t, want+extra, requests.Load(), "the contiguous read reuses the reopened response")
 			n, err = reader.ReadAt(buffer[:31], 7)
 			require.NoError(t, err)
 			require.Equal(t, body[7:38], string(buffer[:n]))
@@ -181,8 +177,9 @@ func TestPartFixedProviderCancellationClosesStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	descriptor := ocispec.Descriptor{Digest: digest.FromString("stream"), Size: 100000}
-	offer := PersistedPartOffer{Chain: OfferedChain{Addresses: map[digest.Digest]BlobAddress{descriptor.Digest: {URL: server.URL}}}}
-	reader, err := (fixedPartContentSource{}).Provider(ctx, offer, nil).ReaderAt(ctx, descriptor)
+	// A provider serves only blobs of its offered chain.
+	offer := PersistedPartOffer{Chain: OfferedChain{Layers: []snapshots.ExportLayer{{Descriptor: descriptor}}, Addresses: map[digest.Digest]BlobAddress{descriptor.Digest: {URL: server.URL}}}}
+	reader, err := (*PartContentSource)(nil).Provider(ctx, offer, nil).ReaderAt(ctx, descriptor)
 	require.NoError(t, err)
 	_, err = reader.ReadAt(make([]byte, 16), 0)
 	require.NoError(t, err)

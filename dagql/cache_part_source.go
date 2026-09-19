@@ -267,15 +267,6 @@ func (c *Cache) partResourceLeavesLocked(row *sharedResult) []uint64 {
 	slices.Sort(ids)
 	return ids
 }
-func chainAddressesUsable(offer *PersistedPartOffer, now int64) bool {
-	for _, layer := range offer.Chain.Layers {
-		a, ok := offer.Chain.Addresses[layer.Descriptor.Digest]
-		if !ok || a.URL == "" || (a.ExpiresAtUnix != 0 && a.ExpiresAtUnix <= now) {
-			return false
-		}
-	}
-	return true
-}
 func (c *Cache) probePart(ctx context.Context, row *sharedResult, address PersistedPartAddress) (PersistedRecord, capturedRowRevision, *PartProbe, error) {
 	var version capturedRowRevision
 	record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
@@ -422,7 +413,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		r := PartRunnable
 		if p != nil && p.LocalComplete && !p.Busy {
 			r = PartReady
-		} else if candidate.offer != nil && (candidate.row == row || c.partOfferAvailable(*candidate.offer, time.Now().Unix())) && (demand == nil || !demand.exhausted(candidate.row.id, address, candidate.offer, candidate.facts.offers)) {
+		} else if candidate.offer != nil && (candidate.row == row || c.PartContentSource().Available(*candidate.offer, time.Now())) && (demand == nil || !demand.exhausted(candidate.row.id, address, candidate.offer, candidate.facts.offers)) {
 			r = PartDownloadable
 		}
 		if p != nil && candidate.row == row && p.LocalComplete {
@@ -505,12 +496,17 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 
 var ErrPartReselect = errors.New("part sources changed; reselect")
 
-// PartDemandState remains open for batch 5's independently keyed renewal set.
+// PartDemandState is one demand's runtime state. Its two sets have distinct
+// keys: exhaustion by source, full address, content and admitted offer
+// revision; renewal episodes by the demand's target address and blob digests.
 type PartDemandState struct {
 	mu               sync.Mutex
+	target           PersistedPartAddress
 	exhaustedContent map[string]struct{}
 	failures         []partContentFailure
-	revision         uint64
+	// revision changes only on exhaustion; SourceCheck treats a change as stale.
+	revision uint64
+	renewals map[renewalEpisodeKey]*renewalEpisode
 }
 
 func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) string {
@@ -653,11 +649,4 @@ func (c *Cache) partSourceReferenceAllowedLocked(receiver *sharedResult, source 
 		return receiver.imported && c.ownPartRequirementsFitLocked(receiver, dep)
 	}
 	return source.sessionID != "" && c.sessionSatisfiesResourceRequirementsLocked(source.sessionID, dep)
-}
-
-func (c *Cache) partOfferAvailable(offer PersistedPartOffer, now int64) bool {
-	if binding := c.partContentSource.Load(); binding != nil {
-		return binding.source.Available(offer, now)
-	}
-	return (fixedPartContentSource{}).Available(offer, now)
 }

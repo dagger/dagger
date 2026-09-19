@@ -372,9 +372,9 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 	}))
 }
 
-func (partTestContentSource) Available(dagql.PersistedPartOffer, int64) bool { return true }
+func (partTestContentSource) Available(dagql.PersistedPartOffer, time.Time) bool { return true }
 
-func (partSelectingContentSource) Available(dagql.PersistedPartOffer, int64) bool { return true }
+func (partSelectingContentSource) Available(dagql.PersistedPartOffer, time.Time) bool { return true }
 
 type partFixtureTestRef struct {
 	bkcache.ImmutableRef

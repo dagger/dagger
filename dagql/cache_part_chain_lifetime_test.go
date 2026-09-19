@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/engine"
@@ -173,7 +174,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 	}
 }
 
-func (lifetimeChainSource) Available(PersistedPartOffer, int64) bool { return true }
+func (lifetimeChainSource) Available(PersistedPartOffer, time.Time) bool { return true }
 
 var errLifetimeImportRelease = errors.New("ImportChain returned ref release failed")
 

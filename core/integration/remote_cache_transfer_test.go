@@ -25,7 +25,7 @@ import (
 type RemoteCacheTransferSuite struct{}
 
 func TestRemoteCacheTransferSuite(t *testing.T) {
-	testctx.New(t, Middleware()[1:]...).RunTests(RemoteCacheTransferSuite{})
+	testctx.New(t, Middleware()...).RunTests(RemoteCacheTransferSuite{})
 }
 
 type transferFixtureMapping struct {

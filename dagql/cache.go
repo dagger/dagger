@@ -428,9 +428,10 @@ func NewCache(
 	snapshotGC func(context.Context) error,
 ) (*Cache, error) {
 	c := &Cache{
-		traceBootID:     newTraceBootID(),
-		snapshotManager: snapshotManager,
-		snapshotGC:      snapshotGC,
+		traceBootID:       newTraceBootID(),
+		snapshotManager:   snapshotManager,
+		snapshotGC:        snapshotGC,
+		partContentSource: NewPartContentSource(nil),
 	}
 
 	if dbPath == "" {
@@ -502,7 +503,7 @@ func NewCache(
 		if err := runOnReleaseFuncs(context.WithoutCancel(ctx), releases); err != nil {
 			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
 		}
-		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, persistenceResetReason: CachePersistenceResetImportFailure, sqlDB: db, pdb: persistDB}
+		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, partContentSource: c.partContentSource, persistenceResetReason: CachePersistenceResetImportFailure, sqlDB: db, pdb: persistDB}
 		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
 			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
 		}
@@ -2011,7 +2012,7 @@ type Cache struct {
 	traceImportRuns uint64
 
 	snapshotManager   bkcache.SnapshotManager
-	partContentSource atomic.Pointer[partContentSourceBinding]
+	partContentSource *PartContentSource
 	snapshotGC        func(context.Context) error
 
 	// Test hooks are nil in production. Tests use them to pause inside or
@@ -4556,12 +4557,24 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 }
 
 func (c *Cache) Close(ctx context.Context) error {
+	return c.CloseWithShutdownError(ctx, nil)
+}
+
+// CloseWithShutdownError is Close for a shutdown that has already failed. A
+// non-nil cause keeps the persistence checkpoint dirty even if drain and
+// cleanup succeed, and is returned joined with any close errors. It shares
+// Close's once, as does CloseDiscardingPersistence: after either has run, it
+// returns that earlier result and makes no checkpoint attempt.
+func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 	c.closeOnce.Do(func() {
+		// A nil cause leaves ordinary Close unchanged.
+		c.closeErr = errors.Join(cause)
 		slog.Info(
 			"starting dagql cache close",
 			"hasSQLDB", c.sqlDB != nil,
 			"hasPersistDB", c.pdb != nil,
 		)
+		c.closeRemoteCacheBridge()
 		if err := c.waitForQuiescence(ctx); err != nil {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
@@ -4606,7 +4619,7 @@ func (c *Cache) Close(ctx context.Context) error {
 
 func (c *Cache) CloseDiscardingPersistence() error {
 	c.closeOnce.Do(func() {
-		c.closing.Store(true)
+		c.closeRemoteCacheBridge()
 		slog.Info(
 			"discarding dagql cache without persistence",
 			"hasSQLDB", c.sqlDB != nil,
