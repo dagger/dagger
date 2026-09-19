@@ -130,7 +130,21 @@ func TestPartHostInlineAllPartsRetriesCapture(t *testing.T) {
 
 			// Call the inline host directly with no named parts. Root EvaluateParts
 			// would conceal the missing inline retry by applying its own loop.
+			released := armLazyAttemptReleased(c)
+			row.lazyMu.Lock()
+			generationBefore := row.lazyGeneration
+			row.lazyMu.Unlock()
 			err = value.host.Evaluate(ctx)
+			// Each acquire task wakes its caller before its deferred row release.
+			// Count the attempts this call started, including any probe retries,
+			// and await their release hooks before observing ownership.
+			row.lazyMu.Lock()
+			attempts := row.lazyGeneration - generationBefore
+			row.lazyMu.Unlock()
+			for range attempts {
+				waitLazyAttemptReleased(t, released)
+			}
+			t.Logf("observed %d acquisition attempt releases", attempts)
 			c.egraphMu.RLock()
 			after := row.incomingOwnershipCount
 			c.egraphMu.RUnlock()
