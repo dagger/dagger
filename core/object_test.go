@@ -199,7 +199,7 @@ func TestModuleObjectMethodsAfterModuleSessionRelease(t *testing.T) {
 					assert.NilError(t, obj.Install(producerCtx, dag))
 					checkFn, ok := objDef.FunctionByName("check")
 					assert.Assert(t, ok)
-					installedFn, err := NewModFunction(producerCtx, mod, objDef, checkFn)
+					installedFn, err := newModFunctionForField(producerCtx, mod, objDef, checkFn)
 					assert.NilError(t, err)
 					assert.NilError(t, installedFn.mergeUserDefaultsTypeDefs(producerCtx))
 					if release {
@@ -224,11 +224,11 @@ func TestModuleObjectMethodsAfterModuleSessionRelease(t *testing.T) {
 								assert.NilError(t, err, "constructors must return objects with a live module")
 								frame, err := result.ResultCall()
 								assert.NilError(t, err)
-								// Dynamic inputs run before CurrentCall is replaced. An unrelated
-								// enclosing frame must not override the request's live module.
+								// Neither the enclosing frame nor the request's scoped cache
+								// identity may replace the exact installed module binding.
 								inputCtx := dagql.ContextWithCall(ctx, &dagql.ResultCall{})
 								assert.NilError(t, installedFn.dynamicInputsForFieldCall(inputCtx, result, map[string]dagql.Input{}, "", &dagql.CallRequest{ResultCall: frame}))
-								bound, err := installedFn.forFieldCall(ctx, frame)
+								bound, err := installedFn.forFieldCall(ctx)
 								assert.NilError(t, err)
 								if !release {
 									assert.Equal(t, installedFn, bound, "warm binding must preserve the fast path")
@@ -261,6 +261,73 @@ func TestModuleObjectMethodsAfterModuleSessionRelease(t *testing.T) {
 					assert.Equal(t, 0, cache.Size(), "schema closures must not create ownership cycles")
 				})
 			}
+		})
+	}
+}
+
+func TestModuleFieldBindingIgnoresBootstrapEquivalence(t *testing.T) {
+	for _, release := range []bool{false, true} {
+		t.Run(fmt.Sprintf("released=%v", release), func(t *testing.T) {
+			cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+			assert.NilError(t, err)
+			t.Cleanup(func() { assert.NilError(t, cache.Close(t.Context())) })
+			root := &Query{}
+			srv := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+			root.Server = srv
+			dag := newCoreDagqlServerForTest(t, root)
+			srv.dag = dag
+			installModuleObjectTestModuleClass(dag)
+			installTypeDefTestClasses(dag)
+			ctxFor := func(id string) context.Context {
+				return ContextWithQuery(dagql.ContextWithCache(engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+					ClientID: id, SessionID: id,
+				}), cache), root)
+			}
+			bootstrapCtx, producerCtx, consumerCtx := ctxFor("bootstrap"), ctxFor("producer"), ctxFor("consumer")
+			dagql.Fields[*Query]{
+				dagql.Func("moduleForBinding", func(ctx context.Context, _ *Query, args struct {
+					Bootstrap bool `default:"false"`
+				}) (*Module, error) {
+					source := &ModuleSource{Kind: ModuleSourceKindDir, ModuleName: "example", ModuleOriginalName: "example", SDKImpl: &moduleObjectReplayRuntime{}}
+					sourceRes := newTypeDefDetachedResult(t, dag, "binding-source", source)
+					mod := &Module{NameField: "example", OriginalName: "example", Source: dagql.NonNull(sourceRes), Deps: NewSchemaBuilder(root, nil)}
+					if !args.Bootstrap {
+						mod.ObjectDefs = dagql.ObjectResultArray[*TypeDef]{moduleObjectReplayTypeDef(t, dag, true)}
+					}
+					return mod, nil
+				}),
+			}.Install(dag)
+			dagql.Fields[*Module]{
+				dagql.NodeFunc("_implementationScoped", func(ctx context.Context, mod dagql.ObjectResult[*Module], _ struct{}) (dagql.ObjectResult[*Module], error) {
+					res, err := dagql.NewObjectResultForCurrentCall(ctx, dag, mod.Self().Clone())
+					if err != nil {
+						return res, err
+					}
+					return res.WithContentDigest(ctx, digest.FromString("same-sdk-implementation"))
+				}),
+			}.Install(dag)
+			var bootstrap, mod dagql.ObjectResult[*Module]
+			assert.NilError(t, dag.Select(bootstrapCtx, dag.Root(), &bootstrap, dagql.Selector{Field: "moduleForBinding", Args: []dagql.NamedInput{{Name: "bootstrap", Value: dagql.Boolean(true)}}}))
+			_, err = ImplementationScopedModule(bootstrapCtx, bootstrap)
+			assert.NilError(t, err)
+			assert.NilError(t, dag.Select(producerCtx, dag.Root(), &mod, dagql.Selector{Field: "moduleForBinding"}))
+			originalID, err := mod.ID()
+			assert.NilError(t, err)
+			obj := &ModuleObject{Module: mod, TypeDef: mod.Self().ObjectDefs[0].Self().AsObject.Value.Self()}
+			// The check method's required label is irrelevant to the constructor.
+			assert.NilError(t, obj.Install(producerCtx, dag))
+			if release {
+				assert.NilError(t, cache.ReleaseSession(producerCtx, "producer"))
+				_, found, err := cache.LoadResultByResultIDExact(consumerCtx, "consumer", dag, originalID.EngineResultID())
+				assert.NilError(t, err)
+				assert.Assert(t, !found, "the original parent must actually be collected")
+			}
+			var result dagql.ObjectResult[*ModuleObject]
+			assert.NilError(t, dag.Select(consumerCtx, dag.Root(), &result, dagql.Selector{Field: "example"}))
+			assert.Equal(t, 1, len(result.Self().Module.Self().ObjectDefs), "bootstrap module is not valid runtime metadata")
+			currentID, err := result.Self().Module.ID()
+			assert.NilError(t, err)
+			assert.Equal(t, release, originalID.EngineResultID() != currentID.EngineResultID())
 		})
 	}
 }

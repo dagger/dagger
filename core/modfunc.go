@@ -34,6 +34,8 @@ type ModuleFunction struct {
 	metadata   *Function
 	returnType ModType
 	args       map[string]*UserModFunctionArg
+
+	fieldBinding *moduleFieldBinding // only for installed schema resolvers
 }
 
 var _ Callable = &ModuleFunction{}
@@ -83,11 +85,25 @@ func NewModFunction(
 	}, nil
 }
 
-// forFieldCall binds an installed function to the calling session without
-// changing the shared schema closure. Direct/internal function calls deliberately
-// do not use this path: their CurrentCall may belong to another module.
-func (fn *ModuleFunction) forFieldCall(ctx context.Context, frame *dagql.ResultCall) (*ModuleFunction, error) {
-	mod, err := moduleForFieldCall(ctx, frame)
+func newModFunctionForField(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *ObjectTypeDef, metadata *Function) (*ModuleFunction, error) {
+	fn, err := NewModFunction(ctx, mod, objDef, metadata)
+	if err != nil {
+		return nil, err
+	}
+	fn.fieldBinding, err = newModuleFieldBinding(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
+	return fn, nil
+}
+
+// forFieldCall binds an installed function to the exact module that supplied
+// its schema, never to an implementation-equivalent bootstrap module.
+func (fn *ModuleFunction) forFieldCall(ctx context.Context) (*ModuleFunction, error) {
+	if fn.fieldBinding == nil {
+		return nil, fmt.Errorf("function %q has no schema module binding", fn.metadata.Name)
+	}
+	mod, err := fn.fieldBinding.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +130,7 @@ func (fn *ModuleFunction) forFieldCall(ctx context.Context, frame *dagql.ResultC
 }
 
 func (fn *ModuleFunction) callForField(ctx context.Context, opts *CallOpts) (dagql.AnyResult, error) {
-	bound, err := fn.forFieldCall(ctx, dagql.CurrentCall(ctx))
+	bound, err := fn.forFieldCall(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bind function %q: %w", fn.metadata.Name, err)
 	}
@@ -122,8 +138,9 @@ func (fn *ModuleFunction) callForField(ctx context.Context, opts *CallOpts) (dag
 }
 
 func (fn *ModuleFunction) dynamicInputsForFieldCall(ctx context.Context, parent dagql.AnyResult, args map[string]dagql.Input, view call.View, req *dagql.CallRequest) error {
-	// preselect has not installed this request as CurrentCall yet.
-	bound, err := fn.forFieldCall(ctx, req.ResultCall)
+	// CurrentCall still names the enclosing operation. Resolve the field's
+	// own captured module, independently of either frame's cache identity.
+	bound, err := fn.forFieldCall(ctx)
 	if err != nil {
 		return fmt.Errorf("bind function %q inputs: %w", fn.metadata.Name, err)
 	}

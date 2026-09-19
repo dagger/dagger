@@ -1114,6 +1114,10 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
+		binding, err := newModuleFieldBinding(ctx, obj.Module)
+		if err != nil {
+			return err
+		}
 		// Prefer the object's description; fall back to the module's
 		// description so that dependency constructors on Query always
 		// carry the module's doc string when the struct itself has none.
@@ -1137,7 +1141,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		dag.Root().ObjectType().Extend(
 			spec,
 			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
-				mod, err := moduleForFieldCall(ctx, dagql.CurrentCall(ctx))
+				mod, err := binding.load(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -1163,7 +1167,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("install constructor for object %q without module result wrapper", objDef.Name)
 	}
 
-	fn, err := NewModFunction(ctx, obj.Module, objDef, fnTypeDef)
+	fn, err := newModFunctionForField(ctx, obj.Module, objDef, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -1433,6 +1437,10 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Obje
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve module identity for field %q: %w", field.Name, err)
 	}
+	binding, err := newModuleFieldBinding(ctx, mod)
+	if err != nil {
+		return dagql.Field[*ModuleObject]{}, err
+	}
 	spec := &dagql.FieldSpec{
 		Name:             field.Name,
 		Description:      field.Description,
@@ -1450,7 +1458,7 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Obje
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			liveMod, err := moduleForFieldCall(ctx, dagql.CurrentCall(ctx))
+			liveMod, err := binding.load(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -1496,7 +1504,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 	if mod.Self() == nil {
 		return f, fmt.Errorf("install function %q without module result wrapper", fun.Name)
 	}
-	modFun, err := NewModFunction(
+	modFun, err := newModFunctionForField(
 		ctx,
 		mod,
 		objDef,
