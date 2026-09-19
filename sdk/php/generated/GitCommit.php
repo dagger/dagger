@@ -58,6 +58,20 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Returns the changes from the first parent to this commit, excluding Git metadata.
+     *
+     * Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+     */
+    public function changes(?GitCommit $against = null): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        if (null !== $against) {
+        $innerQueryBuilder->setArgument('against', $against);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Git committer date, in RFC3339 format.
      */
     public function committedDate(): string

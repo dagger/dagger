@@ -13,8 +13,8 @@ composed view.
 ## The loop
 
 1. (Engine-change QA) `engine-lab start` — note the printed tcp endpoint.
-2. `mcp-lab start` with `engine: <that endpoint>`. Omit `engine` to attach to
-   the current session's own engine instead (stock behavior, no rebuild).
+2. `mcp-lab start` with `engineAddress: <that endpoint>`. Omit `engineAddress` to start a
+   fresh engine built from the current workspace.
 3. `tools` — the verbatim tools/list a model would receive.
 4. `call(name, argsJson)` — the verbatim tools/call result. isError results
    are prefixed with a marker, not raised: failure UX is the point.

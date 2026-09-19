@@ -1,0 +1,106 @@
+"""
+A Dagger module to help developer Dagger.
+Single use for the dagger open-source repo.
+"""
+type DaggerDev {
+
+  """
+  A base container image for various tasks related to developing Dagger.
+  It carries no particular dev tooling. For example it is used as a base for the playground.
+  """
+  base: Container! = wolfi.
+    container(packages: ["apk-tools", "git"]).
+    withEnvVariable("HOME", "/root").
+    withWorkdir("$HOME", expand: true)
+
+  """
+  Enable experimental GPU support for the Dagger engine
+  """
+  gpuSupport: Boolean! = false
+
+  """
+  Build and run a dev build of the dagger engine, exposing it as a tcp service.
+  Connect to it with `DAGGER_ENGINE=tcp://localhost:1234`
+  """
+  engine(ws: Workspace!): Service! @up {
+    engineDev(ws: ws).service(""
+      gpuSupport: gpuSupport
+    )
+  }
+
+  """
+  Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
+  """
+  playground(ws: Workspace!): Container! {
+    engineDev(ws: ws).installClient(base, service: engine(ws))
+  }
+
+  """
+  Smoke test: build the CLI and engine from source, then load a small module and run its check
+  """
+  smoke(ws: Workspace!): Void @check {
+    playground(ws)
+      .withWorkdir("/smoke")
+      .withNewFile("dagger.toml", """
+        [modules.hello]
+        source = ".dagger/modules/hello"
+        """)
+      .withNewFile(".dagger/modules/hello/dagger-module.toml", ```toml
+        name = "hello"
+        engineVersion = "latest"
+
+        [runtime]
+        source = "dang"
+      ```)
+      .withNewFile(".dagger/modules/hello/main.dang", """
+        type Hello {
+          ok: Void @check {
+            container.from("alpine").withExec(["true"]).sync
+            null
+          }
+        }
+        """)
+      .withExec(["dagger", "version"])
+      .withExec(["dagger", "check", "-l"])
+      .withExec(["dagger", "check"])
+      .sync
+    null
+  }
+
+  """
+  Go tools and system dependencies for generating Dagger source files.
+  """
+  goBase: Container! {
+    wolfi.container(packages: [
+      # FIXME: infer go version from our go.mod (ideally dagger.io/go has a utility for it)
+      "go-1.26",
+      "ca-certificates",
+      "git",
+      "build-base",
+      "protobuf~35",
+      "protobuf-dev~35",
+      "clang",
+      "lld",
+      "libbpf-dev",
+    ])
+      .withEnvVariable("HOME", "/root")
+      .withEnvVariable("GOPATH", "/go")
+      .withEnvVariable("GOBIN", "/usr/local/bin")
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withEnvVariable("PATH", "/usr/local/bin:$PATH", expand: true)
+      .withWorkdir("/app")
+      .withExec(["go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"])
+      .withExec(["go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"])
+      .withExec(["go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"])
+      .withExec(["go", "install", "github.com/gogo/protobuf/protoc-gen-gogofaster@v1.3.2"])
+      .withExec(["go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"])
+      # FIXME: use new "latest version" API to move tags into the lockfile
+      .withDirectory("/opt/proto/github.com/gogo/googleapis", git("https://github.com/gogo/googleapis.git").tag("v1.4.1").tree)
+      .withDirectory("/opt/proto/github.com/gogo/protobuf", git("https://github.com/gogo/protobuf.git").tag("v1.3.2").tree)
+      # Keep protobuf imports outside the workspace, at any Go module workdir.
+      .withNewFile("/usr/local/bin/protoc", """
+        #!/bin/sh
+        exec /usr/bin/protoc -I . -I /opt/proto -I /usr/include "$@"
+        """, permissions: 493)
+  }
+}

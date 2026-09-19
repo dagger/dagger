@@ -24,6 +24,8 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/fsutil"
+	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/layercopy"
 	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
@@ -927,31 +929,14 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return fmt.Errorf("compute paths: %w", err)
 	}
 
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return err
-	}
-	var dir dagql.ObjectResult[*Directory]
-	afterID, err := ch.After.ID()
-	if err != nil {
-		return fmt.Errorf("after ID: %w", err)
-	}
-	if err := srv.Select(ctx, ch.Before, &dir,
-		dagql.Selector{
-			Field: "diff",
-			Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*Directory](afterID)},
-			},
-		},
-	); err != nil {
-		return fmt.Errorf("get changeset diff directory: %w", err)
-	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return err
-	}
-	if err := cache.Evaluate(ctx, dir); err != nil {
-		return fmt.Errorf("evaluate changeset diff directory: %w", err)
+	// Snapshot diffs include metadata-only changes that ComputePaths excludes.
+	// Export exactly the declared paths from After, including empty directories,
+	// so an unchanged file cannot overwrite independent edits at the destination.
+	exportedPaths := make(map[string]struct{})
+	for _, p := range slices.Concat(paths.Added, paths.Modified) {
+		for p = path.Clean(p); p != "." && p != "/"; p = path.Dir(p) {
+			exportedPaths[p] = struct{}{}
+		}
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -966,13 +951,13 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export changeset to host %s", destPath))
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dirSnapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
+	dirSnapshot, err := ch.After.Self().Snapshot.GetOrEval(ctx, ch.After.Result)
 	if err != nil {
-		return fmt.Errorf("failed to evaluate changeset diff snapshot: %w", err)
+		return fmt.Errorf("failed to evaluate changeset after snapshot: %w", err)
 	}
-	dirSelector, err := dir.Self().Dir.GetOrEval(ctx, dir.Result)
+	dirSelector, err := ch.After.Self().Dir.GetOrEval(ctx, ch.After.Result)
 	if err != nil {
-		return fmt.Errorf("failed to evaluate changeset diff selector: %w", err)
+		return fmt.Errorf("failed to evaluate changeset after selector: %w", err)
 	}
 
 	return MountRef(ctx, dirSnapshot, func(root string, _ *mount.Mount) error {
@@ -980,7 +965,27 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		if err != nil {
 			return err
 		}
-		return bk.LocalDirExport(ctx, root, destPath, true, paths.Removed)
+		outputFS, err := fsutil.NewFS(root)
+		if err != nil {
+			return err
+		}
+		outputFS, err = fsutil.NewFilterFS(outputFS, &fsutil.FilterOpt{
+			Map: func(p string, stat *fsutiltypes.Stat) fsutil.MapResult {
+				// These are literal paths, not glob patterns. Keeping a parent
+				// directory does not implicitly include its unchanged children.
+				if _, ok := exportedPaths[filepath.ToSlash(p)]; ok {
+					return fsutil.MapResultKeep
+				}
+				if os.FileMode(stat.Mode).IsDir() {
+					return fsutil.MapResultSkipDir
+				}
+				return fsutil.MapResultExclude
+			},
+		})
+		if err != nil {
+			return err
+		}
+		return bk.LocalFSExport(ctx, outputFS, destPath, true, paths.Removed)
 	}, mountRefAsReadOnly)
 }
 
@@ -1754,6 +1759,7 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 	if err != nil {
 		return nil, err
 	}
+	defer newRef.Release(context.WithoutCancel(ctx))
 
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		workDir, err := containerdfs.RootPath(root, baseSelector)

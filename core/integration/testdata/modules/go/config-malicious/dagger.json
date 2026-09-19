@@ -1,8 +1,0 @@
-{
-  "name": "evil",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  },
-  "source": "."
-}

@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -159,7 +161,7 @@ func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
 	if err != nil {
 		return err
 	}
-	disposition, err := workspaceExecDisposition(autoApply, moduleInitNoApply)
+	disposition, err := sdkModuleDisposition(cmd, autoApply, moduleInitNoApply, true, idtui.RunningInAgent())
 	if err != nil {
 		return err
 	}
@@ -322,7 +324,28 @@ func mutateSDKModuleWorkspace(
 	variables map[string]any,
 	afterApply func(context.Context, *dagger.Workspace) error,
 ) error {
-	return mutateSDKModuleWorkspaceWithDisposition(cmd, query, variables, changesetDispositionForAutoApply(autoApply), afterApply)
+	disposition, err := sdkModuleDisposition(cmd, autoApply, false, false, idtui.RunningInAgent())
+	if err != nil {
+		return err
+	}
+	return mutateSDKModuleWorkspaceWithDisposition(cmd, query, variables, disposition, afterApply)
+}
+
+// sdkModuleDisposition picks how an SDK-module workspace change is applied.
+// A coding agent cannot answer the apply prompt, so an agent run without
+// -y/--auto-apply (or --no-apply, when the command offers it) fails before any
+// engine work, like dagger generate and migrate.
+func sdkModuleDisposition(cmd *cobra.Command, apply, noApply, offersNoApply, runningInAgent bool) (changesetDisposition, error) {
+	disposition, err := workspaceExecDisposition(apply, noApply)
+	if err != nil || disposition != changesetDispositionPrompt || !runningInAgent {
+		return disposition, err
+	}
+	msg := cmd.CommandPath() + " requires an explicit changeset choice when run by a coding agent:\n" +
+		"  pass -y/--auto-apply to apply the changes"
+	if offersNoApply {
+		msg += "\n  pass --no-apply to preview the changes without applying them"
+	}
+	return disposition, errors.New(msg)
 }
 
 func mutateSDKModuleWorkspaceWithDisposition(

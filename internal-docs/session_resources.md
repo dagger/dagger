@@ -163,7 +163,24 @@ Instead, `selectLookupCandidateForSessionLocked` filters candidates by checking:
 Only a candidate whose required handle set is a subset of the session's loaded
 handles is eligible.
 
-This is the actual enforcement point of the core rule.
+This is the primary enforcement point of the core rule, but not the only one.
+
+A result's stored `requiredSessionResources` can grow after a hit was
+selected: an attached dep can carry requirements while the result's
+dependency attachment is still in flight, and `AddExplicitDependency` can add
+a requirement-carrying retention edge after the result settled (module
+typedefs retention does this when the loaded module's closure includes a
+secret or socket handle; the growth also cascades to results that already
+depend on the parent). Every change to the stored set bumps a per-result
+generation counter inside the same `egraphMu` critical section.
+
+Serve paths therefore re-validate before handing the value out
+(`sessionStillSatisfiesResourceRequirements`): they capture the generation
+inside the selection critical section, and at serve time compare it with one
+atomic load. If it is unchanged, the set the selection check validated is the
+set being served and no lock is taken; if it changed, the full locked subset
+check runs again. A stale request or digest hit converts to a miss and falls
+through to execution; a stale result-ID load is refused.
 
 ## Concrete Resource Categories Today
 
@@ -392,7 +409,7 @@ Container exec SSH mounts and git SSH operations eventually call
 
 That again depends on resolving the handle to a concrete session-bound socket.
 
-So the handle is not just an identity trick. It is also the gate that connects
+So the handle is not just an identity trick. It is also the check that connects
 cacheable graph state back to the right live resource.
 
 ## Why This Enables Safe Equivalent Hits
@@ -414,7 +431,7 @@ With the current system:
 So we get the desired behavior:
 
 - semantic equivalence enables reuse
-- per-session binding prevents cross-session resource theft
+- per-session binding prevents a session from using a resource it never loaded
 
 The same general pattern applies to SSH sockets by fingerprint identity.
 
@@ -439,8 +456,8 @@ For HTTP auth:
 - the remote metadata cache key includes the secret handles for token/header
 - this intentionally scopes remote metadata caching by auth configuration
 
-The code comment is explicit about the reason: it is safer to scope by auth
-configuration than risk cache poisoning across different auth methods.
+The code comment is explicit about the reason: scoping by authentication
+configuration prevents sharing entries across different authentication methods.
 
 ### Content digests vs session-resource conditions
 
@@ -448,7 +465,7 @@ Git also mixes these resources into some content digest calculations or cache
 scope strings.
 
 That is related to cache identity, but it is not the whole story. The
-session-resource gating is still separately important because equivalence alone
+session-resource validation is still separately important because equivalence alone
 does not authorize a hit.
 
 ## Containers And Transitive Requirements

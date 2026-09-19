@@ -127,8 +127,14 @@ func (s *workspaceSchema) moduleSource(
 	}
 
 	switch ws.BaseSource().(type) {
-	case *core.WorkspaceSourceClientLocal, *core.WorkspaceSourceGitRef:
+	case *core.WorkspaceSourceClientLocal:
 		return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath))
+	case *core.WorkspaceSourceGitRef:
+		if ref, ok := ws.SourceGitRef(); ok {
+			if repo := ref.Self().Repo.Self(); repo != nil && repo.URL.Valid {
+				return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath))
+			}
+		}
 	}
 
 	root, err := s.workspaceOverlayRootfs(ctx, ws)
@@ -254,11 +260,13 @@ func (s *workspaceSchema) moduleSettings(
 			}
 		}
 		settings = append(settings, &core.WorkspaceModuleSetting{
-			Key:         hint.Name,
-			Value:       value,
-			Description: hint.Description,
-			IsList:      hint.IsList,
-			IsObject:    hint.IsObject,
+			Key:          hint.Name,
+			Value:        value,
+			Description:  hint.Description,
+			DefaultValue: hint.DefaultValue,
+			IsString:     hint.IsString,
+			IsList:       hint.IsList,
+			IsObject:     hint.IsObject,
 		})
 	}
 

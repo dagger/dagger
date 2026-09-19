@@ -198,7 +198,7 @@ type Test {
   `Dagger.<T>!` → runtime gets a raw ID string. (Self-calls DO work — don't
   conclude otherwise from old comments.)
 - Missing `@cache(policy: FunctionCachePolicy.Never)` on a stateful/live tool
-  → the second call replays the first result.
+  → the second call reuses the first result.
 - Exposing a `Map[...]` or an ad-hoc record type → hard error.
 - Declaring `id` when implementing a dep interface → error; omit it.
 - Using v1 `.{ }` selection in a `>= v0.21.5` module — that's dot-block now;

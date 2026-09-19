@@ -16,6 +16,24 @@ defmodule Dagger.WorkspaceGit do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
+
+  Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
+
+  This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
+  """
+  @spec directory(t()) :: Dagger.Directory.t()
+  def directory(%__MODULE__{} = workspace_git) do
+    query_builder =
+      workspace_git.query_builder |> QB.select("directory")
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: workspace_git.client
+    }
+  end
+
+  @doc """
   The checked-out HEAD of this workspace.
   """
   @spec head(t()) :: Dagger.GitRef.t()

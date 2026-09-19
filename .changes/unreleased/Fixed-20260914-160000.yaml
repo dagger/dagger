@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  A query rooted at a core `Query` field no longer loads the workspace
+  entrypoint module. `blob`, `currentNode`, `engineVolume`, `schema` and
+  `sshfsVolume` were not recognized as core fields, so a request rooted at one
+  of them was taken for an entrypoint function call, and an entrypoint that
+  could not load broke queries that never mentioned it.
+time: 2026-09-14T16:00:00Z
+custom:
+  Author: eunomie
+  PR: "14140"

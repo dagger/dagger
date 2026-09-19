@@ -420,19 +420,21 @@ func TestClientInitializationDoesNotHoldScopeLock(t *testing.T) {
 		initDone <- err
 	}()
 
+	// Admission briefly holds both locks before releasing scopeMu for slow
+	// initialization. Observe stateMu while holding scopeMu so we cannot mistake
+	// that admission window for the blocked schema boundary. The regression held
+	// scopeMu across schema construction, so it can never satisfy this condition.
 	require.Eventually(t, func() bool {
+		if !sess.scopeMu.TryLock() {
+			return false
+		}
+		defer sess.scopeMu.Unlock()
 		if child.stateMu.TryLock() {
 			child.stateMu.Unlock()
 			return false
 		}
 		return true
-	}, time.Second, time.Millisecond, "client initialization did not reach the blocked schema boundary")
-
-	// The lifecycle regression held scopeMu across the blocked initializer. That
-	// inverted against schema construction, whose detached DagQL work clones a
-	// ClientScope and must acquire scopeMu. Admission must leave the lock available.
-	require.True(t, sess.scopeMu.TryLock(), "slow client initialization retained scopeMu")
-	sess.scopeMu.Unlock()
+	}, time.Second, time.Millisecond, "slow client initialization retained scopeMu")
 
 	// Closing reachability during initialization must not reclaim the runtime:
 	// the provisional request lease owns it until initialization returns.
@@ -1674,6 +1676,8 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 		}
 		_, span := sess.tracerProvider.Tracer("test").Start(ctx, name)
 		spanID := span.SpanContext().SpanID()
+		// Export the live snapshot separately so both updates exercise routing.
+		require.NoError(t, sess.tracerProvider.ForceFlush(ctx))
 		span.End()
 		rec := otellog.Record{}
 		rec.SetTimestamp(time.Now())
@@ -1740,8 +1744,8 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 	rootSpans, rootLogs, rootMetrics := load("root")
 	parentSpans, parentLogs, parentMetrics := load("parent")
 	childSpans, childLogs, childMetrics := load("child")
-	// Live span export emits one start and one end snapshot. Each snapshot must
-	// reach each visibility target once, without duplicate ancestry delivery.
+	// The explicit flush keeps start and end snapshots in separate batches.
+	// Each must reach each visibility target once, without duplicate delivery.
 	require.Equal(t, 2, countSpan(rootSpans, rootSpanID))
 	require.Equal(t, 2, countSpan(rootSpans, childSpanID))
 	require.Equal(t, 2, countSpan(parentSpans, childSpanID))
@@ -2375,14 +2379,20 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	defer db.Close()
 	spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
 	require.NoError(t, err)
-	var cleanupSnapshots int
+	var liveSnapshots, completedSnapshots int
 	for _, span := range spans {
 		if span.Name == "metric cleanup telemetry" {
-			cleanupSnapshots++
+			if span.EndTime.Valid {
+				completedSnapshots++
+			} else {
+				liveSnapshots++
+			}
 		}
 	}
-	require.Equal(t, 2, cleanupSnapshots,
-		"cleanup span start/end snapshots must pass the final session flush")
+	require.Equal(t, 1, completedSnapshots,
+		"the completed cleanup span must pass the final session flush")
+	// The live snapshot may be coalesced with the completed one in the same batch.
+	require.LessOrEqual(t, liveSnapshots, 1)
 }
 
 // newTeardownTestSession publishes an initialized session whose main client
@@ -4069,7 +4079,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 	t.Run("workspace with config", func(t *testing.T) {
 		t.Parallel()
 
-		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+		ws, err := srv.buildCoreWorkspace(ctx, &workspace.Workspace{
 			Root:       "/repo",
 			HasGitRoot: true,
 			Cwd:        filepath.Join("services", "payment", "src"),
@@ -4087,7 +4097,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 	t.Run("workspace without config", func(t *testing.T) {
 		t.Parallel()
 
-		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+		ws, err := srv.buildCoreWorkspace(ctx, &workspace.Workspace{
 			Root:       "/repo",
 			HasGitRoot: true,
 			Cwd:        ".",
@@ -4101,7 +4111,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 	t.Run("local boundary without Git is rootless", func(t *testing.T) {
 		t.Parallel()
 
-		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+		ws, err := srv.buildCoreWorkspace(ctx, &workspace.Workspace{
 			Root:     "/repo",
 			Cwd:      ".",
 			LockFile: workspace.LockFileName,
@@ -4748,4 +4758,28 @@ func sessionTestModuleResultWithGitSource(t *testing.T, name, cloneRef, commit s
 	)
 	require.NoError(t, err)
 	return res
+}
+
+func TestIsCoreRootFieldCoversEveryCoreQueryField(t *testing.T) {
+	t.Parallel()
+
+	// A core Query field that neither list claims looks like an unknown field
+	// to filterPendingWorkspaceModulesForRootFields, which then guesses it
+	// might be an entrypoint function and loads the entrypoint for it.
+	// `node` is the one core field deliberately left out: what it demands is
+	// knowable only from its id, which this layer does not read, so it keeps
+	// the conservative guess.
+	for _, field := range []string{
+		"blob",
+		"currentNode",
+		"engineVolume",
+		"schema",
+		"sshfsVolume",
+	} {
+		require.True(t, isCoreRootField(field), field)
+	}
+	require.False(t, isCoreRootField("node"))
+	// `id` is core on Query, but a module function named `id` is rejected by
+	// name, and that error needs the module loaded to be produced at all.
+	require.False(t, isCoreRootField("id"))
 }

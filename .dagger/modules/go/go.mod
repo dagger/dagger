@@ -9,7 +9,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.43.1-0.20260810200237-752a39ce1610
+	github.com/dagger/otel-go v1.43.1-0.20260917165636-2bca4f5622cf
 	github.com/pelletier/go-toml v1.9.5
 	github.com/vektah/gqlparser/v2 v2.5.36
 	go.opentelemetry.io/otel v1.46.0

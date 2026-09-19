@@ -230,30 +230,15 @@ func TestWorkspaceConfigFlags(t *testing.T) {
 		string(mayReadWorkspaceConfig),
 		string(mayWriteWorkspaceConfig),
 	}, flag.Annotations[flagAnyCapabilitiesAnnotation])
-	require.True(t, flag.Hidden)
+	require.False(t, flag.Hidden)
 
 	read := &cobra.Command{Use: "read"}
 	setCommandCapabilities(read, mayReadWorkspaceConfig)
-	require.False(t, FlagAvailableForCommand(read, flag))
+	require.True(t, FlagAvailableForCommand(read, flag))
 	write := &cobra.Command{Use: "write"}
 	setCommandCapabilities(write, mayWriteWorkspaceConfig)
-	require.False(t, FlagAvailableForCommand(write, flag))
+	require.True(t, FlagAvailableForCommand(write, flag))
 	require.False(t, FlagAvailableForCommand(&cobra.Command{Use: "plain"}, flag))
-}
-
-func TestEnvFlagDisabled(t *testing.T) {
-	root := testRootCommand()
-	for _, args := range [][]string{
-		{"--env=ci", "check"},
-		{"module", "install", "--env", "ci", "github.com/dagger/go"},
-		{"module", "settings", "--env=ci", "go"},
-		{"workspace", "config", "--env=ci"},
-		{"api", "call", "--env=ci"},
-	} {
-		require.ErrorContains(t, validateFlagCapabilities(root, args), "flag --env is not supported", args)
-		cmd, _ := resolveCommand(root, args)
-		require.NotContains(t, renderHelp(t, cmd), "--env", args)
-	}
 }
 
 func TestMayCallEngineCommands(t *testing.T) {
@@ -323,12 +308,12 @@ func TestMayCallEngineCommands(t *testing.T) {
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayCallEngine))
 
 	for name, cmd := range map[string]*cobra.Command{
-		"root":             rootCmd,
-		"activity":         activityCmd,
-		"cloud rerun":      cloudRerunCmd,
-		"sdk":              sdkCmd,
-		"trace":            traceCmd,
-		"workspace remote": workspaceRemoteCmd,
+		"root":               rootCmd,
+		"activity":           activityCmd,
+		"cloud checks rerun": cloudRerunCmd,
+		"sdk":                sdkCmd,
+		"trace":              traceCmd,
+		"workspace remote":   workspaceRemoteCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
 	}
@@ -359,7 +344,6 @@ func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
 func TestMaySelectWorkspaceCommands(t *testing.T) {
 	expected := append(commandsDeclaringCapability(rootCmd, mayCallEngine),
 		"dagger cloud checks",
-		"dagger cloud rerun",
 		"dagger workspace activity",
 		"dagger workspace remote",
 	)
@@ -380,7 +364,7 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 		"activity":            activityCmd,
 		"cloud checks list":   cloudCheckListCmd,
 		"cloud checks status": cloudCheckStatusCmd,
-		"cloud rerun":         cloudRerunCmd,
+		"cloud checks rerun":  cloudRerunCmd,
 		"workspace remote":    workspaceRemoteCmd,
 	} {
 		require.True(t, commandHasCapability(cmd, maySelectWorkspace), name)
@@ -561,8 +545,8 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 	installGlobalFlags(flags)
 	envFlag := flags.Lookup("env")
 	require.NotNil(t, envFlag)
-	require.False(t, FlagAvailableForCommand(moduleInitCmd, envFlag))
-	require.False(t, FlagAvailableForCommand(sdkListCmd, envFlag))
+	require.True(t, FlagAvailableForCommand(moduleInitCmd, envFlag))
+	require.True(t, FlagAvailableForCommand(sdkListCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(rootCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(setupCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(sdkCmd, envFlag))

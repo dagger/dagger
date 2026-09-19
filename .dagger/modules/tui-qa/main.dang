@@ -14,6 +14,8 @@
 #     talks to this session's engine, and `dagger call/check/agent` actually
 #     run with the session's LLM auth) at a
 #     configurable workdir, with DAGGER_TUI_CONSOLE=:PORT + DAGGER_PROGRESS=tty
+#     + PPROF=:PORT+1 (the CLI's standalone pprof/debug server — see
+#     internal/cmd/dagger/debug.go — for profiling the live TUI process)
 #   - run the command under test as a Service and .start() it (so it persists
 #     across tool calls within this dagger session)
 #   - hold a small curl client container (bound to that service) as session
@@ -21,6 +23,47 @@
 
 let defaultWorkdir = "/src"
 let defaultPort = 7777
+
+# Where forwarded Dagger Cloud credentials are mounted. The CLI reads its
+# credentials from $XDG_CONFIG_HOME/dagger/credentials.json (see configRoot in
+# internal/cloud/auth/auth.go), so pointing XDG_CONFIG_HOME at a directory we
+# control is all it takes for a forwarded token to be found.
+let configHome = "/config"
+
+# Forward Dagger Cloud credentials and user config into a container. A no-op
+# when neither is configured.
+#
+# Mounted as secrets: credentials never land in a filesystem layer, and the
+# plaintext is only resolved (from the host, via the secret URI) when an exec
+# actually runs. The mounts are read-only; host-side updates are picked up by
+# the next tool call.
+let withCredentials(
+  ctr: Container!,
+  credentials: Secret,
+  daggerConfig: Secret,
+): Container! {
+  let configured = if (credentials == null and daggerConfig == null) {
+    ctr
+  } else {
+    ctr.withEnvVariable("XDG_CONFIG_HOME", configHome)
+  }
+  let withCloud = if (credentials == null) {
+    configured
+  } else {
+    configured.withMountedSecret(
+      configHome + "/dagger/credentials.json",
+      credentials,
+    )
+  }
+  if (daggerConfig == null) {
+    withCloud
+  } else {
+    withCloud.withMountedSecret(
+      configHome + "/dagger/config.toml",
+      daggerConfig,
+    )
+  }
+}
 
 type TuiQa {
   # ---- session state (private so it isn't exposed as tools; persists across
@@ -32,12 +75,47 @@ type TuiQa {
   let service: Service = null
   # base URL of the console inside the client container, e.g. http://tui-qa:7777
   let url: String! = ""
+  # base URL of the CLI's standalone PPROF debug server, e.g. http://tui-qa:7778
+  let pprofUrl: String! = ""
 
   # The skills shipped alongside this module (skills/<name>/SKILL.md), installed
   # onto the agent's LLM instead of a static system prompt: the model discovers
   # them with ListSkills and reads them with ReadSkill only when relevant, so
   # the TUI-QA workflow never pollutes context until it's actually needed.
   let skills: Directory! = currentModule.source.directory("skills")
+
+  # Dagger Cloud credentials and user-level config forwarded into the CLI under
+  # test. Private so secrets are never exposed as fields or tool arguments:
+  # they are configuration, not something the model steers per call.
+  let cloudCredentials: Secret = null
+  let daggerConfig: Secret = null
+
+  new(
+    """
+    Dagger Cloud credentials for the CLI under test — the contents of the
+    host's ~/.config/dagger/credentials.json — so QA'ing commands that talk to
+    Cloud (`dagger cloud ...`, Cloud-backed traces) runs authenticated instead
+    of logged out.
+
+    Wire it up in dagger.toml settings rather than passing it around:
+
+        [env.dev.modules.tui-qa.settings]
+        cloudCredentials = "file://~/.config/dagger/credentials.json"
+
+    Without it, the CLI under test behaves as logged out.
+    """
+    cloudCredentials: Secret = null,
+    """
+    User-level Dagger config for the CLI under test — the contents of the
+    host's ~/.config/dagger/config.toml. This forwards LLM provider settings
+    when the runner connects to a nested engine.
+    """
+    daggerConfig: Secret = null,
+  ) {
+    self.cloudCredentials = cloudCredentials
+    self.daggerConfig = daggerConfig
+    self
+  }
 
   """
   Compose the TUI-QA tools onto a base LLM.
@@ -70,7 +148,7 @@ type TuiQa {
     Working directory inside the container to run the command from. The workspace
     source is mounted here, so this is usually the repo root.
     """
-    workdir: String! = defaultWorkdir,
+    workingDirectory: String! = defaultWorkdir,
     """
     Port the HTTP TUI console listens on inside the container.
     """
@@ -83,7 +161,16 @@ type TuiQa {
     the attached runner has no LLM auth inherited via nesting, so prefer the
     default for `args: ["agent"]` sessions.
     """
-    engine: String! = "",
+    engineAddress: String! = "",
+    """
+    An auto-saved LLM session file to make resumable inside the runner. The
+    CLI resolves sessions as $XDG_STATE_HOME/dagger/llm-sessions/<uuid>.json
+    (see getSessionDir in internal/cmd/dagger/llm.go), so the file MUST keep
+    its <uuid>.json name — it is mounted under that directory verbatim, with
+    XDG_STATE_HOME pointed at /state. Resume it by starting with
+    args: ["agent", "-r=<uuid>"].
+    """
+    session: File = null,
   ): TuiQa! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): starting a service is a side effect that must actually run
     # every invocation, not be served stale from the dagql session cache.
@@ -96,7 +183,7 @@ type TuiQa {
     # The client container the command under test runs in. Default: a lean
     # client run with experimentalPrivilegedNesting, so it talks to the
     # session's own engine and inherits its LLM auth (required for `agent`).
-    # With `engine`: the same lean client, pointed at the existing engine by
+    # With `engineAddress`: the same lean client, pointed at the existing engine by
     # address instead — that engine is reachable with no service binding
     # because engine-lab starts its service under the session DNS domain, but
     # nothing forwards LLM credentials to it.
@@ -104,31 +191,52 @@ type TuiQa {
       .from("alpine:3.20")
       .withExec(["apk", "add", "--no-cache", "curl", "git"])
 
-    let nesting = engine == ""
+    let nesting = engineAddress == ""
 
     let base = if (nesting) {
       lean
     } else {
-      lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine)
+      lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineAddress)
     }
 
     # we overwrite (or install) the CLI with our from-source build.
-    let runner = base
+    let base2 = base
       .withFile("/usr/local/bin/dagger", cli)
-      .withDirectory(workdir, srcDir)
-      .withWorkdir(workdir)
-      # The workspace snapshot carries no usable .git — at best a worktree
-      # pointer file whose target only exists on the real host — but agent
-      # workspace tools (commit, git.uncommitted, ctrl+s) need an actual
-      # repository. Re-initialize one from the snapshot so `dagger agent`
-      # sessions can stage commits.
-      .withExec([
-        "sh", "-c",
-        "rm -rf .git && git init -q -b main && git add -A && git " + "-c user.email=tui-qa@localhost -c user.name=tui-qa " + "commit -qm 'workspace snapshot'",
-      ])
+      .withDirectory(workingDirectory, srcDir)
+      # The workspace snapshot carries no usable .git of its own — at best a
+      # worktree pointer file whose target only exists on the real host — but
+      # the CLI under test needs a real checkout: without one,
+      # Workspace.snapshot can't freeze (ctrl+s fails with "pulling requires
+      # a frozen source workspace") and `dagger agent` composes with no
+      # tools. Workspace.git.directory is the documented complement: "mount
+      # at .git alongside workspace.directory(\"/\") to form a usable
+      # checkout".
+      .withDirectory(workingDirectory + "/.git", source.git.directory)
+      .withWorkdir(workingDirectory)
       .withEnvVariable("DAGGER_TUI_CONSOLE", ":" + toString(port))
       .withEnvVariable("DAGGER_PROGRESS", "tty")
       .withExposedPort(port)
+      # PPROF=<addr> makes the CLI serve net/http/pprof (+ expvar, /debug/gc)
+      # on its OWN listener (internal/cmd/dagger/debug.go, wired in main.go's
+      # PersistentPreRunE) — a separate server from the console, so profiling
+      # stays reachable even when the console's consoleMu-holding loop is
+      # wedged, which is exactly when the profiling tools below matter.
+      .withEnvVariable("PPROF", ":" + toString(port + 1))
+      .withExposedPort(port + 1)
+
+    # Resume support: mount an auto-saved LLM session where getSessionDir
+    # (internal/cmd/dagger/llm.go) will look for it, keyed by its filename.
+    let resumable = if (session == null) {
+      base2
+    } else {
+      base2
+        .withEnvVariable("XDG_STATE_HOME", "/state")
+        .withMountedFile("/state/dagger/llm-sessions/" + session.name, session)
+    }
+
+    # Cloud auth: forwarded from the configured `cloudCredentials` secret so
+    # the CLI under test is logged in (no-op when none is configured).
+    let runner = withCredentials(resumable, cloudCredentials, daggerConfig)
 
     # run the command under test as a persistent service serving the console.
     # Short-lived commands (e.g. ["version"]) exit before the console port's
@@ -173,12 +281,13 @@ type TuiQa {
         .withExec(["apk", "add", "--no-cache", "curl"])
         .withServiceBinding("tui-qa", svc)
 
-      if (engine != "") {
-        print("Attached to existing engine at " + engine)
+      if (engineAddress != "") {
+        print("Attached to existing engine at " + engineAddress)
       }
       self.client = curlCtr
       self.service = svc
       self.url = "http://tui-qa:" + toString(port)
+      self.pprofUrl = "http://tui-qa:" + toString(port + 1)
       self
     }
   }
@@ -198,9 +307,46 @@ type TuiQa {
   }
 
   """
+  Block until the TUI reaches a state, then return the screen like `screen`
+  does — instead of polling `screen` in a loop while spans finish. With
+  `match`, returns as soon as the rendered (ANSI-stripped) screen matches
+  that RE2 regex; without it, returns once the screen has stopped changing
+  for `quietSeconds`. Either way it gives up after `timeoutSeconds` (capped
+  server-side at 300) and returns the screen as it stands, without erroring —
+  inspect the result rather than assuming the condition was reached.
+  """
+  wait(
+    """
+    RE2 regex to wait for on the screen, e.g. "DONE|ERROR" or a prompt
+    marker. Empty waits for the screen to go quiet instead.
+    """
+    match: String! = "",
+    """
+    How long the screen must stay unchanged to count as settled (only used
+    when `match` is empty). Note: a screen with running spans keeps
+    re-rendering elapsed times, so it only goes quiet once they finish.
+    """
+    quietSeconds: Int! = 2,
+    """
+    Give up after this many seconds and return the screen anyway.
+    """
+    timeoutSeconds: Int! = 60,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    post(
+      "/wait?quiet=" + toString(quietSeconds) + "s&timeout=" + toString(timeoutSeconds) + "s",
+      match,
+      # let curl outlive the server-side wait instead of cutting it off
+      maxTime: timeoutSeconds + 30,
+    )
+  }
+
+  """
   Apply a key script to the TUI and return the resulting screen. Keys are
-  whitespace/comma separated tuist key names (e.g. "down down right", "enter",
-  "esc", "C-c"); a "key*N" token repeats it. Movement/keymap:
+  whitespace/comma separated tuist key names: named keys ("enter", "esc",
+  "tab", "space", "up", "down", "left", "right", "pgup", "pgdown", ...),
+  single characters, or "+"-joined modifier combos ("ctrl+s", "ctrl+c",
+  "alt+enter", "shift+tab" — NOT "C-s"); a "key*N" token repeats it. Unknown
+  tokens are rejected before any key is applied. Movement/keymap:
   ←↑↓→ / h j k l move · right/l expand · left/h collapse · enter zoom · esc back ·
   r error origin · L logs · +/- verbosity · / search · T tests.
   """
@@ -250,6 +396,81 @@ type TuiQa {
   }
 
   """
+  Discover agents from a recorded trace or the live console's roster. Returns
+  JSON with stable handles, names, observed states, parent handles, and span IDs.
+  With `dagger trace <id> -E`, the first extraction request downloads and caches
+  the full trace payloads (may take minutes); no engine or agent restore is needed.
+  In live sessions only loaded telemetry is represented. States in a recorded
+  trace are historical, not live runtimes. Never starts or focuses an agent.
+  """
+  agents: String! @cache(policy: FunctionCachePolicy.Never) {
+    if (url == "") {
+      return "No active TUI session. Call the tui-qa start tool first."
+    }
+    client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec(["curl", "-s", "--connect-timeout", "10", "--max-time", "300", url + "/agents"])
+      .stdout
+  }
+
+  """
+  Read an agent's committed transcript as JSON: text, thinking, tool calls,
+  results, and message origins. With `dagger trace <id> -E`, decodes the recorded
+  checkpoint directly, never evaluating workspace/tool/module recipes. Missing
+  or unsupported message data is an error, not silently omitted. In an engine
+  session, reads Agent.snapshot without sending, resuming, or invoking tools.
+
+  Filters apply before pagination; checkpoint message indexes and the snapshot
+  digest (recorded) or ID (live) are returned. Tool filters select whole messages.
+  Text is not terminal-wrapped or truncated. The first recorded-trace request
+  downloads the full payloads; subsequent pages reuse them. Live requests read
+  the full message list on demand and return only the selected page.
+  """
+  transcript(
+    """
+    Stable handle from `agents`, or a unique display name.
+    """
+    agent: String!,
+    """
+    user, assistant, or system. Empty includes all non-system messages.
+    """
+    role: String! = "",
+    """
+    Exact tool-call name to select, e.g. staff_spawn. Empty selects all.
+    """
+    tool: String! = "",
+    """
+    Optional RE2 regex over message text, tool names, and arguments.
+    """
+    grep: String! = "",
+    """
+    Matching messages to skip from the oldest; filters apply first.
+    """
+    offset: Int! = 0,
+    """
+    Maximum messages to return, from 1 to 100.
+    """
+    limit: Int! = 20,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    if (url == "") {
+      return "No active TUI session. Call the tui-qa start tool first."
+    }
+    client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec([
+        "curl", "-s", "--get", "--connect-timeout", "10", "--max-time", "300",
+        "--data-urlencode", "agent=" + agent,
+        "--data-urlencode", "role=" + role,
+        "--data-urlencode", "tool=" + tool,
+        "--data-urlencode", "grep=" + grep,
+        "--data-urlencode", "offset=" + toString(offset),
+        "--data-urlencode", "limit=" + toString(limit),
+        url + "/transcript",
+      ])
+      .stdout
+  }
+
+  """
   Show one span in depth: name, status, timing, the dagui flags that shape how
   the UI treats it (internal, passthrough, encapsulation, log/span roll-up,
   service, …), and the parent chain up to the root with each ancestor's flags.
@@ -287,6 +508,97 @@ type TuiQa {
   }
 
   """
+  Rebuild the encoded dagql ID for a call digest (xxh3:…) from the call
+  payloads the TUI has ingested, and write it into the workspace under
+  tmp/ids/<hash> — ready to pass to the engine-lab dumpId tool as its `file`
+  argument. Returns the path: the blob itself is huge base64 and never worth
+  reading. Digests come from engine errors ("load xxh3:…") and the calls tool.
+  """
+  callId(
+    source: Workspace!,
+    digest: String!,
+  ): Workspace! @cache(policy: FunctionCachePolicy.Never) {
+    let encoded = get("/id?dig=" + digest)
+    # The console answers errors in prose; a well-formed encoded ID is a
+    # single base64 token. Surface errors instead of writing them to a file.
+    if (encoded.contains(" ")) {
+      print(encoded)
+      source
+    } else {
+      let path = "tmp/ids/" + digest.replace("xxh3:", "").replace("/", "_")
+      print(path)
+      source.withNewFile(path, encoded)
+    }
+  }
+
+  """
+  Content-search every call payload the TUI has ingested: a regex matched
+  against one line per call — "digest field(args) -> Type recv=digest" — with
+  argument literals UNTRUNCATED. The tool for "which call references this
+  path/image/value" and for walking a chain by grepping the digest another
+  line names.
+  """
+  calls(grep: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/calls?grep=" + grep
+      .replace("%", "%25")
+      .replace("+", "%2B")
+      .replace(" ", "%20")
+      .replace("#", "%23")
+      .replace("&", "%26"))
+  }
+
+  # ---- profiling the live TUI process (via its PPROF debug server; same
+  # curl conventions as engine-lab's debugGet, but aimed at the CLI process
+  # rather than the engine) --------------------------------------------------
+
+  """
+  Dump every goroutine's stack in the live TUI process
+  (GET /debug/pprof/goroutine?debug=2 on its PPROF debug server). The first
+  tool to reach for when the input/render loop seems wedged: it shows what
+  each goroutine — including any consoleMu holder — is blocked on. Served on
+  a separate listener from the console, so it responds even when the console
+  endpoints hang.
+  """
+  goroutines: String! @cache(policy: FunctionCachePolicy.Never) {
+    pprofGet("/debug/pprof/goroutine?debug=2", 60)
+  }
+
+  """
+  Profile the live TUI process's CPU for `seconds` seconds and return a
+  `go tool pprof -top` table (top 40 nodes) — where the input/render loop is
+  actually spending its time.
+  """
+  cpuProfile(
+    """
+    How long to sample for, e.g. 10 while reproducing a busy loop.
+    """
+    seconds: Int! = 10,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # curl must outlive the server-side collection window by a comfortable
+    # margin, hence seconds + 60.
+    pprofTop("/debug/pprof/profile?seconds=" + toString(seconds), seconds + 60)
+  }
+
+  """
+  Snapshot the live TUI process's heap and return a `go tool pprof -top`
+  table (top 40 nodes) — what's holding memory.
+  """
+  heapProfile: String! @cache(policy: FunctionCachePolicy.Never) {
+    pprofTop("/debug/pprof/heap", 60)
+  }
+
+  """
+  List the tools the model in an interactive LLM session (`dagger agent`, the
+  shell's prompt mode) currently sees — names, descriptions and schemas,
+  verbatim from the live session — so you can verify what the model would see
+  without spending an LLM turn asking the agent itself. Errors with 404 until
+  such a session is up in the TUI under test.
+  """
+  toolset: String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/toolset")
+  }
+
+  """
   Show the console's own endpoint + keymap help.
   """
   help: String! {
@@ -310,7 +622,7 @@ type TuiQa {
 
   # ---- helpers ------------------------------------------------------------
 
-  let get(path: String!): String! {
+  let get(path: String!, maxTime: Int! = 60): String! {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
@@ -321,13 +633,13 @@ type TuiQa {
       .withExec([
         "curl", "-s",
         "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
-        "--max-time", "60",
+        "--max-time", toString(maxTime),
         url + path,
       ])
       .stdout
   }
 
-  let post(path: String!, body: String!): String! {
+  let post(path: String!, body: String!, maxTime: Int! = 60): String! {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
@@ -336,10 +648,55 @@ type TuiQa {
       .withExec([
         "curl", "-s",
         "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
-        "--max-time", "60",
+        "--max-time", toString(maxTime),
         "--data-binary", body,
         url + path,
       ])
+      .stdout
+  }
+
+  # GET a text endpoint from the CLI's PPROF debug server (goroutine dumps
+  # and friends). Same nonce trick as get/post: bust the exec cache so every
+  # call observes the live process.
+  let pprofGet(path: String!, maxTime: Int!): String! {
+    if (pprofUrl == "") {
+      return "No active TUI session. Call the tui-qa start tool first."
+    }
+    client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "5", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", toString(maxTime),
+        pprofUrl + path,
+      ])
+      .stdout
+  }
+
+  # GET a binary pprof profile and render it as a `go tool pprof -top` table.
+  # The profile is binary protobuf, so curl -o's it to a file rather than
+  # stdout; Go profiles are self-symbolized, so the analysis container needs
+  # only a Go toolchain, not the profiled binary. -f keeps an HTTP error from
+  # masquerading as a (corrupt) profile. No nonce on the pprof exec: its
+  # input file differs every capture, so it never replays a stale analysis.
+  let pprofTop(path: String!, maxTime: Int!): String! {
+    if (pprofUrl == "") {
+      return "No active TUI session. Call the tui-qa start tool first."
+    }
+    let profile = client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec([
+        "curl", "-sf",
+        "--retry", "5", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", toString(maxTime),
+        "-o", "/tmp/profile.pb.gz",
+        pprofUrl + path,
+      ])
+      .file("/tmp/profile.pb.gz")
+    container
+      .from("golang:1.26-alpine")
+      .withFile("/tmp/profile.pb.gz", profile)
+      .withExec(["go", "tool", "pprof", "-top", "-nodecount=40", "/tmp/profile.pb.gz"])
       .stdout
   }
 }

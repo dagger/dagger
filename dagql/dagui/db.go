@@ -598,7 +598,7 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			continue
 		}
 		if spanID == db.PrimarySpan {
-			// buffer raw logs so we can replay them later
+			// buffer raw logs so we can write them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		}
 		// flag that the span has received logs

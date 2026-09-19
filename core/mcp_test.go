@@ -24,7 +24,7 @@ import (
 )
 
 func TestCallPreservesHeaderArgs(t *testing.T) {
-	sr, ctx := replayTestRecorder(t)
+	sr, ctx := recordingTestRecorder(t)
 	result, failed := newMCP().Call(ctx, []LLMTool{{
 		Name: "read",
 		Schema: map[string]any{
@@ -177,7 +177,7 @@ func TestTimeoutTool(t *testing.T) {
 	})
 
 	t.Run("nested call is traced as a tool call of its own", func(t *testing.T) {
-		sr, ctx := replayTestRecorder(t)
+		sr, ctx := recordingTestRecorder(t)
 		tool := timeoutToolForTest(t, LLMTool{
 			Name:   "echo",
 			Server: "Echoes",

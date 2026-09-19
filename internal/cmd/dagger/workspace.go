@@ -37,8 +37,8 @@ A workspace is a project configured to use Dagger — a directory holding
 a dagger.toml that records installed modules, environment overlays, and
 settings. Most commands (install, check, generate, up, settings, ...)
 operate on the workspace reachable from the current directory. The -W
-flag selects a different workspace (local path or git ref); dagger.toml is
-the source of truth.`,
+flag selects a different workspace (local path or git ref); --env
+applies a named overlay; dagger.toml is the source of truth.`,
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "ws",
 	},
@@ -213,7 +213,8 @@ With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
 With one argument and --unset, removes the value at the given key.
 
-Explicit env.* keys address raw overlay storage.
+With --env, reads show the effective env-applied view while writes target that
+environment's overlay. Explicit env.* keys always address raw overlay storage.
 
 Local module source values are stored relative to dagger.toml.`,
 	Args: cobra.MaximumNArgs(2),
@@ -295,7 +296,7 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return fmt.Errorf("--global writes to user-level config; pass KEY VALUE to set or --unset KEY (reads always show the effective merged config)")
 		}
-		return writeUserConfigValue(ctx, userScopedConfigKey(args[0]), args[1], nil)
+		return writeUserConfigValue(ctx, userScopedConfigKey(args[0]), args[1], nil, false)
 	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
@@ -585,7 +586,8 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 	return name, nil
 }
 
-func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
+func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, selection workspacepkg.ModuleSelection, here bool) error {
+	name := selection.Name
 	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutModule(name, dagger.WorkspaceWithoutModuleOpts{Here: here}))
 	if err != nil {
 		return err
@@ -601,7 +603,13 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 		_, err = fmt.Fprintf(out, "Uninstalled module %q from env %q in %s\n", name, workspaceEnv, configPath)
 		return err
 	}
-	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)
+	if _, err := fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath); err != nil {
+		return err
+	}
+	if !workspacepkg.IsLocalRef(selection.Entry.Source, selection.Entry.Pin) {
+		return nil
+	}
+	_, err = fmt.Fprintf(out, "Module files remain at %s\n", filepath.Clean(filepath.FromSlash(selection.Entry.Source)))
 	return err
 }
 
@@ -821,13 +829,18 @@ func userScopedConfigKey(key string) string {
 }
 
 // writeUserConfigValue stores a config value for the current workspace in the
-// user-level config file, under the cross-process lock.
-func writeUserConfigValue(ctx context.Context, key, value string, values []string) error {
+// user-level config file, under the cross-process lock. A non-nil values slice
+// stores a list; otherwise value is stored as a string when asString is set,
+// and typed by what it looks like when not.
+func writeUserConfigValue(ctx context.Context, key, value string, values []string, asString bool) error {
 	workspaceKey, err := userConfigWorkspaceKey(ctx)
 	if err != nil {
 		return err
 	}
 	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		if asString && values == nil {
+			return workspacepkg.WriteUserConfigStringValue(existing, workspaceKey, key, value)
+		}
 		return workspacepkg.WriteUserConfigValue(existing, workspaceKey, key, value, values)
 	})
 }

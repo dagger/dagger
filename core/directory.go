@@ -2003,7 +2003,7 @@ func convertRejectToMarkers(targetPath, rejPath string) error {
 }
 
 func (dir *Directory) Search(ctx context.Context, self dagql.ObjectResult[*Directory], opts SearchOpts, verbose bool, paths []string, globs []string) ([]*SearchResult, error) {
-	// Validate and normalize paths to prevent directory traversal attacks
+	// Validate and normalize paths so they cannot resolve outside the directory.
 	for i, p := range paths {
 		// If absolute, make it relative to the directory
 		if filepath.IsAbs(p) {
@@ -2187,6 +2187,19 @@ func (dir *Directory) WithDirectory(
 	owner string,
 	permissions *int,
 ) error {
+	return dir.withDirectory(ctx, parent, destDir, src, filter, owner, permissions, nil)
+}
+
+func (dir *Directory) withDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*Directory],
+	destDir string,
+	src dagql.ObjectResult[*Directory],
+	filter CopyFilter,
+	owner string,
+	permissions *int,
+	onCommit func(),
+) error {
 	dagqlCache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
@@ -2283,6 +2296,9 @@ func (dir *Directory) WithDirectory(
 	ref, err := newRef.CommitWithUsage(ctx, usage)
 	if err != nil {
 		return fmt.Errorf("failed to commit copied directory: %w", err)
+	}
+	if onCommit != nil {
+		onCommit()
 	}
 	dir.Snapshot.setValue(ref)
 	return nil

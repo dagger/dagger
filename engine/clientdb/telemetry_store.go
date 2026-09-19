@@ -31,9 +31,9 @@ type spanLookup struct {
 	// lastRow maps each span ID to its NEWEST snapshot row. OTel span
 	// snapshots are cumulative — a later row carries the span's full current
 	// state (name, attributes, links, status, end time) — so the last row
-	// alone reconstructs the state a sequential replay of every snapshot
+	// alone reconstructs the state that sequential processing of every snapshot
 	// would end with. This is what lets a scoped reader materialize a span
-	// subtree without replaying the whole stream. Keyed by span ID only,
+	// subtree without reprocessing the whole stream. Keyed by span ID only,
 	// following the children map's identity.
 	lastRow map[string]int64
 	// parent maps each span ID to its parent span ID, from the first
@@ -319,7 +319,7 @@ func (l *spanLookup) ancestorClosure(ids map[string]struct{}) map[string]struct{
 
 // latestRowIDs returns the newest snapshot row ID of every span in ids that
 // the index knows, in ascending row order — append order, which is the order
-// a sequential replay would have delivered them in.
+// sequential processing would have delivered them in.
 func (l *spanLookup) latestRowIDs(ids map[string]struct{}) []int64 {
 	rowIDs := make([]int64, 0, len(ids))
 	l.mu.RLock()
@@ -593,7 +593,7 @@ func (s *DB) CheckTestSpanIDs() (checks, tests map[string]struct{}) {
 
 // SelectSpansLatest returns the newest snapshot row of every span in ids, in
 // append order. A span's snapshots are cumulative, so its newest row alone
-// reconstructs the state a full sequential replay would end with — this is
+// reconstructs the state that full sequential processing would end with — this is
 // the span half of a scoped load, sized by the scope instead of the session.
 func (s *DB) SelectSpansLatest(ctx context.Context, ids map[string]struct{}) ([]Span, error) {
 	rowIDs := s.lookup.latestRowIDs(ids)

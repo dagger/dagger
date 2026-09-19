@@ -51,6 +51,10 @@ type mockServer struct {
 	lockWritable   bool
 }
 
+func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error) {
+	panic("unexpected AuthorizeGitPush")
+}
+
 func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
 	return engine.NewNestedClientTransport(nil), nil
 }
@@ -62,7 +66,7 @@ func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*M
 	return nil
 }
 
-func (ms *mockServer) EnsureWorkspaceModules(context.Context, []string, bool) ([]ModuleLoadFailure, error) {
+func (ms *mockServer) EnsureWorkspaceModules(context.Context, []string, ModuleLoadMode) ([]ModuleLoadFailure, error) {
 	return nil, nil
 }
 

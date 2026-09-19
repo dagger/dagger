@@ -2,15 +2,17 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 // Check represents a validation check with its result
@@ -31,6 +33,57 @@ type Check struct {
 	// SyntheticGeneratorRunner the schema package supplies. Always paired with
 	// IsGenerate.
 	Synthetic *SyntheticGeneratorSpec
+
+	// LoadFailure is set on a check standing in for a workspace module that
+	// could not be loaded. `dagger check` loads best-effort so the modules
+	// that do load still run; the one that did not is reported as a check that
+	// fails, so it can neither abort the run nor pass unnoticed.
+	LoadFailure *ModuleLoadFailure
+}
+
+// moduleLoadCheckName is the leaf the load-failure check is reported under, so
+// it reads as "<module>:load" everywhere checks are named. Naming it after the
+// module alone would collide with a real check of that name (an entrypoint
+// module's checks drop their prefix), and the frontends dedupe by check name.
+const moduleLoadCheckName = "load"
+
+// generateCheckName is the leaf a generate-derived check is reported under, so
+// it reads as "<generator>:up-to-date" everywhere checks are named. The check
+// confirms the generated files are up to date, and the leaf names that intent.
+// An empty changeset from the generator is how the check determines it, not
+// what it asserts. The suffix keeps the check from colliding with the generator
+// itself, which `dagger generate` lists under the un-suffixed name. It extends
+// the generator's path rather than replacing its leaf the way
+// moduleLoadCheckName does, because a module may declare several +generate
+// functions and "<module>:up-to-date" would collide again.
+const generateCheckName = "up-to-date"
+
+// generateCheckNode is the naming-only node of the check derived from a
+// generator. Every place that names such a check goes through it, so the list
+// and the run report cannot disagree.
+func generateCheckNode(generator *ModTreeNode) *ModTreeNode {
+	return &ModTreeNode{Parent: generator, Name: generateCheckName}
+}
+
+// NewModuleLoadFailureCheck is the always-failing check that stands in for a
+// workspace module `dagger check` could not load. Its nodes are naming-only
+// (the shape reparentWorkspaceTreeRoot gives a module root) because the
+// module's own tree is exactly what could not be built.
+func NewModuleLoadFailureCheck(failure ModuleLoadFailure) *Check {
+	return &Check{
+		Node: &ModTreeNode{
+			Parent: &ModTreeNode{
+				Parent: &ModTreeNode{},
+				Name:   failure.Name,
+			},
+			Name: moduleLoadCheckName,
+			// Summary first: consumers that render a description as a single
+			// line (`dagger check -l`) would otherwise print the whole load
+			// error, which the skipped-module report already carries.
+			Description: "this workspace module could not be loaded\n" + failure.Message,
+		},
+		LoadFailure: &failure,
+	}
 }
 
 type CheckGroup struct {
@@ -42,11 +95,15 @@ type CheckGroup struct {
 	// it into the context (WorkspaceToContext) so each check leaf's auto-injected
 	// Workspace! (and any currentWorkspace read) resolves against it, rather than
 	// the session's frozen current workspace. Transient (not persisted): it is
-	// re-established when `checks` re-runs on replay.
+	// re-established when `checks` re-runs after loading the ID.
 	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
-func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string, noGenerate, onlyGenerate bool) (*CheckGroup, error) {
+// NewCheckGroup rolls up every check of the module. It takes no include
+// patterns: a generate-derived check only gets its name once it is a Check, so
+// callers filter the finished checks by Check.MatchNodes instead of the tree
+// nodes here, where a pattern naming such a check would match nothing.
+func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], noGenerate, onlyGenerate bool) (*CheckGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -54,7 +111,7 @@ func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include
 
 	var checks []*Check
 	if !onlyGenerate {
-		checkNodes, err := rootNode.RollupChecks(ctx, include, nil)
+		checkNodes, err := rootNode.RollupChecks(ctx, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +122,7 @@ func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include
 	}
 
 	if !noGenerate {
-		genNodes, err := rootNode.RollupGenerator(ctx, include, nil)
+		genNodes, err := rootNode.RollupGenerator(ctx, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -198,8 +255,9 @@ func (r *CheckGroup) Clone() *CheckGroup {
 	return &cp
 }
 
+// Path agrees with Name: both identify the check, not the node that runs it.
 func (c *Check) Path() []string {
-	return c.Node.Path()
+	return c.NamingNode().Path()
 }
 
 func (c *Check) Description() string {
@@ -228,14 +286,44 @@ func (c *Check) ResultEmoji() string {
 }
 
 func (c *Check) Name() string {
-	return c.Node.CommandName()
+	return c.NamingNode().CommandName()
+}
+
+// NamingNode is the canonical node a check is named by; MatchNodes adds the
+// compatibility aliases patterns may still be written against. A
+// generate-derived check reports under an up-to-date leaf its generator node
+// does not carry, so this wraps that node the way NewModuleLoadFailureCheck
+// builds its own naming-only nodes. Node itself has to stay the real generator
+// node, because that is what RunGeneratorAsCheck and Generator{Node: ...}
+// dispatch on.
+func (c *Check) NamingNode() *ModTreeNode {
+	if !c.IsGenerate {
+		return c.Node
+	}
+	return generateCheckNode(c.Node)
+}
+
+// MatchNodes are the nodes include and skip patterns are tried against. A
+// generate-derived check is listed under its up-to-date name, so that name has
+// to select it. Patterns written against the generator it came from have to
+// keep selecting it too: a "*" spans a single segment, so "go:*" matches the
+// generator and not the check name, which is one leaf longer.
+func (c *Check) MatchNodes() []*ModTreeNode {
+	if !c.IsGenerate {
+		return []*ModTreeNode{c.Node}
+	}
+	return []*ModTreeNode{c.NamingNode(), c.Node}
 }
 
 func (c *Check) CheckType() string {
-	if c.IsGenerate {
+	switch {
+	case c.LoadFailure != nil:
+		return "load"
+	case c.IsGenerate:
 		return "generate"
+	default:
+		return "check"
 	}
-	return "check"
 }
 
 func (c *Check) Clone() *Check {
@@ -249,8 +337,11 @@ func (c *Check) Clone() *Check {
 	return &cp
 }
 
+// run dispatches the check to whatever produces its outcome.
 func (c *Check) run(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) error {
 	switch {
+	case c.LoadFailure != nil:
+		return c.reportLoadFailure(ctx)
 	case c.Synthetic != nil:
 		return c.runSynthetic(ctx, syntheticRunner)
 	case c.IsGenerate:
@@ -260,10 +351,11 @@ func (c *Check) run(ctx context.Context, syntheticRunner SyntheticGeneratorRunne
 	}
 }
 
-// runSynthetic runs an engine-injected generator and passes when it changes
-// nothing. The generator is transient: it exists to reuse Generator's synthetic
-// dispatch and workspace-to-changeset conversion, not to become check state.
-func (c *Check) runSynthetic(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) (rerr error) {
+// runAsCheckSpan runs fn under the check span the frontends build the checks
+// report from (ModTreeNode.runAsCheck emits it for a check backed by a module
+// field). A check with no field behind it has to emit the span here, or the
+// report never counts it and a failure reads as all-passed.
+func (c *Check) runAsCheckSpan(ctx context.Context, fn func(context.Context) error) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, c.Name(),
 		trace.WithAttributes(
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
@@ -275,24 +367,40 @@ func (c *Check) runSynthetic(ctx context.Context, syntheticRunner SyntheticGener
 		span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
 		telemetry.EndWithCause(span, &rerr)
 	}()
+	return fn(ctx)
+}
 
-	generator, err := (&Generator{Node: c.Node, Synthetic: c.Synthetic}).Run(ctx, syntheticRunner)
-	if err != nil {
-		return err
-	}
-	changes, err := generator.RequireChanges(ctx, "check")
-	if err != nil {
-		return err
-	}
-	empty, err := changes.IsEmpty(ctx)
-	if err != nil {
-		return err
-	}
-	if !empty {
-		return fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
-			c.Node.PathString(), c.Node.PathString())
-	}
-	return nil
+// runSynthetic runs an engine-injected generator and passes when it changes
+// nothing. The generator is transient: it exists to reuse Generator's synthetic
+// dispatch and workspace-to-changeset conversion, not to become check state.
+func (c *Check) runSynthetic(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) error {
+	return c.runAsCheckSpan(ctx, func(ctx context.Context) error {
+		generator, err := (&Generator{Node: c.Node, Synthetic: c.Synthetic}).Run(ctx, syntheticRunner)
+		if err != nil {
+			return err
+		}
+		changes, err := generator.RequireChanges(ctx, "check")
+		if err != nil {
+			return err
+		}
+		empty, err := changes.IsEmpty(ctx)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			return fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
+				c.Node.PathString(), c.Node.PathString())
+		}
+		return nil
+	})
+}
+
+// reportLoadFailure fails the check from the module's recorded load error.
+// There is no function to run: the module is exactly what could not be loaded.
+func (c *Check) reportLoadFailure(ctx context.Context) error {
+	return c.runAsCheckSpan(ctx, func(context.Context) error {
+		return errors.New(c.LoadFailure.Message)
+	})
 }
 
 func (c *Check) Run(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) (*Check, error) {

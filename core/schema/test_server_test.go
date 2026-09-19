@@ -31,6 +31,10 @@ type currentTypeDefsTestServer struct {
 	workspaceLockErr error
 }
 
+func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*core.GitPushAuthorization, error) {
+	panic("unexpected AuthorizeGitPush")
+}
+
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
 	return nil
 }
@@ -51,7 +55,7 @@ func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Wor
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string, bool) ([]core.ModuleLoadFailure, error) {
+func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string, core.ModuleLoadMode) ([]core.ModuleLoadFailure, error) {
 	return nil, nil
 }
 

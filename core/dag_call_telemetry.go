@@ -103,7 +103,7 @@ func recordCallPayloads(
 		return
 	}
 	// A handle-form ID is an engine-local result reference, not a recipe:
-	// there are no frames to publish and no client could replay them anyway.
+	// there are no frames to publish and no client could rebuild them anyway.
 	recipe := dagPB.GetRecipe()
 	if recipe == nil {
 		return
@@ -137,7 +137,13 @@ func recordCallPayloads(
 		rec := log.Record{}
 		rec.SetTimestamp(time.Now())
 		rec.SetBody(log.BytesValue(payload))
-		rec.AddAttributes(log.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+		// Repeat the digest as an attribute so stores that index log attributes
+		// can look a payload up by digest without decoding every body. The body
+		// stays authoritative.
+		rec.AddAttributes(
+			log.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			log.String(telemetryattrs.CallPayloadDigestAttr, dgst),
+		)
 		logger.Emit(ctx, rec)
 	}
 

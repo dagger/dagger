@@ -158,6 +158,8 @@ type daggerSession struct {
 
 	allowedLLMModules []string
 
+	gitPushApprovals gitPushApprovals
+
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
 }
@@ -329,8 +331,7 @@ type clientRuntime struct {
 
 	// workspaceReadEpoch is a monotonically bumped token folded into cached
 	// Workspace.file / Workspace.directory host reads' per-client cache
-	// namespace. Bumped on Workspace.export / Workspace.reloaded so a
-	// long-lived session re-reads
+	// namespace. Bumped on Workspace.export so a long-lived session re-reads
 	// the host after the workspace's on-disk content changed under it, instead
 	// of serving a stale per-client host.directory snapshot cached earlier in
 	// the session. Atomic (not guarded by workspaceMu) so a read resolver can
@@ -1133,7 +1134,7 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // loader drops it from the compiled ops. The session's final trace/log barrier
 // flushes the carrier after all cleanup producers have stopped. A trace that
 // never ran a traced main query, or whose count is zero, gets no carrier
-// and so fails the loader's gate by default (unverifiable → refused).
+// and so fails the loader's completeness check by default (unverifiable → refused).
 func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) {
 	if !sess.wcprofTraceID.IsValid() || !sess.wcprofRootSpanID.IsValid() {
 		return
@@ -2572,7 +2573,7 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 			}
 		}
 	}
-	_, err := srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, false, func() {
+	_, err := srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, core.ModuleLoadStrict, func() {
 		// Consume only after a successful load, but before modulesMu is
 		// released, so another request cannot claim the one-shot scope.
 		if scopeApplied {

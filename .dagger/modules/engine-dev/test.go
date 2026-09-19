@@ -295,7 +295,10 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	}
 
 	utilDirPath := "/dagger-dev"
-	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws})
+	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws,
+		// Exercise real client-managed agents and encrypted key loading.
+		ExtraPackages: []string{"openssh-client"},
+	})
 	ldflagValues, err := goToolchain.Values(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -309,7 +312,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 		WithMountedCache("/run", engineRunVol).
 		WithServiceBinding("registry", registrySvc)
 
-	tests, err = dev.InstallClient(ctx, tests, devEngineSvc, "")
+	tests, err = dev.InstallClient(ctx, tests, devEngineSvc)
 	if err != nil {
 		return nil, nil, err
 	}

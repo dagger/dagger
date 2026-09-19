@@ -256,6 +256,21 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
+
+		dagql.Func("serveModule", s.serveModule).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache(`Mutates the calling session's global schema.`).
+			Doc(`Load the module at the given address and serve its API in the current session.`,
+				`A local address resolves against the caller's workspace, so a generated
+				client can serve the module it is bound to without reaching for the
+				workspace itself.`).
+			Args(
+				dagql.Arg("address").Doc(
+					`A module address, or an explicit path into the caller's workspace.`,
+					`Absolute paths (e.g. "/.dagger/modules/hello") resolve from the workspace root, relative ones (e.g. "./hello") from the workspace cwd.`,
+					`Installed module names are not accepted.`),
+				dagql.Arg("refPin").Doc(`The pinned version of a remote module address.`),
+			),
 	}.Install(dag)
 
 	// currentNode returns the object that received the current module function
@@ -2131,6 +2146,66 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResu
 	return void, query.ServeModule(ctx, modMeta, includeDependencies, entrypoint)
 }
 
+type serveModuleArgs struct {
+	Address string
+	RefPin  string `default:""`
+}
+
+// serveModule resolves an address to a module and serves it, namespaced, in the
+// calling session.
+//
+// It exists so a client generated *into a module* can bootstrap the module it is
+// bound to. Such a client cannot spell the local half of that itself: the
+// workspace APIs are deliberately absent from a module's schema
+// (core.FieldsToIgnoreForModuleIntrospection), so resolving a workspace path
+// would mean falling back to a raw GraphQL query. Address resolution happens
+// engine-side instead, leaving one call that is legitimate from a module.
+func (s *moduleSchema) serveModule(ctx context.Context, self *core.Query, args serveModuleArgs) (dagql.Nullable[core.Void], error) {
+	void := dagql.Null[core.Void]()
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return void, err
+	}
+
+	kind, ok := moduleAddressKind(args.Address)
+	if !ok {
+		return void, fmt.Errorf("serve module %q: use a module address or an explicit workspace path such as %q; installed module names are not accepted", args.Address, "./"+args.Address)
+	}
+
+	var src dagql.ObjectResult[*core.ModuleSource]
+	if kind == core.ModuleSourceKindGit {
+		sel := workspaceClientModuleSourceSelector(args.Address)
+		if args.RefPin != "" {
+			sel.Args = append(sel.Args, dagql.NamedInput{Name: "refPin", Value: dagql.String(args.RefPin)})
+		}
+		if err := dag.Select(ctx, dag.Root(), &src, sel); err != nil {
+			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
+		}
+	} else {
+		// currentWorkspace is what makes this resolvable from a module: it
+		// prefers a Workspace bound into the context (a generator/check group,
+		// or an agent's overlaid workspace) over the session's, so the address
+		// resolves against the same tree the calling module was rolled up from.
+		var ws dagql.ObjectResult[*core.Workspace]
+		if err := dag.Select(ctx, dag.Root(), &ws, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
+		}
+		if err := dag.Select(ctx, ws, &src, dagql.Selector{
+			Field: "moduleSource",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(args.Address)}},
+		}); err != nil {
+			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
+		}
+	}
+
+	var mod dagql.ObjectResult[*core.Module]
+	if err := dag.Select(ctx, src, &mod, dagql.Selector{Field: "asModule"}); err != nil {
+		return void, fmt.Errorf("serve module %q: %w", args.Address, err)
+	}
+	return void, self.ServeModule(ctx, mod, false, false)
+}
+
 type currentTypeDefsArgs struct {
 	ReturnAllTypes bool `default:"false"`
 	HideCore       dagql.Optional[dagql.Boolean]
@@ -2688,7 +2763,17 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return core.NewCheckGroup(ctx, mod, include, args.NoGenerate.GetOr(false).Bool(), false)
+	checkGroup, err := core.NewCheckGroup(ctx, mod, args.NoGenerate.GetOr(false).Bool(), false)
+	if err != nil {
+		return nil, err
+	}
+	// Filter the finished checks, not the tree nodes: a generate-derived check
+	// has to be selectable by the up-to-date name it reports.
+	checkGroup.Checks, err = filterChecksByInclude(ctx, checkGroup.Checks, include)
+	if err != nil {
+		return nil, err
+	}
+	return checkGroup, nil
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -2698,14 +2783,18 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name}, false, false)
+	checkGroup, err := core.NewCheckGroup(ctx, mod, false, false)
+	if err != nil {
+		return nil, err
+	}
+	checks, err := filterChecksByInclude(ctx, checkGroup.Checks, []string{args.Name})
 	if err != nil {
 		return nil, err
 	}
 
-	switch len(checkGroup.Checks) {
+	switch len(checks) {
 	case 1:
-		return checkGroup.Checks[0].Clone(), nil
+		return checks[0].Clone(), nil
 	case 0:
 		return nil, fmt.Errorf("check %q not found in module %q", args.Name, mod.Self().Name())
 	default:

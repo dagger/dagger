@@ -87,16 +87,20 @@ type Server interface {
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// AuthorizeGitPush resolves optional owner URL routing and checks permission
+	// before any destination credentials are used. Its result stays operation-local.
+	AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error)
+
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
 
 	// Load pending workspace modules on demand; include narrows to the modules
 	// its patterns name ("module" or "module:item"), empty or unrecognized
-	// loads all. With bestEffort, modules that fail to load are skipped with a
+	// loads all. In a best-effort mode, modules that fail to load are skipped with a
 	// warning instead of failing the operation, and their failure messages are
 	// returned for the caller to surface (e.g. GeneratorGroup.loadFailures) —
 	// for operations like generate that may be exactly what repairs the module.
-	EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) (loadFailures []ModuleLoadFailure, _ error)
+	EnsureWorkspaceModules(ctx context.Context, include []string, mode ModuleLoadMode) (loadFailures []ModuleLoadFailure, _ error)
 
 	// A snapshot of the current workspace lockfile. When requireWritable is
 	// true, returns ok=false for read-only workspace lock sources.

@@ -204,7 +204,7 @@ func joinArgs(args []*callpbv1.Argument) string {
 	return strings.Join(parts, ", ")
 }
 
-// literalLabel renders a literal for a diagnostic, not for replay: an
+// literalLabel renders a literal for a diagnostic, not for reconstruction: an
 // ID-literal shows as the digest it references, so a gap behind an argument
 // can be traced to the argument that holds it.
 func literalLabel(lit *callpbv1.Literal) string {

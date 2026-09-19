@@ -439,7 +439,6 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
 	setFlagCapabilities(flags.Lookup("workspace"), maySelectWorkspace)
 	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
-	flags.Lookup("env").Hidden = true
 	setFlagAnyCapabilities(flags.Lookup("env"), mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when an output is returned")
@@ -992,6 +991,7 @@ func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
 }
 
 func Main() {
+	runSSHAskpass()
 	installRootGlobalFlags()
 	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
 		cmd, _ := resolveCommand(rootCmd, os.Args[1:])

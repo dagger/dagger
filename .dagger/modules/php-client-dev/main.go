@@ -70,7 +70,7 @@ func (t PhpClientDev) BaseContainer() *dagger.Container {
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine(t.Ws, dagger.DaggerEngineOpts{
 				ClientDockerConfig: t.ClientDockerConfig,
-			}).InstallClient(c)
+			}).InstallClient(dagger.DaggerEngineInstallClientOpts{Client: c})
 		})
 }
 

@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June%2017,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%2018,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -90,7 +90,7 @@ ready, open a separate catch-up PR targeting `main`.
       changelogs, SDK/Helm version files, docs version files,
       and any generated release metadata.
 - [ ] Bring over post-release outputs for the latest release, including internal
-      tooling `dagger.json`/generated updates and GitHub workflow/action version
+      tooling `dagger-module.toml`/generated updates and GitHub workflow/action version
       bumps.
 - [ ] Include any `RELEASING.md` improvements in both the release branch
       post-release PR and the main catch-up PR.
@@ -236,17 +236,8 @@ find . -name CHANGELOG.md -type f -exec git add {} \;
 git commit -s -m "chore: add release notes for $ENGINE_VERSION"
 ```
 
-- [ ] Bump `internal/version/VERSION` to the next release version. This file is
-      the single source of truth for the engine/CLI version. Default to the next
-      patch; bump the minor/major instead if the next release is planned to be
-      larger.
-
-  ```console
-  NEXT_VERSION="$(echo "$ENGINE_VERSION" | awk -F. -v OFS=. '{$3+=1; print}')"
-  echo "$NEXT_VERSION" > internal/version/VERSION
-  git add internal/version/VERSION
-  git commit -s -m 'bump version to next release version'
-  ```
+Keep `internal/version/VERSION` at `$ENGINE_VERSION` through tagging. The publish
+workflow requires the tag to match this file. Advance it in the post-release steps.
 
 - [ ] Push changes, and bring the prep PR out of draft:
 
@@ -383,22 +374,66 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
   find .github/ -type f -exec sed -i '' -e "s/dagger-v${old_dashed}/dagger-v${new_dashed}/g" -e "s/${old_dotted}/${new_dotted}/g" {} +
   ```
 
-- [ ] Bump the Go SDK version in our internal CI targets (these aren't actually
-      used anywhere since we use the modularized go SDK - but it's good
-      practice regardless).
+- [ ] Regenerate the internal tooling registered in `dagger.toml` using the
+      published release. Run this from the repository root:
 
   ```console
-  # Run dagger develop in docs/recorder{,2}, and everywhere else but not tests to make sure we do test backwards compat.
-  find . -name dagger.json \( -path "./docs/recorder*" -o -not -path "./docs/*" \) -not -path '*/tests/*' -not -path '*/testdata/*' -not -path '*/viztest/*' -not -path './core/integration/*' -not -path ./dagger.json -execdir dagger develop \;
+  dagger --x-release="$ENGINE_VERSION" generate \
+    go-sdk:generate \
+    dang-sdk:generate \
+    markdown-lint:fix \
+    -y
+  ```
 
-  # update deps and run go mod tidy on all go modules that were updated
-  find . -name go.mod \( -path "./docs/recorder*" -o -not -path "./docs/*" \) -not -path '*/tests/*' -not -path '*/testdata/*' -not -path '*/viztest/*' -not -path './core/integration/*' -execdir sh -c 'for dep in dagger.io/dagger github.com/dagger/dagger/engine/distconsts; do git grep -qF "$dep " go.mod && go get "${dep}@${ENGINE_VERSION}"; done; go mod tidy' \;
+  The SDK generators regenerate Go modules and their clients, and Dang module
+  configuration, for the scopes registered in `dagger.toml`. The last generator
+  formats Markdown files. Replace `-y` with `--no-apply` to preview the changes.
+  These selectors exclude the release-version generators.
 
-  # generate
-  dagger generate go:generate-dagger-runtimes markdown-lint:fix -y
+  Review the generated changes, then commit:
 
-  # add, commit and push the changes to the branch
+  ```console
   git commit -a -s -m "chore: bump internal tooling to $ENGINE_VERSION"
+  ```
+
+- [ ] Choose the next release version and update `internal/version/VERSION`.
+      For stable releases, default to the next patch unless a minor or major
+      release is planned. For numbered prereleases, advance the prerelease
+      counter, for example `v1.0.0-beta.14` to `v1.0.0-beta.15`. Set `NEXT_VERSION`
+      explicitly; adjust the example below to the intended next release:
+
+  ```console
+  NEXT_VERSION=v1.0.0-beta.15
+  printf '%s\n' "$NEXT_VERSION" > internal/version/VERSION
+  ```
+
+  Keep `ENGINE_VERSION` set to the published release for the remaining steps.
+  Regenerate the files derived from `internal/version/VERSION` with the published
+  CLI, so SDK provisioning defaults, Helm version metadata, and current docs
+  references match the next release version. The Go generator updates the Go SDK's
+  provisioning version. CI checks that these generated files are up to date.
+
+  ```console
+  dagger --x-release="$ENGINE_VERSION" generate \
+    'release:*target-version' \
+    golang:generate-all \
+    -y
+  ```
+
+  This updates source files for the next release. Already-published artifacts and
+  the versioned docs snapshot stay at the released version; `current_docs` is the
+  unreleased `/next/` documentation.
+
+  Before the next CLI release is available, SDKs from this checkout can use an
+  existing `dagger run` session or a development CLI selected with
+  `_EXPERIMENTAL_DAGGER_CLI_BIN`. If the requested release is unavailable, they can
+  also fall back to `dagger` on `PATH`, with a compatibility warning.
+
+  Review the generated changes and commit them with the version bump:
+
+  ```console
+  git add internal/version/VERSION docs/current_docs sdk helm
+  git commit -s -m "chore: bump next version to $NEXT_VERSION"
   ```
 
 - [ ] When all the above is done, review this current RELEASING_DOC file

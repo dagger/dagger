@@ -267,7 +267,7 @@ func (c *entrypointFuncCtx) renderArgCall(arg *TypedefArgument) string {
 
 // sourceMapExpr renders a `dag.sourceMap(path, line, col)` expression for a
 // location captured at codegen time, or "" when absent. The static entrypoint
-// replays these baked values at runtime so no-codegen modules keep the same
+// restores these baked values at runtime so no-codegen modules keep the same
 // source-map comments in dependents' bindings as codegen-at-runtime modules.
 func sourceMapExpr(loc *TypedefLocation) string {
 	if loc == nil {

@@ -71,6 +71,7 @@ type EGraphDebugResult struct {
 
 type CacheDebugResult struct {
 	EGraphDebugResult
+	ValueState                            any              `json:"value_state,omitempty"`
 	ResultCall                            *ResultCall      `json:"result_call,omitempty"`
 	ResultCallRecipeDigest                string           `json:"result_call_recipe_digest,omitempty"`
 	ResultCallRecipeDigestError           string           `json:"result_call_recipe_digest_error,omitempty"`
@@ -1111,8 +1112,56 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 	return snap
 }
 
+type cacheDebugCallDigests struct {
+	recipeDigest              string
+	recipeDigestErr           string
+	contentPreferredDigest    string
+	contentPreferredDigestErr string
+	inputDigests              []string
+	inputDigestsErr           string
+}
+
+func (c *Cache) debugResultCallDigests() map[*ResultCall]cacheDebugCallDigests {
+	c.egraphMu.RLock()
+	frames := make(map[*ResultCall]cacheDebugCallDigests, len(c.resultsByID))
+	for _, res := range c.resultsByID {
+		if frame := res.loadResultCall(); frame != nil {
+			frames[frame] = cacheDebugCallDigests{}
+		}
+	}
+	c.egraphMu.RUnlock()
+
+	// Digest reconstruction can acquire egraphMu, so it must finish before
+	// the streamed snapshot holds that lock. These diagnostic observations
+	// precede the graph capture; the map is keyed by the exact immutable frame.
+	for frame := range frames {
+		var observed cacheDebugCallDigests
+		if dig, err := frame.deriveRecipeDigest(c); err == nil {
+			observed.recipeDigest = dig.String()
+		} else {
+			observed.recipeDigestErr = err.Error()
+		}
+		if dig, err := frame.deriveContentPreferredDigest(c); err == nil {
+			observed.contentPreferredDigest = dig.String()
+		} else {
+			observed.contentPreferredDigestErr = err.Error()
+		}
+		if digs, err := frame.inputs(c); err == nil {
+			observed.inputDigests = make([]string, 0, len(digs))
+			for _, dig := range digs {
+				observed.inputDigests = append(observed.inputDigests, dig.String())
+			}
+		} else {
+			observed.inputDigestsErr = err.Error()
+		}
+		frames[frame] = observed
+	}
+	return frames
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
+	callDigests := c.debugResultCallDigests()
 	sessionResults := c.debugSessionResultsSnapshot()
 	c.callsMu.Lock()
 	c.egraphMu.RLock()
@@ -1274,32 +1323,14 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				payloadState = "materialized"
 			}
 
-			var recipeDigest string
-			var recipeDigestErr string
-			var contentPreferredDigest string
-			var contentPreferredDigestErr string
-			var inputDigests []string
-			var inputDigestsErr string
 			frame := res.loadResultCall()
-			if frame != nil {
-				if dig, err := frame.deriveRecipeDigest(c); err == nil {
-					recipeDigest = dig.String()
-				} else {
-					recipeDigestErr = err.Error()
-				}
-				if dig, err := frame.deriveContentPreferredDigest(c); err == nil {
-					contentPreferredDigest = dig.String()
-				} else {
-					contentPreferredDigestErr = err.Error()
-				}
-				if digs, err := frame.inputs(c); err == nil {
-					inputDigests = make([]string, 0, len(digs))
-					for _, dig := range digs {
-						inputDigests = append(inputDigests, dig.String())
-					}
-				} else {
-					inputDigestsErr = err.Error()
-				}
+			observed, found := callDigests[frame]
+			if frame != nil && !found {
+				// Do not reconstruct a new frame while holding egraphMu.
+				const unavailable = "result call added or replaced during debug snapshot preparation"
+				observed.recipeDigestErr = unavailable
+				observed.contentPreferredDigestErr = unavailable
+				observed.inputDigestsErr = unavailable
 			}
 
 			assocTermIDs := make([]uint64, 0, len(c.termIDsForResultLocked(resultID)))
@@ -1316,6 +1347,12 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			}
 
 			if err := writeElem(CacheDebugResult{
+				ValueState: func() any {
+					if value, ok := UnwrapAs[interface{ CacheDebugValue() any }](state.self); ok {
+						return value.CacheDebugValue()
+					}
+					return nil
+				}(),
 				EGraphDebugResult: EGraphDebugResult{
 					SharedResultID:           uint64(res.id),
 					OutputEqClassIDs:         outputEqIDs,
@@ -1332,12 +1369,12 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					SnapshotLinks:            links,
 				},
 				ResultCall:                            frame,
-				ResultCallRecipeDigest:                recipeDigest,
-				ResultCallRecipeDigestError:           recipeDigestErr,
-				ResultCallContentPreferredDigest:      contentPreferredDigest,
-				ResultCallContentPreferredDigestError: contentPreferredDigestErr,
-				ResultCallInputDigests:                inputDigests,
-				ResultCallInputDigestsError:           inputDigestsErr,
+				ResultCallRecipeDigest:                observed.recipeDigest,
+				ResultCallRecipeDigestError:           observed.recipeDigestErr,
+				ResultCallContentPreferredDigest:      observed.contentPreferredDigest,
+				ResultCallContentPreferredDigestError: observed.contentPreferredDigestErr,
+				ResultCallInputDigests:                observed.inputDigests,
+				ResultCallInputDigestsError:           observed.inputDigestsErr,
 				AssociatedTermIDs:                     assocTermIDs,
 				IndexedDigests:                        append([]string(nil), indexedDigestsByResult[resultID]...),
 				ExpiresAtUnix:                         res.expiresAtUnix,

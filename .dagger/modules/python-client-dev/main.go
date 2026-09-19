@@ -59,18 +59,20 @@ func New(
 		DevContainer: dag.DaggerEngine(ws, dagger.DaggerEngineOpts{
 			ClientDockerConfig: clientDockerConfig,
 		}).InstallClient(
-			dag.Wolfi().
-				Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
-				WithEnvVariable("PYTHONUNBUFFERED", "1").
-				WithEnvVariable(
-					"PATH",
-					"/root/.local/bin:/usr/local/bin:$PATH",
-					dagger.ContainerWithEnvVariableOpts{Expand: true}).
-				With(toolsCache("uv", "ruff", "mypy")).
-				With(uvTool(workspaceDir)).
-				WithDirectory("/src/sdk/python", workspaceDir.Directory(sourcePath)).
-				WithWorkdir("/src/sdk/python").
-				WithExec(uv("sync"))),
+			dagger.DaggerEngineInstallClientOpts{
+				Client: dag.Wolfi().
+					Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
+					WithEnvVariable("PYTHONUNBUFFERED", "1").
+					WithEnvVariable(
+						"PATH",
+						"/root/.local/bin:/usr/local/bin:$PATH",
+						dagger.ContainerWithEnvVariableOpts{Expand: true}).
+					With(toolsCache("uv", "ruff", "mypy")).
+					With(uvTool(workspaceDir)).
+					WithDirectory("/src/sdk/python", workspaceDir.Directory(sourcePath)).
+					WithWorkdir("/src/sdk/python").
+					WithExec(uv("sync")),
+			}),
 		Workspace:         workspaceDir,
 		SourcePath:        sourcePath,
 		SupportedVersions: supportedVersions,

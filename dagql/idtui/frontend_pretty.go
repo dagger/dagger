@@ -123,6 +123,7 @@ type frontendPretty struct {
 	statusLine     *StatusLine
 	statusLineData StatusLineData
 	llmCostFn      LLMCostFunc
+	llmToolsFn     LLMToolsProvider
 	textInput      *tuist.TextInput
 	promptFrame    *PromptFrame
 	completionMenu *tuist.CompletionMenu
@@ -232,7 +233,7 @@ type frontendPretty struct {
 	// reportScopedSubtree marks a report as scoped to one subtree (e.g. a
 	// single LLM tool call) rather than describing the whole run. The
 	// surfacing sections no longer need it -- they roll up relative to the
-	// zoom (see surfaceRoot) -- so it now gates exactly two things: the TRACE
+	// zoom (see surfaceRoot) -- so it now controls exactly two things: the TRACE
 	// verdict header (the enclosing run's verdict, not the subtree's) and the
 	// live-tree promotions, which would reshape the shared, cached DB around
 	// the whole run instead of the subtree being reported on.
@@ -1194,7 +1195,7 @@ func (fe *frontendPretty) SetTraceID(traceID string) {
 // drives the report's re-run suggestions.
 type ciContext struct {
 	commit     string // git ref / commit SHA the trace ran on
-	isNativeCI bool   // ran in Dagger Cloud native CI (so 'dagger cloud rerun' applies)
+	isNativeCI bool   // ran in Dagger Cloud native CI (so 'dagger cloud checks rerun' applies)
 }
 
 // SetCIContext records the trace's source commit / CI change so the report can
@@ -1389,12 +1390,18 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
+	return fe.handleForm(ctx, func() *huh.Form { return form })
+}
+
+// Build on the UI goroutine when the form needs current terminal dimensions.
+func (fe *frontendPretty) handleForm(ctx context.Context, create func() *huh.Form) error {
 	if fe.reportOnly {
 		return ErrNonInteractive
 	}
 
-	req := fe.newPromptFormRequest(ctx, form, nil)
+	req := fe.newPromptFormRequest(ctx, nil, nil)
 	fe.dispatch(func() {
+		req.model = create()
 		fe.enqueuePromptForm(req)
 		fe.Update()
 	})
@@ -1520,6 +1527,7 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 	model := req.model.
 		WithTheme(frontendFormTheme()).
 		WithKeyMap(frontendFormKeyMap()).
+		WithWidth(fe.window.Width).
 		WithShowHelp(false)
 	// Cap the form at half the screen so a tall field (e.g. the .resume session
 	// picker's long Select) stays scrollable instead of dominating the terminal.
@@ -1547,12 +1555,22 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 	// focus instead of returning it to the prompt.
 	active.focus = fe.tui.PushFocus(active.wrap)
 
-	// Insert before keymapBar, then acquire scoped focus. Tuist preserves input
-	// typed before the wrapper's first render and restores the captured owner
-	// when this form is dismissed.
+	// Keep queued permission forms above the draft and preserve scoped focus.
+	if fe.promptFrame != nil {
+		fe.tui.RemoveChild(fe.promptFrame)
+	}
+	if fe.statusLine != nil {
+		fe.tui.RemoveChild(fe.statusLine)
+	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(active.wrap)
 	fe.tui.AddChild(active.spacer)
+	if fe.promptFrame != nil {
+		fe.tui.AddChild(fe.promptFrame)
+	}
+	if fe.statusLine != nil {
+		fe.tui.AddChild(fe.statusLine)
+	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.activeForm = active
 	fe.syncHardwareCursor()
@@ -2086,7 +2104,7 @@ func (fe *frontendPretty) requestSpans(id dagui.SpanID) {
 // makes requestSpans treat them as leaves and never fetch. An explicit zoom is
 // the user asking to see exactly this subtree, so fetch it regardless, mirroring
 // what `dagger trace --span` does (it calls loader.listen directly, bypassing
-// the gate). The requestedSpans dedup still prevents repeat fetches.
+// the child-count check). The requestedSpans dedup still prevents repeat fetches.
 func (fe *frontendPretty) requestSubtree(id dagui.SpanID) {
 	if fe.spanProvider == nil || !id.IsValid() {
 		return
@@ -2467,9 +2485,12 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
+	// Only separate the primary output from a report actually rendered above it.
+	var rendered bool
 	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasConversation() || fe.db.HasGenerateReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
+			rendered = true
 		}
 
 		if fe.msgPreFinalRender.Len() > 0 {
@@ -2493,8 +2514,8 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			if fe.reportOnly {
 				// Only the error re-print is redundant, though: the stdout
 				// stream is the command's own result (e.g. a shell script's
-				// output from before it failed), so still replay it.
-				if err := replayPrimaryOutput(w, fe.db, fe.primarySpan(), false); err != nil {
+				// output from before it failed), so still write it.
+				if err := writePrimaryOutput(w, fe.db, fe.primarySpan(), false, rendered); err != nil {
 					return err
 				}
 			}
@@ -2513,16 +2534,16 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		}
 	}
 
-	// Replay the primary output log to stdout/stderr.
+	// Write the primary output log to stdout/stderr.
 	if fe.reportOnly {
 		// In report mode a failed run's root cause is already rendered above
 		// (renderRootCauseSection); the primary span's stderr stream is that
 		// same output wrapped by the engine as `Error: ... Stdout: ... Stderr:
-		// ...`. Replaying it here would duplicate the root cause (and reprint
+		// ...`. Writing it here would duplicate the root cause (and reprint
 		// the raw, un-vterm'd stream). But the stdout stream is the command's
 		// own result — e.g. a shell script's output from before it failed —
-		// so replay that, matching the streaming frontends. A passing run
-		// still replays both streams.
+		// so write that, matching the streaming frontends. A passing run
+		// still writes both streams.
 		//
 		// Only drop stderr when the root cause actually rendered, though:
 		// client-side failures carry no span origins (e.g. cobra usage
@@ -2530,10 +2551,10 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		// primary span's stderr), so nothing above covered that stream and
 		// dropping it here would lose it entirely.
 		if primary := fe.db.Spans.Map[fe.primarySpan()]; primary != nil && primary.IsFailedOrCausedFailure() {
-			return replayPrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError())
+			return writePrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError(), rendered)
 		}
 	}
-	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan())
+	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan(), rendered)
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -3537,7 +3558,7 @@ func reportSectionLines(out TermOutput, agent bool, title string, body []string)
 // with --check/--test. At the root it points at failed checks (and any failed
 // tests not under a check); zoomed to a check it points at that check's failed
 // tests. Returns nil when there's nothing to drill into or no trace ID to build
-// a command from. Gated by traceRenderPolicy.showSuggestions at the call site.
+// a command from. Controlled by traceRenderPolicy.showSuggestions at the call site.
 func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string {
 	if fe.db == nil || fe.traceID == "" {
 		return nil
@@ -3611,12 +3632,12 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // renderRerunSection prints copy-paste commands to re-run the failed checks,
 // split by intent so the two very different actions read distinctly. For a Cloud
 // trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
-// cloud rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
+// cloud checks rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
 // check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
 // be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
 // a CLI to run. Only outermost
 // checks are re-runnable, so sub-checks roll up to their root. Returns nil when
-// no failed check applies. Gated by showSuggestions at the call site.
+// no failed check applies. Controlled by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
 		return nil
@@ -3662,7 +3683,7 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.ciMeta != nil && fe.ciMeta.isNativeCI && fe.ciMeta.commit != "" {
 		body := make([]string, 0, len(names))
 		for _, name := range names {
-			body = append(body, fmt.Sprintf("dagger cloud rerun --commit %s --check %q", fe.ciMeta.commit, name))
+			body = append(body, fmt.Sprintf("dagger cloud checks rerun --commit %s --check %q", fe.ciMeta.commit, name))
 		}
 		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "RE-RUN IN CI", body)...)
 	}
@@ -3695,7 +3716,7 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 
 // outermostSurfacedCheck returns the top-level surfaced check whose subtree
 // contains checkName (itself included), or nil. It maps a (possibly nested)
-// check to the outermost unit that 'dagger cloud rerun'/'dagger check' can target.
+// check to the outermost unit that 'dagger cloud checks rerun'/'dagger check' can target.
 func outermostSurfacedCheck(roots []*dagui.CheckNode, checkName string) *dagui.CheckNode {
 	var contains func(n *dagui.CheckNode) bool
 	contains = func(n *dagui.CheckNode) bool {
@@ -3885,7 +3906,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 
 	// Interactive zoom: force-fetch the zoomed span's subtree so navigating
 	// straight to a failure shows its detail. ChildCount is unreliable for
-	// externally-loaded spans, so the ChildCount-gated requestSpans (via
+	// externally-loaded spans, so the ChildCount-dependent requestSpans (via
 	// setExpanded) silently no-ops on them, leaving the zoomed view empty.
 	// Report mode already fetches the pinned subtree up front (trace.go --span),
 	// so this is interactive-only; requestSubtree dedups against that.
@@ -3894,7 +3915,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	}
 
 	if fe.logProvider != nil {
-		// The primary output is replayed at end of run from OUTSIDE the render
+		// The primary output is written at end of run from OUTSIDE the render
 		// tree (renderPrimaryOutput reads db.PrimaryLogs), so no view fetches it
 		// on render -- request it eagerly in both modes. It's a single span
 		// (descendants=false), not the rolled-up build log, so it isn't the
@@ -6760,6 +6781,11 @@ func (fe *frontendPretty) goErrorOrigin() {
 func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	old := fe.window
 	fe.window = msg
+	if fe.activeForm != nil {
+		// Huh fixes its width at 80 under TERM=dumb, including headless
+		// consoles. The pretty frontend owns layout and must override it.
+		fe.activeForm.model.WithWidth(msg.Width)
+	}
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
 	if old != msg {
@@ -6874,7 +6900,7 @@ func (fe *frontendPretty) renderableErrorOrigins(span *dagui.Span) []*dagui.Span
 		if cause.ID == span.ID {
 			continue
 		}
-		if !cause.Received {
+		if !cause.Received || !hasSpanErrorMessage(cause) {
 			continue
 		}
 		if fe.claims.hasError(cause.ID) {
@@ -7395,12 +7421,21 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		fe.claims.claimLog(rootCauseRow.Span)
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
-
-	fe.claims.claimError(rootCause)
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
 	return fe.claims.hasRootError(fe.err)
+}
+
+// A nested session's error may arrive before its origin's final span. Until
+// that span carries a message, keep the error on the propagating span visible.
+func hasSpanErrorMessage(span *dagui.Span) bool {
+	for _, failed := range span.Errors().Order {
+		if strings.TrimSpace(failed.Status.Description) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // errorShownElsewhere reports whether a failed span's error message is carried
@@ -7424,6 +7459,9 @@ func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
 		if fe.claims.hasError(origin.ID) {
 			return true
 		}
+		if !hasSpanErrorMessage(origin) {
+			continue
+		}
 		if fe.rows != nil && fe.rows.BySpan[origin.ID] != nil {
 			return true
 		}
@@ -7445,6 +7483,9 @@ func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	if !hasSpanErrorMessage(row.Span) {
+		return
+	}
 	if fe.errorShownElsewhere(row.Span) {
 		// span's error originated elsewhere and that origin is visible this
 		// pass; don't repeat the message, the ERROR status links to its origin
@@ -8635,17 +8676,18 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	return fe.HandleForm(ctx, NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title(title).
-				Description(strings.TrimSpace((&Markdown{
-					Content: message,
-					Width:   fe.window.Width,
-				}).View())).
-				Value(dest),
-		),
-	))
+	return fe.handleForm(ctx, func() *huh.Form {
+		field := NewExplicitConfirm("Yes", "No", dest).Title(title)
+		if title == "" {
+			// A self-contained question needs no separate Markdown description.
+			field.Title(message).Inline(true)
+		} else if message == "" {
+			field.Inline(true)
+		} else {
+			field.Description(strings.TrimSpace((&Markdown{Content: message, Width: fe.window.Width}).View()))
+		}
+		return huh.NewForm(huh.NewGroup(field))
+	})
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {

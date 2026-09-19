@@ -30,7 +30,7 @@ import (
 // analyzer reads the override. This is emit, never inference: the loader only
 // reads the attribute the engine writes here.
 //
-// Like the other OTel-profiling hooks (otelprof_hooks.go) this is gated only on
+// Like the other OTel-profiling hooks (otelprof_hooks.go) this is enabled only by
 // telemetry being active, not on wcprof.Enabled — the OTel source must be
 // reconstructable from a Cloud trace alone, with no native recorder running.
 
@@ -139,12 +139,22 @@ func (wcprofLazyParentProcessor) ForceFlush(context.Context) error { return nil 
 // loader's class for that op is "resume <field>" rather than native's
 // profCallClass — a benign divergence because the lazy op's self-time is ~0 and
 // it never ranks in the bottleneck oracle.
-func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, resultCall *ResultCall) (context.Context, trace.Span, bool) {
+func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, group LazyGroupKey, resultCall *ResultCall, storedPart PartKey) (context.Context, trace.Span, bool) {
 	if clientMD, err := engine.ClientMetadataFromContext(evalCtx); err == nil && clientMD.SessionID != "" {
 		if originalSpanCtx, ok := c.sessionLazySpanContext(clientMD.SessionID, sharedID); ok {
 			spanName := "resume lazy evaluation"
 			if resultCall != nil && resultCall.Field != "" {
 				spanName = "resume " + resultCall.Field
+			}
+			// Named groups get their own resume spans; the group key in
+			// the name distinguishes "resume withExec (metadata)" from
+			// "resume withExec (execOutputs)". The whole group keeps
+			// today's names byte-for-byte.
+			if group != LazyGroupWhole {
+				spanName += " (" + string(group) + ")"
+			}
+			if storedPart != "" {
+				spanName = "open stored part (" + string(storedPart) + ")"
 			}
 			// Lazy failure attribution: link the resume span back to all API spans
 			// that installed/own this result in the session (dagui interprets
@@ -169,9 +179,13 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 		}
 	}
 	prev := trace.SpanContextFromContext(evalCtx)
+	spanName := profCallClass(resultCall)
+	if storedPart != "" {
+		spanName = "open stored part (" + string(storedPart) + ")"
+	}
 	callbackCtx, lazySpan := Tracer(evalCtx).Start(
 		evalCtx,
-		profCallClass(resultCall),
+		spanName,
 		telemetry.Passthrough(),
 		trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
 	)
@@ -192,7 +206,18 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 // deferred-work vocabulary, so it keeps its error-origin-stamping role
 // (EndWithCause); the non-resume lazy op is pure profiling emission and must
 // never stamp (EndProfSpan).
-func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, errPtr *error) {
+func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, partial, abandoned bool, storedPart PartKey, errPtr *error) {
+	if storedPart != "" && *errPtr == nil {
+		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
+	}
+	if isResume && partial {
+		span.SetAttributes(attribute.Bool(telemetryattrs.DagPartialAttr, true))
+	}
+	// An attempt abandoned by its waiters will be retried. Mark its resume
+	// span as blocked so the canceled attempt does not read as a call failure.
+	if isResume && abandoned {
+		span.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
+	}
 	if isResume && *errPtr != nil && blockedOnPrerequisite(*errPtr, sharedID) {
 		span.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
 	}

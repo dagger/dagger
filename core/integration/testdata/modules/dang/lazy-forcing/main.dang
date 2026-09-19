@@ -6,10 +6,10 @@
 #
 # LLM.spawn is the witness: it is DoNotCache and mints a fresh agent instance
 # per evaluation, so two reads that disagree prove the chain ran twice. The
-# replay/ model is never called — spawn only composes — so no provider
+# recording/ model is never called — spawn only composes — so no provider
 # configuration is needed.
 type Lazyforcing {
-  let emptyReplay: String! = "replay/W10="
+  let emptyReplay: String! = "recording/W10="
 
   # Effectful and non-deduplicable: @cache(Never) keeps dagql from replaying
   # the call, so every execution mints its own agent instance. Returns an

@@ -57,7 +57,7 @@ func (AgentRuntimeSuite) TestAgentArgInjection(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 	pokerID := servePokerModule(ctx, t, c)
 
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(pokePrompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Poking the parent."},
@@ -140,7 +140,7 @@ func (AgentRuntimeSuite) TestAgentArgRequiresAgentLoop(ctx context.Context, t *t
 		// The tool call fails (no agent in context under a sync loop); the
 		// error becomes the tool's errored result and the recorded turn
 		// still closes, so the message is asserted from the transcript.
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt(pokePrompt).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "poke",

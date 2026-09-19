@@ -14,7 +14,23 @@
         },
         "getting-started/try-dagger",
         "getting-started/quickstart",
-        "getting-started/cloud-checks"
+        "getting-started/cloud-checks",
+        {
+          "type": "category",
+          "label": "Platform Guides",
+          "link": {
+            "type": "doc",
+            "id": "getting-started/platform-guides/index"
+          },
+          "collapsible": true,
+          "collapsed": false,
+          "items": [
+            {
+              "type": "doc",
+              "id": "getting-started/platform-guides/go/index"
+            }
+          ]
+        }
       ]
     },
     {
@@ -65,7 +81,20 @@
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "reference/modules/go",
+            {
+              "type": "category",
+              "label": "Go",
+              "link": {
+                "type": "doc",
+                "id": "reference/modules/go"
+              },
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                "reference/modules/go/golangci-lint",
+                "reference/modules/go/staticcheck"
+              ]
+            },
             {
               "type": "category",
               "label": "JavaScript",
@@ -194,6 +223,7 @@
                 "reference/api/git-bundle",
                 "reference/api/git-bundle-ref",
                 "reference/api/git-commit",
+                "reference/api/git-push-result",
                 "reference/api/git-ref",
                 "reference/api/healthcheck-config",
                 "reference/api/host",
@@ -231,6 +261,7 @@
                 "reference/api/up",
                 "reference/api/up-group",
                 "reference/api/volume",
+                "reference/api/workspace-commit-pick",
                 "reference/api/workspace-git",
                 "reference/api/workspace-migration",
                 "reference/api/workspace-migration-step",

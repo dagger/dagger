@@ -30,6 +30,7 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
+		NotReplayable("Requires the originating workspace client").
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
@@ -67,6 +68,70 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
 			).
 			PassthroughTelemetry(),
+		dagql.NodeFunc("compareCommitsFrom", s.compareCommitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures local receivers before planning integration").
+			Doc("Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.",
+				"Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.",
+				"A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.").
+			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
+				dagql.Arg("commits").Doc("Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits."),
+				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
+		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures local receivers before integrating commits").
+			Doc("Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.",
+				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.",
+				"A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.",
+				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.").
+			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
+				dagql.Arg("commits").Doc("Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits."),
+				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
+		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
+		dagql.NodeFunc("__saveDirectory", s.saveDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Integrate source work into a captured destination and bundle the result."),
+		dagql.NodeFunc("withCommit", s.withCommit).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Freezes host-backed receivers before committing").
+			Doc("Create a Git commit from a changeset and return a stable workspace with HEAD advanced.",
+				"The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.",
+				"A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.",
+				"Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.").
+			Args(
+				dagql.Arg("changes").Doc("Changeset to commit, for example git.uncommitted.filter(...). Paths are rooted at the repository; rename sides are determined by the changeset. Git metadata (.git) is ignored; metadata-only changes fail with nothing to commit."),
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date. Required for reproducible commits."),
+				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),
+				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost."),
+				dagql.Arg("signoff").Doc("Add a Signed-off-by trailer using the commit author's name and email."),
+			),
+		dagql.NodeFunc("withReset", s.withReset).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Freezes host-backed receivers before resetting").
+			Doc("Move this workspace's Git HEAD to a commit and return the resulting stable workspace.",
+				"A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.",
+				"With hard, the working tree is reset to the commit and every uncommitted change is discarded.",
+				"Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.").
+			Args(
+				dagql.Arg("commit").Doc("Full commit hash to reset HEAD to."),
+				dagql.Arg("hard").Doc("Discard uncommitted changes, resetting the working tree to the commit."),
+			),
+		dagql.NodeFunc("snapshot", s.snapshot).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures the client's current Git state after approval").
+			Experimental("Best-effort capture for resumable sessions; capture and fallback behavior may change.").
+			Doc("Return a snapshot of this workspace as a stable value.",
+				"Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.",
+				"Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.",
+				"Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.",
+				"The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only."),
+		dagql.NodeFunc("withConfigPaths", s.withConfigPaths).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.").
+			Args(dagql.Arg("configFile").Doc("Config file path."), dagql.Arg("lockFile").Doc("Lockfile path.")),
+		dagql.NodeFunc("withConfigEnvironment", s.withConfigEnvironment).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Select the config environment carried by this workspace.").
+			Args(dagql.Arg("name").Doc("Environment name, or empty to clear the selection.")),
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("__workspaceSDK", s.workspaceSDK).
@@ -235,7 +300,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			// Env-sensitive writes: what this records depends on the client's env
 			// selection, which travels in client metadata rather than the
-			// workspace ID, so a recipe recorded under one env must not replay
+			// workspace ID, so a recipe recorded under one env must not be reused
 			// under another.
 			WithInput(dagql.PerClientInput).
 			Doc("Return this workspace with a module installed in its config.",
@@ -401,13 +466,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Writes pending workspace changes to the calling client's host").
-			Doc("Write this workspace's pending changes to its local Git workspace on the current client's host.",
-				"Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host."),
-		dagql.NodeFunc("reloaded", s.reloaded).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerCallInput).
-			Doc("Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session."),
+			DoNotCache("Writes workspace commits and changes to the calling client's host").
+			Doc("Write this workspace's commits and pending changes to a checkout on the calling client.",
+				"With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.",
+				"Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.").
+			Args(
+				dagql.Arg("path").Doc("Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root."),
+				dagql.Arg("from").Doc("Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace."),
+			),
 		dagql.Func("configRead", s.configRead).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
@@ -495,6 +561,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceCommitPick](srv).View(AfterVersion("v1.0.0-0")))
+	core.WorkspaceCommitPickStatuses.Install(srv, AfterVersion("v1.0.0-0"))
+	core.WorkspaceCommitPickReasons.Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.Fields[*core.WorkspaceCommitPick]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModule](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModuleSetting](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
@@ -506,6 +576,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("(Internal-only) The git repository backing this workspace git state."),
 		dagql.NodeFunc("head", s.workspaceGitHead).
 			Doc("The checked-out HEAD of this workspace."),
+		dagql.NodeFunc("__checkout", s.workspaceGitFullCheckout).
+			IsPersistable().
+			Doc("(Internal-only) Materialize a clean full-history checkout with Git metadata retained."),
+		dagql.NodeFunc("directory", s.workspaceGitDirectory).
+			IsPersistable().
+			Doc("Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.",
+				"Mount this directory at .git alongside workspace.directory(\"/\") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.",
+				"This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit."),
 		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
 			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
 	}.Install(srv)
@@ -822,7 +900,7 @@ func (s *workspaceSchema) workspaceReadPathExists(
 		if err != nil {
 			return false, fmt.Errorf("buildkit: %w", err)
 		}
-		statPath, err := pathutil.SandboxedRelativePath(resolvedPath, ws.HostPath())
+		statPath, err := pathutil.ResolvePathWithinRoot(resolvedPath, ws.HostPath())
 		if err != nil {
 			return false, err
 		}
@@ -909,7 +987,7 @@ func (s *workspaceSchema) resolveRootfsInner(
 		if err != nil {
 			return inst, err
 		}
-		absPath, err := pathutil.SandboxedRelativePath(resolvedPath, ws.HostPath())
+		absPath, err := pathutil.ResolvePathWithinRoot(resolvedPath, ws.HostPath())
 		if err != nil {
 			return inst, err
 		}
@@ -1015,7 +1093,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 	if err != nil {
 		return inst, err
 	}
-	absPath, err := pathutil.SandboxedRelativePath(".", ws.HostPath())
+	absPath, err := pathutil.ResolvePathWithinRoot(".", ws.HostPath())
 	if err != nil {
 		return inst, err
 	}
@@ -2361,19 +2439,44 @@ func workspacePathInOrLeadingToCwd(p, cwd string) bool {
 func (s *workspaceSchema) export(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	_ struct{},
+	args workspaceExportArgs,
 ) (core.Void, error) {
+	if args.Path != "" {
+		defer invalidateExportedWorkspace(ctx)
+		return core.Void{}, s.saveWorkspace(ctx, parent, args)
+	}
 	ws := parent.Self()
 	hostPath, err := ws.ExportHostPath()
 	if err != nil {
-		return core.Void{}, err
+		return core.Void{}, fmt.Errorf("%w; export frozen workspaces with an explicit path", err)
 	}
 
 	changes, ok := ws.OverlayChanges()
-	if !ok || changes.Self() == nil {
+	wrote := false
+	defer func() {
+		if wrote {
+			invalidateExportedWorkspace(ctx)
+		}
+	}()
+	if !args.From.Valid && (!ok || changes.Self() == nil) {
 		return core.Void{}, nil
 	}
-	if ws.ClientLocalBase() {
+	if args.From.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return core.Void{}, err
+		}
+		from, err := args.From.Value.Load(ctx, srv)
+		if err != nil {
+			return core.Void{}, fmt.Errorf("load comparison workspace: %w", err)
+		}
+		// Export applies at the host root. Unlike the public changes field,
+		// this comparison must retain paths outside the workspace's cwd.
+		changes, err = s.workspaceChangesBetween(ctx, from, parent)
+		if err != nil {
+			return core.Void{}, err
+		}
+	} else if ws.ClientLocalBase() {
 		srv, err := core.CurrentDagqlServer(ctx)
 		if err != nil {
 			return core.Void{}, err
@@ -2402,68 +2505,31 @@ func (s *workspaceSchema) export(
 	// Deliberately no withWorkspaceClientContext here: export is a side
 	// effect on the calling client, like Directory.export — never on the
 	// client that created the workspace (dagger/dagger#14007).
+	wrote = true // Filesync can partially write before returning an error.
 	if err := changes.Self().Export(ctx, hostPath); err != nil {
 		return core.Void{}, err
-	}
-	if err := core.InvalidateCurrentWorkspace(ctx); err != nil {
-		slog.Warn("could not invalidate workspace after export", "error", err)
-	}
-	// The export just changed the workspace's on-disk content, so host reads
-	// (Workspace.file / .directory) cached earlier in this session are stale —
-	// they are cached per client for the client's whole lifetime
-	// (dagql.PerClientInput). Bump the client's read epoch so subsequent reads
-	// land in a fresh per-client cache namespace and re-read the live host.
-	// Like the invalidation above, this only matters when the caller owns the
-	// workspace: a non-owner's export never touched the owner's host, and this
-	// workspace's reads resolve under the owner's epoch, so the bump is a
-	// harmless no-op. Best-effort: a bookkeeping failure must not fail an
-	// export that already succeeded.
-	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
-		slog.Warn("could not bump workspace read epoch after export", "error", err)
 	}
 	return core.Void{}, nil
 }
 
-// reloaded returns the workspace unchanged, having invalidated the workspace
-// owner's cached host reads.
-//
-// Workspace.file / Workspace.directory resolve through host.directory, which is
-// cached per client for the client's whole lifetime (dagql.PerClientInput). In
-// a long-lived session — a `dagger agent` conversation — a file read early on
-// keeps returning that original snapshot even after the files change on disk
-// underneath it. Export bumps the read epoch itself, since it is the operation
-// that changed them; this field covers the other direction, where an agent
-// discards its pending overlay to re-sync with whatever the host now holds
-// (the CLI's ctrl+u), and any other caller that knows its cached reads are
-// stale.
-func (s *workspaceSchema) reloaded(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Workspace],
-	_ struct{},
-) (dagql.ObjectResult[*core.Workspace], error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
+// invalidateExportedWorkspace drops the calling client's cached workspace
+// detection and bumps its workspace read epoch: the export just changed the
+// workspace's on-disk content, so host reads (Workspace.file / .directory and
+// the sparse baseline a later export diffs against) cached earlier in this
+// session are stale — they are cached per client for the client's whole
+// lifetime (dagql.PerClientInput). Bumping the epoch lands subsequent reads in
+// a fresh per-client cache namespace so they re-read the live host. This only
+// matters when the caller owns the workspace: a non-owner's export never
+// touched the owner's host, and this workspace's reads resolve under the
+// owner's epoch, so the bump is a harmless no-op. Best-effort: a bookkeeping
+// failure must not fail an export that already succeeded.
+func invalidateExportedWorkspace(ctx context.Context) {
+	if err := core.InvalidateCurrentWorkspace(ctx); err != nil {
+		slog.Warn("could not invalidate workspace after export", "error", err)
 	}
-	// Bump under the workspace's owning client, the context
-	// withWorkspaceHostReadContext reads the epoch from — a
-	// bump under the caller's own client would be a silent no-op whenever the
-	// caller is not the owner (e.g. a module handed the workspace). A value
-	// workspace has no owning client and no host reads to invalidate, so the
-	// bump is skipped rather than failed.
-	if parent.Self().ClientID != "" {
-		bumpCtx, err := withWorkspaceClientContext(ctx, parent.Self())
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-		// Best-effort, like export's invalidation: failing to bump only falls
-		// back to the prior (stale) read behavior, which is not worth failing
-		// over.
-		if err := core.BumpWorkspaceReadEpoch(bumpCtx); err != nil {
-			slog.Warn("could not bump workspace read epoch", "error", err)
-		}
+	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
+		slog.Warn("could not bump workspace read epoch after export", "error", err)
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().Clone())
 }
 
 func (s *workspaceSchema) overlayWorkspaceWithMutation(
@@ -2850,11 +2916,14 @@ func (s *workspaceSchema) sparseHostBase(
 
 	includes := sparseIncludePatterns(touched)
 
+	// Read the baseline under the read epoch: after an export the on-disk
+	// content moved, and the next export must diff against what is on disk
+	// now rather than the snapshot cached earlier in the session.
 	ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
-	absPath, err := pathutil.SandboxedRelativePath(".", ws.HostPath())
+	absPath, err := pathutil.ResolvePathWithinRoot(".", ws.HostPath())
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
@@ -3037,7 +3106,7 @@ func (s *workspaceSchema) ensureWorkspaceGitDirectory(ctx context.Context, ws *c
 		}
 
 		statFS = core.NewCallerStatFS(bk)
-		statPath, err = pathutil.SandboxedRelativePath(".git", ws.HostPath())
+		statPath, err = pathutil.ResolvePathWithinRoot(".git", ws.HostPath())
 		if err != nil {
 			return err
 		}
@@ -3156,11 +3225,13 @@ func (s *workspaceSchema) materializeWorkspaceGitUncommitted(
 	if err != nil {
 		return inst, false, err
 	}
+	// Pin the reconstruction to the session's cached view of the checkout,
+	// keyed by the read epoch so an export that moved the working tree is
+	// re-read rather than served from the pre-export materialization.
 	epoch, err := core.WorkspaceReadEpoch(clientCtx)
 	if err != nil {
 		return inst, false, err
 	}
-
 	var scratch dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(clientCtx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
 		return inst, false, err
@@ -3252,18 +3323,9 @@ func (s *workspaceSchema) materializeWorkspaceGit(
 	if err != nil {
 		return dir, err
 	}
-	// Pin the reconstruction to the session's cached view of the checkout by
-	// keying it on the workspace read epoch rather than the checkout's live
-	// ref state: a checkout that advances mid-session must NOT be silently
-	// re-read, or a staged-commit export could fast-forward over the user's
-	// own commit instead of detecting that the local branch moved. The epoch
-	// bumps on export/reload, exactly when the pinned view should be refreshed
-	// -- the same scoping Workspace.file/.directory host reads use.
-	epoch, err := core.WorkspaceReadEpoch(clientCtx)
-	if err != nil {
-		return dir, err
-	}
-	out, err := core.MaterializeHostGitCheckout(clientCtx, srv, dir, ws.HostPath(), "epoch:"+epoch)
+	// Live workspaces retain their session-local Git view. Call snapshot to
+	// capture a fresh, independently stable workspace from the live checkout.
+	out, err := core.MaterializeHostGitCheckout(clientCtx, srv, dir, ws.HostPath(), "workspace")
 	if errors.Is(err, core.ErrNoGitContext) {
 		// No .git at all: leave the original directory so downstream callers
 		// surface the plain "not a git repository" failure, matching
@@ -3305,7 +3367,7 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 	ws := parent.Self().Workspace.Self()
 	if changes, ok := ws.OverlayChanges(); ok {
 		if ref, ok := ws.SourceGitRef(); ok {
-			return gitRefWorkspaceChanges(ctx, ws, ref)
+			return gitRefWorkspaceChanges(ctx, ws, ref, true)
 		}
 		return changes, nil
 	}
@@ -3334,10 +3396,15 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 	return inst, nil
 }
 
+// gitRefWorkspaceChanges compares a Git-backed workspace's overlay against its
+// ref's tree. With honorGitignore, additions the tree's .gitignore rules
+// ignore are left out, as git status would; export passes false because an
+// overlay edit is explicit content to write out even when a rule matches it.
 func gitRefWorkspaceChanges(
 	ctx context.Context,
 	ws *core.Workspace,
 	ref dagql.Result[*core.GitRef],
+	honorGitignore bool,
 ) (dagql.ObjectResult[*core.Changeset], error) {
 	var inst dagql.ObjectResult[*core.Changeset]
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -3369,15 +3436,152 @@ func gitRefWorkspaceChanges(
 	if err != nil {
 		return inst, err
 	}
-	if err := srv.Select(ctx, root, &inst, dagql.Selector{
-		Field: "changes",
-		Args: []dagql.NamedInput{
-			{Name: "from", Value: dagql.NewID[*core.Directory](baseID)},
-		},
-	}); err != nil {
+	changesFrom := func(after dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Changeset], error) {
+		var changes dagql.ObjectResult[*core.Changeset]
+		err := srv.Select(ctx, after, &changes, dagql.Selector{
+			Field: "changes",
+			Args: []dagql.NamedInput{
+				{Name: "from", Value: dagql.NewID[*core.Directory](baseID)},
+			},
+		})
+		return changes, err
+	}
+	inst, err = changesFrom(root)
+	if err != nil || !honorGitignore {
 		return inst, err
 	}
-	return inst, nil
+	after, changed, err := withoutGitIgnoredAdditions(ctx, srv, root, inst)
+	if err != nil {
+		return inst, err
+	}
+	if !changed {
+		return inst, nil
+	}
+	return changesFrom(after)
+}
+
+// withoutGitIgnoredAdditions removes from after every path that changes reports
+// as added and the after tree's .gitignore rules ignore, mirroring git: ignore
+// rules only ever hide untracked files, so modifications and deletions of
+// tracked paths are kept even when those paths match a rule. Directories left
+// empty by the removals, and that only exist because of them, are removed too,
+// since git never reports an empty directory. Reports whether anything was
+// removed.
+func withoutGitIgnoredAdditions(
+	ctx context.Context,
+	srv *dagql.Server,
+	after dagql.ObjectResult[*core.Directory],
+	changes dagql.ObjectResult[*core.Changeset],
+) (dagql.ObjectResult[*core.Directory], bool, error) {
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return after, false, err
+	}
+	ignored, err := after.Self().GitIgnoredPaths(ctx, after, paths.Added)
+	if err != nil {
+		return after, false, err
+	}
+	if len(ignored) == 0 {
+		return after, false, nil
+	}
+	added := make(map[string]struct{}, len(paths.Added))
+	for _, p := range paths.Added {
+		added[p] = struct{}{}
+	}
+	// Ignored directories are added wholesale (a directory in Added does not
+	// exist in the baseline), so dropping the outermost ones covers their
+	// contents. Everything else is dropped file by file.
+	var dirs, files []string
+	for _, p := range ignored {
+		if strings.HasSuffix(p, "/") {
+			dirs = append(dirs, p)
+		}
+	}
+	slices.Sort(dirs)
+	var outermost []string
+	for _, d := range dirs {
+		if !underAnyDir(d, outermost) {
+			outermost = append(outermost, d)
+		}
+	}
+	for _, p := range ignored {
+		if !strings.HasSuffix(p, "/") && !underAnyDir(p, outermost) {
+			files = append(files, p)
+		}
+	}
+	for _, d := range outermost {
+		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(strings.TrimSuffix(d, "/"))},
+		}}); err != nil {
+			return after, false, err
+		}
+	}
+	if len(files) > 0 {
+		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutFiles", Args: []dagql.NamedInput{
+			{Name: "paths", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(files...))},
+		}}); err != nil {
+			return after, false, err
+		}
+	}
+	// Prune newly added directories that held nothing but ignored files,
+	// deepest first so a chain of them collapses.
+	var parents []string
+	seen := map[string]struct{}{}
+	for _, f := range files {
+		for dir := path.Dir(f); dir != "." && dir != "/"; dir = path.Dir(dir) {
+			if _, ok := seen[dir]; ok {
+				break
+			}
+			seen[dir] = struct{}{}
+			if _, ok := added[dir+"/"]; ok {
+				parents = append(parents, dir)
+			}
+		}
+	}
+	slices.SortFunc(parents, func(a, b string) int { return strings.Count(b, "/") - strings.Count(a, "/") })
+	for _, dir := range parents {
+		entries, err := after.Self().Entries(ctx, after, dir)
+		if err != nil {
+			return after, false, err
+		}
+		if len(entries) > 0 {
+			continue
+		}
+		if err := srv.Select(ctx, after, &after, dagql.Selector{Field: "withoutDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(dir)},
+		}}); err != nil {
+			return after, false, err
+		}
+	}
+	return after, true, nil
+}
+
+// underAnyDir reports whether p lies beneath one of dirs (each ending in "/").
+func underAnyDir(p string, dirs []string) bool {
+	for _, d := range dirs {
+		if p != d && strings.HasPrefix(p, d) {
+			return true
+		}
+	}
+	return false
+}
+
+// workspaceExportChanges returns every pending overlay edit of a Git-backed
+// workspace, including additions its .gitignore rules would hide from
+// Workspace.git.uncommitted: an export writes what the agent explicitly wrote.
+func workspaceExportChanges(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws dagql.ObjectResult[*core.Workspace],
+) (dagql.ObjectResult[*core.Changeset], error) {
+	if _, ok := ws.Self().OverlayChanges(); ok {
+		if ref, ok := ws.Self().SourceGitRef(); ok {
+			return gitRefWorkspaceChanges(ctx, ws.Self(), ref, false)
+		}
+	}
+	var dirty dagql.ObjectResult[*core.Changeset]
+	err := srv.Select(ctx, ws, &dirty, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"})
+	return dirty, err
 }
 
 func (s *workspaceSchema) selectWorkspaceGitRepository(
@@ -3499,7 +3703,7 @@ func (s *workspaceSchema) findUp(
 		statFS = core.NewCallerStatFS(bk)
 		boundaryRoot := ws.HostPath()
 		pathForStat = func(candidate string) (string, error) {
-			return pathutil.SandboxedRelativePath(candidate, boundaryRoot)
+			return pathutil.ResolvePathWithinRoot(candidate, boundaryRoot)
 		}
 	} else {
 		rootfs, err := workspaceRootfs(ws)
@@ -3759,8 +3963,10 @@ func (s *workspaceSchema) checks(
 		noGenerate = true
 	}
 
-	// check is strict: a module that can't load is a failure, by design.
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, false)
+	// Best-effort: a module that can't load becomes a failing check below
+	// rather than aborting the modules that can. check stays a gate -- the run
+	// still fails -- but a broken module no longer costs the whole report.
+	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadBestEffort)
 	if err != nil {
 		return nil, err
 	}
@@ -3773,50 +3979,31 @@ func (s *workspaceSchema) checks(
 		return e.Check.Skip
 	})
 
-	var allChecks []*core.Check
+	// declaredChecks keeps every module check, whatever the patterns select: a
+	// derived check yields to an explicit one even when only the derived check
+	// was asked for by name.
+	var allChecks, declaredChecks []*core.Check
 	for _, mod := range mods {
-		checkGroup, err := core.NewCheckGroup(ctx, mod, nil, noGenerate, onlyGenerate)
+		checkGroup, err := core.NewCheckGroup(ctx, mod, noGenerate, onlyGenerate)
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
 		}
 		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Self().Name(), entrypoints[mod.Self().Name()])
-		filtered, err := filterNodesByInclude(
-			ctx,
-			checkGroup.Checks,
-			include,
-			func(check *core.Check) *core.ModTreeNode { return check.Node },
-			func(check *core.Check) string { return check.Name() },
-			"check",
-		)
+		declaredChecks = append(declaredChecks, checkGroup.Checks...)
+		filtered, err := filterChecksByInclude(ctx, checkGroup.Checks, include)
 		if err != nil {
 			return nil, err
 		}
 		// Apply caller-requested skip patterns.
 		if len(skip) > 0 {
-			filtered, err = filterNodesByExclude(
-				ctx,
-				filtered,
-				skip,
-				false,
-				func(check *core.Check) *core.ModTreeNode { return check.Node },
-				func(check *core.Check) string { return check.Name() },
-				"check",
-			)
+			filtered, err = filterChecksByExclude(ctx, filtered, skip, false)
 			if err != nil {
 				return nil, err
 			}
 		}
 		// Apply ignoreChecks exclusion for this toolchain's checks.
 		if exclude := ignoreChecks[mod.Self().Name()]; len(exclude) > 0 {
-			filtered, err = filterNodesByExclude(
-				ctx,
-				filtered,
-				exclude,
-				true,
-				func(check *core.Check) *core.ModTreeNode { return check.Node },
-				func(check *core.Check) string { return check.Name() },
-				"check",
-			)
+			filtered, err = filterChecksByExclude(ctx, filtered, exclude, true)
 			if err != nil {
 				return nil, err
 			}
@@ -3832,11 +4019,19 @@ func (s *workspaceSchema) checks(
 		if err != nil {
 			return nil, err
 		}
-		derived, err := s.syntheticSDKGeneratorChecks(ctx, staged, include, skip, entrypoints, ignoreChecks, allChecks)
+		derived, err := s.syntheticSDKGeneratorChecks(ctx, staged, include, skip, entrypoints, ignoreChecks, declaredChecks)
 		if err != nil {
 			return nil, err
 		}
 		allChecks = append(allChecks, derived...)
+	}
+
+	// Every check that resolved leads, derived ones included; the modules that
+	// did not resolve follow. They are reported whatever include/skip patterns
+	// are in play: the checks those patterns would have matched are precisely
+	// what failed to enumerate.
+	for _, failure := range loadFailures {
+		allChecks = append(allChecks, core.NewModuleLoadFailureCheck(failure))
 	}
 
 	return &core.CheckGroup{Checks: allChecks, BoundWorkspace: parentResult}, nil
@@ -3845,7 +4040,7 @@ func (s *workspaceSchema) checks(
 // syntheticSDKGeneratorChecks derives one check per configured SDK from the
 // engine-injected generators `dagger generate` already lists, so a workspace
 // keeps the generate-derived check it had when its SDK declared its own
-// +generate function. syntheticSDKGenerators applies the include patterns.
+// +generate function.
 func (s *workspaceSchema) syntheticSDKGeneratorChecks(
 	ctx context.Context,
 	staged *stagedWorkspaceConfig,
@@ -3855,51 +4050,56 @@ func (s *workspaceSchema) syntheticSDKGeneratorChecks(
 	ignoreChecks map[string][]string,
 	existing []*core.Check,
 ) ([]*core.Check, error) {
-	generators, err := s.syntheticSDKGenerators(ctx, staged, include, entrypoints)
+	// The include patterns are applied to the checks below, not here: a pattern
+	// naming the check selects nothing when it is tried against the generator,
+	// whose path is one leaf shorter.
+	generators, err := s.syntheticSDKGenerators(ctx, staged, nil, entrypoints)
 	if err != nil {
 		return nil, err
 	}
 
 	// An explicit +check at the same name wins, as it does for a function
-	// annotated with both +check and +generate.
+	// annotated with both +check and +generate. The dedup is keyed on the
+	// generator's own name, not the check's, so an explicit +check of that name
+	// still wins even though the two no longer collide.
 	taken := make(map[string]struct{}, len(existing))
 	for _, check := range existing {
-		taken[check.Name()] = struct{}{}
+		taken[check.Node.CommandName()] = struct{}{}
 	}
 
 	derived := make([]*core.Check, 0, len(generators))
 	for _, generator := range generators {
-		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
-		if _, exists := taken[check.Name()]; exists {
+		if _, exists := taken[generator.Node.CommandName()]; exists {
 			continue
 		}
 		// The generator is namespaced under its SDK's provider module, and an
 		// SDK names exactly one installed module, so that module's configured
 		// check skips apply to this check alone.
-		filtered, err := filterNodesByExclude(
-			ctx,
-			[]*core.Check{check},
-			ignoreChecks[generator.Node.Path()[0]],
-			true,
-			func(check *core.Check) *core.ModTreeNode { return check.Node },
-			func(check *core.Check) string { return check.Name() },
-			"check",
-		)
+		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
+		filtered, err := filterChecksByExclude(ctx, []*core.Check{check}, ignoreChecks[generator.Node.Path()[0]], true)
 		if err != nil {
 			return nil, err
 		}
 		derived = append(derived, filtered...)
 	}
 
-	return filterNodesByExclude(
-		ctx,
-		derived,
-		skip,
-		false,
-		func(check *core.Check) *core.ModTreeNode { return check.Node },
-		func(check *core.Check) string { return check.Name() },
-		"check",
-	)
+	derived, err = filterChecksByInclude(ctx, derived, include)
+	if err != nil {
+		return nil, err
+	}
+	return filterChecksByExclude(ctx, derived, skip, false)
+}
+
+// filterChecksByInclude and filterChecksByExclude are the one place checks are
+// matched against patterns, for the workspace and the module API alike. The
+// matching itself is the generic one; a check only differs in answering to
+// every node Check.MatchNodes lists.
+func filterChecksByInclude(ctx context.Context, checks []*core.Check, include []string) ([]*core.Check, error) {
+	return filterNodesByInclude(ctx, checks, include, (*core.Check).MatchNodes, (*core.Check).Name, "check")
+}
+
+func filterChecksByExclude(ctx context.Context, checks []*core.Check, exclude []string, moduleLocal bool) ([]*core.Check, error) {
+	return filterNodesByExclude(ctx, checks, exclude, moduleLocal, (*core.Check).MatchNodes, (*core.Check).Name, "check")
 }
 
 type workspaceGeneratorModule struct {
@@ -3965,7 +4165,7 @@ func (s *workspaceSchema) generators(
 	// is skipped with a warning instead of failing the whole run, and its
 	// failure message is carried on loadFailures so the CLI can honor
 	// --require-load.
-	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, true)
+	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadRepairing)
 	if err != nil {
 		return nil, err
 	}
@@ -4057,7 +4257,7 @@ func (s *workspaceSchema) generators(
 				filtered,
 				exclude,
 				true,
-				func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
+				singleNode(func(generator *core.Generator) *core.ModTreeNode { return generator.Node }),
 				func(generator *core.Generator) string { return generator.Name() },
 				"generator",
 			)
@@ -4100,7 +4300,7 @@ func (s *workspaceSchema) services(
 	}
 
 	// up is strict: a module that can't load is a failure, by design.
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, false)
+	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadStrict)
 	if err != nil {
 		return nil, err
 	}
@@ -4127,7 +4327,7 @@ func (s *workspaceSchema) services(
 			ctx,
 			upGroup.Ups,
 			include,
-			func(up *core.Up) *core.ModTreeNode { return up.Node },
+			singleNode(func(up *core.Up) *core.ModTreeNode { return up.Node }),
 			func(up *core.Up) string { return up.Name() },
 			"service",
 		)
@@ -4140,7 +4340,7 @@ func (s *workspaceSchema) services(
 				filtered,
 				exclude,
 				true,
-				func(up *core.Up) *core.ModTreeNode { return up.Node },
+				singleNode(func(up *core.Up) *core.ModTreeNode { return up.Node }),
 				func(up *core.Up) string { return up.Name() },
 				"service",
 			)
@@ -4235,7 +4435,7 @@ func (s *workspaceSchema) workspaceTargetModules(
 	parentResult dagql.ObjectResult[*core.Workspace],
 	include []string,
 ) ([]dagql.ObjectResult[*core.Module], error) {
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, false)
+	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadStrict)
 	if err != nil {
 		return nil, err
 	}
@@ -4291,11 +4491,11 @@ func collectWorkspaceModuleTargets[T any](
 			return nil, fmt.Errorf("%s from module %q: %w", groupLabel, mod.Self().Name(), err)
 		}
 		reparentWorkspaceTreeRoot(root, mod.Self().Name(), entrypoints[mod.Self().Name()])
-		filtered, err := filterNodesByInclude(ctx, targets, include, node, name, targetLabel)
+		filtered, err := filterNodesByInclude(ctx, targets, include, singleNode(node), name, targetLabel)
 		if err != nil {
 			return nil, err
 		}
-		filtered, err = filterNodesByExclude(ctx, filtered, exclude, false, node, name, targetLabel)
+		filtered, err = filterNodesByExclude(ctx, filtered, exclude, false, singleNode(node), name, targetLabel)
 		if err != nil {
 			return nil, err
 		}
@@ -4403,15 +4603,15 @@ func matchWorkspaceIncludePath(
 
 // ensureWorkspaceModulesLoaded loads the workspace modules the include patterns
 // demand (all when they don't narrow). Selector fields validate against the
-// core schema, so loading can wait until resolution. With bestEffort, per-module
-// load failures are collected and returned instead of aborting (used by unscoped
-// 'dagger generate'); the check/up resolvers pass false to stay strict.
-func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, bestEffort bool) ([]core.ModuleLoadFailure, error) {
+// core schema, so loading can wait until resolution. In a best-effort mode,
+// per-module load failures are collected and returned instead of aborting
+// (`dagger generate`, `dagger check`); up and the target resolvers stay strict.
+func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, mode core.ModuleLoadMode) ([]core.ModuleLoadFailure, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return query.Server.EnsureWorkspaceModules(ctx, include, bestEffort)
+	return query.Server.EnsureWorkspaceModules(ctx, include, mode)
 }
 
 func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {
@@ -4498,7 +4698,7 @@ func filterNodesByExclude[T any](
 	items []T,
 	exclude []string,
 	moduleLocal bool,
-	nodeOf func(T) *core.ModTreeNode,
+	nodesOf func(T) []*core.ModTreeNode,
 	nameOf func(T) string,
 	itemKind string,
 ) ([]T, error) {
@@ -4508,15 +4708,9 @@ func filterNodesByExclude[T any](
 
 	filtered := make([]T, 0, len(items))
 	for _, item := range items {
-		match, err := matchWorkspaceInclude(ctx, nodeOf(item), exclude)
+		match, err := matchAnyNode(ctx, nodesOf(item), exclude, moduleLocal)
 		if err != nil {
 			return nil, fmt.Errorf("%s %q exclude match: %w", itemKind, nameOf(item), err)
-		}
-		if !match && moduleLocal {
-			match, err = matchSingleModuleInclude(ctx, nodeOf(item), exclude)
-			if err != nil {
-				return nil, fmt.Errorf("%s %q exclude compat match: %w", itemKind, nameOf(item), err)
-			}
 		}
 		if !match {
 			filtered = append(filtered, item)
@@ -4548,11 +4742,37 @@ func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include 
 	return matchWorkspaceIncludePath(ctx, node.CommandPath(), include)
 }
 
+// matchAnyNode reports whether a pattern selects any of the nodes a target
+// answers to. Most targets answer to their one node; a check also answers to
+// the aliases Check.MatchNodes lists. moduleLocal also accepts a pattern
+// relative to the module.
+func matchAnyNode(ctx context.Context, nodes []*core.ModTreeNode, patterns []string, moduleLocal bool) (bool, error) {
+	for _, node := range nodes {
+		match, err := matchWorkspaceInclude(ctx, node, patterns)
+		if err != nil || match {
+			return match, err
+		}
+		if !moduleLocal {
+			continue
+		}
+		match, err = matchSingleModuleInclude(ctx, node, patterns)
+		if err != nil || match {
+			return match, err
+		}
+	}
+	return false, nil
+}
+
+// singleNode adapts a target that answers to exactly one node.
+func singleNode[T any](nodeOf func(T) *core.ModTreeNode) func(T) []*core.ModTreeNode {
+	return func(item T) []*core.ModTreeNode { return []*core.ModTreeNode{nodeOf(item)} }
+}
+
 func filterNodesByInclude[T any](
 	ctx context.Context,
 	items []T,
 	include []string,
-	nodeOf func(T) *core.ModTreeNode,
+	nodesOf func(T) []*core.ModTreeNode,
 	nameOf func(T) string,
 	itemKind string,
 ) ([]T, error) {
@@ -4562,7 +4782,7 @@ func filterNodesByInclude[T any](
 
 	filtered := make([]T, 0, len(items))
 	for _, item := range items {
-		match, err := matchWorkspaceInclude(ctx, nodeOf(item), include)
+		match, err := matchAnyNode(ctx, nodesOf(item), include, false)
 		if err != nil {
 			return nil, fmt.Errorf("%s %q include match: %w", itemKind, nameOf(item), err)
 		}
@@ -4581,15 +4801,14 @@ func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *co
 	return withWorkspaceClientContext(ctx, ws)
 }
 
-// withWorkspaceHostReadContext is withWorkspaceClientContext plus the client's
+// withWorkspaceHostReadContext is withWorkspaceClientContext plus the owner's
 // current workspace read epoch folded into the per-client cache namespace, so
 // cached host.directory reads are scoped per epoch. When the epoch is bumped
-// (Workspace.export, after the agent's changes are written to disk, or
-// Workspace.reloaded when its overlay is discarded instead), reads issued
-// afterwards land in a fresh namespace and
-// re-read the live host instead of returning a per-client snapshot cached
-// earlier in the same session. Use it for host reads that must reflect on-disk
-// content (Workspace.file / Workspace.directory and the diff base of edits).
+// (Workspace.export, after the changes are written to disk), reads issued
+// afterwards land in a fresh namespace and re-read the live host instead of
+// returning a per-client snapshot cached earlier in the same session. Use it
+// for host reads that must reflect on-disk content (Workspace.file /
+// Workspace.directory and the baseline of edits and exports).
 func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	ctx, err := withWorkspaceClientContext(ctx, ws)
 	if err != nil {

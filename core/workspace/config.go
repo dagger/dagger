@@ -761,6 +761,35 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 	})
 }
 
+// WriteConfigStringValue writes a string value to config TOML at the given
+// dotted key. The value is stored as a string whatever it looks like, so 1.27
+// stores as "1.27" rather than a float; see StringValue.
+func WriteConfigStringValue(existingData []byte, key string, rawValue string) ([]byte, error) {
+	return writeConfigValueAtKey(existingData, key, func([]string) any {
+		return StringValue(rawValue)
+	})
+}
+
+// StringValue is the string a raw value denotes for a string-typed setting:
+// the value itself, without the pair of double or single quotes that may wrap
+// it to mark it as a string ("1.27" and '1.27' both denote 1.27). The quotes
+// are only removed when that same quote appears nowhere else in the value, so
+// `"a" and "b"` and 'it's quoted' are unchanged.
+func StringValue(rawValue string) string {
+	if len(rawValue) < 2 {
+		return rawValue
+	}
+	quote := rawValue[0]
+	if (quote != '"' && quote != '\'') || rawValue[len(rawValue)-1] != quote {
+		return rawValue
+	}
+	inner := rawValue[1 : len(rawValue)-1]
+	if strings.IndexByte(inner, quote) >= 0 {
+		return rawValue
+	}
+	return inner
+}
+
 // WriteConfigValues writes a string-array value to config TOML at the given
 // dotted key. Elements are stored verbatim, with no comma-splitting or type
 // auto-detection.
@@ -1434,6 +1463,77 @@ func preferredExampleFieldName(t reflect.Type) string {
 		return "value"
 	}
 	return names[0]
+}
+
+// ParseListValue splits the single-value form of a list write into its
+// elements so callers store a native TOML array instead of a bare string.
+// Elements are comma-separated, optionally wrapped in [ ], and trimmed of
+// surrounding whitespace. An element may be wrapped in double or single
+// quotes to keep commas, brackets, or whitespace; quoted elements are taken
+// verbatim, with no escape processing, so ["C:\foo"] stores C:\foo. Empty
+// elements, stray quotes, and text after a closing quote are errors rather
+// than being stored as-is. "[]" denotes an empty list.
+func ParseListValue(rawValue string) ([]string, error) {
+	rawValue = strings.TrimSpace(rawValue)
+	if strings.HasPrefix(rawValue, "[") && strings.HasSuffix(rawValue, "]") {
+		rawValue = strings.TrimSpace(rawValue[1 : len(rawValue)-1])
+		if rawValue == "" {
+			return []string{}, nil
+		}
+	}
+	if rawValue == "" {
+		return nil, fmt.Errorf("list value is empty")
+	}
+
+	elements := []string{}
+	for {
+		element, rest, err := parseListElement(rawValue)
+		if err != nil {
+			return nil, err
+		}
+		elements = append(elements, element)
+		if rest == "" {
+			return elements, nil
+		}
+		// rest begins with the separator; a trailing separator with nothing
+		// after it is an empty element.
+		rawValue = strings.TrimSpace(rest[1:])
+		if rawValue == "" {
+			return nil, fmt.Errorf("list value has an empty element after %q", element)
+		}
+	}
+}
+
+// parseListElement reads one element from the front of input and returns it
+// with the unread remainder, which is either empty or starts with a comma.
+func parseListElement(input string) (element, rest string, err error) {
+	input = strings.TrimSpace(input)
+	if quote := input[0]; quote == '"' || quote == '\'' {
+		end := strings.IndexByte(input[1:], quote)
+		if end < 0 {
+			return "", "", fmt.Errorf("list value has an unterminated quote: %s", input)
+		}
+		element = input[1 : 1+end]
+		rest = strings.TrimSpace(input[2+end:])
+		if rest != "" && rest[0] != ',' {
+			return "", "", fmt.Errorf("list value has unexpected text %q after quoted element %q; separate elements with commas", rest, element)
+		}
+		return element, rest, nil
+	}
+
+	end := strings.IndexByte(input, ',')
+	if end < 0 {
+		end = len(input)
+	}
+	element = strings.TrimSpace(input[:end])
+	rest = input[end:]
+	if element == "" {
+		return "", "", fmt.Errorf("list value has an empty element")
+	}
+	if strings.ContainsAny(element, `"'`) {
+		return "", "", fmt.Errorf("list value has a stray quote in element %s; quote the whole element", element)
+	}
+	return element, rest, nil
 }
 
 func parseValueString(parts []string, rawValue string) any {

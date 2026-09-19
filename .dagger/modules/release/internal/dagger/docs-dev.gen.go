@@ -35,7 +35,7 @@ func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../..
 }
 
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:287:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:280:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -149,13 +149,13 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:320:2)
+	Deployment string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:313:2)
 
-	APIURL string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:322:2)
+	APIURL string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:315:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:316:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:309:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -190,7 +190,7 @@ type DocsDevReferencesOpts struct {
 	Ws *Workspace // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:241:2)
 }
 
-// Regenerate the API schema and CLI reference docs
+// Regenerate the GraphQL schema and API reference pages
 func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:232:1)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {

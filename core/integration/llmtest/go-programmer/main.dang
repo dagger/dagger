@@ -1,5 +1,5 @@
 """
-An expert Go programmer driven by an LLM, for replay golden tests.
+An expert Go programmer driven by an LLM, for recording-based golden tests.
 """
 type GoProgrammer {
   model: String = null

@@ -88,8 +88,8 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if !opts.Silent && fe.renderFinalTests() {
 		fmt.Fprintln(fe.out)
 	}
-	// Replay the primary output log to stdout/stderr.
-	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
+	// Write the primary output log to stdout/stderr.
+	if writeErr := renderPrimaryOutput(fe.out, fe.db, true); writeErr != nil {
 		runErr = errors.Join(runErr, writeErr)
 	}
 	if p := fe.telemetryError.Load(); p != nil {

@@ -1,0 +1,14 @@
+kind: Changed
+body: |
+  A check derived from a `+generate` function is now named
+  `<generator>:up-to-date`, for example `go:generate:up-to-date`. It used to
+  carry the generator's own name, so `dagger check -l` and `dagger generate -l`
+  listed two different things under one name. The check confirms the generated
+  files are up to date: it still passes exactly when the generator changes
+  nothing. Every pattern that selected or skipped it under the generator's name
+  still does, so `dagger check go:generate` and `skip = ["generate"]` keep
+  working.
+time: 2026-09-17T12:00:00Z
+custom:
+  Author: eunomie
+  PR: ""

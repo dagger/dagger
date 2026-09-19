@@ -14,7 +14,7 @@ require (
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/dagger/dagger/sdk/typescript/runtime v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.43.1-0.20260810200237-752a39ce1610
+	github.com/dagger/otel-go v1.43.1-0.20260917165636-2bca4f5622cf
 	github.com/opencontainers/image-spec v1.1.1
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	golang.org/x/mod v0.38.0

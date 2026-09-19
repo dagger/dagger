@@ -460,7 +460,17 @@ func TestValidateSDKModuleGenerationGraph(t *testing.T) {
 	}
 	require.NoError(t, validateSDKModuleGenerationGraph(cfg, "apps/demo"))
 
+	// A scope recording a client for its own module (`dagger module client
+	// add .`) is a target, not a generation dependency: no self-cycle, in
+	// either spelling the config can carry.
+	root := cfg.SDKs["go"].Scopes["."]
+	root.Clients = append(root.Clients, ".")
+	cfg.SDKs["go"].Scopes["."] = root
 	target := cfg.SDKs["go"].Scopes["target"]
+	target.Clients = []string{"./target"}
+	cfg.SDKs["go"].Scopes["target"] = target
+	require.NoError(t, validateSDKModuleGenerationGraph(cfg, "apps/demo"))
+
 	target.Clients = []string{"."}
 	cfg.SDKs["go"].Scopes["target"] = target
 	require.EqualError(
@@ -574,20 +584,6 @@ func TestRootAnchoredSDKScopeIsMatched(t *testing.T) {
 			},
 		}
 	}
-
-	t.Run("uninstall removes the module scope", func(t *testing.T) {
-		c := cfg()
-		path, del, err := removeSDKManagedModuleReference(c, "common", "mymod", c.Modules["mymod"])
-		require.NoError(t, err)
-		require.True(t, del)
-		require.Equal(t, "common/.dagger/modules/mymod", path)
-		moduleScope, ok := c.SDKs["go"].Scopes["/common/.dagger/modules/mymod"]
-		require.True(t, ok)
-		require.False(t, moduleScope.IsModule)
-		require.Empty(t, moduleScope.Name)
-		require.Equal(t, []string{"/common/sdk/shared"}, moduleScope.Clients)
-		require.Contains(t, c.SDKs["go"].Scopes, "/common/clients/one")
-	})
 
 	t.Run("sdk listing resolves it", func(t *testing.T) {
 		config := cfg()

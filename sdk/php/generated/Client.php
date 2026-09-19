@@ -138,6 +138,15 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * The current UTC time in RFC3339 format. Never cached.
+     */
+    public function currentTimestamp(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTimestamp');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'currentTimestamp');
+    }
+
+    /**
      * The TypeDef representations of the objects currently being served in the session.
      */
     public function currentTypeDefs(?bool $returnAllTypes = false, ?bool $hideCore = null): array
@@ -454,6 +463,21 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
         }
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load the module at the given address and serve its API in the current session.
+     *
+     * A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+     */
+    public function serveModule(string $address, ?string $refPin = ''): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('serveModule');
+        $leafQueryBuilder->setArgument('address', $address);
+        if (null !== $refPin) {
+        $leafQueryBuilder->setArgument('refPin', $refPin);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'serveModule');
     }
 
     /**

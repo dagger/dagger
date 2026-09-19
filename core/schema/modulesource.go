@@ -1055,6 +1055,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
+	src.Entrypoint = modCfg.Entrypoint
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
@@ -1064,6 +1065,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
+	if modCfg.Entrypoint != nil {
+		engineVersion = engine.Version
+	}
 	switch engineVersion {
 	case "":
 		// older versions of dagger might not produce an engine version -
@@ -1098,6 +1102,10 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 			Config:       modCfg.SDK.Config,       //nolint:staticcheck // deprecated; read for legacy JSON config compat
 			Experimental: modCfg.SDK.Experimental, //nolint:staticcheck // deprecated; read for legacy JSON config compat
 		}
+	} else if modCfg.Entrypoint != nil {
+		// SDK is an internal adapter for the existing module execution path. The
+		// manifest contains only the entrypoint configuration.
+		src.SDK = &core.SDKConfig{Source: string(modCfg.Entrypoint.Kind)}
 	}
 
 	var sdkSource string
@@ -1767,7 +1775,7 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
 	// Updating a module dependency is an explicit request to resolve it live.
-	// Do not let the consuming workspace's lock replay the old resolution or
+	// Do not let the consuming workspace's lock reuse the old resolution or
 	// record this module-authoring operation back into that workspace's lock.
 	updateCtx := withoutWorkspaceLookupLock(ctx)
 
@@ -2504,7 +2512,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 // loadModuleSourceConfig builds the module config from the in-memory
 // ModuleSource and validates that the resulting engine version is loadable by
 // the running engine. Use buildModuleConfig directly to obtain the config
-// without that gate (e.g. when only persisting a declared engine version
+// without that validation (e.g. when only persisting a declared engine version
 // requirement via updatedConfigDirectory).
 func (s *moduleSourceSchema) loadModuleSourceConfig(
 	src *core.ModuleSource,
@@ -2512,6 +2520,12 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	modCfg, err := s.buildModuleConfig(src)
 	if err != nil {
 		return nil, err
+	}
+
+	// A manifest version 2 module declares no engine version. It always runs
+	// against the running engine, so there is no declared version to check.
+	if src.Entrypoint != nil {
+		return modCfg, nil
 	}
 
 	// Check version compatibility.
@@ -2534,6 +2548,15 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
+	if src.Entrypoint != nil {
+		return &modules.ModuleConfigWithUserFields{
+			ModuleConfig: modules.ModuleConfig{
+				Name:       src.ModuleOriginalName,
+				Entrypoint: src.Entrypoint,
+			},
+		}, nil
+	}
+
 	// construct the module config based on any config read during load and any settings changed via with* APIs
 	modCfg := &modules.ModuleConfigWithUserFields{
 		ModuleConfigUserFields: src.ModuleConfigUserFields,
@@ -3029,7 +3052,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 // generatedContextDirectory it does NOT run codegen and does NOT validate the
 // engine version against the running engine, so it can be used to declare an
 // engine version newer than the running engine (the load/serve check at
-// moduleSourceAsModule still gates actually using such a module).
+// moduleSourceAsModule still validates the use of such a module).
 func (s *moduleSourceSchema) moduleSourceUpdatedConfigDirectory(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],

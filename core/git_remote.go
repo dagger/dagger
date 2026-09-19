@@ -133,6 +133,27 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 	}, nil
 }
 
+// ResolveShortSHA expands an abbreviated commit SHA against the engine's
+// local mirror of the remote. Remote repositories are resolved via ls-remote,
+// which only advertises refs: a prefix can only be expanded when the commit's
+// objects were already fetched (e.g. by a previous tree checkout). Nothing is
+// fetched to answer the expansion.
+func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	var sha string
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		var err error
+		sha, err = git.ResolveShortSHA(ctx, prefix)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, gitutil.ErrShortSHANotFound) {
+			return "", fmt.Errorf("%w; a remote repository can only expand an abbreviated SHA against already-fetched commits: use the full SHA or a named ref", err)
+		}
+		return "", err
+	}
+	return sha, nil
+}
+
 func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -143,8 +164,9 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 	return hashutil.HashStrings(inputs...).String(), nil
 }
 
-// Pipelines could query the same remote with different creds (e.g. a pipeline checking that creds were properly rotated)
-// instead of being too smart, we just scope the cache key to the auth configuration: less chance of cache poisoning
+// Pipelines can query the same remote with different credentials (for example,
+// while checking a credential rotation), so scope the cache key by
+// authentication configuration rather than sharing entries across methods.
 func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	scope := make([]string, 0, 4)
 	if token := repo.AuthToken; token.Self() != nil {
@@ -207,11 +229,27 @@ func (repo *RemoteGitRepository) Cleaned(ctx context.Context) (inst dagql.Object
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	return repo.setupWithSSHAuthSock(ctx, "")
+}
+
+// sshAuthSock is an operation-local agent mount, never a repository capability.
+func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAuthSock string) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	if repo.URL != nil && repo.URL.Scheme == gitutil.SSHProtocol && repo.SSHAuthSocket.Self() == nil && sshAuthSock == "" {
+		return nil, nil, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	var opts []gitutil.Option
+	// Keep automatic maintenance inside the mirror lock and mount lifetime.
+	// Detached repacks can otherwise rewrite shallow during a later fetch.
+	opts := []gitutil.Option{gitutil.WithConfig(map[string]string{
+		"gc.autoDetach":          "false",
+		"maintenance.autoDetach": "false",
+	})}
+	if sshAuthSock != "" {
+		opts = append(opts, gitutil.WithSSHAuthSock(sshAuthSock))
+	}
 
 	cleanups := cleanups.Cleanups{}
 	defer func() {
@@ -288,50 +326,13 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 		}
 		defer cleanup()
 		git = git.New(gitutil.WithGitDir(remote))
-		gitDir, err := git.GitDir(ctx)
-		if err != nil {
-			return fmt.Errorf("could not find git dir: %w", err)
+		remoteRefs := make([]*RemoteGitRef, len(refs))
+		for i, ref := range refs {
+			remoteRefs[i] = ref.(*RemoteGitRef)
 		}
-
-		var fetchRefs []*RemoteGitRef
-		for _, ref := range refs {
-			ref := ref.(*RemoteGitRef)
-
-			// skip fetch if commit already exists
-			doFetch := true
-			if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
-				return fmt.Errorf("failed to rev-parse: %w", err)
-			} else if strings.TrimSpace(string(res)) == ref.SHA {
-				doFetch = false
-
-				if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
-					// if shallow, check we have enough depth
-					if depth <= 0 {
-						doFetch = true
-					} else {
-						// HACK: this is a pretty terrible way to guess the depth,
-						// since it only traces *one* path.
-						res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.SHA)
-						if err != nil {
-							return fmt.Errorf("failed to rev-list: %w", err)
-						}
-						res = bytes.TrimSpace(res)
-						count, err := strconv.Atoi(string(res))
-						if err != nil {
-							return fmt.Errorf("failed to parse rev-list output: %w", err)
-						}
-						if count < depth {
-							doFetch = true
-						}
-					}
-				}
-			}
-
-			// TODO: should set doFetch if a tag in ls-remote has been updated?
-
-			if doFetch {
-				fetchRefs = append(fetchRefs, ref)
-			}
+		fetchRefs, err := gitRefsToFetch(ctx, git, depth, remoteRefs)
+		if err != nil {
+			return err
 		}
 		err = repo.fetch(ctx, git, depth, includeTags, fetchRefs)
 		if err != nil {
@@ -344,6 +345,57 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 
 		return fn(git)
 	})
+}
+
+// gitRefsToFetch checks mirror coverage and retains existing commits, including
+// those fetched by older engines which left their objects only in FETCH_HEAD.
+func gitRefsToFetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []*RemoteGitRef) ([]*RemoteGitRef, error) {
+	gitDir, err := git.GitDir(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not find git dir: %w", err)
+	}
+
+	var fetchRefs []*RemoteGitRef
+	for _, ref := range refs {
+		// skip fetch if commit already exists
+		doFetch := true
+		if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
+			return nil, fmt.Errorf("failed to rev-parse: %w", err)
+		} else if strings.TrimSpace(string(res)) == ref.SHA {
+			doFetch = false
+			if _, err := git.Run(ctx, "update-ref", fetchedGitRef(ref.SHA), ref.SHA); err != nil {
+				return nil, fmt.Errorf("failed to retain fetched sha %s: %w", ref.SHA, err)
+			}
+
+			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+				// if shallow, check we have enough depth
+				if depth <= 0 {
+					doFetch = true
+				} else {
+					// HACK: this is a pretty terrible way to guess the depth,
+					// since it only traces *one* path.
+					res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.SHA)
+					if err != nil {
+						return nil, fmt.Errorf("failed to rev-list: %w", err)
+					}
+					res = bytes.TrimSpace(res)
+					count, err := strconv.Atoi(string(res))
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse rev-list output: %w", err)
+					}
+					if count < depth {
+						doFetch = true
+					}
+				}
+			}
+		}
+
+		// TODO: should set doFetch if a tag in ls-remote has been updated?
+		if doFetch {
+			fetchRefs = append(fetchRefs, ref)
+		}
+	}
+	return fetchRefs, nil
 }
 
 func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (rerr error) {
@@ -366,6 +418,26 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}()
 	git = git.New(gitutil.WithStreams(gitFetchProgressStreams(ctx)))
 
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, repo.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	return repo.fetchObjects(ctx, git, depth, includeTags, refs)
+}
+
+// fetchObjects operates on the private mirror; service bindings and progress
+// streams are supplied by fetch so the Git protocol can also be tested directly.
+func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) error {
+	if len(refs) == 0 && !includeTags {
+		return nil
+	}
+
 	// Fetch by object SHA in the hot path (`--no-tags`), and only retry by named refs for SHA-incompatible remotes.
 	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
 
@@ -376,8 +448,10 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 	shaRefSpecs := make([]string, len(refs))
 	for i, ref := range refs {
-		// Default hot path: fetch exact objects by SHA; ref names are already resolved via ls-remote.
-		shaRefSpecs[i] = ref.SHA
+		// FETCH_HEAD alone is not a negotiation tip. Keep each pinned commit
+		// reachable so subsequent fetches advertise its objects as "have",
+		// without populating the public branch or tag namespaces.
+		shaRefSpecs[i] = ref.SHA + ":" + fetchedGitRef(ref.SHA)
 	}
 
 	runFetch := func(refSpecs []string) error {
@@ -450,16 +524,6 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		return nil
 	}
 
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, repo.Services)
-	if err != nil {
-		return err
-	}
-	defer detach()
-
 	if len(shaRefSpecs) > 0 {
 		err = runFetch(shaRefSpecs)
 		if err != nil {
@@ -480,6 +544,13 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 			if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
 				return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
 			}
+			// The named ref may have moved since resolution. Retain the verified
+			// pinned SHA, not the scratch ref's potentially newer target.
+			for _, ref := range refs {
+				if _, pinErr := git.Run(ctx, "update-ref", fetchedGitRef(ref.SHA), ref.SHA); pinErr != nil {
+					return fmt.Errorf("failed to retain fetched sha %s: %w", ref.SHA, pinErr)
+				}
+			}
 			logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
 		}
 	}
@@ -491,6 +562,11 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}
 
 	return nil
+}
+
+// fetchedGitRef is private to the mutable mirror, never a checkout refspec.
+func fetchedGitRef(sha string) string {
+	return "refs/dagger.fetched/" + sha
 }
 
 // namedFetchRefSpecs builds the bounded fallback refspec set used when SHA fetch is unsupported.
@@ -567,7 +643,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	return fn(dir)
 }
 
-func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
+func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -601,7 +677,13 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
-			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir)
+			// The clone URL is the remote itself, so it doubles as the
+			// checkout's origin; registered remotes overlay it.
+			checkoutRemotes := MergeGitRemotes(
+				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}},
+				remotes,
+			)
+			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)
@@ -766,11 +848,20 @@ func overrideNetworkConfig(hostsOverride, resolvOverride string) error {
 	return nil
 }
 
+// runProcessGroup runs cmd in its own process group so a cancelled context
+// tears down every helper it spawned, and asks the kernel to SIGTERM it if the
+// engine dies. Pdeathsig fires when the OS thread that forked the child exits,
+// not when the process does, and Go retires threads whenever a goroutine that
+// locked one exits. Pin this goroutine to its thread for the child's lifetime:
+// a locked thread only goes away with its goroutine, after Wait has returned,
+// so the child never sees a spurious SIGTERM from an unrelated thread's exit.
 func runProcessGroup(ctx context.Context, cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		Setpgid:   true,
 		Pdeathsig: unix.SIGTERM,
 	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := cmd.Start(); err != nil {
 		return err
 	}

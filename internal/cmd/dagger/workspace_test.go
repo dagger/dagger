@@ -45,16 +45,13 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 
 func TestWorkspaceUpdateGlobalFlags(t *testing.T) {
 	root := testRootCommand()
-	for _, flag := range []string{"--engine=auto", "--workspace=."} {
+	for _, flag := range []string{"--engine=auto", "--workspace=.", "--env=dev"} {
 		require.NoError(t, validateFlagCapabilities(root, []string{"workspace", "update", flag}), flag)
 	}
-	for _, flag := range []string{"--silent", "--progress", "--auto-apply", "--env"} {
+	for _, flag := range []string{"--silent", "--progress", "--auto-apply"} {
 		arg := flag
 		if flag == "--progress" {
 			arg += "=plain"
-		}
-		if flag == "--env" {
-			arg += "=dev"
 		}
 		require.EqualError(t, validateFlagCapabilities(root, []string{"workspace", "update", arg}),
 			fmt.Sprintf("flag %s is not supported by command %q", flag, "dagger workspace update"))

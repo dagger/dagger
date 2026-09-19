@@ -104,6 +104,12 @@ func CurrentNode() dagger.Node {
 	return client.CurrentNode()
 }
 
+// The current UTC time in RFC3339 format. Never cached.
+func CurrentTimestamp(ctx context.Context) (string, error) {
+	client := initClient()
+	return client.CurrentTimestamp(ctx)
+}
+
 // The TypeDef representations of the objects currently being served in the session.
 func CurrentTypeDefs(ctx context.Context, opts ...dagger.CurrentTypeDefsOpts) ([]dagger.TypeDef, error) {
 	client := initClient()
@@ -238,6 +244,14 @@ func Schema(json dagger.JSON) *dagger.Schema {
 func Secret(uri string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()
 	return client.Secret(uri, opts...)
+}
+
+// Load the module at the given address and serve its API in the current session.
+//
+// A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+func ServeModule(ctx context.Context, address string, opts ...dagger.ServeModuleOpts) error {
+	client := initClient()
+	return client.ServeModule(ctx, address, opts...)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.

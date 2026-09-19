@@ -4,7 +4,7 @@ package dagql
 //   - a stale lazy attempt span target: a failed traced lazy eval must not leave a
 //     wait target that a later untraced retry leader fails to overwrite, which a
 //     traced joiner would then mis-link to the wrong (old) lazy op instead of
-//     emitting a gate-observable targetless wait.
+//     emitting a targetless wait visible to validation.
 //   - nested lazy override composition: a re-pointed work span that itself
 //     triggers a second beginOTelLazyOp must keep the inner/outer overrides
 //     separate (no cross-stamping), validated by a committed unit test rather
@@ -34,8 +34,8 @@ import (
 // an UNTRACED retry leader (which must NOT re-mint), and a TRACED joiner of the
 // retry. Without the per-attempt reset, the joiner would read the failed
 // attempt's stale span context and emit a resolvable wait to the wrong lazy op;
-// with the fix it reads an invalid target and emits a gate-observable targetless
-// wait. Asserts the joiner's emitted lazy wait link has an invalid target.
+// with the fix it reads an invalid target and emits a targetless wait visible
+// to validation. Asserts the joiner's emitted lazy wait link has an invalid target.
 func TestLazyEmitRetryDoesNotLeakStaleWaitTarget(t *testing.T) {
 	t.Parallel()
 
@@ -118,7 +118,7 @@ func TestLazyEmitRetryDoesNotLeakStaleWaitTarget(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		shared.lazyMu.Lock()
-		joined := shared.lazyEvalAttempt != nil && shared.lazyEvalAttempt.waiters >= 2
+		joined := shared.lazyWhole.attempt != nil && shared.lazyWhole.attempt.waiters >= 2
 		shared.lazyMu.Unlock()
 		if joined {
 			break
@@ -140,9 +140,9 @@ func TestLazyEmitRetryDoesNotLeakStaleWaitTarget(t *testing.T) {
 		t.Fatalf("traced joiner eval: %v", jerr)
 	}
 
-	// The joiner must have emitted a lazy wait link, and its target must be INVALID
-	// (gate-observable targetless), NOT a resolvable link to the first attempt's
-	// lazy op.
+	// The joiner must have emitted a lazy wait link with an INVALID target,
+	// leaving the missing target visible to validation. It must not resolve
+	// to the first attempt's lazy op.
 	jExported := spanBySpanID(t, sr.Ended(), jSpan.SpanContext().SpanID())
 	var found bool
 	for _, l := range jExported.Links() {
@@ -158,7 +158,7 @@ func TestLazyEmitRetryDoesNotLeakStaleWaitTarget(t *testing.T) {
 		}
 		found = true
 		if l.SpanContext.IsValid() {
-			t.Fatalf("a traced joiner of an untraced retry must emit a TARGETLESS (gate-observable) lazy wait, not a stale link to the failed attempt's lazy op; got resolvable target %s", l.SpanContext.SpanID())
+			t.Fatalf("a traced joiner of an untraced retry must emit a TARGETLESS lazy wait visible to validation, not a stale link to the failed attempt's lazy op; got resolvable target %s", l.SpanContext.SpanID())
 		}
 	}
 	if !found {
@@ -199,7 +199,7 @@ func TestLazyEmitNestedOverrideNoCrossStamping(t *testing.T) {
 	// Outer lazy eval, triggered by the consumer.
 	outerEvalCtx := engine.ContextWithClientMetadata(consumerCtx,
 		&engine.ClientMetadata{SessionID: sessionID, ClientID: "c"})
-	outerCBCtx, outerLazy, outerIsResume := c.beginOTelLazyOp(outerEvalCtx, outerResultID, &ResultCall{Field: "outerDir"})
+	outerCBCtx, outerLazy, outerIsResume := c.beginOTelLazyOp(outerEvalCtx, outerResultID, LazyGroupWhole, &ResultCall{Field: "outerDir"}, "")
 	if !outerIsResume {
 		t.Fatal("outer: producer context captured ⇒ resume re-point case")
 	}
@@ -210,7 +210,7 @@ func TestLazyEmitNestedOverrideNoCrossStamping(t *testing.T) {
 	// The outer work itself triggers a NESTED lazy eval (its own beginOTelLazyOp on
 	// the outer-work subtree ctx, which still carries the outer override).
 	innerEvalCtx := engine.ContextWithClientMetadata(outerWorkCtx, &engine.ClientMetadata{SessionID: sessionID, ClientID: "c"})
-	innerCBCtx, innerLazy, innerIsResume := c.beginOTelLazyOp(innerEvalCtx, innerResultID, &ResultCall{Field: "innerDir"})
+	innerCBCtx, innerLazy, innerIsResume := c.beginOTelLazyOp(innerEvalCtx, innerResultID, LazyGroupWhole, &ResultCall{Field: "innerDir"}, "")
 	if !innerIsResume {
 		t.Fatal("inner: producer context captured ⇒ resume re-point case")
 	}

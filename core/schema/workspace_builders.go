@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
@@ -174,7 +173,8 @@ func (s *workspaceSchema) withConfigValue(
 	}
 
 	var updated []byte
-	if args.Values.Valid {
+	switch {
+	case args.Values.Valid:
 		if args.Value != "" {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("value and values are mutually exclusive")
 		}
@@ -183,8 +183,15 @@ func (s *workspaceSchema) withConfigValue(
 			elements = append(elements, v.String())
 		}
 		updated, err = workspace.WriteConfigValues(staged.Data, writeKey, elements)
-	} else {
-		updated, err = workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
+	default:
+		// A value written to a module setting stores in the setting's type,
+		// so raw config writes and API calls agree with what
+		// `dagger module settings` produces.
+		if moduleName, hint, ok := s.settingHintForKey(ctx, parent.Self(), staged, writeKey); ok {
+			updated, err = writeSettingValue(staged.Data, writeKey, moduleName, hint, args.Value)
+		} else {
+			updated, err = workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
+		}
 	}
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -392,6 +399,11 @@ func (s *workspaceSchema) withSDK(
 	})
 }
 
+type workspaceUninstallArgs struct {
+	Name string
+	Here bool `default:"false"`
+}
+
 func (s *workspaceSchema) withoutModule(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -427,13 +439,14 @@ func (s *workspaceSchema) withoutModule(
 		}
 		return s.withoutEnvModule(ctx, parent, staged, envName, args.Name)
 	}
-	entry, ok := staged.Config.Modules[args.Name]
-	if !ok {
+	if _, ok := staged.Config.Modules[args.Name]; !ok {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module %q is not installed in the workspace", args.Name)
 	}
 
-	managedModulePath, removeManagedModuleDir, err := removeSDKManagedModuleReference(staged.Config, staged.ConfigDir, args.Name, entry)
-	if err != nil {
+	// Keep the SDK scope; only record the name it inferred from this install.
+	if err := workspace.PreserveInferredScopeNames(staged.Config, staged.ConfigDir, func(installed string) bool {
+		return installed == args.Name
+	}); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if sdkName, isSDK := workspace.SDKNameForModule(staged.Config, args.Name); isSDK {
@@ -450,23 +463,10 @@ func (s *workspaceSchema) withoutModule(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	configPath := filepath.ToSlash(staged.ConfigFile)
-	managedDirPath := path.Clean(filepath.ToSlash(managedModulePath))
-	touched := []string{configPath}
-	if removeManagedModuleDir {
-		touched = append(touched, managedDirPath)
-	}
-	return s.overlayEdit(ctx, parent, touched, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, []string{configPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		updatedRoot, err := workspaceWithFile(ctx, dag, base, configPath, updatedConfig)
 		if err != nil {
 			return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace config update: %w", err)
-		}
-		if removeManagedModuleDir {
-			updatedRoot, err = workspaceMigrationSelectDirectory(ctx, updatedRoot, "withoutDirectory", []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(managedDirPath)},
-			})
-			if err != nil {
-				return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace directory removal %q: %w", managedModulePath, err)
-			}
 		}
 		return updatedRoot, nil
 	}, func(ws *core.Workspace) {

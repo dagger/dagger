@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Shortening a list setting in `dagger.toml` or user-level config no longer
+  leaves a dangling comma or blank lines behind: `["bar", "baz"]` becomes
+  `["bar"]` instead of `["bar", ]`. Comments in the list are kept.
+time: 2026-09-17T19:30:00Z
+custom:
+  Author: kpenfound

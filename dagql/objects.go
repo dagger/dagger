@@ -380,6 +380,13 @@ func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
 		if !typeVisibleInView(iface, view) {
 			continue
 		}
+		// Structural conformance may have been inferred in a newer view.
+		// Do not advertise an interface whose required fields are hidden here.
+		if slices.ContainsFunc(iface.FieldSpecs(view), func(spec FieldSpec) bool {
+			return def.Fields.ForName(spec.Name) == nil
+		}) {
+			continue
+		}
 		def.Interfaces = append(def.Interfaces, name)
 	}
 	sort.Strings(def.Interfaces)
@@ -923,6 +930,11 @@ type FieldSpec struct {
 	// ImplicitInputs are engine-computed inputs that are attached to the call
 	// identity but are not explicit GraphQL field args.
 	ImplicitInputs []ImplicitInput
+
+	// NotReplayable identifies fields that require the originating client or
+	// explicit authorization. ClassifyRecipe reports this metadata and
+	// LoadReplayable enforces it; ordinary loading and caching are unchanged.
+	NotReplayable string
 
 	// NoTelemetry suppresses telemetry (AroundFunc) for this field.
 	// Used for entrypoint proxies that delegate to real fields which
@@ -1480,6 +1492,13 @@ func (field Field[T]) Doc(paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.Description = FormatDescription(paras...)
+	return field
+}
+
+// NotReplayable marks a field for structural recipe classification and rejection
+// by LoadReplayable. It does not affect ordinary recipe evaluation or caching.
+func (field Field[T]) NotReplayable(reason string) Field[T] {
+	field.Spec.NotReplayable = reason
 	return field
 }
 

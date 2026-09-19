@@ -344,6 +344,30 @@ func TestRenderDigestedLiteralIsOpaque(t *testing.T) {
 	}
 }
 
+func TestIncompleteErrorOriginDoesNotSuppressMessage(t *testing.T) {
+	for _, originStatus := range []sdktrace.Status{{}, {Code: codes.Error}} {
+		t.Run(originStatus.Code.String(), func(t *testing.T) {
+			const message = `workspace path "../.." escapes workspace root`
+			rootID, callID, originID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+			start := time.Unix(100, 0)
+			db := dagui.NewDB()
+			db.ImportSnapshots([]dagui.SpanSnapshot{
+				{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger call", StartTime: start, EndTime: start.Add(time.Second), Final: true},
+				{ID: callID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "escapeDir", StartTime: start, EndTime: start.Add(time.Second), Final: true, Status: sdktrace.Status{Code: codes.Error, Description: message}},
+				// A nested session's error can arrive before its origin's final span.
+				{ID: originID, TraceID: prettyTestTraceID(), ParentID: callID, Name: "Workspace.directory", StartTime: start, Status: originStatus},
+			})
+			db.Spans.Map[callID].ErrorOrigins.Add(db.Spans.Map[originID])
+			db.SetPrimarySpan(rootID)
+			fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
+			fe.err = fmt.Errorf("%s [traceparent:%s-%s]", message, prettyTestTraceID(), originID)
+			var output bytes.Buffer
+			_ = fe.FinalRender(&output)
+			require.Contains(t, ansi.Strip(output.String()), message)
+		})
+	}
+}
+
 func TestSortErrorOriginsUsesCurrentSpanData(t *testing.T) {
 	spanID := func(id byte) dagui.SpanID {
 		return dagui.SpanID{SpanID: trace.SpanID{id}}
@@ -1070,8 +1094,8 @@ func TestRerunSectionCloudAndLocalForNativeCI(t *testing.T) {
 	if !strings.Contains(joined, "RE-RUN IN CI") || !strings.Contains(joined, "RUN LOCALLY") {
 		t.Fatalf("missing one of the two section headings:\n%s", joined)
 	}
-	if !strings.Contains(joined, `dagger cloud rerun --commit abc123 --check "ci:bootstrap"`) {
-		t.Fatalf("missing cloud rerun line:\n%s", joined)
+	if !strings.Contains(joined, `dagger cloud checks rerun --commit abc123 --check "ci:bootstrap"`) {
+		t.Fatalf("missing cloud checks rerun line:\n%s", joined)
 	}
 	if !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
 		t.Fatalf("missing local check line:\n%s", joined)
@@ -1086,11 +1110,11 @@ func TestRerunSectionLocalOnlyWithoutNativeCI(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	fe := NewWithDB(io.Discard, rerunReportDB(t))
 	fe.recalculateViewLocked()
-	// No ciMeta (live/local run): only a local check, no cloud rerun.
+	// No ciMeta (live/local run): only a local check, no cloud checks rerun.
 
 	lines := fe.renderRerunSection(nil)
 	joined := strings.Join(lines, "\n")
-	if strings.Contains(joined, "cloud rerun") || strings.Contains(joined, "RE-RUN IN CI") {
+	if strings.Contains(joined, "cloud checks rerun") || strings.Contains(joined, "RE-RUN IN CI") {
 		t.Fatalf("did not expect a CI re-run section without native CI:\n%s", joined)
 	}
 	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
@@ -2515,4 +2539,41 @@ func containsStyledLine(frame, text, styleSeq string) bool {
 
 func visibleEscapes(frame string) string {
 	return strings.ReplaceAll(frame, "\x1b", "\\x1b")
+}
+
+// TestFinalRenderPrimaryOutputWithoutReport covers commands whose progress is
+// hidden (e.g. `dagger workspace root`): with no report rendered above it, the
+// primary output starts immediately, without a separating blank line.
+func TestFinalRenderPrimaryOutputWithoutReport(t *testing.T) {
+	db := dagui.NewDB()
+	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
+	db.PrimarySpan = spanID
+	db.PrimaryLogs[spanID] = []sdklog.Record{
+		frontendTestLogRecord(spanID.SpanID, otellog.StringValue("/work/root\n"),
+			otellog.Int(telemetry.StdioStreamAttr, 2)),
+	}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.reportOnly = true
+
+	var buf bytes.Buffer
+	require.NoError(t, fe.FinalRender(&buf))
+	require.Equal(t, "/work/root\n", buf.String())
+}
+
+func TestWritePrimaryOutputSeparate(t *testing.T) {
+	db := dagui.NewDB()
+	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
+	db.PrimaryLogs[spanID] = []sdklog.Record{
+		frontendTestLogRecord(spanID.SpanID, otellog.StringValue("out\n"),
+			otellog.Int(telemetry.StdioStreamAttr, 2)),
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, writePrimaryOutput(&buf, db, spanID, true, false))
+	require.Equal(t, "out\n", buf.String())
+
+	buf.Reset()
+	require.NoError(t, writePrimaryOutput(&buf, db, spanID, true, true))
+	require.Equal(t, "\nout\n", buf.String())
 }

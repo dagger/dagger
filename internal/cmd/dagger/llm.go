@@ -130,6 +130,7 @@ func NewLLMSession(
 	llmModel string,
 	shellHandler *shellCallHandler,
 	frontend idtui.Frontend,
+	initialLLM *dagger.LLM,
 ) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:        dag,
@@ -163,20 +164,49 @@ func NewLLMSession(
 	own.model = llmModel
 	s.agents = []*sessionAgent{own}
 	s.target = own
-	own.reset()
-	// This plain prompt-mode LLM is the real starting value when no composed
-	// agent replaces it. startInteractivePromptMode explicitly replaces this
-	// baseline together with the composed LLM before entering the prompt.
-	own.setLastSynced(own.llm.Workspace())
-
-	// Grab the model to check for a valid config
-	model, err := own.llm.Model(ctx)
-	if err != nil {
+	// Install the selected composition before status reads so its frozen
+	// checkpoint is captured only once and belongs to this conversation.
+	if initialLLM == nil {
+		workspace, err := snapshotWorkspace(ctx, dag)
+		if err != nil {
+			return nil, err
+		}
+		initialLLM = dag.LLM(dagger.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
+	}
+	if err := own.setInitialLLM(initialLLM); err != nil {
 		return nil, err
 	}
-	own.model = model
+
+	if sink, ok := frontend.(interface {
+		SetLLMToolsProvider(idtui.LLMToolsProvider)
+	}); ok {
+		sink.SetLLMToolsProvider(s.tools)
+	}
 
 	return s, nil
+}
+
+// tools resolves focus and the runtime snapshot at request time, so background
+// conversations cannot replace the toolset shown for the selected agent.
+func (s *LLMSession) tools(ctx context.Context) (string, error) {
+	a := s.Target()
+	if a == nil {
+		return "", fmt.Errorf("no LLM session active")
+	}
+	a.llmL.RLock()
+	llm := a.llm
+	a.llmL.RUnlock()
+	if rt := a.runtime(); rt != nil {
+		id, err := rt.SnapshotID(ctx)
+		if err != nil {
+			return "", err
+		}
+		llm = dagger.Ref[*dagger.LLM](s.dag, id)
+	}
+	if llm == nil {
+		return "", fmt.Errorf("no LLM session active")
+	}
+	return llm.Tools(ctx)
 }
 
 // defaultAgentName is the display label the session's own conversation spawns
@@ -720,11 +750,11 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existin
 }
 
 // LoadSession loads an LLM session from disk by UUID, replacing this
-// conversation. The message history is replayed for telemetry against
-// replayCtx (not ctx), so callers can surface the replayed conversation at the
-// conversation's top level rather than nested under the command span that
-// triggered the load. Pass ctx for replayCtx to replay in place.
-func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID string) error {
+// conversation. The message history is emitted as telemetry against
+// historyCtx (not ctx), so callers can surface the conversation at its top
+// level rather than nested under the command span that triggered the load.
+// Pass ctx for historyCtx to emit it in place.
+func (a *sessionAgent) LoadSession(ctx, historyCtx context.Context, sessionID string) error {
 	sessionDir, err := getSessionDir()
 	if err != nil {
 		return err
@@ -770,15 +800,15 @@ func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID str
 		}
 	}
 
-	// Replay the message history to emit telemetry spans so the TUI shows the
-	// conversation in its scrollback. Replay against replayCtx so the spans nest
+	// Emit telemetry spans for the message history so the TUI shows the
+	// conversation in its scrollback. Emit against historyCtx so the spans nest
 	// where the caller wants the conversation to appear (e.g. the top level for
 	// .resume) rather than under the triggering command span.
-	if _, err := loadedLLM.Replay(replayCtx); err != nil {
-		slog.Warn("failed to replay session history", "error", err)
+	if _, err := loadedLLM.EmitHistory(historyCtx); err != nil {
+		slog.Warn("failed to emit session history", "error", err)
 	}
 
-	// Restoring a session replays any un-flushed workspace edits as recorded
+	// Restoring a session reapplies any un-flushed workspace edits as recorded
 	// patches; hunks that no longer fit the live files degrade to conflict
 	// markers (onConflict: LEAVE_CONFLICT_MARKERS). The model's history
 	// describes a workspace that is now partially fiction, so tell it what
@@ -797,7 +827,7 @@ func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID str
 // affected files, or "" when restoration was clean.
 //
 // Only files touched by the overlay can carry restore-time markers (they are
-// produced by replaying the recorded patches), so the search is scoped to the
+// produced by reapplying the recorded patches), so the search is scoped to the
 // overlay changeset's added and modified paths — which also makes this free
 // for sessions that flushed their changes before saving: the changeset is
 // empty and nothing is searched. Best-effort throughout; a failed check must

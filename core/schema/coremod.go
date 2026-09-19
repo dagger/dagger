@@ -802,9 +802,12 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 	if err != nil {
 		return nil, fmt.Errorf("current dagql server: %w", err)
 	}
-	val, err := dag.Load(ctx, &idp)
+	// Module-returned recipes are evaluated in the caller's context. Check
+	// replayability before and during loading so a forged return ID cannot
+	// execute client-dependent operations with the caller's authority.
+	val, err := dag.LoadReplayable(ctx, &idp)
 	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.load: %w", err)
+		return nil, fmt.Errorf("cannot replay module return ID: %w", err)
 	}
 	return val, nil
 }

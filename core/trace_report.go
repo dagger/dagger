@@ -253,9 +253,9 @@ func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root str
 }
 
 // ingestSpanScope feeds the newest snapshot of every span in scope into db,
-// in append order -- the order a sequential replay of the stream would have
+// in append order -- the order sequential processing of the stream would have
 // delivered them in. A span's snapshots are cumulative, so its newest row
-// alone reproduces the state a full replay would end with; still-running
+// alone reproduces the state full sequential processing would end with; still-running
 // spans naturally ingest as running.
 func ingestSpanScope(ctx context.Context, read *clientdb.DB, db *dagui.DB, scope map[string]struct{}) error {
 	rows, err := read.SelectSpansLatest(ctx, scope)

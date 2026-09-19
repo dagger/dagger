@@ -1195,24 +1195,25 @@ func humanizeTokens(v int64) string {
 // 	return nil
 // }
 
-func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
-	return renderPrimaryOutputFor(w, db, db.PrimarySpan)
+func renderPrimaryOutput(w io.Writer, db *dagui.DB, separate bool) error {
+	return renderPrimaryOutputFor(w, db, db.PrimarySpan, separate)
 }
 
 // renderPrimaryOutputFor is renderPrimaryOutput for an explicit primary span,
-// so a scoped report can replay ITS root's output without the DB's global
+// so a scoped report can write ITS root's output without the DB's global
 // primary span having to be mutated to point at it.
-func renderPrimaryOutputFor(w io.Writer, db *dagui.DB, primary dagui.SpanID) error {
-	return replayPrimaryOutput(w, db, primary, true)
+func renderPrimaryOutputFor(w io.Writer, db *dagui.DB, primary dagui.SpanID, separate bool) error {
+	return writePrimaryOutput(w, db, primary, true, separate)
 }
 
-// replayPrimaryOutput replays the primary span's log records to the CLI's
-// stdout/stderr. With includeStderr false only the stdout stream is replayed:
+// writePrimaryOutput writes the primary span's log records to the CLI's
+// stdout/stderr. With includeStderr false only the stdout stream is written:
 // report mode uses this for failed runs, whose stderr stream carries the
 // engine-wrapped failure output the rendered report already covers, while
 // stdout still carries the command's own results (e.g. a shell script's
-// output from before it failed).
-func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includeStderr bool) error {
+// output from before it failed). With separate true, a blank line is written
+// first to set the output apart from progress rendered above it.
+func writePrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includeStderr, separate bool) error {
 	logs := db.PrimaryLogs[primary]
 	if !includeStderr {
 		var stdout []sdklog.Record
@@ -1227,7 +1228,9 @@ func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includ
 		return nil
 	}
 
-	fmt.Fprintln(w)
+	if separate {
+		fmt.Fprintln(w)
+	}
 
 	var lastBody string
 	for _, l := range logs {

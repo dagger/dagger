@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -187,6 +188,7 @@ type shellCallHandler struct {
 
 	// debugServer is the hidden, hotkey-controlled local pprof server.
 	debugServer     *http.Server
+	debugListener   net.Listener
 	debugServerStop func() bool
 	debugServerL    sync.Mutex
 
@@ -224,8 +226,8 @@ type shellCallHandler struct {
 	// cmdParentCtx is the context active just above the per-command span
 	// created in Handle. Builtins whose telemetry should surface as siblings of
 	// the command itself -- rather than nested under the command's own span --
-	// replay against this instead of the command ctx (e.g. .resume, whose
-	// replayed conversation belongs at the top level, not buried under the
+	// emit history against this instead of the command ctx (e.g. .resume, whose
+	// restored conversation belongs at the top level, not buried under the
 	// ".resume" span).
 	cmdParentCtx context.Context
 }
@@ -728,7 +730,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
 
-	// Remember the context above the per-command span so builtins that replay
+	// Remember the context above the per-command span so builtins that emit
 	// conversation telemetry (.resume) can surface it at this level rather than
 	// nested under their own command span.
 	h.cmdParentCtx = ctx
@@ -931,12 +933,16 @@ func (h *shellCallHandler) llmMaybe() (*LLMSession, error) {
 }
 
 func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
+	return h.initLLM(ctx, nil)
+}
+
+func (h *shellCallHandler) initLLM(ctx context.Context, initial *dagger.LLM) (*LLMSession, error) {
 	if s, e := h.llmMaybe(); s != nil || e != nil {
 		return s, e
 	}
 
 	// initialize without the lock held
-	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend)
+	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend, initial)
 
 	h.llmL.Lock()
 	defer h.llmL.Unlock()
@@ -1099,6 +1105,9 @@ func (h *shellCallHandler) toggleDebugServer(ctx context.Context) {
 		if err := h.debugServer.Close(); err != nil {
 			slog.Debug("failed to stop debug server", "error", err)
 		}
+		// Serve may not have registered the listener yet; close it directly.
+		h.debugListener.Close()
+		h.debugListener = nil
 		h.debugServer = nil
 		h.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Debug"})
 		return
@@ -1114,6 +1123,7 @@ func (h *shellCallHandler) toggleDebugServer(ctx context.Context) {
 		return
 	}
 	h.debugServer = srv
+	h.debugListener = lis
 	h.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title:   "Debug",
 		Content: fmt.Sprintf("http://%s/debug/pprof/", lis.Addr()),
@@ -1132,6 +1142,9 @@ func (h *shellCallHandler) toggleDebugServer(ctx context.Context) {
 		if err := srv.Close(); err != nil {
 			slog.Debug("failed to stop debug server", "error", err)
 		}
+		// Serve may not have registered the listener yet; close it directly.
+		lis.Close()
+		h.debugListener = nil
 		h.debugServer = nil
 		h.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Debug"})
 	})

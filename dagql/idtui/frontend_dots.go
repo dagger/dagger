@@ -117,7 +117,7 @@ func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	}
 	if opts.Silent || reportErr == nil {
 		fe.renderFinalMessages(fe.reporter.msgPreFinalRender.String())
-		if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
+		if writeErr := renderPrimaryOutput(fe.out, fe.db, false); writeErr != nil {
 			runErr = errors.Join(runErr, writeErr)
 		}
 	}

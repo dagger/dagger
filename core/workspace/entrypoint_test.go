@@ -125,3 +125,43 @@ func TestSetEntrypointPreservesScopeNames(t *testing.T) {
 		})
 	}
 }
+
+func TestPreserveInferredScopeNames(t *testing.T) {
+	// A migrated root module: the scope carries no name and takes it from the
+	// installed entrypoint, whose source resolves to the same directory.
+	base := func() *Config {
+		return &Config{
+			Modules: map[string]ModuleEntry{
+				"myapp": {Source: ".", Entrypoint: true},
+				"lib":   {Source: "libs/lib", Entrypoint: true},
+			},
+			SDKs: map[string]SDKEntry{
+				"go": {Scopes: map[string]SDKScope{
+					".":        {IsModule: true},
+					"libs/lib": {IsModule: true},
+				}},
+			},
+		}
+	}
+
+	t.Run("records the name of the detached entrypoint only", func(t *testing.T) {
+		cfg := base()
+		require.NoError(t, PreserveInferredScopeNames(cfg, ".", func(installed string) bool {
+			return installed == "myapp"
+		}))
+		require.Equal(t, map[string]SDKScope{
+			".":        {IsModule: true, Name: "myapp"},
+			"libs/lib": {IsModule: true},
+		}, cfg.SDKs["go"].Scopes)
+		require.Equal(t, base().Modules, cfg.Modules, "installs are left to the caller")
+	})
+
+	t.Run("an ambiguous inferred name is not guessed", func(t *testing.T) {
+		cfg := base()
+		cfg.Modules["twin"] = ModuleEntry{Source: "./", Entrypoint: true}
+		require.NoError(t, PreserveInferredScopeNames(cfg, ".", func(installed string) bool {
+			return installed == "myapp"
+		}))
+		require.Empty(t, cfg.SDKs["go"].Scopes["."].Name)
+	})
+}

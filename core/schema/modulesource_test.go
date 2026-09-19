@@ -177,6 +177,35 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *test
 	require.NotContains(t, string(out), `version =`)
 }
 
+// A manifest version 2 module declares no engine version, so there is no
+// declared version to check against the running engine. currentModule.source
+// loads the config this way from inside a module.
+func TestLoadModuleSourceConfigAcceptsEntrypointManifest(t *testing.T) {
+	t.Parallel()
+
+	entrypoint := &modules.ModuleEntrypointConfig{
+		Kind:   modules.ModuleEntrypointKindDang,
+		Source: "./entrypoint",
+	}
+	src := &core.ModuleSource{
+		Kind:               core.ModuleSourceKindLocal,
+		ConfigFilename:     modules.Filename,
+		ModuleOriginalName: "tiny",
+		EngineVersion:      engine.Version,
+		SourceRootSubpath:  ".",
+		Entrypoint:         entrypoint,
+		Local: &core.LocalModuleSource{
+			ContextDirectoryPath: "/work/tiny",
+		},
+	}
+
+	cfg, err := (&moduleSourceSchema{}).loadModuleSourceConfig(src)
+	require.NoError(t, err)
+	require.Equal(t, "tiny", cfg.Name)
+	require.Equal(t, entrypoint, cfg.Entrypoint)
+	require.Empty(t, cfg.EngineVersion)
+}
+
 func moduleSourceObjectResult(t *testing.T, dag *dagql.Server, op string, self *core.ModuleSource) dagql.ObjectResult[*core.ModuleSource] {
 	t.Helper()
 

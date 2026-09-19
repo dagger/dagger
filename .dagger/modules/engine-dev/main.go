@@ -69,7 +69,7 @@ func New(
 // stamping into built binaries. Errors are swallowed — a build proceeds with
 // whatever we collected (possibly nothing). Only the resolved scalars are
 // threaded onward; the Workspace itself is never stored or passed into a
-// build, which would taint the cache key of everything it touches.
+// build, which would make every affected cache key session-specific.
 func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bool) {
 	if ws == nil {
 		return "", false
@@ -132,44 +132,6 @@ func (dev *EngineDev) WithRace() *EngineDev {
 func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	dev.LogLevel = level
 	return dev
-}
-
-// Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
-func (dev *EngineDev) Playground(
-	ctx context.Context,
-	// Build from a custom base image
-	// +optional
-	base *dagger.Container,
-	// Enable experimental GPU support
-	// +optional
-	gpuSupport bool,
-	// Share cache globally
-	// +optional
-	sharedCache bool,
-	// +optional
-	metrics bool,
-	//+optional
-	version string,
-) (*dagger.Container, error) {
-	ctr := base
-	if ctr == nil {
-		ctr = dag.Wolfi().Container(dagger.WolfiContainerOpts{
-			Packages: []string{"apk-tools", "git"},
-		}).WithEnvVariable("HOME", "/root")
-	}
-	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
-	svc, err := dev.Service(
-		ctx,
-		"", // name
-		gpuSupport,
-		sharedCache,
-		metrics,
-		version,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return dev.InstallClient(ctx, ctr, svc, version)
 }
 
 // Build the engine container
@@ -245,24 +207,18 @@ func (dev *EngineDev) Service(
 	sharedCache bool,
 	// +optional
 	metrics bool,
-	// +optional
-	version string,
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
 	dev = dev.IncrementSubnet()
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
-		if version != "" {
-			cacheVolumeName = "dagger-dev-engine-state-" + version
-		} else {
-			cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
-		}
+		cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
 		if name != "" {
 			cacheVolumeName += "-" + name
 		}
 	}
 
-	devEngine, err := dev.Container(ctx, "", gpuSupport, version)
+	devEngine, err := dev.Container(ctx, "", gpuSupport, "")
 	if err != nil {
 		return nil, err
 	}
@@ -296,13 +252,16 @@ func (dev *EngineDev) Service(
 func (dev *EngineDev) InstallClient(
 	ctx context.Context,
 	// The client container to configure
+	// +optional
 	client *dagger.Container,
 	// The engine service to bind
 	// +optional
 	service *dagger.Service,
-	// +optional
-	version string,
 ) (*dagger.Container, error) {
+	if client == nil {
+		// By default, start from a simple base container
+		client = dag.Wolfi().Container()
+	}
 	if service == nil {
 		var err error
 		service, err = dev.Service(
@@ -311,7 +270,6 @@ func (dev *EngineDev) InstallClient(
 			false, // gpuSupport
 			false, // sharedCache
 			false, // metrics
-			version,
 		)
 		if err != nil {
 			return nil, err
@@ -326,7 +284,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Source: dev.Source, Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
+		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
@@ -342,11 +300,11 @@ func (dev *EngineDev) InstallClient(
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
 func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	playground, err := dev.Playground(ctx, nil, false, false, false, "")
+	ctr, err := dev.InstallClient(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	introspectionJSON := playground.
+	introspectionJSON := ctr.
 		WithFile("/usr/local/bin/codegen", dag.Codegen(dev.Ws).Binary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		File("/schema.json")
@@ -359,12 +317,12 @@ func (dev *EngineDev) GraphqlSchema(
 	// +optional
 	version string,
 ) (*dagger.File, error) {
-	playground, err := dev.Playground(ctx, nil, false, false, false, "")
+	ctr, err := dev.InstallClient(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	schemaPath := "schema.graphqls"
-	schema := playground.
+	schema := ctr.
 		WithFile("/usr/local/bin/introspect", dev.IntrospectionTool()).
 		WithExec(
 			[]string{"introspect", "--version=" + version, "schema"},
@@ -379,64 +337,6 @@ func (dev *EngineDev) IntrospectionTool() *dagger.File {
 	return dag.
 		Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).
 		Binary("./cmd/introspect")
-}
-
-// Generate the json schema for a dagger config file
-// Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
-	schemaFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".schema.json"
-	// This tool has runtime dependencies on the engine source code itself
-	return dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).
-		Env().
-		WithExec(
-			[]string{"go", "run", "./cmd/json-schema", filename},
-			dagger.ContainerWithExecOpts{RedirectStdout: schemaFilename},
-		).
-		File(schemaFilename)
-}
-
-// Generate any engine-related files
-// Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-// +generate
-func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
-	base := dev.Source
-	withGoGenerate := dag.Go(dagger.GoOpts{
-		Ws:        dev.Ws,
-		Source:    dev.Source,
-		VcsCommit: dev.VCSCommit,
-		VcsDirty:  dev.VCSDirty,
-		ExtraPackages: []string{
-			"clang",
-			"lld",
-			"libbpf-dev",
-		},
-	}).Env().
-		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
-		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
-		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
-		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogofaster@v1.3.2"}).
-		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"}).
-		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
-		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
-		WithExec([]string{"go", "generate", "-v", "./..."}).
-		WithExec([]string{"go", "test", "./dagql", "-update"}).
-		Directory(".")
-	changes := changes(base, withGoGenerate, []string{"github.com"})
-	return changes, nil
-}
-
-// Return the changes between two directory, excluding the specified path patterns from the comparison
-// FIXME: had to copy-paste across modules
-func changes(before, after *dagger.Directory, exclude []string) *dagger.Changeset {
-	if exclude == nil {
-		return after.Changes(before)
-	}
-	return after.
-		// 1. Remove matching files from after
-		Filter(dagger.DirectoryFilterOpts{Exclude: exclude}).
-		// 2. Copy matching files from before
-		WithDirectory("", before.Filter(dagger.DirectoryFilterOpts{Include: exclude})).
-		Changes(before)
 }
 
 var targets = []struct {

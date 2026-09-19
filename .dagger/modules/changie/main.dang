@@ -1,0 +1,44 @@
+pub description = "A module to generate changelog with `changie`"
+
+type Changie {
+  source: Directory!
+
+  new(ws: Workspace!) {
+    self.source = ws.directory("/", include: ["**/.changes/", "**/CHANGELOG.md", "**/changelog.md", "**/.changie.yaml"])
+    self
+  }
+
+  """
+  Generate the changelog with 'changie merge'. Only run this manually, at release time.
+  """
+  generate: Changeset! @generate {
+    container(platform: "linux/amd64")
+      .from("ghcr.io/miniscruff/changie")
+      .withWorkdir("/src")
+      .withMountedDirectory(".", source)
+      .withExec(["/changie", "merge"])
+      .directory(".")
+      .changes(source)
+  }
+
+  """
+  Lookup the change notes file for the given component and version
+  """
+  lookupEntry(
+    """
+    The component to look up change notes for
+    Example: "sdk/php"
+    """
+    component: String!,
+    """
+    The version to look up change notes for
+    """
+    version: String!,
+  ): File! {
+    let path = ".changes/" + version + ".md"
+    if (component != "") {
+      path = component.trimSuffix("/") + "/" + path
+    }
+    source.file(path)
+  }
+}

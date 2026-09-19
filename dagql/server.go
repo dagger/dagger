@@ -840,7 +840,7 @@ func (s *Server) InterfaceType(name string) (*Interface, bool) {
 //
 // If a ViewFilter is supplied, the scalar is only emitted in the schema for
 // views that match the filter. The scalar is always available for input
-// decoding, regardless of view — this lets a view-gated field accept the
+// decoding, regardless of view — this lets a field with version-specific visibility accept the
 // scalar as an argument value at runtime.
 func (s *Server) InstallScalar(scalar ScalarType, filter ...ViewFilter) ScalarType {
 	s.installLock.Lock()
@@ -1871,6 +1871,9 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 	fieldSpec, ok := baseObj.ObjectType().FieldSpec(frame.Field, view)
 	if !ok {
 		return Selector{}, fmt.Errorf("field %q not found on %s", frame.Field, baseObj.Type().Name())
+	}
+	if ctx.Value(replayableRecipeKey{}) == true && fieldSpec.NotReplayable != "" {
+		return Selector{}, fmt.Errorf("field %s is not replayable: %s", frame.Field, fieldSpec.NotReplayable)
 	}
 	// Lazy-ref args are decoded straight from the recipe ID's literals
 	// (yielding unevaluated recipe IDs) instead of from the frame, since the

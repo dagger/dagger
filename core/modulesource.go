@@ -179,6 +179,7 @@ func (src *ModuleSource) SelfCallsEnabled() bool {
 type ModuleSource struct {
 	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
 	ConfigFilename                string
+	Entrypoint                    *modules.ModuleEntrypointConfig
 	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
 	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
 	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
@@ -262,6 +263,11 @@ var _ dagql.PersistedObject = (*ModuleSource)(nil)
 var _ dagql.PersistedObjectDecoder = (*ModuleSource)(nil)
 
 func (src ModuleSource) Clone() *ModuleSource {
+	if src.Entrypoint != nil {
+		entrypoint := *src.Entrypoint
+		src.Entrypoint = &entrypoint
+	}
+
 	if src.CodegenConfig != nil {
 		src.CodegenConfig = src.CodegenConfig.Clone()
 	}
@@ -469,6 +475,7 @@ type persistedModuleSourceSDKCapabilities struct {
 type persistedModuleSourcePayload struct {
 	ConfigExists                    bool                                  `json:"configExists,omitempty"`
 	ConfigFilename                  string                                `json:"configFilename,omitempty"`
+	Entrypoint                      *modules.ModuleEntrypointConfig       `json:"entrypoint,omitempty"`
 	ModuleName                      string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                   string                                `json:"engineVersion,omitempty"`
@@ -792,6 +799,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	payload := persistedModuleSourcePayload{
 		ConfigExists:                  src.ConfigExists,
 		ConfigFilename:                src.ConfigFilename,
+		Entrypoint:                    src.Entrypoint,
 		ModuleName:                    src.ModuleName,
 		ModuleOriginalName:            src.ModuleOriginalName,
 		EngineVersion:                 src.EngineVersion,
@@ -954,6 +962,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 	src := &ModuleSource{
 		ConfigExists:                  persisted.ConfigExists,
 		ConfigFilename:                persisted.ConfigFilename,
+		Entrypoint:                    persisted.Entrypoint,
 		ModuleName:                    persisted.ModuleName,
 		ModuleOriginalName:            persisted.ModuleOriginalName,
 		EngineVersion:                 persisted.EngineVersion,
@@ -1938,11 +1947,14 @@ func (src *ModuleSource) LoadContextGit(
 		// remains pinned to the workspace ref.
 		refID, err := ref.ID()
 		if err != nil {
-			return inst, fmt.Errorf("git workspace source ref ID: %w", err)
+			return inst, err
 		}
-		if err := dag.Select(ctx, ref.Self().Repo, &inst, dagql.Selector{
-			Field: "__withHead",
-			Args:  []dagql.NamedInput{{Name: "ref", Value: dagql.NewID[*GitRef](refID)}},
+		refObj, err := dagql.NewID[*GitRef](refID).Load(ctx, dag)
+		if err != nil {
+			return inst, err
+		}
+		if err := dag.Select(ctx, refObj, &inst, dagql.Selector{
+			Field: "asRepository",
 		}); err != nil {
 			return inst, fmt.Errorf("pin git workspace source repository: %w", err)
 		}

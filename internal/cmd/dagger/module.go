@@ -73,7 +73,7 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 	if allowLLMEnv := os.Getenv("DAGGER_ALLOW_LLM"); allowLLMEnv != "" {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
-	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session")
 
 	// Add the eager module loading flag to disable lazy load on runtime.
 	moduleFlags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
@@ -192,7 +192,10 @@ func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 To change an installed version, use dagger mod update.
 
 If no workspace config is selected, this creates one at the workspace root first.
-Use --here to create the workspace config at the workspace cwd instead.`,
+Use --here to create the workspace config at the workspace cwd instead.
+
+With --env the module is recorded in that env's overlay (env.<name>.modules.*)
+and the env is created if missing.`,
 		Example: "dagger module install github.com/shykes/daggerverse/hello@v0.3.0",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
@@ -211,7 +214,9 @@ func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 		Long: `Uninstall a module from the current workspace, removing it from dagger.toml.
 
 Match an installed name first, then a source without a version.
-The source must match exactly one installation. Version selectors are not accepted.`,
+The source must match exactly one installation. Version selectors are not accepted.
+
+With --env only the env's overlay entry is removed, never the base module.`,
 		Example: "dagger module uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
@@ -243,7 +248,7 @@ func runWorkspaceUninstall(cmd *cobra.Command, extraArgs []string) error {
 		if err := writeModuleSourceMatch(cmd.ErrOrStderr(), selection); err != nil {
 			return err
 		}
-		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), dag, selection.Name, workspaceHere)
+		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), dag, selection, workspaceHere)
 	})
 }
 

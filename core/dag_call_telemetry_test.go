@@ -31,7 +31,8 @@ type recordedPayload struct {
 	body            []byte
 	contentType     string
 	contentTypeKind otellog.Kind
-	hasDigestAttr   bool
+	digestAttr      string
+	digestAttrKind  otellog.Kind
 	call            *callpbv1.Call
 	digest          string
 	err             error
@@ -57,8 +58,9 @@ func (r *payloadRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error 
 		case telemetry.ContentTypeAttr:
 			got.contentTypeKind = kv.Value.Kind()
 			got.contentType = kv.Value.AsString()
-		case "dagger.io/dag.call.payload.digest":
-			got.hasDigestAttr = true
+		case telemetryattrs.CallPayloadDigestAttr:
+			got.digestAttrKind = kv.Value.Kind()
+			got.digestAttr = kv.Value.AsString()
 		}
 		return true
 	})
@@ -259,9 +261,11 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 		require.Equal(t, otellog.KindBytes, record.bodyKind)
 		require.Equal(t, otellog.KindString, record.contentTypeKind)
 		require.Equal(t, telemetryattrs.CallPayloadContentType, record.contentType)
-		require.False(t, record.hasDigestAttr)
 		require.NotNil(t, record.call)
 		require.NotEmpty(t, record.call.Digest, "the payload must carry its own digest")
+		require.Equal(t, otellog.KindString, record.digestAttrKind)
+		require.Equal(t, record.call.Digest, record.digestAttr,
+			"the digest attribute must name the payload it rides on")
 
 		deterministic, err := (proto.MarshalOptions{Deterministic: true}).Marshal(record.call)
 		require.NoError(t, err)

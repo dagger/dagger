@@ -2015,7 +2015,7 @@ server {
 	return svc, url
 }
 
-func gitSmartHTTPServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *dagger.Directory, username string, token *dagger.Secret) (*dagger.Service, string) {
+func gitSmartHTTPServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *dagger.Directory, username string, token *dagger.Secret, publicRead ...bool) (*dagger.Service, string) {
 	t.Helper()
 
 	if username == "" {
@@ -2030,21 +2030,27 @@ func gitSmartHTTPServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Cli
 	}
 
 	tmpl, err := template.New("").Parse(`
+{{ if .publicRead }}
+map "$arg_service:$uri" $git_auth_realm {
+	default off;
+	~git-receive-pack "Git";
+}
+{{ end }}
 server {
 	listen       80;
 	server_name  localhost;
 
 	# Route everything to git-http-backend (smart-HTTP)
-	location ~ ^/(.*)$ {
+	location ~ ^/(?<git_path>.*)$ {
 		{{ if .token }}
-		auth_basic            "Git";
+		auth_basic            {{ if .publicRead }}$git_auth_realm{{ else }}"Git"{{ end }};
 		auth_basic_user_file  /usr/share/nginx/htpasswd;
 		{{ end }}
 
 		include               /etc/nginx/fastcgi_params;
 		fastcgi_param         GIT_HTTP_EXPORT_ALL "";
 		fastcgi_param         GIT_PROJECT_ROOT      /var/www;
-		fastcgi_param         PATH_INFO             /$1;
+		fastcgi_param         PATH_INFO             /$git_path;
 		fastcgi_param         SCRIPT_FILENAME       /usr/lib/git-core/git-http-backend;
 		fastcgi_pass          unix:/var/run/fcgiwrap.socket;
 	}
@@ -2054,7 +2060,8 @@ server {
 
 	var config bytes.Buffer
 	require.NoError(t, tmpl.Execute(&config, map[string]any{
-		"token": tokenPlaintext,
+		"token":      tokenPlaintext,
+		"publicRead": len(publicRead) > 0 && publicRead[0],
 	}))
 
 	ctr := c.Container().

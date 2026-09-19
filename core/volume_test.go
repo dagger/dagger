@@ -244,10 +244,10 @@ func TestContainerPersistedObjectRoundTripsVolumeMount(t *testing.T) {
 	require.NoError(t, err)
 	var raw persistedContainerPayload
 	require.NoError(t, json.Unmarshal(encoded.JSON, &raw))
-	require.Len(t, raw.Mounts, 1)
-	require.Equal(t, persistedContainerMountKindVolume, raw.Mounts[0].Kind)
-	require.Equal(t, volumeID, raw.Mounts[0].VolumeSourceResultID)
-	require.True(t, raw.Mounts[0].Readonly)
+	require.Len(t, raw.Metadata.Value.Mounts, 1)
+	require.Equal(t, persistedContainerMountKindVolume, raw.Metadata.Value.Mounts[0].Kind)
+	require.Equal(t, volumeID, raw.Metadata.Value.Mounts[0].VolumeSourceResultID)
+	require.True(t, raw.Metadata.Value.Mounts[0].Readonly)
 
 	decodedTyped, err := (&Container{}).DecodePersistedObject(ctx, srv, volumeID, nil, encoded.JSON)
 	require.NoError(t, err)
