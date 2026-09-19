@@ -41,7 +41,7 @@
 ["","git-sha",["github.com/kpenfound/demo-react-app","HEAD"],"79e749035acf2ce91851d90b6920ebad178acb4f"]
 ["","git-sha",["github.com/libfuse/sshfs","refs/tags/sshfs-3.7.6"],"7a2d988775446ebe7af9b01c99b3b8e86bddb05a"]
 ["","git-sha",["github.com/opencontainers/runc","refs/tags/v1.4.2"],"c241c0bb5e60a8e8c1b2e53d4eca8d0068d8d57e"]
-["","git-sha",["github.com/vito/agents","refs/heads/main"],"d03a73750e9a2fafd198a4cdce7a2bcab1dedcfb"]
+["","git-sha",["github.com/vito/agents","refs/heads/main"],"9e8145a9d5ce89d846971d05825e552ba3c6a9c2"]
 ["","git-sha",["github.com/vito/editor","refs/heads/main"],"5481e5ce3a8b97ffb8beaee3a569ad9100e16167"]
 ["","oci-latest",["cgr.dev/chainguard/wolfi-base"],"latest"]
 ["","oci-latest",["docker.io/library/busybox"],"1.38.0"]
