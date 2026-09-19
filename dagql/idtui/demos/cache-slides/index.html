@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dagger cache savings</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f7f7f2;
+      --muted: #a7aea9;
+      --panel: #171c1a;
+      --line: #303934;
+      --green: #b7f36b;
+      --green-2: #65d98b;
+      --amber: #ffd166;
+      --blue: #70c8ff;
+      --bg: #0b0e0d;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 82% 10%, rgba(101, 217, 139, .10), transparent 26%),
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: auto, 32px 32px, 32px 32px;
+    }
+
+    .deck { width: 100%; height: 100%; }
+
+    .slide {
+      display: none;
+      width: 100%;
+      height: 100%;
+      padding: clamp(28px, 4vw, 68px) clamp(34px, 5vw, 88px);
+      position: relative;
+    }
+
+    .slide.active {
+      display: flex;
+      flex-direction: column;
+      animation: enter .22s ease-out;
+    }
+
+    @keyframes enter {
+      from { opacity: 0; transform: translateX(12px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .eyebrow {
+      color: var(--green);
+      font: 700 clamp(12px, 1.1vw, 18px)/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 1100px;
+      font-size: clamp(38px, 5vw, 78px);
+      line-height: .98;
+      letter-spacing: -.055em;
+    }
+
+    .lede {
+      color: var(--muted);
+      font-size: clamp(16px, 1.55vw, 25px);
+      line-height: 1.4;
+      margin: 18px 0 26px;
+      max-width: 1100px;
+    }
+
+    .report {
+      border: 1px solid rgba(183, 243, 107, .35);
+      background: rgba(183, 243, 107, .075);
+      border-radius: 14px;
+      padding: 16px 20px;
+      font: 650 clamp(14px, 1.4vw, 23px)/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 22px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: clamp(16px, 1.7vw, 26px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-width: 0;
+    }
+
+    .metric .icon { font-size: clamp(23px, 2.4vw, 38px); }
+    .metric h2 { margin: 12px 0 8px; font-size: clamp(16px, 1.7vw, 27px); }
+    .metric p { margin: 0; color: var(--muted); font-size: clamp(12px, 1.05vw, 17px); line-height: 1.45; }
+    .formula {
+      color: var(--ink);
+      font: 650 clamp(11px, .92vw, 15px)/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin-top: 18px;
+      overflow-wrap: anywhere;
+    }
+    .cold { color: var(--amber); }
+    .warm { color: var(--blue); }
+
+    .memory-layout {
+      display: grid;
+      grid-template-columns: 1.35fr .8fr;
+      gap: clamp(20px, 3vw, 48px);
+      flex: 1;
+      min-height: 0;
+      margin-top: 24px;
+    }
+
+    .timeline, .memory-notes {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      padding: clamp(18px, 2.2vw, 34px);
+    }
+
+    .timeline { display: flex; flex-direction: column; justify-content: center; }
+    .axis { color: var(--muted); font: 600 13px/1 ui-monospace, monospace; margin: 0 0 14px 100px; display: flex; justify-content: space-between; }
+    .track { display: grid; grid-template-columns: 90px 1fr; align-items: center; margin: 10px 0; }
+    .track-label { color: var(--muted); font-weight: 700; }
+    .track-line { height: clamp(46px, 6vh, 68px); background: #0e1210; border: 1px solid var(--line); border-radius: 10px; position: relative; overflow: hidden; }
+    .block { position: absolute; inset-block: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #0b0e0d; }
+    .block.a { left: 0; width: 48%; background: var(--green); }
+    .block.b { left: 52%; width: 36%; background: var(--blue); }
+    .block.c { left: 34%; width: 34%; background: var(--amber); }
+    .peak-answer {
+      margin: 22px 0 0 100px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      font-size: clamp(18px, 1.7vw, 28px);
+      font-weight: 750;
+    }
+    .peak-answer strong { color: var(--green); }
+
+    .memory-notes { display: flex; flex-direction: column; justify-content: center; }
+    .memory-notes h2 { font-size: clamp(22px, 2vw, 34px); margin: 0 0 18px; }
+    .memory-notes ul { padding-left: 1.2em; margin: 0; color: var(--muted); font-size: clamp(14px, 1.25vw, 20px); line-height: 1.52; }
+    .memory-notes li + li { margin-top: 11px; }
+    .warning { color: var(--amber); }
+
+    .footer {
+      position: absolute;
+      left: clamp(34px, 5vw, 88px);
+      right: clamp(34px, 5vw, 88px);
+      bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #727a75;
+      font: 600 12px/1 ui-monospace, monospace;
+    }
+
+    .controls { display: flex; gap: 8px; }
+    button {
+      width: 34px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--green); }
+
+    @media (max-width: 900px) {
+      .metrics { grid-template-columns: repeat(2, 1fr); overflow: auto; }
+      .memory-layout { grid-template-columns: 1fr; overflow: auto; }
+      .report { white-space: normal; }
+    }
+
+    @media print {
+      html, body { overflow: visible; background: #fff; }
+      .slide, .slide.active { display: flex; height: 100vh; break-after: page; }
+      .controls { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide active" aria-label="How cache savings are calculated">
+      <div class="eyebrow">Dagger cache report · 01</div>
+      <h1>What did the cache save?</h1>
+      <p class="lede">Compare the warm run with the coldest compatible local run of the same workflow. Only positive, available differences are shown.</p>
+      <div class="report">♻️ Cache hits 108/266 (41%) ⚡ Saved ~23s wall · ~2m42s CPU · ~1.2 GB peak memory · ~120 MB net rx · ~31 MB net tx</div>
+
+      <div class="metrics">
+        <article class="metric">
+          <div><div class="icon">♻️</div><h2>Cache hits</h2><p>Hits divided by all calls that consulted the cache. Uncached calls are excluded.</p></div>
+          <div class="formula">hits ÷ (hits + executed + joined)</div>
+        </article>
+        <article class="metric">
+          <div><div class="icon">⏱</div><h2>Wall time</h2><p>Whole-workflow makespan. Parallel branches are never added together.</p></div>
+          <div class="formula"><span class="cold">cold</span> duration − <span class="warm">warm</span> duration</div>
+        </article>
+        <article class="metric">
+          <div><div class="icon">⚙️</div><h2>CPU</h2><p>Cumulative CPU time across every measured container and every core.</p></div>
+          <div class="formula">Σ <span class="cold">cold</span> CPU − Σ <span class="warm">warm</span> CPU</div>
+        </article>
+        <article class="metric">
+          <div><div class="icon">▥</div><h2>Peak memory</h2><p>Largest sum of memory used by containers that were active at the same time.</p></div>
+          <div class="formula"><span class="cold">cold</span> concurrent peak − <span class="warm">warm</span> concurrent peak</div>
+        </article>
+        <article class="metric">
+          <div><div class="icon">⇅</div><h2>Network</h2><p>Received and transmitted bytes are accumulated and compared separately.</p></div>
+          <div class="formula">Σ <span class="cold">rx/tx</span> − Σ <span class="warm">rx/tx</span></div>
+        </article>
+      </div>
+
+      <div class="footer"><span>same directory + same outer command = comparable workflow</span><div class="controls"><button data-go="prev" aria-label="Previous slide">←</button><button data-go="next" aria-label="Next slide">→</button></div><span>1 / 2</span></div>
+    </section>
+
+    <section class="slide" aria-label="The peak memory problem">
+      <div class="eyebrow">Peak memory · 02</div>
+      <h1>Memory is a timeline,<br>not a sum.</h1>
+      <p class="lede">Adding every container’s individual peak exaggerates capacity when those peaks happen at different times.</p>
+
+      <div class="memory-layout">
+        <div class="timeline">
+          <div class="axis"><span>0s</span><span>5s</span><span>10s</span></div>
+          <div class="track">
+            <div class="track-label">Branch A</div>
+            <div class="track-line"><div class="block a">4 GB</div></div>
+          </div>
+          <div class="track">
+            <div class="track-label">Branch B</div>
+            <div class="track-line"><div class="block b">3 GB</div></div>
+          </div>
+          <div class="peak-answer">Non-overlapping peak: <strong>4 GB</strong>, not 7 GB</div>
+
+          <div style="height: clamp(18px, 3vh, 34px)"></div>
+          <div class="track">
+            <div class="track-label">If overlap</div>
+            <div class="track-line"><div class="block a">4 GB</div><div class="block c">+ 3 GB</div></div>
+          </div>
+          <div class="peak-answer">Overlapping peak: <strong>7 GB</strong></div>
+        </div>
+
+        <aside class="memory-notes">
+          <h2>What we actually compute</h2>
+          <ul>
+            <li>Associate each <code>memory.current</code> sample with its container span.</li>
+            <li>Rebuild intervals and sum only containers active at each point in time.</li>
+            <li>Take the maximum aggregate value for each run, then subtract warm from cold.</li>
+            <li class="warning">Samples arrive about every 5 seconds, so brief spikes may be missed.</li>
+            <li>“Peak saved” is an observed estimate—not a guarantee that an OOM was prevented.</li>
+          </ul>
+        </aside>
+      </div>
+
+      <div class="footer"><span>← → / Space to navigate · Home to reset</span><div class="controls"><button data-go="prev" aria-label="Previous slide">←</button><button data-go="next" aria-label="Next slide">→</button></div><span>2 / 2</span></div>
+    </section>
+  </main>
+
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    let current = 0;
+
+    function show(index) {
+      current = (index + slides.length) % slides.length;
+      slides.forEach((slide, i) => slide.classList.toggle('active', i === current));
+      history.replaceState(null, '', `#${current + 1}`);
+    }
+
+    const initial = Number(location.hash.slice(1));
+    if (initial >= 1 && initial <= slides.length) show(initial - 1);
+
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-go]');
+      if (!button) return;
+      show(current + (button.dataset.go === 'next' ? 1 : -1));
+    });
+
+    document.addEventListener('keydown', event => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) {
+        event.preventDefault();
+        show(current + 1);
+      } else if (['ArrowLeft', 'PageUp'].includes(event.key)) {
+        event.preventDefault();
+        show(current - 1);
+      } else if (event.key === 'Home') {
+        show(0);
+      } else if (event.key === 'End') {
+        show(slides.length - 1);
+      }
+    });
+  </script>
+</body>
+</html>
