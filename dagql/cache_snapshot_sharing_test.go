@@ -100,6 +100,21 @@ func shareTestCache(t *testing.T) (context.Context, *Cache, *Server, *shareTestM
 	return ctx, c, srv, manager
 }
 
+// shareTestEnv is shareTestCache's result for callers that name only some of
+// its parts.
+type shareTestEnv struct {
+	ctx     context.Context
+	cache   *Cache
+	srv     *Server
+	manager *shareTestManager
+}
+
+func newShareTestEnv(t *testing.T) shareTestEnv {
+	t.Helper()
+	ctx, c, srv, manager := shareTestCache(t)
+	return shareTestEnv{ctx: ctx, cache: c, srv: srv, manager: manager}
+}
+
 func shareTestQueueDepth(c *Cache) (pending int, members int) {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
@@ -734,7 +749,7 @@ func (o shareTestOverride) Provider(context.Context, PersistedPartOffer, *PartDe
 
 // The worker base itself carries the marker, so no slot can evaluate.
 func TestSnapshotSharingWorkerBaseIsMarked(t *testing.T) {
-	_, c, _, _ := shareTestCache(t)
+	c := newShareTestEnv(t).cache
 	require.True(t, engine.IsSnapshotSharePreparation(c.snapshotShareWorkerBase()))
 }
 
@@ -1552,7 +1567,7 @@ func TestSnapshotSharingPreparationContextIsSetOnce(t *testing.T) {
 	require.ErrorContains(t, c.SetPartPreparationContext(prepare), "already registered")
 	require.NoError(t, c.EnableSnapshotSharing())
 
-	_, enabled, _, _ := shareTestCache(t)
+	enabled := newShareTestEnv(t).cache
 	require.ErrorContains(t, enabled.SetPartPreparationContext(prepare), "already enabled", "a first registration after admission is refused")
 
 	_, closed, _ := transferTestCache(t)
