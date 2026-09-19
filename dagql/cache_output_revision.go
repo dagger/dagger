@@ -19,13 +19,6 @@ type SnapshotOwnerReader interface {
 	ReadSnapshotOwner() (OutputRevision, []PersistedSnapshotRefLink, error)
 }
 
-type snapshotOwnerVersion struct{ SnapshotOwnerReader }
-
-func (v snapshotOwnerVersion) PersistedOutputRevision() (OutputRevision, error) {
-	revision, _, err := v.ReadSnapshotOwner()
-	return revision, err
-}
-
 type capturedOutputVersionsKey struct{}
 type capturedOutputVersion struct {
 	value    PersistedOutputVersion

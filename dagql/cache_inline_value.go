@@ -76,11 +76,14 @@ func collectSnapshotOwnerLinks(self Typed, frame *ResultCall, forSync bool) ([]P
 	err := walkInlineValues(newDetachedResult(frame, self), frame, nil, true, func(value AnyResult, path PersistedRefPath) error {
 		self := value.Unwrap()
 		if reader, ok := self.(SnapshotOwnerReader); forSync && ok {
-			revision, local, err := reader.ReadSnapshotOwner()
+			_, local, err := reader.ReadSnapshotOwner()
 			if err != nil {
 				return err
 			}
-			versions = append(versions, capturedOutputVersion{snapshotOwnerVersion{reader}, revision})
+			// The reader collected these links under one publication guard.
+			// Comparing with a later read would reject a coherent snapshot if
+			// another writer published in between. That writer reconciles its
+			// own links after this sync releases the row's leaseSyncMu.
 			links = append(links, prefixSnapshotLinks(local, path)...)
 			return nil
 		}
