@@ -79,7 +79,7 @@ func (container *Container) CacheDebugValue() any {
 		stored := container.storedParts[part]
 		value := containerPartDebugValue{
 			Computed: container.containerPartComputed(ctx, lazy, part),
-			Consumed: lazy == nil, StoredKind: stored.Kind, StoredSnapshotID: stored.SnapshotID,
+			Consumed: lazy == nil || lazy.IsEvaluated(), StoredKind: stored.Kind, StoredSnapshotID: stored.SnapshotID,
 		}
 		if op, ok := lazy.(LazyContainerParts); ok {
 			if groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part}); err == nil && len(groups) == 1 {

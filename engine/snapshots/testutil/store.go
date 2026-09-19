@@ -36,6 +36,7 @@ type Store struct {
 	DB          *metadata.DB
 	Applies     atomic.Int64
 	Diffs       atomic.Int64
+	BeforeWrite func([]byte) error
 	BeforeApply func(context.Context, ocispecs.Descriptor) error
 	BeforeDiff  func(context.Context) error
 	BeforeAdd   func(context.Context, leases.Lease, leases.Resource) error
@@ -70,11 +71,15 @@ func NewStore(t testing.TB) *Store {
 func (s *Store) openManager(t testing.TB) {
 	t.Helper()
 	var err error
+	// The in-place applier and differ read and write through the same
+	// observed wrapper the manager uses, so BeforeWrite sees a fallback
+	// diff's blob writes as it sees the manager's own.
+	observed := observedContent{Store: s.Content, owner: s}
 	s.Manager, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
-		Snapshotter: s.Snapshots, ContentStore: s.Content,
+		Snapshotter: s.Snapshots, ContentStore: observed,
 		LeaseManager:  &observedLeases{Manager: s.Leases, store: s},
-		Applier:       &observedApplier{Applier: inPlaceApplier{store: s.Content}, store: s},
-		Differ:        &observedDiffer{Comparer: inPlaceDiffer{store: s.Content}, store: s},
+		Applier:       &observedApplier{Applier: inPlaceApplier{store: observed}, store: s},
+		Differ:        &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
 		MountPoolRoot: filepath.Join(s.root, "mounts"),
 	})
 	require.NoError(t, err)
@@ -219,4 +224,33 @@ func (l *observedLeases) Create(ctx context.Context, opts ...leases.Opt) (leases
 		l.store.AfterCreate(lease)
 	}
 	return lease, err
+}
+
+// observedContent retains the actual content store and injects only a writer
+// boundary failure, so import tests exercise the real copy and cleanup path.
+type observedContent struct {
+	content.Store
+	owner *Store
+}
+
+func (s observedContent) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {
+	writer, err := s.Store.Writer(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return observedWriter{Writer: writer, owner: s.owner}, nil
+}
+
+type observedWriter struct {
+	content.Writer
+	owner *Store
+}
+
+func (w observedWriter) Write(p []byte) (int, error) {
+	if w.owner.BeforeWrite != nil {
+		if err := w.owner.BeforeWrite(p); err != nil {
+			return 0, err
+		}
+	}
+	return w.Writer.Write(p)
 }

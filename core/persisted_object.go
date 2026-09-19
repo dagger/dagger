@@ -119,8 +119,8 @@ func loadPersistedObjectResultByResultID[T dagql.Typed](ctx context.Context, dec
 // loadPersistedSnapshotLinkByResultID resolves one declared storage role of
 // the row being decoded.
 func loadPersistedSnapshotLinkByResultID(ctx context.Context, dec *dagql.PersistDecodeContext, label, role string) (dagql.PersistedSnapshotRefLink, error) {
-	if dec.ResultID() == 0 {
-		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link: zero result ID", label)
+	if dec.SnapshotScope().OwnerResultID == 0 {
+		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link: zero storage owner", label)
 	}
 	if _, err := persistedDecodeQuery(dec); err != nil {
 		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link query: %w", label, err)
@@ -135,8 +135,8 @@ func loadPersistedSnapshotLinkByResultID(ctx context.Context, dec *dagql.Persist
 // loadPersistedSnapshotLinksByResultID resolves every declared storage role
 // of the row being decoded.
 func loadPersistedSnapshotLinksByResultID(ctx context.Context, dec *dagql.PersistDecodeContext, label string) ([]dagql.PersistedSnapshotRefLink, error) {
-	if dec.ResultID() == 0 {
-		return nil, fmt.Errorf("load persisted %s snapshot links: zero result ID", label)
+	if dec.SnapshotScope().OwnerResultID == 0 {
+		return nil, fmt.Errorf("load persisted %s snapshot links: zero storage owner", label)
 	}
 	if _, err := persistedDecodeQuery(dec); err != nil {
 		return nil, fmt.Errorf("load persisted %s snapshot links query: %w", label, err)

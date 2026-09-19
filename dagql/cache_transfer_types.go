@@ -81,10 +81,10 @@ type ImportedValue struct {
 	ResultID uint64
 }
 
-const valueBundleVersion = 1
+const valueBundleVersion = 2
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
-// schemas, producers, result references or storage.
+// schemas, operations, result references or storage.
 type PersistedTransferCodec interface {
 	NormalizeForeign(PersistedPayloadVisit) (ForeignPayload, error)
 	ValidateForeign(PersistedPayloadVisit) error

@@ -720,7 +720,7 @@ func TestVisitEncodedReferencesRequiresEveryRoleOnce(t *testing.T) {
 	} {
 		t.Run("a "+kind.name+" root cannot declare storage roles", func(t *testing.T) {
 			_, err := VisitEncodedReferences(PersistedRecord{ResultID: 4, Envelope: kind.env, SnapshotLinks: links}, noop)
-			require.ErrorContains(t, err, "only an object payload classifies storage roles")
+			require.ErrorContains(t, err, "not a codec envelope")
 		})
 	}
 }

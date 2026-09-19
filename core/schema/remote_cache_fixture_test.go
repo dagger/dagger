@@ -116,6 +116,39 @@ func TestRemoteCacheFixture(t *testing.T) {
 	var preciseID call.ID
 	require.NoError(t, preciseID.Decode(precise[0].Handle))
 	require.Equal(t, uint64(9007199254740993), preciseID.EngineResultID())
+	childFrame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "fixtureChild", Type: frame.Type, Receiver: &dagql.ResultCallRef{ResultID: id.EngineResultID()}}
+	child, err := cache.GetOrInitCall(ctx, "fixture", srv, &dagql.CallRequest{ResultCall: childFrame, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewObjectResultForCall(&core.Address{Value: "child"}, srv, childFrame)
+	})
+	require.NoError(t, err)
+	childID, err := child.ID()
+	require.NoError(t, err)
+	childHandle, err := childID.Encode()
+	require.NoError(t, err)
+	execute("export", []string{childHandle})
+	closure := execute("import", []string{})
+	require.Len(t, closure, 2)
+	rows, err := cache.TransferFixtureSnapshot(ctx, "fixture", nil)
+	require.NoError(t, err)
+	byID := map[uint64]dagql.TransferFixtureRow{}
+	for _, row := range rows.Rows {
+		byID[row.ResultID] = row
+	}
+	require.Equal(t, "fixtureChild", byID[closure[0].ResultID].Call.Field)
+	require.Equal(t, closure[1].ResultID, byID[closure[0].ResultID].Call.Receiver.ResultID)
+	require.Equal(t, "fixtureAddress", byID[closure[1].ResultID].Call.Field)
+	// Root IDs alone cannot establish the dependency mapping. Validate the
+	// base against an independently reported non-root row, then corrupt it.
+	bundleRaw, err = os.ReadFile(filepath.Join(root, "bundles", "value.json"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(bundleRaw, &bundle))
+	importedRoots := []dagql.ImportedValue{{Ordinal: closure[0].Ordinal, ResultID: closure[0].ResultID}}
+	reported := []dagql.TransferFixtureRow{byID[closure[0].ResultID], byID[closure[1].ResultID]}
+	_, err = fixtureImportedMappings(bundle, importedRoots, reported)
+	require.NoError(t, err)
+	reported[1].ResultID += 1000
+	_, err = fixtureImportedMappings(bundle, importedRoots, reported)
+	require.ErrorContains(t, err, "reported non-root")
 	const count = 16
 	var wg sync.WaitGroup
 	errs := make(chan error, count)

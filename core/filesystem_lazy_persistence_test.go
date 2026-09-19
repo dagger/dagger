@@ -14,34 +14,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This adapter lets the actual selection producers stat a temporary tree.
+// This adapter lets the actual selection operations stat a temporary tree.
 // Snapshot reopening and persistence still use the existing test manager.
-type producerTreeRef struct {
+type operationTreeRef struct {
 	*cacheVolumeTestImmutableRef
 	root string
 }
 
-type producerTreeMount string
+type operationTreeMount string
 
-func (r *producerTreeRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
-	return producerTreeMount(r.root), nil
+func (r *operationTreeRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
+	return operationTreeMount(r.root), nil
 }
 
-func (m producerTreeMount) Mount() ([]mount.Mount, func() error, error) {
+func (m operationTreeMount) Mount() ([]mount.Mount, func() error, error) {
 	return []mount.Mount{{Type: "bind", Source: string(m)}}, func() error { return nil }, nil
 }
 
-func TestFilesystemCompletedProducerPersistence(t *testing.T) {
+func TestFilesystemEvaluatedLazyOperationPersistence(t *testing.T) {
 	for _, kind := range []string{"Directory", "File", "Container.rootfs"} {
 		t.Run(kind, func(t *testing.T) {
 			env := newPersistedFamiliesTestEnv(t, "completed-filesystem")
 			ctx, cache, srv := env.open(t)
 			root := t.TempDir()
 			require.NoError(t, os.MkdirAll(filepath.Join(root, "selected", "nested"), 0o755))
-			require.NoError(t, os.WriteFile(filepath.Join(root, "selected", "nested", "name.txt"), []byte("saved producer\n"), 0o644))
-			source := containerPersistenceTestDirectory("producer-tree", "/selected")
-			source.Snapshot.setValue(&producerTreeRef{
-				cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "producer-tree", snapshotID: "producer-tree"},
+			require.NoError(t, os.WriteFile(filepath.Join(root, "selected", "nested", "name.txt"), []byte("saved operation\n"), 0o644))
+			source := containerPersistenceTestDirectory("operation-tree", "/selected")
+			source.Snapshot.setValue(&operationTreeRef{
+				cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "operation-tree", snapshotID: "operation-tree"},
 				root:                        root,
 			})
 			var parent, otherParent dagql.AnyResult
@@ -50,8 +50,8 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			if kind == "Container.rootfs" {
 				ctr := NewContainer(source.Platform)
 				ctr.FS.setValue(source)
-				parent = env.attach(t, ctx, cache, srv, "producer-parent", ctr)
-				otherParent = env.attach(t, ctx, cache, srv, "producer-other", NewContainer(source.Platform))
+				parent = env.attach(t, ctx, cache, srv, "operation-parent", ctr)
+				otherParent = env.attach(t, ctx, cache, srv, "operation-other", NewContainer(source.Platform))
 				value = &Directory{
 					Platform: source.Platform,
 					Dir:      new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
@@ -59,8 +59,8 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 				}
 				wantKind, wantPath = persistedDirectoryLazyKindContainerRootFS, "/selected"
 			} else {
-				parent = env.attach(t, ctx, cache, srv, "producer-parent", source)
-				otherParent = env.attach(t, ctx, cache, srv, "producer-other", containerPersistenceTestDirectory("other-tree", "/other"))
+				parent = env.attach(t, ctx, cache, srv, "operation-parent", source)
+				otherParent = env.attach(t, ctx, cache, srv, "operation-other", containerPersistenceTestDirectory("other-tree", "/other"))
 				parentDir := parent.(dagql.ObjectResult[*Directory])
 				if kind == "Directory" {
 					var err error
@@ -75,11 +75,11 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 				}
 			}
 			parentID, otherID := persistedRowID(t, cache, parent), persistedRowID(t, cache, otherParent)
-			child := env.attach(t, ctx, cache, srv, "producer-child", value)
+			child := env.attach(t, ctx, cache, srv, "operation-child", value)
 			pending, err := cache.CapturePersistedRecord(ctx, child)
 			require.NoError(t, err)
-			require.True(t, dagql.HasPendingLazyEvaluation(child), "capture leaves the producer unstarted")
-			var pendingPayload persistedDirectoryPayload // File has the same producer fields.
+			require.True(t, dagql.HasPendingLazyEvaluation(child), "capture leaves the operation unstarted")
+			var pendingPayload persistedDirectoryPayload // File has the same operation fields.
 			require.NoError(t, json.Unmarshal(pending.Envelope.ObjectJSON, &pendingPayload))
 			require.NoError(t, cache.Evaluate(ctx, child))
 			path, err := storedSnapshotTestPath(ctx, child)
@@ -93,21 +93,21 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			require.Equal(t, "snapshot", payload.Form)
 			require.Equal(t, wantKind, payload.LazyKind)
 			require.JSONEq(t, string(pendingPayload.LazyJSON), string(payload.LazyJSON))
-			var producer struct {
+			var operation struct {
 				ParentResultID uint64 `json:"parentResultID"`
 				Subdir         string `json:"subdir"`
 				Path           string `json:"path"`
 			}
-			require.NoError(t, json.Unmarshal(payload.LazyJSON, &producer))
-			require.Equal(t, parentID, producer.ParentResultID)
-			require.Equal(t, wantInputPath, producer.Subdir+producer.Path)
-			require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "producer-tree"}}, rec.SnapshotLinks)
+			require.NoError(t, json.Unmarshal(payload.LazyJSON, &operation))
+			require.Equal(t, parentID, operation.ParentResultID)
+			require.Equal(t, wantInputPath, operation.Subdir+operation.Path)
+			require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "operation-tree"}}, rec.SnapshotLinks)
 
 			if dir, ok := value.(*Directory); ok {
 				derived, err := dir.Subdirectory(ctx, child.(dagql.ObjectResult[*Directory]), "another")
 				require.NoError(t, err)
-				require.Nil(t, derived.completedRecipe)
-				require.Empty(t, derived.completedRecipeJSON)
+				require.False(t, derived.Lazy.IsEvaluated())
+				require.Empty(t, derived.lazyJSON)
 				encoded, err := derived.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 				require.NoError(t, err)
 				var own persistedDirectoryPayload
@@ -118,7 +118,7 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 				require.Equal(t, "another", op.Subdir)
 			}
 
-			opens := env.manager.openCount("producer-tree")
+			opens := env.manager.openCount("operation-tree")
 			ctx, cache, srv = env.restart(t, ctx, cache)
 			assertParentsUnloaded := func() {
 				t.Helper()
@@ -137,7 +137,7 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			path, err = storedSnapshotTestPath(ctx, loaded)
 			require.NoError(t, err)
 			require.Equal(t, wantPath, path)
-			require.Equal(t, opens, env.manager.openCount("producer-tree"))
+			require.Equal(t, opens, env.manager.openCount("operation-tree"))
 			assertParentsUnloaded()
 			enc := dagql.NewPersistEncodeContext(cache, rec.ResultID, rec.Call)
 			assertEncoding := func() {
@@ -154,7 +154,7 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			assertEncoding()
 			env.manager.beforeOpen = nil
 			require.NoError(t, cache.Evaluate(ctx, loaded))
-			require.Equal(t, opens+2, env.manager.openCount("producer-tree"))
+			require.Equal(t, opens+2, env.manager.openCount("operation-tree"))
 			require.False(t, dagql.HasPendingLazyEvaluation(loaded))
 			assertEncoding()
 
@@ -164,8 +164,8 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			require.Equal(t, map[string]uint64{"objectJSON.lazyJSON.parentResultID": parentID}, reloc.childIDs())
 			var relocated persistedDirectoryPayload
 			require.NoError(t, json.Unmarshal(out.Envelope.ObjectJSON, &relocated))
-			require.NoError(t, json.Unmarshal(relocated.LazyJSON, &producer))
-			require.Equal(t, otherID, producer.ParentResultID)
+			require.NoError(t, json.Unmarshal(relocated.LazyJSON, &operation))
+			require.Equal(t, otherID, operation.ParentResultID)
 			codec := loaded.Unwrap().(dagql.PersistedObjectDecoder)
 			decoded, err := codec.DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, out.ResultID, out.Call), out.Envelope.ObjectJSON)
 			require.NoError(t, err)
@@ -174,7 +174,7 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			require.JSONEq(t, string(out.Envelope.ObjectJSON), string(again.JSON))
 			assertParentsUnloaded()
 
-			// Preserve the type-specific path while removing only producer fields.
+			// Preserve the type-specific path while removing only operation fields.
 			var old map[string]json.RawMessage
 			require.NoError(t, json.Unmarshal(rec.Envelope.ObjectJSON, &old))
 			delete(old, "lazyKind")

@@ -1242,7 +1242,7 @@ func changesetJobs() parallel.Jobs {
 }
 
 // FilterNonemptyChangesets keeps the effective merge inputs in their original
-// order, retaining the result handles used to record the Directory producer.
+// order, retaining the result handles used to record the Directory operation.
 func FilterNonemptyChangesets(ctx context.Context, others []dagql.ObjectResult[*Changeset]) ([]dagql.ObjectResult[*Changeset], error) {
 	// Before wasting any effort, remove any changesets that are empty.
 	//

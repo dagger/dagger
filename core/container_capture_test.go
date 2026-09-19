@@ -196,10 +196,10 @@ func (*captureContainerWholeOp) EncodePersisted(context.Context, *dagql.PersistE
 }
 
 func TestCapturePersistedContainerUnrefinedBody(t *testing.T) {
-	for _, consumed := range []bool{false, true} {
+	for _, outputsSet := range []bool{false, true} {
 		name := "active"
-		if consumed {
-			name = "consumed-before-return"
+		if outputsSet {
+			name = "outputs-set-before-return"
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx, cache, srv, session := newContainerPartsTestCtx(t)
@@ -208,14 +208,13 @@ func TestCapturePersistedContainerUnrefinedBody(t *testing.T) {
 			defer finish()
 			op := &captureContainerWholeOp{LazyState: NewLazyState(), body: func(ctr *Container) {
 				ctr.Config.WorkingDir = "/half-written"
-				if consumed {
-					ctr.consumeLazyOp()
+				if outputsSet {
+					ctr.Config.WorkingDir = "/final"
 				}
 				close(entered)
 				<-allow
-				ctr.Config.WorkingDir = "/final"
-				if !consumed {
-					ctr.consumeLazyOp()
+				if !outputsSet {
+					ctr.Config.WorkingDir = "/final"
 				}
 			}}
 			ctr := NewContainer(Platform{OS: "linux", Architecture: "amd64"})

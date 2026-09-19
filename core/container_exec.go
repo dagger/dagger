@@ -131,6 +131,10 @@ func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) err
 	return ctr.evaluateAllLazyGroups(ctx, lazy)
 }
 
+func (lazy *ContainerExecLazy) IsEvaluated() bool {
+	return lazy != nil && lazy.State != nil && lazy.State.IsEvaluated()
+}
+
 func (lazy *ContainerExecLazy) ContainerLazyState() *LazyState {
 	return &lazy.State.LazyState
 }

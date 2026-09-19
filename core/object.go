@@ -608,13 +608,15 @@ func attachTypedModuleObjectValue(
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, ok := val.(dagql.AnyResult); ok {
+		// Handles must retain the attached reference so persistence can relocate
+		// them. Inline object maps keep their SDK representation while the
+		// attached result still supplies the dependency edge.
+		switch val.(type) {
+		case dagql.AnyResult, dagql.IDable, string:
 			return attached, []dagql.AnyResult{attached}, nil
+		default:
+			return val, []dagql.AnyResult{attached}, nil
 		}
-		if _, ok := val.(dagql.IDable); ok {
-			return attached, []dagql.AnyResult{attached}, nil
-		}
-		return val, []dagql.AnyResult{attached}, nil
 	default:
 		return val, nil, nil
 	}

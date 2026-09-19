@@ -78,7 +78,8 @@ func TestContainerExecSuccessConsumesFinalReadOnlyMount(t *testing.T) {
 	mountedSnapshot, ok := mountedDir.Snapshot.Peek()
 	require.True(t, ok)
 	require.Same(t, metaChild, mountedSnapshot)
-	require.Nil(t, child.lazyOpForRouting())
+	require.NotNil(t, child.lazyOpForRouting())
+	require.Nil(t, child.LazyEvalFunc())
 	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
 
 	encoded, err := child.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -26,6 +28,7 @@ type remoteCacheFixtureArgs struct {
 	Operation string
 	Path      string
 	IDs       dagql.ArrayInput[dagql.AnyID]
+	OutputIDs dagql.ArrayInput[dagql.AnyID] `name:"outputIDs"`
 }
 type remoteCacheFixtureMapping struct {
 	Ordinal  dagql.TransferOrdinal `json:"ordinal"`
@@ -71,7 +74,7 @@ func installRemoteCacheFixture(srv *dagql.Server) error {
 	}
 	dagql.Fields[*core.Query]{dagql.Func("_remoteCacheFixture", func(ctx context.Context, q *core.Query, args remoteCacheFixtureArgs) (core.JSON, error) {
 		return runRemoteCacheFixture(ctx, q, path, args)
-	}).Args(dagql.Arg("path").Default(dagql.String("")), dagql.Arg("ids").Default(dagql.ArrayInput[dagql.AnyID]{})).View(AllVersion).DoNotCache("Test fixture reads and mutates external state")}.Install(srv)
+	}).Args(dagql.Arg("path").Default(dagql.String("")), dagql.Arg("ids").Default(dagql.ArrayInput[dagql.AnyID]{}), dagql.Arg("outputIDs").Default(dagql.ArrayInput[dagql.AnyID]{})).View(AllVersion).DoNotCache("Test fixture reads and mutates external state")}.Install(srv)
 	return nil
 }
 
@@ -179,6 +182,52 @@ func fixtureMappings(bundle dagql.ValueBundle, values []dagql.ImportedValue) ([]
 	}
 	return out, nil
 }
+
+// ImportValues returns roots, after reserving one contiguous ID interval for
+// the closure and relocating ordinal n to firstID+n-1. The gated fixture also
+// reports dependency rows so observations can name exact imported operations.
+// Keep roots first for existing fixture callers that select the first root.
+func fixtureImportedMappings(bundle dagql.ValueBundle, roots []dagql.ImportedValue, rows []dagql.TransferFixtureRow) ([]remoteCacheFixtureMapping, error) {
+	if len(roots) == 0 || roots[0].ResultID < uint64(roots[0].Ordinal) {
+		return nil, fmt.Errorf("missing fixture import allocation")
+	}
+	base := roots[0].ResultID - uint64(roots[0].Ordinal)
+	seen := map[dagql.TransferOrdinal]bool{}
+	values := append([]dagql.ImportedValue(nil), roots...)
+	for _, root := range roots {
+		if root.ResultID != base+uint64(root.Ordinal) {
+			return nil, fmt.Errorf("inconsistent fixture import allocation")
+		}
+		seen[root.Ordinal] = true
+	}
+	byID := make(map[uint64]dagql.TransferFixtureRow, len(rows))
+	for _, row := range rows {
+		byID[row.ResultID] = row
+	}
+	hasNonRoot, validatedNonRoot := false, false
+	for _, value := range bundle.Values {
+		if !seen[value.Ordinal] {
+			hasNonRoot = true
+			id := base + uint64(value.Ordinal)
+			if row, ok := byID[id]; ok {
+				if !row.Imported || row.Call == nil || value.Record.Call == nil || row.Call.Field != value.Record.Call.Field || !reflect.DeepEqual(row.Call.Type, value.Record.Call.Type) {
+					return nil, fmt.Errorf("fixture non-root allocation mismatch at ordinal %d", value.Ordinal)
+				}
+				if ref := value.Record.Call.Receiver; ref != nil && ref.ResultID != 0 {
+					if row.Call.Receiver == nil || row.Call.Receiver.ResultID != base+ref.ResultID {
+						return nil, fmt.Errorf("fixture non-root receiver mismatch at ordinal %d", value.Ordinal)
+					}
+				}
+				validatedNonRoot = true
+			}
+			values = append(values, dagql.ImportedValue{Ordinal: value.Ordinal, ResultID: id})
+		}
+	}
+	if hasNonRoot && !validatedNonRoot {
+		return nil, fmt.Errorf("fixture import allocation lacks a reported non-root row")
+	}
+	return fixtureMappings(bundle, values)
+}
 func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 	dir, err := root.Open(".")
 	if err != nil {
@@ -220,6 +269,9 @@ func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 
 //nolint:gocyclo // one phase per fixture scenario kind; splitting hides the order of the phases
 func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args remoteCacheFixtureArgs) (core.JSON, error) {
+	if args.Operation != "export" && len(args.OutputIDs) != 0 {
+		return nil, fmt.Errorf("selected outputs require export")
+	}
 	switch args.Operation {
 	case "export":
 		if len(args.IDs) == 0 {
@@ -264,25 +316,52 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 			return nil, err
 		}
 	}
+	cache.EnableTransferFixtureParts()
+	cache.SetPartContentSource(fixturePartContentSource{path: path})
+	outputIDs := make([]*call.ID, len(args.OutputIDs))
+	for i, arg := range args.OutputIDs {
+		outputIDs[i], err = arg.ID()
+		if err != nil {
+			return nil, err
+		}
+	}
 	var response any
 	switch args.Operation {
 	case "export":
 		err = cache.WithTransferFixtureRoots(ctx, md.SessionID, ids, func(roots []dagql.AnyResult) error {
-			return cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: roots}, config.RefConfig{}, func(ctx context.Context, values *dagql.ExportedValues) error {
-				mapping, err := fixtureMappings(values.Bundle, values.Sources)
-				if err != nil {
-					return err
+			return cache.WithTransferFixtureRoots(ctx, md.SessionID, outputIDs, func(outputs []dagql.AnyResult) error {
+				selection := dagql.ValueSelection{Roots: roots}
+				for _, output := range outputs {
+					typ := output.Type().Name()
+					part := dagql.PartKey("snapshot")
+					switch typ {
+					case "Container":
+						part = core.ContainerPartFS
+					case "Directory", "File":
+					default:
+						return fmt.Errorf("selected fixture output must be Directory, File or Container")
+					}
+					selection.Outputs = append(selection.Outputs, dagql.SelectedValueOutput{Result: output, Address: dagql.PersistedPartAddress{Part: part}})
 				}
-				root, err := fixtureRoot(path, "bundles")
-				if err != nil {
-					return err
-				}
-				defer root.Close()
-				if err := writeFixtureJSON(ctx, root, args.Path, values.Bundle); err != nil {
-					return err
-				}
-				response = mapping
-				return nil
+				return cache.WithExportedValues(ctx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(ctx context.Context, values *dagql.ExportedValues) error {
+					if err := writeFixtureChains(ctx, path, values.Chains); err != nil {
+						return err
+					}
+					mapping, err := fixtureMappings(values.Bundle, values.Sources)
+					if err != nil {
+						return err
+					}
+					root, err := fixtureRoot(path, "bundles")
+					if err != nil {
+						return err
+					}
+					defer root.Close()
+					if err := writeFixtureJSON(ctx, root, args.Path, values.Bundle); err != nil {
+						return err
+					}
+					response = mapping
+					return nil
+				})
 			})
 		})
 	case "import":
@@ -307,7 +386,11 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		var values []dagql.ImportedValue
 		values, err = cache.ImportValues(ctx, bundle)
 		if err == nil {
-			response, err = fixtureMappings(bundle, values)
+			var report dagql.TransferFixtureReport
+			report, err = cache.TransferFixtureSnapshot(ctx, md.SessionID, nil)
+			if err == nil {
+				response, err = fixtureImportedMappings(bundle, values, report.Rows)
+			}
 		}
 	case "report":
 		var report remoteCacheFixtureReport

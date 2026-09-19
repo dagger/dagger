@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -1485,6 +1486,7 @@ const persistedDirectoryLazyKindGitTree = "gitTree"
 
 type DirectoryGitTreeLazy struct {
 	LazyState
+	ContentDigest digest.Digest
 	Ref           dagql.ObjectResult[*GitRef]
 	DiscardGitDir bool
 	Depth         int
@@ -1492,10 +1494,11 @@ type DirectoryGitTreeLazy struct {
 }
 
 type persistedDirectoryGitTreeLazy struct {
-	RefResultID   uint64 `json:"refResultID"`
-	DiscardGitDir bool   `json:"discardGitDir"`
-	Depth         int    `json:"depth"`
-	IncludeTags   bool   `json:"includeTags"`
+	ContentDigest digest.Digest `json:"contentDigest,omitempty"`
+	RefResultID   uint64        `json:"refResultID"`
+	DiscardGitDir bool          `json:"discardGitDir"`
+	Depth         int           `json:"depth"`
+	IncludeTags   bool          `json:"includeTags"`
 }
 
 func (p *persistedDirectoryGitTreeLazy) validate() error {
@@ -1505,6 +1508,9 @@ func (p *persistedDirectoryGitTreeLazy) validate() error {
 	return nil
 }
 func (lazy *DirectoryGitTreeLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	if err := deferGitTreeContentDigest(ctx, dir, lazy.ContentDigest); err != nil {
+		return err
+	}
 	return evaluateGitTreeInto(ctx, &lazy.LazyState, "GitRef.tree", dir, func(ctx context.Context, srv *dagql.Server) (*Directory, error) {
 		input := lazy.Ref.Self()
 		if input == nil || input.Ref == nil || input.Ref.SHA == "" {
@@ -1514,13 +1520,36 @@ func (lazy *DirectoryGitTreeLazy) Evaluate(ctx context.Context, dir *Directory) 
 	})
 }
 
+// A tree's recipe retains its credential-bearing ref until materialization.
+// Only successful materialization may equate outputs across those scopes.
+func deferGitTreeContentDigest(ctx context.Context, dir *Directory, contentDigest digest.Digest) error {
+	if contentDigest == "" || dir == nil || dir.PartHostBinding() == nil {
+		return nil
+	}
+	return dir.PartHostBinding().SetContentDigestAfterEvaluation(ctx, contentDigest, call.ExtraDigestLabelRemoteCache)
+}
+
+func deferPrivateGitTreeContentDigest(ctx context.Context, operation Lazy[*Directory]) error {
+	var contentDigest digest.Digest
+	switch lazy := operation.(type) {
+	case *DirectoryGitTreeLazy:
+		contentDigest = lazy.ContentDigest
+	case *DirectoryGitCommitTreeLazy:
+		contentDigest = lazy.ContentDigest
+	}
+	if contentDigest == "" {
+		return nil
+	}
+	return dagql.PartTaskFromContext(ctx).SetContentDigestAfterEvaluation(contentDigest, call.ExtraDigestLabelRemoteCache)
+}
+
 // evaluateGitTreeInto is the shared evaluation of the two git tree recipes:
 // validate the receiver, resolve the server, produce the tree into dir, and
 // release whatever the producer left unmoved.
 func evaluateGitTreeInto(ctx context.Context, state *LazyState, op string, dir *Directory, produce func(context.Context, *dagql.Server) (*Directory, error)) error {
 	var unmoved *Directory
-	err := state.Evaluate(ctx, op, func(ctx context.Context) error {
-		if err := validateProducedDirectoryReceiver(dir); err != nil {
+	err := dir.evaluateLazy(ctx, state, op, func(ctx context.Context) error {
+		if err := validateLazyDirectoryReceiver(dir); err != nil {
 			return err
 		}
 		srv, err := CurrentDagqlServer(ctx)
@@ -1537,20 +1566,20 @@ func evaluateGitTreeInto(ctx context.Context, state *LazyState, op string, dir *
 }
 
 func gitRefTreeInto(ctx context.Context, dst *Directory, input *GitRef, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
-	if err := validateProducedDirectoryReceiver(dst); err != nil {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return nil, err
 	}
 	src, err := input.Tree(ctx, srv, discardGitDir, depth, includeTags)
 	if err != nil {
 		return nil, err
 	}
-	if err := moveProducedDirectory(dst, src); err != nil {
+	if err := moveDirectoryOutput(dst, src); err != nil {
 		return src, err
 	}
 	return nil, nil
 }
 func (lazy *DirectoryGitTreeLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	ref, err := attachCompletedProducerInput(attach, lazy.Ref, "DirectoryGitTreeLazy.Ref")
+	ref, err := attachLazyInput(attach, lazy.Ref, "DirectoryGitTreeLazy.Ref")
 	if err != nil {
 		return nil, err
 	}
@@ -1562,7 +1591,7 @@ func (lazy *DirectoryGitTreeLazy) EncodePersisted(ctx context.Context, enc *dagq
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(persistedDirectoryGitTreeLazy{RefResultID: refID, DiscardGitDir: lazy.DiscardGitDir, Depth: lazy.Depth, IncludeTags: lazy.IncludeTags})
+	return json.Marshal(persistedDirectoryGitTreeLazy{ContentDigest: lazy.ContentDigest, RefResultID: refID, DiscardGitDir: lazy.DiscardGitDir, Depth: lazy.Depth, IncludeTags: lazy.IncludeTags})
 }
 func decodeDirectoryGitTreeLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
 	var p persistedDirectoryGitTreeLazy
@@ -1576,13 +1605,14 @@ func decodeDirectoryGitTreeLazy(ctx context.Context, dec *dagql.PersistDecodeCon
 	if err != nil {
 		return nil, err
 	}
-	return &DirectoryGitTreeLazy{LazyState: NewLazyState(), Ref: ref, DiscardGitDir: p.DiscardGitDir, Depth: p.Depth, IncludeTags: p.IncludeTags}, nil
+	return &DirectoryGitTreeLazy{LazyState: NewLazyState(), ContentDigest: p.ContentDigest, Ref: ref, DiscardGitDir: p.DiscardGitDir, Depth: p.Depth, IncludeTags: p.IncludeTags}, nil
 }
 
 const persistedDirectoryLazyKindGitCommitTree = "gitCommitTree"
 
 type DirectoryGitCommitTreeLazy struct {
 	LazyState
+	ContentDigest digest.Digest
 	Commit        dagql.ObjectResult[*GitCommit]
 	DiscardGitDir bool
 	Depth         int
@@ -1590,10 +1620,11 @@ type DirectoryGitCommitTreeLazy struct {
 }
 
 type persistedDirectoryGitCommitTreeLazy struct {
-	CommitResultID uint64 `json:"commitResultID"`
-	DiscardGitDir  bool   `json:"discardGitDir"`
-	Depth          int    `json:"depth"`
-	IncludeTags    bool   `json:"includeTags"`
+	ContentDigest  digest.Digest `json:"contentDigest,omitempty"`
+	CommitResultID uint64        `json:"commitResultID"`
+	DiscardGitDir  bool          `json:"discardGitDir"`
+	Depth          int           `json:"depth"`
+	IncludeTags    bool          `json:"includeTags"`
 }
 
 func (p *persistedDirectoryGitCommitTreeLazy) validate() error {
@@ -1603,6 +1634,9 @@ func (p *persistedDirectoryGitCommitTreeLazy) validate() error {
 	return nil
 }
 func (lazy *DirectoryGitCommitTreeLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	if err := deferGitTreeContentDigest(ctx, dir, lazy.ContentDigest); err != nil {
+		return err
+	}
 	return evaluateGitTreeInto(ctx, &lazy.LazyState, "GitCommit.tree", dir, func(ctx context.Context, srv *dagql.Server) (*Directory, error) {
 		input := lazy.Commit.Self()
 		if input == nil || input.Ref == nil || input.Ref.SHA == "" {
@@ -1613,20 +1647,20 @@ func (lazy *DirectoryGitCommitTreeLazy) Evaluate(ctx context.Context, dir *Direc
 }
 
 func gitCommitTreeInto(ctx context.Context, dst *Directory, input *GitCommit, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
-	if err := validateProducedDirectoryReceiver(dst); err != nil {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return nil, err
 	}
 	src, err := input.Tree(ctx, srv, discardGitDir, depth, includeTags)
 	if err != nil {
 		return nil, err
 	}
-	if err := moveProducedDirectory(dst, src); err != nil {
+	if err := moveDirectoryOutput(dst, src); err != nil {
 		return src, err
 	}
 	return nil, nil
 }
 func (lazy *DirectoryGitCommitTreeLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	commit, err := attachCompletedProducerInput(attach, lazy.Commit, "DirectoryGitCommitTreeLazy.Commit")
+	commit, err := attachLazyInput(attach, lazy.Commit, "DirectoryGitCommitTreeLazy.Commit")
 	if err != nil {
 		return nil, err
 	}
@@ -1638,7 +1672,7 @@ func (lazy *DirectoryGitCommitTreeLazy) EncodePersisted(ctx context.Context, enc
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(persistedDirectoryGitCommitTreeLazy{CommitResultID: commitID, DiscardGitDir: lazy.DiscardGitDir, Depth: lazy.Depth, IncludeTags: lazy.IncludeTags})
+	return json.Marshal(persistedDirectoryGitCommitTreeLazy{ContentDigest: lazy.ContentDigest, CommitResultID: commitID, DiscardGitDir: lazy.DiscardGitDir, Depth: lazy.Depth, IncludeTags: lazy.IncludeTags})
 }
 func decodeDirectoryGitCommitTreeLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
 	var p persistedDirectoryGitCommitTreeLazy
@@ -1652,5 +1686,5 @@ func decodeDirectoryGitCommitTreeLazy(ctx context.Context, dec *dagql.PersistDec
 	if err != nil {
 		return nil, err
 	}
-	return &DirectoryGitCommitTreeLazy{LazyState: NewLazyState(), Commit: commit, DiscardGitDir: p.DiscardGitDir, Depth: p.Depth, IncludeTags: p.IncludeTags}, nil
+	return &DirectoryGitCommitTreeLazy{LazyState: NewLazyState(), ContentDigest: p.ContentDigest, Commit: commit, DiscardGitDir: p.DiscardGitDir, Depth: p.Depth, IncludeTags: p.IncludeTags}, nil
 }

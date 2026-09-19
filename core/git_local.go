@@ -122,7 +122,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 }
 
 func (repo *LocalGitRepository) cleanedInto(ctx context.Context, dst *Directory) (unchanged bool, rerr error) {
-	if err := validateProducedDirectoryReceiver(dst); err != nil {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
 		return false, err
 	}
 	query, err := CurrentQuery(ctx)
@@ -426,30 +426,50 @@ func (p *persistedDirectoryGitCleanedLazy) validate() error {
 	}
 	return nil
 }
+
+var errGitCleanedUnchanged = errors.New("git cleaned input has no worktree")
+
 func (lazy *DirectoryGitCleanedLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "GitRepository.__cleaned", func(ctx context.Context) error {
-		if err := validateProducedDirectoryReceiver(dir); err != nil {
+	err := lazy.evaluate(ctx, dir)
+	if errors.Is(err, errGitCleanedUnchanged) {
+		return fmt.Errorf("git cleaned operation: saved input has no worktree")
+	}
+	return err
+}
+
+// EvaluateForCall preserves the no-worktree alias before publishing this shell.
+func (lazy *DirectoryGitCleanedLazy) EvaluateForCall(ctx context.Context, dir *Directory) (bool, error) {
+	err := lazy.evaluate(ctx, dir)
+	if errors.Is(err, errGitCleanedUnchanged) {
+		return true, nil
+	}
+	return false, err
+}
+
+func (lazy *DirectoryGitCleanedLazy) evaluate(ctx context.Context, dir *Directory) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "GitRepository.__cleaned", func(ctx context.Context) error {
+		if err := validateLazyDirectoryReceiver(dir); err != nil {
 			return err
 		}
 		if lazy.Repo.Self() == nil {
-			return fmt.Errorf("git cleaned producer: missing Repo")
+			return fmt.Errorf("git cleaned operation: missing Repo")
 		}
 		local, ok := lazy.Repo.Self().Backend.(*LocalGitRepository)
 		if !ok {
-			return fmt.Errorf("git cleaned producer: Repo is not local")
+			return fmt.Errorf("git cleaned operation: Repo is not local")
 		}
 		unchanged, err := local.cleanedInto(ctx, dir)
 		if err != nil {
 			return err
 		}
 		if unchanged {
-			return fmt.Errorf("git cleaned producer: saved input has no worktree")
+			return errGitCleanedUnchanged
 		}
 		return nil
 	})
 }
 func (lazy *DirectoryGitCleanedLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
-	repo, err := attachCompletedProducerInput(attach, lazy.Repo, "DirectoryGitCleanedLazy.Repo")
+	repo, err := attachLazyInput(attach, lazy.Repo, "DirectoryGitCleanedLazy.Repo")
 	if err != nil {
 		return nil, err
 	}

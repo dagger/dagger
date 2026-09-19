@@ -45,7 +45,7 @@ func awaitContainerPersistenceLatch(t *testing.T, done <-chan error) {
 		}
 		buf := make([]byte, 256<<10)
 		for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
-			if strings.Contains(stack, "[sync.Mutex.Lock]") && strings.Contains(stack, "(*Container).lockForPersistence(") {
+			if strings.Contains(stack, "[sync.Mutex.Lock]") && strings.Contains(stack, "(*Container).lockLazyForPersistence(") {
 				waiting = stack
 				return true
 			}
@@ -80,8 +80,9 @@ func TestContainerShutdownPersistenceWaitsForReader(t *testing.T) {
 			require.NoError(t, op.EvaluateContainerGroup(ctx, ctr, ContainerLazyGroupMetadata))
 			if completed {
 				require.NoError(t, ctr.Evaluate(ctx))
-				require.Nil(t, ctr.lazyOpForRouting())
-				require.Same(t, op, ctr.completedRecipe)
+				require.NotNil(t, ctr.lazyOpForRouting())
+				require.Nil(t, ctr.LazyEvalFunc())
+				require.Same(t, op, ctr.Lazy)
 			}
 			res := env.attach(t, ctx, cache, srv, "withLabel", ctr)
 			before, err := cache.CapturePersistedRecord(ctx, res)
@@ -129,17 +130,17 @@ func TestContainerShutdownPersistenceWaitsForReader(t *testing.T) {
 			require.NoError(t, err)
 			after, err := cache.CapturePersistedRecord(ctx, loaded)
 			require.NoError(t, err)
-			require.Equal(t, before.Envelope, after.Envelope, "producer inputs and pending/completed payloads survive")
+			require.Equal(t, before.Envelope, after.Envelope, "operation inputs and pending/completed payloads survive")
 			require.Equal(t, before.SnapshotLinks, after.SnapshotLinks)
 			if completed {
 				found := false
 				for _, row := range cache.DebugEGraphSnapshot().Results {
 					if row.SharedResultID == parentID {
 						found = true
-						require.False(t, row.HasValue, "loading a completed producer must not decode its parent")
+						require.False(t, row.HasValue, "loading a completed operation must not decode its parent")
 					}
 				}
-				require.True(t, found, "the original producer dependency remains retained")
+				require.True(t, found, "the original operation dependency remains retained")
 			}
 		})
 	}

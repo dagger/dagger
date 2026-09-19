@@ -11,9 +11,9 @@ A lookup or a metadata read does not download filesystem contents. When an exist
 ## Implementation order
 
 1. Retain the implemented value codecs and declared-reference visitor described in [persisted-value-graphs.md](persisted-value-graphs.md).
-2. Preserve original filesystem-producing inputs after completion and replace the synthetic Changeset output with an ordinary named producer. See [saved-filesystem-producers.md](saved-filesystem-producers.md).
+2. Preserve original filesystem-producing inputs after completion and replace the synthetic Changeset output with an ordinary named Lazy operation. See [lazy-values.md](lazy-values.md).
 3. Describe selected live rows and admit the relocated metadata into another live cache. See [live-cache-descriptions.md](live-cache-descriptions.md).
-4. Use supplied snapshot chains from existing lazy evaluation, falling back to the original producer. See [remote-cache-acquisition.md](remote-cache-acquisition.md).
+4. Use supplied snapshot chains from existing lazy evaluation, falling back to the original Lazy operation. See [remote-cache-acquisition.md](remote-cache-acquisition.md).
 5. Complete the originally requested from-image metadata path without unpacking layers. Check existing implementation first. Lookup preference is a separate unresolved choice: the original D15 records a lean toward available, then downloadable, then runnable results. Do not change selection policy without resolving that choice with Erik.
 
 Extra-digest transfer uses the small annotation Erik requested: keep safe useful extras such as pinned image identities; omit content-derived extras from transfer. Describing a chain does not establish that its bytes are available on B. Attaching an identity after downloading actual content is outside this initial work. Local digest merging and teaching keep their current meaning. A layer digest is not the existing tree-content digest.

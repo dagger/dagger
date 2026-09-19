@@ -67,7 +67,7 @@ func (obj *cacheTestPartsObject) PersistedSnapshotRefLinks() []PersistedSnapshot
 	}
 	obj.mu.Lock()
 	defer obj.mu.Unlock()
-	return append([]PersistedSnapshotRefLink(nil), obj.snapshotLinks...)
+	return cloneSnapshotRefLinks(obj.snapshotLinks)
 }
 
 func (obj *cacheTestPartsObject) LazyEvalFunc() LazyEvalFunc {
@@ -868,9 +868,8 @@ func waitForCondition(t *testing.T, cond func() bool, description string) {
 	t.Fatalf("timed out waiting for %s", description)
 }
 
-// partsTestConsumptionAwareResolve mirrors the container's real resolver
-// shape after full consumption: once every group's work is consumed (the
-// container.Lazy == nil analog) it under-reports and returns zero
+// partsTestConsumptionAwareResolve models a resolver that omits consumed
+// groups: once every group's work is consumed it returns zero
 // groups. Cache-side state can still be pending at that point (a body
 // consumed its work while its attempt's bookkeeping failed or is in
 // flight), and the cache must not treat empty resolution as completion.

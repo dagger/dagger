@@ -542,11 +542,18 @@ func (GitSuite) TestCrossSessionGitRepositoryIdentity(ctx context.Context, t *te
 	// reconstruction) re-executes for every new CLI process.
 	const repoURL = "https://github.com/dagger/dagger"
 
-	c1 := connect(ctx, t)
+	newPinnedClient := func(commit string) *dagger.Client {
+		workdir := t.TempDir()
+		hostGitInit(t, workdir)
+		writeEmptyWorkspaceConfig(t, workdir)
+		writeGitRefLock(t, workdir, "git.ref", "main", commit)
+		return connect(ctx, t, dagger.WithWorkdir(workdir))
+	}
+	c1 := newPinnedClient(lockTestGitBranchCommit)
 	id1, err := c1.Git(repoURL).ID(ctx)
 	require.NoError(t, err)
 
-	c2 := connect(ctx, t)
+	c2 := newPinnedClient(lockTestGitStaleCommit)
 	id2, err := c2.Git(repoURL).ID(ctx)
 	require.NoError(t, err)
 
@@ -563,8 +570,15 @@ func (GitSuite) TestCrossSessionGitRepositoryIdentity(ctx context.Context, t *te
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref2)
 
-	// A named ref can resolve through the calling client's workspace lock, so
-	// its lookup stays per client even though the repository is shared.
+	// Named refs must consult each client's workspace lock. Equal pins may
+	// share a result, but these different pins must resolve to different commits.
+	commit1, err := c1.Git(repoURL).Ref("main").CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, lockTestGitBranchCommit, commit1)
+	commit2, err := c2.Git(repoURL).Ref("main").CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, lockTestGitStaleCommit, commit2)
+	require.NotEqual(t, commit1, commit2)
 	main1, err := c1.Git(repoURL).Ref("main").ID(ctx)
 	require.NoError(t, err)
 	main2, err := c2.Git(repoURL).Ref("main").ID(ctx)

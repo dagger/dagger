@@ -554,7 +554,7 @@ func TestCachePersistenceSchemaMismatchWipesStore(t *testing.T) {
 
 	db, q, err := prepareCacheDBs(ctx, dbPath)
 	assert.NilError(t, err)
-	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, "old-schema"))
+	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, "20"))
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"))
 	assert.NilError(t, closeCacheDBs(db, q))
 

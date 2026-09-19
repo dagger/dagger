@@ -44,10 +44,9 @@ type File struct {
 	stored            *storedSnapshot
 	Lazy              Lazy[*File]
 
-	// Keep the producer independently of the operational lazy pointer.
-	completedRecipe     Lazy[*File]
-	completedRecipeKind string
-	completedRecipeJSON json.RawMessage
+	// Retained operation bytes for snapshot restore and acquired values.
+	lazyKind string
+	lazyJSON json.RawMessage
 
 	File     *LazyAccessor[string, *File]
 	Snapshot *LazyAccessor[bkcache.ImmutableRef, *File]
@@ -104,31 +103,23 @@ func (file *File) AttachDependencyResultsKinds(
 	if file == nil {
 		return nil, nil
 	}
-	return attachFilesystemDependencyResultsKinds(ctx, "file", file.Services, file.Lazy, file.completedRecipe, attach)
+	return attachFilesystemDependencyResultsKinds(ctx, "file", file.Services, file.Lazy, attach)
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
 	if file == nil {
 		return nil
 	}
-	file.outputMu.Lock()
-	pending, lazy := file.transferPending != nil, file.Lazy
-	file.outputMu.Unlock()
-	if pending {
-		return func(context.Context) error { return fmt.Errorf("%w: File.snapshot", dagql.ErrUnavailablePart) }
-	}
-	if lazy == nil {
-		return nil
-	}
-	return func(ctx context.Context) error {
-		if err := lazy.Evaluate(ctx, file); err != nil {
-			return err
+	return file.filesystemOutput.lazyEvalFunc("File", func() (bool, *lazyEvalBody) {
+		lazy := file.Lazy
+		if lazy == nil {
+			return file.transferPending != nil, nil
 		}
-		file.outputMu.Lock()
-		defer file.outputMu.Unlock()
-		file.finishLazyLocked(lazy)
-		return nil
-	}
+		return file.transferPending != nil, &lazyEvalBody{
+			evaluated: lazy.IsEvaluated,
+			evaluate:  func(ctx context.Context) error { return lazy.Evaluate(ctx, file) },
+		}
+	})
 }
 
 func ParseFileOwner(owner string) (*Ownership, error) {
@@ -136,6 +127,15 @@ func ParseFileOwner(owner string) (*Ownership, error) {
 }
 
 func (file *File) snapshotIdentity() (string, bool) {
+	if file == nil {
+		return "", false
+	}
+	file.outputMu.Lock()
+	defer file.outputMu.Unlock()
+	return file.snapshotIdentityLocked()
+}
+
+func (file *File) snapshotIdentityLocked() (string, bool) {
 	if file == nil {
 		return "", false
 	}
@@ -197,14 +197,14 @@ const (
 )
 
 type persistedFilePayload struct {
-	ValueKnown    bool                      `json:"valueKnown,omitempty"`
-	ProducerState string                    `json:"producerState,omitempty"`
-	Form          string                    `json:"form"`
-	File          string                    `json:"file,omitempty"`
-	Platform      Platform                  `json:"platform"`
-	Services      []persistedServiceBinding `json:"services,omitempty"`
-	LazyKind      string                    `json:"lazyKind,omitempty"`
-	LazyJSON      json.RawMessage           `json:"lazyJSON,omitempty"`
+	ValueKnown     bool                      `json:"valueKnown,omitempty"`
+	OperationState string                    `json:"operationState,omitempty"`
+	Form           string                    `json:"form"`
+	File           string                    `json:"file,omitempty"`
+	Platform       Platform                  `json:"platform"`
+	Services       []persistedServiceBinding `json:"services,omitempty"`
+	LazyKind       string                    `json:"lazyKind,omitempty"`
+	LazyJSON       json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
 func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
@@ -237,12 +237,12 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 		Platform:   file.Platform,
 		Services:   services,
 	}
-	if identity, ok := file.snapshotIdentity(); ok {
+	if identity, ok := file.snapshotIdentityLocked(); ok {
 		payload.Form = persistedFileFormSnapshot
-		payload.LazyKind = file.completedRecipeKind
-		payload.LazyJSON = file.completedRecipeJSON
-		recipe := file.completedRecipe
-		if recipe == nil && file.Lazy != nil {
+		payload.LazyKind = file.lazyKind
+		payload.LazyJSON = file.lazyJSON
+		var recipe Lazy[*File]
+		if file.Lazy != nil {
 			if _, restored := file.Lazy.(*FileRestoreLazy); !restored {
 				recipe = file.Lazy
 			}
@@ -323,8 +323,8 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 			return nil, err
 		}
 		file.stored = &storedSnapshot{SnapshotID: link.RefKey}
-		file.completedRecipeKind = persisted.LazyKind
-		file.completedRecipeJSON = slices.Clone(persisted.LazyJSON)
+		file.lazyKind = persisted.LazyKind
+		file.lazyJSON = slices.Clone(persisted.LazyJSON)
 		file.storedDiagnostics = newStoredSnapshotDiagnostics()
 		file.SetPath(persisted.File)
 		file.Lazy = &FileRestoreLazy{LazyState: NewLazyState()}
@@ -543,7 +543,7 @@ func decodePersistedFileLazy(ctx context.Context, dec *dagql.PersistDecodeContex
 }
 
 func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.blob", func(ctx context.Context) (rerr error) {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.blob", func(ctx context.Context) (rerr error) {
 		if dir, _ := filepath.Split(lazy.Filename); dir != "" {
 			return fmt.Errorf("file name %q must not contain a directory", lazy.Filename)
 		}
@@ -563,6 +563,7 @@ func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
 		if err != nil {
 			return fmt.Errorf("create blob scratch snapshot: %w", err)
 		}
+		defer func() { rerr = errors.Join(rerr, scratch.Release(context.WithoutCancel(ctx))) }()
 		newRef, err := query.SnapshotManager().New(
 			ctx,
 			scratch,
@@ -612,7 +613,7 @@ func (lazy *FileBlobLazy) EncodePersisted(context.Context, *dagql.PersistEncodeC
 }
 
 func (lazy *FileSubfileLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.file", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.file", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
@@ -680,7 +681,7 @@ func (lazy *FileSubfileLazy) EncodePersisted(ctx context.Context, enc *dagql.Per
 }
 
 func (lazy *FileWithReplacedLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.withReplaced", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.withReplaced", func(ctx context.Context) error {
 		return file.WithReplaced(ctx, lazy.Parent, lazy.Search, lazy.Replacement, lazy.FirstFrom, lazy.All)
 	})
 }
@@ -709,7 +710,7 @@ func (lazy *FileWithReplacedLazy) EncodePersisted(ctx context.Context, enc *dagq
 }
 
 func (lazy *FileWithNameLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.withName", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.withName", func(ctx context.Context) error {
 		return file.WithName(ctx, lazy.Parent, lazy.Filename)
 	})
 }
@@ -732,7 +733,7 @@ func (lazy *FileWithNameLazy) EncodePersisted(ctx context.Context, enc *dagql.Pe
 }
 
 func (lazy *FileWithTimestampsLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.withTimestamps", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.withTimestamps", func(ctx context.Context) error {
 		return file.WithTimestamps(ctx, lazy.Parent, lazy.Timestamp)
 	})
 }
@@ -755,7 +756,7 @@ func (lazy *FileWithTimestampsLazy) EncodePersisted(ctx context.Context, enc *da
 }
 
 func (lazy *FileChownLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.chown", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.chown", func(ctx context.Context) error {
 		return file.Chown(ctx, lazy.Parent, lazy.Owner)
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,6 +36,7 @@ type transferFixtureMapping struct {
 }
 type transferFixtureReport struct {
 	Persistence enginecore.RemoteCacheFixturePersistence `json:"persistence"`
+	Parts       []dagql.TransferFixturePartEvent         `json:"parts"`
 	Rows        []dagql.TransferFixtureRow               `json:"rows"`
 	Bodies      []struct {
 		Parent, Function, Client string
@@ -53,6 +55,17 @@ func transferFixture(ctx context.Context, client *dagger.Client, op, path string
 	return json.Unmarshal([]byte(data.Value), out)
 }
 
+func transferFixtureSelected(ctx context.Context, client *dagger.Client, path string, ids, outputs []string, out any) error {
+	var data struct {
+		Value string `json:"_remoteCacheFixture"`
+	}
+	err := client.Do(ctx, &dagger.Request{Query: `query($path:String!,$ids:[ID!]!,$outputs:[ID!]!){_remoteCacheFixture(operation:"export",path:$path,ids:$ids,outputIDs:$outputs)}`, Variables: map[string]any{"path": path, "ids": ids, "outputs": outputs}}, &dagger.Response{Data: &data})
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(data.Value), out)
+}
+
 const transferProbeSource = `package main
 import (
  "context"
@@ -63,7 +76,7 @@ type CacheProbe struct{}
 type Code string
 type Status string
 const Ready Status = "READY"
-type Report struct { Seed string; Code Code; Status Status; Platform dagger.Platform }
+type Report struct { Seed string; Code Code; Status Status; Platform dagger.Platform; Artifact *dagger.Directory }
 type Named interface { DaggerObject; Seed(context.Context)(string,error) }
 func(m *CacheProbe) Echo(ctx context.Context, item Named)(Named,error){
  if err:=recordBody(ctx);err!=nil{return nil,err}; return item,nil
@@ -79,7 +92,7 @@ func recordBody(ctx context.Context) error {
 }
 func(m *CacheProbe) Report(ctx context.Context, seed string)(*Report,error){
  if err:=recordBody(ctx);err!=nil{return nil,err}
- return &Report{Seed:seed,Code:Code(seed),Status:Ready,Platform:dagger.Platform("linux/amd64")},nil
+ return &Report{Seed:seed,Code:Code(seed),Status:Ready,Platform:dagger.Platform("linux/amd64"),Artifact:dag.Directory().WithNewFile("payload.txt", "selected artifact:"+seed)},nil
 }
 func(r *Report) NoteFile(ctx context.Context,
  // +defaultPath="notes.txt"
@@ -102,7 +115,6 @@ func (RemoteCacheTransferSuite) TestSchemaRecovery(ctx context.Context, t *testc
 }
 
 func (RemoteCacheTransferSuite) TestSchemaRecoveryCold(ctx context.Context, t *testctx.T) {
-	t.Skip("addendum 2: fully cold import needs batch 4 acquisition through local-equivalent selection or the batch 1 builtin producer; batch 7 owns acceptance")
 	runTransferSchemaRecovery(ctx, t, true, false)
 }
 
@@ -115,7 +127,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".dagger"), 0755))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "dagger.json"), []byte(`{"name":"cache-probe","engineVersion":"latest","sdk":{"source":"go"},"source":".dagger"}`), 0644))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, ".dagger", "main.go"), []byte(transferProbeSource), 0644))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("producer notes"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("operation notes"), 0644))
 		return dir
 	}
 	type running struct {
@@ -159,20 +171,27 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, err)
 		return e
 	}
+	var lastArtifactID string
 	callReport := func(t *testctx.T, client *dagger.Client, seed string) string {
 		var data struct {
 			Probe struct {
 				Report struct {
 					ID                           string
 					Seed, Code, Status, Platform string
+					Artifact                     struct {
+						ID   string
+						File struct{ Contents string }
+					}
 				}
 			} `json:"cacheProbe"`
 		}
-		require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($seed:String!){cacheProbe{report(seed:$seed){id seed code status platform}}}`, Variables: map[string]any{"seed": seed}}, &dagger.Response{Data: &data}))
+		require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($seed:String!){cacheProbe{report(seed:$seed){id seed code status platform artifact{id file(path:"payload.txt"){contents}}}}}`, Variables: map[string]any{"seed": seed}}, &dagger.Response{Data: &data}))
 		require.Equal(t, seed, data.Probe.Report.Seed)
 		require.Equal(t, seed, data.Probe.Report.Code)
 		require.Equal(t, "READY", data.Probe.Report.Status)
 		require.Equal(t, "linux/amd64", data.Probe.Report.Platform)
+		require.Equal(t, "selected artifact:"+seed, data.Probe.Report.Artifact.File.Contents)
+		lastArtifactID = data.Probe.Report.Artifact.ID
 		return data.Probe.Report.ID
 	}
 	countBody := func(t *testctx.T, client *dagger.Client, function string) uint64 {
@@ -194,13 +213,16 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	aID := callReport(t, a.client, "same")
 	require.Equal(t, uint64(1), countBody(t, a.client, "report"))
 	var source []transferFixtureMapping
-	require.NoError(t, transferFixture(ctx, a.client, "export", "report.json", []string{aID}, &source))
+	require.NoError(t, transferFixtureSelected(ctx, a.client, "report.json", []string{aID}, []string{lastArtifactID}, &source))
 	require.NotEmpty(t, source)
 	// The same contextual call succeeds on the native object without import.
 	var native struct{ Node struct{ NoteFile string } }
 	require.NoError(t, a.client.Do(ctx, &dagger.Request{Query: `query($id:ID!){node(id:$id){... on CacheProbeReport{noteFile}}}`, Variables: map[string]any{"id": aID}}, &dagger.Response{Data: &native}))
-	require.Equal(t, "producer notes", native.Node.NoteFile)
+	require.Equal(t, "operation notes", native.Node.NoteFile)
 	orders := []string{"before", "after"}
+	if cold {
+		orders = []string{"before"}
+	}
 	if defaultGC {
 		orders = []string{"after"}
 	}
@@ -211,26 +233,69 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			bState := "b2-transfer-b-state-" + identity.NewID()
 			b := start(t, bState, bVolume, bDir)
 			defer func() { stop(t, b) }()
-			operational := b.client.ModuleSource(".").AsModule()
+			var operational *dagger.Module
 			var err error
 			if !cold {
+				operational = b.client.ModuleSource(".").AsModule()
 				operational, err = operational.Sync(ctx)
 				require.NoError(t, err)
+				// Schema Files now use FileBlobLazy, so warming the SDK no longer
+				// evaluates an ordinary empty Directory as an incidental input.
+				// Warm that local donor explicitly for both import orders.
+				warmScratch, err := b.client.Directory().Sync(ctx)
+				require.NoError(t, err)
+				warmScratchID, err := warmScratch.ID(ctx)
+				require.NoError(t, err)
+				var warmReport transferFixtureReport
+				require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{string(warmScratchID)}, &warmReport))
+				require.Len(t, warmReport.Rows, 1)
+				warmRow := warmReport.Rows[0]
+				require.False(t, warmRow.Imported)
+				require.NotNil(t, warmRow.Call)
+				require.Equal(t, "directory", warmRow.Call.Field)
+				require.Nil(t, warmRow.Call.Receiver)
+				require.Len(t, warmRow.SnapshotLinks, 1)
+				require.Equal(t, "snapshot", warmRow.SnapshotLinks[0].Role)
+				require.NotEmpty(t, warmRow.SnapshotLinks[0].RefKey)
+				t.Logf("acquisition warm scratch donor row=%d ref=%s order=%s", warmRow.ResultID, warmRow.SnapshotLinks[0].RefKey, order)
 			}
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"))
 			if order == "after" {
 				require.NoError(t, operational.Serve(ctx))
 			}
 			_, err = outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
-				WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/report.json /destination/bundles/report.json"}).Sync(ctx)
+				WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/report.json /destination/bundles/report.json; cp -a /source/blobs /destination/"}).Sync(ctx)
 			require.NoError(t, err)
 			var imported []transferFixtureMapping
 			require.NoError(t, transferFixture(ctx, b.client, "import", "report.json", []string{}, &imported))
+			t.Logf("acquisition imported closure rows=%d cold=%t order=%s", len(imported), cold, order)
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"))
 			if order == "before" {
+				if cold {
+					operational = b.client.ModuleSource(".").AsModule()
+				}
 				require.NoError(t, operational.Serve(ctx))
 			}
 			saved := callReport(t, b.client, "same")
+			var acquisition transferFixtureReport
+			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
+			counters := map[string]int{}
+			builtinRoute := 0
+			for _, event := range acquisition.Parts {
+				counters[event.Kind]++
+				if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
+					builtinRoute++
+				}
+			}
+			require.Positive(t, counters["provider-read"], "selected artifact must read its transferred chain")
+			require.Positive(t, counters["installed-chain"])
+			require.Positive(t, counters["owner-sync"])
+			require.Positive(t, counters["settled"])
+			if cold {
+				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
+				assertColdPartDelegation(t, acquisition)
+			}
+			t.Logf("acquisition route counters cold=%t builtin=%d counts=%v", cold, builtinRoute, counters)
 			var echoed struct {
 				Probe struct{ Echo struct{ Seed string } } `json:"cacheProbe"`
 			}
@@ -240,6 +305,16 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"), "ordinary call must use transferred result")
 			callReport(t, b.client, "different")
 			require.Equal(t, uint64(1), countBody(t, b.client, "report"), "changed argument enters function")
+			t.Logf("acquisition changed-argument control cold=%t report-body-count=1", cold)
+			// The scratch demand happens inside the changed-argument body, after
+			// the earlier acquisition report was captured.
+			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
+			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold)
+			entries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(scratchHandle)).Entries(ctx)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
+			assertScratchAcquisition(t, acquisition, imported, cold)
 			reportType := ""
 			for _, value := range imported {
 				if strings.HasSuffix(value.Type.NamedType, "Report") {
@@ -263,6 +338,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.Len(t, checkpoint.Rows, 1)
 			require.True(t, checkpoint.Rows[0].Imported)
 			require.True(t, checkpoint.Rows[0].Persisted)
+			t.Logf("acquisition later controls cold=%t noteFile=passed bound-tool=passed saved-row=%d persisted=true", cold, checkpoint.Rows[0].ResultID)
 			if defaultGC {
 				// A bounded temporary file outside engine state supplies actual disk
 				// pressure; the default policy and imported root remain unchanged.
@@ -323,6 +399,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.NoError(t, b.client.ModuleSource(".").AsModule().Serve(ctx))
 			loadNotes("noteDirectory", "consumer directory notes after restart")
 			require.Equal(t, uint64(1), countBody(t, b.client, "report"))
+			t.Logf("acquisition clean-restart control cold=%t saved-row=%d noteDirectory=passed report-body-count=1", cold, restored.Rows[0].ResultID)
 			// Create a higher native comparison row after import, then read its
 			// result from a client with no installed module candidates.
 			writer, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
@@ -368,6 +445,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			text := transferContextTool(ctx, t, bare, nativeID)
 			require.Contains(t, text, "consumer directory notes after restart")
 			require.NotContains(t, text, "local module context belongs to another engine")
+			t.Logf("acquisition native-recorded-module control cold=%t recorded-row=%d lower-imported-equivalent=true passed", cold, recorded)
 		})
 	}
 
@@ -444,6 +522,174 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		// The recorded row is ineligible; its earlier imported equivalent is used.
 		assertForeign(importBundle("expired.json"))
 	})
+}
+
+func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, imported []transferFixtureMapping, cold bool) string {
+	t.Helper()
+	mapping := map[uint64]transferFixtureMapping{}
+	for _, value := range imported {
+		mapping[value.ResultID] = value
+	}
+	var scratch *dagql.TransferFixtureRow
+	for i := range report.Rows {
+		row := &report.Rows[i]
+		if _, ok := mapping[row.ResultID]; !ok || !row.Imported || row.Call == nil || row.Call.Type.NamedType != "Directory" || row.Call.Field != "directory" || row.Call.Receiver != nil {
+			continue
+		}
+		require.Nil(t, scratch, "ambiguous imported Query.directory row")
+		scratch = row
+	}
+	require.NotNil(t, scratch)
+	platform := ""
+	for _, input := range scratch.Call.ImplicitInputs {
+		if input.Name == "engineDefaultPlatform" {
+			platform = input.Value.StringValue
+		}
+	}
+	require.Equal(t, "linux/amd64", platform)
+	entries := 0
+	for _, event := range report.Parts {
+		if event.ResultID != scratch.ResultID {
+			continue
+		}
+		require.NotEqual(t, "provider-read", event.Kind)
+		require.NotEqual(t, "selected-chain", event.Kind)
+		if event.Kind == "lazy-enter" {
+			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, event.Address)
+			entries++
+		}
+	}
+	want := 0
+	if cold {
+		want = 1
+	}
+	require.Equal(t, want, entries, "scratch saved-operation entries")
+	t.Logf("acquisition scratch cold=%t ordinal=%d row=%d address={\"part\":\"snapshot\"} group=%s platform=%s lazy-enter=%d provider-reads=0", cold, mapping[scratch.ResultID].Ordinal, scratch.ResultID, dagql.LazyGroupWhole, platform, entries)
+	return mapping[scratch.ResultID].Handle
+}
+
+// Keep acquisition hops separate from body entries. Every observation is
+// keyed by the exact row and full address, not an aggregate field-name count.
+func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
+	t.Helper()
+	rows := map[uint64]dagql.TransferFixtureRow{}
+	for _, row := range report.Rows {
+		rows[row.ResultID] = row
+	}
+	type key struct {
+		row     uint64
+		address string
+	}
+	keyOf := func(event dagql.TransferFixturePartEvent) key {
+		raw, err := json.Marshal(event.Address)
+		require.NoError(t, err)
+		return key{event.ResultID, string(raw)}
+	}
+	selected, installed, operations := map[key]int{}, map[key]int{}, map[key]int{}
+	fsFields := map[string]int{}
+	mountWriters := map[string]int{}
+	for _, event := range report.Parts {
+		k := keyOf(event)
+		if event.Kind == "lazy-enter" {
+			operations[k]++
+		}
+		if event.Kind != "selected-delegation" && event.Kind != "installed-delegation" {
+			require.Nil(t, event.Source, "ordinary events cannot carry delegation provenance")
+			continue
+		}
+		require.NotNil(t, event.Source)
+		row := rows[event.ResultID]
+		require.NotNil(t, row.Call)
+		require.NotNil(t, row.Call.Receiver)
+		require.Equal(t, row.Call.Receiver.ResultID, event.Source.ResultID)
+		require.Contains(t, row.DependencyIDs, event.Source.ResultID)
+		require.Equal(t, event.Address.Part, event.Source.Address.Part)
+		require.Empty(t, event.Source.Address.OutputPath)
+		require.NotEqual(t, dagql.PartKey("metadata"), event.Address.Part)
+		if event.Kind == "selected-delegation" {
+			selected[k]++
+			continue
+		}
+		installed[k]++
+		if event.Address.Part == "fs" {
+			fsFields[event.Field]++
+		}
+		t.Logf("acquisition delegation target=%d address=%s field=%s parent=%d source=%+v", event.ResultID, k.address, event.Field, event.Source.ResultID, event.Source.Address)
+	}
+	for k, count := range installed {
+		require.Equal(t, 1, count, "duplicate delegation installation: %+v", k)
+		require.Positive(t, selected[k])
+		for p, bodies := range operations {
+			if p.row == k.row {
+				require.Zero(t, bodies, "metadata-only child entered a Lazy operation: %+v", p)
+			}
+		}
+	}
+	require.GreaterOrEqual(t, fsFields["withMountedCache"], 2, "both SDK cache children delegate inherited fs")
+	require.GreaterOrEqual(t, fsFields["__withSystemEnvVariable"], 2, "both SDK environment children delegate inherited fs")
+	for k, count := range operations {
+		row := rows[k.row]
+		if row.Call == nil {
+			continue
+		}
+		var address dagql.PersistedPartAddress
+		require.NoError(t, json.Unmarshal([]byte(k.address), &address))
+		if row.Call.Field == "withMountedFile" || row.Call.Field == "withMountedDirectory" {
+			require.NotNil(t, row.Call.Receiver)
+			t.Logf("operation mount-route row=%d address=%s field=%s parent=%d entries=%d", k.row, k.address, row.Call.Field, row.Call.Receiver.ResultID, count)
+		}
+		if (row.Call.Field == "withMountedFile" && address.Part == "mount:/schema.json") || (row.Call.Field == "withMountedDirectory" && address.Part == "mount:/src") {
+			require.Equal(t, 1, count, "mount write operation repeats: %+v", k)
+			mountWriters[row.Call.Field]++
+			t.Logf("operation mount-write row=%d address=%s field=%s entries=%d", k.row, k.address, row.Call.Field, count)
+		}
+	}
+	require.Positive(t, mountWriters["withMountedFile"])
+	require.Positive(t, mountWriters["withMountedDirectory"])
+	assertImportedHostInputsMatched(t, report, rows)
+	t.Logf("acquisition SDK inherited-fs hops=%v; operation mount-writer rows=%v", fsFields, mountWriters)
+}
+
+// assertImportedHostInputsMatched checks that every imported Host input got
+// B's own matching capture: same content class and installed snapshot, on a
+// distinct row.
+func assertImportedHostInputsMatched(t *testctx.T, report transferFixtureReport, rows map[uint64]dagql.TransferFixtureRow) {
+	t.Helper()
+	// The exact imported Host input gets B's own matching capture. Check both
+	// the content class and the installed snapshot, while retaining distinct rows.
+	hostMatches := 0
+	for _, event := range report.Parts {
+		row := rows[event.ResultID]
+		if event.Kind != "installed-ready" || !row.Imported || row.Call == nil || row.Call.Field != "directory" || row.Call.Receiver == nil {
+			continue
+		}
+		parent := rows[row.Call.Receiver.ResultID]
+		if parent.Call == nil || parent.Call.Type.NamedType != "Host" {
+			continue
+		}
+		matched := false
+		for _, local := range report.Rows {
+			if local.Imported || local.ResultID == row.ResultID || local.Call.Type.NamedType != "Directory" {
+				continue
+			}
+			equalClass, equalSnapshot := false, false
+			for _, class := range row.OutputClasses {
+				equalClass = equalClass || slices.Contains(local.OutputClasses, class)
+			}
+			for _, a := range row.SnapshotLinks {
+				for _, b := range local.SnapshotLinks {
+					equalSnapshot = equalSnapshot || (a.RefKey == b.RefKey && a.Role == b.Role)
+				}
+			}
+			if equalClass && equalSnapshot {
+				matched = true
+				t.Logf("acquisition Host input imported=%d address=%+v local=%d snapshot=%v", row.ResultID, event.Address, local.ResultID, row.SnapshotLinks)
+			}
+		}
+		require.True(t, matched, "imported Host input %d lacks a matching B capture", row.ResultID)
+		hostMatches++
+	}
+	require.Positive(t, hostMatches)
 }
 
 func transferContextTool(ctx context.Context, t *testctx.T, client *dagger.Client, handle string) string {

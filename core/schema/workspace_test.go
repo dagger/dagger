@@ -62,7 +62,10 @@ func TestWorkspaceGitCheckoutReuse(t *testing.T) {
 				cache, err := dagql.NewCache(ctx, "", nil, nil)
 				require.NoError(t, err)
 				ctx = dagql.ContextWithCache(ctx, cache)
-				srv, err := dagql.NewServer(ctx, &core.Query{})
+				// Main's shallow tree path reads the platform from the current query.
+				query := core.NewRoot(&currentTypeDefsTestServer{platform: core.Platform{OS: "linux", Architecture: "arm64"}})
+				ctx = core.ContextWithQuery(ctx, query)
+				srv, err := dagql.NewServer(ctx, query)
 				require.NoError(t, err)
 				srv.InstallObject(dagql.NewClass[*core.Directory](srv))
 				srv.InstallObject(dagql.NewClass[*core.GitRepository](srv))
@@ -152,6 +155,9 @@ func TestWorkspaceGitCheckoutReuse(t *testing.T) {
 				}
 				require.Equal(t, 1, retained, "materialize the retained checkout only once")
 				if discard {
+					// Lazy trees call the backend when evaluated, not when selected.
+					require.NoError(t, cache.Evaluate(ctx, tree))
+					discarded = len(backend.requests) - retained
 					require.Equal(t, 1, discarded, "public tree must still honor keepGitDir=false")
 					require.NotSame(t, tree.Self(), checkouts[0].Self())
 				} else {
@@ -162,6 +168,7 @@ func TestWorkspaceGitCheckoutReuse(t *testing.T) {
 				var shallow dagql.ObjectResult[*core.Directory]
 				require.NoError(t, srv.Select(ctx, ref, &shallow, dagql.Selector{Field: "tree"}))
 				require.NotSame(t, tree.Self(), shallow.Self())
+				require.NoError(t, cache.Evaluate(ctx, shallow))
 				require.Equal(t, 1, backend.requests[len(backend.requests)-1].depth)
 				var tagged dagql.ObjectResult[*core.Directory]
 				require.NoError(t, srv.Select(ctx, ref, &tagged, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
@@ -169,6 +176,7 @@ func TestWorkspaceGitCheckoutReuse(t *testing.T) {
 					{Name: "includeTags", Value: dagql.NewBoolean(true)},
 				}}))
 				require.NotSame(t, tree.Self(), tagged.Self())
+				require.NoError(t, cache.Evaluate(ctx, tagged))
 				require.True(t, backend.requests[len(backend.requests)-1].includeTags)
 			})
 		}

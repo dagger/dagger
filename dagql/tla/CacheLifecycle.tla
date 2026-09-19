@@ -3031,7 +3031,7 @@ EvalSweepDelegation(r, g) ==
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, epoch, flushed>>
 
-\* The scan returns and runLazyGroup reaches clearLazyWhenConsumed. All
+\* The scan returns and runLazyGroup finishes the group's body. All
 \* modeled copies must return before the original callback can sync leases.
 \* MaxEvals bounds internal calls as well as external calls, as it does for
 \* EvalDelegateDemand. At that bound the remaining scan is omitted; a copy

@@ -326,34 +326,15 @@ func (lazy *ContainerWithSymlinkLazy) ContainerLazyParent() dagql.ObjectResult[*
 
 // lazyOpForRouting reads the current Lazy op under lazyOpMu. One rule
 // covers every access: after construction, the op pointer is only ever
-// read or cleared under lazyOpMu, each a short hold with no body ever
+// read under lazyOpMu, each a short hold with no body ever
 // under it. (Construction-time sets - schema shells, WithExec, persisted
 // decode - precede publication and therefore any concurrent access.)
-// nil means the op is consumed - callers treat it exactly like a value
-// with no deferred work (and the cache side independently routes any
-// pending bookkeeping, see evaluateResolved).
+// A present operation can be evaluated. Completion comes from its state;
+// the cache independently routes any pending bookkeeping.
 func (container *Container) lazyOpForRouting() Lazy[*Container] {
 	container.lazyOpMu.Lock()
 	defer container.lazyOpMu.Unlock()
 	return container.Lazy
-}
-
-// consumeLazyOp is the locked-store half of the one-rule contract: every
-// post-construction clear of the op pointer - unrefined bodies consuming
-// themselves, and the refined all-groups-consumed clear - goes through
-// here. Safe to call while holding an op's LazyMu (the lock order is
-// LazyMu, then lazyOpMu, one way).
-func (container *Container) consumeLazyOp() {
-	container.lazyOpMu.Lock()
-	recipe := container.Lazy
-	if restore, ok := recipe.(*ContainerRestoreLazy); ok {
-		recipe = restore.recipe
-	}
-	if recipe != nil {
-		container.completedRecipe = recipe
-	}
-	container.Lazy = nil
-	container.lazyOpMu.Unlock()
 }
 
 // ResolveLazyEvalGroups implements dagql.HasLazyEvaluationParts. An
@@ -364,7 +345,7 @@ func (container *Container) consumeLazyOp() {
 // and never demand sibling groups) and then delegates the mapping to
 // the op.
 func (container *Container) ResolveLazyEvalGroups(ctx context.Context, self dagql.AnyResult, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
-	if container != nil && container.transferPending != nil {
+	if container != nil && container.acquiredOutput.Load() != nil {
 		return container.resolveTransferParts(parts)
 	}
 	if container == nil {
@@ -426,12 +407,28 @@ func (container *Container) LazyEvalFuncForGroup(group dagql.LazyGroupKey) dagql
 	}
 }
 
-// runLazyGroup runs one group's body and clears container.Lazy once the
-// op's last group is consumed. LazyEvalFunc() != nil continues to mean that
-// computation or opening a saved output is still deferred. Persistence captures
-// completion separately from consumed groups and immutable saved descriptors;
-// clearing this operational pointer is not its completion boundary.
+// runLazyGroup evaluates one group through native admission. The operation
+// stays attached; body and bookkeeping completion remain separate.
 func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerParts, group dagql.LazyGroupKey) error {
+	if host := container.partHost.Load(); host != nil {
+		if !host.Admitted(ctx) {
+			if group == ContainerLazyGroupMetadata {
+				return host.Evaluate(ctx, ContainerPartMetadata)
+			}
+			if err := host.Evaluate(ctx, ContainerPartMetadata); err != nil {
+				return err
+			}
+		}
+		parts, err := container.nativeGroupParts(ctx, op, group)
+		if err != nil {
+			return err
+		}
+		return host.RunNative(ctx, group, parts, func(ctx context.Context) error { return container.runLazyGroupAdmitted(ctx, op, group) })
+	}
+	return container.runLazyGroupAdmitted(ctx, op, group)
+}
+
+func (container *Container) runLazyGroupAdmitted(ctx context.Context, op LazyContainerParts, group dagql.LazyGroupKey) error {
 	if err := op.EvaluateContainerGroup(ctx, container, group); err != nil {
 		return err
 	}
@@ -440,7 +437,8 @@ func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerPa
 	if err := container.consumeFinalParentDelegations(ctx, op); err != nil {
 		return err
 	}
-	return container.clearLazyWhenConsumed(ctx, op)
+	_, err := container.lazyGroupsEvaluated(ctx, op)
+	return err
 }
 
 // consumeFinalParentDelegations copies every remaining delegated snapshot
@@ -458,7 +456,7 @@ func (container *Container) consumeFinalParentDelegations(ctx context.Context, o
 	for _, part := range containerSnapshotParts(container) {
 		delegation := containerDelegationGroup(part)
 		// Delegation groups are exactly the snapshot groups whose key is the
-		// part key. Producer groups such as execOutputs and write never match.
+		// part key. LazyOperation groups such as execOutputs and write never match.
 		groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part})
 		if err != nil {
 			return err
@@ -482,14 +480,14 @@ func (container *Container) consumeFinalParentDelegations(ctx context.Context, o
 }
 
 func containerParentPartFinal(ctx context.Context, parent *Container, part dagql.PartKey) (bool, error) {
-	if parent.transferPending != nil {
+	if parent.acquiredOutput.Load() != nil {
 		// Only captured metadata and explicitly absent parts are final. A
 		// delegation sweep must never demand a pending foreign snapshot.
 		_, err := parent.resolveTransferParts([]dagql.PartKey{part})
 		return err == nil, nil
 	}
 	lazy := parent.lazyOpForRouting()
-	if lazy == nil {
+	if lazy == nil || lazy.IsEvaluated() {
 		return true, nil
 	}
 	parentOp, ok := lazy.(LazyContainerParts)
@@ -511,31 +509,25 @@ func containerParentPartFinal(ctx context.Context, parent *Container, part dagql
 	return parentOp.ContainerLazyState().GroupConsumed(groups[0]), nil
 }
 
-// clearLazyWhenConsumed clears container.Lazy when every group of the op
-// is consumed. Callable only after some group body succeeded, which
-// implies metadata is settled and the op's group set is final.
-//
-// The consumed-check and the clear happen under one LazyMu hold: two
-// sibling groups finishing concurrently may both observe full
-// consumption, and the mutex serializes their writes. The store itself
-// goes through consumeLazyOp, per the one-rule contract on the op
-// pointer (see lazyOpForRouting): after construction, every read and
-// every clear of container.Lazy happens under lazyOpMu.
-func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyContainerParts) error {
+// lazyGroupsEvaluated checks the complete mapping only after metadata is final.
+// The operation stays attached after every group has completed.
+func (container *Container) lazyGroupsEvaluated(ctx context.Context, op LazyContainerParts) (bool, error) {
+	state := op.ContainerLazyState()
+	if !state.GroupConsumed(ContainerLazyGroupMetadata) {
+		return false, nil
+	}
 	groups, err := op.ContainerLazyGroups(ctx, container, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
-	state := op.ContainerLazyState()
 	state.LazyMu.Lock()
 	defer state.LazyMu.Unlock()
 	for _, group := range groups {
 		if !state.groupConsumedLocked(group) {
-			return nil
+			return false, nil
 		}
 	}
-	container.consumeLazyOp()
-	return nil
+	return true, nil
 }
 
 // evaluatePartsDirect is the direct object-side narrow force: settle
@@ -544,7 +536,10 @@ func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyCo
 // cache-side EvaluateParts. Used by internal reads that hold the
 // container value but not its attached result (metaFileContents).
 func (container *Container) evaluatePartsDirect(ctx context.Context, parts ...dagql.PartKey) error {
-	if container.transferPending != nil {
+	if host := container.partHost.Load(); host != nil && !host.Admitted(ctx) {
+		return host.Evaluate(ctx, parts...)
+	}
+	if container.acquiredOutput.Load() != nil {
 		_, err := container.resolveTransferParts(parts)
 		return err
 	}
@@ -847,6 +842,14 @@ func materializeContainerMetadataFromParent(ctx context.Context, dst *Container,
 		return fmt.Errorf("materialize container metadata: nil parent container")
 	}
 
+	CopyContainerMetadata(dst, parentCtr)
+	return nil
+}
+
+// CopyContainerMetadata copies plain metadata and mount shape. The caller must
+// first demand the parent's metadata. Existing matching source accessors stay
+// stable; newly introduced source accessors hold no snapshot refs.
+func CopyContainerMetadata(dst, parentCtr *Container) {
 	existingMounts := make(map[string]*ContainerMount, len(dst.Mounts))
 	for i := range dst.Mounts {
 		existingMounts[dst.Mounts[i].Target] = &dst.Mounts[i]
@@ -888,7 +891,6 @@ func materializeContainerMetadataFromParent(ctx context.Context, dst *Container,
 	dst.DefaultTerminalCmd = parentCtr.DefaultTerminalCmd
 	dst.SystemEnvNames = slices.Clone(parentCtr.SystemEnvNames)
 	dst.DefaultArgs = parentCtr.DefaultArgs
-	return nil
 }
 
 // delegateContainerPart evaluates the parent's part and copies its value
@@ -1044,3 +1046,26 @@ func copyContainerDirectoryAccessorValue(dst, cloned *LazyAccessor[*Directory, *
 		dst.SetValue(dir)
 	}
 }
+
+func (container *Container) BindPartHost(host *dagql.PartHost) {
+	container.partHost.CompareAndSwap(nil, host)
+}
+
+func (container *Container) nativeGroupParts(ctx context.Context, op LazyContainerParts, group dagql.LazyGroupKey) ([]dagql.PartKey, error) {
+	if group == ContainerLazyGroupMetadata {
+		return []dagql.PartKey{ContainerPartMetadata}, nil
+	}
+	var writes []dagql.PartKey
+	for _, part := range containerSnapshotParts(container) {
+		groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part})
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(groups, group) {
+			writes = append(writes, part)
+		}
+	}
+	return writes, nil
+}
+
+func (container *Container) PartHostBinding() *dagql.PartHost { return container.partHost.Load() }

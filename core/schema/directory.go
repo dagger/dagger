@@ -430,29 +430,23 @@ func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, 
 	return parent, nil
 }
 
-func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Query], _ struct{}) (inst dagql.ObjectResult[*core.Directory], _ error) {
+func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Query], _ struct{}) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 	platform := parent.Self().Platform()
 
-	finalRef, err := parent.Self().SnapshotManager().Scratch(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load scratch ref: %w", err)
-	}
-
 	dir := &core.Directory{
 		Platform: platform,
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     &core.DirectoryScratchLazy{LazyState: core.NewLazyState()},
 	}
 	dir.SetPath("/")
-	dir.SetSnapshot(finalRef)
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
-		_ = dir.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
 	return inst, nil

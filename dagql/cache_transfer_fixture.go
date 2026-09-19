@@ -86,23 +86,26 @@ func (c *Cache) transferFixtureRowLocked(sessionID string, id *call.ID) (*shared
 }
 
 type TransferFixtureRow struct {
-	ResultID      uint64               `json:"resultID"`
-	Call          *ResultCall          `json:"call"`
-	Imported      bool                 `json:"imported"`
-	Persisted     bool                 `json:"persisted"`
-	DependencyIDs []uint64             `json:"dependencyIDs"`
-	Offers        []PersistedPartOffer `json:"offers"`
-	OutputClasses []uint64             `json:"outputClasses"`
-	TermIDs       []uint64             `json:"termIDs"`
+	ResultID      uint64                     `json:"resultID"`
+	Call          *ResultCall                `json:"call"`
+	Imported      bool                       `json:"imported"`
+	Persisted     bool                       `json:"persisted"`
+	DependencyIDs []uint64                   `json:"dependencyIDs"`
+	Offers        []PersistedPartOffer       `json:"offers"`
+	OutputClasses []uint64                   `json:"outputClasses"`
+	TermIDs       []uint64                   `json:"termIDs"`
+	SnapshotLinks []PersistedSnapshotRefLink `json:"snapshotLinks,omitempty"`
 }
 type TransferFixtureReport struct {
-	Rows   []TransferFixtureRow   `json:"rows"`
-	Owners []CacheDebugOfferOwner `json:"owners"`
+	Parts  []TransferFixturePartEvent `json:"parts,omitempty"`
+	Rows   []TransferFixtureRow       `json:"rows"`
+	Owners []CacheDebugOfferOwner     `json:"owners"`
 }
 
 // TransferFixtureSnapshot copies raw metadata without demanding values or
 // retaining rows. Filesystem counters are read separately by the fixture.
 func (c *Cache) TransferFixtureSnapshot(ctx context.Context, sessionID string, ids []*call.ID) (report TransferFixtureReport, rerr error) {
+	report.Parts = c.partFixtureEvents()
 	op, err := c.beginSessionOperation(sessionID)
 	if err != nil {
 		return report, err
@@ -138,6 +141,7 @@ func (c *Cache) TransferFixtureSnapshot(ctx context.Context, sessionID string, i
 			return report, err
 		}
 		entry := TransferFixtureRow{ResultID: uint64(id), Call: frame.clone(), Imported: row.imported, Offers: offers}
+		entry.SnapshotLinks = cloneSnapshotRefLinks(row.loadPayloadState().snapshotOwnerLinks)
 		_, entry.Persisted = c.persistedEdgesByResult[id]
 		for dep := range row.deps {
 			entry.DependencyIDs = append(entry.DependencyIDs, uint64(dep))

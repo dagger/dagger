@@ -393,9 +393,9 @@ often has two broad forms:
 
 - **snapshot form**
   - the object has a completed snapshot, open or retained by saved identity
-  - `lazyKind` and `lazyJSON` retain its completed producer's original inputs,
+  - `lazyKind` and `lazyJSON` retain the completed Lazy operation's original inputs,
     when present; completed-row decode keeps these raw bytes without loading
-    producer ancestors
+    the operation's input values
 - **lazy form**
   - the object has not been fully materialized, but it still has a structured
     lazy operation that can be serialized
@@ -414,9 +414,9 @@ Today `Directory` and `File` explicitly do this when they have neither snapshot
 nor lazy state available to encode.
 
 `Container` uses one payload with consumed metadata, a record for each snapshot
-part, and its original producer inputs even after computation completes.
-Completed-row decode retains the producer's raw bytes without decoding its
-ancestors. Each part is
+part, and its original Lazy operation inputs even after computation completes.
+Completed-row decode retains the operation's raw bytes without decoding its
+input values. Each part is
 pending, absent, or a completed directory, file, or exec-metadata snapshot.
 Completion comes from object-side group consumption, including final parent
 copies, independently of cache bookkeeping completion. A settled mapping error
@@ -426,8 +426,8 @@ Decode installs metadata and immutable descriptors without opening the stored
 container outputs. It seeds the original completed groups and uses ordinary
 attempts with separate `open:<part>` groups to open saved snapshots on demand.
 Joint computation outputs can open independently after restart. Descriptors
-remain on the Container after opening and after the operational lazy pointer
-clears, so typed decode, usage accounting, owner-lease sync, and a second flush
+remain on the Container after opening and after the retained operation
+completes, so typed decode, usage accounting, owner-lease sync, and a second flush
 retain the same identities. Absence needs no opening. Pending recipe inputs use the standalone
 Directory/File decoders. These retain saved snapshot identity and path, and open
 through the ordinary whole-result attempt on the first filesystem demand.

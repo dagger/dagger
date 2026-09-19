@@ -460,12 +460,17 @@ func TestCachePersistenceWorkerUsesEncodedSnapshotLinks(t *testing.T) {
 	rows, err := c.pdb.ListMirrorResultSnapshotLinks(ctx)
 	assert.NilError(t, err)
 	assert.DeepEqual(t, rows, []persistdb.MirrorResultSnapshotLink{{
-		ResultID: int64(resultID),
-		RefKey:   "snapshot-after",
-		Role:     "snapshot",
+		ResultID:   int64(resultID),
+		RefKey:     "snapshot-after",
+		OutputPath: "[]",
+		Role:       "snapshot",
 	}})
 }
 
 var _ bkcache.SnapshotManager = (*fakeSnapshotManager)(nil)
 var _ PersistedObject = (*persistSnapshotValue)(nil)
 var _ PersistedSnapshotRefLinkProvider = (*persistSnapshotValue)(nil)
+
+func (*fakeSnapshotManager) PinSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
+	panic("unexpected PinSnapshot")
+}

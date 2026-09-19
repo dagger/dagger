@@ -32,7 +32,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 )
 
-type producerExecutionServer struct {
+type operationExecutionServer struct {
 	*cacheVolumeTestQueryServer
 	srv     *dagql.Server
 	store   content.Store
@@ -40,12 +40,12 @@ type producerExecutionServer struct {
 	locker  *locker.Locker
 }
 
-func (s *producerExecutionServer) Locker() *locker.Locker                        { return s.locker }
-func (s *producerExecutionServer) DNS() *oci.DNSConfig                           { return &oci.DNSConfig{} }
-func (s *producerExecutionServer) Server(context.Context) (*dagql.Server, error) { return s.srv, nil }
-func (s *producerExecutionServer) OCIStore() content.Store                       { return s.store }
-func (s *producerExecutionServer) BuiltinOCIStore() content.Store                { return s.builtin }
-func (s *producerExecutionServer) Platform() Platform {
+func (s *operationExecutionServer) Locker() *locker.Locker                        { return s.locker }
+func (s *operationExecutionServer) DNS() *oci.DNSConfig                           { return &oci.DNSConfig{} }
+func (s *operationExecutionServer) Server(context.Context) (*dagql.Server, error) { return s.srv, nil }
+func (s *operationExecutionServer) OCIStore() content.Store                       { return s.store }
+func (s *operationExecutionServer) BuiltinOCIStore() content.Store                { return s.builtin }
+func (s *operationExecutionServer) Platform() Platform {
 	return Platform{OS: "linux", Architecture: "amd64"}
 }
 
@@ -54,22 +54,26 @@ type executionFixtureValues struct {
 	store  *testutil.Store
 	cache  *dagql.Cache
 	srv    *dagql.Server
-	server *producerExecutionServer
+	server *operationExecutionServer
 }
 
 func newExecutionFixture(t *testing.T) executionFixtureValues {
 	t.Helper()
 	store := testutil.NewStore(t)
-	ctx, cache, srv := transferCache(t, store, "", "producer-execution")
+	ctx, cache, srv := transferCache(t, store, "", "operation-execution")
 	query, err := CurrentQuery(ctx)
 	require.NoError(t, err)
-	server := &producerExecutionServer{cacheVolumeTestQueryServer: &cacheVolumeTestQueryServer{mockServer: &mockServer{}, cacheManager: store.Manager}, srv: srv, store: store.Content}
+	server := &operationExecutionServer{cacheVolumeTestQueryServer: &cacheVolumeTestQueryServer{mockServer: &mockServer{}, cacheManager: store.Manager}, srv: srv, store: store.Content}
 	server.locker = locker.New()
 	query.Server = server
+	srv.InstallObject(dagql.NewClass[*HTTPState](srv))
+	dagql.Fields[*Query]{dagql.Func("_httpState", func(_ context.Context, _ *Query, args struct{ URL string }) (*HTTPState, error) {
+		return &HTTPState{URL: args.URL}, nil
+	}).IsPersistable()}.Install(srv)
 	return executionFixtureValues{ctx: ctx, store: store, cache: cache, srv: srv, server: server}
 }
 
-func executionFixture(t *testing.T) (context.Context, *testutil.Store, *dagql.Cache, *dagql.Server, *producerExecutionServer) {
+func executionFixture(t *testing.T) (context.Context, *testutil.Store, *dagql.Cache, *dagql.Server, *operationExecutionServer) {
 	t.Helper()
 	f := newExecutionFixture(t)
 	return f.ctx, f.store, f.cache, f.srv, f.server
@@ -111,10 +115,10 @@ func inUmaskChild(t *testing.T, mask int) bool {
 	require.Contains(t, string(output), ran, "%s", output)
 	return false
 }
-func freshProducerFile() *File {
+func freshLazyOperationFile() *File {
 	return &File{Platform: Platform{OS: "linux", Architecture: "arm64"}, File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
 }
-func decodedHTTPProducer(t *testing.T, ctx context.Context, lazy *FileHTTPResolveLazy) *FileHTTPResolveLazy {
+func decodedHTTPLazyOperation(t *testing.T, ctx context.Context, lazy *FileHTTPResolveLazy) *FileHTTPResolveLazy {
 	t.Helper()
 	raw, err := lazy.EncodePersisted(ctx, nil)
 	require.NoError(t, err)
@@ -124,7 +128,7 @@ func decodedHTTPProducer(t *testing.T, ctx context.Context, lazy *FileHTTPResolv
 }
 func producedFileContents(t *testing.T, file *File) ([]byte, os.FileInfo) {
 	t.Helper()
-	name, snapshot, err := producedFileOutput(file)
+	name, snapshot, err := fileOutput(file)
 	require.NoError(t, err)
 	path, err := RootPathWithoutFinalSymlink(testutil.Root(t, snapshot), name)
 	require.NoError(t, err)
@@ -139,7 +143,7 @@ func producedFileContents(t *testing.T, file *File) ([]byte, os.FileInfo) {
 	}
 	return data, info
 }
-func TestHTTPCompletedProducerEvaluate(t *testing.T) {
+func TestHTTPLazyOperationEvaluate(t *testing.T) {
 	ctx := executionContext(t)
 	for _, test := range []struct {
 		name, body, lastModified, checksum string
@@ -168,8 +172,8 @@ func TestHTTPCompletedProducerEvaluate(t *testing.T) {
 				fmt.Fprint(w, test.body)
 			}))
 			defer origin.Close()
-			lazy := decodedHTTPProducer(t, ctx, &FileHTTPResolveLazy{URL: origin.URL, Filename: "data", Permissions: 0644, Checksum: dagql.Optional[dagql.String]{Valid: test.valid, Value: dagql.String(test.checksum)}, BodyDigest: digest.FromString("saved")})
-			file := freshProducerFile()
+			lazy := decodedHTTPLazyOperation(t, ctx, &FileHTTPResolveLazy{URL: origin.URL, Filename: "data", Permissions: 0644, Checksum: dagql.Optional[dagql.String]{Valid: test.valid, Value: dagql.String(test.checksum)}, BodyDigest: digest.FromString("saved")})
+			file := freshLazyOperationFile()
 			err := lazy.Evaluate(ctx, file)
 			if test.wantErr != "" {
 				require.ErrorContains(t, err, test.wantErr)
@@ -191,15 +195,15 @@ func TestHTTPCompletedProducerEvaluate(t *testing.T) {
 	}
 	for _, status := range []int{204, 304} {
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
-		lazy := decodedHTTPProducer(t, ctx, &FileHTTPResolveLazy{URL: origin.URL, Filename: "empty", BodyDigest: digest.FromString("")})
-		file := freshProducerFile()
+		lazy := decodedHTTPLazyOperation(t, ctx, &FileHTTPResolveLazy{URL: origin.URL, Filename: "empty", BodyDigest: digest.FromString("")})
+		file := freshLazyOperationFile()
 		require.NoError(t, lazy.Evaluate(ctx, file))
 		require.NoError(t, file.OnRelease(ctx))
 		origin.Close()
 	}
 	t.Run("transport", func(t *testing.T) {
 		lazy := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: "http://127.0.0.1:1", Filename: "data", BodyDigest: digest.FromString("saved")}
-		file := freshProducerFile()
+		file := freshLazyOperationFile()
 		require.Error(t, lazy.Evaluate(ctx, file))
 		_, ready := file.Snapshot.Peek()
 		require.False(t, ready)
@@ -208,11 +212,11 @@ func TestHTTPCompletedProducerEvaluate(t *testing.T) {
 		cctx, cancel := context.WithCancel(ctx)
 		cancel()
 		lazy := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: "http://127.0.0.1:1", Filename: "data", BodyDigest: digest.FromString("saved")}
-		require.ErrorIs(t, lazy.Evaluate(cctx, freshProducerFile()), context.Canceled)
+		require.ErrorIs(t, lazy.Evaluate(cctx, freshLazyOperationFile()), context.Canceled)
 	})
 }
 
-func TestHTTPProducerWriter(t *testing.T) {
+func TestHTTPLazyOperationWriter(t *testing.T) {
 	ctx := executionContext(t)
 	query, err := CurrentQuery(ctx)
 	require.NoError(t, err)
@@ -228,9 +232,9 @@ func TestHTTPProducerWriter(t *testing.T) {
 				state := &HTTPState{URL: origin.URL}
 				defer state.OnRelease(ctx)
 				eager, eagerErr := state.Resolve(ctx, query, dagql.Optional[dagql.String]{}, mode, name)
-				output := freshProducerFile()
-				producer := decodedHTTPProducer(t, ctx, &FileHTTPResolveLazy{URL: origin.URL, Filename: name, Permissions: mode, BodyDigest: digest.FromString("saved")})
-				restoreErr := producer.Evaluate(ctx, output)
+				output := freshLazyOperationFile()
+				operation := decodedHTTPLazyOperation(t, ctx, &FileHTTPResolveLazy{URL: origin.URL, Filename: name, Permissions: mode, BodyDigest: digest.FromString("saved")})
+				restoreErr := operation.Evaluate(ctx, output)
 				if name == "sub/data.txt" {
 					require.Error(t, eagerErr)
 					require.Error(t, restoreErr)
@@ -261,9 +265,9 @@ func TestHTTPProducerWriter(t *testing.T) {
 		if !inUmaskChild(t, 0077) {
 			return
 		}
-		output := freshProducerFile()
-		producer := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: origin.URL, Filename: "data", Permissions: 0755, BodyDigest: digest.FromString("saved")}
-		require.NoError(t, producer.Evaluate(ctx, output))
+		output := freshLazyOperationFile()
+		operation := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: origin.URL, Filename: "data", Permissions: 0755, BodyDigest: digest.FromString("saved")}
+		require.NoError(t, operation.Evaluate(ctx, output))
 		defer output.OnRelease(ctx)
 		_, info := producedFileContents(t, output)
 		require.EqualValues(t, 0755, info.Mode().Perm())
@@ -276,9 +280,8 @@ func TestHTTPProducerWriter(t *testing.T) {
 			output, err := FetchHTTPFile(ctx, query, FetchHTTPRequestOpts{URL: origin.URL, Filename: name, Permissions: 0644, AuthorizationHeader: "saved-auth"})
 			require.NoError(t, err)
 			require.Nil(t, output.File.Lazy)
-			require.Nil(t, output.File.completedRecipe)
-			require.Empty(t, output.File.completedRecipeJSON)
-			path, snapshot, err := producedFileOutput(output.File)
+			require.Empty(t, output.File.lazyJSON)
+			path, snapshot, err := fileOutput(output.File)
 			require.NoError(t, err)
 			require.Equal(t, name, path)
 			data, err := os.ReadFile(filepath.Join(testutil.Root(t, snapshot), "data"))
@@ -293,28 +296,28 @@ func TestHTTPProducerWriter(t *testing.T) {
 	})
 }
 
-type producerBodyTransport struct {
+type operationBodyTransport struct {
 	http.RoundTripper
 	closed *atomic.Int64
 	onEOF  func()
 }
 
-func (t *producerBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *operationBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.RoundTripper.RoundTrip(req)
 	if err == nil {
-		resp.Body = &producerObservedBody{ReadCloser: resp.Body, closed: t.closed, onEOF: t.onEOF}
+		resp.Body = &operationObservedBody{ReadCloser: resp.Body, closed: t.closed, onEOF: t.onEOF}
 	}
 	return resp, err
 }
 
-type producerObservedBody struct {
+type operationObservedBody struct {
 	io.ReadCloser
 	closed           *atomic.Int64
 	onEOF            func()
 	done, pendingEOF bool
 }
 
-func (b *producerObservedBody) Read(p []byte) (int, error) {
+func (b *operationObservedBody) Read(p []byte) (int, error) {
 	if b.pendingEOF {
 		b.pendingEOF = false
 		if b.onEOF != nil {
@@ -336,14 +339,14 @@ func (b *producerObservedBody) Read(p []byte) (int, error) {
 	}
 	return n, err
 }
-func (b *producerObservedBody) Close() error { b.closed.Add(1); return b.ReadCloser.Close() }
+func (b *operationObservedBody) Close() error { b.closed.Add(1); return b.ReadCloser.Close() }
 
-type producerObservedMount struct {
+type operationObservedMount struct {
 	bkcache.MountableRef
 	root *string
 }
 
-func (m *producerObservedMount) Mount() ([]mount.Mount, func() error, error) {
+func (m *operationObservedMount) Mount() ([]mount.Mount, func() error, error) {
 	mounts, release, err := m.MountableRef.Mount()
 	if err == nil && len(mounts) > 0 {
 		*m.root = mounts[0].Source
@@ -351,7 +354,7 @@ func (m *producerObservedMount) Mount() ([]mount.Mount, func() error, error) {
 	return mounts, release, err
 }
 
-type observedProducerManager struct {
+type observedLazyOperationManager struct {
 	bkcache.SnapshotManager
 	mutableReleases, immutableReleases atomic.Int64
 	commitErr                          error
@@ -359,27 +362,27 @@ type observedProducerManager struct {
 	writerRoot                         string
 }
 
-func (m *observedProducerManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
-	if p, ok := parent.(*observedProducerSnapshot); ok {
+func (m *observedLazyOperationManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
+	if p, ok := parent.(*observedLazyOperationSnapshot); ok {
 		parent = p.ImmutableRef
 	}
 	ref, err := m.SnapshotManager.New(ctx, parent, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return &observedProducerMutable{MutableRef: ref, manager: m}, nil
+	return &observedLazyOperationMutable{MutableRef: ref, manager: m}, nil
 }
 
-type observedProducerMutable struct {
+type observedLazyOperationMutable struct {
 	bkcache.MutableRef
-	manager *observedProducerManager
+	manager *observedLazyOperationManager
 }
 
-func (r *observedProducerMutable) Release(ctx context.Context) error {
+func (r *observedLazyOperationMutable) Release(ctx context.Context) error {
 	r.manager.mutableReleases.Add(1)
 	return r.MutableRef.Release(ctx)
 }
-func (r *observedProducerMutable) Mount(ctx context.Context, ro bool) (bkcache.MountableRef, error) {
+func (r *observedLazyOperationMutable) Mount(ctx context.Context, ro bool) (bkcache.MountableRef, error) {
 	if r.manager.mountErr != nil {
 		return nil, r.manager.mountErr
 	}
@@ -387,9 +390,9 @@ func (r *observedProducerMutable) Mount(ctx context.Context, ro bool) (bkcache.M
 	if err != nil {
 		return nil, err
 	}
-	return &producerObservedMount{MountableRef: ref, root: &r.manager.writerRoot}, nil
+	return &operationObservedMount{MountableRef: ref, root: &r.manager.writerRoot}, nil
 }
-func (r *observedProducerMutable) Commit(ctx context.Context) (bkcache.ImmutableRef, error) {
+func (r *observedLazyOperationMutable) Commit(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if r.manager.commitErr != nil {
 		return nil, r.manager.commitErr
 	}
@@ -397,20 +400,20 @@ func (r *observedProducerMutable) Commit(ctx context.Context) (bkcache.Immutable
 	if err != nil {
 		return nil, err
 	}
-	return &observedProducerSnapshot{ImmutableRef: ref, manager: r.manager}, nil
+	return &observedLazyOperationSnapshot{ImmutableRef: ref, manager: r.manager}, nil
 }
 
-type observedProducerSnapshot struct {
+type observedLazyOperationSnapshot struct {
 	bkcache.ImmutableRef
-	manager *observedProducerManager
+	manager *observedLazyOperationManager
 }
 
-func (r *observedProducerSnapshot) Release(ctx context.Context) error {
+func (r *observedLazyOperationSnapshot) Release(ctx context.Context) error {
 	r.manager.immutableReleases.Add(1)
 	return r.ImmutableRef.Release(ctx)
 }
 
-func TestHTTPProducerCleanup(t *testing.T) {
+func TestHTTPLazyOperationCleanup(t *testing.T) {
 	ctx, store, _, _, server := executionFixture(t)
 	for _, exit := range []string{"copy", "close", "chmod", "timestamp", "checksum", "commit", "mount", "digest", "move", "success"} {
 		t.Run(exit, func(t *testing.T) {
@@ -424,13 +427,13 @@ func TestHTTPProducerCleanup(t *testing.T) {
 				}
 				binary, err := os.Executable()
 				require.NoError(t, err)
-				cmd := exec.Command(tracer, "-f", "-qq", "-o", filepath.Join(t.TempDir(), "syscalls.log"), "-e", "trace=utimensat", "-e", "inject=utimensat:error=EIO:when=1", binary, "-test.run", "^TestHTTPProducerCleanup/timestamp$", "-test.count=1", "-test.v")
+				cmd := exec.Command(tracer, "-f", "-qq", "-o", filepath.Join(t.TempDir(), "syscalls.log"), "-e", "trace=utimensat", "-e", "inject=utimensat:error=EIO:when=1", binary, "-test.run", "^TestHTTPLazyOperationCleanup/timestamp$", "-test.count=1", "-test.v")
 				cmd.Env = append(os.Environ(), "DAGGER_TEST_HTTP_TIMESTAMP_FAULT=1")
 				out, err := cmd.CombinedOutput()
 				require.NoError(t, err, string(out))
 				return
 			}
-			manager := &observedProducerManager{SnapshotManager: store.Manager}
+			manager := &observedLazyOperationManager{SnapshotManager: store.Manager}
 			server.cacheManager = manager
 			defer func() { server.cacheManager = store.Manager }()
 			if exit == "commit" {
@@ -446,17 +449,17 @@ func TestHTTPProducerCleanup(t *testing.T) {
 				fmt.Fprint(w, "body")
 			}))
 			defer origin.Close()
-			producer := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: origin.URL, Filename: "data", Permissions: 0644, BodyDigest: digest.FromString("body")}
+			operation := &FileHTTPResolveLazy{LazyState: NewLazyState(), URL: origin.URL, Filename: "data", Permissions: 0644, BodyDigest: digest.FromString("body")}
 			if exit == "digest" {
-				producer.BodyDigest = digest.FromString("other")
+				operation.BodyDigest = digest.FromString("other")
 			}
 			if exit == "checksum" {
-				producer.Checksum = dagql.Optional[dagql.String]{Valid: true, Value: dagql.String(digest.FromString("other"))}
+				operation.Checksum = dagql.Optional[dagql.String]{Valid: true, Value: dagql.String(digest.FromString("other"))}
 			}
-			output := freshProducerFile()
+			output := freshLazyOperationFile()
 			closed := atomic.Int64{}
 			previousTransport := http.DefaultTransport
-			transport := &producerBodyTransport{RoundTripper: previousTransport, closed: &closed}
+			transport := &operationBodyTransport{RoundTripper: previousTransport, closed: &closed}
 			transport.onEOF = func() {
 				path := filepath.Join(manager.writerRoot, "data")
 				switch exit {
@@ -483,8 +486,12 @@ func TestHTTPProducerCleanup(t *testing.T) {
 			}
 			http.DefaultTransport = transport
 			defer func() { http.DefaultTransport = previousTransport }()
-			err := producer.Evaluate(ctx, output)
-			require.EqualValues(t, 1, closed.Load())
+			err := operation.Evaluate(ctx, output)
+			if exit == "checksum" {
+				require.Zero(t, closed.Load())
+			} else {
+				require.EqualValues(t, 1, closed.Load())
+			}
 			if exit == "close" || exit == "chmod" {
 				require.ErrorContains(t, err, exit)
 			}
@@ -493,6 +500,10 @@ func TestHTTPProducerCleanup(t *testing.T) {
 			}
 
 			switch exit {
+			case "checksum":
+				require.ErrorContains(t, err, "checksum mismatch")
+				require.Zero(t, manager.mutableReleases.Load())
+				require.Zero(t, manager.immutableReleases.Load())
 			case "success":
 				require.NoError(t, err)
 				require.Zero(t, manager.mutableReleases.Load())
@@ -560,7 +571,7 @@ func TestHTTPStateConcurrentResolveCapture(t *testing.T) {
 	require.Equal(t, state.snapshotID, out.SnapshotLinks[0].RefKey)
 }
 
-func TestStatelessHTTPProducerIsolation(t *testing.T) {
+func TestStatelessHTTPLazyOperationIsolation(t *testing.T) {
 	ctx, store, cache, srv, server := executionFixture(t)
 	query, err := CurrentQuery(ctx)
 	require.NoError(t, err)
@@ -584,10 +595,10 @@ func TestStatelessHTTPProducerIsolation(t *testing.T) {
 	old, err := state.Resolve(ctx, query, dagql.Optional[dagql.String]{}, 0644, "old")
 	require.NoError(t, err)
 	defer old.File.OnRelease(ctx)
-	producer := decodedHTTPProducer(t, ctx, &FileHTTPResolveLazy{URL: origin.URL, Filename: "old", Permissions: 0644, BodyDigest: old.ContentDigest})
-	output := freshProducerFile()
+	operation := decodedHTTPLazyOperation(t, ctx, &FileHTTPResolveLazy{URL: origin.URL, Filename: "old", Permissions: 0644, BodyDigest: old.ContentDigest})
+	output := freshLazyOperationFile()
 	privateErr := make(chan error, 1)
-	go func() { privateErr <- producer.Evaluate(ctx, output) }()
+	go func() { privateErr <- operation.Evaluate(ctx, output) }()
 	newer, err := state.Resolve(ctx, query, dagql.Optional[dagql.String]{}, 0644, "new")
 	require.NoError(t, err)
 	defer newer.File.OnRelease(ctx)
@@ -602,55 +613,55 @@ func TestStatelessHTTPProducerIsolation(t *testing.T) {
 
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*HTTPState]{}))
 	unavailable := &HTTPState{URL: origin.URL}
-	stateResult := attachTransferObject(t, ctx, cache, srv, "producer-execution", "unavailableHTTPState", unavailable)
+	stateResult := attachTransferObject(t, ctx, cache, srv, "operation-execution", "unavailableHTTPState", unavailable)
 	stateID, err := cache.PersistedResultID(stateResult)
 	require.NoError(t, err)
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "_resolve", Receiver: &dagql.ResultCallRef{ResultID: stateID}, Type: dagql.NewResultCallType(output.Type())}
-	guard := &producerStateReadGuard{SnapshotManager: store.Manager}
+	guard := &operationStateReadGuard{SnapshotManager: store.Manager}
 	server.cacheManager = guard
 	unavailable.snapshotID = "unavailable-state-snapshot"
 	unavailable.mu.Lock()
 	defer unavailable.mu.Unlock()
 	privateCtx, cancel := context.WithTimeout(dagql.ContextWithCall(ctx, frame), 5*time.Second)
 	defer cancel()
-	independent := decodedHTTPProducer(t, privateCtx, &FileHTTPResolveLazy{URL: origin.URL, Filename: "independent", Permissions: 0644, BodyDigest: old.ContentDigest})
-	independentOutput := freshProducerFile()
+	independent := decodedHTTPLazyOperation(t, privateCtx, &FileHTTPResolveLazy{URL: origin.URL, Filename: "independent", Permissions: 0644, BodyDigest: old.ContentDigest})
+	independentOutput := freshLazyOperationFile()
 	done := make(chan error, 1)
 	go func() { done <- independent.Evaluate(privateCtx, independentOutput) }()
 	select {
 	case err := <-done:
 		require.NoError(t, err)
 	case <-privateCtx.Done():
-		t.Fatal("private HTTP producer accessed the unavailable state's lock")
+		t.Fatal("private HTTP operation accessed the unavailable state's lock")
 	}
 	require.NoError(t, independentOutput.OnRelease(ctx))
-	require.Zero(t, guard.reads.Load(), "private HTTP producer tried to open retained state")
+	require.Zero(t, guard.reads.Load(), "private HTTP operation tried to open retained state")
 	require.Equal(t, "unavailable-state-snapshot", unavailable.snapshotID)
 	require.Empty(t, unavailable.ETag)
 }
 
-type producerStateReadGuard struct {
+type operationStateReadGuard struct {
 	bkcache.SnapshotManager
 	reads atomic.Int64
 }
 
-func (m *producerStateReadGuard) GetBySnapshotID(context.Context, string, ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
+func (m *operationStateReadGuard) GetBySnapshotID(context.Context, string, ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
 	m.reads.Add(1)
 	return nil, errors.New("retained HTTP state is unavailable")
 }
 
-func TestCompletedProducerConcurrentDemand(t *testing.T) {
+func TestEvaluatedLazyOperationConcurrentDemand(t *testing.T) {
 	ctx := executionContext(t)
 	requests := atomic.Int64{}
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); fmt.Fprint(w, "body") }))
 	defer origin.Close()
 	saved := &FileHTTPResolveLazy{URL: origin.URL, Filename: "data", BodyDigest: digest.FromString("body")}
-	producer := decodedHTTPProducer(t, ctx, saved)
-	output := freshProducerFile()
+	operation := decodedHTTPLazyOperation(t, ctx, saved)
+	output := freshLazyOperationFile()
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
 	for range 8 {
-		wg.Go(func() { errs <- producer.Evaluate(ctx, output) })
+		wg.Go(func() { errs <- operation.Evaluate(ctx, output) })
 	}
 	wg.Wait()
 	close(errs)
@@ -659,10 +670,10 @@ func TestCompletedProducerConcurrentDemand(t *testing.T) {
 	}
 	require.EqualValues(t, 1, requests.Load())
 	require.NoError(t, output.OnRelease(ctx))
-	a, b := decodedHTTPProducer(t, ctx, saved), decodedHTTPProducer(t, ctx, saved)
+	a, b := decodedHTTPLazyOperation(t, ctx, saved), decodedHTTPLazyOperation(t, ctx, saved)
 	require.NotSame(t, a.LazyMu, b.LazyMu)
 	for _, lazy := range []*FileHTTPResolveLazy{a, b} {
-		file := freshProducerFile()
+		file := freshLazyOperationFile()
 		require.NoError(t, lazy.Evaluate(ctx, file))
 		require.NoError(t, file.OnRelease(ctx))
 	}

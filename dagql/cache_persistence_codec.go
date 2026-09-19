@@ -126,10 +126,21 @@ type copiedDecodeRolesKey struct{}
 type copiedDecodeRoles struct {
 	ResultID uint64
 	Links    []PersistedSnapshotRefLink
+	Imported bool
+	Host     *PartHost
+}
+
+type PersistedSnapshotScope struct {
+	OwnerResultID uint64
+	OutputPath    PersistedRefPath
 }
 
 type PersistDecodeContext struct {
+	scope    PersistedSnapshotScope
+	cleanup  *OnReleaseFunc
 	roles    *copiedDecodeRoles
+	imported bool
+	host     *PartHost
 	server   *Server
 	resultID uint64
 	call     *ResultCall
@@ -139,7 +150,14 @@ type PersistDecodeContext struct {
 // the defining server; it may be nil only when the payload declares no
 // references and needs no schema.
 func NewPersistDecodeContext(dag *Server, resultID uint64, call *ResultCall) *PersistDecodeContext {
-	return &PersistDecodeContext{server: dag, resultID: resultID, call: call}
+	return &PersistDecodeContext{server: dag, resultID: resultID, call: call, scope: PersistedSnapshotScope{OwnerResultID: resultID}}
+}
+
+// WithSnapshotRoles supplies an authoritative copied desired map, including empty.
+func (dec *PersistDecodeContext) WithSnapshotRoles(links []PersistedSnapshotRefLink) *PersistDecodeContext {
+	copy := *dec
+	copy.roles = &copiedDecodeRoles{ResultID: dec.scope.OwnerResultID, Links: cloneSnapshotRefLinks(links)}
+	return &copy
 }
 
 // Server is the defining server for the row being decoded.
@@ -207,18 +225,55 @@ func (dec *PersistDecodeContext) CallID(raw string) (*call.ID, error) {
 }
 
 // SnapshotRoles returns the declared storage roles recorded for the owner row.
+func (dec *PersistDecodeContext) SnapshotScope() PersistedSnapshotScope {
+	if dec == nil {
+		return PersistedSnapshotScope{}
+	}
+	return PersistedSnapshotScope{OwnerResultID: dec.scope.OwnerResultID, OutputPath: slices.Clone(dec.scope.OutputPath)}
+}
+
 func (dec *PersistDecodeContext) SnapshotRoles(ctx context.Context) ([]PersistedSnapshotRefLink, error) {
-	if dec == nil || dec.resultID == 0 {
-		return nil, fmt.Errorf("persist decode snapshot roles: zero result ID")
+	if dec == nil || dec.scope.OwnerResultID == 0 {
+		return nil, fmt.Errorf("persist decode snapshot roles: zero storage owner")
 	}
-	if dec.roles != nil && dec.roles.ResultID == dec.resultID {
-		return slices.Clone(dec.roles.Links), nil
+	var links []PersistedSnapshotRefLink
+	if dec.roles != nil {
+		if dec.roles.ResultID != dec.scope.OwnerResultID {
+			return nil, fmt.Errorf("persist decode snapshot roles: carrier owner mismatch")
+		}
+		links = dec.roles.Links
+	} else {
+		if len(dec.scope.OutputPath) != 0 {
+			return nil, fmt.Errorf("persist decode inline snapshot scope: missing owner carrier")
+		}
+		cache, err := EngineCache(ctx)
+		if err != nil {
+			return nil, err
+		}
+		links, err = cache.PersistedSnapshotLinksByResultID(ctx, dec.scope.OwnerResultID)
+		if err != nil {
+			return nil, err
+		}
 	}
-	cache, err := EngineCache(ctx)
+	path, err := canonicalPath(dec.scope.OutputPath)
 	if err != nil {
-		return nil, fmt.Errorf("persist decode snapshot roles for result %d: %w", dec.resultID, err)
+		return nil, err
 	}
-	return cache.PersistedSnapshotLinksByResultID(ctx, dec.resultID)
+	var selected []PersistedSnapshotRefLink
+	for _, link := range links {
+		key, err := snapshotLinkKey(link)
+		if err != nil {
+			return nil, err
+		}
+		if key.Path == path {
+			selected = append(selected, link)
+		}
+	}
+	selected = cloneSnapshotRefLinks(selected)
+	for i := range selected {
+		selected[i].OutputPath = nil
+	}
+	return selected, nil
 }
 
 // SnapshotRole resolves one declared storage role of the owner row. It only
@@ -233,12 +288,17 @@ func (dec *PersistDecodeContext) SnapshotRole(ctx context.Context, role string) 
 			return link, nil
 		}
 	}
-	return PersistedSnapshotRefLink{}, fmt.Errorf("missing persisted snapshot link role %q for result %d", role, dec.ResultID())
+	return PersistedSnapshotRefLink{}, fmt.Errorf("missing persisted snapshot link role %q for owner %d path %s", role, dec.scope.OwnerResultID, dec.scope.OutputPath)
 }
 
 // item returns the context for an inline list item of this row.
-func (dec *PersistDecodeContext) item(itemCall *ResultCall) *PersistDecodeContext {
-	return &PersistDecodeContext{server: dec.Server(), call: itemCall}
+func (dec *PersistDecodeContext) item(itemCall *ResultCall, index int) *PersistDecodeContext {
+	scope := PersistedSnapshotScope{OwnerResultID: dec.scope.OwnerResultID, OutputPath: dec.scope.OutputPath.Field("items").Index(index)}
+	var host *PartHost
+	if dec.host != nil {
+		host = dec.host.at(scope.OutputPath)
+	}
+	return &PersistDecodeContext{server: dec.Server(), call: itemCall, imported: dec.imported, host: host, scope: scope, roles: dec.roles, cleanup: dec.cleanup}
 }
 
 // DecodeLosslessJSON decodes exactly one JSON value, keeping numbers as
@@ -422,6 +482,9 @@ func VisitPersistedSnapshotRoles(visit PersistedRefVisitor, kind PersistedRefKin
 		if err := visit(&ref); err != nil {
 			return err
 		}
+		if ref.Role != links[i].Role || !slices.Equal(ref.Path, path.Field("snapshotLinks").Index(i)) {
+			return fmt.Errorf("snapshot visitor changed declared role or path")
+		}
 		if ref.RefKey == "" {
 			return fmt.Errorf("persisted snapshot role %q: replaced identity with empty key", links[i].Role)
 		}
@@ -560,7 +623,7 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 	}
 	out := PersistedRecord{
 		ResultID:      rec.ResultID,
-		SnapshotLinks: slices.Clone(rec.SnapshotLinks),
+		SnapshotLinks: cloneSnapshotRefLinks(rec.SnapshotLinks),
 	}
 	if rec.Envelope.ResultID != 0 && rec.Envelope.ResultID != rec.ResultID {
 		return PersistedRecord{}, fmt.Errorf("visit encoded references: envelope names row %d but record is row %d", rec.Envelope.ResultID, rec.ResultID)
@@ -570,7 +633,11 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 			return PersistedRecord{}, err
 		}
 	}
-	env, err := visitPersistedEnvelope(rec.Envelope, rec.Call, out.SnapshotLinks, nil, true, visit)
+	scopes, err := partitionSnapshotLinks(rec.Envelope, out.SnapshotLinks)
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	env, err := visitPersistedEnvelope(rec.Envelope, rec.Call, scopes, nil, true, visit)
 	if err != nil {
 		return PersistedRecord{}, err
 	}
@@ -579,6 +646,7 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 		env.ResultID = out.ResultID
 	}
 	out.Envelope = env
+	out.SnapshotLinks = scopes.links
 	if rec.Call != nil {
 		out.Call = rec.Call.clone()
 		if err := visitResultCallReferences(out.Call, nil, visit); err != nil {
@@ -588,7 +656,7 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 	return out, nil
 }
 
-func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, links []PersistedSnapshotRefLink, path PersistedRefPath, root bool, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
+func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, root bool, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
 	if env.Version != persistedResultEnvelopeVersion {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unsupported version %d", path, env.Version)
 	}
@@ -608,14 +676,7 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 	if root && env.Kind == persistedResultKindRef {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope: root envelope cannot be a result reference")
 	}
-	// Only an object payload's family visitor classifies storage roles, so a
-	// null, scalar or list root that carries links would leave their keys
-	// unclassified and unrelocated with no report. Capture cannot produce
-	// that pairing today, but this contract is driven from stored records as
-	// well as from live values, so reject it rather than skip it silently.
-	if root && env.Kind != persistedResultKindObject && len(links) > 0 {
-		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: %s root declares %d storage role(s); only an object payload classifies storage roles", path, env.Kind, len(links))
-	}
+
 	switch env.Kind {
 	case persistedResultKindNull, persistedResultKindScalar:
 		if len(env.Items) != 0 || len(env.ObjectJSON) != 0 {
@@ -631,7 +692,7 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 		}
 		return env, nil
 	case persistedResultKindObject:
-		return visitPersistedObjectEnvelope(env, ownerCall, links, path, root, visit)
+		return visitPersistedObjectEnvelope(env, ownerCall, scopes, path, visit)
 	case persistedResultKindList:
 		items := make([]PersistedResultEnvelope, len(env.Items))
 		for i, item := range env.Items {
@@ -639,7 +700,7 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 			if ownerCall != nil {
 				itemCall = persistedListItemCall(ownerCall, i+1)
 			}
-			rewritten, err := visitPersistedEnvelope(item, itemCall, nil, path.Field("items").Index(i), false, visit)
+			rewritten, err := visitPersistedEnvelope(item, itemCall, scopes, path.Field("items").Index(i), false, visit)
 			if err != nil {
 				return PersistedResultEnvelope{}, err
 			}
@@ -654,14 +715,18 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 
 // visitPersistedObjectEnvelope is visitPersistedEnvelope's object case: every
 // storage role the owner declares is classified by its family exactly once.
-func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, links []PersistedSnapshotRefLink, path PersistedRefPath, root bool, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
+func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
 	family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
 	if !ok {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unknown object codec family %q for type %q", path, env.ObjectCodec, env.TypeName)
 	}
-	payloadLinks := links
-	if !root {
-		payloadLinks = nil
+	payloadLinks := scopes.project(path)
+	if validator, ok := family.Transfer.(interface {
+		ValidateSnapshotScope(PersistedPayloadVisit) error
+	}); ok {
+		if err := validator.ValidateSnapshotScope(PersistedPayloadVisit{Version: env.Version, Call: ownerCall, Path: path, Payload: env.ObjectJSON, SnapshotLinks: cloneSnapshotRefLinks(payloadLinks)}); err != nil {
+			return PersistedResultEnvelope{}, err
+		}
 	}
 	// Every storage role the owner declares must be classified by its
 	// family exactly once: an unreported role would keep an unrelocated
@@ -697,6 +762,9 @@ func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *Result
 		if n := roleReports[link.Role]; n != 1 {
 			return PersistedResultEnvelope{}, fmt.Errorf("visit persisted %s payload at %q: storage role %q classified %d times, expected exactly once", family.Name, path, link.Role, n)
 		}
+	}
+	if err := scopes.rewrite(path, payloadLinks); err != nil {
+		return PersistedResultEnvelope{}, err
 	}
 	env.ObjectJSON = rewritten
 	return env, nil
@@ -786,4 +854,13 @@ func visitResultCallLiteralReferences(lit *ResultCallLiteral, path PersistedRefP
 		}
 	}
 	return nil
+}
+
+// Imported reports the copied owner origin, never a temporary decoded row.
+func (dec *PersistDecodeContext) Imported() bool { return dec != nil && dec.imported }
+func (dec *PersistDecodeContext) PartHost() *PartHost {
+	if dec == nil {
+		return nil
+	}
+	return dec.host
 }

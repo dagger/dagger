@@ -70,7 +70,6 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 // The operation and row ownership are already held by the caller. Only this
 // row's lazyMu is acquired here, never a dependency's mutex or a new admission.
 func (c *Cache) captureHeldPersistedRecord(ctx context.Context, shared *sharedResult, imported bool, offers []PersistedPartOffer, version *capturedRowRevision) (PersistedRecord, error) {
-	var err error
 	shared.lazyMu.Lock()
 	defer shared.lazyMu.Unlock()
 
@@ -83,10 +82,17 @@ func (c *Cache) captureHeldPersistedRecord(ctx context.Context, shared *sharedRe
 		}
 	}
 
+	return c.capturePartRecord(ctx, shared, imported, offers, version)
+}
+
+// capturePartRecord relies on the core nonblocking output guard. Unlike a
+// checkpoint capture it may run inside a synthetic coordination task.
+func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imported bool, offers []PersistedPartOffer, version *capturedRowRevision) (PersistedRecord, error) {
+	var err error
 	payload := shared.loadPayloadState()
 	version.payload = payload
 	if payload.snapshotLinkIntent != nil {
-		payload.snapshotOwnerLinks = slices.Clone(payload.snapshotLinkIntent.Links)
+		payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
 	}
 	frame := shared.loadResultCall().clone()
 	captured := &sharedResult{
@@ -132,7 +138,7 @@ func (c *Cache) captureHeldPersistedRecord(ctx context.Context, shared *sharedRe
 		ResultID:      uint64(shared.id),
 		Envelope:      envelope,
 		Call:          frame,
-		SnapshotLinks: slices.Clone(encoding.SnapshotLinks),
+		SnapshotLinks: cloneSnapshotRefLinks(encoding.SnapshotLinks),
 	}, nil
 }
 

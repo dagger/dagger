@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Capture must refuse the native producers' actual
+// Capture must refuse the native operations' actual
 // LazyState body latch. The body is paused before any filesystem work.
 func TestCapturePersistedFilesystemDirectEvaluation(t *testing.T) {
 	for _, family := range []string{"File", "Directory"} {
@@ -42,8 +42,8 @@ func TestCapturePersistedFilesystemDirectEvaluation(t *testing.T) {
 			record, err := cache.CapturePersistedRecord(ctx, child)
 			close(finish)
 			<-done
-			t.Logf("capture while %s producer body latch held: err=%v payload=%s", family, err, record.Envelope.ObjectJSON)
-			require.ErrorIs(t, err, dagql.ErrPersistStateNotReady, "live capture must refuse an active direct producer body")
+			t.Logf("capture while %s operation body latch held: err=%v payload=%s", family, err, record.Envelope.ObjectJSON)
+			require.ErrorIs(t, err, dagql.ErrPersistStateNotReady, "live capture must refuse an active direct operation body")
 		})
 	}
 }
@@ -85,7 +85,17 @@ func TestFilesystemPersistenceRetainsBodyLatch(t *testing.T) {
 		state   *LazyState
 		clear   func()
 		version dagql.PersistedOutputVersion
-	}{{"File", &fileOp.LazyState, file.clearLazy, file}, {"Directory", &dirOp.LazyState, dir.clearLazy, dir}} {
+	}{{"File", &fileOp.LazyState, func() {
+		file.outputMu.Lock()
+		defer file.outputMu.Unlock()
+		file.rememberBodyLocked(file.Lazy)
+		file.Lazy = nil
+	}, file}, {"Directory", &dirOp.LazyState, func() {
+		dir.outputMu.Lock()
+		defer dir.outputMu.Unlock()
+		dir.rememberBodyLocked(dir.Lazy)
+		dir.Lazy = nil
+	}, dir}} {
 		t.Run(test.name, func(t *testing.T) {
 			test.state.LazyMu.Lock()
 			test.clear()

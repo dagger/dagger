@@ -13,13 +13,13 @@ import (
 
 func TestContainerTransferPendingChild(t *testing.T) {
 	// A captured filesystem descriptor carries no locally usable snapshot.
-	payload := json.RawMessage(`{"producerState":"none","metadata":{"consumed":true,"value":{"platform":"linux/amd64","config":{"WorkingDir":"/captured"},"defaultTerminalCmd":{}}},"parts":{"fs":{"kind":"pending","valueKind":"directory","role":"fs","path":"/"},"execMeta":{"kind":"absent"}}}`)
+	payload := json.RawMessage(`{"operationState":"none","metadata":{"consumed":true,"value":{"platform":"linux/amd64","config":{"WorkingDir":"/captured"},"defaultTerminalCmd":{}}},"parts":{"fs":{"kind":"pending","valueKind":"directory","role":"fs","path":"/"},"execMeta":{"kind":"absent"}}}`)
 	ctr := &core.Container{}
 	family, ok := dagql.PersistedObjectFamilyFor(ctr)
 	require.True(t, ok)
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "capturedContainer", Type: dagql.NewResultCallType(ctr.Type())}
-	bundle := dagql.ValueBundle{Version: 1, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{{Ordinal: 1, Record: dagql.PersistedRecord{
-		ResultID: 1, Call: frame, Envelope: dagql.PersistedResultEnvelope{Version: 4, Kind: "object_self", TypeName: "Container", ObjectCodec: family.Name, ResultID: 1, ObjectJSON: payload},
+	bundle := dagql.ValueBundle{Version: 2, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{{Ordinal: 1, Record: dagql.PersistedRecord{
+		ResultID: 1, Call: frame, Envelope: dagql.PersistedResultEnvelope{Version: 5, Kind: "object_self", TypeName: "Container", ObjectCodec: family.Name, ResultID: 1, ObjectJSON: payload},
 	}}}}
 	b := &persistedSchemaTestEnv{dbPath: filepath.Join(t.TempDir(), "b.db")}
 	ctx, cache, srv := b.open(t)

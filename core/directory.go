@@ -53,10 +53,9 @@ type Directory struct {
 	stored            *storedSnapshot
 	Lazy              Lazy[*Directory]
 
-	// Keep the producer independently of the operational lazy pointer.
-	completedRecipe     Lazy[*Directory]
-	completedRecipeKind string
-	completedRecipeJSON json.RawMessage
+	// Retained operation bytes for snapshot restore and acquired values.
+	lazyKind string
+	lazyJSON json.RawMessage
 
 	Dir      *LazyAccessor[string, *Directory] // a selected subdir of the rootfs of the on-disk Result, if any
 	Snapshot *LazyAccessor[bkcache.ImmutableRef, *Directory]
@@ -113,34 +112,35 @@ func (dir *Directory) AttachDependencyResultsKinds(
 	if dir == nil {
 		return nil, nil
 	}
-	return attachFilesystemDependencyResultsKinds(ctx, "directory", dir.Services, dir.Lazy, dir.completedRecipe, attach)
+	return attachFilesystemDependencyResultsKinds(ctx, "directory", dir.Services, dir.Lazy, attach)
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
 	if dir == nil {
 		return nil
 	}
-	dir.outputMu.Lock()
-	pending, lazy := dir.transferPending != nil, dir.Lazy
-	dir.outputMu.Unlock()
-	if pending {
-		return func(context.Context) error { return fmt.Errorf("%w: Directory.snapshot", dagql.ErrUnavailablePart) }
-	}
-	if lazy == nil {
-		return nil
-	}
-	return func(ctx context.Context) error {
-		if err := lazy.Evaluate(ctx, dir); err != nil {
-			return err
+	return dir.filesystemOutput.lazyEvalFunc("Directory", func() (bool, *lazyEvalBody) {
+		lazy := dir.Lazy
+		if lazy == nil {
+			return dir.transferPending != nil, nil
 		}
-		dir.outputMu.Lock()
-		defer dir.outputMu.Unlock()
-		dir.finishLazyLocked(lazy)
-		return nil
-	}
+		return dir.transferPending != nil, &lazyEvalBody{
+			evaluated: lazy.IsEvaluated,
+			evaluate:  func(ctx context.Context) error { return lazy.Evaluate(ctx, dir) },
+		}
+	})
 }
 
 func (dir *Directory) snapshotIdentity() (string, bool) {
+	if dir == nil {
+		return "", false
+	}
+	dir.outputMu.Lock()
+	defer dir.outputMu.Unlock()
+	return dir.snapshotIdentityLocked()
+}
+
+func (dir *Directory) snapshotIdentityLocked() (string, bool) {
 	if dir == nil {
 		return "", false
 	}
@@ -192,6 +192,7 @@ const (
 )
 
 const (
+	persistedDirectoryLazyKindScratch                       = "scratch"
 	persistedDirectoryLazyKindContainerRootFS               = "container.rootfs"
 	persistedDirectoryLazyKindContainerDirectory            = "container.directory"
 	persistedDirectoryLazyKindWithDirectory                 = "directory.withDirectory"
@@ -210,14 +211,14 @@ const (
 )
 
 type persistedDirectoryPayload struct {
-	ValueKnown    bool                      `json:"valueKnown,omitempty"`
-	ProducerState string                    `json:"producerState,omitempty"`
-	Form          string                    `json:"form"`
-	Dir           string                    `json:"dir,omitempty"`
-	Platform      Platform                  `json:"platform"`
-	Services      []persistedServiceBinding `json:"services,omitempty"`
-	LazyKind      string                    `json:"lazyKind,omitempty"`
-	LazyJSON      json.RawMessage           `json:"lazyJSON,omitempty"`
+	ValueKnown     bool                      `json:"valueKnown,omitempty"`
+	OperationState string                    `json:"operationState,omitempty"`
+	Form           string                    `json:"form"`
+	Dir            string                    `json:"dir,omitempty"`
+	Platform       Platform                  `json:"platform"`
+	Services       []persistedServiceBinding `json:"services,omitempty"`
+	LazyKind       string                    `json:"lazyKind,omitempty"`
+	LazyJSON       json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
 func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
@@ -250,12 +251,12 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 		Platform:   dir.Platform,
 		Services:   services,
 	}
-	if identity, ok := dir.snapshotIdentity(); ok {
+	if identity, ok := dir.snapshotIdentityLocked(); ok {
 		payload.Form = persistedDirectoryFormSnapshot
-		payload.LazyKind = dir.completedRecipeKind
-		payload.LazyJSON = dir.completedRecipeJSON
-		recipe := dir.completedRecipe
-		if recipe == nil && dir.Lazy != nil {
+		payload.LazyKind = dir.lazyKind
+		payload.LazyJSON = dir.lazyJSON
+		var recipe Lazy[*Directory]
+		if dir.Lazy != nil {
 			if _, restored := dir.Lazy.(*DirectoryRestoreLazy); !restored {
 				recipe = dir.Lazy
 			}
@@ -342,8 +343,8 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 			return nil, err
 		}
 		dir.stored = &storedSnapshot{SnapshotID: link.RefKey}
-		dir.completedRecipeKind = persisted.LazyKind
-		dir.completedRecipeJSON = slices.Clone(persisted.LazyJSON)
+		dir.lazyKind = persisted.LazyKind
+		dir.lazyJSON = slices.Clone(persisted.LazyJSON)
 		dir.storedDiagnostics = newStoredSnapshotDiagnostics()
 		dir.SetPath(persisted.Dir)
 		dir.Lazy = &DirectoryRestoreLazy{LazyState: NewLazyState()}
@@ -636,6 +637,10 @@ func attachFileResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res
 
 func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Directory]) (string, json.RawMessage, error) {
 	switch lazy := lazy.(type) {
+	case *DirectoryScratchLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindScratch, payload, err
+
 	case *DirectoryGitCommitTreeLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindGitCommitTree, payload, err
@@ -705,6 +710,12 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeContext, lazyKind string, payload json.RawMessage) (Lazy[*Directory], error) {
 	switch lazyKind {
+	case persistedDirectoryLazyKindScratch:
+		if err := validateDirectoryScratchPayload(payload); err != nil {
+			return nil, err
+		}
+		return &DirectoryScratchLazy{LazyState: NewLazyState()}, nil
+
 	case persistedDirectoryLazyKindGitCommitTree:
 		return decodeDirectoryGitCommitTreeLazy(ctx, dec, payload)
 
@@ -937,7 +948,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 }
 
 func (lazy *DirectoryWithDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withDirectory", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withDirectory", func(ctx context.Context) error {
 		return dir.WithDirectory(ctx, lazy.Parent, lazy.DestDir, lazy.Source, lazy.Filter, lazy.Owner, lazy.Permissions)
 	})
 }
@@ -976,7 +987,7 @@ func (lazy *DirectoryWithDirectoryLazy) EncodePersisted(ctx context.Context, enc
 }
 
 func (lazy *DirectoryWithDirectoryDockerfileCompatLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withDirectoryDockerfileCompat", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withDirectoryDockerfileCompat", func(ctx context.Context) error {
 		return dir.WithDirectoryDockerfileCompat(
 			ctx,
 			lazy.Parent,
@@ -1039,7 +1050,7 @@ func (lazy *DirectoryWithDirectoryDockerfileCompatLazy) EncodePersisted(ctx cont
 }
 
 func (lazy *DirectoryWithPatchFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withPatchFile", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withPatchFile", func(ctx context.Context) error {
 		return dir.applyPatchFileResult(ctx, lazy.Parent, lazy.Patch, lazy.OnConflict)
 	})
 }
@@ -1071,7 +1082,7 @@ func (lazy *DirectoryWithPatchFileLazy) EncodePersisted(ctx context.Context, enc
 }
 
 func (lazy *DirectoryWithNewFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withNewFile", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withNewFile", func(ctx context.Context) error {
 		return dir.WithNewFile(ctx, lazy.Parent, lazy.Dest, lazy.Content, lazy.Permissions, lazy.Ownership)
 	})
 }
@@ -1100,7 +1111,7 @@ func (lazy *DirectoryWithNewFileLazy) EncodePersisted(ctx context.Context, enc *
 }
 
 func (lazy *DirectoryWithFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withFile", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withFile", func(ctx context.Context) error {
 		return dir.WithFile(ctx, lazy.Parent, lazy.DestPath, lazy.Source, lazy.Permissions, lazy.Owner, lazy.DoNotCreateDestPath, lazy.AttemptUnpackDockerCompatibility)
 	})
 }
@@ -1140,7 +1151,7 @@ func (lazy *DirectoryWithFileLazy) EncodePersisted(ctx context.Context, enc *dag
 }
 
 func (lazy *DirectoryWithTimestampsLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withTimestamps", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withTimestamps", func(ctx context.Context) error {
 		return dir.WithTimestamps(ctx, lazy.Parent, lazy.Timestamp)
 	})
 }
@@ -1163,7 +1174,7 @@ func (lazy *DirectoryWithTimestampsLazy) EncodePersisted(ctx context.Context, en
 }
 
 func (lazy *DirectoryWithNewDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withNewDirectory", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withNewDirectory", func(ctx context.Context) error {
 		return dir.WithNewDirectory(ctx, lazy.Parent, dagql.CurrentCall(ctx), lazy.Dest, lazy.Permissions)
 	})
 }
@@ -1186,7 +1197,7 @@ func (lazy *DirectoryWithNewDirectoryLazy) EncodePersisted(ctx context.Context, 
 }
 
 func (lazy *DirectorySubdirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.directory", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.directory", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
@@ -1271,7 +1282,7 @@ func (lazy *DirectorySubdirectoryLazy) EncodePersisted(ctx context.Context, enc 
 }
 
 func (lazy *DirectoryDiffLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.diff", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.diff", func(ctx context.Context) error {
 		return dir.Diff(ctx, lazy.Parent, lazy.Other)
 	})
 }
@@ -1303,7 +1314,7 @@ func (lazy *DirectoryDiffLazy) EncodePersisted(ctx context.Context, enc *dagql.P
 }
 
 func (lazy *DirectoryWithChangesLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withChanges", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withChanges", func(ctx context.Context) error {
 		return dir.WithChanges(ctx, lazy.Parent, lazy.Changes)
 	})
 }
@@ -1339,7 +1350,7 @@ func (lazy *DirectoryWithChangesLazy) EncodePersisted(ctx context.Context, enc *
 }
 
 func (lazy *DirectoryWithoutLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.without", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.without", func(ctx context.Context) error {
 		return dir.Without(ctx, lazy.Parent, dagql.CurrentCall(ctx), true, lazy.Paths...)
 	})
 }
@@ -1362,7 +1373,7 @@ func (lazy *DirectoryWithoutLazy) EncodePersisted(ctx context.Context, enc *dagq
 }
 
 func (lazy *DirectoryWithSymlinkLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.withSymlink", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withSymlink", func(ctx context.Context) error {
 		return dir.WithSymlink(ctx, lazy.Parent, lazy.Target, lazy.LinkName)
 	})
 }
@@ -1385,7 +1396,7 @@ func (lazy *DirectoryWithSymlinkLazy) EncodePersisted(ctx context.Context, enc *
 }
 
 func (lazy *DirectoryChownLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.chown", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.chown", func(ctx context.Context) error {
 		return dir.Chown(ctx, lazy.Parent, lazy.ChownPath, lazy.Owner)
 	})
 }
@@ -2374,7 +2385,10 @@ func materializedDirectorySnapshotAndPath(dir *Directory) (bkcache.ImmutableRef,
 	if dir == nil {
 		return nil, "", fmt.Errorf("materialized directory: nil directory")
 	}
-	if dir.Lazy != nil {
+	// Pending computation, not the operation's evaluated flag: a value whose
+	// part was acquired has a stored descriptor and an opened snapshot, and
+	// its restore operation never runs.
+	if dir.HasPendingLazyComputation() {
 		return nil, "", fmt.Errorf("materialized directory: still lazy %T", dir.Lazy)
 	}
 	dirRef, ok := dir.Snapshot.Peek()

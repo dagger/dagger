@@ -44,15 +44,18 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
 	}
-	if container.transferPending != nil {
-		return encodePersistedObjectPayload(container.transferPending)
+	if view := container.acquiredOutput.Load(); view != nil {
+		raw, err := json.Marshal(view.Payload)
+		return dagql.PersistedObjectEncoding{JSON: raw, SnapshotLinks: dagql.ClonePersistedSnapshotLinks(view.Links)}, err
 	}
-	unlock, err := container.lockForPersistence(enc.Quiescent())
+	// Read the operation before its state latch. Re-taking lazyOpMu while
+	// holding LazyMu would invert the blocking ownership reader's lock order.
+	lazy, recipeJSON := container.lazyForPersistence()
+	unlock, err := container.lockLazyForPersistence(lazy, enc.Quiescent())
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	defer unlock()
-	lazy, completedRecipe, recipeJSON := container.lazyOpsForPersistence()
 	metadata, err := container.encodeContainerMetadata(enc)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
@@ -68,9 +71,6 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 	recipe := lazy
 	if restore, ok := recipe.(*ContainerRestoreLazy); ok {
 		recipe = restore.recipe
-	}
-	if !pending && recipe == nil {
-		recipe = completedRecipe
 	}
 	if pending && recipe == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
@@ -98,12 +98,11 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 // each registered group's mutex excludes runners that already passed LazyMu.
 // No evaluation is started, and sibling groups still run in parallel normally.
 func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
-	lazy, completedRecipe, _ := container.lazyOpsForPersistence()
-	if lazy == nil {
-		// An unrefined body may have cleared Lazy before returning. Its
-		// retained producer still carries the latch held by that body.
-		lazy = completedRecipe
-	}
+	lazy, _ := container.lazyForPersistence()
+	return container.lockLazyForPersistence(lazy, quiescent)
+}
+
+func (container *Container) lockLazyForPersistence(lazy Lazy[*Container], quiescent bool) (func(), error) {
 	if lazy == nil {
 		return func() {}, nil
 	}
@@ -115,9 +114,8 @@ func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
 	if state == nil || state.LazyMu == nil {
 		return nil, fmt.Errorf("encode persisted container: missing lazy mutex for %T", lazy)
 	}
-	// The op is only cleared after publication, never replaced, and restore
-	// wrappers share their recipe's state. Drop lazyOpMu before acquiring
-	// LazyMu: consumption takes those locks in the opposite order.
+	// Restore wrappers share their operation's state. Release lazyOpMu
+	// before taking the body latch; bodies can read the routing pointer.
 	if quiescent {
 		// Operations have drained; a diagnostic reader may still briefly
 		// hold this latch. Waiting preserves ordinary shutdown persistence.
@@ -135,6 +133,9 @@ func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
 		state.LazyMu.Unlock()
 	}
 	for key, group := range state.groups {
+		if group.done.Load() {
+			continue
+		}
 		// Bodies may consult LazyMu. A busy group must release every lock
 		// immediately, rather than waiting with LazyMu held.
 		if !group.mu.TryLock() {
@@ -146,10 +147,10 @@ func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
 	return unlock, nil
 }
 
-func (container *Container) lazyOpsForPersistence() (Lazy[*Container], Lazy[*Container], json.RawMessage) {
+func (container *Container) lazyForPersistence() (Lazy[*Container], json.RawMessage) {
 	container.lazyOpMu.Lock()
 	defer container.lazyOpMu.Unlock()
-	return container.Lazy, container.completedRecipe, container.completedRecipeJSON
+	return container.Lazy, container.lazyJSON
 }
 
 func containerStoredOpenGroup(part dagql.PartKey) dagql.LazyGroupKey {
@@ -173,7 +174,7 @@ func (container *Container) HasPendingLazyComputation() bool {
 	if container == nil {
 		return false
 	}
-	if container.transferPending != nil {
+	if container.acquiredOutput.Load() != nil {
 		_, err := container.resolveTransferParts(nil)
 		return err != nil
 	}
@@ -217,7 +218,7 @@ func (container *Container) containerPartComputedLocked(ctx context.Context, laz
 	if _, stored := container.storedParts[part]; stored {
 		return true
 	}
-	if lazy == nil {
+	if lazy == nil || lazy.IsEvaluated() {
 		return true
 	}
 	if restore, ok := lazy.(*ContainerRestoreLazy); ok {
@@ -313,7 +314,7 @@ func hasStoredContainerPart(ctr *Container, part dagql.PartKey) bool {
 
 // containerPartValue describes the container-owned value, without evaluating
 // an accessor or opening a snapshot. Stored descriptors remain authoritative
-// after opening, and after the restore operation has been cleared.
+// after opening the stored snapshot.
 func (container *Container) containerPartValue(part dagql.PartKey) (containerStoredPart, error) {
 	if stored, ok := container.storedParts[part]; ok {
 		return stored, nil

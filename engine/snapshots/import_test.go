@@ -765,3 +765,112 @@ func TestImportChainCanceledWaiter(t *testing.T) {
 	require.EqualValues(t, 2, provider.Reads.Load())
 	require.EqualValues(t, 2, consumer.Applies.Load())
 }
+
+func TestPinSnapshotIndependentOwner(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	parent, _ := store.Build(t, nil, "prefix", "owned prefix")
+	child, _ := store.Build(t, parent, "suffix", "owned suffix")
+	pin, err := store.Manager.PinSnapshot(ctx, child.SnapshotID())
+	require.NoError(t, err)
+	require.NoError(t, parent.Release(ctx))
+	require.NoError(t, child.Release(ctx))
+	store.GC(t)
+	testutil.CheckFile(t, pin, "prefix", "owned prefix")
+	testutil.CheckFile(t, pin, "suffix", "owned suffix")
+	require.NoError(t, pin.Release(ctx))
+	require.NoError(t, pin.Release(ctx))
+	_, err = store.Manager.PinSnapshot(ctx, "missing-snapshot")
+	require.Error(t, err)
+}
+
+type alteredChainProvider struct {
+	content.InfoReaderProvider
+	mode string
+}
+
+func (p alteredChainProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	reader, err := p.InfoReaderProvider.ReaderAt(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	raw, err := io.ReadAll(content.NewReader(reader))
+	if err != nil {
+		return nil, err
+	}
+	if p.mode == "short" {
+		raw = raw[:len(raw)/2]
+	} else {
+		raw[0] ^= 1
+	}
+	return chainBytesReader{bytes.NewReader(raw)}, nil
+}
+
+type chainBytesReader struct{ *bytes.Reader }
+
+func (r chainBytesReader) Close() error { return nil }
+func TestChainContentClassification(t *testing.T) {
+	for _, mode := range []string{"missing", "short", "checksum", "apply", "lease", "writer", "cancel"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+			ref, _ := producer.Build(t, nil, "payload", "chain bytes")
+			chain := exportChain(t, ref)
+			provider := chain.Provider
+			failure := errors.New("injected local failure")
+			switch mode {
+			case "missing":
+				provider = nil
+			case "short", "checksum":
+				provider = alteredChainProvider{InfoReaderProvider: provider, mode: mode}
+			case "apply":
+				consumer.BeforeApply = func(context.Context, ocispecs.Descriptor) error { return failure }
+			case "writer":
+				consumer.BeforeWrite = func([]byte) error { return failure }
+			case "lease":
+				consumer.BeforeAdd = func(context.Context, leases.Lease, leases.Resource) error { return failure }
+			case "cancel":
+				cancel()
+			}
+			imported, err := consumer.Manager.ImportChain(ctx, supplied(chain, provider))
+			require.Nil(t, imported)
+			require.Error(t, err)
+			var contentErr *bkcache.ChainContentError
+			switch mode {
+			case "lease", "writer":
+				require.ErrorIs(t, err, failure)
+				require.False(t, errors.As(err, &contentErr))
+			case "cancel":
+				require.ErrorIs(t, err, context.Canceled)
+				require.False(t, errors.As(err, &contentErr))
+			default:
+				require.ErrorAs(t, err, &contentErr)
+				require.Equal(t, chain.Layers[0].Descriptor.Digest, contentErr.Layer)
+				stage := "copy"
+				if mode == "missing" {
+					stage = "provider"
+				}
+				if mode == "apply" {
+					stage = "apply"
+					require.ErrorIs(t, err, failure)
+				}
+				require.Equal(t, stage, contentErr.Stage)
+			}
+		})
+	}
+}
+
+// The test store's in-place differ writes its blobs through the same observed
+// content store as the manager, so a test that counts or faults content
+// writes sees a diff's writes too. Without that, a zero-write assertion over
+// an export or a fallback diff would pass without observing anything.
+func TestStoreObservesDifferWrites(t *testing.T) {
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "producer prefix")
+	var writes atomic.Int64
+	store.BeforeWrite = func([]byte) error { writes.Add(1); return nil }
+	exportChain(t, a)
+	require.Positive(t, writes.Load(), "the differ's blob writes reach BeforeWrite")
+}

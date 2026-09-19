@@ -188,6 +188,13 @@ func parentAndSource[T any](sourceField string, parent, source func(*T) *uint64)
 // persistedDirectoryLazyVisitors declares the references of every Directory
 // lazy kind, mirroring decodePersistedDirectoryLazy.
 var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
+	persistedDirectoryLazyKindScratch: func(raw json.RawMessage, _ *persistedRefWalker) (json.RawMessage, error) {
+		if err := validateDirectoryScratchPayload(raw); err != nil {
+			return nil, err
+		}
+		return raw, nil
+	},
+
 	persistedDirectoryLazyKindGitCommitTree: persistedLazyStructVisitor(func(p *persistedDirectoryGitCommitTreeLazy, w *persistedRefWalker) error {
 		if err := p.validate(); err != nil {
 			return err
@@ -374,7 +381,7 @@ var persistedFileVisitor = persistedStructVisitor(dagql.PersistedRefOutputRole, 
 })
 
 // persistedContainerVisitor walks metadata references, per-part service
-// bindings and producer payloads selected by the recorded call's field,
+// bindings and operation payloads selected by the recorded call's field,
 // which pending container decode also dispatches on.
 var persistedContainerVisitor = persistedPayloadVisitorFunc(func(v dagql.PersistedPayloadVisit, visit dagql.PersistedRefVisitor) (json.RawMessage, error) {
 	if err := newPersistedRefWalker(visit, v.Path).roles(dagql.PersistedRefOutputRole, v.SnapshotLinks); err != nil {

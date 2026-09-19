@@ -75,9 +75,8 @@ type resolverInputMount string
 func (m resolverInputMount) Mount() ([]mount.Mount, func() error, error) {
 	return []mount.Mount{{Type: "bind", Source: string(m)}}, func() error { return nil }, nil
 }
-func TestProducerResolverCleanup(t *testing.T) {
-	t.Run("constructed output recording", testProducerRecordingRejections)
-	for _, kind := range []string{"ref wrapping", "ref digest", "commit wrapping", "ref recording", "commit recording"} {
+func TestLazyOperationResolverCleanup(t *testing.T) {
+	for _, kind := range []string{"ref wrapping", "ref digest", "commit wrapping"} {
 		t.Run(kind, func(t *testing.T) {
 			server := &currentTypeDefsTestServer{}
 			query := core.NewRoot(server)
@@ -94,9 +93,6 @@ func TestProducerResolverCleanup(t *testing.T) {
 			dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory])}
 			dir.Dir.SetValue("/")
 			dir.Snapshot.SetValue(ref)
-			if strings.HasSuffix(kind, "recording") {
-				dir.Lazy = &core.DirectorySubdirectoryLazy{LazyState: core.NewLazyState()}
-			}
 			tree := &resolverCleanupTree{output: dir}
 			if strings.HasPrefix(kind, "commit") {
 				cache, e := dagql.NewCache(ctx, "", nil, nil)
@@ -138,25 +134,18 @@ func TestProducerResolverCleanup(t *testing.T) {
 				_, err = (&gitSchema{}).tree(ctx, parent, treeArgs{Depth: 1})
 			}
 			require.Error(t, err)
-			if strings.HasSuffix(kind, "recording") {
-				require.ErrorContains(t, err, "operation already recorded")
-				require.NotNil(t, dir.Lazy)
-			}
-			require.ErrorIs(t, err, cleanupErr)
-			require.Equal(t, 1, ref.releases)
+			require.NotErrorIs(t, err, cleanupErr)
+			require.Zero(t, ref.releases, "construction never acquired a backend output")
 		})
 	}
 }
 
 // The manager exposes real temporary files and counts only output ownership.
-// Faults happen after the eager body has produced its immutable output.
+// Each returned ref has its own release counter.
 type resolverOutputRef struct {
 	bkcache.ImmutableRef
-	root, id          string
-	releases          int
-	faultValue        dagql.Typed
-	faultLazy         any
-	faultReleaseError error
+	root, id string
+	releases int
 }
 
 func (r *resolverOutputRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
@@ -166,9 +155,6 @@ func (r *resolverOutputRef) ID() string         { return r.id }
 func (r *resolverOutputRef) SnapshotID() string { return r.id }
 func (r *resolverOutputRef) Release(ctx context.Context) error {
 	r.releases++
-	if r.faultValue != nil {
-		return errors.Join(ctx.Err(), r.faultReleaseError)
-	}
 	return ctx.Err()
 }
 func (r *resolverOutputRef) Size(context.Context) (int64, error) { return 0, nil }
@@ -188,16 +174,43 @@ func (r *resolverMutableRef) Release(ctx context.Context) error { return ctx.Err
 
 type resolverOutputManager struct {
 	bkcache.SnapshotManager
-	t                     *testing.T
-	outputs               []*resolverOutputRef
-	leaseFault            error
-	recordingReleaseError error
+	t          *testing.T
+	outputs    []*resolverOutputRef
+	leaseFault error
+	inputs     map[string]*resolverOutputRef
+	imageRoot  string
+	imageRef   bkcache.ImmutableRef
+}
+
+func (m *resolverOutputManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+	ref := &resolverOutputRef{root: m.t.TempDir(), id: "scratch"}
+	m.outputs = append(m.outputs, ref)
+	return ref, nil
+}
+
+func (m *resolverOutputManager) GetBySnapshotID(ctx context.Context, id string, opts ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
+	input := m.inputs[id]
+	if input == nil && m.SnapshotManager != nil {
+		return m.SnapshotManager.GetBySnapshotID(ctx, id, opts...)
+	}
+	if input == nil {
+		return nil, fmt.Errorf("missing test snapshot %s", id)
+	}
+	ref := &resolverOutputRef{root: input.root, id: id}
+	m.outputs = append(m.outputs, ref)
+	return ref, nil
 }
 
 func (m *resolverOutputManager) AttachLease(context.Context, string, string) error {
 	return m.leaseFault
 }
+func (m *resolverOutputManager) PinSnapshot(ctx context.Context, id string) (bkcache.ImmutableRef, error) {
+	return m.GetBySnapshotID(ctx, id)
+}
 func (m *resolverOutputManager) RemoveLease(context.Context, string) error { return nil }
+func (m *resolverOutputManager) DeleteStaleDaggerOwnerLeases(context.Context, map[string]struct{}) error {
+	return nil
+}
 func (m *resolverOutputManager) New(ctx context.Context, parent bkcache.ImmutableRef, _ ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	root := m.t.TempDir()
 	if parent != nil {
@@ -221,12 +234,23 @@ func (m *resolverOutputManager) New(ctx context.Context, parent bkcache.Immutabl
 			return os.WriteFile(dst, data, info.Mode())
 		}))
 	}
-	ref := &resolverOutputRef{root: root, id: fmt.Sprintf("output-%d", len(m.outputs)), faultReleaseError: m.recordingReleaseError}
+	ref := &resolverOutputRef{root: root, id: fmt.Sprintf("output-%d", len(m.outputs))}
 	m.outputs = append(m.outputs, ref)
 	return &resolverMutableRef{output: ref}, nil
 }
-func (m *resolverOutputManager) ImportImage(context.Context, *bkcache.ImportedImage, bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
-	ref := &resolverOutputRef{root: m.t.TempDir(), id: "builtin", faultReleaseError: m.recordingReleaseError}
+func (m *resolverOutputManager) ImportImage(ctx context.Context, _ *bkcache.ImportedImage, _ bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
+	if m.imageRef != nil {
+		return m.SnapshotManager.GetBySnapshotID(ctx, m.imageRef.SnapshotID())
+	}
+	root := m.imageRoot
+	if root == "" {
+		root = m.t.TempDir()
+	}
+	ref := &resolverOutputRef{root: root, id: "builtin"}
+	if m.inputs == nil {
+		m.inputs = map[string]*resolverOutputRef{}
+	}
+	m.inputs[ref.id] = ref
 	m.outputs = append(m.outputs, ref)
 	return ref, nil
 }
@@ -258,6 +282,7 @@ func resolverOutputFixture(t *testing.T) (context.Context, *dagql.Server, *dagql
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.File]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Container]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.HTTPState]{}))
+	dagql.Fields[*core.Query]{dagql.NodeFunc("__httpFile", (&httpSchema{}).httpFile).IsPersistable()}.Install(srv)
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitRepository]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitBundle]{}))
 	return ctx, srv, cache, server
@@ -269,9 +294,9 @@ func resolverAttach[T dagql.Typed](t *testing.T, ctx context.Context, srv *dagql
 	require.NoError(t, err)
 	return result.(dagql.ObjectResult[T])
 }
-func TestProducerResolverOutputCleanup(t *testing.T) { testProducerResolverOutputs(t, false) }
-func TestProducerResolverCapture(t *testing.T) {
-	testProducerResolverOutputs(t, true)
+func TestLazyOperationResolverOutputCleanup(t *testing.T) { testLazyOperationResolverOutputs(t, false) }
+func TestLazyOperationResolverCapture(t *testing.T) {
+	testLazyOperationResolverOutputs(t, true)
 	for _, kind := range []string{"gitCleaned", "gitTree", "gitCommitTree"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx, srv, cache, server := resolverOutputFixture(t)
@@ -297,14 +322,14 @@ func TestProducerResolverCapture(t *testing.T) {
 			var result dagql.ObjectResult[*core.Directory]
 			var err error
 			if kind == "gitCleaned" {
-				ctx = producerResolverCall(ctx, "__cleaned", dir)
+				ctx = operationResolverCall(ctx, "__cleaned", dir)
 				dagql.Fields[*core.GitRepository]{dagql.NodeFunc("__cleaned", (&gitSchema{}).cleaned)}.Install(srv)
 				err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "__cleaned"})
 			} else {
 				ref := &gitutil.Ref{Name: "refs/heads/main", SHA: sha}
 				backend, e := repo.Backend.Get(ctx, ref)
 				require.NoError(t, e)
-				ctx = producerResolverCall(ctx, "tree", dir)
+				ctx = operationResolverCall(ctx, "tree", dir)
 				if kind == "gitTree" {
 					input := resolverAttach(t, ctx, srv, cache, "ref", &core.GitRef{Repo: parent, Ref: ref, Backend: backend})
 					// Depth 1: see TestProducerResolverCleanup.
@@ -315,7 +340,12 @@ func TestProducerResolverCapture(t *testing.T) {
 				}
 			}
 			require.NoError(t, err)
-			assertResolverProducer(t, ctx, cache, result.Self(), kind)
+			assertResolverLazyOperation(t, ctx, cache, result.Self(), kind)
+			if kind != "gitCleaned" {
+				require.Empty(t, server.manager.outputs)
+				require.False(t, result.Self().Lazy.IsEvaluated())
+				require.NoError(t, result.Self().Lazy.Evaluate(ctx, result.Self()))
+			}
 			require.Len(t, server.manager.outputs, 1)
 			if kind == "gitCleaned" {
 				require.Zero(t, server.manager.outputs[0].releases)
@@ -326,7 +356,24 @@ func TestProducerResolverCapture(t *testing.T) {
 		})
 	}
 }
-func testProducerResolverOutputs(t *testing.T, recorded bool) {
+func testLazyOperationResolverOutputs(t *testing.T, recorded bool) {
+	t.Run("scratch wrapping", func(t *testing.T) {
+		ctx, srv, cache, server := resolverOutputFixture(t)
+		server.platform = core.Platform{OS: "linux", Architecture: "amd64"}
+		if recorded {
+			ctx = operationResolverCall(ctx, "directory", &core.Directory{})
+		}
+		result, err := (&directorySchema{}).directory(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), struct{}{})
+		require.Empty(t, server.manager.outputs)
+		if recorded {
+			require.NoError(t, err)
+			assertResolverLazyOperation(t, ctx, cache, result.Self(), "scratch")
+			require.NoError(t, result.Self().OnRelease(ctx))
+		} else {
+			require.ErrorContains(t, err, "call is nil")
+			require.Equal(t, dagql.ObjectResult[*core.Directory]{}, result)
+		}
+	})
 	t.Run("http state sync", func(t *testing.T) {
 		ctx, srv, cache, server := resolverOutputFixture(t)
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "body") }))
@@ -334,7 +381,7 @@ func testProducerResolverOutputs(t *testing.T, recorded bool) {
 		state := &core.HTTPState{URL: origin.URL}
 		parent := resolverAttach(t, ctx, srv, cache, "_httpState", state)
 		if recorded {
-			ctx = producerResolverCall(ctx, "_resolve", &core.File{})
+			ctx = operationResolverCall(ctx, "_resolve", &core.File{})
 		} else {
 			server.manager.leaseFault = errors.New("injected state owner failure")
 		}
@@ -343,7 +390,7 @@ func testProducerResolverOutputs(t *testing.T, recorded bool) {
 		err = callErr
 		if recorded {
 			require.NoError(t, err)
-			assertResolverProducer(t, ctx, cache, result.Self(), "httpResolve")
+			assertResolverLazyOperation(t, ctx, cache, result.Self(), "httpResolve")
 			require.NoError(t, result.Self().OnRelease(ctx))
 			return
 		}
@@ -362,18 +409,17 @@ func testProducerResolverOutputs(t *testing.T, recorded bool) {
 			return dir, nil
 		})}.Install(srv)
 		if recorded {
-			ctx = producerResolverCall(ctx, "__schemaJSONFile", &core.File{})
+			ctx = operationResolverCall(ctx, "__schemaJSONFile", &core.File{})
 		}
 		result, err := (&querySchema{}).schemaJSONFile(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), schemaJSONArgs{})
 		if recorded {
 			require.NoError(t, err)
-			assertResolverProducer(t, ctx, cache, result.Self(), "file.blob")
+			assertResolverLazyOperation(t, ctx, cache, result.Self(), "file.blob")
 			require.NoError(t, result.Self().OnRelease(ctx))
 			return
 		}
 		require.ErrorContains(t, err, "call is nil")
-		require.Len(t, server.manager.outputs, 1)
-		require.Equal(t, 1, server.manager.outputs[0].releases)
+		require.Empty(t, server.manager.outputs)
 	})
 	t.Run("builtin wrapping", func(t *testing.T) {
 		ctx, srv, cache, server := resolverOutputFixture(t)
@@ -388,19 +434,18 @@ func testProducerResolverOutputs(t *testing.T, recorded bool) {
 		desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromBytes(manifest), Size: int64(len(manifest))}
 		require.NoError(t, content.WriteBlob(ctx, store, "manifest", bytes.NewReader(manifest), desc))
 		if recorded {
-			ctx = producerResolverCall(ctx, "_builtinContainer", &core.Container{})
+			ctx = operationResolverCall(ctx, "_builtinContainer", &core.Container{})
 		}
 		result, callErr := (&hostSchema{}).builtinContainer(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), builtinContainerArgs{Digest: desc.Digest.String()})
 		err = callErr
 		if recorded {
 			require.NoError(t, err)
-			assertResolverProducer(t, ctx, cache, result.Self(), "")
+			assertResolverLazyOperation(t, ctx, cache, result.Self(), "")
 			require.NoError(t, result.Self().OnRelease(ctx))
 			return
 		}
 		require.ErrorContains(t, err, "call is nil")
-		require.Len(t, server.manager.outputs, 1)
-		require.Equal(t, 1, server.manager.outputs[0].releases)
+		require.Empty(t, server.manager.outputs)
 	})
 	t.Run("bundle wrapping", func(t *testing.T) {
 		ctx, srv, cache, server := resolverOutputFixture(t)
@@ -426,28 +471,27 @@ func testProducerResolverOutputs(t *testing.T, recorded bool) {
 				bundleID, err := bundleRes.ID()
 				require.NoError(t, err)
 				if recorded {
-					ctx = producerResolverCall(ctx, "__withBundleDirectory", &core.Directory{})
+					ctx = operationResolverCall(ctx, "__withBundleDirectory", &core.Directory{})
 				}
 				result, callErr := (&gitSchema{}).withBundleDirectory(ctx, repoRes, gitWithBundleArgs{Bundle: dagql.NewID[*core.GitBundle](bundleID)})
 				err = callErr
 				if recorded {
 					require.NoError(t, err)
-					assertResolverProducer(t, ctx, cache, result.Self(), "gitBundleImport")
+					assertResolverLazyOperation(t, ctx, cache, result.Self(), "gitBundleImport")
 					require.NoError(t, result.Self().OnRelease(ctx))
 					return
 				}
 				require.ErrorContains(t, err, "call is nil")
-				require.Len(t, server.manager.outputs, 1)
-				require.Equal(t, 1, server.manager.outputs[0].releases)
+				require.Empty(t, server.manager.outputs)
 			}
 		}
 	})
 }
 
-func producerResolverCall(ctx context.Context, field string, value dagql.Typed) context.Context {
+func operationResolverCall(ctx context.Context, field string, value dagql.Typed) context.Context {
 	return dagql.ContextWithCall(ctx, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Type: dagql.NewResultCallType(value.Type())})
 }
-func assertResolverProducer(t *testing.T, ctx context.Context, cache *dagql.Cache, value dagql.PersistedObject, kind string) {
+func assertResolverLazyOperation(t *testing.T, ctx context.Context, cache *dagql.Cache, value dagql.PersistedObject, kind string) {
 	t.Helper()
 	encoded, err := value.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, dagql.CurrentCall(ctx)))
 	require.NoError(t, err)

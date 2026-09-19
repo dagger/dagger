@@ -108,14 +108,8 @@ func partAddressKey(address PersistedPartAddress) (string, error) {
 	if address.Part == "" {
 		return "", fmt.Errorf("part address: empty part")
 	}
-	for _, elem := range address.OutputPath {
-		if elem.IsIndex {
-			if elem.Index < 0 || elem.Field != "" {
-				return "", fmt.Errorf("part address: invalid index")
-			}
-		} else if elem.Field == "" || elem.Index != 0 {
-			return "", fmt.Errorf("part address: invalid field")
-		}
+	if _, err := canonicalPath(address.OutputPath); err != nil {
+		return "", err
 	}
 	data, err := json.Marshal(address)
 	return string(data), err

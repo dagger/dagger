@@ -10,7 +10,7 @@ import (
 )
 
 // storedSnapshot belongs to one restored value. Its identity survives opening
-// and removal of the operational lazy pointer; children do not inherit it.
+// independently of the retained operation; children do not inherit it.
 type storedSnapshot struct {
 	SnapshotID string
 }
@@ -19,7 +19,7 @@ type DirectoryRestoreLazy struct{ LazyState }
 type FileRestoreLazy struct{ LazyState }
 
 func (lazy *DirectoryRestoreLazy) Evaluate(ctx context.Context, dir *Directory) error {
-	return lazy.LazyState.Evaluate(ctx, "Directory.restore", func(ctx context.Context) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.restore", func(ctx context.Context) error {
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
@@ -43,7 +43,7 @@ func (*DirectoryRestoreLazy) EncodePersisted(context.Context, *dagql.PersistEnco
 }
 
 func (lazy *FileRestoreLazy) Evaluate(ctx context.Context, file *File) error {
-	return lazy.LazyState.Evaluate(ctx, "File.restore", func(ctx context.Context) error {
+	return file.evaluateLazy(ctx, &lazy.LazyState, "File.restore", func(ctx context.Context) error {
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
@@ -70,7 +70,12 @@ var _ dagql.HasLazyEvaluationReporting = (*Directory)(nil)
 var _ dagql.HasLazyEvaluationReporting = (*File)(nil)
 
 func (dir *Directory) HasPendingLazyComputation() bool {
-	return dir != nil && dir.stored == nil && dir.Lazy != nil
+	if dir == nil {
+		return false
+	}
+	dir.outputMu.Lock()
+	defer dir.outputMu.Unlock()
+	return dir.stored == nil && dir.Lazy != nil && !dir.Lazy.IsEvaluated()
 }
 
 func (dir *Directory) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.PartKey {
@@ -81,7 +86,12 @@ func (dir *Directory) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.PartKe
 }
 
 func (file *File) HasPendingLazyComputation() bool {
-	return file != nil && file.stored == nil && file.Lazy != nil
+	if file == nil {
+		return false
+	}
+	file.outputMu.Lock()
+	defer file.outputMu.Unlock()
+	return file.stored == nil && file.Lazy != nil && !file.Lazy.IsEvaluated()
 }
 
 func (file *File) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.PartKey {
@@ -94,8 +104,12 @@ func (file *File) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.PartKey {
 // PathOrEval returns saved metadata without opening its snapshot. Fresh values
 // still need evaluation, even when their path accessor has been prefilled.
 func (dir *Directory) PathOrEval(ctx context.Context, self dagql.ObjectResult[*Directory]) (string, error) {
-	if dir.stored != nil || dir.transferPending != nil && dir.transferPending.ValueKnown {
-		if path, ok := dir.Dir.Peek(); ok {
+	dir.outputMu.Lock()
+	known := dir.stored != nil || dir.transferPending != nil && dir.transferPending.ValueKnown
+	path, ok := dir.Dir.Peek()
+	dir.outputMu.Unlock()
+	if known {
+		if ok {
 			return path, nil
 		}
 		return "", fmt.Errorf("restored directory has no saved path")
@@ -104,8 +118,12 @@ func (dir *Directory) PathOrEval(ctx context.Context, self dagql.ObjectResult[*D
 }
 
 func (file *File) PathOrEval(ctx context.Context, self dagql.ObjectResult[*File]) (string, error) {
-	if file.stored != nil || file.transferPending != nil && file.transferPending.ValueKnown {
-		if path, ok := file.File.Peek(); ok {
+	file.outputMu.Lock()
+	known := file.stored != nil || file.transferPending != nil && file.transferPending.ValueKnown
+	path, ok := file.File.Peek()
+	file.outputMu.Unlock()
+	if known {
+		if ok {
 			return path, nil
 		}
 		return "", fmt.Errorf("restored file has no saved path")
@@ -117,7 +135,11 @@ func (file *File) PathOrEval(ctx context.Context, self dagql.ObjectResult[*File]
 func SourceFilePaths(ctx context.Context, files []dagql.ObjectResult[*File]) ([]string, error) {
 	var fresh []dagql.AnyResult
 	for _, file := range files {
-		if file.Self().stored == nil && (file.Self().transferPending == nil || !file.Self().transferPending.ValueKnown) {
+		value := file.Self()
+		value.outputMu.Lock()
+		freshPath := value.stored == nil && (value.transferPending == nil || !value.transferPending.ValueKnown)
+		value.outputMu.Unlock()
+		if freshPath {
 			fresh = append(fresh, file)
 		}
 	}

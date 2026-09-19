@@ -1,5 +1,7 @@
 # Deferred opening of completed Directory and File snapshots, and stable identity for persisted lists
 
+The current operation lifetime is specified in [Lazy values](lazy-values.md). The earlier completion traces below predate retention of evaluated operations; pointer presence no longer reports pending work.
+
 <!-- Preserve tab indentation in exact Go source excerpts. -->
 <!-- markdownlint-configure-file {"MD010": {"code_blocks": false}} -->
 

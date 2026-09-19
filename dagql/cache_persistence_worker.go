@@ -95,7 +95,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		}
 		payload := res.loadPayloadState()
 		if payload.snapshotLinkIntent != nil {
-			payload.snapshotOwnerLinks = slices.Clone(payload.snapshotLinkIntent.Links)
+			payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
 		}
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:              resultID,
@@ -274,7 +274,10 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
 		}
 		resultSnapshot.row.SelfPayload = payload
-		resultSnapshot.resultSnapshotLinks = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
+		resultSnapshot.resultSnapshotLinks, err = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
+		if err != nil {
+			return persistStateSnapshot{}, err
+		}
 	}
 	return snapshot, nil
 }
@@ -447,34 +450,34 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 	return nil
 }
 
-func resultSnapshotLinkRows(resultID sharedResultID, links []PersistedSnapshotRefLink) []persistdb.MirrorResultSnapshotLink {
-	if len(links) == 0 {
-		return nil
-	}
-	links = slices.Clone(links)
-	slices.SortFunc(links, func(a, b PersistedSnapshotRefLink) int {
-		switch {
-		case a.RefKey < b.RefKey:
-			return -1
-		case a.RefKey > b.RefKey:
-			return 1
-		case a.Role < b.Role:
-			return -1
-		case a.Role > b.Role:
-			return 1
-		default:
-			return 0
-		}
-	})
+func resultSnapshotLinkRows(resultID sharedResultID, links []PersistedSnapshotRefLink) ([]persistdb.MirrorResultSnapshotLink, error) {
 	rows := make([]persistdb.MirrorResultSnapshotLink, 0, len(links))
 	for _, link := range links {
-		rows = append(rows, persistdb.MirrorResultSnapshotLink{
-			ResultID: int64(resultID),
-			RefKey:   link.RefKey,
-			Role:     link.Role,
-		})
+		key, err := snapshotLinkKey(link)
+		if err != nil {
+			return nil, err
+		}
+		if link.RefKey == "" {
+			return nil, fmt.Errorf("empty snapshot key")
+		}
+		rows = append(rows, persistdb.MirrorResultSnapshotLink{ResultID: int64(resultID), RefKey: link.RefKey, Role: key.Role, OutputPath: key.Path})
 	}
-	return rows
+	slices.SortFunc(rows, func(a, b persistdb.MirrorResultSnapshotLink) int {
+		if a.OutputPath < b.OutputPath {
+			return -1
+		}
+		if a.OutputPath > b.OutputPath {
+			return 1
+		}
+		if a.Role < b.Role {
+			return -1
+		}
+		if a.Role > b.Role {
+			return 1
+		}
+		return 0
+	})
+	return rows, nil
 }
 
 func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (encoding PersistedResultEncoding, rerr error) {
