@@ -356,7 +356,8 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			obj = node.ObjectType()
 		}
 	}
-	if node.Parent != nil && node.CollectionDimension == nil {
+	// An engine object root can have a synthetic parent for its artifact address.
+	if node.Parent != nil && node.RootValue == nil && node.CollectionDimension == nil {
 		parent := node.Parent.ObjectType()
 		if (parent == nil || parent.SourceModuleName == "") && !slices.ContainsFunc(node.Directives, isArtifactDirective) {
 			return nil
