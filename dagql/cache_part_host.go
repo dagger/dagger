@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -135,6 +136,19 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	return err
 }
 
+// SetContentDigestAfterEvaluation defers output equivalence until this native
+// attempt has materialized and settled its output. Inline values do not have an
+// independent result identity, so they cannot publish a digest on their owner.
+func (host *PartHost) SetContentDigestAfterEvaluation(ctx context.Context, contentDigest digest.Digest, labels ...string) error {
+	if len(host.path) != 0 {
+		return nil
+	}
+	if !host.Admitted(ctx) {
+		return fmt.Errorf("defer content digest: no admitted native evaluation")
+	}
+	return PartTaskFromContext(ctx).SetContentDigestAfterEvaluation(contentDigest, labels...)
+}
+
 // Only the owning native attempt may advance installed output to complete,
 // after owner sync and operation-lease cleanup have both succeeded.
 func (c *Cache) completeNativePartTask(ctx context.Context, task *PartTaskToken) error {
@@ -147,7 +161,7 @@ func (c *Cache) completeNativePartTask(ctx context.Context, task *PartTaskToken)
 			return err
 		}
 	}
-	return nil
+	return c.teachTaskContentIdentity(ctx, task)
 }
 
 // DecodeContext borrows this held owner's exact recorded identity and server.

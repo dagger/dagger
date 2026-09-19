@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/opencontainers/go-digest"
 )
 
 // LazyTaskSpec supplies a coordination body, independent of the value's native
@@ -22,14 +25,45 @@ type LazyTaskSpec struct {
 var ErrLazyTaskBusy = errors.New("lazy task already active or awaiting bookkeeping")
 
 type PartTaskToken struct {
-	row           *sharedResult
-	key           LazyGroupKey
-	generation    uint64
-	active        atomic.Bool
-	installed     atomic.Pointer[InstalledOutputs]
-	ownerSync     chan struct{}
-	ownerSyncOnce sync.Once
-	settled       atomic.Bool
+	row             *sharedResult
+	key             LazyGroupKey
+	generation      uint64
+	active          atomic.Bool
+	installed       atomic.Pointer[InstalledOutputs]
+	contentIdentity *lazyContentIdentity
+	ownerSync       chan struct{}
+	ownerSyncOnce   sync.Once
+	settled         atomic.Bool
+}
+
+// lazyContentIdentity is published only after successful materialization and its
+// ownership bookkeeping succeed. The installation token retains it for retries.
+type lazyContentIdentity struct {
+	digest digest.Digest
+	labels []string
+}
+
+// SetContentDigestAfterEvaluation schedules content equivalence for a successful
+// output installation. Failed bodies and unfinished cleanup never publish it.
+func (task *PartTaskToken) SetContentDigestAfterEvaluation(contentDigest digest.Digest, labels ...string) error {
+	if task == nil || !task.active.Load() {
+		return fmt.Errorf("defer content digest: no active evaluation")
+	}
+	if contentDigest == "" {
+		return fmt.Errorf("defer content digest: empty digest")
+	}
+	task.contentIdentity = &lazyContentIdentity{digest: contentDigest, labels: slices.Clone(labels)}
+	return nil
+}
+
+func (c *Cache) teachTaskContentIdentity(ctx context.Context, task *PartTaskToken) error {
+	if task.installed.Load() == nil {
+		return nil
+	}
+	if identity := task.contentIdentity; identity != nil {
+		return c.TeachContentDigest(ctx, Result[Typed]{shared: task.row}, identity.digest, identity.labels...)
+	}
+	return nil
 }
 
 // InstalledOutputs is immutable after publication. Installation identity is
@@ -108,6 +142,9 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 			}
 		}
 		t.settled = true
+	}
+	if err := c.teachTaskContentIdentity(ctx, t.token); err != nil {
+		return err
 	}
 	t.token.settled.Store(true)
 	return nil

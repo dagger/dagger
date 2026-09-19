@@ -204,6 +204,9 @@ func (m *resolverOutputManager) GetBySnapshotID(ctx context.Context, id string, 
 func (m *resolverOutputManager) AttachLease(context.Context, string, string) error {
 	return m.leaseFault
 }
+func (m *resolverOutputManager) PinSnapshot(ctx context.Context, id string) (bkcache.ImmutableRef, error) {
+	return m.GetBySnapshotID(ctx, id)
+}
 func (m *resolverOutputManager) RemoveLease(context.Context, string) error { return nil }
 func (m *resolverOutputManager) DeleteStaleDaggerOwnerLeases(context.Context, map[string]struct{}) error {
 	return nil

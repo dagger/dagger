@@ -1713,14 +1713,15 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 		dgstInputs = append(dgstInputs, "localRepo", dirDgst.String())
 	}
 	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		dgstInputs = append(dgstInputs, "authUsername", remoteRepo.AuthUsername)
 		if remoteRepo.SSHAuthSocket.Self() != nil {
 			dgstInputs = append(dgstInputs, "sshAuthSock", string(remoteRepo.SSHAuthSocket.Self().Handle))
 		}
 		if remoteRepo.AuthToken.Self() != nil {
-			dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(remoteRepo.AuthToken.Self() != nil))
+			dgstInputs = append(dgstInputs, "authToken", string(remoteRepo.AuthToken.Self().Handle))
 		}
 		if remoteRepo.AuthHeader.Self() != nil {
-			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
+			dgstInputs = append(dgstInputs, "authHeader", string(remoteRepo.AuthHeader.Self().Handle))
 		}
 	}
 	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...), call.ExtraDigestLabelRemoteCache)
@@ -2151,9 +2152,13 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if err != nil {
 			return inst, err
 		}
-		inst, err = inst.WithContentDigest(ctx, dgst, call.ExtraDigestLabelRemoteCache)
-		if err != nil {
-			return inst, err
+		if lazy, ok := inst.Self().Lazy.(*core.DirectoryGitTreeLazy); ok {
+			lazy.ContentDigest = dgst
+		} else {
+			inst, err = inst.WithContentDigest(ctx, dgst, call.ExtraDigestLabelRemoteCache)
+			if err != nil {
+				return inst, err
+			}
 		}
 	}
 
@@ -2220,14 +2225,15 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 		dgstInputs = append(dgstInputs, "localRepo", dirDgst.String())
 	}
 	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		dgstInputs = append(dgstInputs, "authUsername", remoteRepo.AuthUsername)
 		if remoteRepo.SSHAuthSocket.Self() != nil {
 			dgstInputs = append(dgstInputs, "sshAuthSock", string(remoteRepo.SSHAuthSocket.Self().Handle))
 		}
 		if remoteRepo.AuthToken.Self() != nil {
-			dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(remoteRepo.AuthToken.Self() != nil))
+			dgstInputs = append(dgstInputs, "authToken", string(remoteRepo.AuthToken.Self().Handle))
 		}
 		if remoteRepo.AuthHeader.Self() != nil {
-			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
+			dgstInputs = append(dgstInputs, "authHeader", string(remoteRepo.AuthHeader.Self().Handle))
 		}
 	}
 	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...), call.ExtraDigestLabelRemoteCache)
@@ -2289,10 +2295,7 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, err
 		}
-		inst, err = inst.WithContentDigest(ctx, dgst, call.ExtraDigestLabelRemoteCache)
-		if err != nil {
-			return inst, err
-		}
+		dir.Lazy.(*core.DirectoryGitCommitTreeLazy).ContentDigest = dgst
 	}
 
 	return inst, nil

@@ -40,7 +40,18 @@ func (family foreignFamilyCodec) PrepareLazyOperation(ctx context.Context, dec *
 			return nil, err
 		}
 		dir := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]), Platform: p.Platform, Services: services, Lazy: lazy}
-		return &privateLazyOperation{run: func(ctx context.Context) error { return dir.LazyEvalFunc()(ctx) }, capture: dir.EncodePersistedObject, release: dir.OnRelease}, nil
+		run := func(ctx context.Context) error {
+			if err := dir.LazyEvalFunc()(ctx); err != nil {
+				return err
+			}
+			// The private receiver has no PartHost. Register on the acquiring
+			// task only for a standalone directory, never on an inline owner.
+			if dec.ResultID() != 0 {
+				return deferPrivateGitTreeContentDigest(ctx, lazy)
+			}
+			return nil
+		}
+		return &privateLazyOperation{run: run, capture: dir.EncodePersistedObject, release: dir.OnRelease}, nil
 	case "File":
 		var p persistedFilePayload
 		if err := json.Unmarshal(record.Envelope.ObjectJSON, &p); err != nil {

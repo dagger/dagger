@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,9 +32,12 @@ func TestPartTaskContinuation(t *testing.T) {
 	ctx, c, _, receiver := newLazyRetryTestResult(t, nil)
 	var bodies, cleanups, settlements atomic.Int32
 	failed := errors.New("post-publication cleanup")
+	contentDigest := digest.FromString("materialized content")
 	spec := LazyTaskSpec{Body: func(ctx context.Context) error {
 		bodies.Add(1)
-		PartTaskFromContext(ctx).installed.Store(&InstalledOutputs{})
+		task := PartTaskFromContext(ctx)
+		require.NoError(t, task.SetContentDigestAfterEvaluation(contentDigest))
+		task.installed.Store(&InstalledOutputs{})
 		return nil
 	}, AfterOwnerSync: func(context.Context) error {
 		if cleanups.Add(1) == 1 {
@@ -42,10 +46,12 @@ func TestPartTaskContinuation(t *testing.T) {
 		return nil
 	}, Settled: func(context.Context) error { settlements.Add(1); return nil }}
 	require.ErrorIs(t, c.RunLazyTask(ctx, receiver, "obtain:snapshot", spec), failed)
+	require.Empty(t, receiver.cacheSharedResult().loadResultCall().ContentDigest())
 	refused := spec
 	refused.NoJoin = true
 	require.ErrorIs(t, c.RunLazyTask(ctx, receiver, "obtain:snapshot", refused), ErrLazyTaskBusy)
 	require.NoError(t, c.RunLazyTask(ctx, receiver, "obtain:snapshot", LazyTaskSpec{}))
+	require.Equal(t, contentDigest, receiver.cacheSharedResult().loadResultCall().ContentDigest())
 	require.EqualValues(t, 1, bodies.Load())
 	require.EqualValues(t, 2, cleanups.Load())
 	require.EqualValues(t, 1, settlements.Load())
