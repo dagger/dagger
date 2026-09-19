@@ -496,10 +496,68 @@ func (ArtifactsSuite) TestLegacyAddress(ctx context.Context, t *testctx.T) {
 "dependencies":[{"name":"dep","source":"../dep"}]}`).
 		WithNewFile("legacy/main.dang", `type Legacy {
   pub base: Container! { address("dep:base").container }
+  pub missingService: Service! { address("missing:serve").service }
 }`)
 	out, err := base.With(daggerCallAt("./legacy", "base", "file", "--path=/marker", "contents")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "legacy", strings.TrimSpace(out))
+
+	out, err = base.With(daggerExecFail("call", "-m", "./legacy", "missing-service", "hostname")).CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, `no installed module matches "missing"`)
+	require.NotContains(t, out, "write it as a DAG address")
+}
+
+func (ArtifactsSuite) TestAddressHints(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := c.Directory().AsWorkspace()
+	_, err := ws.Resolve("missing:serve").Service().ID(ctx)
+	require.ErrorContains(t, err, "write it as a DAG address: dag://missing/serve")
+
+	_, err = c.Address("missing:serve").Service().ID(ctx)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "write it as a DAG address")
+	require.NotContains(t, err.Error(), "no installed module matches")
+
+	_, err = ws.Resolve("missing:workspace").Workspace().ID(ctx)
+	require.ErrorContains(t, err, "must be a DAG address such as dag://<module>/<function>")
+}
+
+func (ArtifactsSuite) TestWorkspaceHelpDiscoveryFailures(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).With(nonNestedDevEngine(c))
+	for _, fixture := range []struct {
+		name string
+		ctr  *dagger.Container
+		err  string
+	}{
+		{name: "engine unavailable", ctr: base.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "invalid://"), err: `no driver for scheme "invalid"`},
+		{name: "invalid workspace", ctr: base.WithNewFile("dagger.toml", "[modules\n"), err: "parse dagger.toml"},
+	} {
+		t.Run(fixture.name, func(ctx context.Context, t *testctx.T) {
+			for _, args := range [][]string{
+				{"workspace"}, {"ws", "--help"}, {"ws", "-h"}, {"help", "workspace"},
+				{"__complete", "ws", ""}, {"__completeNoDesc", "ws", ""},
+			} {
+				t.Run(strings.Join(args, " "), func(ctx context.Context, t *testctx.T) {
+					out, err := fixture.ctr.With(daggerNonNestedExec(args...)).Stdout(ctx)
+					require.NoError(t, err)
+					if strings.HasPrefix(args[0], "__complete") {
+						require.Contains(t, out, "config")
+						require.Contains(t, out, "root")
+					} else {
+						require.Contains(t, out, "Inspect or configure your workspace.")
+					}
+				})
+			}
+			t.Run("shortcut keeps discovery error", func(ctx context.Context, t *testctx.T) {
+				out, err := fixture.ctr.With(daggerNonNestedExecFail("ws", "containers")).CombinedOutput(ctx)
+				require.NoError(t, err, out)
+				require.NotContains(t, out, "unknown command")
+				require.Contains(t, out, fixture.err)
+			})
+		})
+	}
 }
 
 // A legacy caller's generated SDK must retain a check's authored return type.
