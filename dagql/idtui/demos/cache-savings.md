@@ -43,23 +43,23 @@
 
 - Reset the engine cache using the preparation steps above.
 
-- Run the Dang demo once to record a cold baseline:
+- Run the Alpine module once to record a cold baseline:
 
   ```bash
-  ./bin/dagger api call -m ./dagql/idtui/demos/cache-demo cache-savings-demo
+  ./bin/dagger api call -m ./modules/alpine container file --path=/bin/busybox digest
   ```
 
 - Run the same workflow again:
 
   ```bash
-  ./bin/dagger api call -m ./dagql/idtui/demos/cache-demo cache-savings-demo
+  ./bin/dagger api call -m ./modules/alpine container file --path=/bin/busybox digest
   ```
 
-- Explain that the Dang module uses core API calls and does not use a
-  `Workspace`.
+- Explain that `alpine.container` is an existing repository function with no
+  `Workspace` argument.
 
 - Point out the higher warm cache hit rate:
 
   ```text
-  ♻️ Cache hits 64/94 (68%) ⚡ Saved ~9s wall · ...
+  ♻️ Cache hits 40/54 (74%) ⚡ Saved ~2s wall · ...
   ```
