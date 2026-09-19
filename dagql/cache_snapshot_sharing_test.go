@@ -1037,6 +1037,7 @@ func TestSnapshotSharingSelectsRestoredFrame(t *testing.T) {
 // part. A representation change during their optional probe is diagnostic;
 // an ordinary read still uses the snapshot they already own.
 func TestSnapshotSharingCompletedRowCaptureRefusal(t *testing.T) {
+	t.Parallel()
 	ctx, c, srv, manager := shareTestCache(t)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
