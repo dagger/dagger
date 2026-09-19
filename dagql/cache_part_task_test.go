@@ -131,3 +131,40 @@ func TestPartGateFiniteDrain(t *testing.T) {
 		return nil
 	}}))
 }
+
+func TestPartTaskContentIdentityWaitsForOperationLeaseRelease(t *testing.T) {
+	ctx, c, _, receiver := newLazyRetryTestResult(t, nil)
+	failed := errors.New("operation lease release failed")
+	var bodies, releases atomic.Int32
+	ctx = ContextWithOperationLeaseProvider(ctx, OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
+		return ctx, func(context.Context) error {
+			if releases.Add(1) == 1 {
+				return failed
+			}
+			return nil
+		}, nil
+	}))
+	contentDigest := digest.FromString("authorized materialized content")
+	var installation *PartTaskToken
+	spec := LazyTaskSpec{Body: func(ctx context.Context) error {
+		bodies.Add(1)
+		installation = PartTaskFromContext(ctx)
+		require.NoError(t, installation.SetContentDigestAfterEvaluation(contentDigest))
+		installation.installed.Store(&InstalledOutputs{})
+		return nil
+	}}
+
+	require.ErrorIs(t, c.RunLazyTask(ctx, receiver, "lazy:whole", spec), failed)
+	require.EqualValues(t, 1, bodies.Load())
+	require.EqualValues(t, 1, releases.Load())
+	require.Empty(t, receiver.cacheSharedResult().loadResultCall().ContentDigest())
+	require.False(t, installation.settled.Load())
+
+	// The retry has no body or new identity; only the original installation
+	// token can supply the digest after this attempt releases its lease.
+	require.NoError(t, c.RunLazyTask(ctx, receiver, "lazy:whole", LazyTaskSpec{}))
+	require.EqualValues(t, 1, bodies.Load())
+	require.EqualValues(t, 2, releases.Load())
+	require.Equal(t, contentDigest, receiver.cacheSharedResult().loadResultCall().ContentDigest())
+	require.True(t, installation.settled.Load())
+}

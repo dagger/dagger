@@ -4537,6 +4537,14 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
 		err = releaseErr
 	}
+	if err == nil && continuation != nil {
+		// Content equivalence requires successful operation-lease cleanup too.
+		// Bookkeeping retries retain the original installation's identity.
+		err = c.teachTaskContentIdentity(callbackCtx, continuation.token)
+		if err == nil {
+			continuation.token.settled.Store(true)
+		}
+	}
 	return callbackCtx, bodyDone, err
 }
 

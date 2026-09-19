@@ -143,10 +143,6 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 		}
 		t.settled = true
 	}
-	if err := c.teachTaskContentIdentity(ctx, t.token); err != nil {
-		return err
-	}
-	t.token.settled.Store(true)
 	return nil
 }
 
