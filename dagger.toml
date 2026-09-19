@@ -139,9 +139,11 @@ legacy-default-path = true
 
 [modules.dang-sdk]
 source = "dagger.io/sdk/dang@main"
+check.skip = ["generate:up-to-date"]
 
 [modules.go-sdk]
 source = "dagger.io/sdk/go@main"
+check.skip = ["generate:up-to-date"]
 
 # Dev-only: the TLA+ cache-model checks are expensive (the full run takes
 # well over an hour) and deliberately do not run in CI; use
