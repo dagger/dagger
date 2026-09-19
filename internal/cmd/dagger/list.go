@@ -44,7 +44,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		}
 	}
 	cmd, commandArgs := resolveCommand(root, args)
-	if cmd != listCmd && cmd.Parent() != listCmd {
+	if cmd != listCmd && cmd.Parent() != listCmd && cmd != checksCmd {
 		return nil
 	}
 	if !discover {
@@ -107,11 +107,15 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		return err
 	}
 	return withEngineSilent(ctx, params, func(ctx context.Context, ec *client.Client) error {
-		definitions, err := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}).Dimensions(ctx)
+		definitions, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}))
 		if err != nil {
 			return err
 		}
-		registerArtifactDimensionFlags(cmd, definitions)
+		var names []string
+		for _, def := range definitions {
+			names = append(names, def.Name, def.QualifiedName, def.Identifier)
+		}
+		registerArtifactDimensionFlags(cmd, names)
 		return nil
 	})
 }

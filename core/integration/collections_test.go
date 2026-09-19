@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -170,6 +171,53 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	}
 	_, err := base.With(daggerExec("artifacts", "list", "--item=a")).Stdout(ctx)
 	requireErrOut(t, err, "ambiguous dimension")
+}
+
+func (CollectionsSuite) TestCheckSelection(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := collectionSource(c).WithNewFile("collections/main.go", collectionGoSource+`
+// +check
+func (item *Item) Verify() error {
+  if item.Name == "item:c" { return fmt.Errorf("unselected item c ran") }
+  return nil
+}
+`)
+	base := goGitBase(t, c).WithDirectory("/work", source).WithWorkdir("/work")
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"query", []string{"dag://items/verify?item=a&item=b"}, "dag://items/verify?item=a\ndag://items/verify?item=b\n"},
+		{"dimension flag", []string{"items/verify", "--item=a", "--item=b"}, "dag://items/verify?item=a\ndag://items/verify?item=b\n"},
+		{"generic flag", []string{"items/verify", "--dimension-key=item=a", "--dimension-key=item=b"}, "dag://items/verify?item=a\ndag://items/verify?item=b\n"},
+		{"query and flag", []string{"items/verify?item=a", "--collections-items=b"}, "dag://items/verify?item=a\ndag://items/verify?item=b\n"},
+		{"separate addresses", []string{"items/verify?item=a", "other/verify?item=b"}, "dag://items/verify?item=a\ndag://other/verify?item=b\n"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := base.With(daggerExec(append([]string{"check", "-l"}, tc.args...)...)).Stdout(ctx)
+			require.NoError(t, err)
+			require.ElementsMatch(t, strings.Fields(tc.want), strings.Fields(out))
+			out, err = base.With(daggerExec(append([]string{"check"}, tc.args...)...)).CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			require.NotContains(t, out, "unselected item c ran")
+		})
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"check", "items/verify", "--unknown=a"}, "unknown flag: --unknown"},
+		{[]string{"check", "items/verify", "--dimension-key=invalid"}, "expected DIMENSION=KEY"},
+		{[]string{"check", "--item=a"}, "ambiguous dimension"},
+	} {
+		_, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
+		requireErrOut(t, err, tc.want)
+	}
+	out, err := base.With(daggerExec("check", "items/verify", "--help")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "--item")
+	require.Contains(t, out, "--dimension-key")
 }
 
 func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
