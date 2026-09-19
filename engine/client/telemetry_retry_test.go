@@ -79,6 +79,7 @@ func TestOTLPConsumerRetriesInitialConnection(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			var stream bytes.Buffer
+			require.NoError(t, enginetel.WriteLiveHello(&stream, 0))
 			require.NoError(t, enginetel.WriteLiveTerminal(&stream, 0))
 			requests := 0
 			hc := &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -92,12 +93,49 @@ func TestOTLPConsumerRetriesInitialConnection(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {enginetel.LiveContentType}}, Body: io.NopCloser(&stream), Request: req}, nil
 			})}}
 			group := new(errgroup.Group)
-			consumer := &otlpConsumer{httpClient: hc, path: "/v1/traces", eg: group}
+			consumer := &otlpConsumer{httpClient: hc, path: "/v1/traces", eg: group, reconnectDelay: 10 * time.Millisecond}
 			require.NoError(t, consumer.Consume(ctx, func([]byte, liveTelemetryEncoding) error { return nil }))
 			require.NoError(t, group.Wait())
 			require.Equal(t, 2, requests)
 		})
 	}
+}
+
+func TestOTLPConsumerGivesUpAfterRepeatedTransientFailures(t *testing.T) {
+	for _, status := range []int{0, 500, 503} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			requests := 0
+			hc := &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requests++
+				if status == 0 {
+					return nil, errors.New("transport failure")
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader("still unavailable")), Request: req}, nil
+			})}}
+			const attempts = 3
+			consumer := &otlpConsumer{httpClient: hc, path: "/v1/traces", eg: new(errgroup.Group), reconnectDelay: time.Millisecond, connectAttempts: attempts}
+			err := consumer.Consume(ctx, func([]byte, liveTelemetryEncoding) error { return nil })
+			// A persistently failing engine must not be retried until the
+			// telemetry context is cancelled: give up as a permanent failure.
+			require.ErrorIs(t, err, errPermanentTelemetryConnection)
+			require.NoError(t, ctx.Err(), "consumer gave up by exhausting attempts, not by timing out")
+			require.Equal(t, attempts, requests)
+		})
+	}
+}
+
+func TestOTLPConsumerConnectAttemptsDefaultIsBounded(t *testing.T) {
+	t.Parallel()
+	require.Greater(t, telemetryConnectAttempts, 1)
+	consumer := &otlpConsumer{httpClient: &httpClient{inner: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("transport failure")
+	})}}, path: "/v1/traces", reconnectDelay: time.Millisecond}
+	_, err := consumer.connect(t.Context(), 0)
+	require.ErrorIs(t, err, errPermanentTelemetryConnection)
+	require.ErrorContains(t, err, fmt.Sprintf("giving up after %d attempts", telemetryConnectAttempts))
 }
 
 func TestOTLPConsumerRejectsPermanentConnectionErrors(t *testing.T) {

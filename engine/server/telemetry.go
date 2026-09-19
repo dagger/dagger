@@ -957,7 +957,9 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		var err error
 		since, err = strconv.ParseInt(cursor, 10, 64)
 		if err != nil || since < 0 {
-			return fmt.Errorf("invalid telemetry cursor %q", cursor)
+			// A malformed cursor never resolves on retry; a 400 tells the
+			// client to give up rather than reconnect every second.
+			return httpErr(fmt.Errorf("invalid telemetry cursor %q", cursor), http.StatusBadRequest)
 		}
 	}
 

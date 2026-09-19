@@ -2024,6 +2024,35 @@ func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
 	require.Empty(t, resp.Body.Bytes())
 }
 
+func TestTelemetryStreamRejectsInvalidCursorAsBadRequest(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    make(chan struct{}),
+	}
+
+	for _, cursor := range []string{"abc", "-1"} {
+		req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+		req.Header.Set("Accept", enginetel.LiveContentType)
+		req.Header.Set(enginetel.LiveCursorHeader, cursor)
+		resp := httptest.NewRecorder()
+		fetched := false
+		err := ps.streamHandler(resp, req, record, func(context.Context, *clientdb.DB, int64, int) (int64, proto.Message, int, error) {
+			fetched = true
+			return 0, nil, 0, nil
+		})
+		require.Error(t, err)
+		require.False(t, fetched)
+		// A malformed cursor never resolves on retry, so it must not be
+		// reported as a 500 that the client treats as transient.
+		var httpErr httpError
+		require.ErrorAs(t, err, &httpErr)
+		require.Equal(t, http.StatusBadRequest, httpErr.code)
+	}
+}
+
 func TestTelemetryStreamDefaultsToLegacySSE(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	ps := &PubSub{srv: &Server{clientDBs: dbs}}

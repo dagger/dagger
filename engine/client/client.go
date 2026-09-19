@@ -932,9 +932,22 @@ type otlpConsumer struct {
 	traceID    trace.TraceID
 	clientID   string
 	eg         *errgroup.Group
+
+	// reconnectDelay overrides telemetryReconnectDelay; zero uses the default.
+	reconnectDelay time.Duration
+	// connectAttempts overrides telemetryConnectAttempts; zero uses the default.
+	connectAttempts int
 }
 
-const telemetryReconnectDelay = time.Second
+const (
+	// telemetryReconnectDelay is the pause between connection attempts.
+	telemetryReconnectDelay = time.Second
+	// telemetryConnectAttempts bounds consecutive transient failures per
+	// connect. Beyond it the engine is treated as persistently unavailable,
+	// since httpHandlerFunc maps unclassified handler errors to 500s that
+	// would otherwise be retried forever.
+	telemetryConnectAttempts = 10
+)
 
 var errPermanentTelemetryConnection = errors.New("permanent telemetry connection failure")
 
@@ -979,7 +992,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			}
 			logger.Debug("reconnecting to OTLP stream", "cursor", cursor, "err", err)
 
-			if err := waitForTelemetryReconnect(ctx); err != nil {
+			if err := c.waitForReconnect(ctx); err != nil {
 				return nil //nolint:nilerr // Cancellation ends the background consumer normally.
 			}
 			resp, err = c.connect(ctx, cursor) //nolint:bodyclose // The outer loop closes every response after consumeResponse.
@@ -999,19 +1012,30 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 }
 
 func (c *otlpConsumer) connect(ctx context.Context, cursor int64) (*http.Response, error) {
-	for {
+	attempts := c.connectAttempts
+	if attempts <= 0 {
+		attempts = telemetryConnectAttempts
+	}
+	for attempt := 1; ; attempt++ {
 		resp, err := c.connectOnce(ctx, cursor)
 		if err == nil || errors.Is(err, errPermanentTelemetryConnection) {
 			return resp, err
 		}
-		if err := waitForTelemetryReconnect(ctx); err != nil {
+		if attempt >= attempts {
+			return nil, fmt.Errorf("%w: giving up after %d attempts: %w", errPermanentTelemetryConnection, attempt, err)
+		}
+		if err := c.waitForReconnect(ctx); err != nil {
 			return nil, err
 		}
 	}
 }
 
-func waitForTelemetryReconnect(ctx context.Context) error {
-	timer := time.NewTimer(telemetryReconnectDelay)
+func (c *otlpConsumer) waitForReconnect(ctx context.Context) error {
+	delay := c.reconnectDelay
+	if delay <= 0 {
+		delay = telemetryReconnectDelay
+	}
+	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
