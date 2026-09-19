@@ -221,6 +221,34 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 }}}`, string(*got))
 }
 
+func (CollectionsSuite) TestArtifactUnion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	all := goGitBase(t, c).
+		WithDirectory("/work", collectionSource(c)).
+		WithWorkdir("/work").
+		Directory("/work").AsWorkspace().Artifacts()
+	left := all.FilterURI("items/file?item=a&item=b").WithoutURI("items/file?item=b")
+	right := all.FilterURI("items/file?item=b")
+	joined := left.WithArtifacts(right).WithArtifacts(right)
+	assertURIs := func(selection *dagger.Artifacts, want []string) {
+		t.Helper()
+		items, err := selection.Items(ctx)
+		require.NoError(t, err)
+		got := make([]string, 0, len(items))
+		for _, item := range items {
+			uri, err := item.URI(ctx)
+			require.NoError(t, err)
+			got = append(got, uri)
+		}
+		require.Equal(t, want, got)
+	}
+	assertURIs(joined, []string{"dag://items/file?item=a", "dag://items/file?item=b"})
+	assertURIs(joined.FilterDimensionKeys("item", []string{"b"}), []string{"dag://items/file?item=b"})
+	assertURIs(joined.WithoutURI("items/file?item=b"), []string{"dag://items/file?item=a"})
+	_, err := joined.URI(ctx)
+	require.ErrorContains(t, err, "use the individual artifact addresses")
+}
+
 func (CollectionsSuite) TestMainCollection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	out, err := goGitBase(t, c).

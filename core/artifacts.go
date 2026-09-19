@@ -275,8 +275,7 @@ func (a *Artifact) identity() (string, error) {
 		}
 		workspaceID = id.EngineResultID()
 	}
-	uri, err := a.URI(ArtifactURIOpts{DimensionKeys: true})
-	return fmt.Sprintf("%d:%s", workspaceID, uri), err
+	return fmt.Sprintf("%d:%s", workspaceID, artifactIdentity(a)), nil
 }
 
 func (a *Artifacts) WithArtifacts(other *Artifacts) (*Artifacts, error) {

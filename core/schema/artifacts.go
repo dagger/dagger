@@ -115,7 +115,15 @@ func (*artifactsSchema) withArtifacts(ctx context.Context, parent *core.Artifact
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithArtifacts(other.Self())
+	left, err := expandArtifacts(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	right, err := expandArtifacts(ctx, other.Self())
+	if err != nil {
+		return nil, err
+	}
+	return left.WithArtifacts(right)
 }
 func (*artifactsSchema) filterPath(_ context.Context, parent *core.Artifacts, args struct{ Path []string }) (*core.Artifacts, error) {
 	return parent.FilterPath(args.Path), nil
@@ -206,6 +214,9 @@ func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struc
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
 	var workspaceID uint64
 	for i, artifact := range parent.Entries {
+		if len(artifact.DimensionKeys) > 0 {
+			return "", fmt.Errorf("a selection with resolved collection keys has no single DAG address; use the individual artifact addresses")
+		}
 		id, err := artifact.Workspace.ID()
 		if err != nil {
 			return "", err
