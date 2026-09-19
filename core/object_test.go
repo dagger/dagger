@@ -332,6 +332,57 @@ func TestModuleFieldBindingIgnoresBootstrapEquivalence(t *testing.T) {
 	}
 }
 
+func TestModuleObjectRetainsEmbeddedModule(t *testing.T) {
+	for _, withFields := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fields=%v", withFields), func(t *testing.T) {
+			cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+			assert.NilError(t, err)
+			t.Cleanup(func() { assert.NilError(t, cache.Close(t.Context())) })
+			dag := newCoreDagqlServerForTest(t, &Query{})
+			installModuleObjectTestModuleClass(dag)
+			ctxFor := func(id string) context.Context {
+				return dagql.ContextWithCache(engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+					ClientID: id, SessionID: id,
+				}), cache)
+			}
+			producer, reader := ctxFor("producer"), ctxFor("reader")
+			mod := &Module{NameField: "owner", OriginalName: "owner"}
+			modCall := moduleObjectTestSyntheticCall("owned-module", mod)
+			modRes, err := dagql.NewObjectResultForCall(mod, dag, modCall)
+			assert.NilError(t, err)
+			modAny, err := cache.GetOrInitCall(producer, "producer", dag, &dagql.CallRequest{ResultCall: modCall}, dagql.ValueFunc(modRes))
+			assert.NilError(t, err)
+			modRes, ok := modAny.(dagql.ObjectResult[*Module])
+			assert.Assert(t, ok)
+			modID, err := modRes.ID()
+			assert.NilError(t, err)
+			obj := &ModuleObject{Module: modRes, TypeDef: NewObjectTypeDef("Ownership", "", nil)}
+			if withFields {
+				obj.Fields = map[string]any{"private": "value"}
+			}
+			dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{Typed: obj}))
+			// Deliberately omit module provenance: the payload's module must be
+			// owned even when its call references a different equivalent scope.
+			objCall := moduleObjectTestSyntheticCall("owned-object", obj)
+			objRes, err := dagql.NewObjectResultForCall(obj, dag, objCall)
+			assert.NilError(t, err)
+			objAny, err := cache.GetOrInitCall(producer, "producer", dag, &dagql.CallRequest{ResultCall: objCall}, dagql.ValueFunc(objRes))
+			assert.NilError(t, err)
+			objID, err := objAny.ID()
+			assert.NilError(t, err)
+			_, found, err := cache.LoadResultByResultIDExact(reader, "reader", dag, objID.EngineResultID())
+			assert.NilError(t, err)
+			assert.Assert(t, found)
+			assert.NilError(t, cache.ReleaseSession(producer, "producer"))
+			_, found, err = cache.LoadResultByResultIDExact(reader, "reader", dag, modID.EngineResultID())
+			assert.NilError(t, err)
+			assert.Assert(t, found, "retaining the object must retain its embedded module")
+			assert.NilError(t, cache.ReleaseSession(reader, "reader"))
+			assert.Equal(t, 0, cache.Size(), "the module must not retain the object in return")
+		})
+	}
+}
+
 func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

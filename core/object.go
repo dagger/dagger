@@ -483,12 +483,31 @@ func (obj *ModuleObject) AttachDependencyResults(
 	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if obj == nil || len(obj.Fields) == 0 {
+	if obj == nil {
 		return nil, nil
 	}
 
+	owned := make([]dagql.AnyResult, 0)
+	if obj.Module.Self() != nil {
+		// The embedded runtime module can differ from the equivalent module in
+		// call provenance. Retain the exact payload reference, including for
+		// empty objects, so cache readers do not inherit a collected module.
+		attached, err := attach(obj.Module)
+		if err != nil {
+			return nil, fmt.Errorf("attach module object module: %w", err)
+		}
+		module, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach module object module: unexpected result %T", attached)
+		}
+		obj.Module = module
+		owned = append(owned, module)
+	}
+	if len(obj.Fields) == 0 {
+		return owned, nil
+	}
+
 	if obj.Module.Self() == nil || obj.TypeDef == nil {
-		owned := make([]dagql.AnyResult, 0)
 		for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
 			updated, deps, err := attachModuleObjectValue(ctx, attach, obj.Fields[name])
 			if err != nil {
@@ -510,7 +529,6 @@ func (obj *ModuleObject) AttachDependencyResults(
 	}
 
 	modInst := NewUserMod(obj.Module)
-	owned := make([]dagql.AnyResult, 0)
 	for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
 		fieldTypeDef, ok := obj.TypeDef.FieldByOriginalName(name)
 		if !ok {
