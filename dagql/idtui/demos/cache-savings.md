@@ -29,13 +29,14 @@
 - Point out the estimated savings:
   - **wall**: whole-workflow time saved; parallel durations are not added.
   - **CPU**: CPU time saved across all cores.
-  - **memory**: average memory saved for the shown duration, not peak memory.
+  - **peak memory**: difference between the cold and warm workflow-wide peaks;
+    only concurrently running containers are added.
   - **net rx / net tx**: received and transmitted bytes saved.
 
 ## Expected output
 
 ```text
-♻️ Cache hits 108/266 (41%) ⚡ Saved ~23s wall · ~2m42s CPU · ~335 MB memory for 46s · ~120 MB net rx · ~31 MB net tx
+♻️ Cache hits 108/266 (41%) ⚡ Saved ~23s wall · ~2m42s CPU · ~1.2 GB peak memory · ~120 MB net rx · ~31 MB net tx
 ```
 
 ## No-workspace example

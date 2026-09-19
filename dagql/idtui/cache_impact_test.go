@@ -56,12 +56,12 @@ func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
 	if impact.NetworkTxBytes != 200_000_000 {
 		t.Fatalf("network tx saved = %d, want 200000000", impact.NetworkTxBytes)
 	}
-	if impact.MemoryBytes != 4_000_000_000 || impact.MemoryPeriod != 10*time.Second {
-		t.Fatalf("memory saved = %g bytes for %s, want 4000000000 bytes for 10s", impact.MemoryBytes, impact.MemoryPeriod)
+	if impact.MemoryPeakBytes != 4_000_000_000 {
+		t.Fatalf("peak memory saved = %d bytes, want 4000000000", impact.MemoryPeakBytes)
 	}
 
 	got := strings.Join(warmFE.cacheReport(false), "\n")
-	want := "♻️ Cache hits 1/2 (50%) ⚡ Saved ~2s wall · ~1m CPU · ~4.0 GB memory for 10s · ~800 MB net rx · ~200 MB net tx"
+	want := "♻️ Cache hits 1/2 (50%) ⚡ Saved ~2s wall · ~1m CPU · ~4.0 GB peak memory · ~800 MB net rx · ~200 MB net tx"
 	if got != want {
 		t.Fatalf("cache report = %q, want %q", got, want)
 	}
@@ -85,28 +85,28 @@ func TestSaveCacheImpactProfileReplacesCorruptStore(t *testing.T) {
 	}
 }
 
-func TestIntegrateMemorySeriesUsesSampleIntervals(t *testing.T) {
+func TestPeakMemoryBytesDoesNotAddNonConcurrentPeaks(t *testing.T) {
 	start := time.Unix(100, 0)
-	points := []metricdata.DataPoint[int64]{
-		{Time: start.Add(5 * time.Second), Value: 4_000_000_000},
-		{Time: start.Add(10 * time.Second), Value: 2_000_000_000},
-	}
-	got, ok := integrateMemorySeries(points, start, start.Add(10*time.Second))
-	if !ok {
-		t.Fatal("memory series was not integrated")
-	}
-	// Samples describe the interval since the preceding sample: 4 GB for five
-	// seconds, then 2 GB for five seconds.
-	if want := float64(30_000_000_000); got != want {
-		t.Fatalf("memory byte-seconds = %g, want %g", got, want)
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: prettyTestSpanID(2), TraceID: prettyTestTraceID(), StartTime: start, EndTime: start.Add(5 * time.Second), Final: true},
+		{ID: prettyTestSpanID(3), TraceID: prettyTestTraceID(), StartTime: start.Add(5 * time.Second), EndTime: start.Add(10 * time.Second), Final: true},
+	})
+	db.MetricsByCall = map[string]map[string][]metricdata.DataPoint[int64]{}
+	addMemoryTestSeries(db.MetricsByCall, "branch-a", 2, start, 5*time.Second, 4_000_000_000)
+	addMemoryTestSeries(db.MetricsByCall, "branch-b", 3, start.Add(5*time.Second), 5*time.Second, 3_000_000_000)
+
+	got, available := peakMemoryBytes(db)
+	if !available || got != 4_000_000_000 {
+		t.Fatalf("peak memory = %d, available %v; want 4000000000, true", got, available)
 	}
 }
 
-func TestMemoryByteSecondsTreatsNoContainersAsZero(t *testing.T) {
+func TestPeakMemoryBytesTreatsNoContainersAsZero(t *testing.T) {
 	db := dagui.NewDB()
-	got, available := memoryByteSeconds(db)
+	got, available := peakMemoryBytes(db)
 	if !available || got != 0 {
-		t.Fatalf("memory byte-seconds = %g, available %v; want zero, true", got, available)
+		t.Fatalf("peak memory = %d, available %v; want zero, true", got, available)
 	}
 }
 
