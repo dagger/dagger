@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
@@ -53,9 +54,9 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary).With("host", d.host)
 
-	dialer := net.Dialer{
+	dialer := realm.Userland.Dialer(net.Dialer{
 		Timeout: time.Second,
-	}
+	})
 
 	for _, port := range ports {
 		retry := backoff.NewExponentialBackOff(

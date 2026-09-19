@@ -16,6 +16,8 @@ type dangSDK struct {
 	rawConfig map[string]any
 }
 
+func (*dangSDK) DaggerlandRealm() bool { return true }
+
 func (sdk *dangSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {
 	if sdk == nil {
 		return nil
@@ -118,7 +120,7 @@ func (sdk *dangSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Arra
 }
 
 func (sdk *dangSDK) GenerateClient(
-	ctx context.Context,
+	_ context.Context,
 	modSource dagql.ObjectResult[*core.ModuleSource],
 	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
@@ -127,7 +129,7 @@ func (sdk *dangSDK) GenerateClient(
 }
 
 func (sdk *dangSDK) Codegen(
-	ctx context.Context,
+	_ context.Context,
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
@@ -142,6 +144,7 @@ func (sdk *dangSDK) Runtime(
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (core.ModuleRuntime, error) {
+	ctx = engineNetworkContext(ctx)
 	return dangImplFor(source.Self()).Runtime(ctx, deps, source)
 }
 
@@ -151,6 +154,7 @@ func (sdk *dangSDK) ModuleTypes(
 	src dagql.ObjectResult[*core.ModuleSource],
 	partiallyInitializedMod *core.Module,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	ctx = engineNetworkContext(ctx)
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for dang module sdk module types: %w", err)

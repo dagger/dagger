@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -2332,6 +2333,10 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 // sendQueryWithRetry submits the conversation to the model's endpoint,
 // retrying retryable provider failures with exponential backoff.
 func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, tools []LLMTool, llmCallDigest string, maxTokens int) (*LLMResponse, error) {
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create LLM network recorders: %w", err)
+	}
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)
 	b.InitialInterval = 1 * time.Second

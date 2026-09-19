@@ -26,6 +26,7 @@ func (sdk *moduleTypes) ModuleTypes(
 	source dagql.ObjectResult[*core.ModuleSource],
 	partiallyInitializedMod *core.Module,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	ctx = sdk.mod.networkContext(ctx)
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object")
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -63,6 +64,7 @@ func (sdk *moduleTypes) ModuleTypes(
 
 	execMD := engineutil.ExecutionMetadata{
 		Internal:              true,
+		DaggerlandRealm:       sdk.mod.DaggerlandRealm(),
 		UseRecipeIDsByDefault: true,
 	}
 	if curCall := dagql.CurrentCall(ctx); curCall != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/realm"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -91,6 +92,7 @@ type ContainerFromImageRefLazy struct {
 	ResolveMode       serverresolver.ResolveMode
 	RegistryServices  ServiceBindings
 	RegistryTransport serverresolver.RegistryTransport
+	Realm             realm.Realm
 }
 
 type dockerfileImageMetaResolver struct {
@@ -177,6 +179,9 @@ func (lazy *ContainerFromImageRefLazy) EvaluateContainerGroup(ctx context.Contex
 		})
 	case ContainerLazyGroupWrite:
 		return lazy.LazyState.EvaluateGroup(ctx, "Container.from", group, func(ctx context.Context) error {
+			if lazy.Realm == realm.Daggerland {
+				ctx = realm.With(ctx, lazy.Realm)
+			}
 			query, err := CurrentQuery(ctx)
 			if err != nil {
 				return err
@@ -270,6 +275,7 @@ func (lazy *ContainerFromImageRefLazy) EncodePersisted(ctx context.Context, cach
 		Platform:          lazy.Platform,
 		RegistryServices:  services,
 		RegistryTransport: lazy.RegistryTransport,
+		Realm:             lazy.Realm,
 	})
 }
 

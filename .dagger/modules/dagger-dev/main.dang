@@ -25,6 +25,7 @@ type DaggerDev {
   engine(ws: Workspace!): Service! @up {
     engineDev(ws: ws).service(""
       gpuSupport: gpuSupport
+      metrics: true
     )
   }
 
@@ -32,7 +33,20 @@ type DaggerDev {
   Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
   """
   playground(ws: Workspace!): Container! {
-    engineDev(ws: ws).installClient(base, service: engine(ws))
+    let playgroundBase = wolfi.container(packages: [
+      "apk-tools",
+      "ca-certificates",
+      "curl",
+      "git",
+      "go-1.26",
+      "jq",
+      "socat",
+    ]).
+      withEnvVariable("HOME", "/root").
+      withEnvVariable("GOTOOLCHAIN", "auto").
+      withWorkdir("$HOME", expand: true)
+
+    engineDev(ws: ws).installClient(playgroundBase, service: engine(ws))
   }
 
   """

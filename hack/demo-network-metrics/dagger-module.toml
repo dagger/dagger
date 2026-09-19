@@ -1,0 +1,5 @@
+name = "network-metrics-demo"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"

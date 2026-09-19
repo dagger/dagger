@@ -3,11 +3,11 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
 
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/google/uuid"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -22,18 +22,14 @@ const cloudExportHeader = "X-Dagger-Export"
 // for uploads multiplexed with an active download. Reuse this private pool
 // across exporters and token refreshes without disabling HTTP/2. These settings
 // match the OTLP HTTP exporters' private transports and Go's DefaultTransport.
-var cloudExportTransport = &http.Transport{
-	Proxy: http.ProxyFromEnvironment,
-	DialContext: (&net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}).DialContext,
+var cloudExportTransport = realm.Daggerland.Transport(&http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
 	ForceAttemptHTTP2:     true,
 	MaxIdleConns:          100,
 	IdleConnTimeout:       90 * time.Second,
 	TLSHandshakeTimeout:   10 * time.Second,
 	ExpectContinueTimeout: 1 * time.Second,
-}
+})
 
 type exportSequenceContextKey struct{}
 

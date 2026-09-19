@@ -1,0 +1,122 @@
+type NetworkMetricsDemo {
+  pub exec(nonce: String!): Void {
+    let server = container
+      .from("python:3.13-alpine")
+      .withExec([
+        "sh", "-c",
+        "mkdir -p /srv && head -c 33554432 /dev/zero > /srv/payload",
+      ])
+      .withExposedPort(8080)
+      .asService(args: [
+        "sh", "-c",
+        "echo DEMO_NETWORK_SERVER >&2; exec python -m http.server 8080 --directory /srv",
+      ])
+
+    container
+      .from("alpine:3.22")
+      .withExec(["apk", "add", "--no-cache", "curl"])
+      .withServiceBinding("peer", server)
+      .withEnvVariable("DEMO_NONCE", nonce)
+      .withExec([
+        "sh", "-ceu", """
+          echo DEMO_NETWORK_CLIENT >&2
+          head -c 8388608 /dev/urandom > /tmp/upload
+          curl --fail --silent --output /dev/null http://peer:8080/payload
+          curl --fail --silent --output /dev/null 'https://speed.cloudflare.com/__down?bytes=8388608'
+          curl --fail --silent --output /dev/null --request POST --data-binary @/tmp/upload https://speed.cloudflare.com/__up
+        """,
+      ])
+      .sync
+
+    null
+  }
+
+  pub httpDownload(nonce: String!): Int! {
+    http("https://speed.cloudflare.com/__down?bytes=4194304&nonce=" + nonce)
+      .size
+  }
+
+  pub gitPull: String! {
+    git("https://github.com/dagger/dagger.git")
+      .head
+      .tree
+      .file("README.md")
+      .contents
+  }
+
+  pub containerFrom: String! {
+    container
+      .from("debian:bookworm-slim")
+      .withExec(["sh", "-c", "cat /etc/debian_version"])
+      .stdout
+  }
+
+  pub registryPush(nonce: String!): String! {
+    let registry = container
+      .from("registry:3")
+      .withExposedPort(5000)
+      .asService
+
+    container
+      .from("alpine:3.22")
+      .withExec([
+        "sh", "-c",
+        "mkdir -p /demo && head -c 4194304 /dev/urandom > /demo/payload",
+      ])
+      .publish(
+        "registry:5000/network-metrics:" + nonce,
+        registryService: registry,
+        protocol: RegistryProtocol.HTTP,
+      )
+  }
+
+  pub filesyncImport(input: Directory!, nonce: String!): String! {
+    container
+      .from("alpine:3.22")
+      .withMountedDirectory("/input", input)
+      .withEnvVariable("DEMO_NONCE", nonce)
+      .withExec(["sha256sum", "/input/payload"])
+      .stdout
+  }
+
+  pub filesyncExport(nonce: String!): Directory! {
+    container
+      .from("alpine:3.22")
+      .withEnvVariable("DEMO_NONCE", nonce)
+      .withExec([
+        "sh", "-c",
+        "mkdir -p /output && head -c 4194304 /dev/urandom > /output/payload",
+      ])
+      .directory("/output")
+  }
+
+  pub hostSocket(socket: Socket!, nonce: String!): String! {
+    container
+      .from("alpine:3.22")
+      .withExec(["apk", "add", "--no-cache", "socat"])
+      .withUnixSocket("/tmp/demo.sock", socket)
+      .withEnvVariable("DEMO_NONCE", nonce)
+      .withExec([
+        "sh", "-c",
+        "head -c 4194304 /dev/urandom | socat - UNIX-CONNECT:/tmp/demo.sock | wc -c",
+      ])
+      .stdout
+  }
+
+  pub llmPrompt(model: String!): String! {
+    llm(model: model)
+      .withPrompt("Reply with the single word OK.")
+      .lastReply
+  }
+
+  pub tunnel: Service! {
+    container
+      .from("python:3.13-alpine")
+      .withExec([
+        "sh", "-c",
+        "mkdir -p /srv && head -c 4194304 /dev/zero > /srv/payload",
+      ])
+      .withExposedPort(8080)
+      .asService(args: ["python", "-m", "http.server", "8080", "--directory", "/srv"])
+  }
+}

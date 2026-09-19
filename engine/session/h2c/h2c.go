@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/grpcutil"
 	"google.golang.org/grpc"
@@ -41,7 +42,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 		return err
 	}
 
-	l, err := net.Listen(req.GetProtocol(), req.GetAddr())
+	l, err := realm.Userland.Listen(s.rootCtx, req.GetProtocol(), req.GetAddr())
 	if err != nil {
 		return err
 	}

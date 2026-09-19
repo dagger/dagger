@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 )
 
@@ -13,24 +14,27 @@ func createResolver(dns *oci.DNSConfig) (*net.Resolver, []string) {
 	if dns == nil {
 		return net.DefaultResolver, nil
 	}
-	dialer := net.Dialer{}
 	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return dialNameservers(ctx, network, dns.Nameservers, &dialer)
+			return dialNameservers(ctx, network, dns.Nameservers)
 		},
 	}
 	return resolver, dns.SearchDomains
 }
 
-func dialNameservers(ctx context.Context, network string, nameservers []string, dialer *net.Dialer) (net.Conn, error) {
+func dialNameservers(ctx context.Context, network string, nameservers []string) (net.Conn, error) {
 	if len(nameservers) == 0 {
 		return nil, errors.New("no nameservers configured")
 	}
 
 	var errs []error
 	for _, ns := range nameservers {
-		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
+		conn, err := realm.FromContext(ctx).Dialer(net.Dialer{}).DialContext(
+			ctx,
+			network,
+			net.JoinHostPort(ns, "53"),
+		)
 		if err != nil {
 			errs = append(errs, err)
 			continue

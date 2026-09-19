@@ -11,11 +11,15 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+
+	"github.com/dagger/dagger/engine/realm"
 )
 
 // httpClient is the default HTTP client, but a variable so it can be
 // changed by tests, without modifying http.DefaultClient.
-var httpClient = http.DefaultClient
+var httpClient = &http.Client{
+	Transport: realm.Daggerland.Transport(http.DefaultTransport.(*http.Transport)),
+}
 
 // httpGET returns the data from an HTTP GET request for the given URL.
 func httpGET(url string) ([]byte, error) {

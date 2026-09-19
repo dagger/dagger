@@ -55,6 +55,7 @@ import (
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/realm"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -1234,8 +1235,8 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 		return caller, err
 	}
 
-	dialer := &net.Dialer{}
-	dialer.Resolver = &net.Resolver{
+	dnsDialer := realm.Userland.Dialer(net.Dialer{})
+	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			if len(srv.dns.Nameservers) == 0 {
@@ -1244,7 +1245,7 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 
 			var errs []error
 			for _, ns := range srv.dns.Nameservers {
-				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
+				conn, err := dnsDialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
 				if err != nil {
 					errs = append(errs, err)
 					continue
@@ -1256,6 +1257,7 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 			return nil, errors.Join(errs...)
 		},
 	}
+	dialer := realm.Userland.Dialer(net.Dialer{Resolver: resolver})
 
 	engineUtilOpts := *srv.engineUtilOpts
 	engineUtilOpts.Dialer = dialer

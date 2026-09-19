@@ -43,8 +43,10 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine/ebpf/filetracer"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/ebpf/ovltracer"
 	"github.com/dagger/dagger/engine/engineutil/cacerts"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/wcprof"
@@ -631,6 +633,14 @@ func serveAPI(
 		}
 		listeners = append(listeners, l)
 	}
+	// Enable enforcement only after every public listener has been assigned an
+	// owner, but before any listener can accept client traffic.
+	if err := nettracer.EnableRealmEnforcementFromEnv(); err != nil {
+		for _, l := range listeners {
+			l.Close()
+		}
+		return fmt.Errorf("enable network realm enforcement: %w", err)
+	}
 
 	if os.Getenv("NOTIFY_SOCKET") != "" {
 		notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyReady)
@@ -858,7 +868,7 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 	case "fd":
 		return listenFD(listenAddr, tlsConfig)
 	case "tcp":
-		l, err := net.Listen("tcp", listenAddr)
+		l, err := realm.Userland.Listen(context.Background(), "tcp", listenAddr)
 		if err != nil {
 			return nil, err
 		}

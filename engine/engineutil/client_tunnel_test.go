@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -55,7 +56,7 @@ func newReplayHostTunnel(t *testing.T, upstream string) (h2c.TunnelListener_List
 	t.Cleanup(func() { cc.Close() })
 	client := &Client{
 		Opts: &Opts{
-			Dialer: &net.Dialer{},
+			Dialer: realm.Userland.Dialer(net.Dialer{}),
 			GetClientCaller: func(context.Context, string) (SessionCaller, error) {
 				return tunnelTestCaller{cc}, nil
 			},

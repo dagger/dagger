@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -2179,6 +2180,9 @@ func (mod *Module) Patch(ctx context.Context) error {
 }
 
 func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
+	if SDKUsesDaggerlandNetwork(mod.Source.Value.Self().SDKImpl) {
+		ctx = realm.With(ctx, realm.Daggerland)
+	}
 	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
 	if !ok {
 		return nil, fmt.Errorf("no runtime implemented")

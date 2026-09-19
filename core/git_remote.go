@@ -29,6 +29,8 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/network"
@@ -312,6 +314,11 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 	}
 
 	opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
+		cleanup, err := nettracer.PrepareCommand(cmd, realm.FromContext(ctx))
+		if err != nil {
+			return fmt.Errorf("prepare git network cgroup: %w", err)
+		}
+		defer func() { _ = cleanup() }()
 		return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath, query.CleanMountNS())
 	}))
 
@@ -856,10 +863,11 @@ func overrideNetworkConfig(hostsOverride, resolvOverride string) error {
 // a locked thread only goes away with its goroutine, after Wait has returned,
 // so the child never sees a spurious SIGTERM from an unrelated thread's exit.
 func runProcessGroup(ctx context.Context, cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &unix.SysProcAttr{
-		Setpgid:   true,
-		Pdeathsig: unix.SIGTERM,
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = new(unix.SysProcAttr)
 	}
+	cmd.SysProcAttr.Setpgid = true
+	cmd.SysProcAttr.Pdeathsig = unix.SIGTERM
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := cmd.Start(); err != nil {

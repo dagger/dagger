@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/realm"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/pkg/errors"
 )
@@ -94,10 +95,11 @@ func applyRegistryHostConfig(host string, cfg resolverconfig.RegistryConfig, h d
 		tc.InsecureSkipVerify = true
 	}
 	baseTransport := docker.DefaultHTTPTransport(tc)
+	ownerTransport := realm.NewTransport(baseTransport)
 	// Keep the concrete transport here; resolver wraps tracing after any
 	// per-call service DNS transport is installed.
 	h.Client = &http.Client{
-		Transport: baseTransport,
+		Transport: ownerTransport,
 	}
 	explicitTLS := tc.InsecureSkipVerify || tc.RootCAs != nil || len(tc.Certificates) > 0
 
@@ -109,7 +111,7 @@ func applyRegistryHostConfig(host string, cfg resolverconfig.RegistryConfig, h d
 	if explicitTLS && port != "80" {
 		h.Scheme = "https"
 		h.Client = &http.Client{
-			Transport: docker.NewHTTPFallback(baseTransport),
+			Transport: docker.NewHTTPFallback(ownerTransport),
 		}
 		return h, nil
 	}

@@ -49,6 +49,7 @@ func New(
 				"!analytics",
 				"!auth",
 				"!cmd",
+				"!hack",
 				"!internal",
 				"!sdk",
 				"sdk/**/examples",
@@ -94,10 +95,11 @@ type EngineDev struct {
 	VCSCommit string // +private
 	VCSDirty  bool   // +private
 
-	EngineConfig []string // +private
-	LogLevel     string   // +private
-	SubnetNumber int      // +private
-	EBPFProgs    []string // +private
+	EngineConfig            []string // +private
+	LogLevel                string   // +private
+	SubnetNumber            int      // +private
+	EBPFProgs               []string // +private
+	EnforceNetworkOwnership bool     // +private
 
 	Race               bool // +private
 	ClientDockerConfig *dagger.Secret
@@ -178,7 +180,9 @@ func (dev *EngineDev) Container(
 	for _, prog := range dev.EBPFProgs {
 		ctr = ctr.WithEnvVariable("DAGGER_EBPF_PROG_"+strings.ToUpper(prog), "y")
 	}
-
+	if dev.EnforceNetworkOwnership {
+		ctr = ctr.WithEnvVariable("_EXPERIMENTAL_DAGGER_NETWORK_REALM_ENFORCE", "1")
+	}
 	ctr = ctr.
 		WithFile(engineJSONPath, cfg).
 		WithFile(engineTOMLPath, engineTOML).
@@ -234,7 +238,8 @@ func (dev *EngineDev) Service(
 	if metrics {
 		devEngine = devEngine.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "10s")
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "10s").
+			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp})
 	}
 
 	return devEngine.AsService(dagger.ContainerAsServiceOpts{
@@ -246,6 +251,32 @@ func (dev *EngineDev) Service(
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
 	}), nil
+}
+
+// Open a shell with this source tree and a network-metrics engine.
+func (dev *EngineDev) Playground(ctx context.Context) (*dagger.Container, error) {
+	dev = dev.WithEBPFProgs([]string{"net_bytes"})
+	dev.EnforceNetworkOwnership = true
+	service, err := dev.Service(
+		ctx,
+		"network-metrics", // name
+		false,             // gpuSupport
+		false,             // sharedCache
+		true,              // metrics
+	)
+	if err != nil {
+		return nil, err
+	}
+	client := dag.Go(dagger.GoOpts{
+		Source:        dev.Source,
+		VcsCommit:     dev.VCSCommit,
+		VcsDirty:      dev.VCSDirty,
+		Ws:            dev.Ws,
+		ExtraPackages: []string{"curl", "jq", "socat"},
+	}).Env().
+		WithMountedDirectory("/src", dev.Source).
+		WithWorkdir("/src")
+	return dev.InstallClient(ctx, client, service)
 }
 
 // Configure the given client container so that it can connect to the given engine service

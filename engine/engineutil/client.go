@@ -23,9 +23,11 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
+	"github.com/dagger/dagger/engine/realm"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -82,7 +84,7 @@ type Opts struct {
 	HostMntNS  *os.File
 	CleanMntNS *os.File
 
-	Dialer               *net.Dialer
+	Dialer               *realm.Dialer
 	GetClientCaller      func(context.Context, string) (SessionCaller, error)
 	GetHostServiceCaller func(context.Context, string) (SessionCaller, error)
 	GetMainClientCaller  func(context.Context) (SessionCaller, error)
@@ -250,6 +252,11 @@ func (c *Client) ListenHostToContainer(
 	if err != nil {
 		return nil, nil, err
 	}
+	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		cancel(fmt.Errorf("listen host to container error: %w", err))
+		return nil, nil, fmt.Errorf("create tunnel network recorders: %w", err)
+	}
 
 	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
@@ -395,6 +402,7 @@ func (c *Client) ListenHostToContainer(
 								cancel(fmt.Errorf("send tunnel data: %w", err))
 								return
 							}
+							enginetelemetry.RecordNetworkTX(ctx, int64(n))
 						}
 						if readErr != nil {
 							return
@@ -404,7 +412,9 @@ func (c *Client) ListenHostToContainer(
 			}
 
 			if res.Data != nil {
-				_, err = conn.Write(res.Data)
+				n, writeErr := conn.Write(res.Data)
+				enginetelemetry.RecordNetworkRX(ctx, int64(n))
+				err = writeErr
 				if err != nil {
 					// The reader retires this socket and notifies the listener.
 					// One failed connection must not stop the whole tunnel.
