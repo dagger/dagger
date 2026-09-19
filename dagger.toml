@@ -133,10 +133,11 @@ legacy-default-path = true
 source = ".dagger/modules/test-split"
 legacy-default-path = true
 
-# The TLA+ model checks. CI runs `tla-check:quick`, the bounded
-# configurations; the full `tla-check:cache-lifecycle` and
-# `tla-check:client-lifecycle` runs take hours and stay manual: run them
-# before pushing changes under dagql/tla.
+# The TLA+ model checks. CI discovers one check, `tla-check:quick`, the
+# bounded configurations. The full runs, `dagger call tla-check
+# cache-lifecycle` and `dagger call tla-check client-lifecycle`, take hours;
+# they are plain functions, never scheduled: run them by hand before pushing
+# changes under dagql/tla.
 [modules.tla-check]
 source = ".dagger/modules/tla-check"
 
