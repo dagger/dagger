@@ -2540,3 +2540,40 @@ func containsStyledLine(frame, text, styleSeq string) bool {
 func visibleEscapes(frame string) string {
 	return strings.ReplaceAll(frame, "\x1b", "\\x1b")
 }
+
+// TestFinalRenderPrimaryOutputWithoutReport covers commands whose progress is
+// hidden (e.g. `dagger workspace root`): with no report rendered above it, the
+// primary output starts immediately, without a separating blank line.
+func TestFinalRenderPrimaryOutputWithoutReport(t *testing.T) {
+	db := dagui.NewDB()
+	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
+	db.PrimarySpan = spanID
+	db.PrimaryLogs[spanID] = []sdklog.Record{
+		frontendTestLogRecord(spanID.SpanID, otellog.StringValue("/work/root\n"),
+			otellog.Int(telemetry.StdioStreamAttr, 2)),
+	}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.reportOnly = true
+
+	var buf bytes.Buffer
+	require.NoError(t, fe.FinalRender(&buf))
+	require.Equal(t, "/work/root\n", buf.String())
+}
+
+func TestWritePrimaryOutputSeparate(t *testing.T) {
+	db := dagui.NewDB()
+	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
+	db.PrimaryLogs[spanID] = []sdklog.Record{
+		frontendTestLogRecord(spanID.SpanID, otellog.StringValue("out\n"),
+			otellog.Int(telemetry.StdioStreamAttr, 2)),
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, writePrimaryOutput(&buf, db, spanID, true, false))
+	require.Equal(t, "out\n", buf.String())
+
+	buf.Reset()
+	require.NoError(t, writePrimaryOutput(&buf, db, spanID, true, true))
+	require.Equal(t, "\nout\n", buf.String())
+}

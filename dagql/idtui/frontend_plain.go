@@ -470,7 +470,7 @@ func (fe *frontendPlain) finalRender() {
 	if fe.msgPreFinalRender.Len() > 0 {
 		fmt.Fprintln(stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 	}
-	renderPrimaryOutput(stderr, fe.db)
+	renderPrimaryOutput(stderr, fe.db, false)
 }
 
 func (fe *frontendPlain) renderFinalTests() bool {
