@@ -11324,9 +11324,44 @@ class LLM(Type):
         _ctx = self._select("tools", _args)
         return await _ctx.execute(str)
 
-    async def transcript(self) -> str:
+    async def transcript(
+        self,
+        *,
+        limit: int | None = None,
+        last: int | None = None,
+        offset: int | None = 0,
+        roles: list[LLMMessageRole] | None = None,
+        content_kinds: list[LLMContentBlockKind] | None = None,
+    ) -> str:
         """The message history rendered as a plain-text transcript, suitable for
         feeding back to an LLM (e.g. for summarization).
+
+        Filters are applied before pagination. Only messages with renderable
+        content count; content blocks within a message stay grouped. Selected
+        messages are always returned in chronological order.
+
+        Parameters
+        ----------
+        limit:
+            Maximum number of matching messages from the start, after offset.
+            Must be non-negative. Zero is equivalent to omitting this
+            argument. Positive limit and last values are mutually exclusive.
+            If neither is positive, return all matching messages after offset.
+        last:
+            Maximum number of matching messages from the end, after offset.
+            Must be non-negative. Zero is equivalent to omitting this
+            argument. Positive limit and last values are mutually exclusive.
+        offset:
+            Number of matching messages to skip. Skips from the end when last
+            is positive, otherwise from the start. Must be non-negative.
+        roles:
+            Only include these message roles. Omitted or empty includes USER
+            and ASSISTANT; explicitly include SYSTEM to request system
+            prompts.
+        content_kinds:
+            Only render these content block kinds. Omitted or empty includes
+            all renderable kinds. Messages without matching renderable content
+            do not consume pagination slots.
 
         Returns
         -------
@@ -11342,7 +11377,13 @@ class LLM(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("limit", limit, None),
+            Arg("last", last, None),
+            Arg("offset", offset, 0),
+            Arg("roles", roles, None),
+            Arg("contentKinds", content_kinds, None),
+        ]
         _ctx = self._select("transcript", _args)
         return await _ctx.execute(str)
 

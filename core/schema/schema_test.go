@@ -48,6 +48,71 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 			"`go test ./core/schema -run TestBaseSchemaAllowlist -update`.")
 }
 
+func TestLLMTranscriptSelection(t *testing.T) {
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID: "transcript-client", SessionID: "transcript-session",
+	})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	base, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := base.Fork(ctx, root, "v1.0.0")
+	require.NoError(t, err)
+	dagql.Fields[*core.Query]{
+		dagql.Func("transcriptFixture", func(context.Context, *core.Query, struct{}) (*core.LLM, error) {
+			return &core.LLM{Messages: []*core.LLMMessage{
+				{Role: core.LLMMessageRoleSystem, Content: []*core.LLMContentBlock{{Kind: core.LLMContentText, Text: "system"}}},
+				{Role: core.LLMMessageRoleUser, Content: []*core.LLMContentBlock{{Kind: core.LLMContentText, Text: "user"}}},
+				{Role: core.LLMMessageRoleAssistant, Content: []*core.LLMContentBlock{{Kind: core.LLMContentText, Text: "assistant"}}},
+			}}, nil
+		}),
+	}.Install(dag)
+
+	for _, tc := range []struct {
+		args string
+		want string
+	}{
+		{"", "[User]: user\n\n[Assistant]: assistant"},
+		{"(limit: 1)", "[User]: user"},
+		{"(last: 1)", "[Assistant]: assistant"},
+		{"(last: 1, offset: 1)", "[User]: user"},
+		{"(roles: [SYSTEM], contentKinds: [TEXT])", "[System]: system"},
+		{"(roles: [])", "[User]: user\n\n[Assistant]: assistant"},
+		{"(contentKinds: [])", "[User]: user\n\n[Assistant]: assistant"},
+		{"(roles: [], contentKinds: [], last: 1, offset: 1)", "[User]: user"},
+		{"(roles: [SYSTEM], contentKinds: [])", "[System]: system"},
+		{"(roles: [], contentKinds: [TEXT], limit: 1)", "[User]: user"},
+		{"(limit: 0)", "[User]: user\n\n[Assistant]: assistant"},
+		{"(last: 0)", "[User]: user\n\n[Assistant]: assistant"},
+		{"(limit: 0, last: 0)", "[User]: user\n\n[Assistant]: assistant"},
+		{"(limit: 0, last: 1)", "[Assistant]: assistant"},
+		{"(limit: 1, last: 0)", "[User]: user"},
+		{"(limit: 0, offset: 1)", "[Assistant]: assistant"},
+		{"(last: 0, offset: 1)", "[Assistant]: assistant"},
+		{"(limit: 0, last: 0, offset: 1, contentKinds: [TEXT])", "[Assistant]: assistant"},
+		{"(limit: null, last: null, roles: null, contentKinds: null)", "[User]: user\n\n[Assistant]: assistant"},
+	} {
+		t.Run(tc.args, func(t *testing.T) {
+			got, err := dag.Query(ctx, "{ transcriptFixture { transcript"+tc.args+" } }", nil)
+			require.NoError(t, err)
+			require.Equal(t, map[string]any{"transcriptFixture": map[string]any{"transcript": dagql.String(tc.want)}}, got)
+		})
+	}
+	for _, args := range []string{
+		"(limit: 1, last: 1)", "(limit: -1)", "(last: -1)", "(offset: -1)",
+		"(limit: -1, last: 0)", "(limit: 0, last: -1)",
+		"(roles: [UNKNOWN])", "(contentKinds: [UNKNOWN])",
+	} {
+		t.Run(args, func(t *testing.T) {
+			_, err := dag.Query(ctx, "{ transcriptFixture { transcript"+args+" } }", nil)
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestGitBundleSchema(t *testing.T) {
 	ctx := context.Background()
 	cache, err := dagql.NewCache(ctx, "", nil, nil)
