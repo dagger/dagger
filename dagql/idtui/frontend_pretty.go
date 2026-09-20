@@ -131,6 +131,14 @@ type frontendPretty struct {
 	inputHistory   []string // raw encoded history entries (with mode prefix)
 	historyIndex   int      // -1 = not browsing history
 	historySaved   string   // saved input when browsing history
+
+	// Attachments stay out of text history and are owned by the current draft.
+	promptImages     []PromptImage
+	historyImages    []PromptImage
+	imagePasteSeq    uint64
+	imagePasting     bool
+	imagePasteCancel context.CancelFunc
+	clipboardImage   func(context.Context) (PromptImage, error)
 	// turnsRunning counts the handler turns in flight. Prompt turns are no
 	// longer serialized -- each runs server-side in its own agent runtime --
 	// so several can overlap, and "is anything running" is a count, not a
@@ -145,7 +153,7 @@ type frontendPretty struct {
 	// agentDrafts holds the half-typed line of each agent the user has
 	// focused, keyed by agent runtime handle: saved on blur, restored on focus,
 	// so switching agents mid-sentence does not eat the sentence (§5.1).
-	agentDrafts map[string]string
+	agentDrafts map[string]PromptInput
 	// lastFocusedAgent is the agent focused before the current one, for the
 	// tmux-style last-agent toggle: the two-agent ping-pong is the common
 	// case, and a next/prev cycle is the wrong verb for it.
@@ -1138,6 +1146,10 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 }
 
 func (fe *frontendPretty) stopShell() {
+	fe.cancelImagePaste()
+	fe.promptImages = nil
+	fe.historyImages = nil
+	fe.agentDrafts = nil
 	// save history before clearing shell state
 	fe.saveHistory()
 
@@ -2940,6 +2952,12 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 					KeyEnabled(fe.lastFocusedAgent != "")),
 			)
 		}
+		if fe.acceptsPromptImages() {
+			bnds = append(bnds, key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste image")))
+		}
+		if len(fe.promptImages) > 0 && fe.textInput.Value() == "" {
+			bnds = append(bnds, key.NewBinding(key.WithKeys("backspace"), key.WithHelp("backspace", "remove image")))
+		}
 		if fe.shell != nil {
 			bnds = append(bnds, fe.shell.KeyBindings(out)...)
 		}
@@ -4576,9 +4594,15 @@ func (fe *frontendPretty) saveDraftFor(agentID string) {
 		return
 	}
 	if fe.agentDrafts == nil {
-		fe.agentDrafts = map[string]string{}
+		fe.agentDrafts = map[string]PromptInput{}
 	}
-	fe.agentDrafts[agentID] = fe.textInput.Value()
+	draft := PromptInput{Text: fe.textInput.Value(), Images: fe.promptImages}
+	if fe.historyIndex >= 0 && len(fe.historyImages) > 0 {
+		// History browsing temporarily hides attachments; park the original
+		// draft rather than losing its images when switching agents.
+		draft = PromptInput{Text: fe.historySaved, Images: fe.historyImages}
+	}
+	fe.agentDrafts[agentID] = draft.Clone()
 }
 
 // restoreAgentDraft puts the newly focused agent's parked line back in the
@@ -4587,7 +4611,12 @@ func (fe *frontendPretty) restoreAgentDraft(agentID string) {
 	if fe.textInput == nil {
 		return
 	}
-	fe.textInput.SetValue(fe.agentDrafts[agentID])
+	fe.cancelImagePaste()
+	fe.historyIndex = -1
+	fe.historyImages = nil
+	draft := fe.agentDrafts[agentID].Clone()
+	fe.textInput.SetValue(draft.Text)
+	fe.promptImages = draft.Images
 	fe.syncPrompt()
 }
 
@@ -5472,14 +5501,33 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 	}
 
 	switch keyStr {
+	case "ctrl+v":
+		if fe.acceptsPromptImages() {
+			fe.pastePromptImage()
+			return true
+		}
+		return false
+	case "backspace":
+		if fe.textInput.Value() == "" && len(fe.promptImages) > 0 {
+			last := len(fe.promptImages) - 1
+			fe.promptImages[last] = PromptImage{}
+			fe.promptImages = fe.promptImages[:last]
+			fe.clearPromptError()
+			fe.syncPrompt()
+			return true
+		}
+		return false
 	case "ctrl+d":
-		if fe.textInput.Value() == "" {
+		if fe.textInput.Value() == "" && len(fe.promptImages) == 0 && !fe.imagePasting {
 			fe.quitAction(ErrShellExited)
 			return true
 		}
 		return false // let TextInput handle ctrl+d (delete char) when input non-empty
 	case "ctrl+c":
 		fe.interruptCurrent()
+		fe.cancelImagePaste()
+		fe.promptImages = nil
+		fe.historyImages = nil
 		fe.textInput.SetValue("")
 		fe.syncPrompt()
 		return true
@@ -5514,11 +5562,13 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		// Sent check below keeps alt+up from "recalling" a message the agent
 		// is already going to read.
 		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
-			shown := fe.queuedMsgLabel.Message()
-			if msg := fe.clearQueuedMessage(); msg != "" {
-				shown = msg
+			shown := PromptInput{Text: fe.queuedMsgLabel.Message()}
+			if input := fe.clearQueuedPrompt(); !input.Empty() {
+				shown = input
 			}
-			fe.textInput.SetValue(shown)
+			fe.cancelImagePaste()
+			fe.textInput.SetValue(shown.Text)
+			fe.promptImages = shown.Images
 			fe.syncPrompt()
 			return true
 		}
@@ -5875,9 +5925,16 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 func (fe *frontendPretty) handleInputComplete() {
 	// TextInput.OnSubmit is only reached through Tuist's focused input routing.
 	// reset prompt error state
+	if err := fe.validatePromptInput(); err != nil {
+		fe.setPromptError(err)
+		return
+	}
 	fe.clearPromptError()
 
 	value := fe.textInput.Value()
+	input := PromptInput{Text: value, Images: fe.promptImages}.Clone()
+	fe.promptImages = nil
+	fe.historyImages = nil
 	// Add to history (encoded with mode prefix for round-trip fidelity)
 	if value != "" {
 		encoded := value
@@ -5899,11 +5956,11 @@ func (fe *frontendPretty) handleInputComplete() {
 	// different agents (§5.1). The target's own in-flight turn absorbs the
 	// message if it has one (the engine records it immediately and its reply
 	// arrives within that turn, so nothing stays pending client-side).
-	if fe.submitToTarget(value) {
+	if fe.submitPromptToTarget(input) {
 		// Absorbed mid-turn: the engine holds it until the agent's next step
 		// boundary, so show it queued above the prompt until that boundary
 		// lands -- without the hint, the submit looks like the input ate it.
-		fe.setInterjectHint(value)
+		fe.setInterjectHint(input.Summary())
 		return
 	}
 	// Otherwise it opens a new turn -- unless the handler's one interpreter is
@@ -5911,23 +5968,32 @@ func (fe *frontendPretty) handleInputComplete() {
 	// the message is queued and replayed when that turn finishes (see
 	// handleShellDone).
 	if fe.serialRunning {
-		if _, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
-			fe.setQueuedMessage(value)
+		_, textQueue := fe.shell.(interface{ QueueMessage(string) })
+		_, promptQueue := fe.shell.(PromptInputHandler)
+		if textQueue || promptQueue {
+			fe.setQueuedPrompt(input)
 			return
 		}
 	}
 
-	fe.startShellHandle(value)
+	fe.startPromptHandle(input)
 }
 
 // submitToTarget offers the message to the focused conversation's in-flight
 // turn, reporting whether it was absorbed.
 func (fe *frontendPretty) submitToTarget(value string) bool {
-	if fe.shell == nil {
+	return fe.submitPromptToTarget(PromptInput{Text: value})
+}
+
+func (fe *frontendPretty) submitPromptToTarget(input PromptInput) bool {
+	if handler, ok := fe.shell.(PromptInputHandler); ok {
+		return handler.SubmitPromptToTarget(input)
+	}
+	if fe.shell == nil || len(input.Images) > 0 {
 		return false
 	}
 	sub, ok := fe.shell.(interface{ SubmitToTarget(string) bool })
-	return ok && sub.SubmitToTarget(value)
+	return ok && sub.SubmitToTarget(input.Text)
 }
 
 // interruptCurrent is Ctrl-C. A serial turn (a shell command or a /command)
@@ -5956,25 +6022,37 @@ func (fe *frontendPretty) interruptCurrent() {
 // turn once the current (non-prompt) one finishes, and shows the pending
 // indicator above the prompt.
 func (fe *frontendPretty) setQueuedMessage(msg string) {
-	if qh, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
-		qh.QueueMessage(msg)
+	fe.setQueuedPrompt(PromptInput{Text: msg})
+}
+
+func (fe *frontendPretty) setQueuedPrompt(input PromptInput) {
+	if handler, ok := fe.shell.(PromptInputHandler); ok {
+		handler.QueuePrompt(input)
+	} else if qh, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
+		qh.QueueMessage(input.Text)
 	}
 	if fe.queuedMsgLabel != nil {
-		fe.queuedMsgLabel.SetMessage(msg)
+		fe.queuedMsgLabel.SetMessage(input.Summary())
 	}
 }
 
 // clearQueuedMessage removes the queued message from the shell handler and
-// the indicator, returning whatever was still pending.
+// the indicator, returning its text. Used by callers that discard the queue.
 func (fe *frontendPretty) clearQueuedMessage() string {
-	var msg string
-	if qh, ok := fe.shell.(interface{ DequeueMessage() string }); ok {
-		msg = qh.DequeueMessage()
+	return fe.clearQueuedPrompt().Text
+}
+
+func (fe *frontendPretty) clearQueuedPrompt() PromptInput {
+	var input PromptInput
+	if handler, ok := fe.shell.(PromptInputHandler); ok {
+		input = handler.DequeuePrompt()
+	} else if qh, ok := fe.shell.(interface{ DequeueMessage() string }); ok {
+		input.Text = qh.DequeueMessage()
 	}
 	if fe.queuedMsgLabel != nil {
 		fe.queuedMsgLabel.SetMessage("")
 	}
-	return msg
+	return input
 }
 
 // startShellHandle runs a shell turn for value in the background. It is used
@@ -5987,12 +6065,16 @@ func (fe *frontendPretty) clearQueuedMessage() string {
 // runtime, and holding the lock would mean an agent that is running blocks
 // every other agent from being spoken to.
 func (fe *frontendPretty) startShellHandle(value string) {
+	fe.startPromptHandle(PromptInput{Text: value})
+}
+
+func (fe *frontendPretty) startPromptHandle(input PromptInput) {
 	if fe.shell == nil {
 		return
 	}
 	serial := true
 	if sh, ok := fe.shell.(interface{ Serial(string) bool }); ok {
-		serial = sh.Serial(value)
+		serial = sh.Serial(input.Text)
 	}
 	ctx, cancel := context.WithCancelCause(fe.shellCtx)
 	fe.shellInterrupt = cancel
@@ -6012,7 +6094,14 @@ func (fe *frontendPretty) startShellHandle(value string) {
 			fe.shellLock.Lock()
 			defer fe.shellLock.Unlock()
 		}
-		err := fe.shell.Handle(ctx, value)
+		var err error
+		if handler, ok := fe.shell.(PromptInputHandler); ok {
+			err = handler.HandlePrompt(ctx, input)
+		} else if len(input.Images) > 0 {
+			err = fmt.Errorf("this prompt does not support image attachments")
+		} else {
+			err = fe.shell.Handle(ctx, input.Text)
+		}
 		fe.dispatch(func() {
 			fe.handleShellDone(err, serial)
 			fe.Update()
@@ -6041,8 +6130,8 @@ func (fe *frontendPretty) handleShellDone(err error, serial bool) {
 	// The turn is done: if a message was queued behind it (submitted while a
 	// serial turn ran), run it now as a new turn so it is not left stale.
 	if !fe.serialRunning {
-		if queued := fe.clearQueuedMessage(); queued != "" {
-			fe.startShellHandle(queued)
+		if queued := fe.clearQueuedPrompt(); !queued.Empty() {
+			fe.startPromptHandle(queued)
 		}
 	}
 }
@@ -6570,6 +6659,7 @@ func (fe *frontendPretty) historyUp() bool {
 	if fe.historyIndex == -1 {
 		// Start browsing: save current input and mode
 		fe.historySaved = fe.textInput.Value()
+		fe.historyImages = PromptInput{Images: fe.promptImages}.Clone().Images
 		if fe.shell != nil {
 			fe.shell.SaveBeforeHistory()
 		}
@@ -6595,6 +6685,9 @@ func (fe *frontendPretty) historyDown() bool {
 		// Restore saved input and mode
 		fe.historyIndex = -1
 		fe.textInput.SetValue(fe.historySaved)
+		fe.cancelImagePaste()
+		fe.promptImages = fe.historyImages
+		fe.historyImages = nil
 		if fe.shell != nil {
 			fe.shell.RestoreAfterHistory()
 		}
@@ -6607,6 +6700,8 @@ func (fe *frontendPretty) historyDown() bool {
 // TextInput value. If the shell handler is available, DecodeHistory is
 // used to strip mode prefixes.
 func (fe *frontendPretty) setHistoryEntry(idx int) {
+	fe.cancelImagePaste()
+	fe.promptImages = nil // persisted command history contains text only
 	entry := fe.inputHistory[idx]
 	if fe.shell != nil {
 		entry = fe.shell.DecodeHistory(entry)
@@ -6618,6 +6713,10 @@ func (fe *frontendPretty) setHistoryEntry(idx int) {
 func (fe *frontendPretty) initTextInput() {
 	fe.textInput = tuist.NewTextInput("")
 	fe.textInput.OnSubmit = func(ctx tuist.Context, value string) bool {
+		if err := fe.validatePromptInput(); err != nil {
+			fe.setPromptError(err)
+			return false
+		}
 		// Check if the shell considers this a complete command.
 		// If not, insert a newline for multiline editing.
 		if fe.shell != nil && !fe.shell.IsComplete(value) {
@@ -6654,11 +6753,19 @@ func (fe *frontendPretty) syncPrompt() {
 		// shaded in scrollback (styleLLMMessageView). Handlers that don't
 		// distinguish modes (plain shell) leave it unframed.
 		if fe.promptFrame != nil {
+			previousHeight := fe.promptFrame.ChromeHeight()
 			promptMode := false
 			if pm, ok := fe.shell.(interface{ PromptMode() bool }); ok {
 				promptMode = pm.PromptMode()
 			}
 			fe.promptFrame.SetEnabled(promptMode)
+			fe.promptFrame.SetAttachments(fe.promptImages, fe.imagePasting)
+			if fe.promptFrame.ChromeHeight() != previousHeight {
+				fe.Update() // attachment rows change the transcript's height budget
+			}
+		}
+		if fe.keymapBar != nil {
+			fe.keymapBar.Update()
 		}
 		if init != nil {
 			fe.runShellAsync(init)

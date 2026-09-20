@@ -1,10 +1,13 @@
 package idtui
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -24,7 +27,24 @@ type PromptFrame struct {
 	keyHandler func(tuist.Context, uv.KeyPressEvent) bool
 	// enabled gates the framed styling. When false the input is rendered bare
 	// (no rules), matching plain shell mode.
-	enabled bool
+	enabled     bool
+	attachments []string
+}
+
+// SetAttachments shows payload-free labels, not clipboard bytes, in the draft.
+func (p *PromptFrame) SetAttachments(images []PromptImage, pasting bool) {
+	var labels []string
+	for i, image := range images {
+		labels = append(labels, fmt.Sprintf("[image %d: %s, %d KiB]", i+1, image.MIMEType, (len(image.Data)+1023)/1024))
+	}
+	if pasting {
+		labels = append(labels, "Reading clipboard image…")
+	}
+	if slices.Equal(labels, p.attachments) {
+		return
+	}
+	p.attachments = labels
+	p.Update()
 }
 
 // NewPromptFrame creates a PromptFrame wrapping the given TextInput.
@@ -49,9 +69,9 @@ func (p *PromptFrame) HandleKeyPress(ctx tuist.Context, ev uv.KeyPressEvent) boo
 // ChromeHeight is the number of lines the frame adds around the text input.
 func (p *PromptFrame) ChromeHeight() int {
 	if p.enabled {
-		return 2
+		return 2 + len(p.attachments)
 	}
-	return 0
+	return len(p.attachments)
 }
 
 // SetEnabled toggles the framed styling on or off.
@@ -69,9 +89,17 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	}
 
 	result := p.RenderChildResult(ctx, p.input)
+	lines := append([]string(nil), result.Lines...)
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(p.profile))
+	for _, label := range p.attachments {
+		if ctx.Width > 0 {
+			label = ansi.Truncate(label, ctx.Width, "…")
+		}
+		lines = append(lines, out.String(label).Foreground(termenv.ANSICyan).String())
+	}
 
 	if !p.enabled {
-		ctx.Lines(result.Lines...)
+		ctx.Lines(lines...)
 		if result.Cursor != nil {
 			ctx.SetCursor(result.Cursor.Row, result.Cursor.Col)
 		}
@@ -85,7 +113,6 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 		}
 	}
 
-	out := NewOutput(new(strings.Builder), termenv.WithProfile(p.profile))
 	// The rules read as faint bright-black dashes spanning the full width,
 	// framing the flush input without any background.
 	styleBar := func(bar string) string {
@@ -96,11 +123,9 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	}
 	bar := styleBar(strings.Repeat(HorizBar, max(width, 0)))
 
-	lines := make([]string, 0, len(result.Lines)+2)
-	lines = append(lines, bar)
-	lines = append(lines, result.Lines...)
-	lines = append(lines, bar)
+	ctx.Line(bar)
 	ctx.Lines(lines...)
+	ctx.Line(bar)
 
 	// Offset the cursor by one row to account for the top rule.
 	if result.Cursor != nil {
