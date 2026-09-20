@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unsafe"
 
@@ -268,6 +269,12 @@ func TestCallPayloadBatchProcessorFastPathRecordShape(t *testing.T) {
 func TestCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
 	t.Parallel()
 
+	// Keep the coalescing timer from firing partway through emission when
+	// the host is loaded: this test asserts batching of a fully queued closure.
+	synctest.Test(t, testCallPayloadBatchProcessorFiltersAndDrainsQueue)
+}
+
+func testCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
 	exp := &countingLogExporter{}
 	proc := NewCallPayloadBatchProcessor(exp)
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
@@ -381,6 +388,12 @@ func payloadRecordWithBody(body string) logapi.Record {
 func TestCallPayloadBatchProcessorRetriesFailedBatchInOrder(t *testing.T) {
 	t.Parallel()
 
+	// Batch boundaries and retry attempts must not depend on wall-clock
+	// pauses while the initial records are being emitted.
+	synctest.Test(t, testCallPayloadBatchProcessorRetriesFailedBatchInOrder)
+}
+
+func testCallPayloadBatchProcessorRetriesFailedBatchInOrder(t *testing.T) {
 	exp := &flakyLogExporter{failures: 2}
 	proc := NewCallPayloadBatchProcessor(exp)
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
