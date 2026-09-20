@@ -37,3 +37,20 @@ func TestStabilizeRemovesPacketLoss(t *testing.T) {
 
 	require.Equal(t, expected, Stabilize(input))
 }
+
+func TestStabilizeRemovesNetworkMetrics(t *testing.T) {
+	input := strings.Join([]string{
+		"✔ aggregate 1.2s ◆ Network Rx: 770 B ◆ Network Tx: 1.2 kB",
+		"✔ scoped 2.3s ◆ External Rx: 2 MB ◆ Internal Tx: 3 B",
+		"✔ dropped 3.4s ◆ Network Rx: 4.5 kB (5.88% dropped)",
+		"",
+	}, "\n")
+	expected := strings.Join([]string{
+		"✔ aggregate X.Xs",
+		"✔ scoped X.Xs",
+		"✔ dropped X.Xs",
+		"",
+	}, "\n")
+
+	require.Equal(t, expected, Stabilize(input))
+}

@@ -34,6 +34,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/network"
@@ -311,6 +312,9 @@ func (container *Container) execMeta(
 	execMD := engineutil.ExecutionMetadata{}
 	if parent != nil {
 		execMD = *parent
+	}
+	if realm.FromContext(ctx) == realm.Daggerland {
+		execMD.DaggerlandRealm = true
 	}
 
 	query, err := CurrentQuery(ctx)

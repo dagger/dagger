@@ -29,6 +29,7 @@ type ListImageTagsOpts struct {
 // ListImageTags lists every tag for an image repository using the same
 // registry hosts, authentication, transport, and network as image pulls.
 func (r *Resolver) ListImageTags(ctx context.Context, ref string, opts ListImageTagsOpts) ([]string, error) {
+	ctx = withDefaultUserlandRealm(ctx)
 	named, err := reference.ParseNormalizedNamed(ref)
 	if err != nil {
 		return nil, fmt.Errorf("parse image repository %q: %w", ref, err)
@@ -135,7 +136,7 @@ func listImageTagsFromHost(ctx context.Context, host docker.RegistryHost, domain
 func doRegistryRequest(ctx context.Context, host docker.RegistryHost, target *url.URL) (*http.Response, error) {
 	client := host.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultRegistryClient()
 	}
 	var responses []*http.Response
 	for range 6 {

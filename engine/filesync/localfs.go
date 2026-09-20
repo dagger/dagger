@@ -16,6 +16,7 @@ import (
 	"github.com/containerd/continuity/sysx"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/internal/fsutil/types"
@@ -344,13 +345,22 @@ func (local *localFS) Sync( //nolint:gocyclo
 	// unknown up front (the diff streams), so this renders as a climbing
 	// byte count, and an unchanged directory emits nothing. Parent-dir
 	// syncs transfer only directory entries and are skipped.
-	var uploadedBytes atomic.Int64
+	var uploadedBytes int64
+	var uploadedBytesMu sync.Mutex
 	upload := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
+	network, err := enginetelemetry.NewNetworkRecorder(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, "", fmt.Errorf("create directory import network recorder: %w", err)
+	}
 	countUploaded := func(written int64) {
 		if forParents {
 			return
 		}
-		upload.Update(uploadedBytes.Add(written))
+		uploadedBytesMu.Lock()
+		defer uploadedBytesMu.Unlock()
+		uploadedBytes += written
+		upload.Update(uploadedBytes)
+		network.Record(uploadedBytes)
 	}
 	defer upload.Finish()
 
@@ -1042,12 +1052,12 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 		}, nil
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, writtenBytes, err
 	}
 
 	if err := verifyExpectedChange(path, appliedChange.result(), expectedChangeKind, upperStat); err != nil {
 		appliedChange.release()
-		return nil, 0, err
+		return nil, writtenBytes, err
 	}
 	return appliedChange, writtenBytes, nil
 }

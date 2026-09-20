@@ -72,6 +72,13 @@ func TestModuleSDKAttachDependencyResultsRetainsImplementationModuleAndSourceDir
 	require.Same(t, attachedSourceDir.Self(), sdk.optionalFullSDKSourceDir.Self())
 }
 
+func TestSDKDaggerlandNetworkTrust(t *testing.T) {
+	require.True(t, core.SDKUsesDaggerlandNetwork(&goSDK{}))
+	require.True(t, core.SDKUsesDaggerlandNetwork(&dangSDK{}))
+	require.True(t, core.SDKUsesDaggerlandNetwork(&module{trusted: true}))
+	require.False(t, core.SDKUsesDaggerlandNetwork(&module{}))
+}
+
 func moduleSDKTestSyntheticCall(op string, typ dagql.Typed) *dagql.ResultCall {
 	return &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,

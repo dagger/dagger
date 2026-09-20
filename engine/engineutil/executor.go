@@ -24,6 +24,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -46,6 +47,11 @@ type ExecutionMetadata struct {
 	// Internal execution initiated by dagger and not the user.
 	// Used when executing the module runtime itself.
 	Internal bool
+
+	// DaggerlandRealm marks trusted Dagger runtime work. Internal is not a
+	// trust boundary: user module processes are internal telemetry plumbing but
+	// still userland-owned network traffic.
+	DaggerlandRealm bool `json:"-"`
 
 	// UseRecipeIDsByDefault configures nested clients started by this exec to
 	// resolve id() as recipe-form IDs unless explicitly requested otherwise.
@@ -187,24 +193,29 @@ func (c *Client) Run(
 	if dagql.OTelProfActive(ctx) {
 		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent)
 	}
-	err := c.run(ctx, state,
-		namedSetupFunc{"setupNetwork", c.setupNetwork},
-		namedSetupFunc{"injectInit", c.injectInit},
-		namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
-		namedSetupFunc{"filterEnvs", c.filterEnvs},
-		namedSetupFunc{"setupRootfs", c.setupRootfs},
-		namedSetupFunc{"setUserGroup", c.setUserGroup},
-		namedSetupFunc{"setExitCodePath", c.setExitCodePath},
-		namedSetupFunc{"setupStdio", c.setupStdio},
-		namedSetupFunc{"setupOTel", c.setupOTel},
-		namedSetupFunc{"setupSecretScrubbing", c.setupSecretScrubbing},
-		namedSetupFunc{"setProxyEnvs", c.setProxyEnvs},
-		namedSetupFunc{"enableGPU", c.enableGPU},
-		namedSetupFunc{"createCWD", c.createCWD},
-		namedSetupFunc{"setupNestedClient", c.setupNestedClient},
-		namedSetupFunc{"installCACerts", c.installCACerts},
-		namedSetupFunc{"runContainer", c.runContainer},
-	)
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		err = fmt.Errorf("create exec network recorders: %w", err)
+	} else {
+		err = c.run(ctx, state,
+			namedSetupFunc{"setupNetwork", c.setupNetwork},
+			namedSetupFunc{"injectInit", c.injectInit},
+			namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
+			namedSetupFunc{"filterEnvs", c.filterEnvs},
+			namedSetupFunc{"setupRootfs", c.setupRootfs},
+			namedSetupFunc{"setUserGroup", c.setUserGroup},
+			namedSetupFunc{"setExitCodePath", c.setExitCodePath},
+			namedSetupFunc{"setupStdio", c.setupStdio},
+			namedSetupFunc{"setupOTel", c.setupOTel},
+			namedSetupFunc{"setupSecretScrubbing", c.setupSecretScrubbing},
+			namedSetupFunc{"setProxyEnvs", c.setProxyEnvs},
+			namedSetupFunc{"enableGPU", c.enableGPU},
+			namedSetupFunc{"createCWD", c.createCWD},
+			namedSetupFunc{"setupNestedClient", c.setupNestedClient},
+			namedSetupFunc{"installCACerts", c.installCACerts},
+			namedSetupFunc{"runContainer", c.runContainer},
+		)
+	}
 	execOp.EndErr(err)
 	if execRunSpan != nil {
 		endOTelExecRun(execRunSpan, &err)

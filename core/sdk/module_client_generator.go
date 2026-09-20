@@ -18,6 +18,7 @@ type clientGeneratorModule struct {
 func (sdk *clientGeneratorModule) RequiredClientGenerationFiles(
 	ctx context.Context,
 ) (res dagql.Array[dagql.String], err error) {
+	ctx = sdk.mod.networkContext(ctx)
 	// Return an empty array if the SDK doesn't implement the
 	// `requiredClientGenerationFiles` function.
 	if _, ok := sdk.funcs["requiredClientGenerationFiles"]; !ok {
@@ -47,6 +48,7 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
+	ctx = sdk.mod.networkContext(ctx)
 	_, ok := sdk.funcs["generateClient"]
 	if !ok {
 		return inst, fmt.Errorf("generateClient is not implemented by this SDK")

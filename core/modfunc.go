@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -823,6 +824,9 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 	if !ok {
 		return nil, fmt.Errorf("no runtime implemented")
 	}
+	if SDKUsesDaggerlandNetwork(mod.Source.Value.Self().SDKImpl) {
+		ctx = realm.With(ctx, realm.Daggerland)
+	}
 
 	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
 	if err != nil {
@@ -847,7 +851,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	curCall := dagql.CurrentCall(ctx)
 	execMD := engineutil.ExecutionMetadata{
-		Internal: true,
+		Internal:        true,
+		DaggerlandRealm: realm.FromContext(ctx) == realm.Daggerland,
 	}
 	if curCall != nil {
 		callDigest, err := curCall.RecipeDigest(ctx)

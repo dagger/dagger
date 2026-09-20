@@ -4,11 +4,14 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -43,6 +46,8 @@ var (
 		Name: "dagger_local_cache_corrupt_db_reset",
 		Help: "If set, the local cache database was found to be corrupt and reset",
 	})
+
+	networkMetrics = newNetworkCollector()
 )
 
 // setupMetricsServer starts an HTTP server to expose Prometheus metrics
@@ -63,6 +68,9 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 		return err
 	}
 	if err := prometheus.Register(localCacheCorruptDBResetGauge); err != nil {
+		return err
+	}
+	if err := prometheus.Register(networkMetrics); err != nil {
 		return err
 	}
 
@@ -115,17 +123,173 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 			dbReset = 1
 		}
 		localCacheCorruptDBResetGauge.Set(dbReset)
-
 		promhttp.Handler().ServeHTTP(w, r)
 	})
 
+	listener, err := realm.Daggerland.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+
 	// Start server in a goroutine
 	go func() {
-		if err := http.ListenAndServe(addr, nil); err != nil {
+		if err := http.Serve(listener, nil); err != nil {
 			slog.Error("metrics server failed", "error", err)
 		}
 	}()
 
 	slog.Info("metrics server started", "address", addr)
 	return nil
+}
+
+type networkCollector struct {
+	available           *prometheus.Desc
+	realmEnforced       *prometheus.Desc
+	bytes               *prometheus.Desc
+	unattributedBytes   *prometheus.Desc
+	unattributedPackets *prometheus.Desc
+	cgroupRegistrations *prometheus.Desc
+}
+
+func newNetworkCollector() *networkCollector {
+	return &networkCollector{
+		available: prometheus.NewDesc(
+			"dagger_network_accounting_available",
+			"Whether exact engine cgroup network accounting is available",
+			nil,
+			nil,
+		),
+		realmEnforced: prometheus.NewDesc(
+			"dagger_network_realm_enforced",
+			"Whether egress packets without a network realm are rejected",
+			nil,
+			nil,
+		),
+		bytes: prometheus.NewDesc(
+			"dagger_network_bytes_total",
+			"Exact cumulative bytes at the engine cgroup network boundary",
+			[]string{"realm", "scope", "direction"},
+			nil,
+		),
+		unattributedBytes: prometheus.NewDesc(
+			"dagger_network_unattributed_bytes_total",
+			"Exact cumulative bytes without an explicit network realm",
+			[]string{"scope", "direction"},
+			nil,
+		),
+		unattributedPackets: prometheus.NewDesc(
+			"dagger_network_unattributed_packets_total",
+			"Exact cumulative packets without an explicit network realm",
+			[]string{"scope", "direction"},
+			nil,
+		),
+		cgroupRegistrations: prometheus.NewDesc(
+			"dagger_network_cgroup_registrations_total",
+			"Child cgroup network realm registration attempts",
+			[]string{"result", "errno"},
+			nil,
+		),
+	}
+}
+
+func (c *networkCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.available
+	ch <- c.realmEnforced
+	ch <- c.bytes
+	ch <- c.unattributedBytes
+	ch <- c.unattributedPackets
+	ch <- c.cgroupRegistrations
+}
+
+func (c *networkCollector) Collect(ch chan<- prometheus.Metric) {
+	samples, err := nettracer.SampleRealms()
+	if err != nil {
+		ch <- prometheus.MustNewConstMetric(c.available, prometheus.GaugeValue, 0)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(c.available, prometheus.GaugeValue, 1)
+	enforced, err := nettracer.RealmEnforcementEnabled()
+	if err != nil {
+		return
+	}
+	var enforcementValue float64
+	if enforced {
+		enforcementValue = 1
+	}
+	ch <- prometheus.MustNewConstMetric(
+		c.realmEnforced,
+		prometheus.GaugeValue,
+		enforcementValue,
+	)
+	registered, failed, lastErrno := nettracer.CgroupRegistrationStats()
+	ch <- prometheus.MustNewConstMetric(
+		c.cgroupRegistrations,
+		prometheus.CounterValue,
+		float64(registered),
+		"success",
+		"0",
+	)
+	ch <- prometheus.MustNewConstMetric(
+		c.cgroupRegistrations,
+		prometheus.CounterValue,
+		float64(failed),
+		"error",
+		strconv.FormatInt(lastErrno, 10),
+	)
+	for networkRealm, sample := range samples {
+		realmName := "userland"
+		if networkRealm == realm.Daggerland {
+			realmName = "daggerland"
+		}
+		for _, value := range []struct {
+			scope     string
+			direction string
+			bytes     uint64
+		}{
+			{"internal", "rx", sample.InternalRX},
+			{"internal", "tx", sample.InternalTX},
+			{"external", "rx", sample.ExternalRX},
+			{"external", "tx", sample.ExternalTX},
+		} {
+			ch <- prometheus.MustNewConstMetric(
+				c.bytes,
+				prometheus.CounterValue,
+				float64(value.bytes),
+				realmName,
+				value.scope,
+				value.direction,
+			)
+		}
+	}
+
+	unattributed, err := nettracer.SampleUnattributed()
+	if err != nil {
+		return
+	}
+	for _, value := range []struct {
+		scope     string
+		direction string
+		bytes     uint64
+		packets   uint64
+	}{
+		{"internal", "rx", unattributed.InternalRXBytes, unattributed.InternalRXPackets},
+		{"internal", "tx", unattributed.InternalTXBytes, unattributed.InternalTXPackets},
+		{"external", "rx", unattributed.ExternalRXBytes, unattributed.ExternalRXPackets},
+		{"external", "tx", unattributed.ExternalTXBytes, unattributed.ExternalTXPackets},
+	} {
+		ch <- prometheus.MustNewConstMetric(
+			c.unattributedBytes,
+			prometheus.CounterValue,
+			float64(value.bytes),
+			value.scope,
+			value.direction,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			c.unattributedPackets,
+			prometheus.CounterValue,
+			float64(value.packets),
+			value.scope,
+			value.direction,
+		)
+	}
 }

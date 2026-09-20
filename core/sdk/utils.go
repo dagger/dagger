@@ -9,8 +9,13 @@ import (
 	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/util/hashutil"
 )
+
+func engineNetworkContext(ctx context.Context) context.Context {
+	return realm.With(ctx, realm.Daggerland)
+}
 
 // Return true if the given module is a builtin SDK.
 func IsModuleSDKBuiltin(module string) bool {

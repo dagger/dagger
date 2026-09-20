@@ -41,6 +41,17 @@ const (
 	LogRoleAttr     = "dagger.io/log.role"
 	LogRoleSpanName = "span.name"
 
+	// Network byte metrics use the operation's point of view. "Internal" means
+	// the packet's remote address belongs to a Dagger-managed CNI bridge;
+	// "external" means it does not. Traffic that cannot be positively
+	// classified as Dagger-internal is external.
+	NetworkRxBytes         = "dagger.io/metrics.network.rx.bytes"
+	NetworkTxBytes         = "dagger.io/metrics.network.tx.bytes"
+	NetworkInternalRxBytes = "dagger.io/metrics.network.internal.rx.bytes"
+	NetworkInternalTxBytes = "dagger.io/metrics.network.internal.tx.bytes"
+	NetworkExternalRxBytes = "dagger.io/metrics.network.external.rx.bytes"
+	NetworkExternalTxBytes = "dagger.io/metrics.network.external.tx.bytes"
+
 	// DagPartialAttr marks a successful lazy-evaluation resume span that
 	// completed one part while the result still had deferred work. Such a
 	// resumption does not resolve the owning API span's pending state. (bool)

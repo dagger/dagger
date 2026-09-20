@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/iancoleman/strcase"
 )
 
@@ -18,6 +19,7 @@ type module struct {
 
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory]
 	rawConfig                map[string]any
+	trusted                  bool
 
 	funcs map[string]*core.Function
 }
@@ -33,12 +35,14 @@ func newModuleSDK(
 	sdkModMeta dagql.ObjectResult[*core.Module],
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
+	trusted bool,
 ) (*module, error) {
 	sdk := &module{
 		root:                     root,
 		mod:                      sdkModMeta,
 		optionalFullSDKSourceDir: optionalFullSDKSourceDir,
 		rawConfig:                rawConfig,
+		trusted:                  trusted,
 		funcs:                    listImplementedFunctions(sdkModMeta.Self()),
 	}
 
@@ -47,6 +51,17 @@ func newModuleSDK(
 	}
 
 	return sdk, nil
+}
+
+func (sdk *module) DaggerlandRealm() bool {
+	return sdk != nil && sdk.trusted
+}
+
+func (sdk *module) networkContext(ctx context.Context) context.Context {
+	if !sdk.DaggerlandRealm() {
+		return ctx
+	}
+	return realm.With(ctx, realm.Daggerland)
 }
 
 func (sdk *module) CloneForModuleSource(*core.ModuleSource) core.SDK {
@@ -88,6 +103,7 @@ func (sdk *module) RuntimeTrustsCommittedFiles() bool {
 }
 
 func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
+	ctx = sdk.networkContext(ctx)
 	dag, err := dagql.NewServer(ctx, sdk.root)
 	if err != nil {
 		return nil, fmt.Errorf("create sdk module server: %w", err)
@@ -327,6 +343,7 @@ func (sdk *module) AsRuntimeTarget() (core.RuntimeTarget, bool) {
 // value is written into the new module's dagger-module.toml `[runtime]
 // source`.
 func (sdk *module) TargetRuntime(ctx context.Context) (string, error) {
+	ctx = sdk.networkContext(ctx)
 	sdkInst, err := sdk.instantiate(ctx)
 	if err != nil {
 		return "", fmt.Errorf("initialize sdk module %s targetRuntime: %w", sdk.mod.Self().Name(), err)

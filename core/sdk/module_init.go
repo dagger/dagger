@@ -23,6 +23,7 @@ func (sdk *moduleInitializerModule) InitModule(
 	path string,
 	args map[string]any,
 ) (inst dagql.ObjectResult[*core.Changeset], err error) {
+	ctx = sdk.mod.networkContext(ctx)
 	fn, ok := sdk.funcs["initModule"]
 	if !ok {
 		return inst, fmt.Errorf("initModule is not implemented by this SDK")
@@ -45,6 +46,7 @@ func (sdk *clientInitializerModule) InitClient(
 	module string,
 	args map[string]any,
 ) (inst dagql.ObjectResult[*core.Changeset], err error) {
+	ctx = sdk.mod.networkContext(ctx)
 	fn, ok := sdk.funcs["initClient"]
 	if !ok {
 		return inst, fmt.Errorf("initClient is not implemented by this SDK")

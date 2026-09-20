@@ -37,6 +37,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/cleanups"
@@ -1205,6 +1206,10 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 
 	closers := make([]func() error, len(svc.TunnelPorts))
 	ports := make([]Port, len(svc.TunnelPorts))
+	svcCtx, err = enginetelemetry.WithNetworkRecording(svcCtx)
+	if err != nil {
+		return fmt.Errorf("create tunnel network recorders: %w", err)
+	}
 
 	for i, forward := range svc.TunnelPorts {
 		var frontend int

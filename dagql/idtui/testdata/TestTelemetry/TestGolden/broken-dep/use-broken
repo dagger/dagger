@@ -8,6 +8,11 @@ Expected stderr:
 
 ✘ load workspace: . X.Xs ERROR
 ╰╴✘ loading type definitions X.Xs ERROR
+  ├╴✔ uploading /app/dagql/idtui/dagger.toml X.Xs
+  ├╴✔ uploading /app/dagql/idtui/.git/config X.Xs
+  ├╴✔ uploading /app/dagql/idtui/.git/HEAD X.Xs
+  ├╴✘ uploading /tmp/TestTelemetryXXXXXXXXXX/001/.config/dagger/config.toml X.Xs ERROR
+  │ ! failed to read file: failed to receive file bytes message: rpc error: code = NotFound desc = read path: open /tmp/TestTelemetryXXXXXXXXXX/001/.config/dagger/config.toml: no such file or directory
   ╰╴✔ load extra module: ./viztest/broken-dep X.Xs
     ╰╴✘ ModuleSource.asModule: Module! X.Xs ERROR
       ╰╴✘ load dep modules X.Xs ERROR

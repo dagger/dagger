@@ -470,6 +470,7 @@ type persistedModuleSourceSDKCapabilities struct {
 	ModuleInitializer bool `json:"moduleInitializer,omitempty"`
 	ClientInitializer bool `json:"clientInitializer,omitempty"`
 	RuntimeTarget     bool `json:"runtimeTarget,omitempty"`
+	DaggerlandNetwork bool `json:"daggerlandNetwork,omitempty"`
 }
 
 type persistedModuleSourcePayload struct {
@@ -514,6 +515,10 @@ type persistedModuleSourceLazySDK struct {
 
 var _ SDK = (*persistedModuleSourceLazySDK)(nil)
 var _ selfCallsAlwaysEnabler = (*persistedModuleSourceLazySDK)(nil)
+
+func (sdk *persistedModuleSourceLazySDK) DaggerlandRealm() bool {
+	return sdk != nil && sdk.capabilities.DaggerlandNetwork
+}
 
 func (sdk *persistedModuleSourceLazySDK) CloneForModuleSource(src *ModuleSource) SDK {
 	if sdk == nil {
@@ -835,6 +840,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		_, hasModuleInitializer := src.SDKImpl.AsModuleInitializer()
 		_, hasClientInitializer := src.SDKImpl.AsClientInitializer()
 		_, hasRuntimeTarget := src.SDKImpl.AsRuntimeTarget()
+		daggerlandNetwork := SDKUsesDaggerlandNetwork(src.SDKImpl)
 		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
 			Runtime:           hasRuntime,
 			ModuleTypes:       hasModuleTypes,
@@ -844,6 +850,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			ModuleInitializer: hasModuleInitializer,
 			ClientInitializer: hasClientInitializer,
 			RuntimeTarget:     hasRuntimeTarget,
+			DaggerlandNetwork: daggerlandNetwork,
 		}
 	}
 	if src.ContextDirectory.Self() != nil {

@@ -154,6 +154,7 @@ require (
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab
 	github.com/urfave/cli v1.22.17
 	github.com/vektah/gqlparser/v2 v2.5.32
+	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/dang v1.0.1
 	github.com/vito/dang/v2 v2.1.4
@@ -349,7 +350,6 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
-	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect

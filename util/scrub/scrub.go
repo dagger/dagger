@@ -144,6 +144,11 @@ var scrubs = []scrubber{
 	},
 	// Uploads
 	{
+		regexp.MustCompile(`/tmp/TestTelemetry\d+`),
+		"/tmp/TestTelemetry1333437666",
+		"/tmp/TestTelemetryXXXXXXXXXX",
+	},
+	{
 		regexp.MustCompile(`upload ([^ ]+) from [a-z0-9]+ \(client id: [a-z0-9]+, session id: [a-z0-9]+\)`),
 		"upload /app/dagql/idtui/viztest/broken from uiyf0ymsapvxhhgrsamouqh8h (client id: xutan9vz6sjtdcrqcqrd6cvh4, session id: u5mj1p0sw07k6579r3xcuiuf3)",
 		"upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX)",
@@ -171,6 +176,13 @@ var scrubs = []scrubber{
 		// an almost natural deadbeef!
 		"xxh3:0724b85200c28a1d",
 		"xxh3:XXXXXXXXXXXXXXXX",
+	},
+	// Network metrics are sampled asynchronously, so their values, presence,
+	// and available directions can vary by the time telemetry is rendered.
+	{
+		regexp.MustCompile(`(?: ◆ (?:Network (?:Rx|Tx)|(?:External|Internal) (?:Rx|Tx)): \d+(?:\.\d+)?\s?(?:B|kB|MB|GB|TB)(?: \(\d+(?:\.\d+)?(?:e[+-]?\d+)?% dropped\))?)+`),
+		" ◆ Network Rx: 770 B ◆ Network Tx: 1.2 kB ◆ External Rx: 2 MB ◆ Internal Tx: 3 B",
+		"",
 	},
 	// byte quantities
 	{

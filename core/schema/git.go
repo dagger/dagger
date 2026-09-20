@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -39,7 +40,9 @@ import (
 func init() {
 	// allow injection of custom dns resolver for go-git
 	customClient := &http.Client{
-		Transport: netconfhttp.NewInjectableTransport(http.DefaultTransport),
+		Transport: netconfhttp.NewInjectableTransport(
+			realm.NewTransport(http.DefaultTransport.(*http.Transport)),
+		),
 	}
 	client.InstallProtocol("http", githttp.NewClient(customClient))
 	client.InstallProtocol("https", githttp.NewClient(customClient))
@@ -487,6 +490,7 @@ type gitArgs struct {
 
 //nolint:gocyclo
 func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Query], args gitArgs) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	ctx = realm.WithDefault(ctx, realm.Userland)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -1082,6 +1086,7 @@ func gitRepositoryNamedInputs(remote *gitutil.GitURL, args gitArgs, serviceID, s
 // the results here, so this call is shared by every client with the same
 // arguments.
 func (s *gitSchema) gitRepository(ctx context.Context, parent dagql.ObjectResult[*core.Query], args gitArgs) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	ctx = realm.WithDefault(ctx, realm.Userland)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -1287,6 +1292,7 @@ func cachedIsRemotePublic(
 }
 
 func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
+	ctx = realm.WithDefault(ctx, realm.Userland)
 	// check if repo is public
 	repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: "origin",

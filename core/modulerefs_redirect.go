@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -29,7 +30,8 @@ const (
 // we must read the Location header and rewrite it (stripping dagger-get,
 // re-appending any version) before continuing resolution.
 var daggerGetClient = &http.Client{
-	Timeout: daggerGetProbeTimeout,
+	Transport: realm.Daggerland.Transport(http.DefaultTransport.(*http.Transport)),
+	Timeout:   daggerGetProbeTimeout,
 	CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
