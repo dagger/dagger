@@ -54,30 +54,72 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 
 // convertHistoryToOpenAI converts content-block messages to the OpenAI
 // chat-completions message format.
-func convertHistoryToOpenAI(history []*LLMMessage) []openai.ChatCompletionMessageParamUnion {
+func convertHistoryToOpenAI(history []*LLMMessage) ([]openai.ChatCompletionMessageParamUnion, error) {
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
-	for _, msg := range history {
+	// Chat tool messages accept only text. Keep native media in a labeled user
+	// message after the entire run of tool results (including results stored in
+	// separate history messages), so parallel calls all receive their outputs
+	// before any user message interrupts the protocol.
+	var toolMedia []openai.ChatCompletionContentPartUnionParam
+	flushToolMedia := func() {
+		if len(toolMedia) > 0 {
+			openAIMessages = append(openAIMessages, openai.UserMessage(toolMedia))
+			toolMedia = nil
+		}
+	}
+	for i, msg := range history {
+		if err := validateOpenAIMessage(msg); err != nil {
+			return nil, fmt.Errorf("OpenAI message %d: %w", i, err)
+		}
+		if msg.Role != LLMMessageRoleUser {
+			flushToolMedia()
+		}
 		switch msg.Role {
 		case LLMMessageRoleSystem:
 			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.TextContent()))
 		case LLMMessageRoleUser:
-			// A user message may carry tool results and/or text content.
-			var textParts []openai.ChatCompletionContentPartUnionParam
+			var parts []openai.ChatCompletionContentPartUnionParam
+			flushParts := func() {
+				if len(parts) > 0 {
+					openAIMessages = append(openAIMessages, openai.UserMessage(parts))
+					parts = nil
+				}
+			}
 			for _, block := range msg.Content {
-				switch block.Kind {
-				case LLMContentToolResult:
-					content := block.Text
+				if block.Kind == LLMContentToolResult {
+					flushParts()
+					content := block.ContentText()
 					if block.Errored {
 						content = "error: " + content
 					}
 					openAIMessages = append(openAIMessages, openai.ToolMessage(content, block.CallID))
-				case LLMContentText:
-					textParts = append(textParts, openai.TextContentPart(block.Text))
+					hasMedia := false
+					for _, child := range block.Content {
+						hasMedia = hasMedia || child.Kind != LLMContentText
+					}
+					if hasMedia {
+						toolMedia = append(toolMedia, openai.TextContentPart(fmt.Sprintf("Content from tool result %q:", block.CallID)))
+						if block.Text != "" {
+							toolMedia = append(toolMedia, openai.TextContentPart(block.Text))
+						}
+						for _, child := range block.Content {
+							part, err := openAIContentPart(child)
+							if err != nil {
+								return nil, fmt.Errorf("OpenAI tool result %q: %w", block.CallID, err)
+							}
+							toolMedia = append(toolMedia, part)
+						}
+					}
+					continue
 				}
+				flushToolMedia()
+				part, err := openAIContentPart(block)
+				if err != nil {
+					return nil, fmt.Errorf("OpenAI message %d: %w", i, err)
+				}
+				parts = append(parts, part)
 			}
-			if len(textParts) > 0 {
-				openAIMessages = append(openAIMessages, openai.UserMessage(textParts))
-			}
+			flushParts()
 		case LLMMessageRoleAssistant:
 			assistantMsg := openai.AssistantMessage(msg.TextContent())
 			var calls []openai.ChatCompletionMessageToolCallUnionParam
@@ -105,7 +147,97 @@ func convertHistoryToOpenAI(history []*LLMMessage) []openai.ChatCompletionMessag
 			openAIMessages = append(openAIMessages, assistantMsg)
 		}
 	}
-	return openAIMessages
+	flushToolMedia()
+	return openAIMessages, nil
+}
+
+// Both OpenAI protocols accept media only as user input or tool results, not
+// system instructions or historical assistant output. Thinking remains
+// provider-specific: chat omits it, while Responses replays signed reasoning.
+func validateOpenAIMessage(msg *LLMMessage) error {
+	if msg == nil {
+		return fmt.Errorf("nil message")
+	}
+	if err := ValidateLLMContent(msg.Content); err != nil {
+		return err
+	}
+	for _, block := range msg.Content {
+		allowed := false
+		switch msg.Role {
+		case LLMMessageRoleSystem:
+			allowed = block.Kind == LLMContentText
+		case LLMMessageRoleUser:
+			switch block.Kind {
+			case LLMContentText, LLMContentImage, LLMContentAudio, LLMContentDocument, LLMContentToolResult:
+				allowed = true
+			}
+		case LLMMessageRoleAssistant:
+			switch block.Kind {
+			case LLMContentText, LLMContentThinking, LLMContentToolCall:
+				allowed = true
+			}
+		default:
+			return fmt.Errorf("unsupported role %q", msg.Role)
+		}
+		if !allowed {
+			return fmt.Errorf("%s content is unsupported in %s messages", block.Kind, msg.Role)
+		}
+	}
+	switch msg.Role {
+	case LLMMessageRoleSystem, LLMMessageRoleUser, LLMMessageRoleAssistant:
+		return nil
+	default:
+		return fmt.Errorf("unsupported role %q", msg.Role)
+	}
+}
+
+func openAIContentPart(block *LLMContentBlock) (openai.ChatCompletionContentPartUnionParam, error) {
+	switch block.Kind {
+	case LLMContentText:
+		return openai.TextContentPart(block.Text), nil
+	case LLMContentImage:
+		if err := validateOpenAIImage(block); err != nil {
+			return openai.ChatCompletionContentPartUnionParam{}, err
+		}
+		return openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+			URL: openAIMediaDataURL(block),
+		}), nil
+	case LLMContentAudio:
+		var format string
+		switch block.MIMEType {
+		case "audio/wav", "audio/x-wav":
+			format = "wav"
+		case "audio/mpeg", "audio/mp3":
+			format = "mp3"
+		default:
+			return openai.ChatCompletionContentPartUnionParam{}, fmt.Errorf("unsupported OpenAI audio MIME type %q (expected WAV or MP3)", block.MIMEType)
+		}
+		return openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
+			Data: block.Data, Format: format,
+		}), nil
+	case LLMContentDocument:
+		if block.MIMEType != "application/pdf" {
+			return openai.ChatCompletionContentPartUnionParam{}, fmt.Errorf("unsupported OpenAI document MIME type %q (expected PDF)", block.MIMEType)
+		}
+		return openai.FileContentPart(openai.ChatCompletionContentPartFileFileParam{
+			FileData: openai.String(openAIMediaDataURL(block)), Filename: openai.String("document.pdf"),
+		}), nil
+	default:
+		return openai.ChatCompletionContentPartUnionParam{}, fmt.Errorf("unsupported OpenAI content kind %q", block.Kind)
+	}
+}
+
+func validateOpenAIImage(block *LLMContentBlock) error {
+	switch block.MIMEType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return nil
+	default:
+		return fmt.Errorf("unsupported OpenAI image MIME type %q", block.MIMEType)
+	}
+}
+
+func openAIMediaDataURL(block *LLMContentBlock) string {
+	return "data:" + block.MIMEType + ";base64," + block.Data
 }
 
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
@@ -142,7 +274,10 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		return nil, err
 	}
 
-	openAIMessages := convertHistoryToOpenAI(history)
+	openAIMessages, err := convertHistoryToOpenAI(history)
+	if err != nil {
+		return nil, err
+	}
 
 	params := openai.ChatCompletionNewParams{
 		Seed:     openai.Int(0),
