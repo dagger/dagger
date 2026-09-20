@@ -441,59 +441,64 @@ func (b *LLMContentBlock) validate(remaining *int) error {
 			}
 		}
 	case LLMContentImage, LLMContentAudio, LLMContentDocument:
-		if b.Text != "" {
-			return fmt.Errorf("%s cannot contain text", b.Kind)
-		}
-		if b.MIMEType == "" || b.Data == "" {
-			return fmt.Errorf("%s requires MIME type and base64 data", b.Kind)
-		}
-		mt, params, err := mime.ParseMediaType(b.MIMEType)
-		if err != nil || len(params) != 0 || mt != b.MIMEType {
-			return fmt.Errorf("invalid media MIME type %q", b.MIMEType)
-		}
-		if (b.Kind == LLMContentImage && !strings.HasPrefix(mt, "image/")) || (b.Kind == LLMContentAudio && !strings.HasPrefix(mt, "audio/")) || (b.Kind == LLMContentDocument && mt != "application/pdf") {
-			return fmt.Errorf("MIME type %q does not match %s", mt, b.Kind)
-		}
-		encodedSize := len(b.Data)
-		if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
-			encodedSize -= strings.Count(b.Data, "\r") + strings.Count(b.Data, "\n")
-			if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
-				return fmt.Errorf("media exceeds %d decoded bytes", MaxLLMMediaBytes)
-			}
-		}
-		// NewDecoder accepts concatenated padded chunks at read boundaries,
-		// unlike DecodeString. Require padding to terminate the entire value.
-		if pad := strings.IndexByte(b.Data, '='); pad >= 0 {
-			padding := 0
-			for _, char := range b.Data[pad:] {
-				switch char {
-				case '=':
-					padding++
-					if padding > 2 {
-						return fmt.Errorf("invalid base64 media padding")
-					}
-				case '\r', '\n':
-				default:
-					return fmt.Errorf("invalid base64 media data after padding")
-				}
-			}
-		}
-		// Stream validation instead of allocating a decoded copy for every
-		// schema, recipe and provider boundary. Count actual decoded bytes:
-		// base64 permits CR/LF, so its encoded length is not an exact budget.
-		size, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(b.Data)))
-		if err != nil {
-			return fmt.Errorf("invalid base64 media data: %w", err)
-		}
-		if size == 0 {
-			return fmt.Errorf("media must contain 1 to %d decoded bytes", MaxLLMMediaBytes)
-		}
-		*remaining -= int(size)
-		if *remaining < 0 {
-			return fmt.Errorf("message media exceeds %d decoded bytes", MaxLLMMediaBytes)
-		}
+		return b.validateMedia(remaining)
 	default:
 		return fmt.Errorf("unknown content block kind %q", b.Kind)
+	}
+	return nil
+}
+
+func (b *LLMContentBlock) validateMedia(remaining *int) error {
+	if b.Text != "" {
+		return fmt.Errorf("%s cannot contain text", b.Kind)
+	}
+	if b.MIMEType == "" || b.Data == "" {
+		return fmt.Errorf("%s requires MIME type and base64 data", b.Kind)
+	}
+	mt, params, err := mime.ParseMediaType(b.MIMEType)
+	if err != nil || len(params) != 0 || mt != b.MIMEType {
+		return fmt.Errorf("invalid media MIME type %q", b.MIMEType)
+	}
+	if (b.Kind == LLMContentImage && !strings.HasPrefix(mt, "image/")) || (b.Kind == LLMContentAudio && !strings.HasPrefix(mt, "audio/")) || (b.Kind == LLMContentDocument && mt != "application/pdf") {
+		return fmt.Errorf("MIME type %q does not match %s", mt, b.Kind)
+	}
+	encodedSize := len(b.Data)
+	if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
+		encodedSize -= strings.Count(b.Data, "\r") + strings.Count(b.Data, "\n")
+		if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
+			return fmt.Errorf("media exceeds %d decoded bytes", MaxLLMMediaBytes)
+		}
+	}
+	// NewDecoder accepts concatenated padded chunks at read boundaries,
+	// unlike DecodeString. Require padding to terminate the entire value.
+	if pad := strings.IndexByte(b.Data, '='); pad >= 0 {
+		padding := 0
+		for _, char := range b.Data[pad:] {
+			switch char {
+			case '=':
+				padding++
+				if padding > 2 {
+					return fmt.Errorf("invalid base64 media padding")
+				}
+			case '\r', '\n':
+			default:
+				return fmt.Errorf("invalid base64 media data after padding")
+			}
+		}
+	}
+	// Stream validation instead of allocating a decoded copy for every
+	// schema, recipe and provider boundary. Count actual decoded bytes:
+	// base64 permits CR/LF, so its encoded length is not an exact budget.
+	size, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(b.Data)))
+	if err != nil {
+		return fmt.Errorf("invalid base64 media data: %w", err)
+	}
+	if size == 0 {
+		return fmt.Errorf("media must contain 1 to %d decoded bytes", MaxLLMMediaBytes)
+	}
+	*remaining -= int(size)
+	if *remaining < 0 {
+		return fmt.Errorf("message media exceeds %d decoded bytes", MaxLLMMediaBytes)
 	}
 	return nil
 }
@@ -3330,9 +3335,18 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 		})
 	}
 
+	messageSels, err := llm.messageRecipeSelectors()
+	if err != nil {
+		return nil, err
+	}
+	return append(sels, messageSels...), nil
+}
+
+func (llm *LLM) messageRecipeSelectors() ([]dagql.Selector, error) {
 	// Reconstruct the conversation in message order. Every message shape the engine
 	// can produce maps to a selector; anything else is an error rather than
 	// silent data loss.
+	var sels []dagql.Selector
 	for i, msg := range llm.Messages {
 		switch msg.Role {
 		case LLMMessageRoleSystem:
