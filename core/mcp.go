@@ -750,25 +750,21 @@ func messagesEqual(a, b *LLMMessage) bool {
 	if a.Role != b.Role || len(a.Content) != len(b.Content) {
 		return false
 	}
-	for i, blockA := range a.Content {
-		blockB := b.Content[i]
-		if blockA == blockB {
-			continue
-		}
-		if blockA == nil || blockB == nil {
-			return false
-		}
-		if blockA.Kind != blockB.Kind ||
-			blockA.Text != blockB.Text ||
-			blockA.CallID != blockB.CallID ||
-			blockA.ToolName != blockB.ToolName ||
-			string(blockA.Arguments) != string(blockB.Arguments) ||
-			blockA.Errored != blockB.Errored ||
-			blockA.Signature != blockB.Signature {
-			return false
-		}
+	return slices.EqualFunc(a.Content, b.Content, llmContentEqual)
+}
+
+func llmContentEqual(a, b *LLMContentBlock) bool {
+	if a == b {
+		return true
 	}
-	return true
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Kind == b.Kind && a.Text == b.Text && a.CallID == b.CallID &&
+		a.ToolName == b.ToolName && string(a.Arguments) == string(b.Arguments) &&
+		a.Errored == b.Errored && a.Signature == b.Signature &&
+		a.MIMEType == b.MIMEType && a.Data == b.Data &&
+		slices.EqualFunc(a.Content, b.Content, llmContentEqual)
 }
 
 // summarizeContinuation is the model's notice of what a continuation changed:
@@ -1309,8 +1305,10 @@ func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
 		return nil, fmt.Errorf("MCP tool returned a nil result")
 	}
 	var blocks []*LLMContentBlock
+	mediaBytes := 0
 	for i, content := range result.Content {
 		var block *LLMContentBlock
+		var mediaData []byte
 		switch c := content.(type) {
 		case *mcp.TextContent:
 			if c != nil {
@@ -1318,11 +1316,13 @@ func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
 			}
 		case *mcp.ImageContent:
 			if c != nil {
-				block = &LLMContentBlock{Kind: LLMContentImage, MIMEType: c.MIMEType, Data: base64.StdEncoding.EncodeToString(c.Data)}
+				block = &LLMContentBlock{Kind: LLMContentImage, MIMEType: c.MIMEType}
+				mediaData = c.Data
 			}
 		case *mcp.AudioContent:
 			if c != nil {
-				block = &LLMContentBlock{Kind: LLMContentAudio, MIMEType: c.MIMEType, Data: base64.StdEncoding.EncodeToString(c.Data)}
+				block = &LLMContentBlock{Kind: LLMContentAudio, MIMEType: c.MIMEType}
+				mediaData = c.Data
 			}
 		case *mcp.EmbeddedResource:
 			if c != nil && c.Resource != nil {
@@ -1340,7 +1340,8 @@ func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
 					case strings.HasPrefix(r.MIMEType, "audio/"):
 						kind = LLMContentAudio
 					}
-					block = &LLMContentBlock{Kind: kind, MIMEType: r.MIMEType, Data: base64.StdEncoding.EncodeToString(r.Blob)}
+					block = &LLMContentBlock{Kind: kind, MIMEType: r.MIMEType}
+					mediaData = r.Blob
 				}
 			}
 		case *mcp.ResourceLink:
@@ -1352,6 +1353,14 @@ func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
 		}
 		if block == nil {
 			return nil, fmt.Errorf("nil MCP content at index %d", i)
+		}
+		if block.Kind == LLMContentImage || block.Kind == LLMContentAudio || block.Kind == LLMContentDocument {
+			// Check the decoded budget before allocating a second, larger copy.
+			if len(mediaData) > MaxLLMMediaBytes-mediaBytes {
+				return nil, fmt.Errorf("MCP tool media exceeds %d decoded bytes", MaxLLMMediaBytes)
+			}
+			mediaBytes += len(mediaData)
+			block.Data = base64.StdEncoding.EncodeToString(mediaData)
 		}
 		blocks = append(blocks, block)
 	}

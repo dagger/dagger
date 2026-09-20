@@ -68,6 +68,16 @@ func TestMCPMediaContent(t *testing.T) {
 		require.True(t, logged)
 	})
 
+	t.Run("media budget is aggregate and never truncates", func(t *testing.T) {
+		data := make([]byte, MaxLLMMediaBytes/2+1)
+		blocks, err := mcpContentBlocks(&mcp.CallToolResult{Content: []mcp.Content{
+			&mcp.ImageContent{MIMEType: "image/png", Data: data},
+			&mcp.ImageContent{MIMEType: "image/png", Data: data},
+		}})
+		require.ErrorContains(t, err, "media exceeds")
+		require.Nil(t, blocks)
+	})
+
 	t.Run("invalid content becomes explicit tool error", func(t *testing.T) {
 		for _, result := range []*mcp.CallToolResult{
 			nil,
@@ -126,6 +136,24 @@ func TestMediaToolTextBudget(t *testing.T) {
 	}
 	require.LessOrEqual(t, size, llmToolResultMaxBytes)
 	require.Contains(t, result.ContentText(), "omitted")
+}
+
+func TestMediaContinuationEquality(t *testing.T) {
+	msg := &LLMMessage{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{
+		Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{
+			Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U=",
+		}},
+	}}}
+	clone := msg.Clone()
+	require.True(t, messagesEqual(msg, clone))
+	clone.Content[0].Content[0].Data = "b3RoZXI="
+	require.False(t, messagesEqual(msg, clone))
+	clone = msg.Clone()
+	clone.Content[0].Content[0].MIMEType = "image/jpeg"
+	require.False(t, messagesEqual(msg, clone))
+	clone = msg.Clone()
+	clone.Content[0].Content = nil
+	require.False(t, messagesEqual(msg, clone))
 }
 
 func TestMediaToolResultSelectors(t *testing.T) {
