@@ -229,7 +229,9 @@ func TestCachePersistenceEmbeddedOutputKeepsInlineProducer(t *testing.T) {
 		c.egraphMu.RLock()
 		defer c.egraphMu.RUnlock()
 		parent, child := c.resultsByID[parentID], c.resultsByID[childID]
-		assert.Assert(t, parent != nil && child != nil)
+		if parent == nil || child == nil {
+			t.Fatalf("expected cached parent and child, got parent %p and child %p", parent, child)
+		}
 		_, ownsChild := parent.deps[childID]
 		_, ownsParent := child.deps[parentID]
 		_, ownsInput := child.deps[inputID]
