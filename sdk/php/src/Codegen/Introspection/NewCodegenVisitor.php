@@ -62,9 +62,13 @@ class NewCodegenVisitor extends CodeWriter
 
         foreach ($type->inputFields as $field) {
             $fieldType = $field->type;
-            $phpParameterType = $fieldType->isBuiltinScalar()
-                ? $this->formatScalarType($fieldType)
-                : $this->formatPhpFqcn($this->formatOutputTypeName($fieldType));
+            if ($fieldType->isList()) {
+                $phpParameterType = 'array';
+            } else {
+                $phpParameterType = $fieldType->isBuiltinScalar()
+                    ? $this->formatScalarType($fieldType)
+                    : $this->formatPhpFqcn($this->formatOutputTypeName($fieldType));
+            }
 
             $constructorParameter = $constructor->addPromotedParameter($field->name);
             $constructorParameter->setType($phpParameterType);
