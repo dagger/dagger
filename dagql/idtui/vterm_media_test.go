@@ -207,6 +207,45 @@ func TestVtermMediaUnsupportedAndInactiveImages(t *testing.T) {
 	require.Equal(t, "[image]\n", mediaTestView(term))
 }
 
+func TestVtermMediaStreamingLayoutIsLazy(t *testing.T) {
+	images, _, _ := kittyTestManager(t)
+	term := NewVterm(termenv.ANSI)
+	term.images = images
+	term.SetWidth(40)
+	term.SetHeight(2)
+	term.WriteMedia(dagui.MediaRecord{Kind: "image", MIMEType: "image/png", Data: kittyTestPNG(t, 80, 32)}, "[image]")
+	require.Nil(t, term.mediaRows)
+	require.Empty(t, images.cache, "ingestion must not decode images")
+	for range 10 {
+		_, err := term.WriteMarkdown([]byte("another line\n"))
+		require.NoError(t, err)
+		require.Nil(t, term.mediaRows, "streamed chunks must not rebuild layout")
+	}
+	var raw bytes.Buffer
+	require.NoError(t, term.PrintRaw(&raw))
+	require.Nil(t, term.mediaRows, "raw reports must not render layout")
+	height := term.UsedHeight()
+	require.Greater(t, height, term.Height)
+	require.Equal(t, height-term.Height, term.Offset, "deferred layout follows the tail")
+	require.NotNil(t, term.mediaRows)
+
+	_, _ = term.WriteMarkdown([]byte("last line\n"))
+	require.Nil(t, term.mediaRows)
+	term.ScrollBy(-1)
+	require.Equal(t, term.UsedHeight()-term.Height-1, term.Offset)
+	before := term.Offset
+	_, _ = term.WriteMarkdown([]byte("more lines\nmore lines\n"))
+	require.Nil(t, term.mediaRows)
+	_ = term.View()
+	require.Equal(t, before, term.Offset, "streaming must preserve a scrolled viewport")
+
+	term.ScrollToBottom()
+	_, _ = term.WriteMarkdown([]byte("tail\n"))
+	term.ScrollToTop()
+	_ = term.View()
+	require.Zero(t, term.Offset, "explicit top cancels deferred tail following")
+}
+
 func TestVtermTextBehaviorUnchangedUntilMedia(t *testing.T) {
 	term := NewVterm(termenv.Ascii)
 	term.SetWidth(40)

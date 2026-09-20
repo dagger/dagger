@@ -41,7 +41,7 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
-	atBottom := term.Height == 0 || term.Offset+term.Height >= term.usedHeightLocked()
+	term.mediaFollow = term.mediaAtBottom()
 	if term.segments == nil {
 		term.segments = []vtermSegment{}
 		// Preserve the pre-media renderer's ordering of Markdown then terminal
@@ -79,9 +79,6 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 	term.rawBuf.WriteString(fallback)
 	term.rawBuf.WriteByte('\n')
 	term.invalidateMedia()
-	if atBottom {
-		term.Offset = max(0, term.usedHeightLocked()-term.Height)
-	}
 }
 
 // writeMediaText is called with term.mu held. Adjacent chunks of the same text
@@ -90,7 +87,7 @@ func (term *Vterm) writeMediaText(p []byte, markdown, diff bool) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	atBottom := term.Height == 0 || term.Offset+term.Height >= term.usedHeightLocked()
+	term.mediaFollow = term.mediaAtBottom()
 	text := string(p)
 	if diff {
 		text = highlightDiff(term.Profile, text)
@@ -103,10 +100,22 @@ func (term *Vterm) writeMediaText(p []byte, markdown, diff bool) (int, error) {
 	}
 	term.rawBuf.Write(p)
 	term.invalidateMedia()
-	if atBottom {
-		term.Offset = max(0, term.usedHeightLocked()-term.Height)
-	}
 	return len(p), nil
+}
+
+// mediaAtBottom reads the last layout, without rendering streamed input. Once
+// dirty, retain the follow decision until a consumer asks for the next layout.
+func (term *Vterm) mediaAtBottom() bool {
+	if term.Height == 0 {
+		return true
+	}
+	if term.segments == nil {
+		return term.Offset+term.Height >= term.vt.UsedHeight()
+	}
+	if term.mediaRows == nil {
+		return term.mediaFollow
+	}
+	return term.Offset+term.Height >= len(term.mediaRows)
 }
 
 func (term *Vterm) invalidateMedia() {
@@ -178,7 +187,12 @@ func (term *Vterm) layoutMedia() {
 			}
 		}
 	}
-	term.Offset = min(term.Offset, max(0, len(term.mediaRows)-term.Height))
+	if term.mediaFollow {
+		term.Offset = max(0, len(term.mediaRows)-term.Height)
+	} else {
+		term.Offset = min(term.Offset, max(0, len(term.mediaRows)-term.Height))
+	}
+	term.mediaFollow = false
 
 	// A text-only projection preserves the existing midterm search API, with
 	// blank rows reserving image space. No media bytes or markers enter it.

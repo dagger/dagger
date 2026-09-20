@@ -33,6 +33,7 @@ type Vterm struct {
 	segments    []vtermSegment
 	mediaRows   []vtermMediaRow
 	mediaActive bool
+	mediaFollow bool
 
 	// Separate buffer for Markdown content
 	markdownBuf *bytes.Buffer
@@ -159,7 +160,8 @@ func (term *Vterm) SetHeight(height int) {
 	if height == term.Height {
 		return
 	}
-	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
+	used := term.usedHeightLocked()
+	atBottom := term.Offset+term.Height >= used
 	term.Height = height
 	if atBottom {
 		term.Offset = max(0, term.usedHeightLocked()-term.Height)
@@ -287,6 +289,9 @@ func (term *Vterm) setCurrentMatchByRow(row int) {
 func (term *Vterm) ScrollToRow(row int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	// Center the target row in the viewport.
 	term.Offset = max(0, row-term.Height/2)
 	term.clampOffsetLocked()
@@ -296,6 +301,9 @@ func (term *Vterm) ScrollToRow(row int) {
 func (term *Vterm) ScrollBy(delta int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	term.Offset += delta
 	term.clampOffsetLocked()
 	term.needsRedraw = true
@@ -304,6 +312,9 @@ func (term *Vterm) ScrollBy(delta int) {
 func (term *Vterm) ScrollPage(deltaPages int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	page := max(term.Height-1, 1)
 	term.Offset += deltaPages * page
 	term.clampOffsetLocked()
@@ -313,6 +324,7 @@ func (term *Vterm) ScrollPage(deltaPages int) {
 func (term *Vterm) ScrollToTop() {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	term.mediaFollow = false
 	term.Offset = 0
 	term.needsRedraw = true
 }
@@ -364,7 +376,8 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 func (term *Vterm) ScrollPercent() float64 {
 	term.mu.Lock()
 	defer term.mu.Unlock()
-	return min(1, float64(term.Offset+term.Height)/float64(term.usedHeightLocked()))
+	used := term.usedHeightLocked()
+	return min(1, float64(term.Offset+term.Height)/float64(used))
 }
 
 const reset = termenv.CSI + termenv.ResetSeq + "m"
