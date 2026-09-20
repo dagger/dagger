@@ -12,10 +12,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/vcs"
@@ -180,16 +181,16 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 	// Trick:
 	// as we removed the scheme above with `parseScheme``, and the SCP-like refs are
 	// now without ":", all refs are in such format: "[git@]github.com/user/path...@version"
-	// transport.NewEndpoint parses users only for SSH refs. As HTTP refs without scheme are valid SSH refs
+	// transport.ParseURL parses users only for SSH refs. As HTTP refs without scheme are valid SSH refs
 	// we use the "ssh://" prefix to parse properly both explicit / SCP-like and HTTP refs
 	// and delegate the logic to parse the host / path and user to the library
-	endpoint, err := transport.NewEndpoint("ssh://" + schemelessRef)
+	endpoint, err := transport.ParseURL("ssh://" + schemelessRef)
 	if err != nil {
 		return Parsed{}, EndpointError{fmt.Errorf("failed to create git endpoint: %w", err)}
 	}
 
 	gitParsed := Parsed{
-		ModPath: endpoint.Host + endpoint.Path,
+		ModPath: endpoint.Hostname() + endpoint.Path,
 		Scheme:  scheme,
 	}
 
@@ -197,7 +198,7 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 		if version == "" || strings.Contains(version, ":") {
 			return Parsed{}, fmt.Errorf("invalid module version selector %q", version)
 		}
-		gitParsed.ModPath = endpoint.Host + modulePath
+		gitParsed.ModPath = endpoint.Hostname() + modulePath
 		gitParsed.ModVersion = version
 		gitParsed.HasVersion = true
 		gitParsed.Selector = ModuleVersionSelector
@@ -257,7 +258,9 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 		gitParsed.RepoRoot.Root = strings.Replace(gitParsed.RepoRoot.Root, "/", ":", 1)
 	}
 
-	gitParsed.SourceUser, gitParsed.CloneUser = endpoint.User, endpoint.User
+	if endpoint.User != nil {
+		gitParsed.SourceUser, gitParsed.CloneUser = endpoint.User.Username(), endpoint.User.Username()
+	}
 	if gitParsed.CloneUser == "" && gitParsed.Scheme.IsSSH() {
 		gitParsed.CloneUser = "git"
 	}
@@ -272,9 +275,9 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 
 	// For SSH URLs, inject port after host if it is defined: ssh://user@host:port/path
 	repoRootWithPort := gitParsed.RepoRoot.Root
-	if gitParsed.Scheme == SchemeSSH && endpoint.Port > 0 {
+	if gitParsed.Scheme == SchemeSSH && endpoint.Port() != "" {
 		if host, rest, ok := strings.Cut(repoRootWithPort, "/"); ok {
-			repoRootWithPort = fmt.Sprintf("%s:%d/%s", host, endpoint.Port, rest)
+			repoRootWithPort = fmt.Sprintf("%s:%s/%s", host, endpoint.Port(), rest)
 		}
 	}
 
@@ -314,14 +317,14 @@ func parseGitFragmentSelector(scheme SchemeType, ref string) (gitRef, subdir str
 	return gitRef, subdir, true, nil
 }
 
-func explicitGitRepoRoot(modPath string, scheme SchemeType, endpoint *transport.Endpoint) *vcs.RepoRoot {
+func explicitGitRepoRoot(modPath string, scheme SchemeType, endpoint *url.URL) *vcs.RepoRoot {
 	webScheme := scheme
 	if webScheme != SchemeHTTP && webScheme != SchemeHTTPS {
 		webScheme = SchemeHTTPS
 	}
-	host := endpoint.Host
-	if endpoint.Port > 0 && (scheme == SchemeHTTP || scheme == SchemeHTTPS) {
-		host = fmt.Sprintf("%s:%d", host, endpoint.Port)
+	host := endpoint.Hostname()
+	if endpoint.Port() != "" && (scheme == SchemeHTTP || scheme == SchemeHTTPS) {
+		host = fmt.Sprintf("%s:%s", host, endpoint.Port())
 	}
 	return &vcs.RepoRoot{
 		VCS:  vcs.ByCmd("git"),

@@ -27,23 +27,18 @@ import (
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing/format/pktline"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/client"
-	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing/client"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
-func init() {
-	// allow injection of custom dns resolver for go-git
-	customClient := &http.Client{
-		Transport: netconfhttp.NewInjectableTransport(http.DefaultTransport),
-	}
-	client.InstallProtocol("http", githttp.NewClient(customClient))
-	client.InstallProtocol("https", githttp.NewClient(customClient))
-}
+// Allow injection of a custom DNS resolver for go-git's HTTP transport.
+var goGitClientOptions = []client.Option{client.WithHTTPClient(&http.Client{
+	Transport: netconfhttp.NewInjectableTransport(http.DefaultTransport),
+})}
 
 var _ SchemaResolvers = &gitSchema{}
 
@@ -1292,7 +1287,9 @@ func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 		Name: "origin",
 		URLs: []string{remote.Remote()},
 	})
-	_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
+	_, err := repo.ListContext(ctx, &git.ListOptions{
+		ClientOptions: goGitClientOptions,
+	})
 	if err != nil {
 		// Some Git hosts return a 200 HTML login page for unauthenticated refs: go-git reports ErrInvalidPktLen
 		// treat as auth-required/private

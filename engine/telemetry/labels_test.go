@@ -3,6 +3,7 @@ package telemetry_test
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -92,6 +93,18 @@ func TestLoadGitLabels(t *testing.T) {
 			require.Subset(t, labels.AsMap(), example.Labels)
 		})
 	}
+}
+
+func TestLoadGitLabelsFromLinkedWorktree(t *testing.T) {
+	repo := setupRepo(t)
+	worktree := filepath.Join(t.TempDir(), "linked")
+	run(t, "git", "-C", repo, "worktree", "add", "-b", "linked", worktree)
+	run(t, "git", "-C", repo, "config", "extensions.worktreeConfig", "true")
+
+	head := run(t, "git", "-C", worktree, "rev-parse", "HEAD")
+	labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(worktree)
+
+	require.Equal(t, head, labels.AsMap()["dagger.io/git.ref"])
 }
 
 func TestLoadGitRefEnvLabelsForGitHubPullRequestRefs(t *testing.T) {

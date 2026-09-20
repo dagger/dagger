@@ -15,9 +15,9 @@ import (
 	"sync"
 
 	"github.com/denisbrodbeck/machineid"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/google/go-github/v59/github"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -155,8 +155,7 @@ func (labels Labels) WithVCSLabels(workdir string) Labels {
 
 func (labels Labels) WithGitLabels(workdir string) Labels {
 	repo, err := git.PlainOpenWithOptions(workdir, &git.PlainOpenOptions{
-		DetectDotGit:          true,
-		EnableDotGitCommonDir: true,
+		DetectDotGit: true,
 	})
 	if err != nil {
 		if !errors.Is(err, git.ErrRepositoryNotExists) {
