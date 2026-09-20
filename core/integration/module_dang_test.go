@@ -535,10 +535,8 @@ func (DangSuite) TestSelfCallReturningOwnType(_ context.Context, t *testctx.T) {
 // inference and evaluation failures as full reports — multi-line, colored
 // source excerpts — and the runtime used to return them as the span error,
 // which is copied verbatim into tool results and the TUI's error line. The
-// report belongs in the function call's stderr; the error only points at it.
+// report belongs in the function call's stderr; the error carries the diagnostic.
 func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
-	const shortMessage = "Dang module failed to load; see logs"
-
 	writeModule := func(t *testctx.T, source string) string {
 		t.Helper()
 		modDir := t.TempDir()
@@ -549,16 +547,16 @@ func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
 	}
 
 	// requireReported asserts that the report reached the logs but not the
-	// error: the error is the short pointer, and the source excerpt (the
-	// location arrow Dang prints under the message) only shows up in logs.
-	requireReported := func(t *testctx.T, c *dagger.Client, logs *safeBuffer, err error, marker string) {
+	// error: only its diagnostic is returned, without source excerpts or ANSI.
+	requireReported := func(t *testctx.T, c *dagger.Client, logs *safeBuffer, err error, diagnostic string) {
 		t.Helper()
 		require.Error(t, err)
-		require.Contains(t, err.Error(), shortMessage)
-		require.NotContains(t, err.Error(), marker)
+		require.Contains(t, err.Error(), diagnostic)
+		require.NotContains(t, err.Error(), "main.dang:")
+		require.NotContains(t, err.Error(), "\033[")
 		require.NotContains(t, err.Error(), "--> ")
 		require.NoError(t, c.Close()) // close + flush logs
-		require.Contains(t, logs.String(), marker)
+		require.Contains(t, logs.String(), diagnostic)
 		require.Contains(t, logs.String(), "main.dang:")
 	}
 
@@ -591,7 +589,7 @@ func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
 }
 `)
 		_, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
-		requireReported(t, c, &logs, err, "IntentionallyUndefinedType")
+		requireReported(t, c, &logs, err, "unresolved type: IntentionallyUndefinedType")
 	})
 }
 

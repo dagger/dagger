@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/core"
@@ -172,16 +173,41 @@ func evalDangSource(
 // multi-line, ANSI-colored source excerpts, one per inference error — and an
 // error string is copied verbatim into tool results and the TUI's error line,
 // where a report of that size is unreadable. The report goes to the
-// user-facing span's stderr instead (reportDangSourceError); this error only
-// points at it. The original error stays reachable through Unwrap so
-// errors.As-based handling (e.g. dangshared.ConvertError extracting a GraphQL
-// error raised during top-level evaluation) keeps working.
+// user-facing span's stderr instead (reportDangSourceError); this error carries
+// the first diagnostic's message. The original error stays reachable through
+// Unwrap so errors.As-based handling (e.g. dangshared.ConvertError extracting a
+// GraphQL error raised during top-level evaluation) keeps working.
 type dangSourceError struct {
 	err error
 }
 
 func (e *dangSourceError) Error() string {
-	return "Dang module failed to load; see logs"
+	return dangSourceMessage(e.err)
+}
+
+// dangSourceMessage selects the first diagnostic from an aggregate and removes
+// source-report wrappers before rendering. Keep ordinary error context, and
+// normalize user-provided messages (including raised errors) to one plain line.
+func dangSourceMessage(err error) string {
+	switch e := err.(type) {
+	case *dang.SourceError:
+		return dangSourceMessage(e.Inner)
+	case *dang.InferError:
+		return dangSourceMessage(e.Inner)
+	case interface{ Unwrap() []error }:
+		for _, inner := range e.Unwrap() {
+			if inner != nil {
+				return dangSourceMessage(inner)
+			}
+		}
+	default:
+		// Includes Dang's unexported uncaught-error report, which unwraps
+		// to a RaisedError whose Error method returns only its message.
+		if inner := errors.Unwrap(err); inner != nil && isDangSourceError(err) {
+			return dangSourceMessage(inner)
+		}
+	}
+	return strings.Join(strings.Fields(ansi.Strip(err.Error())), " ")
 }
 
 func (e *dangSourceError) Unwrap() error {

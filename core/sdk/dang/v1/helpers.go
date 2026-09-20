@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
@@ -134,14 +135,39 @@ func evalDangSource(
 // dangSourceError is the span error for a module whose Dang source failed to
 // parse, infer, or evaluate. See the v2 runtime's copy of this comment
 // (core/sdk/dang/v2/helpers.go): the rendered report goes to the user-facing
-// span's stderr, and this error only points at it, with the original still
-// reachable through Unwrap.
+// span's stderr, and this error carries the first diagnostic's message, with
+// the original still reachable through Unwrap.
 type dangSourceError struct {
 	err error
 }
 
 func (e *dangSourceError) Error() string {
-	return "Dang module failed to load; see logs"
+	return dangSourceMessage(e.err)
+}
+
+// dangSourceMessage selects the first diagnostic from an aggregate and removes
+// source-report wrappers before rendering. Keep ordinary error context, and
+// normalize user-provided messages (including raised errors) to one plain line.
+func dangSourceMessage(err error) string {
+	switch e := err.(type) {
+	case *dang.SourceError:
+		return dangSourceMessage(e.Inner)
+	case *dang.InferError:
+		return dangSourceMessage(e.Inner)
+	case interface{ Unwrap() []error }:
+		for _, inner := range e.Unwrap() {
+			if inner != nil {
+				return dangSourceMessage(inner)
+			}
+		}
+	default:
+		// Includes Dang's unexported uncaught-error report, which unwraps
+		// to a RaisedError whose Error method returns only its message.
+		if inner := errors.Unwrap(err); inner != nil && isDangSourceError(err) {
+			return dangSourceMessage(inner)
+		}
+	}
+	return strings.Join(strings.Fields(ansi.Strip(err.Error())), " ")
 }
 
 func (e *dangSourceError) Unwrap() error {

@@ -1,4 +1,4 @@
-package dangv2
+package dangv1
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"github.com/vito/dang/v2/pkg/dang"
+	"github.com/vito/dang/pkg/dang"
 
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 )
