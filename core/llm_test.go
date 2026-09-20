@@ -447,7 +447,8 @@ func TestOpenAIConvertToolCalls(t *testing.T) {
 			{Kind: LLMContentToolCall, CallID: "call_2", ToolName: "noargs"},
 		},
 	}}
-	messages := convertHistoryToOpenAI(history)
+	messages, err := convertHistoryToOpenAI(history)
+	require.NoError(t, err)
 	require.Len(t, messages, 1)
 	data, err := json.Marshal(messages[0].OfAssistant.ToolCalls)
 	require.NoError(t, err)
@@ -599,7 +600,8 @@ func TestCodexConvertReasoningOrder(t *testing.T) {
 			{Kind: LLMContentToolCall, CallID: "call_1", ToolName: "do_thing", Arguments: JSON(`{"x":1}`)},
 		}},
 	}
-	_, items := convertToCodexResponsesFormat(history)
+	_, items, err := convertToCodexResponsesFormat(history)
+	require.NoError(t, err)
 	require.Len(t, items, 3) // user message, reasoning, function call
 	assert.NotNil(t, items[0].OfMessage)
 	require.NotNil(t, items[1].OfReasoning)
@@ -616,7 +618,8 @@ func TestCodexConvertEmptyToolArgs(t *testing.T) {
 			{Kind: LLMContentToolCall, CallID: "c1", ToolName: "noargs"},
 		}},
 	}
-	_, items := convertToCodexResponsesFormat(history)
+	_, items, err := convertToCodexResponsesFormat(history)
+	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.NotNil(t, items[0].OfFunctionCall)
 	assert.Equal(t, "{}", items[0].OfFunctionCall.Arguments)
@@ -640,7 +643,8 @@ func TestCodexConvertToolResults(t *testing.T) {
 					Kind: LLMContentToolResult, CallID: "call_1", Text: tc.text, Errored: tc.errored,
 				}},
 			}}
-			_, items := convertToCodexResponsesFormat(history)
+			_, items, err := convertToCodexResponsesFormat(history)
+			require.NoError(t, err)
 			require.Len(t, items, 1)
 			data, err := json.Marshal(items[0])
 			require.NoError(t, err)

@@ -1,24 +1,106 @@
 import assert from "assert"
 import { randomUUID } from "crypto"
 import fs from "fs"
+import { GraphQLClient } from "graphql-request"
 import { describe, it } from "mocha"
 
 import {
   ExecError,
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
-import { buildQuery, queryFlatten } from "../../common/graphql/compute_query.js"
+import {
+  buildQuery,
+  computeQuery,
+  queryFlatten,
+} from "../../common/graphql/compute_query.js"
 import {
   Client,
   type ClientContainerOpts,
   connect,
   Container,
+  type LLMContentBlockInput,
+  LLMContentBlockKind,
   NetworkProtocol,
 } from "../../index.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
 describe("TypeScript SDK api", function () {
+  for (const depth of [-1, 0, 2]) {
+    it(`resolves LLM media File IDs at input depth ${depth}`, async function () {
+      const client = new Client()
+      const file = client.file("image.png", "image bytes")
+      const image: LLMContentBlockInput = {
+        kind: LLMContentBlockKind.Image,
+        file,
+      }
+      let block = image
+      for (let i = 0; i < depth; i++) {
+        block = { kind: LLMContentBlockKind.ToolResult, content: [block] }
+      }
+      const llm =
+        depth >= 0
+          ? client.llm().withContent([block])
+          : client.llm().withContentFile(file)
+      const queries: string[] = []
+      const gqlClient = new GraphQLClient("http://stub.invalid", {
+        fetch: async (_input, init) => {
+          const query = JSON.parse(init?.body as string).query as string
+          queries.push(query)
+          return Response.json({
+            data: { id: query.includes("withContent") ? "llm-id" : "file-id" },
+          })
+        },
+      })
+
+      const query = [...llm["_ctx"]["_queryTree"], { operation: "id" }]
+      await computeQuery(query, gqlClient)
+
+      // Inspect only the file argument: enum serialization is independent.
+      assert.match(queries.at(-1)!, /file:\s*"file-id"/)
+      assert.equal(queries.length, 2)
+      // Keep the caller's File-typed input intact and reuse the resolved ID.
+      assert.strictEqual(image.file, file)
+      await computeQuery(query, gqlClient)
+      assert.equal(queries.length, 3)
+    })
+  }
+
+  it("resolves Files in mixed input arrays without changing other values", async function () {
+    const file = new Client().file("image.png", "image bytes")
+    const date = new Date("2026-01-01T00:00:00Z")
+    const plain = [
+      null,
+      undefined,
+      "text",
+      0,
+      false,
+      { empty: [] },
+      date,
+      LLMContentBlockKind.Image,
+    ]
+    const input = { files: [file, file], mixed: [file, ...plain] }
+    const metadata = {
+      kind: { is_enum: true, value_to_name: (value: string) => value },
+    }
+    const query = [
+      { operation: "example", args: { input, __metadata: metadata } },
+    ]
+    const gqlClient = new GraphQLClient("http://stub.invalid", {
+      fetch: async () => Response.json({ data: { id: "file-id" } }),
+    })
+
+    await computeQuery(query, gqlClient)
+
+    assert.deepStrictEqual(query[0].args.input, {
+      files: ["file-id", "file-id"],
+      mixed: ["file-id", ...plain],
+    })
+    assert.strictEqual(input.files[0], file)
+    assert.strictEqual(input.mixed[0], file)
+    assert.strictEqual(query[0].args.__metadata, metadata)
+  })
+
   it("Build correctly a query with one argument", function () {
     const tree = new Client().container().from("alpine:3.16.2")
 

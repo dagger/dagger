@@ -6,7 +6,7 @@ defmodule Dagger.LLMContentBlockKind do
 
   use Dagger.Core.Base, kind: :enum, name: "LLMContentBlockKind"
 
-  @type t() :: :TEXT | :THINKING | :TOOL_CALL | :TOOL_RESULT
+  @type t() :: :TEXT | :THINKING | :TOOL_CALL | :TOOL_RESULT | :IMAGE | :AUDIO | :DOCUMENT
 
   @doc """
   Plain text content.
@@ -32,6 +32,24 @@ defmodule Dagger.LLMContentBlockKind do
   @spec tool_result() :: :TOOL_RESULT
   def tool_result(), do: :TOOL_RESULT
 
+  @doc """
+  An inline image.
+  """
+  @spec image() :: :IMAGE
+  def image(), do: :IMAGE
+
+  @doc """
+  Inline audio.
+  """
+  @spec audio() :: :AUDIO
+  def audio(), do: :AUDIO
+
+  @doc """
+  An inline PDF document.
+  """
+  @spec document() :: :DOCUMENT
+  def document(), do: :DOCUMENT
+
   @doc false
   @spec from_string(String.t()) :: t()
   def from_string(string)
@@ -40,4 +58,7 @@ defmodule Dagger.LLMContentBlockKind do
   def from_string("THINKING"), do: :THINKING
   def from_string("TOOL_CALL"), do: :TOOL_CALL
   def from_string("TOOL_RESULT"), do: :TOOL_RESULT
+  def from_string("IMAGE"), do: :IMAGE
+  def from_string("AUDIO"), do: :AUDIO
+  def from_string("DOCUMENT"), do: :DOCUMENT
 end

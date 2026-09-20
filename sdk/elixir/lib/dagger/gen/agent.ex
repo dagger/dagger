@@ -240,14 +240,17 @@ defmodule Dagger.Agent do
   >
   > "Agent APIs are likely to change."
   """
-  @spec send(t(), String.t(), [{:reply_to, String.t() | nil}]) ::
-          {:ok, Dagger.AgentMessage.t()} | {:error, term()}
+  @spec send(t(), String.t(), [
+          {:reply_to, String.t() | nil},
+          {:content, [Dagger.LLMContentBlockInput.t()]}
+        ]) :: {:ok, Dagger.AgentMessage.t()} | {:error, term()}
   def send(%__MODULE__{} = agent, message, optional_args \\ []) do
     query_builder =
       agent.query_builder
       |> QB.select("send")
       |> QB.put_arg("message", message)
       |> QB.maybe_put_arg("replyTo", optional_args[:reply_to])
+      |> QB.maybe_put_arg("content", optional_args[:content])
 
     with {:ok, id} <- Client.execute(agent.client, query_builder) do
       {:ok,

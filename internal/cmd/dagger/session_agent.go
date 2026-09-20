@@ -183,7 +183,7 @@ type sessionAgent struct {
 	// before there was a runtime to send them to.
 	turnCancel context.CancelCauseFunc
 	turnDone   chan struct{}
-	pending    []string
+	pending    []idtui.PromptInput
 	turnL      sync.Mutex
 
 	// refreshInFlight/refreshQueued coalesce UI refreshes triggered by step
@@ -541,7 +541,7 @@ func (a *sessionAgent) endTurn() {
 	// it (an error before the runtime existed). Report rather than drop: the
 	// user was told it landed.
 	for _, msg := range pending {
-		slog.Warn("message could not be delivered to the agent", "message", msg)
+		slog.Warn("message could not be delivered to the agent", "message", msg.Summary())
 	}
 }
 
@@ -555,25 +555,32 @@ func (a *sessionAgent) endTurn() {
 // is buffered and flushed by the submit that opened it -- accepted either
 // way, since the alternative is opening a rival turn on the same conversation.
 func (a *sessionAgent) Submit(msg string) bool {
+	return a.SubmitPrompt(idtui.PromptInput{Text: msg})
+}
+
+func (a *sessionAgent) SubmitPrompt(input idtui.PromptInput) bool {
+	if input.Empty() {
+		return false
+	}
 	a.turnL.Lock()
 	if a.turnCancel == nil {
 		a.turnL.Unlock()
 		return false
 	}
+	input = input.Clone()
 	rt := a.runtime()
 	if rt == nil {
-		a.pending = append(a.pending, msg)
+		a.pending = append(a.pending, input)
 		a.turnL.Unlock()
 		return true
 	}
 	a.turnL.Unlock()
-	go a.send(rt, msg)
+	go a.sendPrompt(rt, input)
 	return true
 }
 
-// send enqueues one message and logs how it landed.
-func (a *sessionAgent) send(rt agentRuntime, msg string) {
-	handle, err := rt.SendMessage(a.session.plumbingCtx, msg)
+func (a *sessionAgent) sendPrompt(rt agentRuntime, input idtui.PromptInput) {
+	handle, err := sendAgentPrompt(a.session.plumbingCtx, rt, input)
 	if err != nil {
 		slog.Error("failed to submit message to agent", "error", err)
 		return
@@ -595,7 +602,7 @@ func (a *sessionAgent) flushPending(rt agentRuntime) {
 	a.pending = nil
 	a.turnL.Unlock()
 	for _, msg := range pending {
-		a.send(rt, msg)
+		a.sendPrompt(rt, msg)
 	}
 }
 
@@ -766,6 +773,11 @@ func (a *sessionAgent) syncFromAgent(rt agentRuntime) error {
 // so history, /commands, and session saving keep operating on the honest
 // chain.
 func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
+	return a.WithPromptInput(ctx, idtui.PromptInput{Text: input})
+}
+
+func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptInput) error {
+	input = input.Clone()
 	// The turn's context is this conversation's own, so an interrupt aimed at
 	// this agent stops this turn and no other. It is published before any of
 	// the work below: from here on the conversation is busy, so a message
@@ -781,7 +793,7 @@ func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
 	// mounted read-only in the workspace, and URLs are remapped to
 	// container-to-host tunnels — with the prompt annotated with the
 	// resulting workspace locations and addresses.
-	input = a.attachReferences(a.session.plumbingCtx, input)
+	input.Text = a.attachReferences(a.session.plumbingCtx, input.Text)
 
 	resolvedModel, err := a.llm.Model(a.session.plumbingCtx)
 	if err != nil {
@@ -809,7 +821,7 @@ func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
 	}
 
 	// Enqueue the prompt on the record.
-	msg, err := rt.SendMessage(ctx, input)
+	msg, err := sendAgentPrompt(ctx, rt, input)
 	if err != nil {
 		return err
 	}

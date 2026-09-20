@@ -9,12 +9,28 @@ defmodule Dagger.LLMContentBlockInput do
   @type t() :: %__MODULE__{
           arguments: Dagger.JSON.t() | nil,
           call_id: String.t() | nil,
+          content: [Dagger.LLMContentBlockInput.t()],
+          data: String.t() | nil,
           errored: boolean() | nil,
+          file: String.t() | nil,
           kind: Dagger.LLMContentBlockKind.t(),
+          mime_type: String.t() | nil,
           signature: String.t() | nil,
           text: String.t() | nil,
           tool_name: String.t() | nil
         }
 
-  defstruct [:arguments, :call_id, :errored, :kind, :signature, :text, :tool_name]
+  defstruct [
+    :arguments,
+    :call_id,
+    :content,
+    :data,
+    :errored,
+    :file,
+    :kind,
+    :mime_type,
+    :signature,
+    :text,
+    :tool_name
+  ]
 end

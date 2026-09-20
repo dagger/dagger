@@ -13,16 +13,14 @@ import (
 // v1 `messages` field (GraphQL's lowerCamel key spelling), which is the
 // recording format consumed by recording/ models.
 type recordedMessage struct {
-	Role    string `json:"role"`
-	Content []struct {
-		Kind      string `json:"kind"`
-		Text      string `json:"text"`
-		CallID    string `json:"callId"`
-		ToolName  string `json:"toolName"`
-		Arguments string `json:"arguments"`
-		Errored   bool   `json:"errored"`
-		Signature string `json:"signature"`
-	} `json:"content"`
+	Role    string                 `json:"role"`
+	Content []recordedContentBlock `json:"content"`
+	Origin  *struct {
+		Kind      LLMMessageOriginKind `json:"kind"`
+		AgentName string               `json:"agentName"`
+		Ref       string               `json:"ref"`
+		ReplyTo   string               `json:"replyTo"`
+	} `json:"origin"`
 	TokenUsage struct {
 		InputTokens       int64 `json:"inputTokens"`
 		OutputTokens      int64 `json:"outputTokens"`
@@ -30,6 +28,31 @@ type recordedMessage struct {
 		CachedTokenWrites int64 `json:"cachedTokenWrites"`
 		TotalTokens       int64 `json:"totalTokens"`
 	} `json:"tokenUsage"`
+}
+
+type recordedContentBlock struct {
+	Kind      string                 `json:"kind"`
+	Text      string                 `json:"text"`
+	CallID    string                 `json:"callId"`
+	ToolName  string                 `json:"toolName"`
+	Arguments string                 `json:"arguments"`
+	Errored   bool                   `json:"errored"`
+	Signature string                 `json:"signature"`
+	MIMEType  string                 `json:"mimeType"`
+	Data      string                 `json:"data"`
+	Content   []recordedContentBlock `json:"content"`
+}
+
+func (b recordedContentBlock) block() *LLMContentBlock {
+	block := &LLMContentBlock{
+		Kind: LLMContentBlockKind(b.Kind), Text: b.Text, CallID: b.CallID,
+		ToolName: b.ToolName, Arguments: JSON(b.Arguments), Errored: b.Errored,
+		Signature: b.Signature, MIMEType: b.MIMEType, Data: b.Data,
+	}
+	for _, child := range b.Content {
+		block.Content = append(block.Content, child.block())
+	}
+	return block
 }
 
 // decodeRecordedMessages parses a conversation recording into message history.
@@ -50,16 +73,14 @@ func decodeRecordedMessages(data []byte) ([]*LLMMessage, error) {
 				TotalTokens:       m.TokenUsage.TotalTokens,
 			},
 		}
+		if m.Origin != nil {
+			msg.Origin = &LLMMessageOrigin{Kind: m.Origin.Kind, AgentName: m.Origin.AgentName, Ref: m.Origin.Ref, ReplyTo: m.Origin.ReplyTo}
+		}
 		for _, b := range m.Content {
-			msg.Content = append(msg.Content, &LLMContentBlock{
-				Kind:      LLMContentBlockKind(b.Kind),
-				Text:      b.Text,
-				CallID:    b.CallID,
-				ToolName:  b.ToolName,
-				Arguments: JSON(b.Arguments),
-				Errored:   b.Errored,
-				Signature: b.Signature,
-			})
+			msg.Content = append(msg.Content, b.block())
+		}
+		if err := ValidateLLMContent(msg.Content); err != nil {
+			return nil, fmt.Errorf("message %d: %w", i, err)
 		}
 		messages[i] = msg
 	}
@@ -76,6 +97,53 @@ func newRecordedResponseProvider(messages []*LLMMessage) *RecordedResponseProvid
 
 func (*RecordedResponseProvider) IsRetryable(err error) bool {
 	return false
+}
+
+type recordingMediaBlock struct {
+	Position, MIMEType, Data string
+}
+
+// recordingMedia keeps media identity and ordering separate from the legacy
+// stabilized text comparison. Positions include enclosing block kinds so nested
+// tool-result media cannot match otherwise identical top-level media.
+func recordingMedia(msg *LLMMessage) []recordingMediaBlock {
+	var media []recordingMediaBlock
+	var walk func([]*LLMContentBlock, string)
+	walk = func(blocks []*LLMContentBlock, parent string) {
+		for i, block := range blocks {
+			if block == nil {
+				continue
+			}
+			position := fmt.Sprintf("%s/%d:%s", parent, i, block.Kind)
+			switch block.Kind {
+			case LLMContentImage, LLMContentAudio, LLMContentDocument:
+				media = append(media, recordingMediaBlock{Position: position, MIMEType: block.MIMEType, Data: block.Data})
+			}
+			walk(block.Content, position)
+		}
+	}
+	walk(msg.Content, "")
+	return media
+}
+
+// recordingDiffMessage sanitizes even unchanged neighboring fields before cmp
+// builds its context: a text-only mismatch must not print inline media bytes.
+func recordingDiffMessage(msg *LLMMessage) *LLMMessage {
+	clone := msg.Clone()
+	var redact func([]*LLMContentBlock)
+	redact = func(blocks []*LLMContentBlock) {
+		for _, block := range blocks {
+			if block == nil {
+				continue
+			}
+			if block.Data != "" {
+				block.Data = "[media data omitted]"
+			}
+			redact(block.Content)
+		}
+	}
+	redact(clone.Content)
+	return clone
 }
 
 func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
@@ -95,13 +163,18 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 	if len(history) >= len(c.messages) {
 		return nil, fmt.Errorf("no more messages")
 	}
+	rendered := renderMessagesForModel(c.messages[:len(history)])
 	for i, message := range history {
-		// TODO: (cwlbraa) is this a complete comparison? also doesn't this end up being O(n^2)?
-		if scrub.Stabilize(message.TextContent()) != scrub.Stabilize(c.messages[i].TextContent()) || message.Role != c.messages[i].Role {
+		mediaMismatch := !cmp.Equal(recordingMedia(rendered[i]), recordingMedia(message))
+		if mediaMismatch || scrub.Stabilize(message.TextContent()) != scrub.Stabilize(rendered[i].TextContent()) || message.Role != c.messages[i].Role {
+			reason := ""
+			if mediaMismatch {
+				reason = " (media mismatch)"
+			}
 			return nil, fmt.Errorf(
-				"message history diverges at index %d:\n%s",
-				i,
-				cmp.Diff(c.messages[i], message),
+				"message history diverges at index %d%s:\n%s",
+				i, reason,
+				cmp.Diff(recordingDiffMessage(c.messages[i]), recordingDiffMessage(message)),
 			)
 		}
 	}

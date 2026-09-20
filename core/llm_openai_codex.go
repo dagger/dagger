@@ -100,7 +100,10 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	}
 
 	// Build system prompt and input messages
-	systemPrompt, inputItems := convertToCodexResponsesFormat(history)
+	systemPrompt, inputItems, err := convertToCodexResponsesFormat(history)
+	if err != nil {
+		return nil, err
+	}
 
 	// Build tools
 	var toolParams []responses.ToolUnionParam
@@ -304,43 +307,51 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 
 // convertToCodexResponsesFormat converts the internal message history to the
 // OpenAI Responses API input format.
-func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, items []responses.ResponseInputItemUnionParam) {
+func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, items []responses.ResponseInputItemUnionParam, err error) {
 	var systemParts []string
 
-	for _, msg := range history {
+	for i, msg := range history {
+		if err := validateOpenAIMessage(msg); err != nil {
+			return "", nil, fmt.Errorf("OpenAI Responses message %d: %w", i, err)
+		}
 		switch msg.Role {
 		case LLMMessageRoleSystem:
 			systemParts = append(systemParts, msg.TextContent())
 
 		case LLMMessageRoleUser:
-			// Check if this is a tool result
-			if msg.IsToolResult() {
-				for _, block := range msg.Content {
-					if block.Kind == LLMContentToolResult {
-						output := block.Text
-						if block.Errored {
-							output = "error: " + output
-						}
-						items = append(items, responses.ResponseInputItemUnionParam{
-							OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-								CallID: param.NewOpt(block.CallID),
-								Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-									OfString: param.NewOpt(output),
-								},
-							},
-						})
-					}
-				}
-			} else {
-				items = append(items, responses.ResponseInputItemUnionParam{
-					OfMessage: &responses.EasyInputMessageParam{
-						Role: responses.EasyInputMessageRoleUser,
-						Content: responses.EasyInputMessageContentUnionParam{
-							OfString: param.NewOpt(msg.TextContent()),
+			var parts responses.ResponseInputMessageContentListParam
+			flushParts := func() {
+				if len(parts) > 0 {
+					items = append(items, responses.ResponseInputItemUnionParam{
+						OfMessage: &responses.EasyInputMessageParam{
+							Role:    responses.EasyInputMessageRoleUser,
+							Content: responses.EasyInputMessageContentUnionParam{OfInputItemContentList: parts},
 						},
-					},
-				})
+					})
+					parts = nil
+				}
 			}
+			for _, block := range msg.Content {
+				if block.Kind == LLMContentToolResult {
+					flushParts()
+					output, err := codexToolOutput(block)
+					if err != nil {
+						return "", nil, fmt.Errorf("OpenAI Responses tool result %q: %w", block.CallID, err)
+					}
+					items = append(items, responses.ResponseInputItemUnionParam{
+						OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+							CallID: param.NewOpt(block.CallID), Output: output,
+						},
+					})
+					continue
+				}
+				part, err := codexContentPart(block)
+				if err != nil {
+					return "", nil, fmt.Errorf("OpenAI Responses message %d: %w", i, err)
+				}
+				parts = append(parts, part)
+			}
+			flushParts()
 
 		case LLMMessageRoleAssistant:
 			// Emit blocks in their stored order so a reasoning item precedes the
@@ -388,7 +399,88 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 	}
 
 	systemPrompt = strings.Join(systemParts, "\n\n")
-	return systemPrompt, items
+	return systemPrompt, items, nil
+}
+
+func codexContentPart(block *LLMContentBlock) (responses.ResponseInputContentUnionParam, error) {
+	switch block.Kind {
+	case LLMContentText:
+		return responses.ResponseInputContentUnionParam{
+			OfInputText: &responses.ResponseInputTextParam{Text: block.Text},
+		}, nil
+	case LLMContentImage:
+		if err := validateOpenAIImage(block); err != nil {
+			return responses.ResponseInputContentUnionParam{}, err
+		}
+		return responses.ResponseInputContentUnionParam{
+			OfInputImage: &responses.ResponseInputImageParam{
+				ImageURL: param.NewOpt(openAIMediaDataURL(block)), Detail: responses.ResponseInputImageDetailAuto,
+			},
+		}, nil
+	case LLMContentDocument:
+		if block.MIMEType != "application/pdf" {
+			return responses.ResponseInputContentUnionParam{}, fmt.Errorf("unsupported OpenAI Responses document MIME type %q (expected PDF)", block.MIMEType)
+		}
+		return responses.ResponseInputContentUnionParam{
+			OfInputFile: &responses.ResponseInputFileParam{
+				FileData: param.NewOpt(openAIMediaDataURL(block)), Filename: param.NewOpt("document.pdf"),
+			},
+		}, nil
+	case LLMContentAudio:
+		return responses.ResponseInputContentUnionParam{}, fmt.Errorf("audio input is unsupported by the OpenAI Responses API; use an audio-capable chat-completions model")
+	default:
+		return responses.ResponseInputContentUnionParam{}, fmt.Errorf("unsupported OpenAI Responses content kind %q", block.Kind)
+	}
+}
+
+func codexToolOutput(block *LLMContentBlock) (responses.ResponseInputItemFunctionCallOutputOutputUnionParam, error) {
+	output := responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}
+	if len(block.Content) == 0 {
+		text := block.Text
+		if block.Errored {
+			text = "error: " + text
+		}
+		output.OfString = param.NewOpt(text)
+		return output, nil
+	}
+	// Responses supports structured function outputs directly; unlike chat,
+	// no synthetic user message or media-to-text projection is necessary.
+	var parts responses.ResponseFunctionCallOutputItemListParam
+	text := block.Text
+	if block.Errored {
+		text = "error: " + text
+	}
+	if text != "" {
+		parts = append(parts, responses.ResponseFunctionCallOutputItemUnionParam{
+			OfInputText: &responses.ResponseInputTextContentParam{Text: text},
+		})
+	}
+	for _, child := range block.Content {
+		part, err := codexContentPart(child)
+		if err != nil {
+			return output, err
+		}
+		switch {
+		case part.OfInputText != nil:
+			parts = append(parts, responses.ResponseFunctionCallOutputItemUnionParam{
+				OfInputText: &responses.ResponseInputTextContentParam{Text: part.OfInputText.Text},
+			})
+		case part.OfInputImage != nil:
+			parts = append(parts, responses.ResponseFunctionCallOutputItemUnionParam{
+				OfInputImage: &responses.ResponseInputImageContentParam{
+					ImageURL: part.OfInputImage.ImageURL, Detail: responses.ResponseInputImageContentDetailAuto,
+				},
+			})
+		case part.OfInputFile != nil:
+			parts = append(parts, responses.ResponseFunctionCallOutputItemUnionParam{
+				OfInputFile: &responses.ResponseInputFileContentParam{
+					FileData: part.OfInputFile.FileData, Filename: part.OfInputFile.Filename,
+				},
+			})
+		}
+	}
+	output.OfResponseFunctionCallOutputItemArray = parts
+	return output, nil
 }
 
 // codexReasoning is the opaque data stashed in a THINKING block's Signature so a

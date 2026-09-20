@@ -352,11 +352,15 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 // a message submitted while some OTHER agent is mid-turn must not be delivered
 // to that agent just because it happens to be the busy one.
 func (s *LLMSession) SubmitToTarget(msg string) bool {
+	return s.SubmitPromptToTarget(idtui.PromptInput{Text: msg})
+}
+
+func (s *LLMSession) SubmitPromptToTarget(input idtui.PromptInput) bool {
 	target := s.Target()
 	if target == nil {
 		return false
 	}
-	return target.Submit(msg)
+	return target.SubmitPrompt(input)
 }
 
 // InterruptTarget preempts the target conversation, reporting whether there

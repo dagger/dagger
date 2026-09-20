@@ -146,12 +146,15 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
      */
-    public function send(string $message, ?string $replyTo = ''): AgentMessage
+    public function send(string $message, ?string $replyTo = '', ?array $content = null): AgentMessage
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('send');
         $leafQueryBuilder->setArgument('message', $message);
         if (null !== $replyTo) {
         $leafQueryBuilder->setArgument('replyTo', $replyTo);
+        }
+        if (null !== $content) {
+        $leafQueryBuilder->setArgument('content', $content);
         }
         $id = $this->queryLeaf($leafQueryBuilder, 'send');
         return $this->client->loadObjectFromId(\Dagger\AgentMessage::class, new \Dagger\Id((string)$id), 'AgentMessage');

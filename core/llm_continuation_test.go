@@ -185,7 +185,8 @@ func TestToolResultSelectors(t *testing.T) {
 
 	t.Run("result whose call is in the adopted history appends normally", func(t *testing.T) {
 		target := &LLM{Messages: []*LLMMessage{toolCallMsg("call-1", "reload")}}
-		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		sels, err := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.NoError(t, err)
 		require.Len(t, sels, 1)
 		require.Equal(t, "withToolResult", sels[0].Field)
 		require.Equal(t, dagql.NewString("call-1"), sels[0].Args[0].Value)
@@ -200,7 +201,8 @@ func TestToolResultSelectors(t *testing.T) {
 			toolCallMsg("call-1", "reload"),
 			textMsg(LLMMessageRoleAssistant, "carried on"),
 		}}
-		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		sels, err := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.NoError(t, err)
 		require.Len(t, sels, 1)
 		require.Equal(t, "withPrompt", sels[0].Field)
 		require.Equal(t, dagql.NewString("[continued via tool reload]\nok"), sels[0].Args[0].Value)
@@ -213,7 +215,8 @@ func TestToolResultSelectors(t *testing.T) {
 			toolCallMsg("call-1", "reload"),
 			resultMsg("call-1", "answered by the continuation"),
 		}}
-		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		sels, err := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.NoError(t, err)
 		require.Len(t, sels, 1)
 		require.Equal(t, "withPrompt", sels[0].Field)
 	})
@@ -228,7 +231,8 @@ func TestToolResultSelectors(t *testing.T) {
 			}},
 			resultMsg("call-2", "read ok"),
 		}}
-		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		sels, err := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.NoError(t, err)
 		require.Len(t, sels, 1)
 		require.Equal(t, "withToolResult", sels[0].Field)
 	})
@@ -238,7 +242,8 @@ func TestToolResultSelectors(t *testing.T) {
 		// summarize-and-restart): a tool_result block with no matching tool_use
 		// would be protocol-invalid, so the information is carried as prose.
 		target := &LLM{Messages: []*LLMMessage{textMsg(LLMMessageRoleUser, "summary so far")}}
-		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		sels, err := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.NoError(t, err)
 		require.Len(t, sels, 1)
 		require.Equal(t, "withPrompt", sels[0].Field)
 		require.Equal(t, "prompt", sels[0].Args[0].Name)
@@ -247,14 +252,16 @@ func TestToolResultSelectors(t *testing.T) {
 
 	t.Run("unknown tool name falls back to the call ID", func(t *testing.T) {
 		target := &LLM{}
-		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-9", "ok")}, names)
+		sels, err := toolResultSelectors(target, []*LLMMessage{resultMsg("call-9", "ok")}, names)
+		require.NoError(t, err)
 		require.Len(t, sels, 1)
 		require.Equal(t, "withPrompt", sels[0].Field)
 		require.Equal(t, dagql.NewString("[continued via tool call-9]\nok"), sels[0].Args[0].Value)
 	})
 
 	t.Run("a nil target keeps tool results as tool results", func(t *testing.T) {
-		sels := toolResultSelectors(nil, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		sels, err := toolResultSelectors(nil, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.NoError(t, err)
 		require.Len(t, sels, 1)
 		require.Equal(t, "withToolResult", sels[0].Field)
 	})

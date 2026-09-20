@@ -351,6 +351,43 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Queue one user message containing ordered text and media blocks.
+  """
+  @spec with_content(t(), [Dagger.LLMContentBlockInput.t()], [
+          {:origin, Dagger.LLMMessageOriginInput.t() | nil}
+        ]) :: Dagger.LLM.t()
+  def with_content(%__MODULE__{} = llm, content, optional_args \\ []) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withContent")
+      |> QB.put_arg("content", content)
+      |> QB.maybe_put_arg("origin", optional_args[:origin])
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.
+  """
+  @spec with_content_file(t(), Dagger.File.t(), [{:mime_type, String.t() | nil}]) ::
+          Dagger.LLM.t()
+  def with_content_file(%__MODULE__{} = llm, file, optional_args \\ []) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withContentFile")
+      |> QB.put_arg("file", Dagger.ID.id!(file))
+      |> QB.maybe_put_arg("mimeType", optional_args[:mime_type])
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   Add an external MCP server to the LLM
   """
   @spec with_mcp_server(t(), String.t(), Dagger.Service.t()) :: Dagger.LLM.t()
@@ -504,14 +541,17 @@ defmodule Dagger.LLM do
   @doc """
   Append the result of a tool call to the message history.
   """
-  @spec with_tool_result(t(), String.t(), String.t(), boolean()) :: Dagger.LLM.t()
-  def with_tool_result(%__MODULE__{} = llm, call_id, content, errored) do
+  @spec with_tool_result(t(), String.t(), String.t(), boolean(), [
+          {:blocks, [Dagger.LLMContentBlockInput.t()]}
+        ]) :: Dagger.LLM.t()
+  def with_tool_result(%__MODULE__{} = llm, call_id, content, errored, optional_args \\ []) do
     query_builder =
       llm.query_builder
       |> QB.select("withToolResult")
       |> QB.put_arg("callId", call_id)
       |> QB.put_arg("content", content)
       |> QB.put_arg("errored", errored)
+      |> QB.maybe_put_arg("blocks", optional_args[:blocks])
 
     %Dagger.LLM{
       query_builder: query_builder,

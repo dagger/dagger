@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
@@ -12,6 +14,77 @@ import (
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// emitContentLog preserves the text projection while carrying media out of band
+// at its exact position. SpanStdio writes synchronously to the same logger, so
+// adjacent text records retain their ordering relative to the attachment.
+func emitContentLog(ctx context.Context, stdout io.Writer, block *LLMContentBlock, suffix string, attrs ...log.KeyValue) {
+	if block == nil {
+		return
+	}
+	switch block.Kind {
+	case LLMContentImage, LLMContentAudio, LLMContentDocument:
+		rec := log.Record{}
+		rec.SetTimestamp(time.Now())
+		rec.SetBody(log.StringValue(block.ContentText() + suffix))
+		rec.AddAttributes(attrs...)
+		rec.AddAttributes(
+			log.Int(telemetry.StdioStreamAttr, 1),
+			log.String(telemetryattrs.LogMediaKindAttr, strings.ToLower(string(block.Kind))),
+			log.String(telemetryattrs.LogMediaMIMETypeAttr, block.MIMEType),
+			log.String(telemetryattrs.LogMediaDataAttr, block.Data),
+		)
+		telemetry.Logger(ctx, InstrumentationLibrary).Emit(ctx, rec)
+	case LLMContentToolResult:
+		if len(block.Content) == 0 {
+			fmt.Fprint(stdout, block.Text+suffix)
+			return
+		}
+		if block.Text != "" {
+			fmt.Fprintln(stdout, block.Text)
+		}
+		for i, child := range block.Content {
+			childSuffix := "\n"
+			if i == len(block.Content)-1 {
+				childSuffix = suffix
+			}
+			emitContentLog(ctx, stdout, child, childSuffix, attrs...)
+		}
+	default:
+		fmt.Fprint(stdout, block.ContentText()+suffix)
+	}
+}
+
+// emitToolResultLogs is shared by live execution and history replay. Keep the
+// all-text path intact (including patch detection), splitting only media-bearing
+// results into ordered text and attachment records.
+func emitToolResultLogs(ctx context.Context, result *LLMContentBlock) {
+	text := result.ContentText()
+	attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+	if contentType := toolResultContentType(text); contentType != "" {
+		attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
+	}
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
+	defer stdio.Close()
+	if llmContentHasMedia(result.Content) {
+		emitContentLog(ctx, stdio.Stdout, result, "\n", attrs...)
+	} else {
+		fmt.Fprintln(stdio.Stdout, text)
+	}
+}
+
+func llmContentHasMedia(blocks []*LLMContentBlock) bool {
+	for _, block := range blocks {
+		if block == nil {
+			continue
+		}
+		switch block.Kind {
+		case LLMContentImage, LLMContentAudio, LLMContentDocument:
+			return true
+		}
+	}
+	return false
+}
 
 // displayPhase tracks a single display span for streaming LLM content
 // (text response, thinking, or tool call arguments). The span names, emojis and

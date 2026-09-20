@@ -28,6 +28,13 @@ type Vterm struct {
 
 	vt *midterm.Terminal
 
+	// Media uses ordered blocks; text-only terminals retain their legacy path.
+	images      *kittyImages
+	segments    []vtermSegment
+	mediaRows   []vtermMediaRow
+	mediaActive bool
+	mediaFollow bool
+
 	// Separate buffer for Markdown content
 	markdownBuf *bytes.Buffer
 	// Regular terminal buffer
@@ -64,6 +71,9 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
+	if term.segments != nil {
+		return term.writeMediaText(p, true, false), nil
+	}
 	n, err := term.markdownBuf.Write(p)
 	if err != nil {
 		return n, err
@@ -80,7 +90,10 @@ func (term *Vterm) WriteDiff(p []byte) (int, error) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
-	atBottom := term.Offset+term.Height >= term.vt.UsedHeight()
+	if term.segments != nil {
+		return term.writeMediaText(p, false, true), nil
+	}
+	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
 	if term.Height == 0 {
 		atBottom = true
 	}
@@ -94,7 +107,7 @@ func (term *Vterm) WriteDiff(p []byte) (int, error) {
 	}
 
 	if atBottom {
-		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+		term.Offset = max(0, term.usedHeightLocked()-term.Height)
 	}
 	term.needsRedraw = true
 	return len(p), nil
@@ -104,7 +117,10 @@ func (term *Vterm) Write(p []byte) (int, error) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
-	atBottom := term.Offset+term.Height >= term.vt.UsedHeight()
+	if term.segments != nil {
+		return term.writeMediaText(p, false, false), nil
+	}
+	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
 	if term.Height == 0 {
 		atBottom = true
 	}
@@ -116,7 +132,7 @@ func (term *Vterm) Write(p []byte) (int, error) {
 	_, _ = term.rawBuf.Write(p)
 
 	if atBottom {
-		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+		term.Offset = max(0, term.usedHeightLocked()-term.Height)
 	}
 
 	term.needsRedraw = true
@@ -125,6 +141,16 @@ func (term *Vterm) Write(p []byte) (int, error) {
 }
 
 func (term *Vterm) UsedHeight() int {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	return term.usedHeightLocked()
+}
+
+func (term *Vterm) usedHeightLocked() int {
+	if term.segments != nil {
+		term.layoutMedia()
+		return len(term.mediaRows)
+	}
 	return term.vt.UsedHeight()
 }
 
@@ -134,10 +160,11 @@ func (term *Vterm) SetHeight(height int) {
 	if height == term.Height {
 		return
 	}
-	atBottom := term.Offset+term.Height >= term.vt.UsedHeight()
+	used := term.usedHeightLocked()
+	atBottom := term.Offset+term.Height >= used
 	term.Height = height
 	if atBottom {
-		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+		term.Offset = max(0, term.usedHeightLocked()-term.Height)
 	}
 	term.needsRedraw = true
 }
@@ -149,6 +176,11 @@ func (term *Vterm) SetWidth(width int) {
 		return
 	}
 	term.Width = width
+	if term.segments != nil {
+		term.invalidateMedia()
+		term.clampOffsetLocked()
+		return
+	}
 	prefixWidth := lipgloss.Width(term.Prefix)
 	if width > prefixWidth {
 		term.vt.ResizeX(width - prefixWidth)
@@ -163,6 +195,11 @@ func (term *Vterm) SetPrefix(prefix string) {
 		return
 	}
 	term.Prefix = prefix
+	if term.segments != nil {
+		term.invalidateMedia()
+		term.clampOffsetLocked()
+		return
+	}
 	prefixWidth := lipgloss.Width(prefix)
 	if term.Width > prefixWidth && !term.vt.AutoResizeX {
 		term.vt.ResizeX(term.Width - prefixWidth)
@@ -205,6 +242,9 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	if query == "" {
 		if term.SearchQuery != "" {
 			term.vt.SearchClear()
@@ -249,6 +289,9 @@ func (term *Vterm) setCurrentMatchByRow(row int) {
 func (term *Vterm) ScrollToRow(row int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	// Center the target row in the viewport.
 	term.Offset = max(0, row-term.Height/2)
 	term.clampOffsetLocked()
@@ -258,6 +301,9 @@ func (term *Vterm) ScrollToRow(row int) {
 func (term *Vterm) ScrollBy(delta int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	term.Offset += delta
 	term.clampOffsetLocked()
 	term.needsRedraw = true
@@ -266,6 +312,9 @@ func (term *Vterm) ScrollBy(delta int) {
 func (term *Vterm) ScrollPage(deltaPages int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	page := max(term.Height-1, 1)
 	term.Offset += deltaPages * page
 	term.clampOffsetLocked()
@@ -275,6 +324,7 @@ func (term *Vterm) ScrollPage(deltaPages int) {
 func (term *Vterm) ScrollToTop() {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	term.mediaFollow = false
 	term.Offset = 0
 	term.needsRedraw = true
 }
@@ -282,7 +332,7 @@ func (term *Vterm) ScrollToTop() {
 func (term *Vterm) ScrollToBottom() {
 	term.mu.Lock()
 	defer term.mu.Unlock()
-	term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+	term.Offset = max(0, term.usedHeightLocked()-term.Height)
 	term.needsRedraw = true
 }
 
@@ -290,7 +340,7 @@ func (term *Vterm) clampOffsetLocked() {
 	if term.Offset < 0 {
 		term.Offset = 0
 	}
-	maxOffset := max(0, term.vt.UsedHeight()-term.Height)
+	maxOffset := max(0, term.usedHeightLocked()-term.Height)
 	if term.Offset > maxOffset {
 		term.Offset = maxOffset
 	}
@@ -300,6 +350,9 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	if query == "" {
 		term.vt.SearchClear()
 		term.SearchQuery = ""
@@ -321,7 +374,10 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 }
 
 func (term *Vterm) ScrollPercent() float64 {
-	return min(1, float64(term.Offset+term.Height)/float64(term.vt.UsedHeight()))
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	used := term.usedHeightLocked()
+	return min(1, float64(term.Offset+term.Height)/float64(used))
 }
 
 const reset = termenv.CSI + termenv.ResetSeq + "m"
@@ -331,6 +387,12 @@ const reset = termenv.CSI + termenv.ResetSeq + "m"
 func (term *Vterm) View() string {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.segments != nil {
+		term.layoutMedia()
+		term.viewBuf.Reset()
+		term.renderMedia(term.viewBuf, term.Offset, term.Height)
+		return term.viewBuf.String()
+	}
 	if term.needsRedraw {
 		term.redraw()
 		term.needsRedraw = false
@@ -477,6 +539,11 @@ func (m *Markdown) View() string {
 // Render writes the output for the given region of the terminal, with
 // ANSI formatting. Search highlights are rendered natively by midterm.
 func (term *Vterm) Render(w io.Writer, offset, height int) {
+	if term.segments != nil {
+		term.layoutMedia()
+		term.renderMedia(w, offset, height)
+		return
+	}
 	used := term.vt.UsedHeight()
 	if used == 0 {
 		return
@@ -508,6 +575,9 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 // LastLine returns the last line of visible text, with ANSI formatting, but
 // without any trailing whitespace.
 func (term *Vterm) LastLine() string {
+	if term.segments != nil {
+		term.layoutMedia()
+	}
 	used := term.vt.UsedHeight()
 	if used == 0 {
 		return ""
@@ -527,6 +597,10 @@ func (term *Vterm) LastLine() string {
 
 // Print prints the full log output without any formatting.
 func (term *Vterm) Print(w io.Writer) error {
+	if term.segments != nil {
+		_, err := io.WriteString(w, ansi.Strip(term.rawBuf.String()))
+		return err
+	}
 	used := term.vt.UsedHeight()
 
 	for row, l := range term.vt.Content {

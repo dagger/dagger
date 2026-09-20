@@ -218,6 +218,15 @@ class ImageMediaTypes(Enum):
 class LLMContentBlockKind(Enum):
     """The kind of content in a message block."""
 
+    AUDIO = "AUDIO"
+    """Inline audio."""
+
+    DOCUMENT = "DOCUMENT"
+    """An inline PDF document."""
+
+    IMAGE = "IMAGE"
+    """An inline image."""
+
     TEXT = "TEXT"
     """Plain text content."""
 
@@ -462,8 +471,20 @@ class LLMContentBlockInput(Input):
     call_id: str | None = ""
     """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
 
+    content: "list[LLMContentBlockInput] | None" = None
+    """Ordered TEXT or media blocks returned by a tool."""
+
+    data: str | None = ""
+    """Base64-encoded media bytes. Supply exactly one of data or file for media."""
+
     errored: bool | None = False
     """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
+
+    file: "File | None" = None
+    """A media file to resolve to inline bytes."""
+
+    mime_type: str | None = ""
+    """Media MIME type; required for inline data, inferred for a file."""
 
     signature: str | None = ""
     """Provider-specific opaque data (e.g. Anthropic thinking signature)."""
@@ -1125,6 +1146,7 @@ class Agent(Type):
         message: str,
         *,
         reply_to: str | None = "",
+        content: list[LLMContentBlockInput] | None = None,
     ) -> "AgentMessage":
         """Enqueue a message, on the record: it is consumed at a step boundary,
         appends to the agent's history, and steers the running turn or opens a
@@ -1148,12 +1170,17 @@ class Agent(Type):
         ----------
         message:
             The message text, appended to the agent's history as a prompt when
-            a turn consumes it.
+            a turn consumes it. When content is supplied, nonempty text
+            precedes those blocks in the same user message.
         reply_to:
             The ref of a message in the SENDER's own mailbox this send answers
             (e.g. "#3", from its attribution header). The recipient sees the
             two paired, and awaiters of the replied-to message resolve with
             this reply immediately instead of at the sender's turn end.
+        content:
+            Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File
+            inputs are resolved and all content is validated before
+            enqueueing. Pass an empty message for media-only sends.
 
         Raises
         ------
@@ -1165,6 +1192,7 @@ class Agent(Type):
         _args = [
             Arg("message", message),
             Arg("replyTo", reply_to, ""),
+            Arg("content", [] if content is None else content, []),
         ]
         return await self._ctx.execute_sync(self, "send", _args, AgentMessage)
 
@@ -11346,6 +11374,52 @@ class LLM(Type):
         _ctx = self._select("transcript", _args)
         return await _ctx.execute(str)
 
+    def with_content(
+        self,
+        content: list[LLMContentBlockInput],
+        *,
+        origin: LLMMessageOriginInput | None = None,
+    ) -> Self:
+        """Queue one user message containing ordered text and media blocks.
+
+        Parameters
+        ----------
+        content:
+            The ordered message content.
+        origin:
+            The message's recorded provenance.
+        """
+        _args = [
+            Arg("content", content),
+            Arg("origin", origin, None),
+        ]
+        _ctx = self._select("withContent", _args)
+        return LLM(_ctx)
+
+    def with_content_file(
+        self,
+        file: File,
+        *,
+        mime_type: str | None = "",
+    ) -> Self:
+        """Queue an image, audio, or PDF file as one user message. Media bytes
+        are stored in the conversation.
+
+        Parameters
+        ----------
+        file:
+            The media file.
+        mime_type:
+            The media MIME type; inferred from the file's contents when
+            omitted.
+        """
+        _args = [
+            Arg("file", file),
+            Arg("mimeType", mime_type, ""),
+        ]
+        _ctx = self._select("withContentFile", _args)
+        return LLM(_ctx)
+
     def with_mcp_server(self, name: str, service: "Service") -> Self:
         """Add an external MCP server to the LLM
 
@@ -11534,6 +11608,8 @@ class LLM(Type):
         call_id: str,
         content: str,
         errored: bool,
+        *,
+        blocks: list[LLMContentBlockInput] | None = None,
     ) -> Self:
         """Append the result of a tool call to the message history.
 
@@ -11542,14 +11618,17 @@ class LLM(Type):
         call_id:
             The ID of the tool call this result responds to
         content:
-            The content returned by the tool
+            Text returned by the tool, placed before blocks
         errored:
             Whether the tool call resulted in an error
+        blocks:
+            Ordered text and media returned by the tool
         """
         _args = [
             Arg("callId", call_id),
             Arg("content", content),
             Arg("errored", errored),
+            Arg("blocks", [] if blocks is None else blocks, []),
         ]
         _ctx = self._select("withToolResult", _args)
         return LLM(_ctx)
@@ -11672,6 +11751,35 @@ class LLMContentBlock(Type):
         _ctx = self._select("callId", _args)
         return await _ctx.execute(str)
 
+    async def content(self) -> list["LLMContentBlock"]:
+        """Ordered content returned by a tool, following any text (for
+        TOOL_RESULT kind).
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("content", _args)
+        return await _ctx.execute_object_list(LLMContentBlock)
+
+    async def data(self) -> str:
+        """Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("data", _args)
+        return await _ctx.execute(str)
+
     async def errored(self) -> bool:
         """Whether the tool call resulted in an error (for TOOL_RESULT kind).
 
@@ -11738,6 +11846,27 @@ class LLMContentBlock(Type):
         _args: list[Arg] = []
         _ctx = self._select("kind", _args)
         return await _ctx.execute(LLMContentBlockKind)
+
+    async def mime_type(self) -> str:
+        """The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("mimeType", _args)
+        return await _ctx.execute(str)
 
     async def signature(self) -> str:
         """Provider-specific opaque data (e.g. Anthropic thinking signature).

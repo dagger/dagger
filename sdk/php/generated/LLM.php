@@ -242,6 +242,32 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Queue one user message containing ordered text and media blocks.
+     */
+    public function withContent(array $content, ?LLMMessageOriginInput $origin = null): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContent');
+        $innerQueryBuilder->setArgument('content', $content);
+        if (null !== $origin) {
+        $innerQueryBuilder->setArgument('origin', $origin);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.
+     */
+    public function withContentFile(File $file, ?string $mimeType = ''): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContentFile');
+        $innerQueryBuilder->setArgument('file', $file);
+        if (null !== $mimeType) {
+        $innerQueryBuilder->setArgument('mimeType', $mimeType);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Add an external MCP server to the LLM
      */
     public function withMCPServer(string $name, Service $service): LLM
@@ -361,12 +387,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Append the result of a tool call to the message history.
      */
-    public function withToolResult(string $callId, string $content, bool $errored): LLM
+    public function withToolResult(string $callId, string $content, bool $errored, ?array $blocks = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolResult');
         $innerQueryBuilder->setArgument('callId', $callId);
         $innerQueryBuilder->setArgument('content', $content);
         $innerQueryBuilder->setArgument('errored', $errored);
+        if (null !== $blocks) {
+        $innerQueryBuilder->setArgument('blocks', $blocks);
+        }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -170,11 +170,23 @@ type LLMContentBlockInput struct {
 	// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
 	CallID string `json:"callId,omitempty"`
 
+	// Ordered TEXT or media blocks returned by a tool.
+	Content []LLMContentBlockInput `json:"content,omitempty"`
+
+	// Base64-encoded media bytes. Supply exactly one of data or file for media.
+	Data string `json:"data,omitempty"`
+
 	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
 	Errored bool `json:"errored,omitempty"`
 
+	// A media file to resolve to inline bytes.
+	File *File `json:"file,omitempty"`
+
 	// The kind of content block.
 	Kind LLMContentBlockKind `json:"kind"`
+
+	// Media MIME type; required for inline data, inferred for a file.
+	MimeType string `json:"mimeType,omitempty"`
 
 	// Provider-specific opaque data (e.g. Anthropic thinking signature).
 	Signature string `json:"signature,omitempty"`
@@ -692,6 +704,8 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 type AgentSendOpts struct {
 	// The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
 	ReplyTo string
+	// Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File inputs are resolved and all content is validated before enqueueing. Pass an empty message for media-only sends.
+	Content []LLMContentBlockInput
 }
 
 // Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
@@ -709,6 +723,10 @@ func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts)
 		// `replyTo` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ReplyTo) {
 			q = q.Arg("replyTo", opts[i].ReplyTo)
+		}
+		// `content` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Content) {
+			q = q.Arg("content", opts[i].Content)
 		}
 	}
 	q = q.Arg("message", message)
@@ -11496,6 +11514,51 @@ func (r *LLM) Transcript(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// LLMWithContentOpts contains options for LLM.WithContent
+type LLMWithContentOpts struct {
+	// The message's recorded provenance.
+	Origin LLMMessageOriginInput
+}
+
+// Queue one user message containing ordered text and media blocks.
+func (r *LLM) WithContent(content []LLMContentBlockInput, opts ...LLMWithContentOpts) *LLM {
+	q := r.query.Select("withContent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `origin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Origin) {
+			q = q.Arg("origin", opts[i].Origin)
+		}
+	}
+	q = q.Arg("content", content)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// LLMWithContentFileOpts contains options for LLM.WithContentFile
+type LLMWithContentFileOpts struct {
+	// The media MIME type; inferred from the file's contents when omitted.
+	MimeType string
+}
+
+// Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.
+func (r *LLM) WithContentFile(file *File, opts ...LLMWithContentFileOpts) *LLM {
+	assertNotNil("file", file)
+	q := r.query.Select("withContentFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `mimeType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MimeType) {
+			q = q.Arg("mimeType", opts[i].MimeType)
+		}
+	}
+	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Add an external MCP server to the LLM
 func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	assertNotNil("service", service)
@@ -11649,9 +11712,21 @@ func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	}
 }
 
+// LLMWithToolResultOpts contains options for LLM.WithToolResult
+type LLMWithToolResultOpts struct {
+	// Ordered text and media returned by the tool
+	Blocks []LLMContentBlockInput
+}
+
 // Append the result of a tool call to the message history.
-func (r *LLM) WithToolResult(callId string, content string, errored bool) *LLM {
+func (r *LLM) WithToolResult(callId string, content string, errored bool, opts ...LLMWithToolResultOpts) *LLM {
 	q := r.query.Select("withToolResult")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `blocks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Blocks) {
+			q = q.Arg("blocks", opts[i].Blocks)
+		}
+	}
 	q = q.Arg("callId", callId)
 	q = q.Arg("content", content)
 	q = q.Arg("errored", errored)
@@ -11752,9 +11827,11 @@ type LLMContentBlock struct {
 
 	arguments *JSON
 	callId    *string
+	data      *string
 	errored   *bool
 	id        *ID
 	kind      *LLMContentBlockKind
+	mimeType  *string
 	signature *string
 	text      *string
 	toolName  *string
@@ -11785,6 +11862,52 @@ func (r *LLMContentBlock) CallID(ctx context.Context) (string, error) {
 		return *r.callId, nil
 	}
 	q := r.query.Select("callId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
+func (r *LLMContentBlock) Content(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("content")
+
+	q = q.Select("id")
+
+	type content struct {
+		Id ID
+	}
+
+	convert := func(fields []content) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMContentBlock")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []content
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+func (r *LLMContentBlock) Data(ctx context.Context) (string, error) {
+	if r.data != nil {
+		return *r.data, nil
+	}
+	q := r.query.Select("data")
 
 	var response string
 
@@ -11853,6 +11976,19 @@ func (r *LLMContentBlock) Kind(ctx context.Context) (LLMContentBlockKind, error)
 	q := r.query.Select("kind")
 
 	var response LLMContentBlockKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
+func (r *LLMContentBlock) MimeType(ctx context.Context) (string, error) {
+	if r.mimeType != nil {
+		return *r.mimeType, nil
+	}
+	q := r.query.Select("mimeType")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -21011,6 +21147,12 @@ func (v LLMContentBlockKind) Name() string {
 		return "TOOL_CALL"
 	case LLMContentBlockKindToolResult:
 		return "TOOL_RESULT"
+	case LLMContentBlockKindImage:
+		return "IMAGE"
+	case LLMContentBlockKindAudio:
+		return "AUDIO"
+	case LLMContentBlockKindDocument:
+		return "DOCUMENT"
 	default:
 		return ""
 	}
@@ -21039,6 +21181,12 @@ func (v *LLMContentBlockKind) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
+	case "AUDIO":
+		*v = LLMContentBlockKindAudio
+	case "DOCUMENT":
+		*v = LLMContentBlockKindDocument
+	case "IMAGE":
+		*v = LLMContentBlockKindImage
 	case "TEXT":
 		*v = LLMContentBlockKindText
 	case "THINKING":
@@ -21065,6 +21213,15 @@ const (
 
 	// A tool/function result.
 	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+
+	// An inline image.
+	LLMContentBlockKindImage LLMContentBlockKind = "IMAGE"
+
+	// Inline audio.
+	LLMContentBlockKindAudio LLMContentBlockKind = "AUDIO"
+
+	// An inline PDF document.
+	LLMContentBlockKindDocument LLMContentBlockKind = "DOCUMENT"
 )
 
 // EXPERIMENTAL: Agent APIs are likely to change.

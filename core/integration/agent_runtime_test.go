@@ -1034,6 +1034,122 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// TestSendContent exercises file resolution, validation before enqueue and the
+// real mailbox drain against a keyless recording, including a paused queue.
+func (AgentRuntimeSuite) TestSendContent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	file := c.Container().From(alpineImage).
+		WithNewFile("/image.b64", mediaPNG).
+		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
+	for _, text := range []string{"describe this", ""} {
+		for _, paused := range []bool{false, true} {
+			t.Run(fmt.Sprintf("text=%q/paused=%t", text, paused), func(ctx context.Context, t *testctx.T) {
+				blocks := []dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"}}
+				if text != "" {
+					blocks = append([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: text}}, blocks...)
+				}
+				origin := dagger.LLMMessageOriginInput{Kind: dagger.LLMMessageOriginKindUser, Ref: "#1", ReplyTo: "#9"}
+				expected := c.LLM().WithContent(blocks, dagger.LLMWithContentOpts{Origin: origin}).
+					WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "a picture"}})
+				model := agentContentRecordingModel(ctx, t, c, expected)
+				agent, err := c.LLM(dagger.LLMOpts{Model: model}).Spawn(ctx)
+				require.NoError(t, err)
+				if paused {
+					_, err = agent.Pause(ctx)
+					require.NoError(t, err)
+				}
+				_, err = agent.Send(ctx, "bad", dagger.AgentSendOpts{Content: []dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindImage, Data: "not base64", MimeType: "image/png"}}})
+				require.Error(t, err)
+				_, err = agent.Send(ctx, "bad", dagger.AgentSendOpts{Content: []dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindToolResult, Text: "not user content"}}})
+				require.ErrorContains(t, err, "not user content")
+				msg, err := agent.Send(ctx, text, dagger.AgentSendOpts{ReplyTo: "#9", Content: []dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindImage, File: file}}})
+				require.NoError(t, err)
+				ref, err := msg.Ref(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "#1", ref, "invalid sends must not allocate mailbox records")
+				delivery, err := msg.Delivery(ctx)
+				require.NoError(t, err)
+				if paused {
+					require.Equal(t, dagger.AgentMessageDeliveryQueued, delivery)
+					_, err = agent.Resume(ctx)
+					require.NoError(t, err)
+				} else {
+					require.Equal(t, dagger.AgentMessageDeliveryStarted, delivery)
+				}
+				reply, err := msg.Response(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "a picture", reply)
+				snapshot := agent.Snapshot()
+				require.Equal(t, mediaHistory(t, c, expected), mediaHistory(t, c, snapshot))
+				portable, err := snapshot.PortableID(ctx)
+				require.NoError(t, err)
+				require.Equal(t, mediaHistory(t, c, snapshot), mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, portable)))
+			})
+		}
+	}
+}
+
+// agentContentRecordingModel retains media and origin fields that the older
+// text-only canned helper omits, so replay checks the complete model input.
+func agentContentRecordingModel(ctx context.Context, t *testctx.T, c *dagger.Client, conversation *dagger.LLM) string {
+	t.Helper()
+	id, err := conversation.ID(ctx)
+	require.NoError(t, err)
+	recorded, err := testutil.QueryWithClient[struct {
+		Node struct {
+			Messages json.RawMessage `json:"messages"`
+		} `json:"node"`
+	}](c, t, `query($id: ID!) { node(id: $id) { ... on LLM {
+		messages { role origin { kind agentName ref replyTo } content { kind text data mimeType callId toolName arguments errored } }
+	} } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
+	require.NoError(t, err)
+	return "recording/" + base64.StdEncoding.EncodeToString(recorded.Node.Messages)
+}
+
+func (AgentRuntimeSuite) TestSendContentMidTurn(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	vol := c.CacheVolume("agent-media-gate-" + identity.NewID())
+	gate := c.Container().From(alpineImage).
+		WithMountedCache("/sync", vol).
+		WithEnvVariable("CACHEBUSTER", identity.NewID())
+	tool := gate.WithExec([]string{"sh", "-c", "touch /sync/started; for i in $(seq 1 600); do [ -f /sync/release ] && { echo TOOL-DONE; exit 0; }; sleep 0.1; done; exit 1"})
+	toolID, err := tool.ID(ctx)
+	require.NoError(t, err)
+	expected := c.LLM().WithPrompt(slowToolPrompt).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "stdout"}}).
+		WithToolResult("call_1", "", false).
+		WithContent([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "inspect now"},
+			{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+			{Kind: dagger.LLMContentBlockKindText, Text: "then continue"},
+		}).WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: slowToolReply}})
+	model := agentContentRecordingModel(ctx, t, c, expected)
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, toolIDs: []dagger.ID{toolID}})
+	agent := dagger.Ref[*dagger.Agent](c, dagger.ID(h.agentID))
+	first, err := agent.Send(ctx, slowToolPrompt)
+	require.NoError(t, err)
+	waitForSlowTool(ctx, t, c, vol)
+	// The gate cannot finish until the content-bearing send has enqueued.
+	steer, err := agent.Send(ctx, "inspect now", dagger.AgentSendOpts{Content: []dagger.LLMContentBlockInput{
+		{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+		{Kind: dagger.LLMContentBlockKindText, Text: "then continue"},
+	}})
+	require.NoError(t, err)
+	_, err = gate.WithExec([]string{"touch", "/sync/release"}).Sync(ctx)
+	require.NoError(t, err)
+	delivery, err := steer.Delivery(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.AgentMessageDeliverySteered, delivery)
+	for _, msg := range []*dagger.AgentMessage{first, steer} {
+		reply, err := msg.Response(ctx)
+		require.NoError(t, err)
+		require.Equal(t, slowToolReply, reply)
+	}
+	history := mediaHistory(t, c, agent.Snapshot())
+	require.Len(t, history, 5)
+	require.Equal(t, mediaHistory(t, c, expected)[3], history[3])
+}
+
 // TestPauseQueueResume covers the mailbox behind a pause: QUEUED delivery
 // evidence, the state staying PAUSED across sends, and resume draining the
 // queue — for an already-running agent and for one paused before it ever

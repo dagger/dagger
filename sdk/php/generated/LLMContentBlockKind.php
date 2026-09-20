@@ -24,4 +24,13 @@ enum LLMContentBlockKind: string
 
     /** A tool/function result. */
     case TOOL_RESULT = 'TOOL_RESULT';
+
+    /** An inline image. */
+    case IMAGE = 'IMAGE';
+
+    /** Inline audio. */
+    case AUDIO = 'AUDIO';
+
+    /** An inline PDF document. */
+    case DOCUMENT = 'DOCUMENT';
 }
