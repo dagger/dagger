@@ -75,7 +75,25 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 	// FunctionResponse.Name requires.
 	callIDToToolName := map[string]string{}
 	for _, msg := range history {
+		if msg == nil {
+			return nil, nil, fmt.Errorf("google: nil message")
+		}
+		if err := ValidateLLMContent(msg.Content); err != nil {
+			return nil, nil, fmt.Errorf("google: %w", err)
+		}
 		for _, block := range msg.Content {
+			validRole := false
+			switch msg.Role {
+			case LLMMessageRoleSystem:
+				validRole = block.Kind == LLMContentText
+			case LLMMessageRoleUser:
+				validRole = block.Kind == LLMContentText || block.Kind == LLMContentToolResult || block.Kind == LLMContentImage || block.Kind == LLMContentAudio || block.Kind == LLMContentDocument
+			case LLMMessageRoleAssistant:
+				validRole = block.Kind == LLMContentText || block.Kind == LLMContentThinking || block.Kind == LLMContentToolCall
+			}
+			if !validRole {
+				return nil, nil, fmt.Errorf("google: %s content is not supported in %s messages", block.Kind, msg.Role)
+			}
 			if block.Kind == LLMContentToolCall && block.CallID != "" {
 				callIDToToolName[block.CallID] = block.ToolName
 			}
@@ -139,22 +157,17 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 					// Fallback: CallID may already be a function name.
 					toolName = block.CallID
 				}
-				content.Parts = append(content.Parts, &genai.Part{
-					FunctionResponse: &genai.FunctionResponse{
-						// ID pairs this result with its call. Parallel calls to the
-						// same tool share a Name, so without the ID Gemini can only
-						// match by position — and CallBatch returns results grouped
-						// by category, not in call order. Echoing the CallID keeps
-						// the association unambiguous.
-						ID:   block.CallID,
-						Name: toolName,
-						// Genai expects a json format response
-						Response: map[string]any{
-							"response": block.Text,
-							"error":    block.Errored,
-						},
-					},
-				})
+				response, err := genaiToolResponse(block, toolName)
+				if err != nil {
+					return nil, nil, err
+				}
+				content.Parts = append(content.Parts, &genai.Part{FunctionResponse: response})
+			case LLMContentImage, LLMContentAudio, LLMContentDocument:
+				part, err := genaiMediaPart(block)
+				if err != nil {
+					return nil, nil, err
+				}
+				content.Parts = append(content.Parts, part)
 			case LLMContentText:
 				text := block.Text
 				if text == "" {
@@ -199,6 +212,8 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 					Thought:          true,
 					ThoughtSignature: decodeThoughtSignature(block.Signature),
 				})
+			default:
+				return nil, nil, fmt.Errorf("google: unsupported content kind %q", block.Kind)
 			}
 		}
 
@@ -216,6 +231,70 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 	}
 
 	return genaiHistory, systemInstruction, nil
+}
+
+func genaiMediaPart(block *LLMContentBlock) (*genai.Part, error) {
+	supported := false
+	switch block.Kind {
+	case LLMContentImage:
+		switch block.MIMEType {
+		case "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif":
+			supported = true
+		}
+	case LLMContentAudio:
+		switch block.MIMEType {
+		case "audio/wav", "audio/mp3", "audio/mpeg", "audio/aiff", "audio/aac", "audio/ogg", "audio/flac":
+			supported = true
+		}
+	case LLMContentDocument:
+		supported = block.MIMEType == "application/pdf"
+	}
+	if !supported {
+		return nil, fmt.Errorf("google: unsupported %s MIME type %q", block.Kind, block.MIMEType)
+	}
+	data, err := base64.StdEncoding.DecodeString(block.Data)
+	if err != nil {
+		return nil, fmt.Errorf("google: invalid base64 %s data", block.Kind)
+	}
+	return genai.NewPartFromBytes(data, block.MIMEType), nil
+}
+
+func genaiToolResponse(block *LLMContentBlock, toolName string) (*genai.FunctionResponse, error) {
+	response := &genai.FunctionResponse{
+		// Preserve IDs even for parallel calls to the same named tool, whose
+		// results need not arrive in call order.
+		ID:       block.CallID,
+		Name:     toolName,
+		Response: map[string]any{"response": block.Text, "error": block.Errored},
+	}
+	if len(block.Content) == 0 {
+		return response, nil
+	}
+	// FunctionResponse.Parts accepts media, not text. Preserve the original
+	// mixed order in the JSON response, referring to native media by its index
+	// in this same function response rather than detaching it as user input.
+	var ordered []map[string]any
+	if block.Text != "" {
+		ordered = append(ordered, map[string]any{"type": "text", "text": block.Text})
+	}
+	for _, child := range block.Content {
+		if child.Kind == LLMContentText {
+			ordered = append(ordered, map[string]any{"type": "text", "text": child.Text})
+			continue
+		}
+		part, err := genaiMediaPart(child)
+		if err != nil {
+			return nil, fmt.Errorf("google tool result %q: %w", block.CallID, err)
+		}
+		ordered = append(ordered, map[string]any{
+			"type":      strings.ToLower(string(child.Kind)),
+			"mimeType":  child.MIMEType,
+			"partIndex": len(response.Parts),
+		})
+		response.Parts = append(response.Parts, genai.NewFunctionResponsePartFromBytes(part.InlineData.Data, child.MIMEType))
+	}
+	response.Response["content"] = ordered
+	return response, nil
 }
 
 func (c *GenaiClient) processStreamResponse(

@@ -153,6 +153,26 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	var messages []anthropic.MessageParam
 	var systemPrompts []anthropic.TextBlockParam
 	for _, msg := range history {
+		if msg == nil {
+			return nil, fmt.Errorf("anthropic: nil message")
+		}
+		if err := ValidateLLMContent(msg.Content); err != nil {
+			return nil, fmt.Errorf("anthropic: %w", err)
+		}
+		for _, block := range msg.Content {
+			validRole := false
+			switch msg.Role {
+			case LLMMessageRoleSystem:
+				validRole = block.Kind == LLMContentText
+			case LLMMessageRoleUser:
+				validRole = block.Kind == LLMContentText || block.Kind == LLMContentToolResult || block.Kind == LLMContentImage || block.Kind == LLMContentAudio || block.Kind == LLMContentDocument
+			case LLMMessageRoleAssistant:
+				validRole = block.Kind == LLMContentText || block.Kind == LLMContentThinking || block.Kind == LLMContentToolCall
+			}
+			if !validRole {
+				return nil, fmt.Errorf("anthropic: %s content is not supported in %s messages", block.Kind, msg.Role)
+			}
+		}
 		if msg.Role == LLMMessageRoleSystem {
 			text := msg.TextContent()
 			if text != "" {
@@ -182,11 +202,35 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				}
 				blocks = append(blocks, anthropic.NewToolUseBlock(block.CallID, args, block.ToolName))
 			case LLMContentToolResult:
-				content := block.Text
-				if content == "" {
-					content = " "
+				result := &anthropic.ToolResultBlockParam{
+					ToolUseID: block.CallID,
+					IsError:   anthropic.Opt(block.Errored),
 				}
-				blocks = append(blocks, anthropic.NewToolResultBlock(block.CallID, content, block.Errored))
+				if block.Text != "" || len(block.Content) == 0 {
+					text := block.Text
+					if text == "" {
+						text = " "
+					}
+					result.Content = append(result.Content, anthropic.ToolResultBlockParamContentUnion{OfText: &anthropic.TextBlockParam{Text: text}})
+				}
+				for _, child := range block.Content {
+					part, err := anthropicInputBlock(child)
+					if err != nil {
+						return nil, fmt.Errorf("anthropic tool result %q: %w", block.CallID, err)
+					}
+					result.Content = append(result.Content, anthropic.ToolResultBlockParamContentUnion{
+						OfText:     part.OfText,
+						OfImage:    part.OfImage,
+						OfDocument: part.OfDocument,
+					})
+				}
+				blocks = append(blocks, anthropic.ContentBlockParamUnion{OfToolResult: result})
+			case LLMContentImage, LLMContentAudio, LLMContentDocument:
+				part, err := anthropicInputBlock(block)
+				if err != nil {
+					return nil, err
+				}
+				blocks = append(blocks, part)
 			case LLMContentThinking:
 				// Round-trip extended thinking. When thinking is enabled and the
 				// assistant made tool calls, Anthropic requires the original
@@ -207,6 +251,8 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				case block.Signature != "":
 					blocks = append(blocks, anthropic.NewRedactedThinkingBlock(block.Signature))
 				}
+			default:
+				return nil, fmt.Errorf("anthropic: unsupported content kind %q", block.Kind)
 			}
 		}
 
@@ -215,6 +261,8 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			messages = appendOrMerge(messages, anthropic.MessageParamRoleUser, blocks)
 		case LLMMessageRoleAssistant:
 			messages = appendOrMerge(messages, anthropic.MessageParamRoleAssistant, blocks)
+		default:
+			return nil, fmt.Errorf("anthropic: unexpected role %s", msg.Role)
 		}
 	}
 
@@ -240,6 +288,10 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 					lastBlock.OfToolUse.CacheControl = ephemeral
 				case lastBlock.OfToolResult != nil:
 					lastBlock.OfToolResult.CacheControl = ephemeral
+				case lastBlock.OfImage != nil:
+					lastBlock.OfImage.CacheControl = ephemeral
+				case lastBlock.OfDocument != nil:
+					lastBlock.OfDocument.CacheControl = ephemeral
 				}
 			}
 			break
@@ -466,6 +518,35 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		DisplaySpans:     displaySpans,
 		ToolCallDisplays: toolCallDisplays,
 	}, nil
+}
+
+// anthropicInputBlock translates the content allowed in user input and tool
+// results. Keeping media native here avoids replacing it with a text projection.
+func anthropicInputBlock(block *LLMContentBlock) (anthropic.ContentBlockParamUnion, error) {
+	switch block.Kind {
+	case LLMContentText:
+		text := block.Text
+		if text == "" {
+			text = " "
+		}
+		return anthropic.NewTextBlock(text), nil
+	case LLMContentImage:
+		switch block.MIMEType {
+		case "image/jpeg", "image/png", "image/gif", "image/webp":
+			return anthropic.NewImageBlockBase64(block.MIMEType, block.Data), nil
+		default:
+			return anthropic.ContentBlockParamUnion{}, fmt.Errorf("anthropic: unsupported image MIME type %q", block.MIMEType)
+		}
+	case LLMContentDocument:
+		if block.MIMEType != "application/pdf" {
+			return anthropic.ContentBlockParamUnion{}, fmt.Errorf("anthropic: unsupported document MIME type %q (only application/pdf is supported)", block.MIMEType)
+		}
+		return anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{Data: block.Data}), nil
+	case LLMContentAudio:
+		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("anthropic: AUDIO content is not supported")
+	default:
+		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("anthropic: unsupported input content kind %q", block.Kind)
+	}
 }
 
 // anthropicStoppedCleanly reports whether a stop reason means the model
