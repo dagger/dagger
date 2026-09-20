@@ -429,24 +429,9 @@ func buildContextVizSnapshot(conv *vizConversation) *contextVizSnapshot {
 	// inventory is a second view of this same context, not additional tokens.
 	toolsByName := map[string]int{}
 	if conv.Tools != "" {
-		label := "Tool schemas"
-		tools, err := parseVizTools(conv.Tools)
-		if err != nil {
-			snap.ToolsError = err.Error()
-		} else {
-			snap.Tools = tools
-			label = fmt.Sprintf("Tool schemas (%d tools)", len(tools))
-			for i, tool := range tools {
-				toolsByName[tool.Name] = i
-			}
-		}
-		window = append(window, addItem(vizItem{
-			Category: vizCatTools,
-			Label:    label,
-			Tokens:   vizEstimateTokens(len(conv.Tools)),
-			Text:     conv.Tools,
-			Fixed:    true,
-		}))
+		item, index := snap.buildToolInventory(conv.Tools)
+		toolsByName = index
+		window = append(window, addItem(item))
 	}
 
 	callIdx := 0
@@ -595,6 +580,29 @@ func buildContextVizSnapshot(conv *vizConversation) *contextVizSnapshot {
 	}
 
 	return snap
+}
+
+func (snap *contextVizSnapshot) buildToolInventory(definitions string) (vizItem, map[string]int) {
+	item := vizItem{
+		Category: vizCatTools,
+		Label:    "Tool schemas",
+		Tokens:   vizEstimateTokens(len(definitions)),
+		Text:     definitions,
+		Fixed:    true,
+	}
+	toolsByName := map[string]int{}
+	tools, err := parseVizTools(definitions)
+	if err != nil {
+		snap.ToolsError = err.Error()
+		return item, toolsByName
+	}
+
+	snap.Tools = tools
+	item.Label = fmt.Sprintf("Tool schemas (%d tools)", len(tools))
+	for i, tool := range tools {
+		toolsByName[tool.Name] = i
+	}
+	return item, toolsByName
 }
 
 // contextVizLLMID resolves the conversation state to visualize: the agent
