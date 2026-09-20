@@ -94,3 +94,16 @@ func TestSummarizeEmpty(t *testing.T) {
 	Summarize(out, []Entry{}, 80)
 	require.Empty(t, buf.String())
 }
+
+// DiffStats can omit structural directory removals when files imply them.
+// Keep the resulting preview at file granularity with accurate totals.
+func TestSummarizeFileOnlyDirectoryRemoval(t *testing.T) {
+	text := SummarizeString([]Entry{
+		{Path: "dir/a.txt", Kind: KindRemoved, Removed: 2},
+		{Path: "dir/sub/b.txt", Kind: KindRemoved, Removed: 1},
+	}, 80)
+	require.Contains(t, text, "dir/a.txt")
+	require.Contains(t, text, "dir/sub/b.txt")
+	require.Contains(t, text, "2 files changed")
+	require.Contains(t, text, "-3 lines")
+}
