@@ -4597,9 +4597,9 @@ func (fe *frontendPretty) saveDraftFor(agentID string) {
 		fe.agentDrafts = map[string]PromptInput{}
 	}
 	draft := PromptInput{Text: fe.textInput.Value(), Images: fe.promptImages}
-	if fe.historyIndex >= 0 && len(fe.historyImages) > 0 {
+	if fe.historyIndex >= 0 && len(fe.historyImages) > 0 && len(fe.promptImages) == 0 {
 		// History browsing temporarily hides attachments; park the original
-		// draft rather than losing its images when switching agents.
+		// draft unless images have been attached to the displayed history entry.
 		draft = PromptInput{Text: fe.historySaved, Images: fe.historyImages}
 	}
 	fe.agentDrafts[agentID] = draft.Clone()
@@ -4613,8 +4613,12 @@ func (fe *frontendPretty) restoreAgentDraft(agentID string) {
 	}
 	fe.cancelImagePaste()
 	fe.historyIndex = -1
+	fe.historySaved = ""
 	fe.historyImages = nil
-	draft := fe.agentDrafts[agentID].Clone()
+	// Transfer ownership out of the parked draft so removing or submitting an
+	// image does not leave another copy retained until the next focus change.
+	draft := fe.agentDrafts[agentID]
+	delete(fe.agentDrafts, agentID)
 	fe.textInput.SetValue(draft.Text)
 	fe.promptImages = draft.Images
 	fe.syncPrompt()
@@ -5527,7 +5531,10 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.interruptCurrent()
 		fe.cancelImagePaste()
 		fe.promptImages = nil
+		fe.historyIndex = -1
+		fe.historySaved = ""
 		fe.historyImages = nil
+		fe.clearPromptError()
 		fe.textInput.SetValue("")
 		fe.syncPrompt()
 		return true
@@ -5555,8 +5562,9 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		// Pull a queued message (one submitted while a non-prompt turn was
 		// running; see handleInputComplete) back into the input for editing.
 		// Slightly racy: if the turn just finished, handleShellDone already
-		// consumed the message to start it as a new turn, so the dequeue
-		// returns empty and we fall back to the text the label was showing.
+		// consumed the message to start it as a new turn. Legacy text handlers
+		// can fall back to the label; typed queues must not recreate attachments
+		// from their payload-free summary.
 		// Prompt-turn interjections never land here: they are sent to the
 		// agent immediately, with nothing left client-side to recall -- the
 		// Sent check below keeps alt+up from "recalling" a message the agent
@@ -5565,8 +5573,15 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 			shown := PromptInput{Text: fe.queuedMsgLabel.Message()}
 			if input := fe.clearQueuedPrompt(); !input.Empty() {
 				shown = input
+			} else if _, typed := fe.shell.(PromptInputHandler); typed {
+				// The typed queue already drained. Its payload-free label cannot
+				// reconstruct an image-bearing prompt or safely duplicate a send.
+				return true
 			}
 			fe.cancelImagePaste()
+			fe.historyIndex = -1
+			fe.historySaved = ""
+			fe.historyImages = nil
 			fe.textInput.SetValue(shown.Text)
 			fe.promptImages = shown.Images
 			fe.syncPrompt()
