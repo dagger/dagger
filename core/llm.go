@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"mime"
 	"net"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -314,7 +316,9 @@ var (
 	LLMContentThinking   = LLMContentBlockKinds.Register("THINKING", "Model thinking/reasoning content (e.g. Anthropic extended thinking).")
 	LLMContentToolCall   = LLMContentBlockKinds.Register("TOOL_CALL", "A tool/function call from the model.")
 	LLMContentToolResult = LLMContentBlockKinds.Register("TOOL_RESULT", "A tool/function result.")
-	// Future: IMAGE, AUDIO, etc.
+	LLMContentImage      = LLMContentBlockKinds.Register("IMAGE", "An inline image.")
+	LLMContentAudio      = LLMContentBlockKinds.Register("AUDIO", "Inline audio.")
+	LLMContentDocument   = LLMContentBlockKinds.Register("DOCUMENT", "An inline PDF document.")
 )
 
 func (LLMContentBlockKind) Type() *ast.Type {
@@ -353,6 +357,10 @@ type LLMContentBlock struct {
 	// CallID is reused from above.
 	Errored bool `field:"true" json:"errored,omitempty" doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)."`
 
+	MIMEType string             `field:"true" name:"mimeType" json:"mime_type,omitempty" doc:"The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds)."`
+	Data     string             `field:"true" json:"data,omitempty" doc:"Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."`
+	Content  []*LLMContentBlock `field:"true" json:"content,omitempty" doc:"Ordered content returned by a tool, following any text (for TOOL_RESULT kind)."`
+
 	// Provider-specific opaque data. Exposed so a conversation exported via
 	// messages can be reconstructed losslessly with withResponse — some
 	// providers (e.g. Anthropic) reject resubmitted thinking blocks without it.
@@ -371,19 +379,150 @@ func (*LLMContentBlock) Type() *ast.Type {
 }
 
 func (b *LLMContentBlock) Clone() *LLMContentBlock {
+	if b == nil {
+		return nil
+	}
 	cp := *b
+	cp.Arguments = slices.Clone(b.Arguments)
+	cp.Content = cloneLLMContent(b.Content)
 	return &cp
+}
+
+func cloneLLMContent(blocks []*LLMContentBlock) []*LLMContentBlock {
+	if blocks == nil {
+		return nil
+	}
+	cloned := make([]*LLMContentBlock, len(blocks))
+	for i, block := range blocks {
+		cloned[i] = block.Clone()
+	}
+	return cloned
+}
+
+// MaxLLMMediaBytes bounds decoded media in one message, including tool results.
+const MaxLLMMediaBytes = 20 * 1024 * 1024
+
+// Validate checks a resolved block without interpreting provider-specific signatures.
+func (b *LLMContentBlock) Validate() error {
+	if b == nil {
+		return fmt.Errorf("nil content block")
+	}
+	media := b.Kind == LLMContentImage || b.Kind == LLMContentAudio || b.Kind == LLMContentDocument
+	if !media && (b.MIMEType != "" || b.Data != "") {
+		return fmt.Errorf("%s cannot contain media data or MIME type", b.Kind)
+	}
+	if b.Kind != LLMContentToolResult && (len(b.Content) != 0 || b.Errored) {
+		return fmt.Errorf("%s cannot contain tool result content or error state", b.Kind)
+	}
+	if b.Kind != LLMContentToolCall && (b.ToolName != "" || len(b.Arguments) != 0) {
+		return fmt.Errorf("%s cannot contain tool call fields", b.Kind)
+	}
+	if b.Kind != LLMContentToolCall && b.Kind != LLMContentToolResult && b.CallID != "" {
+		return fmt.Errorf("%s cannot contain a call ID", b.Kind)
+	}
+	switch b.Kind {
+	case LLMContentText, LLMContentThinking, LLMContentToolCall:
+	case LLMContentToolResult:
+		for i, child := range b.Content {
+			if child == nil {
+				return fmt.Errorf("content %d: nil content block", i)
+			}
+			if child.Kind != LLMContentText && child.Kind != LLMContentImage && child.Kind != LLMContentAudio && child.Kind != LLMContentDocument {
+				return fmt.Errorf("content %d: %s is not valid tool result content", i, child.Kind)
+			}
+		}
+		if err := ValidateLLMContent(b.Content); err != nil {
+			return err
+		}
+	case LLMContentImage, LLMContentAudio, LLMContentDocument:
+		if b.Text != "" {
+			return fmt.Errorf("%s cannot contain text", b.Kind)
+		}
+		if b.MIMEType == "" || b.Data == "" {
+			return fmt.Errorf("%s requires MIME type and base64 data", b.Kind)
+		}
+		mt, params, err := mime.ParseMediaType(b.MIMEType)
+		if err != nil || len(params) != 0 || mt != b.MIMEType {
+			return fmt.Errorf("invalid media MIME type %q", b.MIMEType)
+		}
+		if (b.Kind == LLMContentImage && !strings.HasPrefix(mt, "image/")) || (b.Kind == LLMContentAudio && !strings.HasPrefix(mt, "audio/")) || (b.Kind == LLMContentDocument && mt != "application/pdf") {
+			return fmt.Errorf("MIME type %q does not match %s", mt, b.Kind)
+		}
+		if len(b.Data) > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
+			return fmt.Errorf("media exceeds %d decoded bytes", MaxLLMMediaBytes)
+		}
+		data, err := base64.StdEncoding.Strict().DecodeString(b.Data)
+		if err != nil {
+			return fmt.Errorf("invalid base64 media data: %w", err)
+		}
+		if len(data) == 0 || len(data) > MaxLLMMediaBytes {
+			return fmt.Errorf("media must contain 1 to %d decoded bytes", MaxLLMMediaBytes)
+		}
+	default:
+		return fmt.Errorf("unknown content block kind %q", b.Kind)
+	}
+	return nil
+}
+
+// ValidateLLMContent validates blocks and the aggregate decoded-media budget.
+func ValidateLLMContent(blocks []*LLMContentBlock) error {
+	size := 0
+	var count func(*LLMContentBlock)
+	count = func(b *LLMContentBlock) {
+		if b.Data != "" {
+			size += base64.StdEncoding.DecodedLen(len(b.Data)) - (len(b.Data) - len(strings.TrimRight(b.Data, "=")))
+		}
+		for _, child := range b.Content {
+			count(child)
+		}
+	}
+	for i, b := range blocks {
+		if err := b.Validate(); err != nil {
+			return fmt.Errorf("content %d: %w", i, err)
+		}
+		count(b)
+		if size > MaxLLMMediaBytes {
+			return fmt.Errorf("message media exceeds %d decoded bytes", MaxLLMMediaBytes)
+		}
+	}
+	return nil
+}
+
+// ContentText projects content for logs and text-only consumers, never leaking base64.
+func (b *LLMContentBlock) ContentText() string {
+	if b == nil {
+		return ""
+	}
+	switch b.Kind {
+	case LLMContentImage, LLMContentAudio, LLMContentDocument:
+		return fmt.Sprintf("[%s: %s]", strings.ToLower(string(b.Kind)), b.MIMEType)
+	case LLMContentToolResult:
+		parts := []string{}
+		if b.Text != "" {
+			parts = append(parts, b.Text)
+		}
+		for _, child := range b.Content {
+			parts = append(parts, child.ContentText())
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return b.Text
+	}
 }
 
 // LLMContentBlockInput is the input object type for creating content blocks.
 type LLMContentBlockInput struct {
-	Kind      LLMContentBlockKind `doc:"The kind of content block."`
-	Text      string              `doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)." default:""`
-	CallID    string              `doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
-	ToolName  string              `doc:"The name of the tool to call (for TOOL_CALL kind)." default:""`
-	Arguments JSON                `doc:"The arguments to pass to the tool (for TOOL_CALL kind)." default:""`
-	Errored   bool                `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
-	Signature string              `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
+	Kind      LLMContentBlockKind                       `doc:"The kind of content block."`
+	Text      string                                    `doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)." default:""`
+	CallID    string                                    `doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
+	ToolName  string                                    `doc:"The name of the tool to call (for TOOL_CALL kind)." default:""`
+	Arguments JSON                                      `doc:"The arguments to pass to the tool (for TOOL_CALL kind)." default:""`
+	Errored   bool                                      `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
+	Signature string                                    `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
+	MIMEType  string                                    `name:"mimeType" doc:"Media MIME type; required for inline data, inferred for a file." default:""`
+	Data      string                                    `doc:"Base64-encoded media bytes. Supply exactly one of data or file for media." default:""`
+	File      dagql.Optional[FileID]                    `doc:"A media file to resolve to inline bytes."`
+	Content   []dagql.InputObject[LLMContentBlockInput] `doc:"Ordered TEXT or media blocks returned by a tool." default:"[]"`
 }
 
 func (LLMContentBlockInput) TypeName() string {
@@ -396,6 +535,10 @@ func (LLMContentBlockInput) TypeDescription() string {
 
 // ToLLMContentBlock converts the input object to an LLMContentBlock.
 func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
+	var content []*LLMContentBlock
+	for _, child := range in.Content {
+		content = append(content, child.Value.ToLLMContentBlock())
+	}
 	return &LLMContentBlock{
 		Kind:      in.Kind,
 		Text:      in.Text,
@@ -404,7 +547,87 @@ func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
 		Arguments: in.Arguments,
 		Errored:   in.Errored,
 		Signature: in.Signature,
+		MIMEType:  in.MIMEType,
+		Data:      in.Data,
+		Content:   content,
 	}
+}
+
+// Resolve resolves file references recursively and validates the stored content.
+func (in LLMContentBlockInput) Resolve(ctx context.Context) (*LLMContentBlock, error) {
+	block := in.ToLLMContentBlock()
+	if in.File.Valid {
+		if in.Data != "" {
+			return nil, fmt.Errorf("supply exactly one of file or data")
+		}
+		if in.Kind != LLMContentImage && in.Kind != LLMContentAudio && in.Kind != LLMContentDocument {
+			return nil, fmt.Errorf("%s cannot contain a media file", in.Kind)
+		}
+		media, err := LLMContentFromFile(ctx, in.File.Value, in.MIMEType)
+		if err != nil {
+			return nil, err
+		}
+		block.Data, block.MIMEType = media.Data, media.MIMEType
+	}
+	for i, child := range in.Content {
+		resolved, err := child.Value.Resolve(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("content %d: %w", i, err)
+		}
+		block.Content[i] = resolved
+	}
+	if err := ValidateLLMContent([]*LLMContentBlock{block}); err != nil {
+		return nil, err
+	}
+	return block, nil
+}
+
+// LLMContentFromFile reads a media file, inferring its type from its contents.
+func LLMContentFromFile(ctx context.Context, id FileID, mimeType string) (*LLMContentBlock, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file, err := id.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, file); err != nil {
+		return nil, err
+	}
+	data, err := file.Self().Contents(ctx, file, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return llmContentFromBytes(data, mimeType)
+}
+
+func llmContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error) {
+	if len(data) == 0 || len(data) > MaxLLMMediaBytes {
+		return nil, fmt.Errorf("media must contain 1 to %d bytes", MaxLLMMediaBytes)
+	}
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
+	kind := LLMContentDocument
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		kind = LLMContentImage
+	case strings.HasPrefix(mimeType, "audio/"):
+		kind = LLMContentAudio
+	case mimeType == "application/pdf":
+	default:
+		return nil, fmt.Errorf("unsupported media MIME type %q; expected image, audio, or PDF", mimeType)
+	}
+	block := &LLMContentBlock{Kind: kind, MIMEType: mimeType, Data: base64.StdEncoding.EncodeToString(data)}
+	if err := block.Validate(); err != nil {
+		return nil, err
+	}
+	return block, nil
 }
 
 // LLMMessageOriginKind classifies who put a message on the conversation
@@ -611,7 +834,7 @@ func (m *LLMMessage) TextContent() string {
 func (m *LLMMessage) estimateTokens() int64 {
 	var chars int
 	for _, b := range m.Content {
-		chars += len(b.Text)
+		chars += len(b.ContentText())
 		chars += len(b.CallID)
 		chars += len(b.ToolName)
 		chars += len(b.Arguments)
@@ -651,11 +874,11 @@ func (m *LLMMessage) IsToolResult() bool {
 	return false
 }
 
-// ToolResultContent returns the text from the first TOOL_RESULT block, if any.
+// ToolResultContent returns a safe text projection of the first TOOL_RESULT block.
 func (m *LLMMessage) ToolResultContent() string {
 	for _, b := range m.Content {
 		if b.Kind == LLMContentToolResult {
-			return b.Text
+			return b.ContentText()
 		}
 	}
 	return ""
@@ -1731,15 +1954,17 @@ func (llm *LLM) WithPrompt(
 // A nil origin is the user's own prompt — the unmarked common case, which is
 // also what keeps every pre-provenance chain and recording byte-stable.
 func (llm *LLM) WithPromptOrigin(prompt string, origin *LLMMessageOrigin) *LLM {
+	return llm.WithContent([]*LLMContentBlock{{Kind: LLMContentText, Text: prompt}}, origin)
+}
+
+// WithContent appends one ordered user message. Callers validate resolved blocks first.
+func (llm *LLM) WithContent(blocks []*LLMContentBlock, origin *LLMMessageOrigin) *LLM {
 	llm = llm.Clone()
-	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role: LLMMessageRoleUser,
-		Content: []*LLMContentBlock{{
-			Kind: LLMContentText,
-			Text: prompt,
-		}},
-		Origin: origin,
-	})
+	llm.Messages = append(llm.Messages, (&LLMMessage{
+		Role:    LLMMessageRoleUser,
+		Content: blocks,
+		Origin:  origin,
+	}).Clone())
 	return llm
 }
 
@@ -1798,7 +2023,7 @@ func (llm *LLM) WithResponse(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role:       LLMMessageRoleAssistant,
-		Content:    blocks,
+		Content:    cloneLLMContent(blocks),
 		TokenUsage: &tokenUsage,
 	})
 	return llm
@@ -1806,12 +2031,18 @@ func (llm *LLM) WithResponse(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage
 
 // WithToolResult appends a tool result (user) message to the history.
 func (llm *LLM) WithToolResult(callID, content string, errored bool) *LLM {
+	return llm.WithToolResultBlocks(callID, content, nil, errored)
+}
+
+// WithToolResultBlocks appends one result, with legacy text preceding ordered blocks.
+func (llm *LLM) WithToolResultBlocks(callID, text string, blocks []*LLMContentBlock, errored bool) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role: LLMMessageRoleUser,
 		Content: []*LLMContentBlock{{
 			Kind:    LLMContentToolResult,
-			Text:    content,
+			Text:    text,
+			Content: cloneLLMContent(blocks),
 			CallID:  callID,
 			Errored: errored,
 		}},
@@ -2332,6 +2563,14 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 // sendQueryWithRetry submits the conversation to the model's endpoint,
 // retrying retryable provider failures with exponential backoff.
 func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, tools []LLMTool, llmCallDigest string, maxTokens int) (*LLMResponse, error) {
+	for i, msg := range messages {
+		if msg == nil {
+			return nil, fmt.Errorf("message %d: nil message", i)
+		}
+		if err := ValidateLLMContent(msg.Content); err != nil {
+			return nil, fmt.Errorf("message %d: %w", i, err)
+		}
+	}
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)
 	b.InitialInterval = 1 * time.Second
@@ -2400,39 +2639,44 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 	return responseSelectorFromBlocks(res.Content, res.TokenUsage)
 }
 
-// responseSelectorFromBlocks builds a withResponse selector from raw content
-// blocks and token usage. Used for fresh responses (responseSelector) and for
-// re-emitting recorded assistant messages (recipeSelectors).
-func responseSelectorFromBlocks(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) (dagql.Selector, error) {
-	// Build content block input objects for the withResponse selector.
-	// An InputObject's fields are only populated by decoding a map through
-	// its Decoder; a bare struct literal leaves them nil and panics when the
-	// selector is serialized to a call literal. Decode from a map, mirroring
-	// the pattern in core/schema/address.go. Field keys are the GraphQL arg
-	// names (lowerCamel), and values must be types each field's decoder
-	// accepts (enum → name string, JSON → string). Empty "arguments" decodes
-	// to nil and is omitted from the literal entirely, so the field must have
-	// a default tag or reloading the serialized ID fails with "missing
-	// required input field".
-	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(blocks))
+// contentBlockInputMap uses GraphQL's lowerCamel field names recursively.
+func contentBlockInputMap(block *LLMContentBlock) map[string]any {
+	content := make([]any, len(block.Content))
+	for i, child := range block.Content {
+		content[i] = contentBlockInputMap(child)
+	}
+	return map[string]any{
+		"kind": string(block.Kind), "text": block.Text,
+		"callId": block.CallID, "toolName": block.ToolName,
+		"arguments": string(block.Arguments), "errored": block.Errored,
+		"signature": block.Signature, "mimeType": block.MIMEType,
+		"data": block.Data, "content": content,
+	}
+}
+
+// contentBlockInputs decodes maps rather than constructing bare InputObjects:
+// their decoded fields are required when serializing a selector to a call literal.
+func contentBlockInputs(blocks []*LLMContentBlock) (dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], error) {
+	if err := ValidateLLMContent(blocks); err != nil {
+		return nil, err
+	}
+	inputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(blocks))
 	for i, block := range blocks {
-		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
-			"kind":      string(block.Kind),
-			"text":      block.Text,
-			"callId":    block.CallID,
-			"toolName":  block.ToolName,
-			"arguments": string(block.Arguments),
-			"errored":   block.Errored,
-			"signature": block.Signature,
-		})
+		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(contentBlockInputMap(block))
 		if err != nil {
-			return dagql.Selector{}, fmt.Errorf("decode content block %d input: %w", i, err)
+			return nil, fmt.Errorf("decode content block %d input: %w", i, err)
 		}
-		input, ok := decoded.(dagql.InputObject[LLMContentBlockInput])
-		if !ok {
-			return dagql.Selector{}, fmt.Errorf("decode content block %d input: unexpected type %T", i, decoded)
-		}
-		contentInputs[i] = input
+		inputs[i] = decoded.(dagql.InputObject[LLMContentBlockInput])
+	}
+	return inputs, nil
+}
+
+// responseSelectorFromBlocks builds a withResponse selector from raw content
+// blocks and token usage, for fresh responses and portable reconstruction.
+func responseSelectorFromBlocks(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) (dagql.Selector, error) {
+	contentInputs, err := contentBlockInputs(blocks)
+	if err != nil {
+		return dagql.Selector{}, err
 	}
 	args := []dagql.NamedInput{
 		{
@@ -2703,7 +2947,14 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
-	fmt.Fprint(stdio.Stdout, msg.TextContent())
+	for _, block := range msg.Content {
+		switch block.Kind {
+		case LLMContentText:
+			fmt.Fprint(stdio.Stdout, block.Text)
+		case LLMContentImage, LLMContentAudio, LLMContentDocument:
+			fmt.Fprintln(stdio.Stdout, block.ContentText())
+		}
+	}
 }
 
 func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]replayedToolResult) {
@@ -2811,8 +3062,8 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 			defer stdio.Close()
 			for _, block := range g.blocks {
 				switch block.Kind {
-				case LLMContentText, LLMContentThinking:
-					fmt.Fprint(stdio.Stdout, block.Text)
+				case LLMContentText, LLMContentThinking, LLMContentImage, LLMContentAudio, LLMContentDocument:
+					fmt.Fprint(stdio.Stdout, block.ContentText())
 				case LLMContentToolCall:
 					fmt.Fprintln(stdio.Stdout, string(block.Arguments))
 				}
@@ -2848,9 +3099,9 @@ func (llm *LLM) EmitHistory(ctx context.Context) {
 	for _, msg := range llm.Messages {
 		for _, block := range msg.Content {
 			if block.Kind == LLMContentToolResult && block.CallID != "" {
-				resultTokens[block.CallID] = estimateTextTokens(len(block.Text))
+				resultTokens[block.CallID] = estimateTextTokens(len(block.ContentText()))
 				replayedResults[block.CallID] = replayedToolResult{
-					text:    block.Text,
+					text:    block.ContentText(),
 					errored: block.Errored,
 				}
 			}
@@ -2878,12 +3129,12 @@ func (llm *LLM) Transcript() string {
 					if block.Errored {
 						prefix = "[Tool result ERROR]"
 					}
-					if block.Text != "" {
-						parts = append(parts, prefix+": "+block.Text)
+					if text := block.ContentText(); text != "" {
+						parts = append(parts, prefix+": "+text)
 					}
-				case LLMContentText:
-					if block.Text != "" {
-						parts = append(parts, "[User]: "+block.Text)
+				case LLMContentText, LLMContentImage, LLMContentAudio, LLMContentDocument:
+					if text := block.ContentText(); text != "" {
+						parts = append(parts, "[User]: "+text)
 					}
 				}
 			}
@@ -2896,9 +3147,9 @@ func (llm *LLM) Transcript() string {
 					if block.Text != "" {
 						thinkingParts = append(thinkingParts, block.Text)
 					}
-				case LLMContentText:
-					if block.Text != "" {
-						textParts = append(textParts, block.Text)
+				case LLMContentText, LLMContentImage, LLMContentAudio, LLMContentDocument:
+					if text := block.ContentText(); text != "" {
+						textParts = append(textParts, text)
 					}
 				case LLMContentToolCall:
 					toolCalls = append(toolCalls,
@@ -3065,40 +3316,54 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 			}
 			sels = append(sels, sel)
 		case LLMMessageRoleUser:
-			for _, block := range msg.Content {
-				switch block.Kind {
-				case LLMContentToolResult:
-					sels = append(sels, dagql.Selector{
-						Field: "withToolResult",
-						Args: []dagql.NamedInput{
-							{Name: "callId", Value: dagql.NewString(block.CallID)},
-							{Name: "content", Value: dagql.NewString(block.Text)},
-							{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
-						},
-					})
-				case LLMContentText:
-					args := []dagql.NamedInput{
-						{Name: "prompt", Value: dagql.NewString(block.Text)},
-					}
-					// Provenance survives the portable round trip: a restored
-					// conversation must render the same attribution the live
-					// one did, or replay diverges from what actually happened.
-					if msg.Origin != nil {
-						origin, err := originInput(msg.Origin)
-						if err != nil {
-							return nil, fmt.Errorf("message %d: %w", i, err)
-						}
-						args = append(args, dagql.NamedInput{
-							Name: "origin", Value: dagql.Opt(origin),
-						})
-					}
-					sels = append(sels, dagql.Selector{
-						Field: "withPrompt",
-						Args:  args,
-					})
-				default:
-					return nil, fmt.Errorf("message %d: cannot re-emit %s block in a %s message", i, block.Kind, msg.Role)
+			if err := ValidateLLMContent(msg.Content); err != nil {
+				return nil, fmt.Errorf("message %d: %w", i, err)
+			}
+			// Retain the legacy single-text selector, but keep mixed content in
+			// one message so media stays adjacent to its accompanying prompt.
+			if !msg.IsToolResult() {
+				field := "withContent"
+				inputs, err := contentBlockInputs(msg.Content)
+				if err != nil {
+					return nil, fmt.Errorf("message %d: %w", i, err)
 				}
+				args := []dagql.NamedInput{{Name: "content", Value: inputs}}
+				for _, block := range msg.Content {
+					if block.Kind != LLMContentText && block.Kind != LLMContentImage && block.Kind != LLMContentAudio && block.Kind != LLMContentDocument {
+						return nil, fmt.Errorf("message %d: cannot re-emit %s block in a user message", i, block.Kind)
+					}
+				}
+				if len(msg.Content) == 1 && msg.Content[0].Kind == LLMContentText {
+					field = "withPrompt"
+					args = []dagql.NamedInput{{Name: "prompt", Value: dagql.NewString(msg.Content[0].Text)}}
+				}
+				if msg.Origin != nil {
+					origin, err := originInput(msg.Origin)
+					if err != nil {
+						return nil, fmt.Errorf("message %d: %w", i, err)
+					}
+					args = append(args, dagql.NamedInput{Name: "origin", Value: dagql.Opt(origin)})
+				}
+				sels = append(sels, dagql.Selector{Field: field, Args: args})
+				continue
+			}
+			for _, block := range msg.Content {
+				if block.Kind != LLMContentToolResult {
+					return nil, fmt.Errorf("message %d: mixed tool results and user content", i)
+				}
+				args := []dagql.NamedInput{
+					{Name: "callId", Value: dagql.NewString(block.CallID)},
+					{Name: "content", Value: dagql.NewString(block.Text)},
+					{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
+				}
+				if len(block.Content) > 0 {
+					inputs, err := contentBlockInputs(block.Content)
+					if err != nil {
+						return nil, fmt.Errorf("message %d: %w", i, err)
+					}
+					args = append(args, dagql.NamedInput{Name: "blocks", Value: inputs})
+				}
+				sels = append(sels, dagql.Selector{Field: "withToolResult", Args: args})
 			}
 		default:
 			return nil, fmt.Errorf("message %d: cannot re-emit role %q", i, msg.Role)

@@ -13,16 +13,8 @@ import (
 // v1 `messages` field (GraphQL's lowerCamel key spelling), which is the
 // recording format consumed by recording/ models.
 type recordedMessage struct {
-	Role    string `json:"role"`
-	Content []struct {
-		Kind      string `json:"kind"`
-		Text      string `json:"text"`
-		CallID    string `json:"callId"`
-		ToolName  string `json:"toolName"`
-		Arguments string `json:"arguments"`
-		Errored   bool   `json:"errored"`
-		Signature string `json:"signature"`
-	} `json:"content"`
+	Role       string                 `json:"role"`
+	Content    []recordedContentBlock `json:"content"`
 	TokenUsage struct {
 		InputTokens       int64 `json:"inputTokens"`
 		OutputTokens      int64 `json:"outputTokens"`
@@ -30,6 +22,31 @@ type recordedMessage struct {
 		CachedTokenWrites int64 `json:"cachedTokenWrites"`
 		TotalTokens       int64 `json:"totalTokens"`
 	} `json:"tokenUsage"`
+}
+
+type recordedContentBlock struct {
+	Kind      string                 `json:"kind"`
+	Text      string                 `json:"text"`
+	CallID    string                 `json:"callId"`
+	ToolName  string                 `json:"toolName"`
+	Arguments string                 `json:"arguments"`
+	Errored   bool                   `json:"errored"`
+	Signature string                 `json:"signature"`
+	MIMEType  string                 `json:"mimeType"`
+	Data      string                 `json:"data"`
+	Content   []recordedContentBlock `json:"content"`
+}
+
+func (b recordedContentBlock) block() *LLMContentBlock {
+	block := &LLMContentBlock{
+		Kind: LLMContentBlockKind(b.Kind), Text: b.Text, CallID: b.CallID,
+		ToolName: b.ToolName, Arguments: JSON(b.Arguments), Errored: b.Errored,
+		Signature: b.Signature, MIMEType: b.MIMEType, Data: b.Data,
+	}
+	for _, child := range b.Content {
+		block.Content = append(block.Content, child.block())
+	}
+	return block
 }
 
 // decodeRecordedMessages parses a conversation recording into message history.
@@ -51,15 +68,10 @@ func decodeRecordedMessages(data []byte) ([]*LLMMessage, error) {
 			},
 		}
 		for _, b := range m.Content {
-			msg.Content = append(msg.Content, &LLMContentBlock{
-				Kind:      LLMContentBlockKind(b.Kind),
-				Text:      b.Text,
-				CallID:    b.CallID,
-				ToolName:  b.ToolName,
-				Arguments: JSON(b.Arguments),
-				Errored:   b.Errored,
-				Signature: b.Signature,
-			})
+			msg.Content = append(msg.Content, b.block())
+		}
+		if err := ValidateLLMContent(msg.Content); err != nil {
+			return nil, fmt.Errorf("message %d: %w", i, err)
 		}
 		messages[i] = msg
 	}

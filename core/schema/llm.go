@@ -98,6 +98,20 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return dagql.Null[core.Void](), self.MCP(ctx, currentSrv)
 		}).
 			Doc("instantiates an mcp server"),
+		dagql.Func("withContent", s.withContent).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Queue one user message containing ordered text and media blocks.").
+			Args(
+				dagql.Arg("content").Doc("The ordered message content."),
+				dagql.Arg("origin").Doc("The message's recorded provenance."),
+			),
+		dagql.Func("withContentFile", s.withContentFile).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.").
+			Args(
+				dagql.Arg("file").Doc("The media file."),
+				dagql.Arg("mimeType").Doc("The media MIME type; inferred from the file's contents when omitted."),
+			),
 		dagql.Func("withPromptFile", s.withPromptFile).
 			Doc("Queue a file's contents as a user prompt, like withPrompt.").
 			Args(
@@ -124,7 +138,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Append the result of a tool call to the message history.").
 			Args(
 				dagql.Arg("callId").Doc("The ID of the tool call this result responds to"),
-				dagql.Arg("content").Doc("The content returned by the tool"),
+				dagql.Arg("content").Doc("Text returned by the tool, placed before blocks"),
+				dagql.Arg("blocks").Doc("Ordered text and media returned by the tool"),
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
 			),
 		dagql.Func("withTools", s.withTools).
@@ -404,6 +419,52 @@ func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 	return llm.WithPromptOrigin(args.Prompt, origin), nil
 }
 
+func resolveLLMContent(ctx context.Context, inputs []dagql.InputObject[core.LLMContentBlockInput]) ([]*core.LLMContentBlock, error) {
+	blocks := make([]*core.LLMContentBlock, len(inputs))
+	for i, input := range inputs {
+		block, err := input.Value.Resolve(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("content %d: %w", i, err)
+		}
+		blocks[i] = block
+	}
+	if err := core.ValidateLLMContent(blocks); err != nil {
+		return nil, err
+	}
+	return blocks, nil
+}
+
+func (s *llmSchema) withContent(ctx context.Context, llm *core.LLM, args struct {
+	Content []dagql.InputObject[core.LLMContentBlockInput]
+	Origin  dagql.Optional[dagql.InputObject[core.LLMMessageOriginInput]]
+}) (*core.LLM, error) {
+	blocks, err := resolveLLMContent(ctx, args.Content)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range blocks {
+		if b.Kind != core.LLMContentText && b.Kind != core.LLMContentImage && b.Kind != core.LLMContentAudio && b.Kind != core.LLMContentDocument {
+			return nil, fmt.Errorf("%s is not user content", b.Kind)
+		}
+	}
+	var origin *core.LLMMessageOrigin
+	if args.Origin.Valid {
+		origin = args.Origin.Value.Value.ToLLMMessageOrigin()
+	}
+	return llm.WithContent(blocks, origin), nil
+}
+
+func (s *llmSchema) withContentFile(ctx context.Context, llm *core.LLM, args struct {
+	File     core.FileID
+	MIMEType string `name:"mimeType" default:""`
+}) (*core.LLM, error) {
+	block, err := core.LLMContentFromFile(ctx, args.File, args.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithContent([]*core.LLMContentBlock{block}, nil), nil
+}
+
 func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
 }) (*core.LLM, error) {
@@ -418,9 +479,9 @@ func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct
 	CachedTokenWrites int64 `default:"0"`
 	TotalTokens       int64 `default:"0"`
 }) (*core.LLM, error) {
-	blocks := make([]*core.LLMContentBlock, len(args.Content))
-	for i, input := range args.Content {
-		blocks[i] = input.Value.ToLLMContentBlock()
+	blocks, err := resolveLLMContent(ctx, args.Content)
+	if err != nil {
+		return nil, err
 	}
 	return llm.WithResponse(blocks, core.LLMTokenUsage{
 		InputTokens:       args.InputTokens,
@@ -434,9 +495,18 @@ func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct
 func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args struct {
 	CallID  string `name:"callId"`
 	Content string
+	Blocks  []dagql.InputObject[core.LLMContentBlockInput] `default:"[]"`
 	Errored bool
 }) (*core.LLM, error) {
-	return llm.WithToolResult(args.CallID, args.Content, args.Errored), nil
+	blocks, err := resolveLLMContent(ctx, args.Blocks)
+	if err != nil {
+		return nil, err
+	}
+	result := &core.LLMContentBlock{Kind: core.LLMContentToolResult, CallID: args.CallID, Text: args.Content, Content: blocks, Errored: args.Errored}
+	if err := result.Validate(); err != nil {
+		return nil, err
+	}
+	return llm.WithToolResultBlocks(args.CallID, args.Content, blocks, args.Errored), nil
 }
 
 func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
