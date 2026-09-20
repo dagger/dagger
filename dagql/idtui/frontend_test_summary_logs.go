@@ -28,7 +28,9 @@ func appendTestSummaryLogRecords(logs map[dagui.SpanID]*Vterm, profile termenv.P
 			vt = NewVterm(profile)
 			logs[spanID] = vt
 		}
-		if contentType == "text/markdown" {
+		if media, ok := dagui.ParseMediaRecord(record); ok {
+			vt.WriteMedia(media, body)
+		} else if contentType == "text/markdown" {
 			_, _ = vt.WriteMarkdown([]byte(body))
 		} else {
 			_, _ = fmt.Fprint(vt, body)

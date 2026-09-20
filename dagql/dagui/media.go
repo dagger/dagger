@@ -20,7 +20,8 @@ type MediaRecord struct {
 
 // ParseMediaRecord recognizes typed media attributes without coercing malformed
 // values. Its Body remains ordinary safe text for plain/log/ascii frontends.
-// Consumers replace that body on successful rendering, never append to it.
+// A capable frontend may use Body as a caption alongside the attachment; Data
+// must never be passed to a text renderer.
 func ParseMediaRecord(record sdklog.Record) (MediaRecord, bool) {
 	body, ok := LogBodyString(record)
 	if !ok || body == "" {

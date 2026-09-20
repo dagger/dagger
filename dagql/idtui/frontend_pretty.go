@@ -948,10 +948,22 @@ func newWithTerminal(w io.Writer, db *dagui.DB, term tuist.Terminal) *frontendPr
 // callers that need deterministic plain-text output can pin termenv.Ascii
 // instead of inheriting the process environment's profile.
 func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, profile termenv.Profile) *frontendPretty {
+	// Graphics belong to the interactive terminal, never to a report writer or
+	// the headless console. The manager stays inactive until Terminal.Start and
+	// returns to text placeholders on Stop (including the final report).
+	var images *kittyImages
+	if _, realTerminal := term.(*tuist.StdTerminal); realTerminal && profile != termenv.Ascii && kittyImagesEnabled(os.Getenv) {
+		if _, out := findTTYs(); out != nil {
+			images = newKittyImages()
+			term = images.wrapTerminal(term)
+		}
+	}
 	tui := tuist.New(term)
+	logs := newPrettyLogs(profile, db)
+	logs.Images = images
 	fe := &frontendPretty{
 		db:        db,
-		logs:      newPrettyLogs(profile, db),
+		logs:      logs,
 		autoFocus: true,
 
 		// set empty initial row state to avoid nil checks
@@ -1967,6 +1979,13 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	// (so don't show key hints etc.). syncSpanTreeState copies this into each
 	// SpanTreeView and marks any changed tree dirty.
 	fe.finalRender = true
+	// Final reports write to arbitrary io.Writers, outside the terminal
+	// wrapper that resolves image references. Always render textual media
+	// placeholders here, even if called before the interactive terminal stops.
+	fe.logs.Images = nil
+	for _, logs := range fe.logs.Logs {
+		logs.images = nil
+	}
 	// Always mark the tree dirty, even on a repeat FinalRender: nothing
 	// downstream should serve lines memoized under a previous render's
 	// configuration.
@@ -3207,7 +3226,7 @@ func (fe *frontendPretty) renderZoomHeader(ctx tuist.Context, r *renderer) []str
 	titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	var zoomHeader []string
 	for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
-		if ctx.Width > 0 {
+		if ctx.Width > 0 && !isKittyImageLine(line) {
 			line = titleOut.String(padANSI(clipPlain(ansi.Strip(line), ctx.Width), ctx.Width)).
 				Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
 		}
@@ -8240,7 +8259,7 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 		// its sender's name, and an engine lifecycle event collapses to a
 		// one-liner instead of a prompt bubble.
 		switch {
-		case span.LLMEventOriginMessage():
+		case span.LLMEventOriginMessage() && !isKittyImageLine(view):
 			return fe.styleLLMEventView(out, view), true
 		case span.LLMAgentOriginMessage():
 			return fe.styleLLMAgentMessageView(out, span, logPrefix, view, width), true
@@ -8252,6 +8271,12 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 	for i, line := range lines {
 		if i > 0 {
 			b.WriteByte('\n')
+		}
+		// Kitty placeholder foreground colors encode image IDs, not prose
+		// styling. Keep those and their upload markers intact.
+		if isKittyImageLine(line) {
+			b.WriteString(line)
+			continue
 		}
 		// Strip existing SGR so the role styling owns the line. These messages
 		// are prose, not richly formatted output, so nothing of value is lost.
@@ -8357,6 +8382,13 @@ func (fe *frontendPretty) styleLLMAgentMessageView(out TermOutput, span *dagui.S
 	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
 	for i, line := range lines {
 		b.WriteByte('\n')
+		if isKittyImageLine(line) {
+			if i == 0 {
+				b.WriteString(logPrefix)
+			}
+			b.WriteString(line)
+			continue
+		}
 		// Strip existing SGR so the role styling owns the line, as for user
 		// prompts.
 		plain := ansi.Strip(line)
@@ -8469,6 +8501,7 @@ type prettyLogs struct {
 	SawEOF        map[dagui.SpanID]bool
 	Profile       termenv.Profile
 	Output        TermOutput
+	Images        *kittyImages
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
@@ -8517,6 +8550,7 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			continue
 		}
 
+		media, isMedia := dagui.ParseMediaRecord(log)
 		pw, rollUpID, rolledUp := l.findRollUpSpan(spanID)
 		// Skip the prefixed roll-up copy when the record is keyed to the
 		// roll-up span itself -- e.g. 'dagger trace' re-keys descendant
@@ -8532,10 +8566,18 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 				context = spanID.String()
 			}
 			pw.Prefix = l.Output.String("["+context+"]").Foreground(termenv.ANSICyan).String() + " "
-			fmt.Fprint(pw, body)
+			if isMedia {
+				l.spanLogs(rollUpID).WriteMedia(media, pw.Prefix+body)
+			} else {
+				fmt.Fprint(pw, body)
+			}
 		}
 
 		vterm := l.spanLogs(spanID)
+		if isMedia {
+			vterm.WriteMedia(media, body)
+			continue
+		}
 		if contentType == "application/json" {
 			if span := l.DB.Spans.Map[spanID]; span != nil && span.LLMRole != "" && span.LLMTool != "" {
 				vterm = l.spanToolArgs(spanID)
@@ -8629,6 +8671,7 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 	term, found := l.Logs[spanID]
 	if !found {
 		term = NewVterm(l.Profile)
+		term.images = l.Images
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
 		}
