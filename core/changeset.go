@@ -874,8 +874,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 // root and writes the resulting unified diff to out, normalizing the
 // `diff --git` header lines along the way (see diffGitHeaderRewriter).
 //
-// logOut/logErr receive the command's own diagnostics; logOut also gets the
-// argv, which the span name can't carry.
+// logOut/logErr receive the command's own diagnostics, never the patch data.
 func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out, logOut, logErr io.Writer) error {
 	// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
 	// from the ---/+++ lines but not from rename from/to lines, so a
@@ -891,9 +890,9 @@ func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out
 		args = append(args, "--")
 		args = append(args, pathSpecs...)
 	}
-	// The span is named for the command rather than the whole argv, which the
-	// pathspecs make unbounded; log those.
-	fmt.Fprintln(logOut, "running git", strings.Join(args, " "))
+	// Pathspecs can name an entire repository; log their count, not an
+	// unbounded argv that floods the same telemetry as the patch would.
+	fmt.Fprintf(logOut, "running git diff (%d pathspecs)\n", len(pathSpecs))
 
 	rewriter := &diffGitHeaderRewriter{w: out}
 	cmd := exec.CommandContext(ctx, "git", args...)

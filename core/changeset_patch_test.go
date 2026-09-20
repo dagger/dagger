@@ -167,6 +167,17 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, errFailingWriter }
 
+func TestWriteGitDiffPatchBinaryDiagnostics(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, "a"), 0o755))
+	require.NoError(t, os.Mkdir(filepath.Join(root, "b"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "b", "binary"), []byte("\x00binary payload"), 0o644))
+	var patch, diagnostics bytes.Buffer
+	require.NoError(t, writeGitDiffPatch(t.Context(), root, nil, &patch, &diagnostics, &diagnostics))
+	require.Contains(t, patch.String(), "GIT binary patch")
+	require.Equal(t, "running git diff (0 pathspecs)\n", diagnostics.String())
+}
+
 // TestWriteGitDiffPatch_Integration generates a real patch the way AsPatch
 // does, asserts the `diff --git` header of every change kind (added, deleted,
 // modified, renamed) uses git's a/ ... b/ convention, and - most importantly -
@@ -196,8 +207,9 @@ func TestWriteGitDiffPatch_Integration(t *testing.T) {
 	writeFile(after, "add.txt", "newly added\n")
 	writeFile(after, "new-name.txt", "same content across the rename\n")
 
-	var patch bytes.Buffer
-	require.NoError(t, writeGitDiffPatch(ctx, root, nil, &patch, io.Discard, io.Discard))
+	var patch, diagnostics bytes.Buffer
+	require.NoError(t, writeGitDiffPatch(ctx, root, nil, &patch, &diagnostics, &diagnostics))
+	require.Equal(t, "running git diff (0 pathspecs)\n", diagnostics.String())
 
 	patchText := patch.String()
 	require.NotEmpty(t, patchText)

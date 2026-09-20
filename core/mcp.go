@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"regexp"
 	"slices"
@@ -441,7 +442,7 @@ const (
 	patchSummaryMaxPaths = 200
 	// patchSummaryMaxBytes bounds the patch summarizePatch will read into
 	// memory to show verbatim. Larger patches fall back to diff stats without
-	// ever loading their contents (cf. llmToolLogsMaxBytes for tool logs).
+	// loading the full contents (cf. llmToolLogsMaxBytes for tool logs).
 	patchSummaryMaxBytes = 64 * 1024
 	// patchSummaryMaxLines is the longest patch shown verbatim to the model;
 	// anything longer becomes a diff-stat summary.
@@ -464,39 +465,31 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", patchSummaryMaxPaths)
 	}
 
-	// Try to return the raw patch so the LLM can see the actual diff, but
-	// check its size before reading it: File.contents refuses oversized files
-	// and even an accepted one would be more than the model should see.
-	// Fall back to a structured summary for large changesets.
-	var patch dagql.ObjectResult[*File]
-	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
-		View:  srv.View,
-		Field: "asPatch",
-	}); err == nil {
-		var size int
-		if err := srv.Select(ctx, patch, &size, dagql.Selector{
-			View:  srv.View,
-			Field: "size",
-		}); err == nil && size > 0 && size <= patchSummaryMaxBytes {
-			var rawPatch string
-			if err := srv.Select(ctx, patch, &rawPatch, dagql.Selector{
-				View:  srv.View,
-				Field: "contents",
-			}); err == nil && rawPatch != "" && strings.Count(rawPatch, "\n") <= patchSummaryMaxLines {
-				return rawPatch
+	// Inspect stats before generating a patch. Keep these transient entries
+	// local rather than publishing a dagql object per path for the preview.
+	stats, err := changes.Self().DiffStats(ctx)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
+	}
+	if len(stats) == 0 {
+		return ""
+	}
+	if smallTextChangeset(stats) {
+		var patch dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, changes, &patch, dagql.Selector{
+			View: srv.View, Field: "asPatch",
+		}); err == nil {
+			if r, err := patch.Self().Open(ctx, patch); err == nil {
+				preview, ok := readPatchPreview(r)
+				r.Close()
+				if ok {
+					return preview
+				}
 			}
 		}
 	}
 
 	const summaryWidth = 80
-
-	var stats []*DiffStat
-	if err := srv.Select(ctx, changes, &stats, dagql.Selector{
-		View:  srv.View,
-		Field: "diffStats",
-	}); err != nil {
-		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
-	}
 
 	entries := make([]patchpreview.Entry, len(stats))
 	for i, s := range stats {
@@ -506,6 +499,43 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		}
 	}
 	return patchpreview.SummarizeString(entries, summaryWidth)
+}
+
+// smallTextChangeset avoids generating obviously large or binary patches.
+// Renames are excluded because asPatch encodes them as delete+add, which can
+// include an entire file even when numstat reports zero changed lines.
+func smallTextChangeset(stats []*DiffStat) bool {
+	lines := 0
+	for _, stat := range stats {
+		if strings.HasSuffix(stat.Path, "/") {
+			// Directory entries accompany ordinary files but have no patch payload.
+			continue
+		}
+		// Binary files and path-only fallback stats both report zero lines.
+		if stat.Kind == DiffStatKindRenamed || (stat.AddedLines == 0 && stat.RemovedLines == 0) {
+			return false
+		}
+		lines += stat.AddedLines + stat.RemovedLines
+		if lines > patchSummaryMaxLines {
+			return false
+		}
+	}
+	return true
+}
+
+// readPatchPreview bounds bytes as well as lines: a single minified line can
+// exceed File.contents' limit. One extra byte distinguishes a complete preview
+// from truncation; binary payloads must never become automatic previews.
+func readPatchPreview(r io.Reader) (string, bool) {
+	buf, err := io.ReadAll(io.LimitReader(r, patchSummaryMaxBytes+1))
+	if err != nil || len(buf) == 0 || len(buf) > patchSummaryMaxBytes {
+		return "", false
+	}
+	patch := string(buf)
+	if strings.Count(patch, "\n") > patchSummaryMaxLines || strings.Contains(patch, "\nGIT binary patch\n") {
+		return "", false
+	}
+	return patch, true
 }
 
 const gitDiffContentType = "text/x-diff"
@@ -642,7 +672,17 @@ func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, prev, ws dagql.ObjectResult[*Workspace]) (string, error) {
 	switch WorkspaceRelation(ctx, prev.Self(), ws.Self()) {
 	case WorkspaceRelationSameBase:
-		return m.summarizeWorkspaceEdits(ctx, srv, prev, ws)
+		summary, err := m.summarizeWorkspaceEdits(ctx, srv, prev, ws)
+		if err != nil {
+			return "", err
+		}
+		if mounts := summarizeMountChanges(prev.Self(), ws.Self()); mounts != "" {
+			if summary == "" {
+				return mounts, nil
+			}
+			return mounts + "\n\n" + summary, nil
+		}
+		return summary, nil
 	case WorkspaceRelationSameOrigin:
 		return m.summarizeWorkspaceMove(ctx, srv, prev, ws), nil
 	default:
@@ -653,10 +693,18 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 // summarizeWorkspaceEdits renders the patch between two workspaces on the
 // same base. It goes through Workspace.changes(from:), which compares overlay
 // changesets over a sparse host view (only the paths either side touched)
-// instead of uploading both roots. That field re-roots its result to the
-// workspace cwd and refuses edits outside it, so on any error it falls back to
-// diffing the full roots — bounded, since the bases are the same.
+// instead of uploading both roots. Measure the summary from the workspace root:
+// re-rooting changes to a nested cwd inspects every path before our budget check
+// and rejects edits outside that cwd.
 func (m *MCP) summarizeWorkspaceEdits(ctx context.Context, srv *dagql.Server, prev, ws dagql.ObjectResult[*Workspace]) (string, error) {
+	if ws.Self().Cwd != "" && ws.Self().Cwd != "." {
+		if err := srv.Select(ctx, ws, &ws, dagql.Selector{
+			View: srv.View, Field: "withWorkdir",
+			Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(".")}},
+		}); err != nil {
+			return "", err
+		}
+	}
 	prevID, err := prev.ID()
 	if err != nil {
 		return "", err
@@ -672,7 +720,7 @@ func (m *MCP) summarizeWorkspaceEdits(ctx context.Context, srv *dagql.Server, pr
 		slog.Warn("failed to compare workspaces; diffing roots instead", "error", err)
 		return m.summarizeWorkspaceRootDiff(ctx, srv, prev, ws)
 	}
-	return m.summarizePatch(ctx, srv, changes), nil
+	return m.summarizeWorkspaceDiff(ctx, srv, prev.Self(), ws.Self(), changes.Self().Before, changes.Self().After)
 }
 
 // summarizeWorkspaceRootDiff renders the patch from one workspace's root to
@@ -685,6 +733,21 @@ func (m *MCP) summarizeWorkspaceRootDiff(ctx context.Context, srv *dagql.Server,
 	}
 	after, err := workspaceRoot(ctx, srv, ws)
 	if err != nil {
+		return "", err
+	}
+	return m.summarizeWorkspaceDiff(ctx, srv, prev.Self(), ws.Self(), before, after)
+}
+
+// summarizeWorkspaceDiff filters both sparse comparisons and the full-root
+// fallback before inspecting paths. Mounted content is a read-only attachment,
+// not a pending edit; Git metadata is not a working-tree edit either.
+func (m *MCP) summarizeWorkspaceDiff(ctx context.Context, srv *dagql.Server, prev, ws *Workspace, before, after dagql.ObjectResult[*Directory]) (string, error) {
+	excluded := append(unionMountPoints(prev, ws), ".git")
+	var err error
+	if before, err = withoutMountPoints(ctx, srv, before, excluded); err != nil {
+		return "", err
+	}
+	if after, err = withoutMountPoints(ctx, srv, after, excluded); err != nil {
 		return "", err
 	}
 	beforeID, err := before.ID()
@@ -702,6 +765,46 @@ func (m *MCP) summarizeWorkspaceRootDiff(ctx context.Context, srv *dagql.Server,
 		return "", err
 	}
 	return m.summarizePatch(ctx, srv, changes), nil
+}
+
+// unionMountPoints returns every root-relative path excluded from a workspace
+// comparison, including mounts present on only one side of the transition.
+func unionMountPoints(a, b *Workspace) []string {
+	points := append(a.MountPoints(), b.MountPoints()...)
+	slices.Sort(points)
+	return slices.Compact(points)
+}
+
+// withoutMountPoints removes directories and files alike, ignoring missing
+// paths, so file mounts and a worktree's .git file are excluded too.
+func withoutMountPoints(ctx context.Context, srv *dagql.Server, dir dagql.ObjectResult[*Directory], points []string) (dagql.ObjectResult[*Directory], error) {
+	for _, point := range points {
+		if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+			View: srv.View, Field: "withoutDirectory",
+			Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(point)}},
+		}); err != nil {
+			return dir, fmt.Errorf("exclude workspace path %q: %w", point, err)
+		}
+	}
+	return dir, nil
+}
+
+// summarizeMountChanges reports topology, never the attached files. Replacing
+// content at an existing mount point does not turn it into a pending edit.
+func summarizeMountChanges(prev, next *Workspace) string {
+	before, after := prev.MountPoints(), next.MountPoints()
+	var lines []string
+	for _, point := range after {
+		if !slices.Contains(before, point) {
+			lines = append(lines, fmt.Sprintf("Mounted (read-only): %s", point))
+		}
+	}
+	for _, point := range before {
+		if !slices.Contains(after, point) {
+			lines = append(lines, fmt.Sprintf("Unmounted: %s", point))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // workspaceMoveLogLimit caps the commits counted on each side of a workspace

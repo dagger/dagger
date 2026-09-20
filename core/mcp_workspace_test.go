@@ -6,6 +6,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestWorkspaceMountSummary(t *testing.T) {
+	prev := &Workspace{mountPoints: []string{"mnt/kept", "mnt/removed"}}
+	next := &Workspace{mountPoints: []string{"config", "mnt/added", "mnt/kept"}}
+	require.Equal(t, "Mounted (read-only): config\nMounted (read-only): mnt/added\nUnmounted: mnt/removed", summarizeMountChanges(prev, next))
+	require.Equal(t, []string{"config", "mnt/added", "mnt/kept", "mnt/removed"}, unionMountPoints(prev, next))
+	require.Empty(t, summarizeMountChanges(prev, prev))
+	require.Empty(t, summarizeMountChanges(nil, nil))
+
+	// Combining and sorting mount paths must not mutate either workspace,
+	// including when the source slice has capacity to spare.
+	points := make([]string, 2, 8)
+	copy(points, prev.mountPoints)
+	prev.mountPoints = points
+	unionMountPoints(prev, next)
+	require.Equal(t, []string{"mnt/kept", "mnt/removed"}, prev.MountPoints())
+	require.Equal(t, []string{"config", "mnt/added", "mnt/kept"}, next.MountPoints())
+	cloned := prev.MountPoints()
+	cloned[0] = "changed"
+	require.Equal(t, "mnt/kept", prev.MountPoints()[0])
+}
+
 // The notices rebindWorkspace/adoptLLM hand the model when a swap cannot be
 // summarized as a patch: same-origin moves and outright replacements.
 func TestWorkspaceSwapNotices(t *testing.T) {
