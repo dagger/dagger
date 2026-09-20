@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  Dang module load failures (parse, inference, and top-level evaluation
+  errors) no longer surface their full rendered report as the span error.
+  The report — multi-line, colored source excerpts — is written to the
+  function call's stderr instead, and the error carries the first diagnostic
+  as a plain one-line message, so MCP tool results and the TUI error line
+  stay readable without hiding the cause of the failure.
+time: 2026-09-19T06:40:00Z
+custom:
+  Author: vito
+  PR: "14250"

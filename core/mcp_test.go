@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -22,6 +23,75 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
+
+func TestToolErrorResponseScopesLogs(t *testing.T) {
+	const traceID = "000102030405060708090a0b0c0d0e0f"
+	const originID = "0000000000000001"
+	const unrelatedID = "0000000000000002"
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]clientdb.Span{
+		{TraceID: traceID, SpanID: originID, Attributes: marshalSpanAttrs(t)},
+		{TraceID: traceID, SpanID: unrelatedID, Attributes: marshalSpanAttrs(t)},
+	})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]clientdb.Log{
+		persistedCaptureLog(t, traceID, originID, "test", stringLogBody("source diagnostic\n")),
+		persistedCaptureLog(t, traceID, originID, "test", stringLogBody("exec stdout\nexec stderr\n")),
+		persistedCaptureLog(t, traceID, unrelatedID, "test", stringLogBody("unrelated output\n")),
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{
+		mockServer: &mockServer{}, dbs: dbs,
+	}})
+	failure := &ExecError{
+		Err:    fmt.Errorf("failed [traceparent:%s-%s]", traceID, originID),
+		Stdout: "exec stdout", Stderr: "exec stderr", ExitCode: 1,
+	}
+	m := newMCP()
+	got := m.toolErrorResponse(ctx, failure)
+	require.Contains(t, got, "source diagnostic")
+	require.NotContains(t, got, "unrelated output")
+	require.Contains(t, got, failure.Error())
+	require.Equal(t, 1, strings.Count(got, "exec stdout"))
+	require.Equal(t, 1, strings.Count(got, "exec stderr"))
+	require.NotContains(t, got, "<stdout>")
+	require.NotContains(t, got, "<stderr>")
+	require.NotContains(t, got, "<exitCode>")
+	// The payload comes entirely from telemetry, with identical output when
+	// the error has no stdout/stderr extensions at all.
+	require.Equal(t, got, m.toolErrorResponse(ctx, failure.Err))
+	marker := fmt.Sprintf("[traceparent:%s-%s]", traceID, originID)
+	fullLogs, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": marker})
+	require.NoError(t, err)
+	require.Equal(t, "     1→source diagnostic\n     2→exec stdout\n     3→exec stderr", fullLogs)
+	tool := LLMTool{
+		Name: "broken",
+		Call: func(context.Context, any) (any, error) { return nil, failure },
+	}
+	agentResult, failed := m.Call(ctx, []LLMTool{tool}, &LLMToolCall{Name: tool.Name})
+	require.True(t, failed)
+	require.Equal(t, got, agentResult)
+	handler := (mcpServer{env: m}).genMcpToolHandler(tool)
+	request := mcp.CallToolRequest{Params: mcp.CallToolParams{Name: tool.Name}}
+	request.Method = "tools/call"
+	result, err := handler(ctx, request)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	require.Equal(t, got, result.Content[0].(mcp.TextContent).Text)
+	// Without an origin, never fall back to the ambient session's logs.
+	require.Equal(t, "plain failure", m.toolErrorResponse(ctx, fmt.Errorf("plain failure")))
+	// Telemetry is best-effort: unavailable context or a failed flush/read
+	// preserves the original failure, not the telemetry infrastructure error.
+	require.Equal(t, failure.Error(), m.toolErrorResponse(t.Context(), failure))
+	failedTelemetry := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{
+		mockServer: &mockServer{}, telemetryErr: fmt.Errorf("flush failed"),
+	}})
+	require.Equal(t, failure.Error(), m.toolErrorResponse(failedTelemetry, failure))
+}
 
 func TestCallPreservesHeaderArgs(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
@@ -326,10 +396,14 @@ func TestAssembleLines(t *testing.T) {
 
 type logCaptureTestServer struct {
 	*mockServer
-	dbs *clientdb.DBs
+	dbs          *clientdb.DBs
+	telemetryErr error
 }
 
 func (srv *logCaptureTestServer) ClientTelemetry(ctx context.Context, _, _ string) (*clientdb.DB, error) {
+	if srv.telemetryErr != nil {
+		return nil, srv.telemetryErr
+	}
 	return srv.dbs.Open(ctx, "capture-test")
 }
 

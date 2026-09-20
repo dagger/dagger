@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -1266,7 +1267,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	}
 	result, err := tool.Call(toolCtx, args)
 	if err != nil {
-		return toolErrorMessage(err), true
+		return m.toolErrorResponse(ctx, err), true
 	}
 
 	switch v := result.(type) {
@@ -2185,43 +2186,19 @@ func (f *internalSpanFilter) serviceInstallSpan(ctx context.Context, traceID, sp
 	return false, nil
 }
 
-func toolErrorMessage(err error) string {
-	errResponse := err.Error()
-	// propagate error values to the model
-	var extErr dagql.ExtendedError
-	if errors.As(err, &extErr) {
-		// TODO: return a structured error object instead?
-		var exts []string
-		for k, v := range extErr.Extensions() {
-			if k == "traceparent" || k == "baggage" {
-				// silence this one
-				continue
-			}
-			var ext strings.Builder
-			fmt.Fprintf(&ext, "<%s>\n", k)
-
-			switch v := v.(type) {
-			case string:
-				ext.WriteString(v)
-			default:
-				jsonBytes, err := json.Marshal(v)
-				if err != nil {
-					fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
-				} else {
-					ext.Write(jsonBytes)
-				}
-			}
-
-			fmt.Fprintf(&ext, "\n</%s>", k)
-
-			exts = append(exts, ext.String())
-		}
-		if len(exts) > 0 {
-			sort.Strings(exts)
-			errResponse += "\n\n" + strings.Join(exts, "\n\n")
+// toolErrorResponse connects failures to the same bounded log capture used by
+// successful tool results. Errors bypass routeObjectMethodResult, and Call's
+// defer only writes the result to telemetry; neither captures failure logs.
+// Scope to the first useful error origin, not an ambient MCP session, and keep
+// the original message and trace marker even when telemetry is unavailable.
+func (m *MCP) toolErrorResponse(ctx context.Context, err error) string {
+	response := err.Error()
+	for _, origin := range telemetry.ParseErrorOrigins(response) {
+		if logs := m.spanResult(ctx, origin.SpanID().String(), toolCallReportOpts()); logs != "" {
+			return response + "\n\n" + ansi.Strip(logs)
 		}
 	}
-	return errResponse
+	return response
 }
 
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
