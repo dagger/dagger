@@ -2352,7 +2352,11 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	for _, tc := range toolCalls {
 		toolNames[tc.CallID] = tc.Name
 	}
-	sels := toolResultSelectors(base.Self(), resultMsgs, toolNames)
+	sels, err := toolResultSelectors(base.Self(), resultMsgs, toolNames)
+	if err != nil {
+		endRemainingDisplaySpans()
+		return inst, err
+	}
 	sels = append(sels, stateSels...)
 
 	var stepped dagql.ObjectResult[*LLM]
@@ -2406,46 +2410,58 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 // plain user message carrying the same information, so nothing is lost and the
 // history stays valid. Where the call IS still the pending one (the
 // install/reload case, which preserves history) results append normally.
-func toolResultSelectors(target *LLM, msgs []*LLMMessage, toolNames map[string]string) []dagql.Selector {
+func toolResultSelectors(target *LLM, msgs []*LLMMessage, toolNames map[string]string) ([]dagql.Selector, error) {
 	var sels []dagql.Selector
 	for _, msg := range msgs {
-		callID := msg.ToolResultCallID()
+		var result *LLMContentBlock
+		for _, block := range msg.Content {
+			if block.Kind == LLMContentToolResult {
+				result = block
+				break
+			}
+		}
+		if result == nil {
+			return nil, fmt.Errorf("tool result message has no TOOL_RESULT block")
+		}
+		callID := result.CallID
 		if target != nil && !toolResultAttachable(target.Messages, callID) {
 			name := toolNames[callID]
 			if name == "" {
 				name = callID
 			}
-			sels = append(sels, dagql.Selector{
-				Field: "withPrompt",
-				Args: []dagql.NamedInput{
-					{
-						Name: "prompt",
-						Value: dagql.NewString(fmt.Sprintf("[continued via tool %s]\n%s",
-							name, msg.ToolResultContent())),
-					},
-				},
-			})
+			text := fmt.Sprintf("[continued via tool %s]\n%s", name, result.Text)
+			if len(result.Content) > 0 {
+				// A continuation can discard the matching tool call. Retain the
+				// media as user content, not just its plain-text placeholder.
+				blocks := append([]*LLMContentBlock{{Kind: LLMContentText, Text: text}}, result.Content...)
+				inputs, err := contentBlockInputs(blocks)
+				if err != nil {
+					return nil, err
+				}
+				sels = append(sels, dagql.Selector{Field: "withContent", Args: []dagql.NamedInput{{Name: "content", Value: inputs}}})
+			} else {
+				sels = append(sels, dagql.Selector{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.NewString(text)}}})
+			}
 			continue
 		}
-		sels = append(sels, dagql.Selector{
+		sel := dagql.Selector{
 			Field: "withToolResult",
 			Args: []dagql.NamedInput{
-				{
-					Name:  "callId",
-					Value: dagql.NewString(callID),
-				},
-				{
-					Name:  "content",
-					Value: dagql.NewString(msg.ToolResultContent()),
-				},
-				{
-					Name:  "errored",
-					Value: dagql.NewBoolean(msg.ToolResultErrored()),
-				},
+				{Name: "callId", Value: dagql.NewString(callID)},
+				{Name: "content", Value: dagql.NewString(result.Text)},
+				{Name: "errored", Value: dagql.NewBoolean(result.Errored)},
 			},
-		})
+		}
+		if len(result.Content) > 0 {
+			inputs, err := contentBlockInputs(result.Content)
+			if err != nil {
+				return nil, err
+			}
+			sel.Args = append(sel.Args, dagql.NamedInput{Name: "blocks", Value: inputs})
+		}
+		sels = append(sels, sel)
 	}
-	return sels
+	return sels, nil
 }
 
 // stateDeltaSelectors builds the selectors that re-record what this step's tool

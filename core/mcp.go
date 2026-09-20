@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -406,26 +407,9 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 						return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, serverName, err)
 					}
 
-					var out string
-					for _, content := range res.Content {
-						switch x := content.(type) {
-						case *mcp.TextContent:
-							out += x.Text
-						default:
-							out += fmt.Sprintf("WARNING: unsupported content type %T", x)
-						}
-					}
-					if res.StructuredContent != nil {
-						str, err := toolStructuredResponse(res.StructuredContent)
-						if err != nil {
-							return nil, err
-						}
-						out += str
-					}
-					if res.IsError {
-						return "", errors.New(out)
-					}
-					return out, nil
+					// Keep native content intact; CallContent applies validation and
+					// bounds text without ever truncating binary payloads.
+					return res, nil
 				},
 			})
 		}
@@ -1169,16 +1153,27 @@ func toolArgHeaderValue(name string, value any) (string, bool) {
 	}
 }
 
-func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res string, failed bool) {
+// Call returns the plain-text projection for callers that only need text.
+// Conversation dispatch uses CallContent so media never passes through this view.
+func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (string, bool) {
+	result := m.CallContent(ctx, tools, toolCall)
+	return result.ContentText(), result.Errored
+}
+
+// CallContent executes a tool and preserves its ordered, typed result blocks.
+func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res *LLMContentBlock) {
+	errorResult := func(text string) *LLMContentBlock {
+		return &LLMContentBlock{Kind: LLMContentToolResult, CallID: toolCall.CallID, Text: guardToolResult(text), Errored: true}
+	}
 	tool, err := m.LookupTool(toolCall.Name, tools)
 	if err != nil {
-		return guardToolResult(err.Error()), true
+		return errorResult(err.Error())
 	}
 
 	args := map[string]any{}
 	if len(toolCall.Arguments) > 0 {
 		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
-			return guardToolResult(fmt.Sprintf("failed to parse tool arguments: %s", err)), true
+			return errorResult(fmt.Sprintf("failed to parse tool arguments: %s", err))
 		}
 	}
 
@@ -1235,27 +1230,27 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	var telemetryErr error
 	defer telemetry.EndWithCause(span, &telemetryErr)
 	defer func() {
-		if failed {
+		if res.Errored {
 			telemetryErr = fmt.Errorf("tool call %q failed", tool.Name)
 		}
 	}()
 
 	defer func() {
-		// Bound the result before anything observes it: everything downstream
-		// must see exactly what the LLM sees, and this is the one place every
-		// tool result funnels through. That means the telemetry copy below,
-		// and the LLMToolResultTokensAttr estimate endToolCallDisplay stamps
-		// from the string we return.
-		res = guardToolResult(res)
+		// Validate media independently from text bounding: truncating base64
+		// would corrupt it, and treating it as text would inflate token counts.
+		if err := res.Validate(); err != nil {
+			res = errorResult(fmt.Sprintf("invalid tool content: %s", err))
+		}
+		guardToolContent(res)
 
+		text := res.ContentText()
 		attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
-		if contentType := toolResultContentType(res); contentType != "" {
+		if contentType := toolResultContentType(text); contentType != "" {
 			attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
 		}
 		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
-		// Write the final result to telemetry so the TUI sees exactly what the
-		// LLM sees, with semantic content type when the result is a patch.
-		fmt.Fprintln(stdio.Stdout, res)
+		// Terminal logs use media placeholders, never the encoded payload.
+		fmt.Fprintln(stdio.Stdout, text)
 		_ = stdio.Close()
 	}()
 
@@ -1267,18 +1262,145 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	}
 	result, err := tool.Call(toolCtx, args)
 	if err != nil {
-		return m.toolErrorResponse(ctx, err), true
+		return errorResult(m.toolErrorResponse(ctx, err))
 	}
 
+	res = &LLMContentBlock{Kind: LLMContentToolResult, CallID: toolCall.CallID}
 	switch v := result.(type) {
 	case string:
-		return v, false
+		res.Text = v
+	case *mcp.CallToolResult:
+		res.Content, err = mcpContentBlocks(v)
+		if err != nil {
+			return errorResult(err.Error())
+		}
+		res.Errored = v.IsError
+	case *LLMContentBlock:
+		if v == nil {
+			return errorResult("tool returned a nil content block")
+		}
+		if v.Kind == LLMContentToolResult {
+			res = v.Clone()
+			res.CallID = toolCall.CallID
+		} else {
+			res.Content = []*LLMContentBlock{v.Clone()}
+		}
+	case []*LLMContentBlock:
+		for _, block := range v {
+			if block == nil {
+				return errorResult("tool returned a nil content block")
+			}
+			res.Content = append(res.Content, block.Clone())
+		}
 	default:
 		jsonBytes, err := json.Marshal(v)
 		if err != nil {
-			return fmt.Sprintf("Failed to marshal result: %s", err), true
+			return errorResult(fmt.Sprintf("Failed to marshal result: %s", err))
 		}
-		return string(jsonBytes), false
+		res.Text = string(jsonBytes)
+	}
+	return res
+}
+
+// mcpContentBlocks translates MCP wire content without flattening media into
+// text. Resource links remain descriptions, not implicitly fetched resources.
+func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
+	if result == nil {
+		return nil, fmt.Errorf("MCP tool returned a nil result")
+	}
+	var blocks []*LLMContentBlock
+	for i, content := range result.Content {
+		var block *LLMContentBlock
+		switch c := content.(type) {
+		case *mcp.TextContent:
+			if c != nil {
+				block = &LLMContentBlock{Kind: LLMContentText, Text: c.Text}
+			}
+		case *mcp.ImageContent:
+			if c != nil {
+				block = &LLMContentBlock{Kind: LLMContentImage, MIMEType: c.MIMEType, Data: base64.StdEncoding.EncodeToString(c.Data)}
+			}
+		case *mcp.AudioContent:
+			if c != nil {
+				block = &LLMContentBlock{Kind: LLMContentAudio, MIMEType: c.MIMEType, Data: base64.StdEncoding.EncodeToString(c.Data)}
+			}
+		case *mcp.EmbeddedResource:
+			if c != nil && c.Resource != nil {
+				r := c.Resource
+				if r.Blob == nil {
+					block = &LLMContentBlock{Kind: LLMContentText, Text: r.Text}
+				} else {
+					if r.Text != "" {
+						return nil, fmt.Errorf("MCP resource %q contains both text and binary data", r.URI)
+					}
+					kind := LLMContentDocument
+					switch {
+					case strings.HasPrefix(r.MIMEType, "image/"):
+						kind = LLMContentImage
+					case strings.HasPrefix(r.MIMEType, "audio/"):
+						kind = LLMContentAudio
+					}
+					block = &LLMContentBlock{Kind: kind, MIMEType: r.MIMEType, Data: base64.StdEncoding.EncodeToString(r.Blob)}
+				}
+			}
+		case *mcp.ResourceLink:
+			if c != nil {
+				block = &LLMContentBlock{Kind: LLMContentText, Text: fmt.Sprintf("[resource link: %s (%s)]\n%s\n%s", c.Name, c.MIMEType, c.URI, c.Description)}
+			}
+		default:
+			return nil, fmt.Errorf("unsupported MCP content type %T at index %d", content, i)
+		}
+		if block == nil {
+			return nil, fmt.Errorf("nil MCP content at index %d", i)
+		}
+		blocks = append(blocks, block)
+	}
+	if result.StructuredContent != nil {
+		text, err := toolStructuredResponse(result.StructuredContent)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, &LLMContentBlock{Kind: LLMContentText, Text: text})
+	}
+	return blocks, nil
+}
+
+// guardToolContent shares one text budget across a result's child blocks.
+// Media bytes are validated separately and are never truncated.
+func guardToolContent(result *LLMContentBlock) {
+	if len(result.Content) == 0 {
+		result.Text = guardToolResult(result.Text)
+		return
+	}
+	remaining := llmToolResultMaxBytes
+	omitted := false
+	bound := func(text string) string {
+		if text == "" {
+			return ""
+		}
+		if remaining < 256 {
+			if omitted {
+				return ""
+			}
+			omitted = true
+			return "[additional tool text omitted; re-run the call more narrowly]"
+		}
+		text = guardText(text, textGuard{
+			maxBytes:   remaining - 128,
+			maxLineLen: llmLogsMaxLineLen,
+			headBytes:  (remaining - 128) * 2 / 3,
+			marker: func(lines, bytes int) string {
+				return fmt.Sprintf("... %d lines (%d bytes) omitted (re-run the call more narrowly) ...", lines, bytes)
+			},
+		})
+		remaining -= len(text)
+		return text
+	}
+	result.Text = bound(result.Text)
+	for _, block := range result.Content {
+		if block.Kind == LLMContentText {
+			block.Text = bound(block.Text)
+		}
 	}
 }
 
@@ -1412,16 +1534,11 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 
 	// 1. Execute destructive non-MCP calls sequentially (they replace shared state).
 	for _, call := range destructiveCalls {
-		result, isError := m.Call(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
-		endToolCallDisplay(toolCallDisplays, call.CallID, isError, result)
+		result := m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
+		endToolCallDisplay(toolCallDisplays, call.CallID, result.Errored, result.ContentText())
 		allResults = append(allResults, &LLMMessage{
-			Role: LLMMessageRoleUser,
-			Content: []*LLMContentBlock{{
-				Kind:    LLMContentToolResult,
-				Text:    result,
-				CallID:  call.CallID,
-				Errored: isError,
-			}},
+			Role:    LLMMessageRoleUser,
+			Content: []*LLMContentBlock{result},
 		})
 	}
 
@@ -1546,19 +1663,14 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 		calls.Go(func() callResult {
 			capture := new(changesetCapture)
 			callCtx := context.WithValue(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), changesetCaptureKey{}, capture)
-			content, failed := m.Call(callCtx, tools, toolCall)
+			content := m.CallContent(callCtx, tools, toolCall)
 			return callResult{
 				message: &LLMMessage{
-					Role: LLMMessageRoleUser,
-					Content: []*LLMContentBlock{{
-						Kind:    LLMContentToolResult,
-						Text:    content,
-						CallID:  toolCall.CallID,
-						Errored: failed,
-					}},
+					Role:    LLMMessageRoleUser,
+					Content: []*LLMContentBlock{content},
 				},
 				capture: capture,
-				failed:  failed,
+				failed:  content.Errored,
 			}
 		})
 	}
@@ -1735,16 +1847,11 @@ func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls [
 	toolCallsPool := pool.NewWithResults[*LLMMessage]()
 	for _, toolCall := range toolCalls {
 		toolCallsPool.Go(func() *LLMMessage {
-			content, isError := m.Call(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), tools, toolCall)
-			endToolCallDisplay(toolCallDisplays, toolCall.CallID, isError, content)
+			content := m.CallContent(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), tools, toolCall)
+			endToolCallDisplay(toolCallDisplays, toolCall.CallID, content.Errored, content.ContentText())
 			return &LLMMessage{
-				Role: LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
-				Content: []*LLMContentBlock{{
-					Kind:    LLMContentToolResult,
-					Text:    content,
-					CallID:  toolCall.CallID,
-					Errored: isError,
-				}},
+				Role:    LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
+				Content: []*LLMContentBlock{content},
 			}
 		})
 	}
@@ -2348,13 +2455,18 @@ func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
 		call := &LLMToolCall{CallID: toolName, Name: toolName, Arguments: JSON(encodedArgs)}
 		displays := newDisplayPhases(ctx, "")
 		displays.EmitToolCall(0, call.CallID, toolName, string(encodedArgs))
-		res, failed := m.Call(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call)
-		endToolCallDisplay(displays.toolCalls, call.CallID, failed, res)
-		if failed {
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil, fmt.Errorf("tool %q did not finish within %s: %w", toolName, duration, ctx.Err())
+		res := m.CallContent(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call)
+		endToolCallDisplay(displays.toolCalls, call.CallID, res.Errored, res.ContentText())
+		if res.Errored && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("tool %q did not finish within %s: %w", toolName, duration, ctx.Err())
+		}
+		// Keep the legacy string return for ordinary tools, but forward media
+		// and their error status intact through wrappers such as Timeout.
+		if len(res.Content) == 0 {
+			if res.Errored {
+				return nil, errors.New(res.Text)
 			}
-			return nil, errors.New(res)
+			return res.Text, nil
 		}
 		return res, nil
 	}
