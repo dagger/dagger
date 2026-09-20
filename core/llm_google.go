@@ -234,15 +234,21 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 }
 
 func genaiMediaPart(block *LLMContentBlock) (*genai.Part, error) {
+	mimeType := block.MIMEType
+	if block.Kind == LLMContentAudio && (mimeType == "audio/wave" || mimeType == "audio/x-wav") {
+		// Go's content sniffer and common file producers use these aliases;
+		// Gemini expects the canonical WAV MIME type on the wire.
+		mimeType = "audio/wav"
+	}
 	supported := false
 	switch block.Kind {
 	case LLMContentImage:
-		switch block.MIMEType {
+		switch mimeType {
 		case "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif":
 			supported = true
 		}
 	case LLMContentAudio:
-		switch block.MIMEType {
+		switch mimeType {
 		case "audio/wav", "audio/mp3", "audio/mpeg", "audio/aiff", "audio/aac", "audio/ogg", "audio/flac":
 			supported = true
 		}
@@ -256,7 +262,7 @@ func genaiMediaPart(block *LLMContentBlock) (*genai.Part, error) {
 	if err != nil {
 		return nil, fmt.Errorf("google: invalid base64 %s data", block.Kind)
 	}
-	return genai.NewPartFromBytes(data, block.MIMEType), nil
+	return genai.NewPartFromBytes(data, mimeType), nil
 }
 
 func genaiToolResponse(block *LLMContentBlock, toolName string) (*genai.FunctionResponse, error) {
@@ -288,10 +294,10 @@ func genaiToolResponse(block *LLMContentBlock, toolName string) (*genai.Function
 		}
 		ordered = append(ordered, map[string]any{
 			"type":      strings.ToLower(string(child.Kind)),
-			"mimeType":  child.MIMEType,
+			"mimeType":  part.InlineData.MIMEType,
 			"partIndex": len(response.Parts),
 		})
-		response.Parts = append(response.Parts, genai.NewFunctionResponsePartFromBytes(part.InlineData.Data, child.MIMEType))
+		response.Parts = append(response.Parts, genai.NewFunctionResponsePartFromBytes(part.InlineData.Data, part.InlineData.MIMEType))
 	}
 	response.Response["content"] = ordered
 	return response, nil

@@ -159,6 +159,41 @@ func TestGenaiMediaRequest(t *testing.T) {
 	]`, string(request["contents"]))
 }
 
+func TestGenaiWAVMIMETypes(t *testing.T) {
+	// Go's MIME sniffer recognizes this RIFF/WAVE header as audio/wave.
+	wav := []byte("RIFF\x24\x00\x00\x00WAVEfmt ")
+	for _, mimeType := range []string{"", "audio/wav", "audio/wave", "audio/x-wav"} {
+		t.Run(mimeType, func(t *testing.T) {
+			audio, err := llmContentFromBytes(wav, mimeType)
+			require.NoError(t, err)
+			require.Equal(t, LLMContentAudio, audio.Kind)
+			if mimeType != "" {
+				// Also exercise aliases supplied directly in restored content,
+				// independently of any canonicalization in file inference.
+				audio.MIMEType = mimeType
+			}
+			originalMIME := audio.MIMEType
+			client, requests := mediaRequestClient(t, "google")
+			request := sentMediaRequest(t, client, requests, []*LLMMessage{
+				{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{audio}},
+				{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentToolCall, CallID: "call-1", ToolName: "listen", Arguments: JSON(`{}`)}}},
+				{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{audio}}}},
+			})
+			var contents []genai.Content
+			require.NoError(t, json.Unmarshal(request["contents"], &contents))
+			require.Len(t, contents, 3)
+			require.Equal(t, "audio/wav", contents[0].Parts[0].InlineData.MIMEType)
+			require.Equal(t, wav, contents[0].Parts[0].InlineData.Data)
+			response := contents[2].Parts[0].FunctionResponse
+			require.Equal(t, "call-1", response.ID)
+			require.Equal(t, "audio/wav", response.Parts[0].InlineData.MIMEType)
+			require.Equal(t, wav, response.Parts[0].InlineData.Data)
+			require.Equal(t, "audio/wav", response.Response["content"].([]any)[0].(map[string]any)["mimeType"])
+			require.Equal(t, originalMIME, audio.MIMEType, "provider mapping must not mutate history")
+		})
+	}
+}
+
 func TestProviderMediaOnlyToolResult(t *testing.T) {
 	for _, provider := range []string{"anthropic", "google"} {
 		t.Run(provider, func(t *testing.T) {
