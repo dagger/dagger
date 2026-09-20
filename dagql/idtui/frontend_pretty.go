@@ -3219,10 +3219,20 @@ func (fe *frontendPretty) renderZoomHeader(ctx tuist.Context, r *renderer) []str
 
 	zoomBuf := new(strings.Builder)
 	zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
-	fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
-		Span:     fe.rowsView.Zoomed,
-		Expanded: true,
-	}, fe, false)
+	span := fe.rowsView.Zoomed
+	if span.Message != "" {
+		// The zoom body owns this span's logs. A message's normal step title
+		// embeds those logs, which would repeat (and clip) its text and media
+		// in the pinned bar. Title the span itself here instead.
+		_ = r.renderSpan(zoomOut, span, span.Name)
+		fe.renderDurationDynamic(ctx, zoomOut, r, span, fe, true)
+		fe.renderStatus(zoomOut, span)
+	} else {
+		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
+			Span:     span,
+			Expanded: true,
+		}, fe, false)
+	}
 	titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	var zoomHeader []string
 	for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
@@ -6860,13 +6870,11 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) {
 	span := row.Span
 
-	// The expanded-step-logs case (span.Message == "" && (Expanded || LLMTool))
-	// is now rendered by SpanTreeView.renderInlineLogs via the memoized
-	// LogsView. The rollup/shell branch below is preserved with the same
-	// precedence (it only fired when that case didn't).
-	inlineLogsCase := span.Message == "" && (row.Expanded || row.Span.LLMTool != "")
-	if !inlineLogsCase &&
-		(row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded &&
+	// Expanded command and tool logs use the memoized LogsView. Message logs
+	// already form the step title, regardless of expansion; neither kind
+	// belongs in the additional shell/rollup block below.
+	if span.Message == "" && span.LLMTool == "" &&
+		(span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded &&
 		!fe.shouldRenderInlineTests(row) && !fe.shouldRenderInlineChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
@@ -7056,6 +7064,11 @@ func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *r
 	}
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
+	}
+	// Flowing conversation messages are transcript content, not a command's
+	// tail window. Keep the complete message (including media) in scrollback.
+	if fe.flowingMode() && row.Span.Message != "" && row.Span.LLMRole != "" && row.Span.LLMTool == "" {
+		limit = 0
 	}
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 		return fe.renderLogs(out, r, row, logs, limit, prefix, focused)
@@ -7742,7 +7755,9 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 	if row.Span.LLMRole != "" && row.Span.LLMTool == "" {
 		fe.requestLogsOnRender(row.Span.ID)
 		logs := fe.logs.Logs[row.Span.ID]
-		if logs == nil || strings.TrimSpace(logs.View()) == "" {
+		// Media has layout rows even before its viewport height is set. An
+		// empty View at that point does not mean the message has no content.
+		if logs == nil || (logs.UsedHeight() == 0 && strings.TrimSpace(logs.View()) == "") {
 			return nil
 		}
 	}
