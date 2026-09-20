@@ -46,11 +46,7 @@ from dagger._exceptions import _query_error_from_transport
 from dagger.client._session import BaseConnection, SharedConnection
 from dagger.client.base import Scalar, Type
 
-from ._guards import (
-    IDType,
-    is_id_type,
-    is_id_type_sequence,
-)
+from ._guards import IDType, is_id_type
 
 logger = logging.getLogger(__name__)
 
@@ -323,31 +319,32 @@ class Context:
     async def resolve_ids(self) -> None:
         """Replace Type object instances with their ID implicitly."""
 
-        # mutating to avoid re-fetching on forked pipeline
-        async def _resolve_id(pos: int, k: str, v: IDType):
-            sel = self.selections[pos]
-            sel.args[k] = await v.id()
+        # Mutate the unstructured arguments to avoid re-fetching on forked pipelines.
+        async def _resolve_id(values: Any, key: str | int, value: IDType):
+            values[key] = await value.id()
 
-        async def _resolve_seq_id(pos: int, idx: int, k: str, v: IDType):
-            sel = self.selections[pos]
-            sel.args[k][idx] = await v.id()
+        def _walk(values: Any):
+            items = values.items() if isinstance(values, dict) else enumerate(values)
+            for key, value in items:
+                if is_id_type(value):
+                    tg.start_soon(_resolve_id, values, key, value)
+                elif isinstance(value, dict):
+                    _walk(value)
+                elif isinstance(value, typing.Sequence) and not isinstance(
+                    value, (str, bytes, bytearray)
+                ):
+                    # Input objects can contain sequences at any depth. Normalize
+                    # them to lists so resolved IDs can be assigned by index.
+                    values[key] = list(value)
+                    _walk(values[key])
 
-        # resolve all ids concurrently
+        # Resolve all IDs concurrently, including those nested in input objects.
         with exceptiongroup.catch(
             {(graphql.GraphQLError, DaggerError): self.handle_group_err}
         ):
             async with anyio.create_task_group() as tg:
-                for i, sel in enumerate(self.selections):
-                    for k, v in sel.args.items():
-                        # check if it's a sequence of Type objects
-                        if is_id_type_sequence(v):
-                            # make sure it's a list, to mutate by index
-                            sel.args[k] = list(v)
-                            for seq_i, seq_v in enumerate(sel.args[k]):
-                                if is_id_type(seq_v):
-                                    tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
-                        elif is_id_type(v):
-                            tg.start_soon(_resolve_id, i, k, v)
+                for sel in self.selections:
+                    _walk(sel.args)
 
 
 def make_converter(ctx: Context):

@@ -3,7 +3,7 @@ from collections.abc import Sequence
 import pytest
 
 import dagger
-from dagger.client._core import Context
+from dagger.client._core import Arg, Context
 from dagger.client._guards import is_id_type, is_id_type_sequence, typecheck
 from dagger.client.base import Root, Scalar, Type
 
@@ -133,25 +133,66 @@ def test_input_object():
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("nested", [False, True], ids=["direct-file", "content-block"])
-async def test_llm_content_file_id_resolution(mocker, nested):
+@pytest.mark.parametrize(
+    "depth", [-1, 0, 2], ids=["direct-file", "content-block", "nested-content"]
+)
+async def test_llm_content_file_id_resolution(mocker, depth):
     client = dagger.Client(Context())
     file = client.file("image.png", "image bytes")
     file_id = "file-id"
     resolve_id = mocker.patch.object(dagger.File, "id", return_value=file_id)
+    image = dagger.LLMContentBlockInput(
+        kind=dagger.LLMContentBlockKind.IMAGE,
+        file=file,
+    )
+    block = image
 
-    if nested:
-        llm = client.llm().with_content(
-            [dagger.LLMContentBlockInput(kind=dagger.LLMContentBlockKind.IMAGE, file=file)]
-        )
+    if depth >= 0:
+        for _ in range(depth):
+            block = dagger.LLMContentBlockInput(
+                kind=dagger.LLMContentBlockKind.TOOL_RESULT, content=[block]
+            )
+        llm = client.llm().with_content([block])
     else:
         llm = client.llm().with_content_file(file)
 
     await llm._ctx.resolve_ids()
     args = llm._ctx.selections[-1].args
-    actual = args["content"][0]["file"] if nested else args["file"]
-    assert actual == file_id
+    if depth >= 0:
+        args = args["content"][0]
+        for _ in range(depth):
+            args = args["content"][0]
+    assert args["file"] == file_id
+    # Do not overwrite the caller's File-typed input or refetch cached IDs.
+    assert image.file is file
+    await llm._ctx.resolve_ids()
     resolve_id.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_resolve_ids_in_mixed_input_sequences(mocker):
+    client = dagger.Client(Context())
+    file = client.file("image.png", "image bytes")
+    resolve_id = mocker.patch.object(dagger.File, "id", return_value="file-id")
+    plain = [None, "text", 0, False, {"empty": []}]
+    value = {
+        "files": (file, file),
+        "mixed": [file, *plain],
+        "kind": dagger.LLMContentBlockKind.IMAGE,
+    }
+    ctx = Context().select("Query", "example", [Arg("input", value)])
+
+    await ctx.resolve_ids()
+
+    assert ctx.selections[-1].args == {
+        "input": {
+            "files": ["file-id", "file-id"],
+            "mixed": ["file-id", *plain],
+            "kind": "IMAGE",
+        }
+    }
+    assert value["files"] == (file, file)
+    assert resolve_id.await_count == 3
 
 
 def test_is_id_type(client: Client):

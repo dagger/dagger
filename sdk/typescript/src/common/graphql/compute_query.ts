@@ -86,10 +86,6 @@ async function computeNestedQuery(
   // Check if there is a nested queryTree to be executed
   const isQueryTree = (value: any) => value["_ctx"] !== undefined
 
-  // Check if there is a nested array of queryTree to be executed
-  const isArrayQueryTree = (value: any[]) =>
-    value.every((v) => v instanceof Object && isQueryTree(v))
-
   // Prepare query tree for final query by computing nested queries
   // and building it with their results.
   const computeQueryTree = async (value: any): Promise<string> => {
@@ -107,35 +103,44 @@ async function computeNestedQuery(
     ])
   }
 
-  // Remove all undefined args and assert args type
-  const queryToExec = query.filter((q): q is Required<QueryTree> => !!q.args)
+  const resolveValue = async (value: any): Promise<any> => {
+    if (value === null || typeof value !== "object") {
+      return value
+    }
+    if (isQueryTree(value)) {
+      return await compute(await computeQueryTree(value), client)
+    }
+    if (Array.isArray(value)) {
+      return await Promise.all(value.map(resolveValue))
+    }
+    // Input objects are plain records. Do not traverse scalar instances (e.g.
+    // Date), whose own serialization must be preserved.
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype === Object.prototype || prototype === null) {
+      return Object.fromEntries(
+        await Promise.all(
+          Object.entries(value).map(async ([key, child]) => [
+            key,
+            await resolveValue(child),
+          ]),
+        ),
+      )
+    }
+    return value
+  }
 
-  for (const q of queryToExec) {
-    await Promise.all(
-      // Compute nested query for single object
-      Object.entries(q.args).map(async ([key, value]: any) => {
-        if (value instanceof Object && isQueryTree(value)) {
-          // push an id that will be used by the container
-          const getQueryTree = await computeQueryTree(value)
-
-          q.args[key] = await compute(getQueryTree, client)
-        }
-
-        // Compute nested query for array of object
-        if (Array.isArray(value) && isArrayQueryTree(value)) {
-          const tmp: any = q.args[key]
-
-          for (let i = 0; i < value.length; i++) {
-            // push an id that will be used by the container
-            const getQueryTree = await computeQueryTree(value[i])
-
-            tmp[i] = await compute(getQueryTree, client)
+  // Cache resolved arguments on the query, but copy nested input objects and
+  // arrays so the caller's File-typed fields are not replaced with strings.
+  for (const q of query) {
+    if (q.args) {
+      await Promise.all(
+        Object.entries(q.args).map(async ([key, value]) => {
+          if (key !== "__metadata") {
+            q.args![key] = await resolveValue(value)
           }
-
-          q.args[key] = tmp
-        }
-      }),
-    )
+        }),
+      )
+    }
   }
 }
 
