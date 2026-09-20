@@ -111,8 +111,12 @@ pub struct BuildArg {
 pub struct LlmContentBlockInput {
     pub arguments: Json,
     pub call_id: String,
+    pub content: Vec<LlmContentBlockInput>,
+    pub data: String,
     pub errored: bool,
+    pub file: Id,
     pub kind: LlmContentBlockKind,
+    pub mime_type: String,
     pub signature: String,
     pub text: String,
     pub tool_name: String,
@@ -11150,6 +11154,18 @@ pub struct LlmStepOpts {
     pub max_tokens: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct LlmWithContentOpts {
+    /// The message's recorded provenance.
+    #[builder(setter(into, strip_option), default)]
+    pub origin: Option<LlmMessageOriginInput>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmWithContentFileOpts<'a> {
+    /// The media MIME type; inferred from the file's contents when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub mime_type: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithModelOpts<'a> {
     /// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
     #[builder(setter(into, strip_option), default)]
@@ -11178,6 +11194,12 @@ pub struct LlmWithResponseOpts {
     /// Total tokens consumed by this response
     #[builder(setter(into, strip_option), default)]
     pub total_tokens: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmWithToolResultOpts {
+    /// Ordered text and media returned by the tool
+    #[builder(setter(into, strip_option), default)]
+    pub blocks: Option<Vec<LlmContentBlockInput>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithToolsOpts<'a> {
@@ -11481,6 +11503,92 @@ impl Llm {
         let query = self.selection.select("transcript");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Queue one user message containing ordered text and media blocks.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The ordered message content.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_content(&self, content: Vec<LlmContentBlockInput>) -> Llm {
+        let mut query = self.selection.select("withContent");
+        query = query.arg("content", content);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Queue one user message containing ordered text and media blocks.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The ordered message content.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_content_opts(
+        &self,
+        content: Vec<LlmContentBlockInput>,
+        opts: LlmWithContentOpts,
+    ) -> Llm {
+        let mut query = self.selection.select("withContent");
+        query = query.arg("content", content);
+        if let Some(origin) = opts.origin {
+            query = query.arg("origin", origin);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The media file.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_content_file(&self, file: impl IntoID<Id>) -> Llm {
+        let mut query = self.selection.select("withContentFile");
+        query = query.arg_lazy(
+            "file",
+            Box::new(move || {
+                let file = file.clone();
+                Box::pin(async move { file.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The media file.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_content_file_opts<'a>(
+        &self,
+        file: impl IntoID<Id>,
+        opts: LlmWithContentFileOpts<'a>,
+    ) -> Llm {
+        let mut query = self.selection.select("withContentFile");
+        query = query.arg_lazy(
+            "file",
+            Box::new(move || {
+                let file = file.clone();
+                Box::pin(async move { file.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(mime_type) = opts.mime_type {
+            query = query.arg("mimeType", mime_type);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Add an external MCP server to the LLM
     ///
     /// # Arguments
@@ -11700,8 +11808,9 @@ impl Llm {
     /// # Arguments
     ///
     /// * `call_id` - The ID of the tool call this result responds to
-    /// * `content` - The content returned by the tool
+    /// * `content` - Text returned by the tool, placed before blocks
     /// * `errored` - Whether the tool call resulted in an error
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_tool_result(
         &self,
         call_id: impl Into<String>,
@@ -11712,6 +11821,34 @@ impl Llm {
         query = query.arg("callId", call_id.into());
         query = query.arg("content", content.into());
         query = query.arg("errored", errored);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append the result of a tool call to the message history.
+    ///
+    /// # Arguments
+    ///
+    /// * `call_id` - The ID of the tool call this result responds to
+    /// * `content` - Text returned by the tool, placed before blocks
+    /// * `errored` - Whether the tool call resulted in an error
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_tool_result_opts(
+        &self,
+        call_id: impl Into<String>,
+        content: impl Into<String>,
+        errored: bool,
+        opts: LlmWithToolResultOpts,
+    ) -> Llm {
+        let mut query = self.selection.select("withToolResult");
+        query = query.arg("callId", call_id.into());
+        query = query.arg("content", content.into());
+        query = query.arg("errored", errored);
+        if let Some(blocks) = opts.blocks {
+            query = query.arg("blocks", blocks);
+        }
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -11891,6 +12028,28 @@ impl LlmContentBlock {
         let query = self.selection.select("callId");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
+    pub async fn content(&self) -> Result<Vec<LlmContentBlock>, DaggerError> {
+        let query = self.selection.select("content");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| LlmContentBlock {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("LLMContentBlock"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+    pub async fn data(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("data");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Whether the tool call resulted in an error (for TOOL_RESULT kind).
     pub async fn errored(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("errored");
@@ -11904,6 +12063,11 @@ impl LlmContentBlock {
     /// The kind of content block, which determines the other populated fields.
     pub async fn kind(&self) -> Result<LlmContentBlockKind, DaggerError> {
         let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
+    pub async fn mime_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("mimeType");
         query.execute(self.graphql_client.clone()).await
     }
     /// Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
@@ -19474,6 +19638,12 @@ pub enum ImageMediaTypes {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum LlmContentBlockKind {
+    #[serde(rename = "AUDIO")]
+    Audio,
+    #[serde(rename = "DOCUMENT")]
+    Document,
+    #[serde(rename = "IMAGE")]
+    Image,
     #[serde(rename = "TEXT")]
     Text,
     #[serde(rename = "THINKING")]

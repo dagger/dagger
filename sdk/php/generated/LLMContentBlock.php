@@ -32,6 +32,24 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
+     * Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
+     */
+    public function content(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('content');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'content');
+    }
+
+    /**
+     * Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+     */
+    public function data(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('data');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'data');
+    }
+
+    /**
      * Whether the tool call resulted in an error (for TOOL_RESULT kind).
      */
     public function errored(): bool
@@ -56,6 +74,15 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
         return \Dagger\LLMContentBlockKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+    }
+
+    /**
+     * The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
+     */
+    public function mimeType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('mimeType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'mimeType');
     }
 
     /**

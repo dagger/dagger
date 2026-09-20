@@ -139,8 +139,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("callId").Doc("The ID of the tool call this result responds to"),
 				dagql.Arg("content").Doc("Text returned by the tool, placed before blocks"),
-				dagql.Arg("blocks").Doc("Ordered text and media returned by the tool"),
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
+				dagql.Arg("blocks").Doc("Ordered text and media returned by the tool"),
 			),
 		dagql.Func("withTools", s.withTools).
 			View(AfterVersion("v1.0.0-0")).
@@ -495,8 +495,8 @@ func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct
 func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args struct {
 	CallID  string `name:"callId"`
 	Content string
-	Blocks  []dagql.InputObject[core.LLMContentBlockInput] `default:"[]"`
 	Errored bool
+	Blocks  []dagql.InputObject[core.LLMContentBlockInput] `default:"[]"`
 }) (*core.LLM, error) {
 	blocks, err := resolveLLMContent(ctx, args.Blocks)
 	if err != nil {

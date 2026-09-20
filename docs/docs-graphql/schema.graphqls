@@ -4396,6 +4396,26 @@ type LLM implements Node & Syncer {
   """
   transcript: String!
 
+  """Queue one user message containing ordered text and media blocks."""
+  withContent(
+    """The ordered message content."""
+    content: [LLMContentBlockInput!]!
+
+    """The message's recorded provenance."""
+    origin: LLMMessageOriginInput
+  ): LLM!
+
+  """
+  Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.
+  """
+  withContentFile(
+    """The media file."""
+    file: ID! @expectedType(name: "File")
+
+    """The media MIME type; inferred from the file's contents when omitted."""
+    mimeType: String = ""
+  ): LLM!
+
   """Add an external MCP server to the LLM"""
   withMCPServer(
     """The name of the MCP server"""
@@ -4510,11 +4530,14 @@ type LLM implements Node & Syncer {
     """The ID of the tool call this result responds to"""
     callId: String!
 
-    """The content returned by the tool"""
+    """Text returned by the tool, placed before blocks"""
     content: String!
 
     """Whether the tool call resulted in an error"""
     errored: Boolean!
+
+    """Ordered text and media returned by the tool"""
+    blocks: [LLMContentBlockInput!] = []
   ): LLM!
 
   """
@@ -4563,6 +4586,14 @@ type LLMContentBlock implements Node {
   """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
   callId: String!
 
+  """
+  Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
+  """
+  content: [LLMContentBlock!]!
+
+  """Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."""
+  data: String!
+
   """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
   errored: Boolean!
 
@@ -4573,6 +4604,9 @@ type LLMContentBlock implements Node {
   The kind of content block, which determines the other populated fields.
   """
   kind: LLMContentBlockKind!
+
+  """The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds)."""
+  mimeType: String!
 
   """
   Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
@@ -4608,6 +4642,20 @@ input LLMContentBlockInput {
 
   """Provider-specific opaque data (e.g. Anthropic thinking signature)."""
   signature: String = ""
+
+  """Media MIME type; required for inline data, inferred for a file."""
+  mimeType: String = ""
+
+  """
+  Base64-encoded media bytes. Supply exactly one of data or file for media.
+  """
+  data: String = ""
+
+  """A media file to resolve to inline bytes."""
+  file: ID @expectedType(name: "File")
+
+  """Ordered TEXT or media blocks returned by a tool."""
+  content: [LLMContentBlockInput!] = []
 }
 
 """The kind of content in a message block."""
@@ -4623,6 +4671,15 @@ enum LLMContentBlockKind {
 
   """A tool/function result."""
   TOOL_RESULT
+
+  """An inline image."""
+  IMAGE
+
+  """Inline audio."""
+  AUDIO
+
+  """An inline PDF document."""
+  DOCUMENT
 }
 
 """A single message in an LLM conversation."""

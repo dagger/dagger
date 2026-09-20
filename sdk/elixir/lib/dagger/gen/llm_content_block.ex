@@ -38,6 +38,40 @@ defmodule Dagger.LLMContentBlock do
   end
 
   @doc """
+  Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
+  """
+  @spec content(t()) :: {:ok, [Dagger.LLMContentBlock.t()]} | {:error, term()}
+  def content(%__MODULE__{} = llm_content_block) do
+    query_builder =
+      llm_content_block.query_builder |> QB.select("content") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(llm_content_block.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.LLMContentBlock{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("LLMContentBlock"),
+           client: llm_content_block.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+  """
+  @spec data(t()) :: {:ok, String.t()} | {:error, term()}
+  def data(%__MODULE__{} = llm_content_block) do
+    query_builder =
+      llm_content_block.query_builder |> QB.select("data")
+
+    Client.execute(llm_content_block.client, query_builder)
+  end
+
+  @doc """
   Whether the tool call resulted in an error (for TOOL_RESULT kind).
   """
   @spec errored(t()) :: {:ok, boolean()} | {:error, term()}
@@ -71,6 +105,17 @@ defmodule Dagger.LLMContentBlock do
       {:ok, enum} -> {:ok, Dagger.LLMContentBlockKind.from_string(enum)}
       error -> error
     end
+  end
+
+  @doc """
+  The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
+  """
+  @spec mime_type(t()) :: {:ok, String.t()} | {:error, term()}
+  def mime_type(%__MODULE__{} = llm_content_block) do
+    query_builder =
+      llm_content_block.query_builder |> QB.select("mimeType")
+
+    Client.execute(llm_content_block.client, query_builder)
   end
 
   @doc """

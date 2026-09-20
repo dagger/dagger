@@ -2419,6 +2419,20 @@ export type LLMStepOpts = {
   maxTokens?: number
 }
 
+export type LLMWithContentOpts = {
+  /**
+   * The message's recorded provenance.
+   */
+  origin?: LLMMessageOriginInput
+}
+
+export type LLMWithContentFileOpts = {
+  /**
+   * The media MIME type; inferred from the file's contents when omitted.
+   */
+  mimeType?: string
+}
+
 export type LLMWithModelOpts = {
   /**
    * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
@@ -2460,6 +2474,13 @@ export type LLMWithResponseOpts = {
   totalTokens?: number
 }
 
+export type LLMWithToolResultOpts = {
+  /**
+   * Ordered text and media returned by the tool
+   */
+  blocks?: LLMContentBlockInput[]
+}
+
 export type LLMWithToolsOpts = {
   /**
    * Method names to exclude from the toolset (e.g. constructors, entrypoints).
@@ -2479,14 +2500,34 @@ export type LLMContentBlockInput = {
   callId?: string
 
   /**
+   * Ordered TEXT or media blocks returned by a tool.
+   */
+  content?: LLMContentBlockInput[]
+
+  /**
+   * Base64-encoded media bytes. Supply exactly one of data or file for media.
+   */
+  data?: string
+
+  /**
    * Whether the tool call resulted in an error (for TOOL_RESULT kind).
    */
   errored?: boolean
 
   /**
+   * A media file to resolve to inline bytes.
+   */
+  file?: File
+
+  /**
    * The kind of content block.
    */
   kind: LLMContentBlockKind
+
+  /**
+   * Media MIME type; required for inline data, inferred for a file.
+   */
+  mimeType?: string
 
   /**
    * Provider-specific opaque data (e.g. Anthropic thinking signature).
@@ -2508,6 +2549,21 @@ export type LLMContentBlockInput = {
  * The kind of content in a message block.
  */
 export enum LLMContentBlockKind {
+  /**
+   * Inline audio.
+   */
+  Audio = "AUDIO",
+
+  /**
+   * An inline PDF document.
+   */
+  Document = "DOCUMENT",
+
+  /**
+   * An inline image.
+   */
+  Image = "IMAGE",
+
   /**
    * Plain text content.
    */
@@ -2537,6 +2593,12 @@ export function LLMContentBlockKindValueToName(
   value: LLMContentBlockKind,
 ): string {
   switch (value) {
+    case LLMContentBlockKind.Audio:
+      return "AUDIO"
+    case LLMContentBlockKind.Document:
+      return "DOCUMENT"
+    case LLMContentBlockKind.Image:
+      return "IMAGE"
     case LLMContentBlockKind.Text:
       return "TEXT"
     case LLMContentBlockKind.Thinking:
@@ -2558,6 +2620,12 @@ export function LLMContentBlockKindNameToValue(
   name: string,
 ): LLMContentBlockKind {
   switch (name) {
+    case "AUDIO":
+      return LLMContentBlockKind.Audio
+    case "DOCUMENT":
+      return LLMContentBlockKind.Document
+    case "IMAGE":
+      return LLMContentBlockKind.Image
     case "TEXT":
       return LLMContentBlockKind.Text
     case "THINKING":
@@ -12289,6 +12357,29 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Queue one user message containing ordered text and media blocks.
+   * @param content The ordered message content.
+   * @param opts.origin The message's recorded provenance.
+   */
+  withContent = (
+    content: LLMContentBlockInput[],
+    opts?: LLMWithContentOpts,
+  ): LLM => {
+    const ctx = this._ctx.select("withContent", { content, ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.
+   * @param file The media file.
+   * @param opts.mimeType The media MIME type; inferred from the file's contents when omitted.
+   */
+  withContentFile = (file: File, opts?: LLMWithContentFileOpts): LLM => {
+    const ctx = this._ctx.select("withContentFile", { file, ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
    * Add an external MCP server to the LLM
    * @param name The name of the MCP server
    * @param service The MCP service to run and communicate with over stdio
@@ -12382,11 +12473,22 @@ export class LLM extends BaseClient {
   /**
    * Append the result of a tool call to the message history.
    * @param callId The ID of the tool call this result responds to
-   * @param content The content returned by the tool
+   * @param content Text returned by the tool, placed before blocks
    * @param errored Whether the tool call resulted in an error
+   * @param opts.blocks Ordered text and media returned by the tool
    */
-  withToolResult = (callId: string, content: string, errored: boolean): LLM => {
-    const ctx = this._ctx.select("withToolResult", { callId, content, errored })
+  withToolResult = (
+    callId: string,
+    content: string,
+    errored: boolean,
+    opts?: LLMWithToolResultOpts,
+  ): LLM => {
+    const ctx = this._ctx.select("withToolResult", {
+      callId,
+      content,
+      errored,
+      ...opts,
+    })
     return new LLM(ctx)
   }
 
@@ -12458,8 +12560,10 @@ export class LLMContentBlock extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _arguments?: JSON = undefined
   private readonly _callId?: string = undefined
+  private readonly _data?: string = undefined
   private readonly _errored?: boolean = undefined
   private readonly _kind?: LLMContentBlockKind = undefined
+  private readonly _mimeType?: string = undefined
   private readonly _signature?: string = undefined
   private readonly _text?: string = undefined
   private readonly _toolName?: string = undefined
@@ -12472,8 +12576,10 @@ export class LLMContentBlock extends BaseClient {
     _id?: ID,
     _arguments?: JSON,
     _callId?: string,
+    _data?: string,
     _errored?: boolean,
     _kind?: LLMContentBlockKind,
+    _mimeType?: string,
     _signature?: string,
     _text?: string,
     _toolName?: string,
@@ -12483,8 +12589,10 @@ export class LLMContentBlock extends BaseClient {
     this._id = _id
     this._arguments = _arguments
     this._callId = _callId
+    this._data = _data
     this._errored = _errored
     this._kind = _kind
+    this._mimeType = _mimeType
     this._signature = _signature
     this._text = _text
     this._toolName = _toolName
@@ -12536,6 +12644,39 @@ export class LLMContentBlock extends BaseClient {
   }
 
   /**
+   * Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
+   */
+  content = async (): Promise<LLMContentBlock[]> => {
+    type content = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("content").select("id")
+
+    const response: Awaited<content[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new LLMContentBlock(ctx.copy().selectNode(r.id, "LLMContentBlock")),
+    )
+  }
+
+  /**
+   * Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+   */
+  data = async (): Promise<string> => {
+    if (this._data) {
+      return this._data
+    }
+
+    const ctx = this._ctx.select("data")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Whether the tool call resulted in an error (for TOOL_RESULT kind).
    */
   errored = async (): Promise<boolean> => {
@@ -12563,6 +12704,21 @@ export class LLMContentBlock extends BaseClient {
     const response: Awaited<LLMContentBlockKind> = await ctx.execute()
 
     return LLMContentBlockKindNameToValue(response)
+  }
+
+  /**
+   * The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
+   */
+  mimeType = async (): Promise<string> => {
+    if (this._mimeType) {
+      return this._mimeType
+    }
+
+    const ctx = this._ctx.select("mimeType")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

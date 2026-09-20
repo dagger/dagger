@@ -21,6 +21,10 @@ class LLMContentBlockInput extends Client\AbstractInputObject
         public ?Json $arguments,
         public ?bool $errored = false,
         public ?string $signature = '',
+        public ?string $mimeType = '',
+        public ?string $data = '',
+        public ?Id $file,
+        public ?LLMContentBlockInput $content,
     ) {
     }
 }
