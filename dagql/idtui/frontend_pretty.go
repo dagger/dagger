@@ -5994,12 +5994,8 @@ func (fe *frontendPretty) handleInputComplete() {
 	fe.startPromptHandle(input)
 }
 
-// submitToTarget offers the message to the focused conversation's in-flight
+// submitPromptToTarget offers the message to the focused conversation's in-flight
 // turn, reporting whether it was absorbed.
-func (fe *frontendPretty) submitToTarget(value string) bool {
-	return fe.submitPromptToTarget(PromptInput{Text: value})
-}
-
 func (fe *frontendPretty) submitPromptToTarget(input PromptInput) bool {
 	if handler, ok := fe.shell.(PromptInputHandler); ok {
 		return handler.SubmitPromptToTarget(input)
@@ -6052,9 +6048,9 @@ func (fe *frontendPretty) setQueuedPrompt(input PromptInput) {
 }
 
 // clearQueuedMessage removes the queued message from the shell handler and
-// the indicator, returning its text. Used by callers that discard the queue.
-func (fe *frontendPretty) clearQueuedMessage() string {
-	return fe.clearQueuedPrompt().Text
+// the indicator. Used by callers that discard the queue.
+func (fe *frontendPretty) clearQueuedMessage() {
+	fe.clearQueuedPrompt()
 }
 
 func (fe *frontendPretty) clearQueuedPrompt() PromptInput {
@@ -6070,7 +6066,7 @@ func (fe *frontendPretty) clearQueuedPrompt() PromptInput {
 	return input
 }
 
-// startShellHandle runs a shell turn for value in the background. It is used
+// startPromptHandle runs a shell turn for input in the background. It is used
 // both for freshly submitted input and to drain a message that was queued
 // after the previous turn's prompt loop finished consuming interjects.
 //
@@ -6079,10 +6075,6 @@ func (fe *frontendPretty) clearQueuedPrompt() PromptInput {
 // shellLock. A prompt turn is not: it runs server-side in its own agent
 // runtime, and holding the lock would mean an agent that is running blocks
 // every other agent from being spoken to.
-func (fe *frontendPretty) startShellHandle(value string) {
-	fe.startPromptHandle(PromptInput{Text: value})
-}
-
 func (fe *frontendPretty) startPromptHandle(input PromptInput) {
 	if fe.shell == nil {
 		return

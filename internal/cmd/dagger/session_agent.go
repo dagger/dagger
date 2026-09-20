@@ -579,11 +579,6 @@ func (a *sessionAgent) SubmitPrompt(input idtui.PromptInput) bool {
 	return true
 }
 
-// send enqueues one text-only message and logs how it landed.
-func (a *sessionAgent) send(rt agentRuntime, msg string) {
-	a.sendPrompt(rt, idtui.PromptInput{Text: msg})
-}
-
 func (a *sessionAgent) sendPrompt(rt agentRuntime, input idtui.PromptInput) {
 	handle, err := sendAgentPrompt(a.session.plumbingCtx, rt, input)
 	if err != nil {

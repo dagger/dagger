@@ -72,7 +72,7 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	defer term.mu.Unlock()
 
 	if term.segments != nil {
-		return term.writeMediaText(p, true, false)
+		return term.writeMediaText(p, true, false), nil
 	}
 	n, err := term.markdownBuf.Write(p)
 	if err != nil {
@@ -91,7 +91,7 @@ func (term *Vterm) WriteDiff(p []byte) (int, error) {
 	defer term.mu.Unlock()
 
 	if term.segments != nil {
-		return term.writeMediaText(p, false, true)
+		return term.writeMediaText(p, false, true), nil
 	}
 	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
 	if term.Height == 0 {
@@ -118,7 +118,7 @@ func (term *Vterm) Write(p []byte) (int, error) {
 	defer term.mu.Unlock()
 
 	if term.segments != nil {
-		return term.writeMediaText(p, false, false)
+		return term.writeMediaText(p, false, false), nil
 	}
 	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
 	if term.Height == 0 {

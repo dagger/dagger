@@ -1124,7 +1124,7 @@ func (AgentRuntimeSuite) TestSendContentMidTurn(ctx context.Context, t *testctx.
 			{Kind: dagger.LLMContentBlockKindText, Text: "then continue"},
 		}).WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: slowToolReply}})
 	model := agentContentRecordingModel(ctx, t, c, expected)
-	h := spawnAgent(ctx, t, c, spawnOpts{model: model, toolIDs: []dagger.ID{dagger.ID(toolID)}})
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, toolIDs: []dagger.ID{toolID}})
 	agent := dagger.Ref[*dagger.Agent](c, dagger.ID(h.agentID))
 	first, err := agent.Send(ctx, slowToolPrompt)
 	require.NoError(t, err)

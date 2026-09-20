@@ -83,9 +83,9 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 
 // writeMediaText is called with term.mu held. Adjacent chunks of the same text
 // kind are coalesced so streaming Markdown and terminal escape sequences work.
-func (term *Vterm) writeMediaText(p []byte, markdown, diff bool) (int, error) {
+func (term *Vterm) writeMediaText(p []byte, markdown, diff bool) int {
 	if len(p) == 0 {
-		return 0, nil
+		return 0
 	}
 	term.mediaFollow = term.mediaAtBottom()
 	text := string(p)
@@ -100,7 +100,7 @@ func (term *Vterm) writeMediaText(p []byte, markdown, diff bool) (int, error) {
 	}
 	term.rawBuf.Write(p)
 	term.invalidateMedia()
-	return len(p), nil
+	return len(p)
 }
 
 // mediaAtBottom reads the last layout, without rendering streamed input. Once

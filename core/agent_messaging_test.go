@@ -143,9 +143,10 @@ func TestAgentSendContent(t *testing.T) {
 			require.Equal(t, msg.Ref, rec.origin.Ref)
 			require.Equal(t, "#9", rec.origin.ReplyTo)
 			hint := AgentMessageStarted
-			if state == "mid-turn" {
+			switch state {
+			case "mid-turn":
 				hint = AgentMessageSteered
-			} else if state == "paused" {
+			case "paused":
 				hint = AgentMessageQueued
 			}
 			require.Equal(t, hint, rec.deliveryHint)
