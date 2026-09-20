@@ -89,6 +89,11 @@ func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testct
       .withNewFile("main.dang", contents: "type Broken {\n  hello: IntentionallyUndefinedType! { \"hi\" }\n}\n")
       .asModule
   }
+
+  execFailure: Container! {
+    container.from("alpine:3.20")
+      .withExec(["sh", "-c", "echo exec-stdout-diagnostic; echo exec-stderr-diagnostic >&2; exit 1"])
+  }
 }
 `,
 	} {
@@ -105,10 +110,27 @@ func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testct
 	t.Logf("MCP failure result:\n%s", text)
 	require.Contains(t, text, "unresolved type: IntentionallyUndefinedType")
 	require.Contains(t, text, "[traceparent:")
-	require.Contains(t, text, "== DIAGNOSTIC LOGS ==")
+	require.NotContains(t, text, "== DIAGNOSTIC LOGS ==")
 	require.Contains(t, text, "main.dang:2:10")
 	require.Contains(t, text, `hello: IntentionallyUndefinedType! { "hi" }`)
 	require.NotContains(t, text, "\033[")
+
+	// Exec failures must use the same captured output, not a second copy
+	// serialized from stdout/stderr error extensions.
+	res, err = cli.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "execFailure", Arguments: map[string]any{}},
+	})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+	text = toolResultText(t, res)
+	t.Logf("MCP exec failure result:\n%s", text)
+	require.Contains(t, text, "exit code: 1")
+	require.Contains(t, text, "[traceparent:")
+	require.Equal(t, 1, strings.Count(text, "\nexec-stdout-diagnostic"))
+	require.Equal(t, 1, strings.Count(text, "\nexec-stderr-diagnostic"))
+	require.NotContains(t, text, "<stdout>")
+	require.NotContains(t, text, "<stderr>")
+	require.NotContains(t, text, "<exitCode>")
 }
 
 func initMCPTestModule(ctx context.Context, t testing.TB) string {
