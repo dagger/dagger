@@ -217,7 +217,7 @@ type shellCallHandler struct {
 	// as a new turn once the current one finishes. Messages submitted while a
 	// PROMPT turn runs bypass this entirely: they are sent straight to the
 	// agent runtime (see Interject).
-	queuedMsg   string
+	queuedMsg   idtui.PromptInput
 	queuedMsgMu sync.Mutex
 
 	// cancel interrupts the entire shell session
@@ -243,11 +243,20 @@ type shellCallHandler struct {
 // delivering to the busy one would put the user's words in a conversation
 // they were not looking at (hack/designs/async-agents.md §5.1).
 func (h *shellCallHandler) SubmitToTarget(msg string) bool {
+	return h.SubmitPromptToTarget(idtui.PromptInput{Text: msg})
+}
+
+func (h *shellCallHandler) SubmitPromptToTarget(input idtui.PromptInput) bool {
+	// Rejected inputs must go through HandlePrompt to surface the error, never
+	// bypass command/attachment validation by joining an in-flight turn.
+	if h.validatePromptInput(input) != nil {
+		return false
+	}
 	s, err := h.llmMaybe()
 	if err != nil || s == nil {
 		return false
 	}
-	return s.SubmitToTarget(msg)
+	return s.SubmitPromptToTarget(input)
 }
 
 // InterruptTarget preempts the focused conversation -- Ctrl-C. It reports
@@ -357,17 +366,26 @@ func (h *shellCallHandler) resetSaveIdentity() {
 // to be run as a new turn once the current one finishes (see
 // frontendPretty.handleShellDone).
 func (h *shellCallHandler) QueueMessage(msg string) {
-	h.queuedMsgMu.Lock()
-	defer h.queuedMsgMu.Unlock()
-	h.queuedMsg = msg
+	h.QueuePrompt(idtui.PromptInput{Text: msg})
 }
 
-// DequeueMessage returns and clears any queued message.
+func (h *shellCallHandler) QueuePrompt(input idtui.PromptInput) {
+	h.queuedMsgMu.Lock()
+	defer h.queuedMsgMu.Unlock()
+	h.queuedMsg = input.Clone()
+}
+
+// DequeueMessage returns and clears any queued text-only message. Multimodal
+// callers use DequeuePrompt to retain attachments when recalling the draft.
 func (h *shellCallHandler) DequeueMessage() string {
+	return h.DequeuePrompt().Text
+}
+
+func (h *shellCallHandler) DequeuePrompt() idtui.PromptInput {
 	h.queuedMsgMu.Lock()
 	defer h.queuedMsgMu.Unlock()
 	msg := h.queuedMsg
-	h.queuedMsg = ""
+	h.queuedMsg = idtui.PromptInput{}
 	return msg
 }
 
@@ -669,10 +687,35 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 }
 
 var _ idtui.ShellHandler = (*shellCallHandler)(nil)
+var _ idtui.PromptInputHandler = (*shellCallHandler)(nil)
 
-func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error) {
-	// Quick sanitization
-	line = strings.TrimSpace(line)
+func (h *shellCallHandler) Handle(ctx context.Context, line string) error {
+	return h.HandlePrompt(ctx, idtui.PromptInput{Text: line})
+}
+
+func (h *shellCallHandler) validatePromptInput(input idtui.PromptInput) error {
+	if len(input.Images) == 0 {
+		return nil
+	}
+	if h.mode != modePrompt {
+		return fmt.Errorf("image attachments are only supported in prompt mode")
+	}
+	line := strings.TrimSpace(input.Text)
+	if line == "exit" || strings.HasPrefix(line, "/") {
+		return fmt.Errorf("image attachments cannot be used with commands")
+	}
+	return nil
+}
+
+func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptInput) (rerr error) {
+	// Validate before interpreting commands, including exit: never execute a
+	// command or silently drop attachments from an image-bearing draft.
+	if err := h.validatePromptInput(input); err != nil {
+		return err
+	}
+	input = input.Clone()
+	input.Text = strings.TrimSpace(input.Text)
+	line := input.Text
 
 	// If in exit command
 	if line == "exit" || line == "/exit" {
@@ -680,8 +723,8 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		return nil
 	}
 
-	// Empty input
-	if line == "" {
+	// Empty input (an image-only prompt is valid).
+	if input.Empty() {
 		return nil
 	}
 
@@ -709,11 +752,11 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 			if err != nil {
 				return err
 			}
-			h.notePrompt(line)
+			h.notePrompt(input.Summary())
 			// The turn runs on whichever conversation the roster has
 			// focused; Target is the one place that resolves.
 			target := llm.Target()
-			if err := target.WithPrompt(ctx, line); err != nil {
+			if err := target.WithPromptInput(ctx, input); err != nil {
 				if errors.Is(err, errAgentRewound) {
 					return nil
 				}
