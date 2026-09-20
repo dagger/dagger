@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"mime"
 	"net"
@@ -404,6 +405,11 @@ const MaxLLMMediaBytes = 20 * 1024 * 1024
 
 // Validate checks a resolved block without interpreting provider-specific signatures.
 func (b *LLMContentBlock) Validate() error {
+	remaining := MaxLLMMediaBytes
+	return b.validate(&remaining)
+}
+
+func (b *LLMContentBlock) validate(remaining *int) error {
 	if b == nil {
 		return fmt.Errorf("nil content block")
 	}
@@ -430,9 +436,9 @@ func (b *LLMContentBlock) Validate() error {
 			if child.Kind != LLMContentText && child.Kind != LLMContentImage && child.Kind != LLMContentAudio && child.Kind != LLMContentDocument {
 				return fmt.Errorf("content %d: %s is not valid tool result content", i, child.Kind)
 			}
-		}
-		if err := ValidateLLMContent(b.Content); err != nil {
-			return err
+			if err := child.validate(remaining); err != nil {
+				return fmt.Errorf("content %d: %w", i, err)
+			}
 		}
 	case LLMContentImage, LLMContentAudio, LLMContentDocument:
 		if b.Text != "" {
@@ -448,15 +454,43 @@ func (b *LLMContentBlock) Validate() error {
 		if (b.Kind == LLMContentImage && !strings.HasPrefix(mt, "image/")) || (b.Kind == LLMContentAudio && !strings.HasPrefix(mt, "audio/")) || (b.Kind == LLMContentDocument && mt != "application/pdf") {
 			return fmt.Errorf("MIME type %q does not match %s", mt, b.Kind)
 		}
-		if len(b.Data) > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
-			return fmt.Errorf("media exceeds %d decoded bytes", MaxLLMMediaBytes)
+		encodedSize := len(b.Data)
+		if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
+			encodedSize -= strings.Count(b.Data, "\r") + strings.Count(b.Data, "\n")
+			if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
+				return fmt.Errorf("media exceeds %d decoded bytes", MaxLLMMediaBytes)
+			}
 		}
-		data, err := base64.StdEncoding.Strict().DecodeString(b.Data)
+		// NewDecoder accepts concatenated padded chunks at read boundaries,
+		// unlike DecodeString. Require padding to terminate the entire value.
+		if pad := strings.IndexByte(b.Data, '='); pad >= 0 {
+			padding := 0
+			for _, char := range b.Data[pad:] {
+				switch char {
+				case '=':
+					padding++
+					if padding > 2 {
+						return fmt.Errorf("invalid base64 media padding")
+					}
+				case '\r', '\n':
+				default:
+					return fmt.Errorf("invalid base64 media data after padding")
+				}
+			}
+		}
+		// Stream validation instead of allocating a decoded copy for every
+		// schema, recipe and provider boundary. Count actual decoded bytes:
+		// base64 permits CR/LF, so its encoded length is not an exact budget.
+		size, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(b.Data)))
 		if err != nil {
 			return fmt.Errorf("invalid base64 media data: %w", err)
 		}
-		if len(data) == 0 || len(data) > MaxLLMMediaBytes {
+		if size == 0 {
 			return fmt.Errorf("media must contain 1 to %d decoded bytes", MaxLLMMediaBytes)
+		}
+		*remaining -= int(size)
+		if *remaining < 0 {
+			return fmt.Errorf("message media exceeds %d decoded bytes", MaxLLMMediaBytes)
 		}
 	default:
 		return fmt.Errorf("unknown content block kind %q", b.Kind)
@@ -466,23 +500,10 @@ func (b *LLMContentBlock) Validate() error {
 
 // ValidateLLMContent validates blocks and the aggregate decoded-media budget.
 func ValidateLLMContent(blocks []*LLMContentBlock) error {
-	size := 0
-	var count func(*LLMContentBlock)
-	count = func(b *LLMContentBlock) {
-		if b.Data != "" {
-			size += base64.StdEncoding.DecodedLen(len(b.Data)) - (len(b.Data) - len(strings.TrimRight(b.Data, "=")))
-		}
-		for _, child := range b.Content {
-			count(child)
-		}
-	}
+	remaining := MaxLLMMediaBytes
 	for i, b := range blocks {
-		if err := b.Validate(); err != nil {
+		if err := b.validate(&remaining); err != nil {
 			return fmt.Errorf("content %d: %w", i, err)
-		}
-		count(b)
-		if size > MaxLLMMediaBytes {
-			return fmt.Errorf("message media exceeds %d decoded bytes", MaxLLMMediaBytes)
 		}
 	}
 	return nil
@@ -612,6 +633,10 @@ func llmContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error)
 	}
 	if mimeType == "" {
 		mimeType = http.DetectContentType(data)
+		// net/http uses the audio/wave alias, while provider APIs expect wav.
+		if mimeType == "audio/wave" {
+			mimeType = "audio/wav"
+		}
 	}
 	kind := LLMContentDocument
 	switch {
@@ -2172,15 +2197,11 @@ func renderMessagesForModel(messages []*LLMMessage) []*LLMMessage {
 			rendered = append(rendered, messages[:i]...)
 		}
 		cp := msg.Clone()
-		prepended := false
-		for _, block := range cp.Content {
-			if block.Kind == LLMContentText {
-				block.Text = header + "\n\n" + block.Text
-				prepended = true
-				break
-			}
-		}
-		if !prepended {
+		// Attribution must precede the entire message, not just its first
+		// text block: media may come before the accompanying prompt.
+		if len(cp.Content) > 0 && cp.Content[0].Kind == LLMContentText {
+			cp.Content[0].Text = header + "\n\n" + cp.Content[0].Text
+		} else {
 			cp.Content = append([]*LLMContentBlock{{
 				Kind: LLMContentText,
 				Text: header,

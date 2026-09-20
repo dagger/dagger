@@ -13,8 +13,14 @@ import (
 // v1 `messages` field (GraphQL's lowerCamel key spelling), which is the
 // recording format consumed by recording/ models.
 type recordedMessage struct {
-	Role       string                 `json:"role"`
-	Content    []recordedContentBlock `json:"content"`
+	Role    string                 `json:"role"`
+	Content []recordedContentBlock `json:"content"`
+	Origin  *struct {
+		Kind      LLMMessageOriginKind `json:"kind"`
+		AgentName string               `json:"agentName"`
+		Ref       string               `json:"ref"`
+		ReplyTo   string               `json:"replyTo"`
+	} `json:"origin"`
 	TokenUsage struct {
 		InputTokens       int64 `json:"inputTokens"`
 		OutputTokens      int64 `json:"outputTokens"`
@@ -67,6 +73,9 @@ func decodeRecordedMessages(data []byte) ([]*LLMMessage, error) {
 				TotalTokens:       m.TokenUsage.TotalTokens,
 			},
 		}
+		if m.Origin != nil {
+			msg.Origin = &LLMMessageOrigin{Kind: m.Origin.Kind, AgentName: m.Origin.AgentName, Ref: m.Origin.Ref, ReplyTo: m.Origin.ReplyTo}
+		}
 		for _, b := range m.Content {
 			msg.Content = append(msg.Content, b.block())
 		}
@@ -107,9 +116,10 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 	if len(history) >= len(c.messages) {
 		return nil, fmt.Errorf("no more messages")
 	}
+	rendered := renderMessagesForModel(c.messages[:len(history)])
 	for i, message := range history {
 		// TODO: (cwlbraa) is this a complete comparison? also doesn't this end up being O(n^2)?
-		if scrub.Stabilize(message.TextContent()) != scrub.Stabilize(c.messages[i].TextContent()) || message.Role != c.messages[i].Role {
+		if scrub.Stabilize(message.TextContent()) != scrub.Stabilize(rendered[i].TextContent()) || message.Role != c.messages[i].Role {
 			return nil, fmt.Errorf(
 				"message history diverges at index %d:\n%s",
 				i,

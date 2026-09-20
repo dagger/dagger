@@ -45,13 +45,69 @@ func TestLLMContentValidation(t *testing.T) {
 	require.ErrorContains(t, (&LLMContentBlock{Kind: LLMContentToolResult, Content: []*LLMContentBlock{large, large}}).Validate(), "exceeds")
 }
 
+func TestLLMContentValidationExactSize(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString(make([]byte, MaxLLMMediaBytes/2))
+	// Both blocks together are exactly at the decoded limit. CR/LF and
+	// padding must not count toward the decoded budget.
+	wrapped := encoded[:80] + "\r\n" + encoded[80:] + "\r\n"
+	block := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: wrapped}
+	require.NoError(t, ValidateLLMContent([]*LLMContentBlock{block, block}))
+	block.Data = base64.StdEncoding.EncodeToString(make([]byte, MaxLLMMediaBytes)) + "\r\n"
+	require.NoError(t, block.Validate())
+	for _, data := range []string{"aGVsbG8=aA==", "aGVsbG8=!", "\r\n", "aB==", strings.Repeat("YWFh", 255) + "YQ==YQ=="} {
+		block.Data = data
+		require.Error(t, block.Validate(), "data %q", data)
+	}
+}
+
+func TestLLMContentAttributionOrder(t *testing.T) {
+	image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "aGVsbG8="}
+	origin := &LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentName: "reviewer", Ref: "#1", ReplyTo: "#2"}
+	for name, blocks := range map[string][]*LLMContentBlock{
+		"image only":        {image},
+		"image before text": {image, {Kind: LLMContentText, Text: "describe"}},
+		"text before image": {{Kind: LLMContentText, Text: "describe"}, image},
+	} {
+		t.Run(name, func(t *testing.T) {
+			llm := (&LLM{endpointMtx: &sync.Mutex{}, mcp: &MCP{}}).WithContent(blocks, origin)
+			before := llm.Messages[0].Clone()
+			rendered := renderMessagesForModel(llm.Messages)
+			require.Equal(t, LLMContentText, rendered[0].Content[0].Kind)
+			require.True(t, strings.HasPrefix(rendered[0].Content[0].Text, origin.AttributionHeader()))
+			require.Equal(t, before, llm.Messages[0], "rendering must not mutate stored content")
+			sels, err := llm.recipeSelectors(context.Background())
+			require.NoError(t, err)
+			require.Len(t, sels, 2)
+			require.Equal(t, "withContent", sels[1].Field)
+			inputs := sels[1].Args[0].Value.(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]])
+			restoredOrigin := sels[1].Args[1].Value.(dagql.Optional[dagql.InputObject[LLMMessageOriginInput]]).Value.Value.ToLLMMessageOrigin()
+			require.Equal(t, origin, restoredOrigin)
+			restored := &LLMMessage{Role: LLMMessageRoleUser, Origin: restoredOrigin}
+			for _, input := range inputs {
+				restored.Content = append(restored.Content, input.Value.ToLLMContentBlock())
+			}
+			require.Equal(t, rendered, renderMessagesForModel([]*LLMMessage{restored}))
+		})
+	}
+}
+
+func TestLLMContentRecordedOrigin(t *testing.T) {
+	msgs, err := decodeRecordedMessages([]byte(`[{"role":"USER","origin":{"kind":"AGENT","agentName":"reviewer","ref":"#1","replyTo":"#2"},"content":[{"kind":"IMAGE","mimeType":"image/png","data":"aGVsbG8="}]},{"role":"ASSISTANT","content":[{"kind":"TEXT","text":"a picture"}]}]`))
+	require.NoError(t, err)
+	require.Equal(t, &LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentName: "reviewer", Ref: "#1", ReplyTo: "#2"}, msgs[0].Origin)
+	_, ctx := recordingTestRecorder(t)
+	response, err := newRecordedResponseProvider(msgs).SendQuery(ctx, renderMessagesForModel(msgs[:1]), nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "a picture", response.TextContent())
+}
+
 func TestLLMContentFromBytes(t *testing.T) {
 	for _, tc := range []struct {
 		data, mime string
 		kind       LLMContentBlockKind
 	}{
 		{"\x89PNG\r\n\x1a\n", "image/png", LLMContentImage},
-		{"RIFF\x00\x00\x00\x00WAVE", "audio/wave", LLMContentAudio},
+		{"RIFF\x00\x00\x00\x00WAVE", "audio/wav", LLMContentAudio},
 		{"%PDF-1.7\n", "application/pdf", LLMContentDocument},
 	} {
 		block, err := llmContentFromBytes([]byte(tc.data), "")
