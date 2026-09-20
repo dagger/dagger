@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -99,6 +100,59 @@ func TestLLMContentRecordedOrigin(t *testing.T) {
 	response, err := newRecordedResponseProvider(msgs).SendQuery(ctx, renderMessagesForModel(msgs[:1]), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "a picture", response.TextContent())
+}
+
+func TestLLMContentRecordedMediaComparison(t *testing.T) {
+	image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: base64.StdEncoding.EncodeToString([]byte("private picture bytes"))}
+	other := image.Clone()
+	other.Data = base64.StdEncoding.EncodeToString([]byte("different private picture bytes"))
+	for _, nested := range []bool{false, true} {
+		for name, mutate := range map[string]func([]*LLMContentBlock) []*LLMContentBlock{
+			"bytes": func(blocks []*LLMContentBlock) []*LLMContentBlock { blocks[0].Data = other.Data; return blocks },
+			"MIME":  func(blocks []*LLMContentBlock) []*LLMContentBlock { blocks[0].MIMEType = "image/jpeg"; return blocks },
+			"kind":  func(blocks []*LLMContentBlock) []*LLMContentBlock { blocks[0].Kind = LLMContentAudio; return blocks },
+			"order": func(blocks []*LLMContentBlock) []*LLMContentBlock {
+				blocks[0], blocks[1] = blocks[1], blocks[0]
+				return blocks
+			},
+			"missing": func(blocks []*LLMContentBlock) []*LLMContentBlock { return blocks[1:] },
+		} {
+			t.Run(fmt.Sprintf("nested=%t/%s", nested, name), func(t *testing.T) {
+				expected := &LLMMessage{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{image.Clone(), other.Clone()}}
+				actual := expected.Clone()
+				actual.Content = mutate(actual.Content)
+				if nested {
+					expected.Content = []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call", Content: expected.Content}}
+					actual.Content = []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call", Content: actual.Content}}
+				}
+				provider := newRecordedResponseProvider([]*LLMMessage{expected, {Role: LLMMessageRoleAssistant}})
+				_, err := provider.SendQuery(context.Background(), []*LLMMessage{actual}, nil, nil)
+				require.ErrorContains(t, err, "media mismatch")
+				require.NotContains(t, err.Error(), image.Data)
+				require.NotContains(t, err.Error(), other.Data)
+				require.Equal(t, image.Data, recordingMedia(expected)[0].Data, "diff must not mutate the recording")
+			})
+		}
+	}
+
+	// Equal neighboring media must also be sanitized when only text differs.
+	expected := &LLMMessage{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{
+		{Kind: LLMContentText, Text: "pid=1"}, image.Clone(),
+		{Kind: LLMContentToolResult, Content: []*LLMContentBlock{other.Clone()}},
+	}}
+	actual := expected.Clone()
+	actual.Content[0].Text = "pid=2"
+	provider := newRecordedResponseProvider([]*LLMMessage{expected, {Role: LLMMessageRoleAssistant}})
+	_, ctx := recordingTestRecorder(t)
+	_, err := provider.SendQuery(ctx, []*LLMMessage{actual}, nil, nil)
+	require.NoError(t, err, "legacy stabilized text matching must remain intact")
+	actual.Content[0].Text = "different text"
+	_, err = provider.SendQuery(ctx, []*LLMMessage{actual}, nil, nil)
+	require.ErrorContains(t, err, "message history diverges")
+	require.NotContains(t, err.Error(), "media mismatch")
+	require.NotContains(t, err.Error(), image.Data)
+	require.NotContains(t, err.Error(), other.Data)
+	require.Equal(t, image.Data, actual.Content[1].Data, "diff must not mutate history")
 }
 
 func TestLLMContentFromBytes(t *testing.T) {

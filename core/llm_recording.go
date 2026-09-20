@@ -99,6 +99,53 @@ func (*RecordedResponseProvider) IsRetryable(err error) bool {
 	return false
 }
 
+type recordingMediaBlock struct {
+	Position, MIMEType, Data string
+}
+
+// recordingMedia keeps media identity and ordering separate from the legacy
+// stabilized text comparison. Positions include enclosing block kinds so nested
+// tool-result media cannot match otherwise identical top-level media.
+func recordingMedia(msg *LLMMessage) []recordingMediaBlock {
+	var media []recordingMediaBlock
+	var walk func([]*LLMContentBlock, string)
+	walk = func(blocks []*LLMContentBlock, parent string) {
+		for i, block := range blocks {
+			if block == nil {
+				continue
+			}
+			position := fmt.Sprintf("%s/%d:%s", parent, i, block.Kind)
+			switch block.Kind {
+			case LLMContentImage, LLMContentAudio, LLMContentDocument:
+				media = append(media, recordingMediaBlock{Position: position, MIMEType: block.MIMEType, Data: block.Data})
+			}
+			walk(block.Content, position)
+		}
+	}
+	walk(msg.Content, "")
+	return media
+}
+
+// recordingDiffMessage sanitizes even unchanged neighboring fields before cmp
+// builds its context: a text-only mismatch must not print inline media bytes.
+func recordingDiffMessage(msg *LLMMessage) *LLMMessage {
+	clone := msg.Clone()
+	var redact func([]*LLMContentBlock)
+	redact = func(blocks []*LLMContentBlock) {
+		for _, block := range blocks {
+			if block == nil {
+				continue
+			}
+			if block.Data != "" {
+				block.Data = "[media data omitted]"
+			}
+			redact(block.Content)
+		}
+	}
+	redact(clone.Content)
+	return clone
+}
+
 func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	if len(history) > 0 && history[0].Role == LLMMessageRoleSystem {
 		// HACK: drop the synthesized default system prompt, which recordings
@@ -118,12 +165,16 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 	}
 	rendered := renderMessagesForModel(c.messages[:len(history)])
 	for i, message := range history {
-		// TODO: (cwlbraa) is this a complete comparison? also doesn't this end up being O(n^2)?
-		if scrub.Stabilize(message.TextContent()) != scrub.Stabilize(rendered[i].TextContent()) || message.Role != c.messages[i].Role {
+		mediaMismatch := !cmp.Equal(recordingMedia(rendered[i]), recordingMedia(message))
+		if mediaMismatch || scrub.Stabilize(message.TextContent()) != scrub.Stabilize(rendered[i].TextContent()) || message.Role != c.messages[i].Role {
+			reason := ""
+			if mediaMismatch {
+				reason = " (media mismatch)"
+			}
 			return nil, fmt.Errorf(
-				"message history diverges at index %d:\n%s",
-				i,
-				cmp.Diff(c.messages[i], message),
+				"message history diverges at index %d%s:\n%s",
+				i, reason,
+				cmp.Diff(recordingDiffMessage(c.messages[i]), recordingDiffMessage(message)),
 			)
 		}
 	}
