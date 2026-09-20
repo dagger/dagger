@@ -205,7 +205,7 @@ func openAIContentPart(block *LLMContentBlock) (openai.ChatCompletionContentPart
 	case LLMContentAudio:
 		var format string
 		switch block.MIMEType {
-		case "audio/wav", "audio/x-wav":
+		case "audio/wav", "audio/wave", "audio/x-wav":
 			format = "wav"
 		case "audio/mpeg", "audio/mp3":
 			format = "mp3"

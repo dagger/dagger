@@ -122,6 +122,26 @@ func TestOpenAIToolAudioPayload(t *testing.T) {
 	]}`, string(payload))
 }
 
+func TestOpenAIWAVMediaFromBytes(t *testing.T) {
+	// The RIFF/WAVE header is sniffed as audio/wave by net/http. Exercise
+	// inference and explicit aliases through the same path as file content.
+	wav := []byte("RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x40\x1f\x00\x00\x80\x3e\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
+	for _, mimeType := range []string{"", "audio/wav", "audio/wave", "audio/x-wav"} {
+		t.Run(mimeType, func(t *testing.T) {
+			block, err := llmContentFromBytes(wav, mimeType)
+			require.NoError(t, err)
+			require.Equal(t, LLMContentAudio, block.Kind)
+			messages, err := convertHistoryToOpenAI([]*LLMMessage{{
+				Role: LLMMessageRoleUser, Content: []*LLMContentBlock{block},
+			}})
+			require.NoError(t, err)
+			payload, err := json.Marshal(messages)
+			require.NoError(t, err)
+			assert.JSONEq(t, `[{"role":"user","content":[{"type":"input_audio","input_audio":{"format":"wav","data":"`+block.Data+`"}}]}]`, string(payload))
+		})
+	}
+}
+
 func TestCodexMediaPayload(t *testing.T) {
 	_, items, err := convertToCodexResponsesFormat([]*LLMMessage{{
 		Role: LLMMessageRoleUser,
