@@ -3,6 +3,7 @@ from collections.abc import Sequence
 import pytest
 
 import dagger
+from dagger.client._core import Context
 from dagger.client._guards import is_id_type, is_id_type_sequence, typecheck
 from dagger.client.base import Root, Scalar, Type
 
@@ -129,6 +130,28 @@ def test_input_object():
     arg = dagger.BuildArg("NAME", "value")
 
     assert (arg.name, arg.value) == ("NAME", "value")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("nested", [False, True], ids=["direct-file", "content-block"])
+async def test_llm_content_file_id_resolution(mocker, nested):
+    client = dagger.Client(Context())
+    file = client.file("image.png", "image bytes")
+    file_id = "file-id"
+    resolve_id = mocker.patch.object(dagger.File, "id", return_value=file_id)
+
+    if nested:
+        llm = client.llm().with_content(
+            [dagger.LLMContentBlockInput(kind=dagger.LLMContentBlockKind.IMAGE, file=file)]
+        )
+    else:
+        llm = client.llm().with_content_file(file)
+
+    await llm._ctx.resolve_ids()
+    args = llm._ctx.selections[-1].args
+    actual = args["content"][0]["file"] if nested else args["file"]
+    assert actual == file_id
+    resolve_id.assert_awaited_once()
 
 
 def test_is_id_type(client: Client):

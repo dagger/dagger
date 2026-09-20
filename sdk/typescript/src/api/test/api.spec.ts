@@ -1,24 +1,59 @@
 import assert from "assert"
 import { randomUUID } from "crypto"
 import fs from "fs"
+import { GraphQLClient } from "graphql-request"
 import { describe, it } from "mocha"
 
 import {
   ExecError,
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
-import { buildQuery, queryFlatten } from "../../common/graphql/compute_query.js"
+import {
+  buildQuery,
+  computeQuery,
+  queryFlatten,
+} from "../../common/graphql/compute_query.js"
 import {
   Client,
   type ClientContainerOpts,
   connect,
   Container,
+  LLMContentBlockKind,
   NetworkProtocol,
 } from "../../index.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
 describe("TypeScript SDK api", function () {
+  for (const nested of [false, true]) {
+    it(`resolves LLM media File IDs (${nested ? "content block" : "direct file"})`, async function () {
+      const client = new Client()
+      const file = client.file("image.png", "image bytes")
+      const llm = nested
+        ? client.llm().withContent([{ kind: LLMContentBlockKind.Image, file }])
+        : client.llm().withContentFile(file)
+      const queries: string[] = []
+      const gqlClient = new GraphQLClient("http://stub.invalid", {
+        fetch: async (_input, init) => {
+          const query = JSON.parse(init?.body as string).query as string
+          queries.push(query)
+          return Response.json({
+            data: { id: query.includes("withContent") ? "llm-id" : "file-id" },
+          })
+        },
+      })
+
+      await computeQuery(
+        [...llm["_ctx"]["_queryTree"], { operation: "id" }],
+        gqlClient,
+      )
+
+      // Inspect only the file argument: enum serialization is independent.
+      assert.match(queries.at(-1)!, /file:\s*"file-id"/)
+      assert.equal(queries.length, 2)
+    })
+  }
+
   it("Build correctly a query with one argument", function () {
     const tree = new Client().container().from("alpine:3.16.2")
 
