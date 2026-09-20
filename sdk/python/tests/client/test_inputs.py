@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+import anyio
 import pytest
 
 import dagger
@@ -193,6 +194,55 @@ async def test_resolve_ids_in_mixed_input_sequences(mocker):
     }
     assert value["files"] == (file, file)
     assert resolve_id.await_count == 3
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("nested", [False, True], ids=["list", "nested-input"])
+async def test_resolve_ids_in_concurrent_forks(mocker, nested):
+    client = dagger.Client(Context())
+    file = client.file("image.png", "image bytes")
+    started = [anyio.Event(), anyio.Event()]
+    release = [anyio.Event(), anyio.Event()]
+    finished = anyio.Event()
+    calls = 0
+
+    async def resolve_file_id():
+        nonlocal calls
+        index = calls
+        calls += 1
+        started[index].set()
+        await release[index].wait()
+        return "file-id"
+
+    resolve_id = mocker.patch.object(dagger.File, "id", side_effect=resolve_file_id)
+    files = [file]
+    value = {"content": [{"files": files}]} if nested else files
+    ctx = Context().select("Query", "example", [Arg("input", value)])
+    first = ctx.select("Example", "first", [])
+    second = ctx.select("Example", "second", [])
+
+    async def resolve_first():
+        await first.resolve_ids()
+        finished.set()
+
+    with anyio.fail_after(5):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(resolve_first)
+            await started[0].wait()
+            tg.start_soon(second.resolve_ids)
+            await started[1].wait()
+            release[0].set()
+            await finished.wait()
+            # The first query must be ready to send even while the second
+            # query is still resolving IDs on the same selections.
+            args = first.selections[0].args["input"]
+            resolved = list(args["content"][0]["files"] if nested else args)
+            release[1].set()
+
+    assert resolved == ["file-id"]
+    assert files == [file]
+    await ctx.resolve_ids()
+    assert resolve_id.await_count == 2
 
 
 def test_is_id_type(client: Client):

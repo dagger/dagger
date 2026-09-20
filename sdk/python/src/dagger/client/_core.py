@@ -333,9 +333,10 @@ class Context:
                 elif isinstance(value, typing.Sequence) and not isinstance(
                     value, (str, bytes, bytearray)
                 ):
-                    # Input objects can contain sequences at any depth. Normalize
-                    # them to lists so resolved IDs can be assigned by index.
-                    values[key] = list(value)
+                    # Normalize immutable sequences, but keep existing lists:
+                    # concurrent forks may already be resolving into them.
+                    if not isinstance(value, list):
+                        values[key] = list(value)
                     _walk(values[key])
 
         # Resolve all IDs concurrently, including those nested in input objects.
