@@ -2,8 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
+	"sync"
 	"testing"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -104,6 +107,117 @@ func twoAgentRegistry(t *testing.T) (ars *AgentRuntimes, rtA, rtB *AgentRuntime,
 	rtB, err = ars.Create(base, agentB, AgentStateIdle, "", false)
 	require.NoError(t, err)
 	return ars, rtA, rtB, ctxA, ctxB
+}
+
+func TestAgentSendContent(t *testing.T) {
+	for _, state := range []string{"idle", "mid-turn", "paused"} {
+		t.Run(state, func(t *testing.T) {
+			ars, _, rt, _, receiverCtx := twoAgentRegistry(t)
+			receiver, ok := AgentFromContext(receiverCtx)
+			require.True(t, ok)
+			// Hold the loop at a deterministic boundary without a provider.
+			rt.started = true
+			rt.turnOpen = state == "mid-turn"
+			rt.stepping = state == "mid-turn"
+			rt.paused = state == "paused"
+			image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "aGVsbG8="}
+			blocks := []*LLMContentBlock{image, {Kind: LLMContentText, Text: "after"},
+				{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: image.Data},
+				{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: image.Data}}
+			want := append([]*LLMContentBlock{{Kind: LLMContentText, Text: "before"}}, cloneLLMContent(blocks)...)
+			msg, err := ars.Send(context.Background(), receiver, "before", "#9", blocks...)
+			require.NoError(t, err)
+			mediaOnly, err := ars.Send(context.Background(), receiver, "", "", image)
+			require.NoError(t, err)
+			legacy, err := ars.Send(context.Background(), receiver, "legacy", "")
+			require.NoError(t, err)
+			empty, err := ars.Send(context.Background(), receiver, "", "")
+			require.NoError(t, err)
+			require.Equal(t, []string{msg.Ref, mediaOnly.Ref, legacy.Ref, empty.Ref}, rt.mailbox)
+			// Mutating caller-owned pointers and the input slice cannot alter queued data.
+			image.Data = "b3RoZXI="
+			blocks[1].Text = "mutated"
+			blocks[0] = nil
+			rec := rt.messages[msg.Ref]
+			require.Equal(t, want, rec.content)
+			require.Equal(t, msg.Ref, rec.origin.Ref)
+			require.Equal(t, "#9", rec.origin.ReplyTo)
+			hint := AgentMessageStarted
+			if state == "mid-turn" {
+				hint = AgentMessageSteered
+			} else if state == "paused" {
+				hint = AgentMessageQueued
+			}
+			require.Equal(t, hint, rec.deliveryHint)
+			require.False(t, rec.consumed)
+
+			// This is the exact selector drainMailbox records at the next boundary.
+			sel, err := rec.selector(rt.key)
+			require.NoError(t, err)
+			require.Equal(t, "withContent", sel.Field)
+			inputs := sel.Args[0].Value.(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]])
+			restored := make([]*LLMContentBlock, len(inputs))
+			for i, input := range inputs {
+				restored[i], err = input.Value.Resolve(context.Background())
+				require.NoError(t, err)
+			}
+			origin := sel.Args[1].Value.(dagql.Optional[dagql.InputObject[LLMMessageOriginInput]]).Value.Value.ToLLMMessageOrigin()
+			require.Equal(t, rec.origin, origin)
+			llm := (&LLM{endpointMtx: &sync.Mutex{}, mcp: &MCP{}}).WithContent(restored, origin)
+			require.Len(t, llm.Messages, 1)
+			require.Equal(t, want, llm.Messages[0].Content)
+			// Snapshot/fork replay continues to use the existing media recipe shape.
+			recipe, err := llm.recipeSelectors(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, sel, recipe[len(recipe)-1])
+			require.Len(t, rt.messages[mediaOnly.Ref].content, 1)
+			require.Equal(t, want[1], rt.messages[mediaOnly.Ref].content[0])
+			for ref, text := range map[string]string{legacy.Ref: "legacy", empty.Ref: ""} {
+				sel, err := rt.messages[ref].selector(rt.key)
+				require.NoError(t, err)
+				require.Equal(t, dagql.Selector{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.NewString(text)}}}, sel)
+			}
+		})
+	}
+}
+
+func TestAgentSendContentValidationBeforeReply(t *testing.T) {
+	ars, sender, receiver, senderCtx, receiverCtx := twoAgentRegistry(t)
+	to, ok := AgentFromContext(receiverCtx)
+	require.True(t, ok)
+	receiver.started = true
+	ref, err := sender.enqueue("question", nil, "")
+	require.NoError(t, err)
+	sender.messages[ref].consumed = true
+	large := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: base64.StdEncoding.EncodeToString(make([]byte, MaxLLMMediaBytes/2+1))}
+	for name, blocks := range map[string][]*LLMContentBlock{
+		"nil":            {nil},
+		"tool call":      {{Kind: LLMContentToolCall}},
+		"tool result":    {{Kind: LLMContentToolResult, Text: "not user content"}},
+		"thinking":       {{Kind: LLMContentThinking, Text: "private"}},
+		"invalid media":  {{Kind: LLMContentImage, MIMEType: "image/png", Data: "bad"}},
+		"aggregate size": {large, large},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := ars.Send(senderCtx, to, "answer", ref, blocks...)
+			require.Error(t, err)
+			require.Empty(t, receiver.mailbox)
+			require.Empty(t, receiver.messages)
+			require.Zero(t, receiver.msgSeq)
+			require.False(t, sender.messages[ref].resolved, "invalid sends must not resolve replyTo")
+		})
+	}
+	msg, err := ars.Send(senderCtx, to, "answer", ref, &LLMContentBlock{Kind: LLMContentText, Text: "details"})
+	require.NoError(t, err)
+	require.True(t, sender.messages[ref].resolved)
+	require.Equal(t, (&LLMMessage{Content: receiver.messages[msg.Ref].content}).TextContent(), sender.messages[ref].reply)
+	sel, err := receiver.messages[msg.Ref].selector(receiver.key)
+	require.NoError(t, err)
+	origin := sel.Args[1].Value.(dagql.Optional[dagql.InputObject[LLMMessageOriginInput]]).Value.Value.ToLLMMessageOrigin()
+	require.Equal(t, LLMMessageOriginAgent, origin.Kind)
+	require.Equal(t, "chief", origin.AgentName)
+	require.Equal(t, msg.Ref, origin.Ref)
+	require.Equal(t, ref, origin.ReplyTo)
 }
 
 // TestAgentWaitGuard covers hack/designs/agent-messaging.md §4.5: self-waits

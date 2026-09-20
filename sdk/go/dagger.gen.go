@@ -704,6 +704,8 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 type AgentSendOpts struct {
 	// The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
 	ReplyTo string
+	// Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File inputs are resolved and all content is validated before enqueueing. Pass an empty message for media-only sends.
+	Content []LLMContentBlockInput
 }
 
 // Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
@@ -721,6 +723,10 @@ func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts)
 		// `replyTo` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ReplyTo) {
 			q = q.Arg("replyTo", opts[i].ReplyTo)
+		}
+		// `content` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Content) {
+			q = q.Arg("content", opts[i].Content)
 		}
 	}
 	q = q.Arg("message", message)

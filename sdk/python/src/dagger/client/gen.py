@@ -1146,6 +1146,7 @@ class Agent(Type):
         message: str,
         *,
         reply_to: str | None = "",
+        content: list[LLMContentBlockInput] | None = None,
     ) -> "AgentMessage":
         """Enqueue a message, on the record: it is consumed at a step boundary,
         appends to the agent's history, and steers the running turn or opens a
@@ -1169,12 +1170,17 @@ class Agent(Type):
         ----------
         message:
             The message text, appended to the agent's history as a prompt when
-            a turn consumes it.
+            a turn consumes it. When content is supplied, nonempty text
+            precedes those blocks in the same user message.
         reply_to:
             The ref of a message in the SENDER's own mailbox this send answers
             (e.g. "#3", from its attribution header). The recipient sees the
             two paired, and awaiters of the replied-to message resolve with
             this reply immediately instead of at the sender's turn end.
+        content:
+            Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File
+            inputs are resolved and all content is validated before
+            enqueueing. Pass an empty message for media-only sends.
 
         Raises
         ------
@@ -1186,6 +1192,7 @@ class Agent(Type):
         _args = [
             Arg("message", message),
             Arg("replyTo", reply_to, ""),
+            Arg("content", [] if content is None else content, []),
         ]
         return await self._ctx.execute_sync(self, "send", _args, AgentMessage)
 

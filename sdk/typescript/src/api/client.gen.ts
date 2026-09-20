@@ -49,6 +49,11 @@ export type AgentSendOpts = {
    * The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
    */
   replyTo?: string
+
+  /**
+   * Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File inputs are resolved and all content is validated before enqueueing. Pass an empty message for media-only sends.
+   */
+  content?: LLMContentBlockInput[]
 }
 
 export type AgentStopOpts = {
@@ -4546,8 +4551,9 @@ export class Agent extends BaseClient {
    * The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
    *
    * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
-   * @param message The message text, appended to the agent's history as a prompt when a turn consumes it.
+   * @param message The message text, appended to the agent's history as a prompt when a turn consumes it. When content is supplied, nonempty text precedes those blocks in the same user message.
    * @param opts.replyTo The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
+   * @param opts.content Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File inputs are resolved and all content is validated before enqueueing. Pass an empty message for media-only sends.
    * @experimental
    */
   send = async (

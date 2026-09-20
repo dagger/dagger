@@ -568,6 +568,9 @@ pub struct AgentPauseOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct AgentSendOpts<'a> {
+    /// Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File inputs are resolved and all content is validated before enqueueing. Pass an empty message for media-only sends.
+    #[builder(setter(into, strip_option), default)]
+    pub content: Option<Vec<LlmContentBlockInput>>,
     /// The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
     #[builder(setter(into, strip_option), default)]
     pub reply_to: Option<&'a str>,
@@ -799,7 +802,7 @@ impl Agent {
     ///
     /// # Arguments
     ///
-    /// * `message` - The message text, appended to the agent's history as a prompt when a turn consumes it.
+    /// * `message` - The message text, appended to the agent's history as a prompt when a turn consumes it. When content is supplied, nonempty text precedes those blocks in the same user message.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn send(&self, message: impl Into<String>) -> Result<AgentMessage, DaggerError> {
         let mut query = self.selection.select("send");
@@ -822,7 +825,7 @@ impl Agent {
     ///
     /// # Arguments
     ///
-    /// * `message` - The message text, appended to the agent's history as a prompt when a turn consumes it.
+    /// * `message` - The message text, appended to the agent's history as a prompt when a turn consumes it. When content is supplied, nonempty text precedes those blocks in the same user message.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn send_opts<'a>(
         &self,
@@ -833,6 +836,9 @@ impl Agent {
         query = query.arg("message", message.into());
         if let Some(reply_to) = opts.reply_to {
             query = query.arg("replyTo", reply_to);
+        }
+        if let Some(content) = opts.content {
+            query = query.arg("content", content);
         }
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(AgentMessage {

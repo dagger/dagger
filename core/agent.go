@@ -229,9 +229,11 @@ func (delivery AgentMessageDelivery) ToLiteral() call.Literal {
 // of the session: canceled readers can retry and concurrent readers share the
 // same immutable evidence and result.
 type agentMessageRecord struct {
-	// text is the message body, recorded as a withPrompt selector when a
-	// turn consumes it.
+	// text is the legacy message body, recorded as a withPrompt selector.
 	text string
+	// content is an immutable, resolved copy of user content (including any
+	// leading message text). Nonempty content is recorded with withContent.
+	content []*LLMContentBlock
 	// origin is the message's resolved provenance — who sent it and what it
 	// answers (hack/designs/agent-messaging.md §4.1). Resolved once at the
 	// central enqueue path; drainMailbox records it on the withPrompt
@@ -645,7 +647,12 @@ func newAgentRuntime(ars *AgentRuntimes, key string, agent dagql.ObjectResult[*A
 // the two paired, and anyone awaiting the replied-to message resolves with
 // this reply immediately instead of at the sender's turn end
 // (hack/designs/agent-messaging.md §4.2).
-func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Agent], text, replyTo string) (*AgentMessage, error) {
+func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Agent], text, replyTo string, content ...*LLMContentBlock) (*AgentMessage, error) {
+	// Validate and freeze content before any reply resolution or mailbox mutation.
+	blocks, err := agentMessageContent(text, content)
+	if err != nil {
+		return nil, err
+	}
 	rt, err := ars.Require(ctx, agent)
 	if err != nil {
 		return nil, err
@@ -657,13 +664,17 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	// the user. There is no "from" argument to forge.
 	origin, senderKey := resolveMessageOrigin(ctx)
 	if replyTo != "" {
-		normalized, err := ars.resolveReply(senderKey, origin, replyTo, text)
+		answer := text
+		if len(blocks) > 0 {
+			answer = (&LLMMessage{Content: blocks}).TextContent()
+		}
+		normalized, err := ars.resolveReply(senderKey, origin, replyTo, answer)
 		if err != nil {
 			return nil, err
 		}
 		origin.ReplyTo = normalized
 	}
-	ref, err := rt.enqueue(text, origin, senderKey)
+	ref, err := rt.enqueueMessage(text, blocks, origin, senderKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1318,18 +1329,42 @@ func (rt *AgentRuntime) Snapshot() dagql.ObjectResult[*LLM] {
 	return rt.last
 }
 
-// enqueue appends a message to the mailbox with pending delivery evidence and
-// wakes the loop if it is idle. Provider-backed agents preserve the existing
-// enqueue-boundary classification as a hint, but STARTED and STEERED become
-// conclusive only when drainMailbox records the prompt at its step boundary.
-// PAUSED and FAILED are already conclusive QUEUED evidence because their loop
-// cannot dispatch the record before an explicit resume.
-//
-// A STOPPED tombstone is reopened from its preserved snapshot, so the new
-// message restarts the loop instead of being rejected — unless the origin is
-// an EVENT: events never relaunch (hack/designs/agent-messaging.md §4.3), so
-// a stopped subscriber reports errAgentEventDropped instead of reopening.
+// agentMessageContent validates user blocks and takes ownership of their data.
+// Empty content deliberately retains the legacy withPrompt recipe, even when
+// text is empty. A content-bearing send is always a single ordered message.
+func agentMessageContent(text string, content []*LLMContentBlock) ([]*LLMContentBlock, error) {
+	if len(content) == 0 {
+		return nil, nil
+	}
+	if err := ValidateLLMContent(content); err != nil {
+		return nil, err
+	}
+	for _, block := range content {
+		switch block.Kind {
+		case LLMContentText, LLMContentImage, LLMContentAudio, LLMContentDocument:
+		default:
+			return nil, fmt.Errorf("%s is not user content", block.Kind)
+		}
+	}
+	blocks := cloneLLMContent(content)
+	if text != "" {
+		blocks = append([]*LLMContentBlock{{Kind: LLMContentText, Text: text}}, blocks...)
+	}
+	return blocks, nil
+}
+
+// enqueue appends a legacy text message through the common mailbox path.
 func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin, senderKey string) (string, error) {
+	return rt.enqueueMessage(text, nil, origin, senderKey)
+}
+
+// enqueueMessage accepts only resolved, validated, owned blocks from Send.
+// It wakes an idle loop; STARTED and STEERED remain hints until drainMailbox
+// commits the message at a step boundary. PAUSED and FAILED give conclusive
+// QUEUED evidence, since they cannot drain until explicitly resumed.
+// A STOPPED tombstone reopens from its snapshot unless this is an EVENT:
+// lifecycle notifications must never relaunch a stopped subscriber.
+func (rt *AgentRuntime) enqueueMessage(text string, content []*LLMContentBlock, origin *LLMMessageOrigin, senderKey string) (string, error) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	stopped := rt.stateLocked() == AgentStateStopped
@@ -1365,6 +1400,7 @@ func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin, senderKey
 	}
 	rec := &agentMessageRecord{
 		text:          text,
+		content:       content,
 		origin:        origin,
 		sender:        senderKey,
 		deliveryHint:  deliveryHint,
@@ -1534,8 +1570,35 @@ func (rt *AgentRuntime) awaitMessage(ctx context.Context, messageHandle string) 
 	}
 }
 
+func (rec *agentMessageRecord) selector(receiverKey string) (dagql.Selector, error) {
+	sel := dagql.Selector{
+		Field: "withPrompt",
+		Args:  []dagql.NamedInput{{Name: "prompt", Value: dagql.NewString(rec.text)}},
+	}
+	if len(rec.content) > 0 {
+		inputs, err := contentBlockInputs(rec.content)
+		if err != nil {
+			return dagql.Selector{}, err
+		}
+		sel = dagql.Selector{
+			Field: "withContent",
+			Args:  []dagql.NamedInput{{Name: "content", Value: inputs}},
+		}
+	}
+	// Keep plain user prompts and self-sends byte-stable; retain attribution
+	// and reply pairing for both prompt and content selectors.
+	if origin := rec.origin; origin != nil && !originOmittedFromChain(origin, rec.sender, receiverKey) {
+		originArg, err := originInput(origin)
+		if err != nil {
+			return dagql.Selector{}, err
+		}
+		sel.Args = append(sel.Args, dagql.NamedInput{Name: "origin", Value: dagql.Opt(originArg)})
+	}
+	return sel, nil
+}
+
 // drainMailbox consumes every queued message into the current turn: each is
-// recorded as a real withPrompt Select on the last-committed conversation —
+// recorded as a real withPrompt or withContent Select on the committed conversation —
 // the honest-chain discipline: a message that influences the agent appears
 // in its history exactly as the model saw it (design §3.2, influence ⇔
 // append) — committed as the new snapshot, and marked consumed by the
@@ -1572,34 +1635,13 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 			rt.failMessage(rec, err)
 			return err
 		}
-		args := []dagql.NamedInput{
-			{
-				Name:  "prompt",
-				Value: dagql.NewString(rec.text),
-			},
-		}
-		// Record provenance on the chain for every case where it says
-		// something (hack/designs/agent-messaging.md §4.1). Two deliberate
-		// omissions keep pre-provenance chains and recordings byte-stable:
-		// a plain user prompt is the unmarked common case, and a self-send
-		// (a tool steering its own calling agent) attributes the agent's own
-		// words to itself — noise, not provenance.
-		if origin := rec.origin; origin != nil && !originOmittedFromChain(origin, rec.sender, rt.key) {
-			originArg, err := originInput(origin)
-			if err != nil {
-				rt.failMessage(rec, err)
-				return err
-			}
-			args = append(args, dagql.NamedInput{
-				Name:  "origin",
-				Value: dagql.Opt(originArg),
-			})
+		selector, err := rec.selector(rt.key)
+		if err != nil {
+			rt.failMessage(rec, err)
+			return err
 		}
 		var next dagql.ObjectResult[*LLM]
-		if err := srv.Select(ctx, inst, &next, dagql.Selector{
-			Field: "withPrompt",
-			Args:  args,
-		}); err != nil {
+		if err := srv.Select(ctx, inst, &next, selector); err != nil {
 			// The message was popped but never joined the turn: resolve
 			// it with the failure rather than leaving awaiters to hang on
 			// a record nothing will ever touch again.

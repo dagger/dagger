@@ -258,7 +258,9 @@ type Agent implements Node {
   """
   send(
     """
-    The message text, appended to the agent's history as a prompt when a turn consumes it.
+    The message text, appended to the agent's history as a prompt when a turn
+    consumes it. When content is supplied, nonempty text precedes those blocks
+    in the same user message.
     """
     message: String!
 
@@ -269,6 +271,13 @@ type Agent implements Node {
     instead of at the sender's turn end.
     """
     replyTo: String = ""
+
+    """
+    Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File inputs are
+    resolved and all content is validated before enqueueing. Pass an empty
+    message for media-only sends.
+    """
+    content: [LLMContentBlockInput!] = []
   ): ID! @expectedType(name: "AgentMessage") @experimental(reason: "Agent APIs are likely to change.")
 
   """
