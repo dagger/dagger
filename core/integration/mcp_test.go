@@ -11,6 +11,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,6 +75,40 @@ func (MCPSuite) TestModuleWithPrivilegedStillExposesModuleMethods(ctx context.Co
 	require.Contains(t, tools, "greeting")
 
 	require.Contains(t, callToolText(ctx, t, cli, "greeting", map[string]any{}), "hello from module")
+}
+
+func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+	for name, contents := range map[string]string{
+		"dagger.toml": "[modules.test]\nsource = \".\"\nentrypoint = true\n",
+		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
+		"main.dang": `type Test {
+  broken: Module! {
+    directory
+      .withNewFile("dagger.json", contents: "{\"name\":\"broken\",\"engineVersion\":\"v1.0.0\",\"sdk\":\"dang\"}")
+      .withNewFile("main.dang", contents: "type Broken {\n  hello: IntentionallyUndefinedType! { \"hi\" }\n}\n")
+      .asModule
+  }
+}
+`,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, name), []byte(contents), 0o644))
+	}
+	initGitRepo(ctx, t, modDir)
+	cli := startMCPClient(ctx, t, modDir)
+	res, err := cli.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "broken", Arguments: map[string]any{}},
+	})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+	text := toolResultText(t, res)
+	t.Logf("MCP failure result:\n%s", text)
+	require.Contains(t, text, "unresolved type: IntentionallyUndefinedType")
+	require.Contains(t, text, "[traceparent:")
+	require.Contains(t, text, "== DIAGNOSTIC LOGS ==")
+	require.Contains(t, text, "main.dang:2:10")
+	require.Contains(t, text, `hello: IntentionallyUndefinedType! { "hi" }`)
+	require.NotContains(t, text, "\033[")
 }
 
 func initMCPTestModule(ctx context.Context, t testing.TB) string {

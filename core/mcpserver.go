@@ -40,7 +40,7 @@ func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
 		result, err := tool.Call(ctx, request.Params.Arguments)
 		// TODO: differentiate user module's error from dagger error for better error message
 		if err != nil {
-			res := mcp.NewToolResultText(toolErrorMessage(err))
+			res := mcp.NewToolResultText(s.env.toolErrorResponse(ctx, err))
 			res.IsError = true
 			return res, nil
 		}

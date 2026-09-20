@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -1266,7 +1267,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	}
 	result, err := tool.Call(toolCtx, args)
 	if err != nil {
-		return toolErrorMessage(err), true
+		return m.toolErrorResponse(ctx, err), true
 	}
 
 	switch v := result.(type) {
@@ -2183,6 +2184,54 @@ func (f *internalSpanFilter) serviceInstallSpan(ctx context.Context, traceID, sp
 		}
 	}
 	return false, nil
+}
+
+const toolErrorLogsMaxLines = 24
+const toolErrorLogsMaxBytes = 4 * 1024
+
+// toolErrorResponse is shared by agent tool calls and the standalone MCP server.
+// Read only the first error origin with useful logs, never the ambient session's
+// output: an MCP request may share its context with other calls. captureLogs
+// flushes session telemetry and excludes internal, verbose, and service output.
+// Failure to read diagnostics must not mask the original error or trace marker.
+func (m *MCP) toolErrorResponse(ctx context.Context, err error) string {
+	response := toolErrorMessage(err)
+	for _, origin := range telemetry.ParseErrorOrigins(err.Error()) {
+		spanID := origin.SpanID().String()
+		logs, captureErr := m.captureLogs(ctx, spanID, true)
+		if captureErr != nil {
+			continue
+		}
+		if withLogs := toolErrorWithLogs(err, spanID, logs); withLogs != response {
+			return withLogs
+		}
+	}
+	return response
+}
+
+// toolErrorWithLogs adds one bounded diagnostic excerpt, not a trace report.
+// Exec errors already carry stdout/stderr in extensions; remove those complete
+// blocks from the capture, while retaining any additional diagnostic output.
+func toolErrorWithLogs(err error, spanID string, logs []string) string {
+	response := toolErrorMessage(err)
+	text := "\n" + strings.Trim(ansi.Strip(strings.Join(logs, "\n")), "\n") + "\n"
+	var extErr dagql.ExtendedError
+	if errors.As(err, &extErr) {
+		exts := extErr.Extensions()
+		for _, key := range []string{"stdout", "stderr"} {
+			if output, ok := exts[key].(string); ok && strings.TrimSpace(output) != "" {
+				block := "\n" + strings.Trim(ansi.Strip(output), "\n") + "\n"
+				text = strings.ReplaceAll(text, block, "\n")
+			}
+		}
+	}
+	text = strings.Trim(text, "\n")
+	if strings.TrimSpace(text) == "" || strings.Contains(ansi.Strip(response), text) {
+		return response
+	}
+	lines := limitLines(spanID, strings.Split(text, "\n"), toolErrorLogsMaxLines, llmLogsMaxLineLen)
+	lines = capLinesBytes(spanID, lines, toolErrorLogsMaxBytes)
+	return response + "\n\n== DIAGNOSTIC LOGS ==\n" + strings.Join(lines, "\n")
 }
 
 func toolErrorMessage(err error) string {

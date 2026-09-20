@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -22,6 +23,99 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
+
+func TestToolErrorWithLogs(t *testing.T) {
+	err := fmt.Errorf("unresolved type: Missing [traceparent:000102030405060708090a0b0c0d0e0f-0000000000000001]")
+	const spanID = "0000000000000001"
+	t.Run("plain diagnostic and preserved origin", func(t *testing.T) {
+		got := toolErrorWithLogs(err, spanID, []string{"\033[31mError: unresolved type: Missing\033[0m", "  --> main.dang:2:10", "  2 | hello: Missing!"})
+		require.True(t, strings.HasPrefix(got, err.Error()+"\n\n== DIAGNOSTIC LOGS ==\n"))
+		require.Contains(t, got, "  --> main.dang:2:10")
+		require.NotContains(t, got, "\033[")
+	})
+	t.Run("no logs or already included", func(t *testing.T) {
+		require.Equal(t, err.Error(), toolErrorWithLogs(err, spanID, nil))
+		require.Equal(t, err.Error(), toolErrorWithLogs(err, spanID, []string{err.Error()}))
+	})
+	t.Run("extensions do not duplicate or hide new logs", func(t *testing.T) {
+		execErr := &ExecError{Err: err, Stdout: "building", Stderr: "compiler failure\nsource.go:2"}
+		got := toolErrorWithLogs(execErr, spanID, []string{"building", "compiler failure", "source.go:2", "additional diagnostic"})
+		require.Equal(t, toolErrorMessage(execErr)+"\n\n== DIAGNOSTIC LOGS ==\nadditional diagnostic", got)
+		require.Equal(t, toolErrorMessage(execErr), toolErrorWithLogs(execErr, spanID, []string{"building", "compiler failure", "source.go:2"}))
+	})
+	t.Run("line bound", func(t *testing.T) {
+		logs := strings.Split(strings.Repeat("noise\n", 40)+"last diagnostic", "\n")
+		got := toolErrorWithLogs(err, spanID, logs)
+		require.Contains(t, got, "17 lines omitted (use ReadLogs(span: "+spanID+") to read more)")
+		require.True(t, strings.HasSuffix(got, "last diagnostic"))
+		require.Contains(t, got, err.Error())
+	})
+	t.Run("byte and long line bounds", func(t *testing.T) {
+		logs := strings.Split(strings.Repeat(strings.Repeat("x", 3000)+"\n", 20), "\n")
+		got := toolErrorWithLogs(err, spanID, logs)
+		require.Contains(t, got, "chars truncated]")
+		require.Contains(t, got, "use ReadLogs(span: "+spanID+")")
+		// Existing byte guards allow an omission marker beyond the budget.
+		require.Less(t, len(got), len(err.Error())+toolErrorLogsMaxBytes+300)
+	})
+}
+
+func TestToolErrorResponseScopesLogs(t *testing.T) {
+	const traceID = "000102030405060708090a0b0c0d0e0f"
+	const originID = "0000000000000001"
+	const unrelatedID = "0000000000000002"
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]clientdb.Span{
+		{TraceID: traceID, SpanID: originID, Attributes: marshalSpanAttrs(t)},
+		{TraceID: traceID, SpanID: unrelatedID, Attributes: marshalSpanAttrs(t)},
+	})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]clientdb.Log{
+		persistedCaptureLog(t, traceID, originID, "test", stringLogBody("source diagnostic\n")),
+		persistedCaptureLog(t, traceID, unrelatedID, "test", stringLogBody("unrelated output\n")),
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{
+		mockServer: &mockServer{}, dbs: dbs,
+	}})
+	failure := fmt.Errorf("failed [traceparent:%s-%s]", traceID, originID)
+	m := newMCP()
+	got := m.toolErrorResponse(ctx, failure)
+	require.Contains(t, got, "source diagnostic")
+	require.NotContains(t, got, "unrelated output")
+	require.Contains(t, got, failure.Error())
+	marker := fmt.Sprintf("[traceparent:%s-%s]", traceID, originID)
+	fullLogs, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": marker})
+	require.NoError(t, err)
+	require.Equal(t, "     1→source diagnostic", fullLogs)
+	tool := LLMTool{
+		Name: "broken",
+		Call: func(context.Context, any) (any, error) { return nil, failure },
+	}
+	agentResult, failed := m.Call(ctx, []LLMTool{tool}, &LLMToolCall{Name: tool.Name})
+	require.True(t, failed)
+	require.Equal(t, got, agentResult)
+	handler := (mcpServer{env: m}).genMcpToolHandler(tool)
+	request := mcp.CallToolRequest{Params: mcp.CallToolParams{Name: tool.Name}}
+	request.Method = "tools/call"
+	result, err := handler(ctx, request)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	require.Equal(t, got, result.Content[0].(mcp.TextContent).Text)
+	// Without an origin, never fall back to the ambient session's logs.
+	require.Equal(t, "plain failure", m.toolErrorResponse(ctx, fmt.Errorf("plain failure")))
+	// Telemetry is best-effort: unavailable context or a failed flush/read
+	// preserves the original failure, not the telemetry infrastructure error.
+	require.Equal(t, failure.Error(), m.toolErrorResponse(t.Context(), failure))
+	failedTelemetry := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{
+		mockServer: &mockServer{}, telemetryErr: fmt.Errorf("flush failed"),
+	}})
+	require.Equal(t, failure.Error(), m.toolErrorResponse(failedTelemetry, failure))
+}
 
 func TestCallPreservesHeaderArgs(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
@@ -326,10 +420,14 @@ func TestAssembleLines(t *testing.T) {
 
 type logCaptureTestServer struct {
 	*mockServer
-	dbs *clientdb.DBs
+	dbs          *clientdb.DBs
+	telemetryErr error
 }
 
 func (srv *logCaptureTestServer) ClientTelemetry(ctx context.Context, _, _ string) (*clientdb.DB, error) {
+	if srv.telemetryErr != nil {
+		return nil, srv.telemetryErr
+	}
 	return srv.dbs.Open(ctx, "capture-test")
 }
 
