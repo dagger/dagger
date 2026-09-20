@@ -17,9 +17,16 @@ import (
 // Text and media have separate representations: an image's encoded data and
 // placement rows must never be interpreted by either Glamour or midterm.
 type vtermSegment struct {
-	text     string
+	text     *strings.Builder
 	markdown bool
 	media    *dagui.MediaRecord
+	fallback string
+}
+
+func newVtermTextSegment(text string, markdown bool) vtermSegment {
+	buf := new(strings.Builder)
+	buf.WriteString(text)
+	return vtermSegment{text: buf, markdown: markdown}
 }
 
 type vtermMediaRow struct {
@@ -40,7 +47,7 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 		// Preserve the pre-media renderer's ordering of Markdown then terminal
 		// output. After this boundary every write is ordered by arrival.
 		if term.markdownBuf.Len() > 0 {
-			term.segments = append(term.segments, vtermSegment{text: term.markdownBuf.String(), markdown: true})
+			term.segments = append(term.segments, newVtermTextSegment(term.markdownBuf.String(), true))
 		}
 		if used := term.vt.UsedHeight(); used > 0 {
 			// Highlights belong to the search projection, not the saved text.
@@ -52,7 +59,7 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 				}
 				term.vt.RenderLineFgBg(&snapshot, row, nil, nil)
 			}
-			term.segments = append(term.segments, vtermSegment{text: snapshot.String()})
+			term.segments = append(term.segments, newVtermTextSegment(snapshot.String(), false))
 		}
 		term.markdownBuf.Reset()
 	}
@@ -65,7 +72,7 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 	if fallback == "" {
 		fallback = "[media]"
 	}
-	term.segments = append(term.segments, vtermSegment{text: fallback, media: &media})
+	term.segments = append(term.segments, vtermSegment{fallback: fallback, media: &media})
 	if b := term.rawBuf.Bytes(); len(b) > 0 && b[len(b)-1] != '\n' {
 		term.rawBuf.WriteByte('\n')
 	}
@@ -90,9 +97,9 @@ func (term *Vterm) writeMediaText(p []byte, markdown, diff bool) (int, error) {
 	}
 	n := len(term.segments)
 	if n > 0 && term.segments[n-1].media == nil && term.segments[n-1].markdown == markdown {
-		term.segments[n-1].text += text
+		term.segments[n-1].text.WriteString(text)
 	} else {
-		term.segments = append(term.segments, vtermSegment{text: text, markdown: markdown})
+		term.segments = append(term.segments, newVtermTextSegment(text, markdown))
 	}
 	term.rawBuf.Write(p)
 	term.invalidateMedia()
@@ -126,7 +133,7 @@ func (term *Vterm) layoutMedia() {
 	width := term.mediaWidth()
 	for _, segment := range term.segments {
 		if segment.media != nil {
-			for _, line := range strings.Split(ansi.Hardwrap(segment.text, width, true), "\n") {
+			for _, line := range strings.Split(ansi.Hardwrap(segment.fallback, width, true), "\n") {
 				term.mediaRows = append(term.mediaRows, vtermMediaRow{text: line})
 			}
 			if active && segment.media.Kind == "image" {
@@ -147,7 +154,7 @@ func (term *Vterm) layoutMedia() {
 			)
 			if err == nil {
 				var rendered string
-				rendered, err = renderer.Render(segment.text)
+				rendered, err = renderer.Render(segment.text.String())
 				lines = strings.Split(strings.TrimSpace(rendered), "\n")
 			}
 			if err != nil {
@@ -156,7 +163,7 @@ func (term *Vterm) layoutMedia() {
 		} else {
 			terminal := midterm.NewAutoResizingTerminal()
 			terminal.ResizeX(width)
-			_, _ = terminal.Write([]byte(segment.text))
+			_, _ = terminal.Write([]byte(segment.text.String()))
 			for row := 0; row < terminal.UsedHeight(); row++ {
 				var line strings.Builder
 				terminal.RenderLineFgBg(&line, row, nil, nil)
