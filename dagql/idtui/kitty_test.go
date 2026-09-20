@@ -237,6 +237,64 @@ func TestKittyUploadClippingDedupAndCleanup(t *testing.T) {
 	require.Equal(t, 1, strings.Count(out.Output(), "a=t,"), "resume reuploads surviving cached rows")
 }
 
+type kittyRowsComponent struct {
+	tuist.Compo
+	lines []string
+}
+
+func (c *kittyRowsComponent) Render(ctx tuist.Context) { ctx.Lines(c.lines...) }
+
+func TestKittyTuistClippingAndRowDiff(t *testing.T) {
+	k, term, out := kittyTestManager(t)
+	out.Resize(80, 3)
+	first, ok := k.render(kittyTestPNG(t, 16, 160), "image/png", 80)
+	require.True(t, ok)
+	second, ok := k.render(kittyTestPNG(t, 80, 160), "image/png", 80)
+	require.True(t, ok)
+	component := &kittyRowsComponent{lines: append(first, second...)}
+	tui := tuist.New(term)
+	tui.AddChild(component)
+	tui.RenderOnce()
+	// The first image and the second image's first seven rows are clipped by
+	// tuist itself. Only the three surviving rows cause a terminal upload.
+	require.Equal(t, 1, strings.Count(out.Output(), "a=t,"))
+	require.Equal(t, 30, strings.Count(out.Output(), string(kittyPlaceholder)))
+	require.NotContains(t, out.Output(), kittyMarkerPrefix)
+	for _, entry := range k.byID {
+		require.Equal(t, entry.columns == 10, entry.uploaded)
+	}
+	require.Contains(t, out.Output(), string([]rune{kittyPlaceholder, kittyDiacritics[7], kittyDiacritics[0]}))
+	out.Reset()
+	tui.RenderOnce()
+	require.Empty(t, out.Output(), "identical rows produce no terminal writes")
+	// Replacing a placeholder row must issue a normal line erase, not create a
+	// persistent graphics placement. Kitty ties visibility to those text cells.
+	component.lines[len(component.lines)-1] = "replacement"
+	component.Update()
+	tui.RenderOnce()
+	require.Contains(t, out.Output(), "\x1b[2K")
+	require.Contains(t, out.Output(), "replacement")
+	require.NotContains(t, out.Output(), "\x1b_G")
+	out.Reset()
+	component.lines = append(component.lines, "scroll")
+	component.Update()
+	tui.RenderOnce()
+	require.NotContains(t, out.Output(), "\x1b_G")
+	require.Contains(t, out.Output(), string([]rune{kittyPlaceholder, kittyDiacritics[8], kittyDiacritics[0]}))
+}
+
+func TestKittyHorizontalClipping(t *testing.T) {
+	k, term, out := kittyTestManager(t)
+	lines, ok := k.render(kittyTestPNG(t, 80, 32), "image/png", 80)
+	require.True(t, ok)
+	clipped := ansi.Cut(lines[1], 3, 6)
+	require.Equal(t, 3, ansi.StringWidth(clipped))
+	require.Contains(t, clipped, string([]rune{kittyPlaceholder, kittyDiacritics[1], kittyDiacritics[3]}))
+	term.WriteString(clipped)
+	require.Contains(t, out.Output(), "a=t,")
+	require.NotContains(t, out.Output(), kittyMarkerPrefix)
+}
+
 func TestKittySplitAndUnknownMarkers(t *testing.T) {
 	for _, split := range []int{1, 10, len(kittyMarkerPrefix), len(kittyMarkerPrefix) + 3} {
 		t.Run(fmt.Sprint(split), func(t *testing.T) {
@@ -257,6 +315,14 @@ func TestKittySplitAndUnknownMarkers(t *testing.T) {
 	require.Empty(t, term.pending, "unterminated marker memory must stay bounded")
 	term.WriteString("junk\aok\x1b[31mred\x1b[0m")
 	require.Equal(t, "ok\x1b[31mred\x1b[0m", out.Output())
+	out.Reset()
+	term.WriteString(kittyMarkerPrefix + "unknown;123\x1b\\safe")
+	require.Equal(t, "safe", out.Output())
+	out.Reset()
+	term.WriteString(kittyMarkerPrefix + strings.Repeat("x", 1000) + "\x1b")
+	require.LessOrEqual(t, len(term.pending), 1)
+	term.WriteString("\\also safe")
+	require.Equal(t, "also safe", out.Output())
 }
 
 type kittyFailTerminal struct{ tuist.Terminal }

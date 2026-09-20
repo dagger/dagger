@@ -256,12 +256,15 @@ func (t *kittyTerminal) WriteString(s string) {
 	t.pending = ""
 	for len(s) > 0 {
 		if t.discardMarker {
-			end := strings.IndexByte(s, '\a')
+			end, terminatorLen := kittyMarkerEnd(s)
 			if end < 0 {
+				if strings.HasSuffix(s, "\x1b") {
+					t.pending = "\x1b"
+				}
 				return
 			}
 			t.discardMarker = false
-			s = s[end+1:]
+			s = s[end+terminatorLen:]
 			continue
 		}
 		start := strings.Index(s, kittyMarkerPrefix)
@@ -278,10 +281,13 @@ func (t *kittyTerminal) WriteString(s string) {
 		}
 		t.Terminal.WriteString(s[:start])
 		s = s[start+len(kittyMarkerPrefix):]
-		end := strings.IndexByte(s, '\a')
+		end, terminatorLen := kittyMarkerEnd(s)
 		if end < 0 {
 			if len(s) > 128 {
 				t.discardMarker = true
+				if strings.HasSuffix(s, "\x1b") {
+					t.pending = "\x1b"
+				}
 			} else {
 				t.pending = kittyMarkerPrefix + s
 			}
@@ -296,8 +302,18 @@ func (t *kittyTerminal) WriteString(s string) {
 				}
 			}
 		}
-		s = s[end+1:]
+		s = s[end+terminatorLen:]
 	}
+}
+
+// OSC accepts either BEL or ST. Recognize both even for unknown markers, so
+// stripping one cannot consume unrelated terminal output following it.
+func kittyMarkerEnd(s string) (int, int) {
+	bel, st := strings.IndexByte(s, '\a'), strings.Index(s, "\x1b\\")
+	if st >= 0 && (bel < 0 || st < bel) {
+		return st, 2
+	}
+	return bel, 1
 }
 
 func (t *kittyTerminal) upload(entry *kittyImage) {
