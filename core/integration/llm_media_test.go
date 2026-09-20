@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
@@ -12,8 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests inspect queued histories only: no provider credentials or LLM
+// Most tests inspect queued histories only: no provider credentials or LLM
 // requests are needed, including when reconstructing a portable conversation.
+// The continuation test runs the loop against a canned recording instead.
 const mediaPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
 const mediaWAV = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
 const mediaPDF = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n"
@@ -190,6 +193,64 @@ func (LLMSuite) TestMediaToolResultBlocks(ctx context.Context, t *testctx.T) {
 	rebuilt := mediaHistory(t, c, reconstructed)
 	require.Len(t, rebuilt, 1)
 	require.Equal(t, mediaPNG, rebuilt[0].Content[0].Content[0].Data)
+}
+
+func (LLMSuite) TestMediaReturnedConversationDisplay(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const prompt = "show the screenshot"
+	const caption = "Screenshot from the browser"
+	conversation := c.LLM().
+		WithPrompt(prompt).
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindToolCall, CallID: "screenshot", ToolName: "viewScreenshot",
+		}}).
+		WithContent([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: caption},
+			{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+		}).
+		WithToolResult("screenshot", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}})
+	id, err := conversation.ID(ctx)
+	require.NoError(t, err)
+	// Unlike the text-only cannedRecordingModel helper, preserve media bytes in
+	// the recording: the provider checks the actual resumed conversation's image.
+	recorded, err := testutil.QueryWithClient[struct {
+		Node struct {
+			Messages json.RawMessage `json:"messages"`
+		} `json:"node"`
+	}](c, t, `query($id: ID!) { node(id: $id) { ... on LLM {
+		messages { role content { kind text callId toolName arguments data mimeType } }
+	} } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
+	require.NoError(t, err)
+	model := "recording/" + base64.StdEncoding.EncodeToString(recorded.Node.Messages)
+
+	// Return LLM!, not a media tool result. The loop appends a continuation
+	// tool result AFTER withContent's user message, then takes another step.
+	ctr := workspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.browser]\nsource = \"browser\"\n").
+		WithNewFile("browser/dagger.json", `{"name":"browser","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("browser/main.dang", fmt.Sprintf(`
+type Browser {
+  viewScreenshot(llm: LLM!): LLM! {
+    llm.withContent([
+      LLMContentBlockInput(kind: LLMContentBlockKind.TEXT, text: %q),
+      LLMContentBlockInput(kind: LLMContentBlockKind.IMAGE, data: %q, mimeType: "image/png")
+    ])
+  }
+}
+`, caption, mediaPNG)).
+		WithExec([]string{"dagger", "--progress=plain", "-vv", "script"}, dagger.ContainerWithExecOpts{
+			Stdin:                         fmt.Sprintf(`llm --model=%q | with-tools $(browser) | with-prompt %q | loop | last-reply`, model, prompt),
+			ExperimentalPrivilegedNesting: true,
+		})
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "done", strings.TrimSpace(out), "the loop must resume from the returned conversation")
+	logs, err := ctr.Stderr(ctx)
+	require.NoError(t, err)
+	// Assert frontend output, NOT transcript: history already contained the
+	// image when emitNewMessageSpans stopped scanning at the tool result.
+	require.Contains(t, logs, caption+"[image: image/png]")
 }
 
 func (LLMSuite) TestMediaInvalidContent(ctx context.Context, t *testctx.T) {
