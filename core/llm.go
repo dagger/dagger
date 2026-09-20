@@ -2584,15 +2584,28 @@ func messageHasBlock(msg *LLMMessage, kind LLMContentBlockKind, callID string) b
 	return false
 }
 
-// emitNewMessageSpans emits display spans for the messages appended since the
-// last response (the new prompt or tool results), so the TUI shows what is
-// being submitted this turn.
+// emitNewMessageSpans emits display spans for prompt content appended since the
+// last response. Tool results already have their own display logs, but are not
+// a boundary: a continuation can append a prompt before step adds its results.
 func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDigest string) {
 	var newMessages []*LLMMessage
 	for _, msg := range slices.Backward(messages) {
-		if msg.Role == LLMMessageRoleAssistant || msg.IsToolResult() {
-			// only display messages appended since the last response
+		if msg.Role == LLMMessageRoleAssistant {
+			// Only display messages appended since the last response.
 			break
+		}
+		// Skip result-only messages without hiding direct prompt content in a
+		// mixed message. emitUserMessageSpan ignores TOOL_RESULT blocks, whose
+		// contents were already emitted by the tool call itself.
+		if !slices.ContainsFunc(msg.Content, func(block *LLMContentBlock) bool {
+			switch block.Kind {
+			case LLMContentText, LLMContentImage, LLMContentAudio, LLMContentDocument:
+				return true
+			default:
+				return false
+			}
+		}) {
+			continue
 		}
 		newMessages = append(newMessages, msg)
 	}
