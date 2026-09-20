@@ -291,7 +291,9 @@ func TestClipboardCommandBoundedProcess(t *testing.T) {
 	for _, mode := range []string{"ok", "overflow", "stderr", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("DAGGER_TEST_CLIPBOARD_PROCESS", mode)
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			// The race-instrumented child waits about a second before exiting;
+			// don't mistake that test-runtime delay for a clipboard timeout.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if mode == "cancel" {
 				cancel()
