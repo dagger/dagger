@@ -41,6 +41,14 @@ const (
 	LogRoleAttr     = "dagger.io/log.role"
 	LogRoleSpanName = "span.name"
 
+	// Media logs keep a payload-free textual placeholder in Body. These string
+	// attributes let capable frontends replace that placeholder with inline
+	// media without changing log ordering or leaking base64 to text outputs.
+	// Kind is image, audio, or document; Data is standard base64-encoded bytes.
+	LogMediaKindAttr     = "dagger.io/log.media.kind"
+	LogMediaMIMETypeAttr = "dagger.io/log.media.mime_type"
+	LogMediaDataAttr     = "dagger.io/log.media.data"
+
 	// DagPartialAttr marks a successful lazy-evaluation resume span that
 	// completed one part while the result still had deferred work. Such a
 	// resumption does not resolve the owning API span's pending state. (bool)

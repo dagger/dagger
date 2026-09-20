@@ -2921,18 +2921,13 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
-type replayedToolResult struct {
-	text    string
-	errored bool
-}
-
 // emitMessageSpan creates a telemetry span for a single LLM message. This is
 // used both during live step() execution and during history emission.
 // callDigest is the DAG digest enabling TUI branching from that point.
 // resultTokens maps a tool call's ID to the estimated token size of the result
-// it produced, while replayedResults carries the authoritative result text so
+// it produced, while replayedResults carries the authoritative result content so
 // history emission can reproduce the same result logs as the live call.
-func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]replayedToolResult) {
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]*LLMContentBlock) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
 		emitUserMessageSpan(ctx, msg, callDigest)
@@ -2994,12 +2989,13 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 		case LLMContentText:
 			fmt.Fprint(stdio.Stdout, block.Text)
 		case LLMContentImage, LLMContentAudio, LLMContentDocument:
-			fmt.Fprintln(stdio.Stdout, block.ContentText())
+			emitContentLog(ctx, stdio.Stdout, block, "\n",
+				log.String(telemetry.ContentTypeAttr, "text/markdown"))
 		}
 	}
 }
 
-func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]replayedToolResult) {
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]*LLMContentBlock) {
 	// Each content block gets its own span, matching the provider streaming
 	// behavior: thinking, text (LLM response), and tool calls each appear
 	// separately. Contiguous runs of the same non-tool-call type are grouped.
@@ -3105,7 +3101,8 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 			for _, block := range g.blocks {
 				switch block.Kind {
 				case LLMContentText, LLMContentThinking, LLMContentImage, LLMContentAudio, LLMContentDocument:
-					fmt.Fprint(stdio.Stdout, block.ContentText())
+					emitContentLog(spanCtx, stdio.Stdout, block, "",
+						log.String(telemetry.ContentTypeAttr, contentType))
 				case LLMContentToolCall:
 					fmt.Fprintln(stdio.Stdout, string(block.Arguments))
 				}
@@ -3113,16 +3110,10 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 			if g.kind == LLMContentToolCall {
 				block := g.blocks[0]
 				if result, ok := replayedResults[block.CallID]; ok {
-					if result.errored {
-						span.SetStatus(codes.Error, result.text)
+					if result.Errored {
+						span.SetStatus(codes.Error, result.ContentText())
 					}
-					resultAttrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
-					if resultType := toolResultContentType(result.text); resultType != "" {
-						resultAttrs = append(resultAttrs, log.String(telemetry.ContentTypeAttr, resultType))
-					}
-					resultStdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary, resultAttrs...)
-					fmt.Fprintln(resultStdio.Stdout, result.text)
-					_ = resultStdio.Close()
+					emitToolResultLogs(spanCtx, result)
 				}
 			}
 		}()
@@ -3137,15 +3128,12 @@ func (llm *LLM) EmitHistory(ctx context.Context) {
 	// can carry the same result-size badge, status, and model-visible output as
 	// the live path even though the result is stored in a later user message.
 	resultTokens := map[string]int64{}
-	replayedResults := map[string]replayedToolResult{}
+	replayedResults := map[string]*LLMContentBlock{}
 	for _, msg := range llm.Messages {
 		for _, block := range msg.Content {
 			if block.Kind == LLMContentToolResult && block.CallID != "" {
 				resultTokens[block.CallID] = estimateTextTokens(len(block.ContentText()))
-				replayedResults[block.CallID] = replayedToolResult{
-					text:    block.ContentText(),
-					errored: block.Errored,
-				}
+				replayedResults[block.CallID] = block
 			}
 		}
 	}

@@ -33,7 +33,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
@@ -1239,15 +1238,7 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 		}
 		guardToolContent(res)
 
-		text := res.ContentText()
-		attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
-		if contentType := toolResultContentType(text); contentType != "" {
-			attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
-		}
-		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
-		// Terminal logs use media placeholders, never the encoded payload.
-		fmt.Fprintln(stdio.Stdout, text)
-		_ = stdio.Close()
+		emitToolResultLogs(ctx, res)
 	}()
 
 	toolCtx := context.WithValue(ctx, agentToolCallKey{}, true)
