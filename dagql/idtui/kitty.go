@@ -60,7 +60,17 @@ func kittyImagesEnabled(getenv func(string) string) bool {
 	case "kitty":
 		return true
 	case "":
-		return getenv("TERM") == "xterm-kitty" && getenv("TMUX") == "" && getenv("STY") == ""
+		if getenv("TMUX") != "" || getenv("STY") != "" {
+			return false
+		}
+		// Both terminals support Unicode virtual placements. A basic Kitty
+		// graphics query alone would not establish support for that extension.
+		switch getenv("TERM") {
+		case "xterm-kitty", "xterm-ghostty":
+			return true
+		default:
+			return false
+		}
 	default:
 		return false
 	}

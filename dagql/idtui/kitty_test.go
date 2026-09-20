@@ -50,6 +50,11 @@ func TestKittyCapability(t *testing.T) {
 		want                        bool
 	}{
 		{name: "kitty", term: "xterm-kitty", want: true},
+		{name: "ghostty", term: "xterm-ghostty", want: true},
+		{name: "ghostty disabled", mode: "off", term: "xterm-ghostty"},
+		{name: "ghostty invalid", mode: "yes", term: "xterm-ghostty"},
+		{name: "ghostty tmux", term: "xterm-ghostty", tmux: "session"},
+		{name: "ghostty screen", term: "xterm-ghostty", sty: "session"},
 		{name: "unsupported", term: "xterm-256color"},
 		{name: "empty"},
 		{name: "disabled", mode: "off", term: "xterm-kitty"},
