@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"regexp"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/patchpreview"
@@ -433,29 +435,62 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 	return nil
 }
 
+const (
+	// patchSummaryMaxPaths bounds the metadata candidates inspected before
+	// deciding whether to materialize a patch or per-file diff stats. Large
+	// regenerations and moves must not trigger content verification or rename
+	// detection merely to decide that the summary is too large.
+	patchSummaryMaxPaths = 200
+	// patchSummaryMaxBytes bounds the patch summarizePatch will read into
+	// memory to show verbatim. Larger patches fall back to diff stats without
+	// loading the full contents (cf. llmToolLogsMaxBytes for tool logs).
+	patchSummaryMaxBytes = 64 * 1024
+	// patchSummaryMaxLines is the longest patch shown verbatim to the model;
+	// anything longer becomes a diff-stat summary.
+	patchSummaryMaxLines = 100
+)
+
+// changesetTooLarge checks a metadata upper bound before any full path
+// computation, which would verify content and detect renames. An oversized
+// result deliberately has no exact count or path list.
+func changesetTooLarge(ctx context.Context, changes dagql.ObjectResult[*Changeset]) (bool, error) {
+	return changes.Self().PathCountExceeds(ctx, patchSummaryMaxPaths)
+}
+
 func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
-	// Try to return the raw patch so the LLM can see the actual diff.
-	// Fall back to a structured summary for large changesets.
-	var rawPatch string
-	if err := srv.Select(ctx, changes, &rawPatch, dagql.Selector{
-		View:  srv.View,
-		Field: "asPatch",
-	}, dagql.Selector{
-		View:  srv.View,
-		Field: "contents",
-	}); err == nil && rawPatch != "" && strings.Count(rawPatch, "\n") <= 100 {
-		return rawPatch
+	tooLarge, err := changesetTooLarge(ctx, changes)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
+	}
+	if tooLarge {
+		return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", patchSummaryMaxPaths)
+	}
+
+	// Inspect stats before generating a patch. Keep these transient entries
+	// local rather than publishing a dagql object per path for the preview.
+	stats, err := changes.Self().DiffStats(ctx)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
+	}
+	if len(stats) == 0 {
+		return ""
+	}
+	if smallTextChangeset(stats) {
+		var patch dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, changes, &patch, dagql.Selector{
+			View: srv.View, Field: "asPatch",
+		}); err == nil {
+			if r, err := patch.Self().Open(ctx, patch); err == nil {
+				preview, ok := readPatchPreview(r)
+				r.Close()
+				if ok {
+					return preview
+				}
+			}
+		}
 	}
 
 	const summaryWidth = 80
-
-	var stats []*DiffStat
-	if err := srv.Select(ctx, changes, &stats, dagql.Selector{
-		View:  srv.View,
-		Field: "diffStats",
-	}); err != nil {
-		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
-	}
 
 	entries := make([]patchpreview.Entry, len(stats))
 	for i, s := range stats {
@@ -465,6 +500,43 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		}
 	}
 	return patchpreview.SummarizeString(entries, summaryWidth)
+}
+
+// smallTextChangeset avoids generating obviously large or binary patches.
+// Renames are excluded because asPatch encodes them as delete+add, which can
+// include an entire file even when numstat reports zero changed lines.
+func smallTextChangeset(stats []*DiffStat) bool {
+	lines := 0
+	for _, stat := range stats {
+		if strings.HasSuffix(stat.Path, "/") {
+			// Directory entries accompany ordinary files but have no patch payload.
+			continue
+		}
+		// Binary files and path-only fallback stats both report zero lines.
+		if stat.Kind == DiffStatKindRenamed || (stat.AddedLines == 0 && stat.RemovedLines == 0) {
+			return false
+		}
+		lines += stat.AddedLines + stat.RemovedLines
+		if lines > patchSummaryMaxLines {
+			return false
+		}
+	}
+	return true
+}
+
+// readPatchPreview bounds bytes as well as lines: a single minified line can
+// exceed File.contents' limit. One extra byte distinguishes a complete preview
+// from truncation; binary payloads must never become automatic previews.
+func readPatchPreview(r io.Reader) (string, bool) {
+	buf, err := io.ReadAll(io.LimitReader(r, patchSummaryMaxBytes+1))
+	if err != nil || len(buf) == 0 || len(buf) > patchSummaryMaxBytes {
+		return "", false
+	}
+	patch := string(buf)
+	if strings.Count(patch, "\n") > patchSummaryMaxLines || strings.Contains(patch, "\nGIT binary patch\n") {
+		return "", false
+	}
+	return patch, true
 }
 
 const gitDiffContentType = "text/x-diff"
@@ -571,8 +643,10 @@ func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql
 
 // rebindWorkspace makes a tool-returned Workspace the LLM's current workspace,
 // the sibling of applyChangeset for the replace (rather than overlay) case. It
-// summarizes the diff from the previous workspace so the model sees what the tool
-// changed, reusing the Changeset patch summary.
+// tells the model what the swap changed — see summarizeWorkspaceChange: a
+// patch when the new workspace builds on the old one's base, a history move
+// when both come from the same repository, and a plain replacement notice
+// otherwise.
 func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace]) (string, error) {
 	if err := m.guardStateChange(); err != nil {
 		return "", err
@@ -581,22 +655,100 @@ func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 	m.workspace = ws
 	m.markStateChanged()
 	if prev.Self() == nil {
-		// No prior workspace to diff against (e.g. the LLM was unbound); just adopt
-		// it without a patch summary.
+		// No prior workspace to compare against (e.g. the LLM was unbound);
+		// just adopt it without a change summary.
 		return "Set the current workspace.", nil
 	}
 	return m.summarizeWorkspaceChange(ctx, srv, prev, ws)
 }
 
-// summarizeWorkspaceChange renders the patch from one workspace's root to
-// another's, so the model sees what a workspace swap changed.
+// summarizeWorkspaceChange tells the model what a workspace swap changed. It
+// classifies how the two workspaces relate FIRST (WorkspaceRelation) and only
+// diffs files when they share a base, where the diff is bounded by the tool's
+// own edits. Workspaces from the same git remote are reported as a history
+// move (commits, not files), and unrelated ones as a replacement notice: a
+// file diff between two different repositories, or two distant points of one,
+// would upload the old host tree in full and hand the model a patch that
+// describes nothing it can act on.
 func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, prev, ws dagql.ObjectResult[*Workspace]) (string, error) {
+	switch WorkspaceRelation(ctx, prev.Self(), ws.Self()) {
+	case WorkspaceRelationSameBase:
+		summary, err := m.summarizeWorkspaceEdits(ctx, srv, prev, ws)
+		if err != nil {
+			return "", err
+		}
+		if mounts := summarizeMountChanges(prev.Self(), ws.Self()); mounts != "" {
+			if summary == "" {
+				return mounts, nil
+			}
+			return mounts + "\n\n" + summary, nil
+		}
+		return summary, nil
+	case WorkspaceRelationSameOrigin:
+		return m.summarizeWorkspaceMove(ctx, srv, prev, ws), nil
+	default:
+		return summarizeWorkspaceReplaced(prev.Self(), ws.Self()), nil
+	}
+}
+
+// summarizeWorkspaceEdits renders the patch between two workspaces on the
+// same base. It goes through Workspace.changes(from:), which compares overlay
+// changesets over a sparse host view (only the paths either side touched)
+// instead of uploading both roots. Measure the summary from the workspace root:
+// re-rooting changes to a nested cwd inspects every path before our budget check
+// and rejects edits outside that cwd.
+func (m *MCP) summarizeWorkspaceEdits(ctx context.Context, srv *dagql.Server, prev, ws dagql.ObjectResult[*Workspace]) (string, error) {
+	if ws.Self().Cwd != "" && ws.Self().Cwd != "." {
+		if err := srv.Select(ctx, ws, &ws, dagql.Selector{
+			View: srv.View, Field: "withWorkdir",
+			Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(".")}},
+		}); err != nil {
+			return "", err
+		}
+	}
+	prevID, err := prev.ID()
+	if err != nil {
+		return "", err
+	}
+	var changes dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, ws, &changes, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.Opt(dagql.NewID[*Workspace](prevID))},
+		},
+	}); err != nil {
+		slog.Warn("failed to compare workspaces; diffing roots instead", "error", err)
+		return m.summarizeWorkspaceRootDiff(ctx, srv, prev, ws)
+	}
+	return m.summarizeWorkspaceDiff(ctx, srv, prev.Self(), ws.Self(), changes.Self().Before, changes.Self().After)
+}
+
+// summarizeWorkspaceRootDiff renders the patch from one workspace's root to
+// another's. Only for workspaces on the same base: for anything else this
+// uploads and diffs entire trees.
+func (m *MCP) summarizeWorkspaceRootDiff(ctx context.Context, srv *dagql.Server, prev, ws dagql.ObjectResult[*Workspace]) (string, error) {
 	before, err := workspaceRoot(ctx, srv, prev)
 	if err != nil {
 		return "", err
 	}
 	after, err := workspaceRoot(ctx, srv, ws)
 	if err != nil {
+		return "", err
+	}
+	return m.summarizeWorkspaceDiff(ctx, srv, prev.Self(), ws.Self(), before, after)
+}
+
+// summarizeWorkspaceDiff filters both sparse comparisons and the full-root
+// fallback before inspecting paths. Mounted content is a read-only attachment,
+// not a pending edit; Git metadata is not a working-tree edit either.
+func (m *MCP) summarizeWorkspaceDiff(ctx context.Context, srv *dagql.Server, prev, ws *Workspace, before, after dagql.ObjectResult[*Directory]) (string, error) {
+	excluded := append(unionMountPoints(prev, ws), ".git")
+	var err error
+	if before, err = withoutMountPoints(ctx, srv, before, excluded); err != nil {
+		return "", err
+	}
+	if after, err = withoutMountPoints(ctx, srv, after, excluded); err != nil {
 		return "", err
 	}
 	beforeID, err := before.ID()
@@ -616,6 +768,164 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 	return m.summarizePatch(ctx, srv, changes), nil
 }
 
+// unionMountPoints returns every root-relative path excluded from a workspace
+// comparison, including mounts present on only one side of the transition.
+func unionMountPoints(a, b *Workspace) []string {
+	points := append(a.MountPoints(), b.MountPoints()...)
+	slices.Sort(points)
+	return slices.Compact(points)
+}
+
+// withoutMountPoints removes directories and files alike, ignoring missing
+// paths, so file mounts and a worktree's .git file are excluded too.
+func withoutMountPoints(ctx context.Context, srv *dagql.Server, dir dagql.ObjectResult[*Directory], points []string) (dagql.ObjectResult[*Directory], error) {
+	for _, point := range points {
+		if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+			View: srv.View, Field: "withoutDirectory",
+			Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(point)}},
+		}); err != nil {
+			return dir, fmt.Errorf("exclude workspace path %q: %w", point, err)
+		}
+	}
+	return dir, nil
+}
+
+// summarizeMountChanges reports topology, never the attached files. Replacing
+// content at an existing mount point does not turn it into a pending edit.
+func summarizeMountChanges(prev, next *Workspace) string {
+	before, after := prev.MountPoints(), next.MountPoints()
+	var lines []string
+	for _, point := range after {
+		if !slices.Contains(before, point) {
+			lines = append(lines, fmt.Sprintf("Mounted (read-only): %s", point))
+		}
+	}
+	for _, point := range before {
+		if !slices.Contains(after, point) {
+			lines = append(lines, fmt.Sprintf("Unmounted: %s", point))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// workspaceMoveLogLimit caps the commits counted on each side of a workspace
+// move; beyond it the count is reported as "N+".
+const workspaceMoveLogLimit = 100
+
+// summarizeWorkspaceMove describes a swap between two checkouts of the same
+// repository as a move through its history rather than a file diff. It is
+// best-effort throughout: resolving a local checkout's HEAD and counting the
+// commits between the two heads both call out (host git, a fetch of both
+// refs), and any failure degrades to whatever identity the workspace values
+// carry on their own.
+func (m *MCP) summarizeWorkspaceMove(ctx context.Context, srv *dagql.Server, prev, ws dagql.ObjectResult[*Workspace]) string {
+	from, prevHead := describeWorkspaceWithHead(ctx, srv, prev)
+	to, nextHead := describeWorkspaceWithHead(ctx, srv, ws)
+	return renderWorkspaceMove(from, to, workspaceMoveCounts(ctx, srv, prevHead, nextHead))
+}
+
+// workspaceMoveDistance is the commit distance between two heads of the same
+// repository, when it could be computed.
+type workspaceMoveDistance struct {
+	known         bool
+	ahead, behind int
+}
+
+func renderWorkspaceMove(from, to WorkspaceIdentity, dist workspaceMoveDistance) string {
+	location := to.Location()
+	if to.Origin == "" && from.Origin != "" {
+		location = from.Location()
+	}
+	revision := func(id WorkspaceIdentity) string {
+		if rev := id.Revision(); rev != "" {
+			return rev
+		}
+		if id.Address != "" {
+			return id.Address
+		}
+		return "(unknown revision)"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Workspace moved: %s %s -> %s.", location, revision(from), revision(to))
+	if dist.known {
+		count := func(n int) string {
+			if n > workspaceMoveLogLimit {
+				return fmt.Sprintf("%d+", workspaceMoveLogLimit)
+			}
+			return fmt.Sprint(n)
+		}
+		fmt.Fprintf(&b, " The new checkout is %s commit(s) ahead of and %s behind the previous one.", count(dist.ahead), count(dist.behind))
+	}
+	b.WriteString(" Files were not diffed; the previous checkout is no longer reachable through your tools.")
+	return b.String()
+}
+
+// summarizeWorkspaceReplaced is the notice for a swap to an unrelated
+// workspace, the workspace counterpart of "Conversation history replaced".
+// Nothing is diffed: there is no shared base for a patch to be measured from.
+func summarizeWorkspaceReplaced(prev, ws *Workspace) string {
+	return fmt.Sprintf("Workspace replaced: %s -> %s. Files were not diffed; the previous workspace is no longer reachable through your tools.",
+		DescribeWorkspace(prev), DescribeWorkspace(ws))
+}
+
+// describeWorkspaceWithHead returns a workspace's identity, filled in with its
+// HEAD commit when Workspace.git.head can resolve one, and that head for
+// callers that go on to compare histories. The head is zero when unavailable.
+func describeWorkspaceWithHead(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace]) (WorkspaceIdentity, dagql.ObjectResult[*GitRef]) {
+	id := DescribeWorkspace(ws.Self())
+	var head dagql.ObjectResult[*GitRef]
+	if err := srv.Select(ctx, ws, &head,
+		dagql.Selector{View: srv.View, Field: "git"},
+		dagql.Selector{View: srv.View, Field: "head"},
+	); err != nil {
+		slog.Debug("failed to resolve workspace head for move summary", "error", err)
+		return id, dagql.ObjectResult[*GitRef]{}
+	}
+	return id.WithGitRef(head.Self()), head
+}
+
+// workspaceMoveCounts counts the commits each head has that the other lacks,
+// via GitRef.log(base:), capped at workspaceMoveLogLimit+1 per side so the
+// caller can say "100+". Unknown when either head is missing or a log fails.
+func workspaceMoveCounts(ctx context.Context, srv *dagql.Server, prevHead, nextHead dagql.ObjectResult[*GitRef]) workspaceMoveDistance {
+	if prevHead.Self() == nil || nextHead.Self() == nil {
+		return workspaceMoveDistance{}
+	}
+	if prevHead.Self().Ref != nil && nextHead.Self().Ref != nil && prevHead.Self().Ref.SHA == nextHead.Self().Ref.SHA {
+		return workspaceMoveDistance{known: true}
+	}
+	ahead, err := countCommitsSince(ctx, srv, nextHead, prevHead)
+	if err != nil {
+		slog.Debug("failed to count commits ahead for move summary", "error", err)
+		return workspaceMoveDistance{}
+	}
+	behind, err := countCommitsSince(ctx, srv, prevHead, nextHead)
+	if err != nil {
+		slog.Debug("failed to count commits behind for move summary", "error", err)
+		return workspaceMoveDistance{}
+	}
+	return workspaceMoveDistance{known: true, ahead: ahead, behind: behind}
+}
+
+func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.ObjectResult[*GitRef]) (int, error) {
+	baseID, err := base.ID()
+	if err != nil {
+		return 0, err
+	}
+	var commits dagql.ObjectResultArray[*GitCommit]
+	if err := srv.Select(ctx, head, &commits, dagql.Selector{
+		View:  srv.View,
+		Field: "log",
+		Args: []dagql.NamedInput{
+			{Name: "limit", Value: dagql.NewInt(workspaceMoveLogLimit + 1)},
+			{Name: "base", Value: dagql.NewID[*GitRef](baseID)},
+		},
+	}); err != nil {
+		return 0, err
+	}
+	return len(commits), nil
+}
+
 // adoptLLM makes a tool-returned LLM the conversation the agent loop resumes
 // from — the continuation ring of the state-return convention. The object-tool
 // adapter passes the current conversation directly to the tool's hidden `LLM!`
@@ -626,7 +936,9 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 // ANY LLM may be adopted — there is no lineage requirement. This mirrors
 // rebindWorkspace, the sibling ring of the same convention: a tool may return
 // any workspace at all, and what makes that safe is not prevention but
-// VISIBILITY (a patch summary the model reads). Continuations are written by
+// VISIBILITY (a notice the model reads: a patch when the workspace builds on
+// the old one, a history move or replacement notice when it does not — see
+// summarizeWorkspaceChange). Continuations are written by
 // the env's author, so refusing a "suspicious" history protects nobody, while
 // a lineage rule would block the uses this exists for: self-compaction,
 // summarize-and-restart, handing a sub-agent's conversation back.
@@ -699,11 +1011,12 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 }
 
 // summarizeContinuationWorkspace reports how the continuation's bound
-// workspace differs from the one the tool was handed, as the patch summary
-// rebindWorkspace gives for a workspace swap: a continuation derived from its
-// input (a reload, or the input plus a marker file) shows just the delta, and
-// one bound to an unrelated workspace shows everything the turn loses by
-// adopting it. Empty when the workspace is unchanged or either side has none.
+// workspace differs from the one the tool was handed, the same way
+// rebindWorkspace reports a workspace swap: a continuation derived from its
+// input (a reload, or the input plus a marker file) shows just the delta,
+// while one bound to another checkout of the same repository, or to an
+// unrelated workspace, gets a history-move or replacement notice rather than
+// a diff. Empty when the workspace is unchanged or either side has none.
 func (m *MCP) summarizeContinuationWorkspace(ctx context.Context, srv *dagql.Server, current, next *LLM) string {
 	if current == nil || next == nil || current.mcp == nil || next.mcp == nil {
 		return ""
@@ -887,16 +1200,50 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // known — makes the recorded overlay pure data, and its restoration a tolerant
 // application: hunks that fit apply, hunks that don't leave conflict markers
 // for the agent to resolve.
+//
+// Changesets above patchSummaryMaxPaths are left as-is: rendering and
+// re-applying a patch for thousands of files takes long enough to stall the
+// turn, and normalization is only a durability upgrade — the caller falls
+// back to the raw changeset on any failure anyway.
 func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	var patchText string
-	if err := srv.Select(ctx, changes, &patchText, dagql.Selector{
+	tooLarge, err := changesetTooLarge(ctx, changes)
+	if err != nil {
+		return changes, fmt.Errorf("bound changeset paths: %w", err)
+	}
+	if tooLarge {
+		slog.Debug("changeset too large to normalize to patch form; keeping raw changeset",
+			"max", patchSummaryMaxPaths)
+		return changes, nil
+	}
+	var patch dagql.ObjectResult[*File]
+	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
 		View:  srv.View,
 		Field: "asPatch",
-	}, dagql.Selector{
+	}); err != nil {
+		return changes, fmt.Errorf("render changeset as patch: %w", err)
+	}
+	// Stat before reading: File.contents refuses files over
+	// MaxFileContentsSize only after reading up to it, and a patch that size
+	// is too big to ship back through withPatch as a string argument anyway.
+	var size int
+	if err := srv.Select(ctx, patch, &size, dagql.Selector{
+		View:  srv.View,
+		Field: "size",
+	}); err != nil {
+		return changes, fmt.Errorf("stat changeset patch: %w", err)
+	}
+	if size > engineutil.MaxFileContentsSize {
+		slog.Debug("changeset patch too large to normalize to patch form; keeping raw changeset",
+			"bytes", size,
+			"max", engineutil.MaxFileContentsSize)
+		return changes, nil
+	}
+	var patchText string
+	if err := srv.Select(ctx, patch, &patchText, dagql.Selector{
 		View:  srv.View,
 		Field: "contents",
 	}); err != nil {
-		return changes, fmt.Errorf("render changeset as patch: %w", err)
+		return changes, fmt.Errorf("read changeset patch: %w", err)
 	}
 	if patchText == "" {
 		return changes, nil
@@ -1013,14 +1360,18 @@ func (m *MCP) workspaceDirectory(ctx context.Context, srv *dagql.Server) (dagql.
 }
 
 // workspaceRoot returns the given workspace's root directory as a plain
-// Directory, e.g. for diffing two workspaces.
+// Directory, e.g. for diffing two workspaces. It addresses the root as "/":
+// Workspace.directory resolves relative paths from the workspace cwd, so "."
+// would return the cwd subtree and misalign the diff between two workspaces
+// with different cwds, or a cwd-measured snapshot against a root-measured
+// overlay.
 func workspaceRoot(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace]) (dagql.ObjectResult[*Directory], error) {
 	var dir dagql.ObjectResult[*Directory]
 	err := srv.Select(ctx, ws, &dir, dagql.Selector{
 		View:  srv.View,
 		Field: "directory",
 		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(".")},
+			{Name: "path", Value: dagql.NewString("/")},
 		},
 	})
 	return dir, err

@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 	"unicode/utf8"
 
@@ -125,6 +127,99 @@ func TestToolResultContentType(t *testing.T) {
 	require.Equal(t, gitDiffContentType, toolResultContentType(patch))
 	require.Empty(t, toolResultContentType("main.go | 1 +\n"))
 	require.Empty(t, toolResultContentType("prefix\n"+patch))
+}
+
+func TestOversizedChangesetSkipsPatchWork(t *testing.T) {
+	ctx := t.Context()
+	srv, err := dagql.NewServer(ctx, &Query{})
+	require.NoError(t, err)
+	srv.InstallObject(dagql.NewClass[*Changeset](srv))
+	paths := &ChangesetPaths{}
+	for i := range patchSummaryMaxPaths {
+		paths.Added = append(paths.Added, fmt.Sprintf("new/%d", i))
+		paths.AllRemoved = append(paths.AllRemoved, fmt.Sprintf("old/%d", i))
+	}
+	ch := &Changeset{paths: &changesetPathsMemo{paths: paths}}
+	ch.paths.done.Store(true)
+	ch.paths.once.Do(func() {})
+	changes, err := dagql.NewObjectResultForCall(ch, srv, &dagql.ResultCall{
+		Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "oversized",
+		Type: dagql.NewResultCallType(ch.Type()),
+	})
+	require.NoError(t, err)
+
+	// No server is needed on either oversized branch: neither may request
+	// asPatch, diffStats, or an exact per-path summary.
+	out := newMCP().summarizePatch(ctx, nil, changes)
+	require.Contains(t, out, "exceeds the 200-path inspection budget")
+	require.NotContains(t, out, "new/")
+	require.NotContains(t, out, "old/")
+	require.NotContains(t, out, "WARNING")
+	require.Empty(t, toolResultContentType(out))
+	normalized, err := normalizeChangesetToPatch(ctx, nil, changes)
+	require.NoError(t, err)
+	require.Same(t, ch, normalized.Self())
+}
+
+func TestSmallTextChangeset(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		stats []*DiffStat
+		want  bool
+	}{
+		{name: "small text", stats: []*DiffStat{{Path: "a.txt", Kind: DiffStatKindModified, AddedLines: 1, RemovedLines: 1}}, want: true},
+		{name: "directory with text", stats: []*DiffStat{{Path: "new/", Kind: DiffStatKindAdded}, {Path: "new/a.txt", Kind: DiffStatKindAdded, AddedLines: 1}}, want: true},
+		{name: "binary or path-only", stats: []*DiffStat{{Path: "a.bin", Kind: DiffStatKindAdded}}},
+		{name: "binary with text", stats: []*DiffStat{{Path: "a.txt", Kind: DiffStatKindModified, AddedLines: 1}, {Path: "a.bin", Kind: DiffStatKindRemoved}}},
+		{name: "rename", stats: []*DiffStat{{Path: "new.txt", Kind: DiffStatKindRenamed}}},
+		{name: "rename with edits", stats: []*DiffStat{{Path: "new.txt", Kind: DiffStatKindRenamed, AddedLines: 1, RemovedLines: 1}}},
+		{name: "at line budget", stats: []*DiffStat{{Path: "a.txt", Kind: DiffStatKindAdded, AddedLines: patchSummaryMaxLines}}, want: true},
+		{name: "over line budget across files", stats: []*DiffStat{{Path: "a.txt", Kind: DiffStatKindAdded, AddedLines: patchSummaryMaxLines}, {Path: "b.txt", Kind: DiffStatKindRemoved, RemovedLines: 1}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, smallTextChangeset(tc.stats))
+		})
+	}
+}
+
+func TestReadPatchPreview(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		patch string
+		want  bool
+	}{
+		{name: "small text", patch: "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-old\n+new\n", want: true},
+		{name: "empty"},
+		{name: "at byte budget", patch: strings.Repeat("x", patchSummaryMaxBytes), want: true},
+		{name: "over byte budget", patch: strings.Repeat("x", patchSummaryMaxBytes+1)},
+		{name: "at line budget", patch: strings.Repeat("+x\n", patchSummaryMaxLines), want: true},
+		{name: "over line budget", patch: strings.Repeat("+x\n", patchSummaryMaxLines+1)},
+		{name: "binary", patch: "diff --git a/a b/a\nGIT binary patch\nliteral 3\nabc\n"},
+		{name: "text mentioning binary marker", patch: "diff --git a/a b/a\n+GIT binary patch\n", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			preview, ok := readPatchPreview(strings.NewReader(tc.patch))
+			require.Equal(t, tc.want, ok)
+			if ok {
+				require.Equal(t, tc.patch, preview)
+			} else {
+				require.Empty(t, preview)
+			}
+		})
+	}
+
+	t.Run("read error", func(t *testing.T) {
+		preview, ok := readPatchPreview(iotest.ErrReader(io.ErrUnexpectedEOF))
+		require.False(t, ok)
+		require.Empty(t, preview)
+	})
+	t.Run("read is bounded", func(t *testing.T) {
+		r := strings.NewReader(strings.Repeat("x", patchSummaryMaxBytes*2))
+		preview, ok := readPatchPreview(r)
+		require.False(t, ok)
+		require.Empty(t, preview)
+		require.Equal(t, patchSummaryMaxBytes-1, r.Len())
+	})
 }
 
 func TestCallMarksPatchResult(t *testing.T) {

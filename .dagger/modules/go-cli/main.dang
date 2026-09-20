@@ -31,7 +31,7 @@ type GoCli {
     args: [String!]!,
   ): Changeset! {
     let before = base
-      .withDirectory(".", ws.directory("/", gitignore: true, exclude: ["tmp"]))
+      .withDirectory(".", ws.directory("/", gitignore: true))
       .withEnvVariable("CACHEBUST", UUID.v7)
     let after = before
       .withExec(["go"] + args)

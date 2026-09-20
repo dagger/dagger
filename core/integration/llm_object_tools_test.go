@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -241,6 +242,179 @@ func (LLMSuite) TestParallelChangesetToolsMergeResults(ctx context.Context, t *t
 	require.Contains(t, out, "SECOND.txt")
 }
 
+// TestWorkspaceToolSummaryPayloads checks the actual tool result and telemetry,
+// including changes with few paths but potentially large or binary patches.
+func (LLMSuite) TestWorkspaceToolSummaryPayloads(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name, setup, edit string
+		generatePatch     bool
+		showPatch         bool
+	}{
+		{name: "small text", setup: "true", generatePatch: true, showPatch: true},
+		{name: "binary", setup: "printf '\\000binary payload' > payload.dat", edit: `.withoutFile("payload.dat")`},
+		{name: "long line", setup: "head -c 327680 /dev/zero | tr '\\0' x > payload.dat", edit: `.withoutFile("payload.dat")`, generatePatch: true},
+		{name: "rename", setup: "echo original > payload.dat", edit: `.withFile("renamed.dat", ws.file("payload.dat")).withoutFile("payload.dat")`},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			sink := newAgentTraceSink(t)
+			c := connect(ctx, t, sink.clientOpts()...)
+			base := workspaceFixture(t, c, "workspace-tool-return").
+				WithNewFile(".dagger/modules/swapper/main.dang", fmt.Sprintf(`
+type Swapper {
+  swap(ws: Workspace!): Workspace! {
+    ws%s.withNewFile("EDIT.txt", "ordinary edit\n")
+  }
+}
+`, tc.edit)).WithExec([]string{"sh", "-ec", tc.setup})
+			model := cannedRecordingModel(ctx, t, c, c.LLM().
+				WithPrompt("swap the workspace").
+				WithResponse([]dagger.LLMContentBlockInput{{
+					Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swap",
+				}}).
+				WithToolResult("call_1", "", false).
+				WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+			out, err := base.With(daggerShell(fmt.Sprintf(
+				`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "swap the workspace" | loop | transcript`, model,
+			))).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "done")
+			require.Contains(t, out, "EDIT.txt")
+			require.NotContains(t, out, "GIT binary patch")
+			require.NotContains(t, out, strings.Repeat("x", 1024))
+			require.NotContains(t, out, "bytes truncated; read Changeset.asPatch")
+			require.NotContains(t, out, "WARNING:")
+			require.Less(t, len(out), 16*1024)
+			if tc.showPatch {
+				require.Contains(t, out, "diff --git")
+				require.Contains(t, out, "+ordinary edit")
+			} else {
+				require.NotContains(t, out, "diff --git")
+				require.Contains(t, out, "payload.dat")
+			}
+
+			// Closing flushes the nested CLI's forwarded spans and logs.
+			require.NoError(t, c.Close())
+			traces, logs := sink.capture()
+			require.NotEmpty(t, traces)
+			require.NotEmpty(t, logs)
+			seenTool, seenPatch := false, false
+			patchLogs := map[string]*strings.Builder{}
+			for _, request := range traces {
+				for _, resource := range request.ResourceSpans {
+					for _, scope := range resource.ScopeSpans {
+						for _, span := range scope.Spans {
+							seenTool = seenTool || span.Name == "Swapper.swap"
+							seenPatch = seenPatch || span.Name == "Changeset.asPatch"
+							if span.Name == "git diff" {
+								patchLogs[fmt.Sprintf("%x", span.SpanId)] = new(strings.Builder)
+							}
+							require.NotEqual(t, "Changeset.diffStats", span.Name)
+							require.False(t, strings.HasPrefix(span.Name, "DiffStat."), "%s", span.Name)
+						}
+					}
+				}
+			}
+			require.True(t, seenTool, "capture must include the workspace-returning tool")
+			require.Equal(t, tc.generatePatch, seenPatch)
+			// The nested CLI and parent SDK can forward the same record. Count
+			// each emission once, retaining distinct writes with identical text.
+			type logKey struct {
+				span, body string
+				timestamp  uint64
+			}
+			seenLogs := map[logKey]bool{}
+			for _, request := range logs {
+				for _, resource := range request.ResourceLogs {
+					for _, scope := range resource.ScopeLogs {
+						for _, record := range scope.LogRecords {
+							body := record.GetBody().GetStringValue()
+							require.NotContains(t, body, "GIT binary patch")
+							if diagnostic := patchLogs[fmt.Sprintf("%x", record.SpanId)]; diagnostic != nil && body != "" {
+								var verbose bool
+								for _, attr := range record.Attributes {
+									if attr.Key == telemetry.LogsVerboseAttr {
+										verbose = attr.Value.GetBoolValue()
+									}
+								}
+								require.True(t, verbose, "patch diagnostics must be excluded from tool-result logs")
+								key := logKey{fmt.Sprintf("%x", record.SpanId), body, record.TimeUnixNano}
+								if !seenLogs[key] {
+									diagnostic.WriteString(body)
+									seenLogs[key] = true
+								}
+							}
+						}
+					}
+				}
+			}
+			seenPrefix, seenTruncation := false, false
+			for _, diagnostic := range patchLogs {
+				text := diagnostic.String()
+				seenPrefix = seenPrefix || strings.Contains(text, "diff --git")
+				seenTruncation = seenTruncation || strings.Contains(text, "bytes truncated; read Changeset.asPatch")
+				// Allow the command diagnostic and truncation marker in addition
+				// to the 256 KiB patch prefix, across all emitted log records.
+				require.Less(t, len(text), (256<<10)+1024)
+			}
+			require.Equal(t, tc.generatePatch, seenPrefix)
+			require.Equal(t, tc.name == "long line", seenTruncation)
+		})
+	}
+}
+
+// TestLargeChangesetToolSkipsPatchWork covers a move with both additions and
+// removals: computing full paths would stage every file for rename detection.
+func (LLMSuite) TestLargeChangesetToolSkipsPatchWork(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := c.Directory().
+		WithNewFile("dagger.toml", "[modules.editor]\nsource = \"modules/editor\"\n").
+		WithNewFile("modules/editor/dagger.json", `{"name":"editor","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("modules/editor/main.dang", `
+type Editor {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  moveTree(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withDirectory("new", root.directory("old")).withoutDirectory("old").changes(root)
+  }
+}
+`)
+	for i := range 110 {
+		source = source.WithNewFile(fmt.Sprintf("old/%03d.txt", i), fmt.Sprintf("file %d\n", i))
+	}
+	ws := source.AsWorkspace()
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("move the tree").
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "moveTree",
+		}}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+	result := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
+		WithPrompt("move the tree").Loop()
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "exceeds the 200-path inspection budget")
+
+	id, err := result.PortableID(ctx)
+	require.NoError(t, err)
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(string(id)))
+	fields := map[string]bool{}
+	collectIDFieldNames(gid, fields)
+	require.False(t, fields["withPatch"], "oversized changesets must stay raw")
+
+	entries, err := result.Workspace().Directory("new").Entries(ctx)
+	require.NoError(t, err)
+	require.Len(t, entries, 110)
+	entries, err = result.Workspace().Directory("/").Entries(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, entries, "old/")
+}
+
 // TestChangesetToolKeepsEmptyDirectories locks in that a Changeset-returning
 // tool's empty directories survive the engine's patch normalization
 // (core.normalizeChangesetToPatch). Git patches carry file content only, so
@@ -455,6 +629,139 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 		)).Stdout(ctx)
 		require.Error(t, err)
 	})
+
+	t.Run("a swap that builds on the current workspace shows the model a patch", func(ctx context.Context, t *testctx.T) {
+		// The returned workspace is the bound one plus an edit (same base), so
+		// the tool result is the patch of that edit — not a replacement notice.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "swap the workspace" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "SWAPPED.txt")
+		require.Contains(t, out, "+swapped by tool")
+		require.NotContains(t, out, "Workspace replaced")
+		require.NotContains(t, out, "Workspace moved")
+	})
+}
+
+// TestWorkspaceMountSummary keeps attachments and Git metadata out of tool
+// results while preserving ordinary root-relative edits from a nested cwd.
+func (LLMSuite) TestWorkspaceMountSummary(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name, workspace, edit, notice string
+	}{
+		{
+			name: "directory mount", workspace: "current-workspace",
+			edit:   `.withNewFile("/mnt/deps/shadowed.txt", "shadowed payload").withMountedDirectory("/mnt/deps", directory.withNewFile("attachment-only.txt", "mounted payload"))`,
+			notice: "Mounted (read-only): mnt/deps",
+		},
+		{
+			name: "file mount", workspace: "current-workspace",
+			edit:   `.withNewFile("/mounted.txt", "shadowed payload").withMountedFile("/mounted.txt", directory.withNewFile("attachment-only.txt", "mounted payload").file("attachment-only.txt"))`,
+			notice: "Mounted (read-only): mounted.txt",
+		},
+		{
+			name:      "unmount",
+			workspace: `current-workspace | with-mounted-directory --path /mnt/deps --source $(directory | with-new-file attachment-only.txt "mounted payload")`,
+			edit:      `.withoutMount("/mnt/deps").withNewFile("/mnt/deps/shadowed.txt", "shadowed payload")`, notice: "Unmounted: mnt/deps",
+		},
+		{
+			name:      "replace mount",
+			workspace: `current-workspace | with-mounted-directory --path /mnt/deps --source $(directory | with-new-file attachment-only.txt "old mounted payload")`,
+			edit:      `.withMountedDirectory("/mnt/deps", directory.withNewFile("replacement-only.txt", "mounted payload"))`,
+		},
+		{
+			name: "git metadata", workspace: "current-workspace | directory / | as-workspace",
+			edit: `.withoutDirectory("/.git")`,
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			base := workspaceFixture(t, c, "workspace-tool-return").
+				WithNewFile("nested/keep.txt", "keep").
+				WithNewFile(".dagger/modules/swapper/main.dang", fmt.Sprintf(`
+type Swapper {
+  swap(ws: Workspace!): Workspace! {
+    ws%s.withNewFile("/ROOT.txt", "root edit\n").withNewFile("EDIT.txt", "nested edit\n")
+  }
+}
+`, tc.edit))
+			model := cannedRecordingModel(ctx, t, c, c.LLM().
+				WithPrompt("swap the workspace").
+				WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swap"}}).
+				WithToolResult("call_1", "", false).
+				WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+			out, err := base.With(daggerShell(fmt.Sprintf(`
+ws=$(%s | with-workdir nested)
+llm --model="%s" | with-workspace --workspace $ws | with-tools $(swapper) | with-prompt "swap the workspace" | loop | transcript
+`, tc.workspace, model))).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "diff --git a/ROOT.txt b/ROOT.txt")
+			require.Contains(t, out, "diff --git a/nested/EDIT.txt b/nested/EDIT.txt")
+			require.Contains(t, out, "+root edit")
+			require.Contains(t, out, "+nested edit")
+			if tc.notice != "" {
+				require.Contains(t, out, tc.notice)
+			} else {
+				require.NotContains(t, out, "Mounted (read-only):")
+				require.NotContains(t, out, "Unmounted:")
+			}
+			require.NotContains(t, out, "attachment-only.txt")
+			require.NotContains(t, out, "replacement-only.txt")
+			require.NotContains(t, out, "mounted payload")
+			require.NotContains(t, out, "shadowed.txt")
+			require.NotContains(t, out, "shadowed payload")
+			require.NotContains(t, out, ".git/")
+			require.NotContains(t, out, "GIT binary patch")
+			require.NotContains(t, out, "WARNING:")
+		})
+	}
+}
+
+// TestToolReturningUnrelatedWorkspaceIsNotDiffed locks in the other half of
+// the rebinding's visibility rule: a tool may bind ANY workspace, but what the
+// model is told depends on how it relates to the one it replaces
+// (core.WorkspaceRelation). A workspace with no base or origin in common gets a
+// one-line replacement notice — diffing it against the old one would upload
+// the old tree in full and produce a patch describing nothing actionable.
+func (LLMSuite) TestToolReturningUnrelatedWorkspaceIsNotDiffed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("swap to an unrelated workspace").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swapToUnrelated"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+	loopThen := func(ctx context.Context, t *testctx.T, then string) string {
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "swap to an unrelated workspace" | loop | %s`,
+			model, then,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("the unrelated workspace is still adopted", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, "from an unrelated workspace", strings.TrimSpace(loopThen(ctx, t, "workspace | file OTHER.txt | contents")))
+	})
+
+	t.Run("the model sees a replacement notice, not a patch", func(ctx context.Context, t *testctx.T) {
+		transcript := loopThen(ctx, t, "transcript")
+		require.Contains(t, transcript, "Workspace replaced: file://")
+		require.Contains(t, transcript, "-> directory://")
+		require.Contains(t, transcript, "Files were not diffed")
+		// Neither side's content was rendered: no patch of the new tree's
+		// files, and none of the old tree's removals.
+		require.NotContains(t, transcript, "diff --git")
+		require.NotContains(t, transcript, "+from an unrelated workspace")
+		require.NotContains(t, transcript, "-line1: placeholder")
+	})
 }
 
 // TestToolReturningLLMContinues locks in the continuation ring of the state-return
@@ -540,7 +847,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
-			"Toolset unchanged (15 tools).",
+			"Toolset unchanged (16 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
 		continuationModel := cannedRecordingModel(ctx, t, c, c.LLM().

@@ -12,4 +12,8 @@ const (
 	// stays O(changed files) there while still catching files whose stat
 	// happens to collide (same size and mtime, different bytes).
 	CompareInodeThenContent
+	// CompareInodeOnly is a conservative, content-free variant for bounded
+	// inspections. Distinct backing files always count as potentially changed,
+	// even if all their metadata matches.
+	CompareInodeOnly
 )

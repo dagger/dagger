@@ -14,6 +14,17 @@ type Swapper {
   }
 
   """
+  Return a workspace that shares nothing with the current one.
+
+  A synthetic directory workspace has no base or origin in common with the
+  agent's checkout, so the rebinding must not try to diff the two: the model
+  gets a one-line replacement notice instead of a patch.
+  """
+  swapToUnrelated: Workspace! {
+    directory.withNewFile("OTHER.txt", "from an unrelated workspace").asWorkspace
+  }
+
+  """
   Continue the conversation with a workspace that has a marker file.
 
   MCP passes the current LLM directly, including the tool call itself; returning

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -37,9 +38,9 @@ import (
 
 func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, error) {
 	return &Changeset{
-		Before:    before,
-		After:     after,
-		pathsOnce: &sync.Once{},
+		Before: before,
+		After:  after,
+		paths:  &changesetPathsMemo{},
 	}, nil
 }
 
@@ -160,23 +161,90 @@ func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uin
 // ComputePaths computes the added, modified, and removed paths using file
 // metadata and git diffs.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
-	ch.pathsOnce.Do(func() {
+	memo := ch.paths
+	memo.once.Do(func() {
+		defer memo.done.Store(true)
 		_ = enginetel.Task(ctx, "computing paths", func(ctx context.Context) error {
-			ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
-			if ch.pathsErr != nil {
-				// nothing to report; cachedPaths is nil on error
-				return ch.pathsErr
+			memo.paths, memo.err = ch.computePathsOnce(ctx)
+			if memo.err != nil {
+				// nothing to report; paths is nil on error
+				return memo.err
 			}
 			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 			defer stdio.Close()
-			fmt.Fprintln(stdio.Stdout, "added:", ch.cachedPaths.Added)
-			fmt.Fprintln(stdio.Stdout, "removed:", ch.cachedPaths.Removed)
-			fmt.Fprintln(stdio.Stdout, "modified:", ch.cachedPaths.Modified)
-			fmt.Fprintln(stdio.Stdout, "renamed:", ch.cachedPaths.Renamed)
+			fmt.Fprintln(stdio.Stdout, "added:", memo.paths.Added)
+			fmt.Fprintln(stdio.Stdout, "removed:", memo.paths.Removed)
+			fmt.Fprintln(stdio.Stdout, "modified:", memo.paths.Modified)
+			fmt.Fprintln(stdio.Stdout, "renamed:", memo.paths.Renamed)
 			return nil
 		})
 	})
-	return ch.cachedPaths, ch.pathsErr
+	return memo.paths, memo.err
+}
+
+// changesetPathCount is the number of entries ComputePaths reports: every
+// added, modified and removed path, directories included. A rename counts
+// twice, since it appears in both Added and AllRemoved.
+func changesetPathCount(paths *ChangesetPaths) int {
+	return len(paths.Added) + len(paths.Modified) + len(paths.AllRemoved)
+}
+
+// PathCountExceeds reports whether the changeset touches more than limit
+// paths, counted the way ComputePaths reports them (see changesetPathCount).
+// It exists for callers deciding whether a changeset is too large to present
+// in full, who shouldn't have to walk a 100k-file tree to completion to learn
+// that it is.
+//
+// This is an upper-bound check. When ComputePaths has already run, the answer
+// comes straight from its memoized result and is exact. Otherwise the metadata
+// delta is walked and abandoned as soon as more than limit entries are seen,
+// without the rename detection or content verification ComputePaths performs:
+// a distinct backing file still counts even if its content is identical.
+// Thus true means more than limit candidate paths, not necessarily actual
+// changes, while false guarantees at most limit paths changed.
+//
+// The partial walk never populates the ComputePaths memo; a later ComputePaths
+// still computes the full result.
+func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, error) {
+	if ch.paths.done.Load() {
+		paths, err := ch.ComputePaths(ctx)
+		if err != nil {
+			return false, err
+		}
+		return changesetPathCount(paths) > limit, nil
+	}
+
+	beforeDigest, err := ch.Before.ContentPreferredDigest(ctx)
+	if err != nil {
+		return false, fmt.Errorf("before content-preferred digest: %w", err)
+	}
+	afterDigest, err := ch.After.ContentPreferredDigest(ctx)
+	if err != nil {
+		return false, fmt.Errorf("after content-preferred digest: %w", err)
+	}
+	if beforeDigest == afterDigest {
+		// Nothing changed; only a negative limit is exceeded by zero paths.
+		return limit < 0, nil
+	}
+
+	var exceeds bool
+	var deltaErr error
+	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+		exceeds, deltaErr = changesetDeltaExceeds(ctx, beforeDir, afterDir, limit)
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if deltaErr != nil {
+		if ctx.Err() != nil {
+			return false, context.Cause(ctx)
+		}
+		// A bounded inspection must not fall back to an unbounded content
+		// diff. Callers can omit the summary or keep the raw changeset.
+		return false, fmt.Errorf("bound changeset delta: %w", deltaErr)
+	}
+	return exceeds, nil
 }
 
 func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, error) {
@@ -355,9 +423,17 @@ type Changeset struct {
 	// objects in UnmarshalJSON
 	decoded *changesetJSONEnvelope
 
-	pathsOnce   *sync.Once
-	cachedPaths *ChangesetPaths
-	pathsErr    error
+	paths *changesetPathsMemo
+}
+
+// changesetPathsMemo memoizes ComputePaths. Held by pointer so that copies of
+// a Changeset share one computation, and so a partial answer from
+// PathCountExceeds can tell whether the full one already exists.
+type changesetPathsMemo struct {
+	once  sync.Once
+	done  atomic.Bool // set once paths/err are final
+	paths *ChangesetPaths
+	err   error
 }
 
 type changesetJSONEnvelope struct {
@@ -393,7 +469,7 @@ func (ch *Changeset) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	ch.decoded = &env
-	ch.pathsOnce = &sync.Once{}
+	ch.paths = &changesetPathsMemo{}
 	return nil
 }
 
@@ -759,8 +835,20 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				return enginetel.Task(ctx, "git diff", func(ctx context.Context) error {
 					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 					defer stdio.Close()
-					return writeGitDiffPatch(ctx, root, pathSpecs,
-						io.MultiWriter(patchFile, stdio.Stdout), stdio.Stdout, stdio.Stderr)
+					// The patch file gets everything; the span's logs only
+					// get a bounded prefix, since the whole patch would
+					// otherwise stream to the client as log records before
+					// the caller has even asked for the file.
+					logged := &truncatingWriter{w: stdio.Stdout, limit: maxPatchTelemetryBytes}
+					err := writeGitDiffPatch(ctx, root, pathSpecs,
+						io.MultiWriter(patchFile, logged), stdio.Stdout, stdio.Stderr)
+					if dropped := logged.Dropped(); dropped > 0 {
+						if !logged.atLineStart() {
+							fmt.Fprintln(stdio.Stdout)
+						}
+						fmt.Fprintf(stdio.Stdout, "[... %d bytes truncated; read Changeset.asPatch for the full patch]\n", dropped)
+					}
+					return err
 				})
 			})
 		}, mountRefAsReadOnly)
@@ -786,8 +874,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 // root and writes the resulting unified diff to out, normalizing the
 // `diff --git` header lines along the way (see diffGitHeaderRewriter).
 //
-// logOut/logErr receive the command's own diagnostics; logOut also gets the
-// argv, which the span name can't carry.
+// logOut/logErr receive the command's own diagnostics, never the patch data.
 func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out, logOut, logErr io.Writer) error {
 	// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
 	// from the ---/+++ lines but not from rename from/to lines, so a
@@ -803,9 +890,9 @@ func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out
 		args = append(args, "--")
 		args = append(args, pathSpecs...)
 	}
-	// The span is named for the command rather than the whole argv, which the
-	// pathspecs make unbounded; log those.
-	fmt.Fprintln(logOut, "running git", strings.Join(args, " "))
+	// Pathspecs can name an entire repository; log their count, not an
+	// unbounded argv that floods the same telemetry as the patch would.
+	fmt.Fprintf(logOut, "running git diff (%d pathspecs)\n", len(pathSpecs))
 
 	rewriter := &diffGitHeaderRewriter{w: out}
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -866,6 +953,58 @@ func (r *diffGitHeaderRewriter) Flush() error {
 	r.buf = nil
 	_, err := io.WriteString(r.w, fixDiffGitHeader(line))
 	return err
+}
+
+// maxPatchTelemetryBytes bounds how much of a patch AsPatch copies into its
+// span's logs. The copy exists so the patch can be read in the trace, not to
+// carry it: diffing two unrelated trees produces patches in the hundreds of
+// megabytes, every byte of which would otherwise stream to the client as log
+// records before the caller has even read the file.
+const maxPatchTelemetryBytes = 256 << 10
+
+// truncatingWriter forwards at most limit bytes to w and discards the rest,
+// counting what it dropped so the caller can say so afterwards. Every write
+// reports full success (short of w erroring), so the writer can sit inside an
+// io.MultiWriter without cutting off its siblings once the budget is spent.
+type truncatingWriter struct {
+	w       io.Writer
+	limit   int64
+	written int64
+	dropped int64
+	last    byte
+}
+
+func (t *truncatingWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	remaining := t.limit - t.written
+	if remaining <= 0 {
+		t.dropped += int64(n)
+		return n, nil
+	}
+	if int64(n) > remaining {
+		t.dropped += int64(n) - remaining
+		p = p[:remaining]
+	}
+	if len(p) == 0 {
+		return n, nil
+	}
+	if _, err := t.w.Write(p); err != nil {
+		return 0, err
+	}
+	t.written += int64(len(p))
+	t.last = p[len(p)-1]
+	return n, nil
+}
+
+// Dropped returns how many bytes were discarded beyond the limit.
+func (t *truncatingWriter) Dropped() int64 {
+	return t.dropped
+}
+
+// atLineStart reports whether the next forwarded byte would begin a new line,
+// i.e. nothing has been forwarded yet or the last forwarded byte was a newline.
+func (t *truncatingWriter) atLineStart() bool {
+	return t.written == 0 || t.last == '\n'
 }
 
 // fixDiffGitHeader normalizes the path prefixes on a `diff --git` header line.
