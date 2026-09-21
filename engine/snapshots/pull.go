@@ -484,7 +484,9 @@ func (cm *snapshotManager) copyBuiltinLayer(ctx context.Context, desc ocispecs.D
 	if err != nil {
 		return false, errors.Wrapf(err, "look up %s in the builtin image store", desc.Digest)
 	}
-	if desc.Size > 0 && info.Size != desc.Size {
+	// Exact digest and exact size, always: a layer that says another size,
+	// zero included, is not this blob.
+	if info.Size != desc.Size {
 		return false, errors.Errorf("builtin image store has %s with size %d, the layer says %d", desc.Digest, info.Size, desc.Size)
 	}
 	ref := "builtin-layer-" + identity.NewID()

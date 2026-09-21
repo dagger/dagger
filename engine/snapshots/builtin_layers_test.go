@@ -134,3 +134,47 @@ func TestChainImportFallsThroughWhenTheBuiltinStoreFails(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, all, "nothing was taken from the builtin store")
 }
+
+// Only the exact size matches: a layer descriptor that says another size
+// for a digest the builtin store has, zero or otherwise, is downloaded
+// from the provider and takes no builtin lease.
+func TestChainImportRefusesBuiltinLayersOfAnotherSize(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		size func(int64) int64
+	}{
+		{name: "zero", size: func(int64) int64 { return 0 }},
+		{name: "larger", size: func(n int64) int64 { return n + 1 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+			chain := twoLayerChain(t, producer)
+			consumer.WithBuiltin(t, builtinStoreWith(t, chain, 0, 1))
+			// The chain carries the right blob sizes; the provider serves the
+			// bytes the descriptor names whatever size it claims.
+			layers := []bkcache.ExportLayer{chain.Layers[0], chain.Layers[1]}
+			layers[0].Descriptor.Size = tc.size(layers[0].Descriptor.Size)
+			provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+			imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: layers, Provider: provider})
+			if tc.name == "zero" {
+				// A zero-size descriptor cannot be verified by the provider path
+				// either; the point is that the builtin copy refused it.
+				if err != nil {
+					all, lerr := consumer.Leases.List(ctx, "id=="+bkcache.BuiltinLayersLeaseID)
+					require.NoError(t, lerr)
+					require.Empty(t, all, "no builtin lease for a refused size")
+					require.EqualValues(t, 1, provider.Reads.Load(), "the provider was asked for that layer")
+					return
+				}
+			}
+			require.NoError(t, err)
+			require.NoError(t, imported.Release(ctx))
+			require.GreaterOrEqual(t, provider.Reads.Load(), int64(1), "the mismatched layer came from the provider")
+			_, _, contents := leaseResources(t, consumer, bkcache.BuiltinLayersLeaseID)
+			require.Equal(t, []string{chain.Layers[1].Descriptor.Digest.String()}, contents, "only the layer with the exact size is held from the builtin store")
+		})
+	}
+}

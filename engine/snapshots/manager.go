@@ -47,6 +47,12 @@ type ImportedImage struct {
 	Nonlayers    []ocispecs.Descriptor
 }
 
+// BuiltinContent is the builtin image store chain imports consult, nil
+// when there is none.
+func (cm *snapshotManager) BuiltinContent() content.InfoReaderProvider {
+	return cm.builtinContent
+}
+
 // Blobs lists every blob of the image: manifest, config, layers and the
 // non-layer descriptors.
 func (img *ImportedImage) Blobs() []ocispecs.Descriptor {
