@@ -926,6 +926,54 @@ settings.label = "second"
 	require.ErrorContains(t, err, "ambiguous artifact path")
 }
 
+func (ArtifactsSuite) TestCheckReturnTypes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	for _, tc := range []struct {
+		name, returnType, body string
+		invalid, fails         bool
+	}{
+		{name: "string", returnType: "String!", body: `"ok"`},
+		{name: "nullable string", returnType: "String", body: `"ok"`},
+		{name: "null string", returnType: "String", body: "null"},
+		{name: "failed string", returnType: "String!", body: `raise "check failed"`, fails: true},
+		{name: "integer", returnType: "Int!", body: "42", invalid: true},
+		{name: "boolean", returnType: "Boolean!", body: "true", invalid: true},
+		{name: "object", returnType: "Container!", body: "container", invalid: true},
+		{name: "string list", returnType: "[String!]!", body: `["ok"]`, invalid: true},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			src := c.Directory().WithNewFile("dagger.toml", `[modules.example]
+source = "./example"
+entrypoint = true
+`).WithNewFile("example/dagger-module.toml", `name = "example"
+engineVersion = "v1.0.0"
+[runtime]
+source = "dang"
+`).WithNewFile("example/main.dang", fmt.Sprintf("type Example { pub verify: %s @check { %s } }", tc.returnType, tc.body))
+			checkArtifact := src.AsWorkspace().Artifacts().FilterDirectives([]string{"check"}).One()
+			loadError, err := checkArtifact.LoadError(ctx)
+			require.NoError(t, err)
+			if tc.invalid {
+				require.Contains(t, loadError, "must return Void or String")
+				return
+			}
+			require.Empty(t, loadError)
+			check := artifactValue[*dagger.Check](ctx, t, c, checkArtifact)
+			pass, err := check.Pass(ctx)
+			require.NoError(t, err)
+			require.Equal(t, !tc.fails, pass)
+			if tc.fails {
+				checkErr, err := check.Error(ctx)
+				require.NoError(t, err)
+				require.NotNil(t, checkErr)
+				message, err := checkErr.Message(ctx)
+				require.NoError(t, err)
+				require.Contains(t, message, "check failed")
+			}
+		})
+	}
+}
+
 func (ArtifactsSuite) TestCheckProjection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	src := c.Directory().WithNewFile("dagger.toml", `[modules.example]
