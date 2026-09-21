@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/azure"
@@ -50,6 +51,35 @@ var _ LLMClient = (*OpenAIClient)(nil)
 func (c *OpenAIClient) IsRetryable(err error) bool {
 	// OpenAI client immplements retrying internally; nothing to do here.
 	return false
+}
+
+// openAIPromptCacheKey derives a conversation's prompt_cache_key.
+//
+// OpenAI places a request on a cache node by hashing the first few hundred
+// tokens of the prompt — the start of the system prompt, which every
+// conversation composed from the same agent shares — combined with
+// prompt_cache_key when one is given. Without a key, each turn of a
+// conversation is placed independently, and only whatever prefix happens to
+// be warm on the node it lands on is read: in practice the instructions and
+// tools common to all conversations, with the conversation's own history
+// missing every time. Codex sends its thread id. An LLM value has no session
+// identity (it is content-addressed, branchable and resumable), so the key
+// is derived from what identifies the conversation and never changes across
+// its turns: the system prompt(s) and the first prompt. Branches and resumed
+// sessions therefore share it, which is right — they share the prefix too.
+func openAIPromptCacheKey(history []*LLMMessage) string {
+	var parts []string
+	for _, msg := range history {
+		parts = append(parts, string(msg.Role))
+		for _, block := range msg.Content {
+			parts = append(parts, string(block.Kind), block.Text, block.CallID,
+				block.ToolName, string(block.Arguments), block.MIMEType, block.Data)
+		}
+		if msg.Role != LLMMessageRoleSystem {
+			break
+		}
+	}
+	return hashutil.HashStrings(parts...).Encoded()
 }
 
 // convertHistoryToOpenAI converts content-block messages to the OpenAI
@@ -284,6 +314,13 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		Model:    c.endpoint.Model,
 		Messages: openAIMessages,
 		// call tools one at a time, or else chaining breaks
+	}
+
+	// Pin the conversation to a cache node (see openAIPromptCacheKey). Only
+	// OpenAI itself is known to accept the parameter; compatible endpoints
+	// may reject what they don't recognize.
+	if c.endpoint.Provider == OpenAI {
+		params.PromptCacheKey = openai.String(openAIPromptCacheKey(history))
 	}
 
 	// Apply an explicit maxTokens cap. The parameter is optional for

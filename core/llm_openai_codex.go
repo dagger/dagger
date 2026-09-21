@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
+	"sync"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/openai/openai-go/v3"
@@ -26,6 +28,73 @@ import (
 type OpenAICodexClient struct {
 	svc      responses.ResponseService
 	endpoint *LLMEndpoint
+
+	// turnStates holds each conversation's sticky-routing token, keyed by
+	// its prompt cache key (see codexTurnState).
+	turnStates sync.Map
+}
+
+// codexTurnState is the backend's sticky-routing token for one turn of a
+// conversation. The backend hands it out in the x-codex-turn-state header
+// of the first response of a turn — one user prompt through to the model's
+// final answer, however many tool-call rounds that takes — and Codex replays
+// it unchanged on every request of that turn, and never across turns. It is
+// what keeps a turn's requests on the node holding its cache; the prompt
+// cache key alone only influences placement.
+type codexTurnState struct {
+	// turn identifies the turn the token belongs to: the index of the
+	// prompt that opened it (see codexTurnIndex).
+	turn  int
+	token string
+}
+
+const codexTurnStateHeader = "x-codex-turn-state"
+
+// codexTurnIndex locates the prompt that opened the current turn: the last
+// user message carrying anything other than tool results.
+func codexTurnIndex(history []*LLMMessage) int {
+	for i := len(history) - 1; i >= 0; i-- {
+		msg := history[i]
+		if msg.Role != LLMMessageRoleUser {
+			continue
+		}
+		for _, block := range msg.Content {
+			if block.Kind != LLMContentToolResult {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// turnRequestOptions returns the per-request options that keep a
+// conversation's requests together on the backend: the session-id header the
+// ChatGPT backend derives cache affinity from, and the current turn's
+// sticky-routing token when one has been issued.
+func (c *OpenAICodexClient) turnRequestOptions(cacheKey string, turn int) []option.RequestOption {
+	opts := []option.RequestOption{option.WithHeader("session-id", cacheKey)}
+	if st, ok := c.turnStates.Load(cacheKey); ok {
+		if st := st.(*codexTurnState); st.turn == turn {
+			opts = append(opts, option.WithHeader(codexTurnStateHeader, st.token))
+		}
+	}
+	return opts
+}
+
+// recordTurnState keeps the sticky-routing token issued at the start of a
+// turn. Like Codex, the first token wins for the rest of the turn.
+func (c *OpenAICodexClient) recordTurnState(cacheKey string, turn int, resp *http.Response) {
+	if resp == nil {
+		return
+	}
+	token := resp.Header.Get(codexTurnStateHeader)
+	if token == "" {
+		return
+	}
+	if st, ok := c.turnStates.Load(cacheKey); ok && st.(*codexTurnState).turn == turn {
+		return
+	}
+	c.turnStates.Store(cacheKey, &codexTurnState{turn: turn, token: token})
 }
 
 func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
@@ -117,6 +186,8 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		})
 	}
 
+	cacheKey := openAIPromptCacheKey(history)
+
 	// NB: no max_output_tokens is sent, so an explicit maxTokens cap has no
 	// effect here. The ChatGPT backend only officially serves the Codex CLI,
 	// which never sends an output cap; an unexpected parameter risks
@@ -135,6 +206,9 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		Include: []responses.ResponseIncludable{
 			responses.ResponseIncludableReasoningEncryptedContent,
 		},
+		// Pin the conversation to a cache node, as Codex does with its thread
+		// id (see openAIPromptCacheKey).
+		PromptCacheKey: param.NewOpt(cacheKey),
 	}
 	if len(toolParams) > 0 {
 		params.Tools = toolParams
@@ -153,8 +227,12 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	}
 
 	// Use streaming
-	stream := c.svc.NewStreaming(ctx, params)
+	turn := codexTurnIndex(history)
+	var httpResp *http.Response
+	reqOpts := append(c.turnRequestOptions(cacheKey, turn), option.WithResponseInto(&httpResp))
+	stream := c.svc.NewStreaming(ctx, params, reqOpts...)
 	defer stream.Close()
+	c.recordTurnState(cacheKey, turn, httpResp)
 
 	var content strings.Builder
 	var contentBlocks []*LLMContentBlock
