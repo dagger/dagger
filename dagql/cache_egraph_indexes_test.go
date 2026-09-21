@@ -24,7 +24,32 @@ func assertCacheDerivedIndexesConsistent(t testing.TB, c *Cache) {
 	assert.NilError(t, err)
 }
 
+// cacheDerivedIndexesErrorLocked checks every derived index family in
+// order and returns the first inconsistency it finds.
 func cacheDerivedIndexesErrorLocked(c *Cache) error {
+	if err := cacheOutputEqClassForwardErrorLocked(c); err != nil {
+		return err
+	}
+	if err := cacheOutputEqClassInverseErrorLocked(c); err != nil {
+		return err
+	}
+	if err := cacheOutputEqClassSurvivorErrorLocked(c, time.Now().Unix()); err != nil {
+		return err
+	}
+	exactDigestsByResult, err := cacheExactDigestIndexErrorLocked(c)
+	if err != nil {
+		return err
+	}
+	if err := cacheBroadDigestMarkerErrorLocked(c); err != nil {
+		return err
+	}
+	return cacheDigestPostingErrorLocked(c, exactDigestsByResult)
+}
+
+// cacheOutputEqClassForwardErrorLocked checks the result → output eq-class
+// associations: every association names a root, once, with its inverse
+// membership present.
+func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
 	if len(c.egraphTerms) != 0 && len(c.resultOutputEqClasses) == 0 {
 		return fmt.Errorf("e-graph has %d terms but no result/output eq-class associations", len(c.egraphTerms))
 	}
@@ -48,7 +73,13 @@ func cacheDerivedIndexesErrorLocked(c *Cache) error {
 			}
 		}
 	}
+	return nil
+}
 
+// cacheOutputEqClassInverseErrorLocked checks the output eq-class → results
+// map: every key is a root and every member exists with its forward
+// membership present.
+func cacheOutputEqClassInverseErrorLocked(c *Cache) error {
 	for outputEqID, results := range c.outputEqClassResults {
 		root := c.findEqClassLocked(outputEqID)
 		if outputEqID != root {
@@ -64,7 +95,13 @@ func cacheDerivedIndexesErrorLocked(c *Cache) error {
 			}
 		}
 	}
-	nowUnix := time.Now().Unix()
+	return nil
+}
+
+// cacheOutputEqClassSurvivorErrorLocked checks that the survivor predicate
+// of every live output eq-class root agrees with the digest-posting
+// semantics at nowUnix.
+func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 	liveOutputRoots := make(map[eqClassID]struct{}, len(c.outputEqClassToTerms)+len(c.outputEqClassResults))
 	for outputEqID := range c.outputEqClassToTerms {
 		root := c.findEqClassLocked(outputEqID)
@@ -100,33 +137,49 @@ func cacheDerivedIndexesErrorLocked(c *Cache) error {
 			return fmt.Errorf("output eq-class root %d survivor predicate differs from digest-posting semantics", root)
 		}
 	}
+	return nil
+}
 
+// cacheExactDigestIndexErrorLocked checks the exact digest index: every
+// indexed result exists, lists each digest once, and has its posting. It
+// returns the digests listed per result for the posting check.
+func cacheExactDigestIndexErrorLocked(c *Cache) (map[sharedResultID]map[string]struct{}, error) {
 	exactDigestsByResult := make(map[sharedResultID]map[string]struct{}, len(c.resultIndexedDigests))
 	for resID, digests := range c.resultIndexedDigests {
 		if c.resultsByID[resID] == nil {
-			return fmt.Errorf("exact digest index references missing result %d", resID)
+			return nil, fmt.Errorf("exact digest index references missing result %d", resID)
 		}
 		seen := make(map[string]struct{}, len(digests))
 		for _, dig := range digests {
 			_, duplicate := seen[dig]
 			if duplicate {
-				return fmt.Errorf("result %d exact digest index contains duplicate %q", resID, dig)
+				return nil, fmt.Errorf("result %d exact digest index contains duplicate %q", resID, dig)
 			}
 			seen[dig] = struct{}{}
 			posting := c.egraphResultsByDigest[dig]
 			if posting == nil || !posting.Contains(resID) {
-				return fmt.Errorf("result %d exact digest %q is missing its posting", resID, dig)
+				return nil, fmt.Errorf("result %d exact digest %q is missing its posting", resID, dig)
 			}
 		}
 		exactDigestsByResult[resID] = seen
 	}
+	return exactDigestsByResult, nil
+}
 
+// cacheBroadDigestMarkerErrorLocked checks that every broadly indexed
+// result exists.
+func cacheBroadDigestMarkerErrorLocked(c *Cache) error {
 	for resID := range c.broadlyIndexedResults {
 		if c.resultsByID[resID] == nil {
 			return fmt.Errorf("broad digest marker references missing result %d", resID)
 		}
 	}
+	return nil
+}
 
+// cacheDigestPostingErrorLocked checks the digest postings: every member
+// exists and is either exact-listed for that digest or broadly indexed.
+func cacheDigestPostingErrorLocked(c *Cache, exactDigestsByResult map[sharedResultID]map[string]struct{}) error {
 	for dig, posting := range c.egraphResultsByDigest {
 		if posting == nil {
 			continue
