@@ -202,6 +202,13 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
 			),
+		dagql.NodeFunc("withoutDirectories", s.withoutDirectories).
+			View(AfterVersion("v1.0.0-beta.14")).
+			IsPersistable().
+			Doc(`Return a snapshot with subdirectories removed`).
+			Args(
+				dagql.Arg("paths").Doc(`Paths of the subdirectories to remove. Example: [".github/workflows"]`),
+			),
 		dagql.NodeFunc("diff", s.diff).
 			IsPersistable().
 			Doc(`Return the difference between this directory and an another directory. The difference is encoded as a directory.`).
@@ -1066,6 +1073,16 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+type withoutDirectoriesArgs struct {
+	Paths []string
+}
+
+// Both removal APIs use the same lazy path operation, preserving one recipe
+// frame for the complete batch.
+func (s *directorySchema) withoutDirectories(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoriesArgs) (dagql.ObjectResult[*core.Directory], error) {
+	return s.withoutFiles(ctx, parent, withoutFilesArgs(args))
 }
 
 type withoutFileArgs struct {

@@ -6406,6 +6406,23 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a snapshot with subdirectories removed
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Paths of the subdirectories to remove. Example: [".github/workflows"]
+    pub fn without_directories(&self, paths: Vec<impl Into<String>>) -> Directory {
+        let mut query = self.selection.select("withoutDirectories");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return a snapshot with a subdirectory removed
     ///
     /// # Arguments
