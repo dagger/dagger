@@ -81,42 +81,8 @@ func TestPRWorkflow(t *testing.T) {
 			if tc.noOp {
 				pr.Body = renderSection("", merge, head, false)
 			}
-			reads, writes := 0, 0
-			var written string
-			g := githubClient{token: "test-token", client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				if r.Header.Get("Authorization") != "Bearer test-token" {
-					t.Fatal("missing authentication")
-				}
-				var response any
-				switch {
-				case r.Method == "GET" && r.URL.Path == "/repos/dagger/dagger/pulls/42":
-					reads++
-					response = pr
-					if tc.changed && reads > 1 {
-						changed := pr
-						changed.Body += " concurrent edit"
-						response = changed
-					}
-				case r.Method == "GET" && r.URL.Path == "/repos/dagger/dagger/compare/"+base+"..."+head:
-					response = map[string]any{"merge_base_commit": map[string]string{"sha": merge}}
-				case r.Method == "PATCH" && r.URL.Path == "/repos/dagger/dagger/pulls/42":
-					writes++
-					var payload map[string]string
-					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-						t.Fatal(err)
-					}
-					if len(payload) != 1 {
-						t.Fatal("must only patch body")
-					}
-					written = payload["body"]
-					response = map[string]string{}
-				default:
-					t.Fatalf("unexpected request: %s %s", r.Method, r.URL)
-					return nil, fmt.Errorf("unexpected request")
-				}
-				data, _ := json.Marshal(response)
-				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
-			})}}
+			api := &prTestAPI{pr: pr, merge: merge, changeOnRead: tc.changed}
+			g := api.client(t)
 			result, err := g.updatePR(context.Background(), "dagger/dagger", "42", tc.descriptions, tc.publish,
 				func(_ context.Context, repo, b, h string) (string, string, error) {
 					if repo != "dagger/dagger" || b != merge || h != head {
@@ -132,17 +98,63 @@ func TestPRWorkflow(t *testing.T) {
 			if tc.publish && !fails && !tc.noOp {
 				wantWrites = 1
 			}
-			if writes != wantWrites {
-				t.Fatalf("got %d writes, want %d", writes, wantWrites)
+			if api.writes != wantWrites {
+				t.Fatalf("got %d writes, want %d", api.writes, wantWrites)
 			}
-			if writes == 1 && (!strings.HasPrefix(written, pr.Body+"\n\n") || !strings.Contains(written, "No semantic API changes.")) {
-				t.Fatal(written)
+			if api.writes == 1 && (!strings.HasPrefix(api.written, pr.Body+"\n\n") || !strings.Contains(api.written, "No semantic API changes.")) {
+				t.Fatal(api.written)
 			}
 			if tc.descriptions && !strings.Contains(result, "new description") {
 				t.Fatal(result)
 			}
 		})
 	}
+}
+
+type prTestAPI struct {
+	pr            pullRequest
+	merge         string
+	changeOnRead  bool
+	reads, writes int
+	written       string
+}
+
+func (api *prTestAPI) client(t *testing.T) githubClient {
+	t.Helper()
+	return githubClient{token: "test-token", client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Fatal("missing authentication")
+		}
+		var response any
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/repos/dagger/dagger/pulls/42":
+			api.reads++
+			response = api.pr
+			if api.changeOnRead && api.reads > 1 {
+				changed := api.pr
+				changed.Body += " concurrent edit"
+				response = changed
+			}
+		case r.Method == "GET" && r.URL.Path == "/repos/dagger/dagger/compare/"+api.pr.Base.SHA+"..."+api.pr.Head.SHA:
+			response = map[string]any{"merge_base_commit": map[string]string{"sha": api.merge}}
+		case r.Method == "PATCH" && r.URL.Path == "/repos/dagger/dagger/pulls/42":
+			api.writes++
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload) != 1 {
+				t.Fatal("must only patch body")
+			}
+			api.written = payload["body"]
+			response = map[string]string{}
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL)
+			return nil, fmt.Errorf("unexpected request")
+		}
+		data, _ := json.Marshal(response)
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+	})}}
 }
 
 func TestRunPRMissingToken(t *testing.T) {
