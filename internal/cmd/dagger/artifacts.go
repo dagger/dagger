@@ -28,7 +28,8 @@ An address selects that path and its children. Use / between fields; : is
 also accepted. The dag:// scheme is optional. Glob patterns work as with
 check and up. Quote them to keep the shell from expanding them.
 
-Use --type to select a GraphQL type. Each dimension adds a flag with its name,
+Use --type to select a type in CLI or GraphQL case, such as container or Container.
+Each dimension adds a flag with its name,
 such as --go-module. Repeat a flag to match any of its values. Different filters
 must all match. Use --dimension-key DIMENSION=KEY if a dimension name
 conflicts with an existing flag. A query in the address has the same meaning
@@ -44,7 +45,7 @@ Examples:
   dagger artifact keys go-test --go-module=sdk/go`,
 		Args: cobra.NoArgs,
 	}
-	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Keep artifacts of this GraphQL type (repeat for alternatives)")
+	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Keep artifacts of this `type` (CLI or GraphQL case; repeat for alternatives)")
 	cmd.PersistentFlags().StringArray("dimension-key", nil, "Keep a dimension key: DIMENSION=KEY (repeat for alternatives)")
 	for _, child := range []struct{ use, short string }{
 		{"list [address...]", "List matching artifact addresses"},
@@ -146,7 +147,17 @@ func artifactPaths(addresses []*dagaddress.Address) []string {
 func selectArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifacts *dagger.Artifacts) (*dagger.Artifacts, error) {
 	types, _ := cmd.Flags().GetStringArray("type")
 	if cmd.Flags().Changed("type") {
-		artifacts = artifacts.FilterTypes(types)
+		names := make([]string, 0, len(types))
+		for _, typ := range types {
+			if typ != "" {
+				names = append(names, cliName(typ))
+			}
+		}
+		if len(names) == 0 {
+			artifacts = artifacts.FilterTypes([]string{})
+		} else {
+			artifacts = artifacts.FilterURI((&dagaddress.Address{HasScheme: true, Types: names}).String())
+		}
 	}
 	// Workspace.artifacts(include:) already selected the path and its children.
 	// Send the remaining address and flag filters through the engine's parser.

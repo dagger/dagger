@@ -192,6 +192,11 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "dag://verify\n", out)
 	_, err = base.With(workspaceSelectionDaggerExec("check", "dag://"+ref+":verify")).Sync(ctx)
 	require.NoError(t, err)
+	for _, typ := range []string{"LLM", "llm"} {
+		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "artifact", "list", "--type", typ)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag://assistant\n", out)
+	}
 
 	for _, tc := range []struct {
 		args  []string
@@ -671,7 +676,13 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		want string
 	}{
 		{[]string{"list", "--type", "Container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
+		{[]string{"list", "--type", "container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
+		{[]string{"list", "--type", "ProviderDocs"}, "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
+		{[]string{"list", "--type", "provider-docs"}, "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
+		{[]string{"list", "--type="}, ""},
+		{[]string{"list", "--type=", "--type=container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
 		{[]string{"list", "consumer", "--type", "Container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
+		{[]string{"list", "consumer", "--type", "container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
 		{[]string{"list", "docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
 		{[]string{"list", "dag://docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
 		{[]string{"list", "provider/docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},

@@ -359,7 +359,8 @@ An address selects that path and its children. Use / between fields; : is
 also accepted. The dag:// scheme is optional. Glob patterns work as with
 check and up. Quote them to keep the shell from expanding them.
 
-Use --type to select a GraphQL type. Each dimension adds a flag with its name,
+Use --type to select a type in CLI or GraphQL case, such as container or Container.
+Each dimension adds a flag with its name,
 such as --go-module. Repeat a flag to match any of its values. Different filters
 must all match. Use --dimension-key DIMENSION=KEY if a dimension name
 conflicts with an existing flag. A query in the address has the same meaning
@@ -378,7 +379,7 @@ Examples:
 
 ```
       --dimension-key stringArray   Keep a dimension key: DIMENSION=KEY (repeat for alternatives)
-  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -t, --type type                   Keep artifacts of this type (CLI or GraphQL case; repeat for alternatives)
 ```
 
 ### Options inherited from parent commands
@@ -416,7 +417,7 @@ dagger artifact dimensions [address...]
       --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string                  Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
-  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -t, --type type                   Keep artifacts of this type (CLI or GraphQL case; repeat for alternatives)
   -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string            Select the workspace location to load from (local path or git ref)
 ```
@@ -441,7 +442,7 @@ dagger artifact keys DIMENSION [address...]
       --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string                  Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
-  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -t, --type type                   Keep artifacts of this type (CLI or GraphQL case; repeat for alternatives)
   -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string            Select the workspace location to load from (local path or git ref)
 ```
@@ -472,7 +473,7 @@ dagger artifact list [address...]
       --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string                  Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
-  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -t, --type type                   Keep artifacts of this type (CLI or GraphQL case; repeat for alternatives)
   -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string            Select the workspace location to load from (local path or git ref)
 ```
@@ -497,7 +498,7 @@ dagger artifact types [address...]
       --engine string               Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string                  Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error              Open a shell when a container exec fails (needs an interactive terminal)
-  -t, --type stringArray            Keep artifacts of this GraphQL type (repeat for alternatives)
+  -t, --type type                   Keep artifacts of this type (CLI or GraphQL case; repeat for alternatives)
   -v, --verbose count               Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string            Select the workspace location to load from (local path or git ref)
 ```
