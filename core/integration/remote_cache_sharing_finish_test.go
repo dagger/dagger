@@ -98,17 +98,14 @@ func (s *sharingFinishScenario) readAll(ctx context.Context, t *testctx.T, rHand
 // row that has a local equivalent, and R's row is not known until the import
 // returns, so a barrier cannot be selected by row in time. Instead every
 // arrival at the point is paused in turn, the next barrier is armed before
-// the last is released, and the walk stops at R's. It returns the key whose
-// "-wait.json" record releases R's pause.
-func (s *sharingFinishScenario) importAndHoldR(ctx context.Context, t *testctx.T, point dagql.FixtureBarrierPoint) (rHandle string, rID uint64, reached dagql.FixtureBarrierReached, key string) {
+// the last is released, and the walk stops at R's. It returns the barrier
+// that holds R's pause.
+func (s *sharingFinishScenario) importAndHoldR(ctx context.Context, t *testctx.T, point dagql.FixtureBarrierPoint) (rHandle string, rID uint64, reached dagql.FixtureBarrierReached, hold *armedBarrier) {
 	t.Helper()
-	arm := func(i int) dagql.FixtureBarrierArmed {
-		var armed dagql.FixtureBarrierArmed
-		key := fmt.Sprintf("hold-%d", i)
-		require.NoError(t, s.b.fixture("barrierArm", s.b.control(key+".json", dagql.FixtureBarrierRequest{Key: key, Point: point, Action: dagql.FixturePause}), nil, &armed))
-		return armed
+	arm := func(i int) *armedBarrier {
+		return s.b.armBarrier(dagql.FixtureBarrierRequest{Key: fmt.Sprintf("hold-%d", i), Point: point, Action: dagql.FixturePause})
 	}
-	armed := arm(0)
+	hold = arm(0)
 	var imported []transferFixtureMapping
 	require.NoError(t, s.b.fixture("import", "finish.json", nil, &imported))
 	require.NotEmpty(t, imported)
@@ -116,27 +113,15 @@ func (s *sharingFinishScenario) importAndHoldR(ctx context.Context, t *testctx.T
 	rHandle, rID = imported[0].Handle, imported[0].ResultID
 	for i := 0; ; i++ {
 		require.Less(t, i, 64, "R never reached %s", point)
-		key = fmt.Sprintf("hold-%d", i)
-		reached = s.await(ctx, t, key, armed.Generation)
+		reached = hold.await(ctx, t)
 		t.Logf("%s %d: row=%d pass=%d", point, i, reached.Event.ResultID, reached.Event.PassID)
 		if reached.Event.ResultID == rID {
-			return rHandle, rID, reached, key
+			return rHandle, rID, reached, hold
 		}
 		next := arm(i + 1)
-		require.NoError(t, s.b.fixture("barrierRelease", key+"-wait.json", nil, nil))
-		armed = next
+		require.NoError(t, hold.release())
+		hold = next
 	}
-}
-
-// await waits for one armed barrier on B.
-func (s *sharingFinishScenario) await(ctx context.Context, t *testctx.T, key string, generation uint64) dagql.FixtureBarrierReached {
-	t.Helper()
-	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	var reached dagql.FixtureBarrierReached
-	err := transferFixture(waitCtx, s.b.client, "barrierWait", s.b.control(key+"-wait.json", map[string]any{"key": key, "generation": generation}), []string{}, &reached)
-	require.NoError(t, err, "barrier %s was never reached", key)
-	return reached
 }
 
 // TestSharingFinish is the native sharing pass and Finish row (design §5 as
@@ -155,9 +140,9 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		// has committed every slot, and no demand for R has been issued yet,
 		// so the pass and nothing else installed them.
 		cascade := time.Now()
-		rHandle, rID, reached, key := s.importAndHoldR(ctx, t, dagql.FixtureBeforeFinish)
+		rHandle, rID, reached, hold := s.importAndHoldR(ctx, t, dagql.FixtureBeforeFinish)
 		t.Logf("measurement: import to R's first Finish, every earlier Finish paused and released through the harness: %s", time.Since(cascade))
-		require.NoError(t, b.fixture("barrierRelease", key+"-wait.json", nil, nil))
+		require.NoError(t, hold.release())
 		pass := reached.Event.PassID
 		require.NotZero(t, pass)
 
@@ -252,7 +237,7 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		s := newSharingFinishScenario(ctx, t, "finish-race")
 		b := s.b
 		_, pinsBefore := s.exportAndBuildDonor(ctx, t)
-		rHandle, rID, _, key := s.importAndHoldR(ctx, t, dagql.FixtureBeforeCommit)
+		rHandle, rID, _, hold := s.importAndHoldR(ctx, t, dagql.FixtureBeforeCommit)
 
 		done := make(chan error, 1)
 		go func() {
@@ -271,11 +256,10 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		// Let the pass go, and hold it again at R's first external Finish: the
 		// commit phase is then over, so every install of R is recorded before
 		// the report below is read.
-		var finish dagql.FixtureBarrierArmed
-		require.NoError(t, b.fixture("barrierArm", b.control("finish.json", dagql.FixtureBarrierRequest{Key: "finish", Point: dagql.FixtureBeforeFinish, Selector: dagql.FixtureBarrierSelector{ResultID: rID}, Action: dagql.FixturePause}), nil, &finish))
-		require.NoError(t, b.fixture("barrierRelease", key+"-wait.json", nil, nil))
-		s.await(ctx, t, "finish", finish.Generation)
-		require.NoError(t, b.fixture("barrierRelease", "finish-wait.json", nil, nil))
+		finish := b.armBarrier(dagql.FixtureBarrierRequest{Key: "finish", Point: dagql.FixtureBeforeFinish, Selector: dagql.FixtureBarrierSelector{ResultID: rID}, Action: dagql.FixturePause})
+		require.NoError(t, hold.release())
+		finish.await(ctx, t)
+		require.NoError(t, finish.release())
 		s.readAll(ctx, t, rHandle)
 		var after fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &after))

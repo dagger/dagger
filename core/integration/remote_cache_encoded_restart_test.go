@@ -4,7 +4,6 @@ import (
 	"context"
 	"strconv"
 	"strings"
-	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
@@ -59,16 +58,6 @@ func newEncodedRestartScenario(ctx context.Context, t *testctx.T, prepare func(b
 	return s
 }
 
-func (s *encodedRestartScenario) await(ctx context.Context, t *testctx.T, key string, generation uint64) dagql.FixtureBarrierReached {
-	t.Helper()
-	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	var reached dagql.FixtureBarrierReached
-	err := transferFixture(waitCtx, s.b.client, "barrierWait", s.b.control(key+"-wait.json", map[string]any{"key": key, "generation": generation}), []string{}, &reached)
-	require.NoError(t, err, "barrier %s was never reached", key)
-	return reached
-}
-
 // TestEncodedRestart is the native half of "encoded decode and partial sync"
 // (design §5 as amended by B1) and G3.
 func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testctx.T) {
@@ -79,19 +68,19 @@ func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testc
 	// process's transfer pins are released, so R reads after the restart and
 	// after a real collection, with nothing to fall back on.
 	t.Run("FailedAttachThenRestart", func(ctx context.Context, t *testctx.T) {
-		var attach, synced dagql.FixtureBarrierArmed
+		var attach, synced *armedBarrier
 		s := newEncodedRestartScenario(ctx, t, func(b *fixtureEngine) {
-			require.NoError(t, b.fixture("barrierArm", b.control("attach.json", dagql.FixtureBarrierRequest{Key: "attach", Point: dagql.FixtureAfterOwnerAttach, Action: dagql.FixtureFailOwnerAttachAfter}), nil, &attach))
-			require.NoError(t, b.fixture("barrierArm", b.control("synced.json", dagql.FixtureBarrierRequest{Key: "synced", Point: dagql.FixtureOwnerSyncDone, Action: dagql.FixturePause}), nil, &synced))
+			attach = b.armBarrier(dagql.FixtureBarrierRequest{Key: "attach", Point: dagql.FixtureAfterOwnerAttach, Action: dagql.FixtureFailOwnerAttachAfter})
+			synced = b.armBarrier(dagql.FixtureBarrierRequest{Key: "synced", Point: dagql.FixtureOwnerSyncDone, Action: dagql.FixturePause})
 		})
 		b := s.b
-		reached := s.await(ctx, t, "attach", attach.Generation)
+		reached := attach.await(ctx, t)
 		require.Equal(t, s.rID, reached.Event.ResultID, "the faulted attachment is R's")
 		require.Contains(t, reached.Event.Detail, s.donorRef)
-		done := s.await(ctx, t, "synced", synced.Generation)
+		done := synced.await(ctx, t)
 		require.Equal(t, s.rID, done.Event.ResultID)
 		require.Contains(t, done.Event.Detail, "fixture local storage fault", "the owner synchronization really failed")
-		require.NoError(t, b.fixture("barrierRelease", "synced-wait.json", nil, nil))
+		require.NoError(t, synced.release())
 
 		var pending fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &pending))
@@ -125,15 +114,15 @@ func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testc
 	// TestSharingOwedBookkeepingIsPaidByAnExactDemand). So L's owners are
 	// released first, as in TestSharingDonorRestart; R then serves the read.
 	t.Run("RetryOnlyBookkeeping", func(ctx context.Context, t *testctx.T) {
-		var attach, synced dagql.FixtureBarrierArmed
+		var attach, synced *armedBarrier
 		s := newEncodedRestartScenario(ctx, t, func(b *fixtureEngine) {
-			require.NoError(t, b.fixture("barrierArm", b.control("attach.json", dagql.FixtureBarrierRequest{Key: "attach", Point: dagql.FixtureAfterOwnerAttach, Action: dagql.FixtureFailOwnerAttachAfter}), nil, &attach))
-			require.NoError(t, b.fixture("barrierArm", b.control("synced.json", dagql.FixtureBarrierRequest{Key: "synced", Point: dagql.FixtureOwnerSyncDone, Action: dagql.FixturePause}), nil, &synced))
+			attach = b.armBarrier(dagql.FixtureBarrierRequest{Key: "attach", Point: dagql.FixtureAfterOwnerAttach, Action: dagql.FixtureFailOwnerAttachAfter})
+			synced = b.armBarrier(dagql.FixtureBarrierRequest{Key: "synced", Point: dagql.FixtureOwnerSyncDone, Action: dagql.FixturePause})
 		})
 		b := s.b
-		s.await(ctx, t, "attach", attach.Generation)
-		s.await(ctx, t, "synced", synced.Generation)
-		require.NoError(t, b.fixture("barrierRelease", "synced-wait.json", nil, nil))
+		attach.await(ctx, t)
+		synced.await(ctx, t)
+		require.NoError(t, synced.release())
 
 		// The owed state, measured: the install is published, its settlement
 		// is not, and the pass's protection is still held for the retry.
@@ -167,13 +156,13 @@ func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testc
 	// by row: one saved owner link that cannot attach resets the whole cache,
 	// the engine still boots, and nothing is requested from anywhere.
 	t.Run("LocalRestoreReset", func(ctx context.Context, t *testctx.T) {
-		var finish dagql.FixtureBarrierArmed
+		var finish *armedBarrier
 		s := newEncodedRestartScenario(ctx, t, func(b *fixtureEngine) {
-			require.NoError(t, b.fixture("barrierArm", b.control("finish.json", dagql.FixtureBarrierRequest{Key: "finish", Point: dagql.FixtureBeforeFinish, Action: dagql.FixturePause}), nil, &finish))
+			finish = b.armBarrier(dagql.FixtureBarrierRequest{Key: "finish", Point: dagql.FixtureBeforeFinish, Action: dagql.FixturePause})
 		})
 		b := s.b
-		s.await(ctx, t, "finish", finish.Generation)
-		require.NoError(t, b.fixture("barrierRelease", "finish-wait.json", nil, nil))
+		finish.await(ctx, t)
+		require.NoError(t, finish.release())
 		_, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(s.rHandle)).Entries(ctx)
 		require.NoError(t, err)
 

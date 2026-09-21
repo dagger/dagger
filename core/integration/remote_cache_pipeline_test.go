@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
@@ -334,7 +333,7 @@ func pipelineRetainedExec(ctx context.Context, t *testctx.T) {
 		s.importOnB(t)
 		built := s.hit(ctx, t)
 		dir0 := rowOf(t, s.b, built.Dirs[0].ID)
-		require.NoError(t, s.b.fixture("barrierArm", s.b.control("chain.json", dagql.FixtureBarrierRequest{Key: "chain", Point: dagql.FixtureChainReaderOpen, Action: dagql.FixtureFailChainOpen}), nil, nil))
+		s.b.armBarrier(dagql.FixtureBarrierRequest{Key: "chain", Point: dagql.FixtureChainReaderOpen, Action: dagql.FixtureFailChainOpen})
 
 		copied, err := dagger.Ref[*dagger.Directory](s.b.client, dagger.ID(built.Dirs[0].ID)).File("data.json").Contents(ctx)
 		require.NoError(t, err, "the retained exec restores the output")
@@ -375,11 +374,8 @@ func pipelineDonorReleased(ctx context.Context, t *testctx.T, restart bool) {
 	// Walk every external Finish until the imported input's: its share is
 	// then committed. The imported input is the imported File row in the
 	// donor's output class, which exists once the import has united them.
-	arm := func(i int) dagql.FixtureBarrierArmed {
-		var armed dagql.FixtureBarrierArmed
-		key := fmt.Sprintf("finish-%d", i)
-		require.NoError(t, b.fixture("barrierArm", b.control(key+".json", dagql.FixtureBarrierRequest{Key: key, Point: dagql.FixtureBeforeFinish, Action: dagql.FixturePause}), nil, &armed))
-		return armed
+	arm := func(i int) *armedBarrier {
+		return b.armBarrier(dagql.FixtureBarrierRequest{Key: fmt.Sprintf("finish-%d", i), Point: dagql.FixtureBeforeFinish, Action: dagql.FixturePause})
 	}
 	armed := arm(0)
 	imported := s.importOnB(t)
@@ -402,17 +398,13 @@ func pipelineDonorReleased(ctx context.Context, t *testctx.T, restart bool) {
 	require.NotZero(t, inputID, "the imported input joined the donor's output class")
 	for i := 0; ; i++ {
 		require.Less(t, i, 64, "the imported input was never shared")
-		key := fmt.Sprintf("finish-%d", i)
-		waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		var reached dagql.FixtureBarrierReached
-		err := transferFixture(waitCtx, b.client, "barrierWait", b.control(key+"-wait.json", map[string]any{"key": key, "generation": armed.Generation}), []string{}, &reached)
-		cancel()
-		require.NoError(t, err, "no pass shared the imported input")
+		reached := armed.await(ctx, t)
 		found := reached.Event.ResultID == inputID
+		held := armed
 		if !found {
 			armed = arm(i + 1)
 		}
-		require.NoError(t, b.fixture("barrierRelease", key+"-wait.json", nil, nil))
+		require.NoError(t, held.release())
 		if found {
 			break
 		}
@@ -451,7 +443,7 @@ func pipelineDonorReleased(ctx context.Context, t *testctx.T, restart bool) {
 	// A new reader with only the saved handles: the output's chain fails and
 	// the saved exec runs from the imported input.
 	dir0 := rowOf(t, b, built.Dirs[0].ID)
-	require.NoError(t, b.fixture("barrierArm", b.control("chain.json", dagql.FixtureBarrierRequest{Key: "chain", Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: dir0.ResultID}, Action: dagql.FixtureFailChainOpen}), nil, nil))
+	b.armBarrier(dagql.FixtureBarrierRequest{Key: "chain", Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: dir0.ResultID}, Action: dagql.FixtureFailChainOpen})
 	copied, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(built.Dirs[0].ID)).File("data.json").Contents(ctx)
 	require.NoError(t, err, "a receiver-owned input does not depend on its donor or on the origin")
 	require.Equal(t, s.input, copied)

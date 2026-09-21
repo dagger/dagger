@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -402,6 +403,60 @@ func (e *fixtureEngine) hostFile(path, content string) {
 	full := filepath.Join(e.workdir, path)
 	require.NoError(e.t, os.MkdirAll(filepath.Dir(full), 0755))
 	require.NoError(e.t, os.WriteFile(full, []byte(content), 0644))
+}
+
+// fixtureBarrierWaitTimeout bounds one wait for an armed barrier. It is a
+// bound on a failure, not a wait: a reached barrier returns at once.
+const fixtureBarrierWaitTimeout = 2 * time.Minute
+
+// armedBarrier is one barrier this engine armed: the key the request named
+// and the generation the engine assigned, which is what a wait and a release
+// name. Its token record is written once, at arming.
+type armedBarrier struct {
+	dagql.FixtureBarrierArmed
+	e     *fixtureEngine
+	token string
+}
+
+// armBarrier arms one barrier on this engine and keeps its token.
+func (e *fixtureEngine) armBarrier(req dagql.FixtureBarrierRequest) *armedBarrier {
+	e.t.Helper()
+	var armed dagql.FixtureBarrierArmed
+	require.NoError(e.t, e.fixture("barrierArm", e.control(req.Key+".json", req), nil, &armed))
+	token := e.control(req.Key+"-wait.json", map[string]any{"key": armed.Key, "generation": armed.Generation})
+	return &armedBarrier{FixtureBarrierArmed: armed, e: e, token: token}
+}
+
+// await waits, within fixtureBarrierWaitTimeout, until the armed occurrence
+// is reached, and returns its observation.
+func (b *armedBarrier) await(ctx context.Context, t *testctx.T) dagql.FixtureBarrierReached {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(ctx, fixtureBarrierWaitTimeout)
+	defer cancel()
+	var reached dagql.FixtureBarrierReached
+	require.NoError(t, transferFixture(waitCtx, b.e.client, "barrierWait", b.token, []string{}, &reached), "barrier %s was never reached", b.Key)
+	return reached
+}
+
+// release wakes the armed occurrence. It never inherits a canceled context,
+// so a cleanup can release what a failed test left paused; releasing twice
+// is harmless. An engine whose client is already closed has nothing to
+// release.
+func (b *armedBarrier) release() error {
+	if b.e.client == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(b.e.ctx), 30*time.Second)
+	defer cancel()
+	return transferFixture(ctx, b.e.client, "barrierRelease", b.token, []string{}, new(json.RawMessage))
+}
+
+// releaseAtCleanup releases the barrier when the test ends, whatever it did,
+// so a failed assertion between arming and releasing ends the held operation
+// locally rather than at engine shutdown. It is registered after the
+// engine's own cleanup and so runs before it.
+func (b *armedBarrier) releaseAtCleanup(t *testctx.T) {
+	t.Cleanup(func() { _ = b.release() })
 }
 
 // partEvents returns the row's part events of one kind.

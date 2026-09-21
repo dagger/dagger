@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
@@ -71,8 +70,7 @@ func (RemoteCacheTransferSuite) TestSharingDonorRestart(ctx context.Context, t *
 
 			// The pass is asynchronous. A pause before its external Finish is
 			// the real signal that a share committed; nothing polls a report.
-			var armed dagql.FixtureBarrierArmed
-			require.NoError(t, b.fixture("barrierArm", b.control("finish.json", dagql.FixtureBarrierRequest{Key: "finish", Point: dagql.FixtureBeforeFinish, Action: dagql.FixturePause}), nil, &armed))
+			finish := b.armBarrier(dagql.FixtureBarrierRequest{Key: "finish", Point: dagql.FixtureBeforeFinish, Action: dagql.FixturePause})
 
 			var lHandle string
 			var lRow dagql.TransferFixtureRow
@@ -90,14 +88,10 @@ func (RemoteCacheTransferSuite) TestSharingDonorRestart(ctx context.Context, t *
 			donorRef := lRow.SnapshotLinks[0].RefKey
 			t.Logf("donor L=%d persisted=%t ref=%s; receiver R=%d", lRow.ResultID, lRow.Persisted, donorRef, rID)
 
-			waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			var reached dagql.FixtureBarrierReached
-			err = transferFixture(waitCtx, b.client, "barrierWait", b.control("finish-wait.json", map[string]any{"key": "finish", "generation": armed.Generation}), []string{}, &reached)
-			cancel()
-			require.NoError(t, err, "no sharing pass committed a receipt")
+			reached := finish.await(ctx, t)
 			require.Equal(t, rID, reached.Event.ResultID, "the committed receipt is R's")
 			require.NotZero(t, reached.Event.PassID)
-			require.NoError(t, b.fixture("barrierRelease", "finish-wait.json", nil, nil))
+			require.NoError(t, finish.release())
 
 			// An ordinary read through the exact imported reference. It joins
 			// the installed output's task, so it returns after the settlement.

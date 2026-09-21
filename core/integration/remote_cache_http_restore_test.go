@@ -60,7 +60,7 @@ func newHTTPRestoreScenario(ctx context.Context, t *testctx.T, name string) *htt
 // failChain arms the one-shot content fault on R's offered chain.
 func (s *httpRestoreScenario) failChain(t *testctx.T) {
 	t.Helper()
-	require.NoError(t, s.b.fixture("barrierArm", s.b.control("chain.json", dagql.FixtureBarrierRequest{Key: "chain", Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: s.rID}, Action: dagql.FixtureFailChainOpen}), nil, nil))
+	s.b.armBarrier(dagql.FixtureBarrierRequest{Key: "chain", Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: s.rID}, Action: dagql.FixtureFailChainOpen})
 }
 
 func (s *httpRestoreScenario) report(t *testctx.T) (fixtureControlsReport, dagql.TransferFixtureRow) {
@@ -262,8 +262,7 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 		for i, tc := range cases {
 			row := imported[i]
 			require.Equal(t, "File", row.Type.NamedType)
-			key := fmt.Sprintf("chain-%d", i)
-			require.NoError(t, b.fixture("barrierArm", b.control(key+".json", dagql.FixtureBarrierRequest{Key: key, Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: row.ResultID}, Action: dagql.FixtureFailChainOpen}), nil, nil))
+			b.armBarrier(dagql.FixtureBarrierRequest{Key: fmt.Sprintf("chain-%d", i), Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: row.ResultID}, Action: dagql.FixtureFailChainOpen})
 			got := facts(b, row.Handle)
 			require.Equal(t, want[i], got, "%q %o: the restored File has A's recorded name, actual mode and bytes", tc.name, tc.permissions)
 			var report fixtureControlsReport
@@ -341,8 +340,7 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 		for i, tc := range cases {
 			row := imported[i]
 			require.Equal(t, "File", row.Type.NamedType)
-			key := fmt.Sprintf("chain-%d", i)
-			require.NoError(t, b.fixture("barrierArm", b.control(key+".json", dagql.FixtureBarrierRequest{Key: key, Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: row.ResultID}, Action: dagql.FixtureFailChainOpen}), nil, nil))
+			b.armBarrier(dagql.FixtureBarrierRequest{Key: fmt.Sprintf("chain-%d", i), Point: dagql.FixtureChainReaderOpen, Selector: dagql.FixtureBarrierSelector{ResultID: row.ResultID}, Action: dagql.FixtureFailChainOpen})
 			contents, err := dagger.Ref[*dagger.File](b.client, dagger.ID(row.Handle)).Contents(ctx)
 			var report, single fixtureControlsReport
 			require.NoError(t, b.fixture("report", "", nil, &report))

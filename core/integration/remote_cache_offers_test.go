@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -92,36 +91,17 @@ func (s *offersScenario) read(ctx context.Context) <-chan error {
 	return done
 }
 
-func (s *offersScenario) pauseAt(t *testctx.T, point dagql.FixtureBarrierPoint) dagql.FixtureBarrierArmed {
+func (s *offersScenario) pauseAt(t *testctx.T, point dagql.FixtureBarrierPoint) *armedBarrier {
 	t.Helper()
-	var armed dagql.FixtureBarrierArmed
-	require.NoError(t, s.b.fixture("barrierArm", s.b.control("pause.json", dagql.FixtureBarrierRequest{Key: "pause", Point: point, Selector: dagql.FixtureBarrierSelector{ResultID: s.rID}, Action: dagql.FixturePause}), nil, &armed))
-	s.releaseOnExit(t, armed)
+	armed := s.b.armBarrier(dagql.FixtureBarrierRequest{Key: "pause", Point: point, Selector: dagql.FixtureBarrierSelector{ResultID: s.rID}, Action: dagql.FixturePause})
+	armed.releaseAtCleanup(t)
 	return armed
 }
 
-// releaseOnExit releases the scenario's pause on every exit, so a failed
-// assertion between arming and releasing ends the held demand locally rather
-// than at engine shutdown. Releasing twice is harmless. It is registered
-// after the engine's own cleanup and so runs before it.
-func (s *offersScenario) releaseOnExit(t *testctx.T, armed dagql.FixtureBarrierArmed) {
-	record := s.b.control("pause-exit.json", map[string]any{"key": "pause", "generation": armed.Generation})
-	t.Cleanup(func() {
-		if s.b.client == nil {
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(s.b.ctx), 30*time.Second)
-		defer cancel()
-		_ = transferFixture(ctx, s.b.client, "barrierRelease", record, []string{}, new(json.RawMessage))
-	})
-}
-
-func (s *offersScenario) await(ctx context.Context, t *testctx.T, armed dagql.FixtureBarrierArmed) {
+// await waits for the scenario's pause and checks it is R's.
+func (s *offersScenario) await(ctx context.Context, t *testctx.T, armed *armedBarrier) {
 	t.Helper()
-	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	var reached dagql.FixtureBarrierReached
-	require.NoError(t, transferFixture(waitCtx, s.b.client, "barrierWait", s.b.control("pause-wait.json", map[string]any{"key": "pause", "generation": armed.Generation}), []string{}, &reached))
+	reached := armed.await(ctx, t)
 	require.Equal(t, s.rID, reached.Event.ResultID)
 }
 
@@ -160,7 +140,7 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 		s.await(ctx, t, armed)
 		result := s.offer(t)
 		require.Equal(t, "accepted", result.Dispositions[0].Outcome)
-		require.NoError(t, s.b.fixture("barrierRelease", "pause-wait.json", nil, nil))
+		require.NoError(t, armed.release())
 		require.NoError(t, joinBounded(t, done, "the held demand"))
 		all, _ := s.report(t)
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))
@@ -178,7 +158,7 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 		s.await(ctx, t, armed)
 		result := s.offer(t)
 		require.Equal(t, "executionStarted", result.Dispositions[0].Outcome)
-		require.NoError(t, s.b.fixture("barrierRelease", "pause-wait.json", nil, nil))
+		require.NoError(t, armed.release())
 		require.NoError(t, joinBounded(t, done, "the held demand"), "the body was not interrupted")
 		all, row := s.report(t)
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))
@@ -200,9 +180,8 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "accepted", first.Dispositions[0].Outcome)
 		require.False(t, first.Dispositions[0].Replaced)
 
-		var armed dagql.FixtureBarrierArmed
-		require.NoError(t, s.b.fixture("barrierArm", s.b.control("pause.json", dagql.FixtureBarrierRequest{Key: "pause", Point: dagql.FixtureChainRead, Selector: dagql.FixtureBarrierSelector{ResultID: s.rID}, Action: dagql.FixturePause}), nil, &armed))
-		s.releaseOnExit(t, armed)
+		armed := s.b.armBarrier(dagql.FixtureBarrierRequest{Key: "pause", Point: dagql.FixtureChainRead, Selector: dagql.FixtureBarrierSelector{ResultID: s.rID}, Action: dagql.FixturePause})
+		armed.releaseAtCleanup(t)
 		done := s.read(ctx)
 		s.await(ctx, t, armed)
 
@@ -221,7 +200,7 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 		require.Greater(t, second.Dispositions[0].OfferRev, first.Dispositions[0].OfferRev)
 		require.NoError(t, s.b.fixture("gc", "", nil, nil), "a collection while O1's reader is held")
 
-		require.NoError(t, s.b.fixture("barrierRelease", "pause-wait.json", nil, nil))
+		require.NoError(t, armed.release())
 		require.NoError(t, joinBounded(t, done, "the held demand"), "O1's acquisition survived the swap and the collection")
 		all, row := s.report(t)
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))

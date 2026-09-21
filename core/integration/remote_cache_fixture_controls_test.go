@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"dagger.io/dagger"
 	enginecore "github.com/dagger/dagger/core"
@@ -145,16 +144,10 @@ func (RemoteCacheTransferSuite) TestFixtureControls(ctx context.Context, t *test
 		for i, fault := range faults {
 			row := imported[i]
 			require.Equal(t, "Directory", row.Type.NamedType)
-			var armed dagql.FixtureBarrierArmed
-			key := "fault-" + string(fault.action)
-			require.NoError(t, b.fixture("barrierArm", b.control(key+".json", dagql.FixtureBarrierRequest{Key: key, Point: fault.point, Selector: dagql.FixtureBarrierSelector{ResultID: row.ResultID}, Action: fault.action}), nil, &armed))
+			armed := b.armBarrier(dagql.FixtureBarrierRequest{Key: "fault-" + string(fault.action), Point: fault.point, Selector: dagql.FixtureBarrierSelector{ResultID: row.ResultID}, Action: fault.action})
 
 			_, firstErr := dagger.Ref[*dagger.Directory](b.client, dagger.ID(row.Handle)).Entries(ctx)
-			waitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-			var reached dagql.FixtureBarrierReached
-			err := transferFixture(waitCtx, b.client, "barrierWait", b.control(key+"-wait.json", map[string]any{"key": key, "generation": armed.Generation}), []string{}, &reached)
-			cancel()
-			require.NoError(t, err, "%s was never reached", fault.point)
+			reached := armed.await(ctx, t)
 			require.Equal(t, fault.point, reached.Event.Point)
 			require.Equal(t, row.ResultID, reached.Event.ResultID)
 			t.Logf("fixture fault %s at %s: first read err=%v", fault.action, fault.point, firstErr)
@@ -201,8 +194,7 @@ func (RemoteCacheTransferSuite) TestFixtureControls(ctx context.Context, t *test
 		require.NoError(t, err)
 		var hold dagql.TransferFixtureHold
 		require.NoError(t, b.fixture("hold", "", []string{string(id)}, &hold))
-		var armed dagql.FixtureBarrierArmed
-		require.NoError(t, b.fixture("barrierArm", b.control("never.json", dagql.FixtureBarrierRequest{Key: "never", Point: dagql.FixtureLazyEntry, Selector: dagql.FixtureBarrierSelector{ResultID: 1 << 60}, Action: dagql.FixturePause}), nil, &armed))
+		never := b.armBarrier(dagql.FixtureBarrierRequest{Key: "never", Point: dagql.FixtureLazyEntry, Selector: dagql.FixtureBarrierSelector{ResultID: 1 << 60}, Action: dagql.FixturePause})
 		var report fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &report))
 		require.Equal(t, dagql.TransferFixtureControls{HoldTokens: 1, ArmedBarriers: 1}, report.Controls)
@@ -211,7 +203,7 @@ func (RemoteCacheTransferSuite) TestFixtureControls(ctx context.Context, t *test
 		require.NoError(t, b.fixture("report", "", nil, &report))
 		require.Equal(t, dagql.CachePersistenceResetNone, report.Persistence.PersistenceResetReason)
 		require.Equal(t, dagql.TransferFixtureControls{}, report.Controls, "neither a hold token nor an armed barrier survives a restart")
-		require.ErrorContains(t, b.fixture("barrierRelease", b.control("old-barrier.json", map[string]any{"key": "never", "generation": armed.Generation}), nil, nil), "not armed")
+		require.ErrorContains(t, never.release(), "not armed")
 		require.ErrorContains(t, b.fixture("releaseHold", b.control("old-hold.json", map[string]any{"token": hold.Token}), nil, nil), "unknown fixture hold token")
 
 		// The collection control runs the engine's real metadata collection
