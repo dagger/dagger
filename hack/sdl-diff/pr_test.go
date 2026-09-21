@@ -36,11 +36,11 @@ func TestReplaceSection(t *testing.T) {
 
 func TestRenderSection(t *testing.T) {
 	empty := renderSection("", "base", "head", false)
-	if !strings.Contains(empty, "No semantic API changes.") {
+	if !strings.Contains(empty, "No semantic API changes.") || !strings.Contains(empty, "go run ./hack/sdl-diff -descriptions=false base:"+schemaPath+" head:"+schemaPath) {
 		t.Fatal(empty)
 	}
 	got := renderSection("# docs with ``` and ````\n", "base", "head", true)
-	if !strings.Contains(got, "`````graphql\n") || !strings.Contains(got, "Includes description changes.") {
+	if !strings.Contains(got, "`````graphql\n") || !strings.Contains(got, "`go run ./hack/sdl-diff base:"+schemaPath+" head:"+schemaPath+"`") {
 		t.Fatal(got)
 	}
 }

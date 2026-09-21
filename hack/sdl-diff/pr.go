@@ -92,10 +92,11 @@ func replaceSection(body, section string) (string, error) {
 }
 
 func renderSection(diff, base, head string, descriptions bool) string {
-	mode := "Description-only changes are omitted."
-	if descriptions {
-		mode = "Includes description changes."
+	command := "go run ./hack/sdl-diff"
+	if !descriptions {
+		command += " -descriptions=false"
 	}
+	command += " " + base + ":" + schemaPath + " " + head + ":" + schemaPath
 	content := "No semantic API changes."
 	if diff != "" {
 		// Descriptions can themselves contain Markdown fences.
@@ -106,7 +107,7 @@ func renderSection(diff, base, head string, descriptions bool) string {
 		content = fence + "graphql\n" + strings.TrimRight(diff, "\n") + "\n" + fence
 	}
 	return sectionStart + "\n## API changes\n\n" +
-		"Semantic SDL diff of `" + schemaPath + "` from merge base `" + base + "` to PR head `" + head + "`. " + mode + "\n\n" +
+		"`" + command + "`\n\n" +
 		content + "\n" + sectionEnd
 }
 

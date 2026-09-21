@@ -22,8 +22,8 @@ type SdlDiff {
   first, then preview this tool's output and call again with publish=true.
 
   Compares the published PR head against its merge base, not local pending
-  changes. Ignores formatting and field reordering; description changes are
-  opt-in. A reorder-only PR gets an explicit "No semantic API changes" section.
+  changes. Ignores formatting and field reordering; includes descriptions by
+  default. A reorder-only PR gets an explicit "No semantic API changes" section.
   Only the marked SDL section is replaced; all other description text is kept.
   Refuses malformed markers, oversized descriptions, or concurrent PR edits
   detected before publishing. Publishing edits GitHub: only do so when asked
@@ -37,7 +37,7 @@ type SdlDiff {
     """Write the section to GitHub. False previews without modifying the PR."""
     publish: Boolean! = false,
     """Include description-only changes in the semantic diff."""
-    descriptions: Boolean! = false,
+    descriptions: Boolean! = true,
   ): String! {
     let token = githubToken
     if (token == null) {
@@ -45,7 +45,7 @@ type SdlDiff {
     }
     let args = ["/usr/local/bin/sdl-diff", "-pr", pr]
     if (publish) { args += ["-update"] }
-    if (descriptions) { args += ["-descriptions"] }
+    if (!descriptions) { args += ["-descriptions=false"] }
     runner(ws)
       .withSecretVariable("GH_TOKEN", token)
       .withEnvVariable("CACHEBUST", UUID.v7)

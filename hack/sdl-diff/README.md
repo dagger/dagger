@@ -24,11 +24,11 @@ review summary, not an executable schema migration.
 
 All declared types, fields (including internal fields), arguments, defaults,
 directives, and extensions are compared. The tool combines type extensions and
-ignores formatting, comments, descriptions, and ordering of named members. Use
-`-descriptions` to include description changes. Directive application order and
-list default order are preserved because they can affect behavior. Inputs need
-only parse, so partial schemas are supported. This is not a breaking-change
-classifier.
+ignores formatting, comments, and ordering of named members. Descriptions are
+included by default; use `-descriptions=false` to omit description changes.
+Directive application order and list default order are preserved because they
+can affect behavior. Inputs need only parse, so partial schemas are supported.
+This is not a breaking-change classifier.
 
 Output follows the new schema’s declaration order within each section; removed
 APIs follow in old schema order. Members in additions and “after” blocks retain
