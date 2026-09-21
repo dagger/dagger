@@ -96,7 +96,9 @@ func TestCacheEmbeddedOutputLifecycle(t *testing.T) {
 				defer c.egraphMu.RUnlock()
 				for i, id := range ids {
 					res := c.resultsByID[id]
-					assert.Assert(t, res != nil)
+					if res == nil {
+						t.Fatalf("projection %d result %d is missing from the cache", i, id)
+					}
 					_, ownsInput := res.deps[inputID]
 					assert.Assert(t, ownsInput, "projection %d must retain its recipe input", i)
 					assert.Assert(t, cacheTestSessionResourceSetContains(res.requiredSessionResources, handle))
