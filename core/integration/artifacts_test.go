@@ -78,14 +78,14 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
-    types uri
-    containers: filterTypes(types: ["Container"]) { types uri items { path dimensionKeys { dimension key } uri } }
+    types { name } uri
+    containers: filterTypes(types: ["Container"]) { types { name } uri items { path dimensionKeys { dimension key } uri } }
     nested: filterPath(path: ["docs", "source"]) { uri items { uri } }
     sibling: filterPath(path: ["other-docs", "source"]) { items { uri } }
     optional: filterPath(path: ["optional-docs", "source"]) { items { uri } }
     list: filterPath(path: ["doc-list", "source"]) { items { uri } }
     cycle: filterPath(path: ["docs", "again", "source"]) { items { uri } }
-    noType: filterTypes(types: []) { types uri items { uri } }
+    noType: filterTypes(types: []) { types { name } uri items { uri } }
     unknown: filterTypes(types: ["Unknown"]) { items { uri } }
     noDimension: filterDimensions(dimensions: ["missing"]) { uri items { uri } }
     noKey: filterDimensionKeys(dimension: "missing", keys: ["anything"]) { uri items { uri } }
@@ -103,9 +103,9 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{
-  "types":["Artifact","Artifacts","Consumer","Container","Directory","File","Provider","ProviderDocs"],
+  "types":[{"name":"Artifact"},{"name":"Artifacts"},{"name":"Consumer"},{"name":"Container"},{"name":"Directory"},{"name":"File"},{"name":"Provider"},{"name":"ProviderDocs"}],
   "uri":"dag://",
-  "containers":{"types":["Container"],"uri":"dag+container://","items":[
+  "containers":{"types":[{"name":"Container"}],"uri":"dag+container://","items":[
     {"path":["base"],"dimensionKeys":[],"uri":"dag://base"},
     {"path":["broken"],"dimensionKeys":[],"uri":"dag://broken"},
     {"path":["consumer","base"],"dimensionKeys":[],"uri":"dag://consumer/base"}
@@ -1121,7 +1121,7 @@ More details."""
 			require.NotContains(t, out, "edit")
 		})
 	}
-	for _, flag := range []string{"", "--generate", "--no-generate"} {
+	for _, flag := range []string{"", "--generated=true", "--generated=false"} {
 		t.Run("check "+flag, func(ctx context.Context, t *testctx.T) {
 			args := []string{"check", "--skip=failing", "--skip=dirty"}
 			if flag != "" {

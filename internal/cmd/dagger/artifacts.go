@@ -198,7 +198,8 @@ func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]strin
 		return nil, cobra.ShellCompDirectiveError
 	}
 	err = withEngineSilent(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
-		types, err = ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}).Types(ctx)
+		definitions, err := readArtifactTypes(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}))
+		types = artifactTypeNames(definitions)
 		return err
 	})
 	if err != nil {
@@ -265,18 +266,32 @@ func readArtifactTypes(ctx context.Context, dag *dagger.Client, artifacts *dagge
 		return nil, err
 	}
 	var response struct {
-		Node struct{ TypeDefinitions []commandListItem }
+		Node struct {
+			Types []struct {
+				Name     string
+				AsObject struct{ Description string }
+			}
+		}
 	}
 	err = dag.Do(ctx, &dagger.Request{
 		Query: `query($id: ID!) { node(id: $id) { ... on Artifacts {
-  typeDefinitions { name comment: description }
+  types { name asObject { description } }
  } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &response})
-	for i := range response.Node.TypeDefinitions {
-		response.Node.TypeDefinitions[i].Comment = firstDescriptionLine(response.Node.TypeDefinitions[i].Comment)
+	items := make([]commandListItem, 0, len(response.Node.Types))
+	for _, typ := range response.Node.Types {
+		items = append(items, commandListItem{Name: typ.Name, Comment: firstDescriptionLine(typ.AsObject.Description)})
 	}
-	return response.Node.TypeDefinitions, err
+	return items, err
+}
+
+func artifactTypeNames(types []commandListItem) []string {
+	names := make([]string, len(types))
+	for i, typ := range types {
+		names[i] = typ.Name
+	}
+	return names
 }
 
 // artifactURIs prints one address per artifact, in the form filterUri accepts.

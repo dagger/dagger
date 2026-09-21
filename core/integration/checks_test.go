@@ -188,9 +188,9 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.NotContains(t, out, "Generators")
 	})
 
-	t.Run("list with no-generate excludes generators", func(ctx context.Context, t *testctx.T) {
+	t.Run("list with generated=false excludes generators", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
-			With(daggerExec("check", "-l", "--no-generate")).
+			With(daggerExec("check", "-l", "--generated=false")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		// Should only list regular checks, no Generators section
@@ -200,15 +200,15 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.NotContains(t, out, "non-empty-generate")
 	})
 
-	t.Run("list with generate only includes generators", func(ctx context.Context, t *testctx.T) {
+	t.Run("list with generated=true includes all checks", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
-			With(daggerExec("check", "-l", "--generate")).
+			With(daggerExec("check", "-l", "--generated=true")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// Should only list generators (rendered with `# Did you "..."?` comments), no regular checks
+		// Generated and regular checks are both included.
 		require.Regexp(t, `(?m)^dag://empty-generate/stale\s+# `, out)
 		require.Regexp(t, `(?m)^dag://non-empty-generate/stale\s+# `, out)
-		require.NotContains(t, out, "passing-check")
+		require.Contains(t, out, "passing-check")
 	})
 
 	t.Run("run empty generator passes", func(ctx context.Context, t *testctx.T) {
@@ -280,10 +280,10 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.Regexp(t, `non-empty-generate.*ERROR`, out)
 	})
 
-	t.Run("run with no-generate skips generators", func(ctx context.Context, t *testctx.T) {
+	t.Run("run with generated=false skips generators", func(ctx context.Context, t *testctx.T) {
 		// Should pass because only passing-check runs
 		out, err := modGen.
-			With(daggerExec("--progress=report", "check", "--no-generate")).
+			With(daggerExec("--progress=report", "check", "--generated=false")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, `passing-check.*OK`, out)
@@ -291,23 +291,23 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.NotContains(t, out, "non-empty-generate")
 	})
 
-	t.Run("run with generate skips annotated checks", func(ctx context.Context, t *testctx.T) {
+	t.Run("run with generated=true includes all checks", func(ctx context.Context, t *testctx.T) {
 		// Should fail because non-empty-generate produces changes
 		out, err := modGen.
-			With(daggerExecFail("--progress=report", "check", "--generate")).
+			With(daggerExecFail("--progress=report", "check", "--generated=true")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, `empty-generate.*OK`, out)
 		require.Regexp(t, `non-empty-generate.*ERROR`, out)
-		require.NotContains(t, out, "passing-check")
+		require.Contains(t, out, "passing-check")
 	})
 
-	t.Run("no-generate and generate are mutually exclusive", func(ctx context.Context, t *testctx.T) {
+	t.Run("generated requires a boolean", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
-			With(daggerExecFail("check", "--no-generate", "--generate")).
+			With(daggerExecFail("check", "--generated=maybe")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "if any flags in the group [no-generate generate] are set none of the others can be")
+		require.Contains(t, out, `invalid argument "maybe" for "--generated" flag`)
 	})
 }
 
@@ -417,16 +417,16 @@ source = "hello-with-generate-checks"
 		require.NotContains(t, out, "non-empty-generate")
 	})
 
-	t.Run("--generate flag overrides the config", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("check", "-l", "--generate")).CombinedOutput(ctx)
+	t.Run("--generated=true flag overrides the config", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "--generated=true")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^dag://hello-with-generate-checks/empty-generate/stale\s+# A check`, out)
-		require.Regexp(t, `(?m)^dag://hello-with-generate-checks/non-empty-generate/stale\s+# A check`, out)
-		require.NotContains(t, out, "passing-check")
+		require.Regexp(t, `(?m)^dag://hello-with-generate-checks/empty-generate/stale\s+# Did you`, out)
+		require.Regexp(t, `(?m)^dag://hello-with-generate-checks/non-empty-generate/stale\s+# Did you`, out)
+		require.Contains(t, out, "passing-check")
 	})
 
-	t.Run("--no-generate flag matches the config default", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("check", "-l", "--no-generate")).CombinedOutput(ctx)
+	t.Run("--generated=false flag matches the config default", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "--generated=false")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "hello-with-generate-checks/passing-check")
 		require.NotContains(t, out, "empty-generate")
@@ -464,12 +464,12 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 
 	base := workspaceFixture(t, c, "generators-broken")
 
-	t.Run("generate-only mode retains load failures", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("check", "-l", "--generate")).Stdout(ctx)
+	t.Run("generated=true retains load failures", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "--generated=true")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "bad/load")
-		require.NotContains(t, out, "good/verify")
-		out, err = base.With(daggerExecFail("check", "--generate", "--progress=report")).CombinedOutput(ctx)
+		require.Contains(t, out, "good/verify")
+		out, err = base.With(daggerExecFail("check", "--generated=true", "--progress=report")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Regexp(t, `bad/load.*ERROR`, out)
 	})
@@ -488,7 +488,7 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 		// good/verify passes, so the non-zero exit can only come from the
 		// module that could not be loaded.
 		out, err := base.
-			With(daggerExecFail("check", "--no-generate", "--progress=report")).
+			With(daggerExecFail("check", "--generated=false", "--progress=report")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, `good/verify.*OK`, out)
@@ -498,7 +498,7 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 
 	t.Run("scoping to the broken module reports its load failure", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExecFail("check", "bad", "--no-generate", "--progress=report")).
+			With(daggerExecFail("check", "bad", "--generated=false", "--progress=report")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, `bad/load.*ERROR`, out)
@@ -506,7 +506,7 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 
 	t.Run("scoping to the healthy module passes and never mentions the broken one", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExec("check", "good", "--no-generate", "--progress=report")).
+			With(daggerExec("check", "good", "--generated=false", "--progress=report")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Regexp(t, `good/verify.*OK`, out)
@@ -698,7 +698,7 @@ name = "beta"
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		// The generated Changeset exposes its stale check at a child address.
-		require.Regexp(t, `(?m)^dag://alpha-sdk/generate/stale\s+# A check`, out)
+		require.Regexp(t, `(?m)^dag://alpha-sdk/generate/stale\s+# Did you`, out)
 	})
 
 	t.Run("the generator keeps the un-suffixed name", func(ctx context.Context, t *testctx.T) {
@@ -711,17 +711,17 @@ name = "beta"
 		require.NotContains(t, out, "/stale")
 	})
 
-	t.Run("no-generate excludes the derived check", func(ctx context.Context, t *testctx.T) {
+	t.Run("generated=false excludes the derived check", func(ctx context.Context, t *testctx.T) {
 		out, err := generated(ctx, t, alphaOnly).
-			With(daggerNonNestedExec("check", "-l", "--no-generate")).
+			With(daggerNonNestedExec("check", "-l", "--generated=false")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
-	t.Run("generate only includes the derived check", func(ctx context.Context, t *testctx.T) {
+	t.Run("generated=true includes the derived check", func(ctx context.Context, t *testctx.T) {
 		out, err := generated(ctx, t, alphaOnly).
-			With(daggerNonNestedExec("check", "-l", "--generate")).
+			With(daggerNonNestedExec("check", "-l", "--generated=true")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "alpha-sdk/generate/stale")
@@ -764,7 +764,7 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^dag://generate/stale\s+# A check`, out)
+		require.Regexp(t, `(?m)^dag://generate/stale\s+# Did you`, out)
 		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
@@ -784,7 +784,7 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l", "alpha-sdk/generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^dag://alpha-sdk/generate/stale\s+# A check`, out)
+		require.Regexp(t, `(?m)^dag://alpha-sdk/generate/stale\s+# Did you`, out)
 		require.NotContains(t, out, "beta-sdk")
 
 		out, err = base.

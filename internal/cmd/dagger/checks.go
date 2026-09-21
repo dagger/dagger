@@ -17,24 +17,21 @@ import (
 )
 
 var (
-	checksListMode     bool
-	checksFailFast     bool
-	checksNoGenerate   bool
-	checksOnlyGenerate bool
-	checksSkip         []string
-	checksScaleOut     bool
+	checksListMode  bool
+	checksFailFast  bool
+	checksGenerated bool
+	checksSkip      []string
+	checksScaleOut  bool
 )
 
 func init() {
 	registerArtifactListFlags(checksCmd)
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
-	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
-	checksCmd.Flags().BoolVar(&checksOnlyGenerate, "generate", false, "Only run generate-as-checks, skip annotated check functions")
+	checksCmd.Flags().BoolVar(&checksGenerated, "generated", true, "Check that generated files are up to date")
 	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching `pattern` (repeat for multiple patterns)")
 	checksCmd.Flags().BoolVar(&checksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	checksCmd.Flags().Lookup("scale-out").Hidden = true
-	checksCmd.MarkFlagsMutuallyExclusive("no-generate", "generate")
 }
 
 var checksCmd = &cobra.Command{
@@ -77,26 +74,15 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			noGenerate := checksNoGenerate
-			if !cmd.Flags().Changed("no-generate") && !cmd.Flags().Changed("generate") && cfg.CheckGenerated != nil {
-				noGenerate = !*cfg.CheckGenerated
+			generated := checksGenerated
+			if !cmd.Flags().Changed("generated") && cfg.CheckGenerated != nil {
+				generated = *cfg.CheckGenerated
 			}
 			regular := checks.FilterParentTypes([]string{"Changeset"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true})
-			generated := checks.FilterParentTypes([]string{"Changeset"}).FilterParentDirectives([]string{"generate"})
-			switch {
-			case checksOnlyGenerate:
-				checks = generated
-				failures, err := artifactLoadFailures(ctx, dag, regular)
-				if err != nil {
-					return err
-				}
-				for _, failure := range failures {
-					checks = checks.WithArtifacts(regular.FilterURI(failure.URI))
-				}
-			case noGenerate:
-				checks = regular
-			default:
-				checks = regular.WithArtifacts(generated)
+			checks = regular
+			if generated {
+				stale := artifacts.FilterDirectives([]string{"check"}).FilterParentTypes([]string{"Changeset"}).FilterParentDirectives([]string{"generate"})
+				checks = checks.WithArtifacts(stale)
 			}
 			for _, skip := range checksSkip {
 				address, err := dagaddress.Parse(skip)

@@ -72,11 +72,11 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 		return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
 	}
 	err := withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
-		types, err := ec.Dagger().CurrentWorkspace().Artifacts().Types(ctx)
+		types, err := readArtifactTypes(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts())
 		if err != nil {
 			return err
 		}
-		for name, typeName := range workspaceArtifactCommands(types) {
+		for name, typeName := range workspaceArtifactCommands(artifactTypeNames(types)) {
 			cmd := &cobra.Command{
 				Use:   name,
 				Short: "List " + typeName + " artifacts",
