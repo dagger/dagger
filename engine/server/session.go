@@ -3584,9 +3584,10 @@ func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []stri
 
 // settleCallPayload records the outcome of a delivery attempt. delivered
 // marks each target done for good. Otherwise the targets are released so the
-// record's retry — or, once the payload processor gives up on it, any later
-// closure walk — can deliver them; a target a span delivered in the meantime
-// keeps that state.
+// record's retry can deliver them — or, once the payload processor gives up
+// on it, a later closure walk, though only one that reaches the record via a
+// root not yet delivered to that target; a target a span delivered in the
+// meantime keeps that state.
 func (sess *daggerSession) settleCallPayload(digest string, targets []string, delivered bool) {
 	if digest == "" || len(targets) == 0 {
 		return

@@ -431,8 +431,9 @@ func testCallPayloadBatchProcessorRetriesFailedBatchInOrder(t *testing.T) {
 }
 
 // A batch that never lands must eventually be dropped rather than wedge the
-// queue: the session exporter has released its records' delivery claims, so a
-// later closure walk can still repair them.
+// queue. The drop is reported with the records' digests: the session exporter
+// released their delivery claims, but only a walk that reaches them through a
+// still-undelivered root would re-emit them.
 func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
 	t.Parallel()
 
@@ -461,6 +462,36 @@ func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
 	_, bodies, _ = exp.stats()
 	require.Equal(t, []string{"repaired"}, bodies)
 	require.NoError(t, proc.Shutdown(ctx))
+}
+
+// captureLogExporter keeps every record it is handed.
+type captureLogExporter struct {
+	mu      sync.Mutex
+	records []sdklog.Record
+}
+
+func (e *captureLogExporter) Export(_ context.Context, recs []sdklog.Record) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.records = append(e.records, recs...)
+	return nil
+}
+
+func (*captureLogExporter) Shutdown(context.Context) error   { return nil }
+func (*captureLogExporter) ForceFlush(context.Context) error { return nil }
+
+func TestCallPayloadDigestsForDropReport(t *testing.T) {
+	t.Parallel()
+
+	stamped := payloadRecordWithBody("stamped")
+	stamped.AddAttributes(logapi.String(telemetryattrs.CallPayloadDigestAttr, "xxh3:abc"))
+	capture := &captureLogExporter{}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)))
+	logger := provider.Logger("test.core")
+	logger.Emit(t.Context(), stamped)
+	logger.Emit(t.Context(), payloadRecordWithBody("unstamped"))
+	require.NoError(t, provider.Shutdown(t.Context()))
+	require.Equal(t, []string{"xxh3:abc", "?"}, callPayloadDigests(capture.records))
 }
 
 func TestCallPayloadRetryDelayBackoff(t *testing.T) {

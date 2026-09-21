@@ -9,6 +9,7 @@ import (
 
 	otelgo "github.com/dagger/otel-go"
 
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/log"
@@ -26,10 +27,14 @@ const (
 	CallPayloadRetryBaseDelay = 50 * time.Millisecond
 	CallPayloadRetryMaxDelay  = 2 * time.Second
 	// CallPayloadMaxExportAttempts bounds how often one batch is retried
-	// before it is dropped. The session exporter releases every target a
-	// failed write left behind, so a dropped record can still be repaired by
-	// a later closure walk; this bound only keeps a dead client DB from
-	// wedging the queue forever.
+	// before it is dropped, so a dead client DB cannot wedge the queue
+	// forever. Dropping is lossy: the session exporter releases the failed
+	// targets, but a later closure walk only re-emits a dropped record if it
+	// reaches it through a root that is itself still undelivered. When the
+	// root already landed, every walk from it short-circuits at the root's
+	// claim and the dropped dependency stays missing for that client unless
+	// some other chain happens to include it. The drop is logged with the
+	// records' digests so that gap is at least diagnosable.
 	CallPayloadMaxExportAttempts = 8
 )
 
@@ -245,9 +250,15 @@ func (processor *CallPayloadBatchProcessor) exportQueued(ctx context.Context) (r
 				processor.mu.Unlock()
 				return callPayloadRetryDelay(failures), errors.Join(err, exportErr)
 			}
-			// Give up on this batch alone; the exporter released its records'
-			// delivery claims, so a later walk can still repair them. The rest
-			// of the queue gets a fresh start.
+			// Give up on this batch alone; the rest of the queue gets a fresh
+			// start. This can leave a client's closure permanently partial
+			// (see CallPayloadMaxExportAttempts), so name the casualties.
+			digests := callPayloadDigests(batch)
+			slog.Warn("dropping call payload records after repeated export failures",
+				"records", batchSize,
+				"attempts", failures,
+				"digests", digests,
+				"err", exportErr)
 			err = errors.Join(err, fmt.Errorf("dropping %d call payload records after %d failed exports: %w", batchSize, failures, exportErr))
 			failures = 0
 			clear(batch)
@@ -265,6 +276,24 @@ func callPayloadRetryDelay(failures int) time.Duration {
 		delay *= 2
 	}
 	return min(delay, CallPayloadRetryMaxDelay)
+}
+
+// callPayloadDigests lists the recipe digests stamped on the records, for
+// diagnostics; records without the attribute are reported as "?".
+func callPayloadDigests(records []sdklog.Record) []string {
+	digests := make([]string, 0, len(records))
+	for _, record := range records {
+		digest := "?"
+		record.WalkAttributes(func(attr log.KeyValue) bool {
+			if attr.Key == telemetryattrs.CallPayloadDigestAttr && attr.Value.Kind() == log.KindString {
+				digest = attr.Value.AsString()
+				return false
+			}
+			return true
+		})
+		digests = append(digests, digest)
+	}
+	return digests
 }
 
 // WithoutCallPayloads wraps a log processor so call payload records never
