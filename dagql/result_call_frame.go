@@ -64,11 +64,13 @@ type ResultCallRef struct {
 	ResultID uint64      `json:"resultID,omitempty"`
 	Call     *ResultCall `json:"call,omitempty"`
 
-	// KeepInline preserves a replay recipe without turning it into ownership of
-	// the result of that recipe. An embedded output may select itself from its
-	// producer, but retaining that producer would cycle back to the output.
-	// References inside Call still retain their own dependencies.
-	KeepInline bool `json:"keepInline,omitempty"`
+	// InlineRecipe keeps Call as provenance instead of resolving it to a retained
+	// materialized result during attachment. Call must be set and ResultID must
+	// be zero. References inside Call still normalize and retain their inputs.
+	// This does not change recipe identity or make the referenced result live:
+	// the caller must independently own any payload resources it needs.
+	// Use EmbeddedFieldCall for an output owned by its producer.
+	InlineRecipe bool `json:"inlineRecipe,omitempty"`
 
 	// shared is a runtime-only fast path for attached result refs. It is not
 	// persisted and must never be the sole source of truth for identity.
@@ -1051,10 +1053,10 @@ func (ref *ResultCallRef) cloneWith(memo resultCallCloneMemo) *ResultCallRef {
 		return nil
 	}
 	return &ResultCallRef{
-		ResultID:   ref.ResultID,
-		Call:       ref.Call.cloneWith(memo),
-		KeepInline: ref.KeepInline,
-		shared:     ref.shared,
+		ResultID:     ref.ResultID,
+		Call:         ref.Call.cloneWith(memo),
+		InlineRecipe: ref.InlineRecipe,
+		shared:       ref.shared,
 	}
 }
 
@@ -1074,6 +1076,10 @@ func (ref *ResultCallRef) Validate() error {
 		return fmt.Errorf("result ref cannot have both result ID and call")
 	case ref.ResultID == 0 && ref.Call == nil:
 		return fmt.Errorf("missing result ref")
+	case ref.InlineRecipe && ref.ResultID != 0:
+		return fmt.Errorf("inline recipe ref cannot have a result ID")
+	case ref.InlineRecipe && ref.shared != nil:
+		return fmt.Errorf("inline recipe ref cannot have a shared result")
 	default:
 		return nil
 	}

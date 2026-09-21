@@ -210,9 +210,8 @@ func TestCachePersistenceEmbeddedOutputKeepsInlineProducer(t *testing.T) {
 
 	parentCall := cacheTestIntCall("producer")
 	parentCall.Receiver = &ResultCallRef{ResultID: uint64(inputID)}
-	childCall := ChildFieldCall(parentCall, "output", NewInt(0).Type())
-	childCall.Receiver.KeepInline = true
-	// This is the ownership shape of Changeset.merge and its embedded After:
+	childCall := EmbeddedFieldCall(parentCall, "output", NewInt(0).Type())
+	// This is the ownership shape of a module object and its embedded fields:
 	// the output's recipe selects it from the producer that owns the output.
 	parentValue := &cacheTestOwnedDepsInt{
 		Int: NewInt(1), ownedResults: []AnyResult{cacheTestIntResult(childCall, 2)},
@@ -239,7 +238,7 @@ func TestCachePersistenceEmbeddedOutputKeepsInlineProducer(t *testing.T) {
 		assert.Assert(t, !ownsParent, "inline producer must not create an ownership cycle")
 		assert.Assert(t, ownsInput, "inline producer's inputs must remain retained")
 		ref := child.loadResultCall().Receiver
-		assert.Assert(t, ref.KeepInline && ref.Call != nil)
+		assert.Assert(t, ref.InlineRecipe && ref.Call != nil)
 		assert.Equal(t, uint64(0), ref.ResultID)
 	}
 	assertGraph(cacheA)

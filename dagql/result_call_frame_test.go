@@ -36,6 +36,100 @@ func TestResultCallDigestErrorsDoNotPanic(t *testing.T) {
 	require.ErrorContains(t, err, `result call frame "broken" args: failed to write argument "bad" to hash`)
 }
 
+func TestResultCallRefInlineRecipeValidation(t *testing.T) {
+	t.Parallel()
+	frame := cacheTestIntCall("producer")
+	for name, tc := range map[string]struct {
+		ref *ResultCallRef
+		err string
+	}{
+		"pending":       {ref: &ResultCallRef{Call: frame}},
+		"attached":      {ref: &ResultCallRef{ResultID: 1}},
+		"inline recipe": {ref: &ResultCallRef{Call: frame, InlineRecipe: true}},
+		"missing":       {ref: &ResultCallRef{InlineRecipe: true}, err: "missing result ref"},
+		"result ID":     {ref: &ResultCallRef{ResultID: 1, InlineRecipe: true}, err: "inline recipe ref cannot have a result ID"},
+		"both":          {ref: &ResultCallRef{ResultID: 1, Call: frame, InlineRecipe: true}, err: "result ref cannot have both result ID and call"},
+		"shared":        {ref: &ResultCallRef{Call: frame, InlineRecipe: true, shared: &sharedResult{}}, err: "inline recipe ref cannot have a shared result"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := tc.ref.Validate()
+			if tc.err == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.err)
+			}
+		})
+	}
+}
+
+func TestEmbeddedFieldCallPreservesRecipe(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	t.Cleanup(func() { cacheTestReleaseSession(t, c, ctx) })
+
+	parent := cacheTestIntCall("producer")
+	parent.View = "test-view"
+	parent.Nth = 2
+	parent.Module = &ResultCallModule{
+		ResultRef: &ResultCallRef{Call: cacheTestIntCall("module")},
+		Name:      "test-module", Ref: "test-ref", Pin: "test-pin",
+	}
+	parent.Args = []*ResultCallArg{{
+		Name: "option", Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "selected"},
+	}}
+	parent.ImplicitInputs = []*ResultCallArg{{
+		Name: "scope", Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "test-scope"},
+	}}
+
+	require.Nil(t, EmbeddedFieldCall(nil, "output", Int(0).Type()))
+	ordinary := ChildFieldCall(parent, "output", Int(0).Type())
+	embedded := EmbeddedFieldCall(parent, "output", Int(0).Type())
+	require.False(t, ordinary.Receiver.InlineRecipe)
+	require.True(t, embedded.Receiver.InlineRecipe)
+	require.Equal(t, parent, embedded.Receiver.Call)
+	require.NotSame(t, parent, embedded.Receiver.Call)
+	require.Equal(t, parent.View, embedded.View)
+	require.Equal(t, parent.Module, embedded.Module)
+	require.NotSame(t, parent.Module, embedded.Module)
+
+	// Attachment policy must not become semantic identity or change the
+	// exported recipe. Cloning and local persistence must preserve the policy.
+	wantID, err := ordinary.RecipeID(ctx)
+	require.NoError(t, err)
+	wantDigest, err := ordinary.deriveRecipeDigest(c)
+	require.NoError(t, err)
+	wantSelf, _, err := ordinary.selfDigestAndInputRefs(c)
+	require.NoError(t, err)
+	encoded, err := json.Marshal(embedded)
+	require.NoError(t, err)
+	var decoded ResultCall
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	for name, frame := range map[string]*ResultCall{
+		"original": embedded, "clone": embedded.clone(), "persisted": &decoded,
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.True(t, frame.Receiver.InlineRecipe)
+			require.NoError(t, frame.Receiver.Validate())
+			id, err := frame.RecipeID(ctx)
+			require.NoError(t, err)
+			wantEncoded, err := wantID.Encode()
+			require.NoError(t, err)
+			gotEncoded, err := id.Encode()
+			require.NoError(t, err)
+			require.Equal(t, wantEncoded, gotEncoded)
+			dig, err := frame.deriveRecipeDigest(c)
+			require.NoError(t, err)
+			require.Equal(t, wantDigest, dig)
+			self, _, err := frame.selfDigestAndInputRefs(c)
+			require.NoError(t, err)
+			require.Equal(t, wantSelf, self)
+		})
+	}
+}
+
 func TestResultCallRecipeIDRejectsSyntheticOperations(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
