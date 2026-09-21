@@ -5963,7 +5963,16 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	var resultCallDeps []resultCallDep
 	if !resWasCacheBacked {
-		if resultCall := oc.res.loadResultCall(); resultCall != nil {
+		// A call answered with nothing has no value to take a frame from,
+		// so the row has none yet; indexing below stores the request frame
+		// on it. Its references are the null row's dependencies as much as
+		// any other result's: walk the request frame so the row owns the
+		// receiver, module and arguments its persisted frame names.
+		resultCall := oc.res.loadResultCall()
+		if resultCall == nil {
+			resultCall = req.ResultCall
+		}
+		if resultCall != nil {
 			seenResults := map[sharedResultID]struct{}{}
 			seenCalls := map[*ResultCall]struct{}{}
 
