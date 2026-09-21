@@ -167,7 +167,7 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 			return nil, fmt.Errorf("could not find mod type for field %q", name)
 		}
 		fieldCtx := ctx
-		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
+		if fieldCall := dagql.EmbeddedFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
 			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
 		}
 		updated, err := moduleObjectValueToSDKInput(fieldCtx, modType, value)
@@ -374,7 +374,7 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		}
 
 		fieldCtx := ctx
-		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
+		if fieldCall := dagql.EmbeddedFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
 			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
 		}
 		typed, err := modType.ConvertFromSDKResult(fieldCtx, v)
@@ -531,8 +531,10 @@ func (obj *ModuleObject) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module object field %q: missing mod type", name)
 		}
 
+		// Raw SDK maps become independently owned outputs. Their field calls
+		// preserve the parent's recipe without retaining it back from the child.
 		fieldCtx := ctx
-		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
+		if fieldCall := dagql.EmbeddedFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
 			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
 		}
 
