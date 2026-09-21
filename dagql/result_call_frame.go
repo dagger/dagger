@@ -332,6 +332,9 @@ func (frame *ResultCall) ContentDigest() digest.Digest {
 	return last
 }
 
+// ContentPreferredDigest is the historical runtime identity used by services
+// and other core objects. Telemetry uses ContentPreferredDigestForTelemetry,
+// which matches recipe encoding and observes content learned by inputs later.
 func (frame *ResultCall) ContentPreferredDigest(ctx context.Context) (digest.Digest, error) {
 	c, err := EngineCache(ctx)
 	if err != nil {
@@ -686,97 +689,97 @@ func (frame *ResultCall) recipeDigestWithVisiting(c *Cache, visiting map[sharedR
 	if frame == nil {
 		return "", nil
 	}
-
 	frame.recipeDigestOnce.Do(func() {
-		field, err := resultCallIdentityField(frame)
-		if err != nil {
-			frame.recipeDigestErr = err
-			return
-		}
-		if frame.Type == nil {
-			frame.recipeDigestErr = fmt.Errorf("missing call type")
-			return
-		}
-
-		h := hashutil.NewHasher()
-
-		if frame.Receiver != nil {
-			receiverDigest, err := recipeDigestForResultCallRef(c, frame.Receiver, visiting)
-			if err != nil {
-				if h != nil {
-					h.Close()
-				}
-				frame.recipeDigestErr = fmt.Errorf("receiver: %w", err)
-				return
-			}
-			h = h.WithString(receiverDigest.String())
-		}
-		h = h.WithDelim()
-
-		h = appendResultCallTypeBytes(h, frame.Type).
-			WithDelim()
-
-		h = h.WithString(field).
-			WithDelim()
-
-		for _, arg := range frame.Args {
-			arg = redactedCallArgForDigest(arg)
-			if arg == nil {
-				continue
-			}
-			nextH, err := appendResultCallArgBytes(c, arg, h, visiting)
-			if err != nil {
-				if h != nil {
-					h.Close()
-				}
-				frame.recipeDigestErr = fmt.Errorf("args: %w", err)
-				return
-			}
-			h = nextH
-			h = h.WithDelim()
-		}
-		h = h.WithDelim()
-
-		for _, input := range frame.ImplicitInputs {
-			input = redactedCallArgForDigest(input)
-			if input == nil {
-				continue
-			}
-			nextH, err := appendResultCallArgBytes(c, input, h, visiting)
-			if err != nil {
-				if h != nil {
-					h.Close()
-				}
-				frame.recipeDigestErr = fmt.Errorf("implicit inputs: %w", err)
-				return
-			}
-			h = nextH
-			h = h.WithDelim()
-		}
-		h = h.WithDelim()
-
-		if frame.Module != nil && frame.Module.ResultRef != nil {
-			moduleDigest, err := recipeDigestForResultCallRef(c, frame.Module.ResultRef, visiting)
-			if err != nil {
-				if h != nil {
-					h.Close()
-				}
-				frame.recipeDigestErr = fmt.Errorf("module: %w", err)
-				return
-			}
-			h = h.WithString(moduleDigest.String())
-		}
-		h = h.WithDelim()
-
-		h = h.WithInt64(frame.Nth).
-			WithDelim()
-
-		h = h.WithString(frame.View.String()).
-			WithDelim()
-
-		frame.recipeDigest = digest.Digest(h.DigestAndClose())
+		frame.recipeDigest, frame.recipeDigestErr = frame.digestWithInputs(func(ref *ResultCallRef) (digest.Digest, error) {
+			return recipeDigestForResultCallRef(c, ref, visiting)
+		})
 	})
 	return frame.recipeDigest, frame.recipeDigestErr
+}
+
+// Share the byte encoding so content-free graphs have exactly recipe identity.
+func (frame *ResultCall) digestWithInputs(refDigest func(*ResultCallRef) (digest.Digest, error)) (digest.Digest, error) {
+	field, err := resultCallIdentityField(frame)
+	if err != nil {
+		return "", err
+	}
+	if frame.Type == nil {
+		return "", fmt.Errorf("missing call type")
+	}
+
+	h := hashutil.NewHasher()
+
+	if frame.Receiver != nil {
+		receiverDigest, err := refDigest(frame.Receiver)
+		if err != nil {
+			if h != nil {
+				h.Close()
+			}
+			return "", fmt.Errorf("receiver: %w", err)
+		}
+		h = h.WithString(receiverDigest.String())
+	}
+	h = h.WithDelim()
+
+	h = appendResultCallTypeBytes(h, frame.Type).
+		WithDelim()
+
+	h = h.WithString(field).
+		WithDelim()
+
+	for _, arg := range frame.Args {
+		arg = redactedCallArgForDigest(arg)
+		if arg == nil {
+			continue
+		}
+		nextH, err := appendResultCallArgBytes(arg, h, refDigest)
+		if err != nil {
+			if h != nil {
+				h.Close()
+			}
+			return "", fmt.Errorf("args: %w", err)
+		}
+		h = nextH
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	for _, input := range frame.ImplicitInputs {
+		input = redactedCallArgForDigest(input)
+		if input == nil {
+			continue
+		}
+		nextH, err := appendResultCallArgBytes(input, h, refDigest)
+		if err != nil {
+			if h != nil {
+				h.Close()
+			}
+			return "", fmt.Errorf("implicit inputs: %w", err)
+		}
+		h = nextH
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	if frame.Module != nil && frame.Module.ResultRef != nil {
+		moduleDigest, err := refDigest(frame.Module.ResultRef)
+		if err != nil {
+			if h != nil {
+				h.Close()
+			}
+			return "", fmt.Errorf("module: %w", err)
+		}
+		h = h.WithString(moduleDigest.String())
+	}
+	h = h.WithDelim()
+
+	h = h.WithInt64(frame.Nth).
+		WithDelim()
+
+	h = h.WithString(frame.View.String()).
+		WithDelim()
+
+	return digest.Digest(h.DigestAndClose()), nil
 }
 
 func (frame *ResultCall) contentPreferredDigestWithVisiting(c *Cache, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
@@ -1197,13 +1200,12 @@ func redactedCallArgForDigest(arg *ResultCallArg) *ResultCallArg {
 }
 
 func appendResultCallArgBytes(
-	c *Cache,
 	arg *ResultCallArg,
 	h *hashutil.Hasher,
-	visiting map[sharedResultID]struct{},
+	refDigest func(*ResultCallRef) (digest.Digest, error),
 ) (*hashutil.Hasher, error) {
 	h = h.WithString(arg.Name)
-	nextH, err := appendResultCallLiteralBytes(c, arg.Value, h, visiting)
+	nextH, err := appendResultCallLiteralBytes(arg.Value, h, refDigest)
 	if err != nil {
 		return h, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
 	}
@@ -1238,12 +1240,10 @@ func appendResultCallArgSelfRefs(
 	return nextH, nextInputs, nil
 }
 
-//nolint:dupl // symmetric with appendResultCallLiteralContentPreferredBytes; each is a distinct ID-digest pass
 func appendResultCallLiteralBytes(
-	c *Cache,
 	lit *ResultCallLiteral,
 	h *hashutil.Hasher,
-	visiting map[sharedResultID]struct{},
+	refDigest func(*ResultCallRef) (digest.Digest, error),
 ) (*hashutil.Hasher, error) {
 	var err error
 	switch {
@@ -1252,7 +1252,7 @@ func appendResultCallLiteralBytes(
 		h = h.WithByte(prefix).WithByte(1)
 	case lit.Kind == ResultCallLiteralKindResultRef:
 		const prefix = '0'
-		dig, err := recipeDigestForResultCallRef(c, lit.ResultRef, visiting)
+		dig, err := refDigest(lit.ResultRef)
 		if err != nil {
 			return nil, fmt.Errorf("result ref digest: %w", err)
 		}
@@ -1284,7 +1284,7 @@ func appendResultCallLiteralBytes(
 		const prefix = '7'
 		h = h.WithByte(prefix)
 		for _, elem := range lit.ListItems {
-			h, err = appendResultCallLiteralBytes(c, elem, h, visiting)
+			h, err = appendResultCallLiteralBytes(elem, h, refDigest)
 			if err != nil {
 				return nil, err
 			}
@@ -1293,7 +1293,7 @@ func appendResultCallLiteralBytes(
 		const prefix = '8'
 		h = h.WithByte(prefix)
 		for _, field := range lit.ObjectFields {
-			h, err = appendResultCallArgBytes(c, field, h, visiting)
+			h, err = appendResultCallArgBytes(field, h, refDigest)
 			if err != nil {
 				return nil, err
 			}
@@ -1312,7 +1312,6 @@ func appendResultCallLiteralBytes(
 	return h, nil
 }
 
-//nolint:dupl // symmetric with appendResultCallLiteralBytes; each is a distinct ID-digest pass
 func appendResultCallLiteralContentPreferredBytes(
 	c *Cache,
 	lit *ResultCallLiteral,

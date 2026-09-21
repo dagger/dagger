@@ -1,6 +1,15 @@
 package telemetryattrs
 
 const (
+	// DagContentPreferredDigestAttr is the operation's content-preferred identity
+	// at span completion (string). Prefer its recorded output content digest;
+	// otherwise hash its recipe using recursively content-preferred inputs.
+	// This supplements dagger.io/dag.digest without changing recipe identity.
+	// It is observational: no evaluation or e-graph canonicalization is forced.
+	// Pending API spans reflect currently known content; lazy spans report again
+	// after evaluation. Consumers must not assume this is a cache-hit decision.
+	DagContentPreferredDigestAttr = "dagger.io/dag.content_preferred_digest"
+
 	// CloudEngineAttr reports that telemetry was produced by a Dagger Cloud
 	// Engine. It is a resource attribute on client and engine telemetry. (bool)
 	CloudEngineAttr = "dagger.io/cloud.engine"

@@ -4525,6 +4525,12 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// reporting stale partial work, while callers still observe an ended
 			// and exported span when their wait completes.
 			if lazySpan != nil {
+				// Lazy evaluation may have learned content since the API span
+				// ended. Read the latest frame outside the cache locks.
+				frame := shared.loadResultCall()
+				if frame != nil && lazySpan.IsRecording() {
+					RecordContentPreferredDigest(lazyCallbackCtx, lazySpan, frame, res)
+				}
 				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, storedPart, &err)
 			}
 			if c.testAfterLazyEvalFinish != nil {
