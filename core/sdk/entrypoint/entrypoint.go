@@ -97,6 +97,12 @@ func Workspace(
 	if src.Self() == nil {
 		return workspace, fmt.Errorf("module entrypoint workspace: module source is not set")
 	}
+	// A local module the caller's config declares clients for gets those too.
+	if scoped, ok, err := callerScopedWorkspace(ctx, dag, src.Self()); err != nil {
+		return workspace, fmt.Errorf("module entrypoint workspace: %w", err)
+	} else if ok {
+		return scoped, nil
+	}
 	root, err := sourceContextDirectory(src.Self())
 	if err != nil {
 		return workspace, fmt.Errorf("module entrypoint workspace: %w", err)

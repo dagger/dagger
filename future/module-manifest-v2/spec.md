@@ -209,6 +209,13 @@ its manifest, its own files, and the paths its includes name. A local module
 that needs a file above its directory, such as the `go.mod` of a nested Go
 root, declares it in its includes.
 
+When the caller's workspace config registers a local module under an SDK
+scope, the module workspace also holds the local clients that scope declares,
+their local dependencies, and a config that names only that SDK and scope. The
+engine reads the caller's config itself, so the scope follows that
+configuration. The entrypoint resolves those clients through
+`Workspace.moduleSource` as it would in the caller's workspace.
+
 ### Type rules
 
 `types` returns every type defined by the module. This includes each object

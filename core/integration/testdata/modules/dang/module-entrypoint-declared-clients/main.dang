@@ -1,0 +1,62 @@
+# An entrypoint that resolves the local clients the caller declared for its
+# module, the way a shared SDK entrypoint does: from the workspace config, then
+# each client and its local dependencies through Workspace.moduleSource. It
+# reports what it found, and whether a caller file outside the scope is
+# reachable.
+type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("App")
+        .withConstructor(function("", typeDef.withObject("App")))
+        .withFunction(
+          function("Probe", typeDef.withKind(TypeDefKind.STRING_KIND)),
+        ),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Probe") {
+      let sdkNames = workspace.sdks.{{name}}.map { s => s.name }
+      let sdk = workspace.sdk(name: "py")
+      let scopes = sdk.modules.{{name, source}}
+        .filter { m => m.name == currentModule.name }
+        .map { m => m.source }
+      let clients = sdk.clients.{{name, source}}.map { c => c.name + "=" + c.source }
+      let lib = workspace.moduleSource("/clients/lib")
+      let libMarker = lib.contextDirectory.file("clients/lib/marker.txt").contents
+      # On this workspace a client is a directory source, and so are its
+      # dependencies, whose files are already in the client's context.
+      let deps = lib.dependencies.{{kind, sourceRootSubpath}}
+        .map { d =>
+          let kind = if (d.kind == ModuleSourceKind.DIR_SOURCE) { "dir" } else { "other" }
+          kind + ":" + d.sourceRootSubpath
+        }
+      let depMarker = workspace.moduleSource("/clients/dep").contextDirectory.file("clients/dep/marker.txt").contents
+      let secret = workspace.findUp("caller-only.txt") ?? "none"
+      let other = workspace.findUp("other-client.txt") ?? "none"
+      let out = [
+        workspace.cwd,
+        sdkNames.join(","),
+        scopes.join(","),
+        clients.join(","),
+        libMarker,
+        deps.join(","),
+        depMarker,
+        secret,
+        other,
+      ].join("|")
+      (("\"" + out + "\"") :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}

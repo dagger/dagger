@@ -6,7 +6,9 @@ body: |
   for a directory module, and the loaded files for a local module. A module
   inside the caller's workspace used to receive the caller's workspace
   instead. A local module that reads a file above its own directory now
-  declares that file in its includes.
+  declares that file in its includes. A local module registered under an SDK
+  scope in the caller's config still gets the local clients that scope
+  declares.
 time: 2026-09-18T23:00:00Z
 custom:
   Author: eunomie

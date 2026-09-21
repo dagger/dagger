@@ -438,3 +438,74 @@ source = "`+repoURL+`#main:ep"
 		require.NotContains(t, out, "a caller file")
 	})
 }
+
+// A local module the caller's config registers under an SDK scope gets, in
+// its workspace, the local clients that scope declares and their local
+// dependencies, with a config naming only that scope. An entrypoint resolves
+// them the way a shared SDK entrypoint does. A client declared for another
+// scope, and any other caller file, stay out of reach.
+func (ModuleSuite) TestModuleEntrypointWorkspaceDeclaredClients(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dangModule := func(name string, deps ...string) string {
+		manifest := `name = "` + name + `"
+
+[runtime]
+source = "dang"
+`
+		for _, dep := range deps {
+			manifest += `
+[[dependencies]]
+name = "` + dep + `"
+source = "../` + dep + `"
+`
+		}
+		return manifest
+	}
+
+	out, err := goGitBase(t, c).
+		WithNewFile("caller-only.txt", "a caller file").
+		WithNewFile("dagger.toml", `[modules.pysdk]
+source = "./sdk"
+
+[sdks.py]
+module = "pysdk"
+
+[sdks.py.scopes."mods/app"]
+is-module = true
+name = "app"
+clients = ["./clients/lib"]
+
+[sdks.py.scopes."mods/other"]
+is-module = true
+name = "other"
+clients = ["./clients/other"]
+`).
+		WithNewFile("sdk/dagger-module.toml", dangModule("pysdk")).
+		WithNewFile("sdk/main.dang", `type Pysdk { pub hello: String! { "sdk" } }`).
+		WithNewFile("mods/app/dagger-module.toml", `name = "app"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+		WithDirectory(
+			"mods/app/entrypoint",
+			c.Host().Directory("./testdata/modules/dang/module-entrypoint-declared-clients"),
+		).
+		WithNewFile("clients/lib/dagger-module.toml", dangModule("lib", "dep")).
+		WithNewFile("clients/lib/main.dang", `type Lib { pub hello: String! { "lib" } }`).
+		WithNewFile("clients/lib/marker.txt", "lib-files").
+		WithNewFile("clients/dep/dagger-module.toml", dangModule("dep")).
+		WithNewFile("clients/dep/main.dang", `type Dep { pub hello: String! { "dep" } }`).
+		WithNewFile("clients/dep/marker.txt", "dep-files").
+		WithNewFile("clients/other/dagger-module.toml", dangModule("other")).
+		WithNewFile("clients/other/main.dang", `type Other { pub hello: String! { "other" } }`).
+		WithNewFile("clients/other/other-client.txt", "not for app").
+		With(daggerCallAt("mods/app", "probe")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t,
+		"/mods/app|py|mods/app|mods/app=./clients/lib|lib-files|dir:clients/dep|dep-files|none|none",
+		strings.TrimSpace(out))
+}
