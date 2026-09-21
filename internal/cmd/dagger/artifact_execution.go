@@ -192,6 +192,8 @@ func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.
 		return selectCommandChecks(ctx, dag.CurrentWorkspace(), artifacts, cmd)
 	case "shell":
 		return artifacts.FilterTypes([]string{"Container", "Directory"}), nil
+	case "agent":
+		return artifacts.FilterDirectives([]string{"agent"}).FilterTypes([]string{"LLM"}), nil
 	default:
 		return artifacts.FilterDirectives([]string{cmd.Name()}), nil
 	}
