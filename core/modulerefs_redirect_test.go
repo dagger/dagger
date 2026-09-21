@@ -413,7 +413,7 @@ func TestResolveDaggerGetRedirectPreservesDestinationVersion(t *testing.T) {
 // vanityVersionServer redirects /go to dagger/dagger. It rewrites the version
 // "my feature" to a pull request ref, gives "v1" as the default version, and
 // echoes any other version unchanged, as a passthrough host does.
-func vanityVersionServer(t *testing.T, requests *atomic.Int32) *httptest.Server {
+func vanityVersionServer(t *testing.T, requests *atomic.Int32) {
 	t.Helper()
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if requests != nil {
@@ -450,7 +450,6 @@ func vanityVersionServer(t *testing.T, requests *atomic.Int32) *httptest.Server 
 		return http.ErrUseLastResponse
 	}
 	t.Cleanup(func() { daggerGetClient = oldClient })
-	return srv
 }
 
 func TestDaggerGetProbeVersion(t *testing.T) {

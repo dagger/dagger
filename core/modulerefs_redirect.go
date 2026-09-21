@@ -88,36 +88,15 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 		}
 	}
 
-	urlInputs := []any{sourceURL}
-	versionInputs := []any{sourceURL, version}
 	lockedURL := ""
 	if lock != nil {
-		resolvedURL, urlLocked := lock.GetLookup(
-			workspace.CoreLockNamespace,
-			workspace.LockOperationVanityURL,
-			urlInputs,
-		)
-		resolvedVersion, versionLocked := lock.GetLookup(
-			workspace.CoreLockNamespace,
-			workspace.LockOperationVanityVersion,
-			versionInputs,
-		)
-		if !urlLocked {
-			resolvedURL = sourceURL
+		resolved, urlOnly, ok := lookupVanityLock(lock, sourceURL, version)
+		if ok {
+			return resolved, nil
 		}
-		// A ref without a version has a version entry only if the host supplied
-		// a default. Its absence does not require a new probe.
-		if versionLocked || (urlLocked && version == "") {
-			if resolvedVersion == "" {
-				resolvedVersion = version
-			}
-			return sourceURLWithVersion(resolvedURL, resolvedVersion), nil
-		}
-		if urlLocked {
-			// The URL is locked but this version is not: probe for the version
-			// only, and keep the locked URL.
-			lockedURL = resolvedURL
-		}
+		// The URL can be locked while this version is not: probe for the
+		// version only, and keep the locked URL.
+		lockedURL = urlOnly
 		if !lockOverridden && queryErr == nil {
 			_, lockWritable, err := query.CurrentWorkspaceLock(ctx, true)
 			if err != nil {
@@ -139,7 +118,7 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 		if lockedURL != "" {
 			return sourceURLWithVersion(lockedURL, version), nil
 		}
-		return refString, nil //nolint:nilerr // deliberate: see above
+		return refString, nil
 	}
 
 	res, err := cache.GetOrInitArbitrary(
@@ -179,31 +158,87 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 	if setLookup == nil {
 		return sourceURLWithVersion(resolvedURL, resolvedVersion), nil
 	}
-	// Store the destination before applying the caller's version. A version in
-	// the redirect is its default and must survive later lookups and refreshes.
-	if lockedURL == "" && result.SourceURL != sourceURL {
-		if err := setLookup(
-			workspace.CoreLockNamespace,
-			workspace.LockOperationVanityURL,
-			urlInputs,
-			result.SourceURL,
-		); err != nil {
-			return "", fmt.Errorf("set vanity-url lock entry: %w", err)
+	if lockedURL == "" {
+		if err := storeVanityURLLock(setLookup, sourceURL, result.SourceURL); err != nil {
+			return "", err
 		}
 	}
-	// Store the version even if the host did not change it, so that a later
-	// load does not probe again.
-	if resolvedVersion != "" {
-		if err := setLookup(
-			workspace.CoreLockNamespace,
-			workspace.LockOperationVanityVersion,
-			versionInputs,
-			resolvedVersion,
-		); err != nil {
-			return "", fmt.Errorf("set vanity-version lock entry: %w", err)
-		}
+	if err := storeVanityVersionLock(setLookup, sourceURL, version, resolvedVersion); err != nil {
+		return "", err
 	}
 	return sourceURLWithVersion(resolvedURL, resolvedVersion), nil
+}
+
+// lookupVanityLock resolves a ref from the lockfile alone. ok reports a full
+// resolution. If only the URL is locked and the version still needs a probe,
+// lockedURL is that URL.
+func lookupVanityLock(lock *workspace.Lock, sourceURL, version string) (resolved, lockedURL string, ok bool) {
+	resolvedURL, urlLocked := lock.GetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityURL,
+		[]any{sourceURL},
+	)
+	resolvedVersion, versionLocked := lock.GetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityVersion,
+		[]any{sourceURL, version},
+	)
+	if !urlLocked {
+		resolvedURL = sourceURL
+	}
+	// A ref without a version has a version entry only if the host supplied
+	// a default. Its absence does not require a new probe.
+	if versionLocked || (urlLocked && version == "") {
+		if resolvedVersion == "" {
+			resolvedVersion = version
+		}
+		return sourceURLWithVersion(resolvedURL, resolvedVersion), "", true
+	}
+	if urlLocked {
+		return "", resolvedURL, false
+	}
+	return "", "", false
+}
+
+// storeVanityURLLock stores the destination before the caller's version is
+// applied. A version in the redirect is its default and must survive later
+// lookups and refreshes.
+func storeVanityURLLock(
+	setLookup func(string, string, []any, string) error,
+	sourceURL, resolvedURL string,
+) error {
+	if resolvedURL == sourceURL {
+		return nil
+	}
+	if err := setLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityURL,
+		[]any{sourceURL},
+		resolvedURL,
+	); err != nil {
+		return fmt.Errorf("set vanity-url lock entry: %w", err)
+	}
+	return nil
+}
+
+// storeVanityVersionLock stores the version even if the host did not change
+// it, so that a later load does not probe again.
+func storeVanityVersionLock(
+	setLookup func(string, string, []any, string) error,
+	sourceURL, version, resolvedVersion string,
+) error {
+	if resolvedVersion == "" {
+		return nil
+	}
+	if err := setLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityVersion,
+		[]any{sourceURL, version},
+		resolvedVersion,
+	); err != nil {
+		return fmt.Errorf("set vanity-version lock entry: %w", err)
+	}
+	return nil
 }
 
 func splitSourceURLVersion(refString string) (string, string, error) {
