@@ -10,11 +10,14 @@ import (
 	"testing"
 	"time"
 
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/stretchr/testify/require"
+
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPartScopeEmptyBoot(t *testing.T) {
@@ -70,6 +73,10 @@ func (m *rekeyObservedManager) AttachLease(ctx context.Context, id, key string) 
 	m.attaches++
 	return m.SnapshotManager.AttachLease(ctx, id, key)
 }
+func (m *rekeyObservedManager) PinContent(context.Context, string, []ocispecs.Descriptor) error {
+	return nil
+}
+
 func (m *rekeyObservedManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error {
 	m.scans++
 	before, err := m.leases.List(ctx)
@@ -138,6 +145,8 @@ func TestPartScopeRootRekeyCost(t *testing.T) {
 type failedScopeScan struct{ bkcache.SnapshotManager }
 
 var errScopeScan = errors.New("stale owner lease scan failed")
+
+func (failedScopeScan) PinContent(context.Context, string, []ocispecs.Descriptor) error { return nil }
 
 func (failedScopeScan) DeleteStaleDaggerOwnerLeases(context.Context, map[string]struct{}) error {
 	return errScopeScan

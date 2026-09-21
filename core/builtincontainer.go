@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
+	"github.com/containerd/containerd/v2/core/leases"
+
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 )
 
 func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string) (*Container, error) {
@@ -41,12 +44,34 @@ func builtinContainerInto(ctx context.Context, container *Container, platform Pl
 		return fmt.Errorf("lookup builtin image manifest %s: %w", manifestDigest, err)
 	}
 	manifestDesc := specs.Descriptor{Digest: manifestDigest, Size: info.Size, MediaType: specs.MediaTypeImageManifest}
-	if err := contentutil.CopyChain(ctx, query.OCIStore(), query.BuiltinOCIStore(), manifestDesc); err != nil {
+	// The engine ships this image: its blobs are engine-lifetime resources,
+	// held by one persistent lease, created before the copy and used for
+	// it, so an export reuses a layer's compressed blob under the builtin
+	// store's digest instead of a fresh diff, on every engine alike. The
+	// lease holds content only, never snapshots.
+	leaseID := BuiltinImageLeaseID(manifestDigest)
+	if err := query.SnapshotManager().PinContent(ctx, leaseID, nil); err != nil {
+		return fmt.Errorf("create builtin image lease: %w", err)
+	}
+	if err := contentutil.CopyChain(leases.WithLease(ctx, leaseID), query.OCIStore(), query.BuiltinOCIStore(), manifestDesc); err != nil {
 		return fmt.Errorf("copy builtin image content: %w", err)
+	}
+	loaded, err := loadImportedImageFromStore(ctx, query.OCIStore(), manifestDesc, "")
+	if err != nil {
+		return err
+	}
+	if err := query.SnapshotManager().PinContent(ctx, leaseID, loaded.Image.Blobs()); err != nil {
+		return fmt.Errorf("pin builtin image content: %w", err)
 	}
 	container.Platform = platform
 	_, err = container.FromOCIStore(ctx, manifestDesc, "")
 	return err
+}
+
+// BuiltinImageLeaseID names the persistent lease holding a builtin image's
+// blobs, by its manifest digest.
+func BuiltinImageLeaseID(manifestDigest digest.Digest) string {
+	return "dagger/builtin-image/" + manifestDigest.Encoded()
 }
 
 type ContainerBuiltinLazy struct {
