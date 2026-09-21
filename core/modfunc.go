@@ -2,15 +2,19 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/sync/errgroup"
 
@@ -26,6 +30,11 @@ const (
 	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
 	MinFunctionCacheTTLSeconds = 1
 )
+
+// declaredClientsInput puts a module's declared local clients into the cache
+// identity of its function calls. The module serves them at run time, after
+// the cache lookup, so nothing else in the key changes when they do.
+const declaredClientsInput = "declaredClients"
 
 type ModuleFunction struct {
 	mod    dagql.ObjectResult[*Module]
@@ -802,7 +811,90 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		}
 	}
 
-	return nil
+	clientsDigest, err := fn.declaredClientsDigest(ctx)
+	if err != nil || clientsDigest == "" {
+		return err
+	}
+	return req.SetImplicitInput(ctx, declaredClientsInput, dagql.NewString(clientsDigest))
+}
+
+// declaredClientsDigest digests the local clients the current workspace
+// declares for the function's module, and theirs in turn. It is empty when
+// there are none.
+func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, error) {
+	mod := fn.mod.Self()
+	if !mod.Source.Valid || mod.Source.Value.Self() == nil {
+		return "", nil
+	}
+	src := mod.Source.Value.Self()
+	if src.Kind != ModuleSourceKindLocal || src.Local == nil {
+		return "", nil
+	}
+
+	var ws *Workspace
+	if bound, ok := WorkspaceFromContext(ctx); ok {
+		ws = bound.Self()
+	} else {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return "", err
+		}
+		ws, err = query.Server.CurrentWorkspace(ctx)
+		if errors.Is(err, ErrNoCurrentWorkspace) {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	if ws.HostPath() == "" {
+		return "", nil
+	}
+	modulePath, err := filepath.Rel(ws.HostPath(), filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath))
+	if err != nil {
+		return "", err
+	}
+
+	targets := map[string]bool{}
+	pending := slices.Clone(ws.ModuleClients(filepath.ToSlash(modulePath)))
+	for len(pending) > 0 {
+		target := pending[0]
+		pending = pending[1:]
+		if targets[target] {
+			continue
+		}
+		targets[target] = true
+		pending = append(pending, ws.ModuleClients(target)...)
+	}
+	if len(targets) == 0 {
+		return "", nil
+	}
+
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	var wsRes dagql.ObjectResult[*Workspace]
+	if err := dag.Select(ctx, dag.Root(), &wsRes, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+		return "", err
+	}
+	inputs := []string{declaredClientsInput}
+	for _, target := range slices.Sorted(maps.Keys(targets)) {
+		var targetDigest string
+		if err := dag.Select(ctx, wsRes, &targetDigest,
+			dagql.Selector{
+				Field: "moduleSource",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/" + target)}},
+			},
+			dagql.Selector{Field: "digest"},
+		); err != nil {
+			// A target that does not resolve must not fail calls that never
+			// serve it, nor let a result computed meanwhile be reused.
+			targetDigest = "unresolved:" + rand.Text()
+		}
+		inputs = append(inputs, target, targetDigest)
+	}
+	return hashutil.HashStrings(inputs...).String(), nil
 }
 
 func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRuntime, rerr error) {
