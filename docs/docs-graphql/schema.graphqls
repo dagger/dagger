@@ -64,6 +64,9 @@ object types. Address format depends on the type, and is validated at type
 selection.
 """
 type Address implements Node {
+  """A temporary field for testing the SDL diff tool."""
+  testLabel(prefix: String = "demo"): String!
+
   """A unique identifier for this Address."""
   id: ID!
 
