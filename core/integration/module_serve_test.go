@@ -301,6 +301,16 @@ func (m *Caller) Plain() string {
 		require.Equal(t, changed, again)
 	})
 
+	t.Run("declared clients stay out of the call display", func(ctx context.Context, t *testctx.T) {
+		out, err := workdir(t).
+			WithEnvVariable("NO_COLOR", "1").
+			With(moduleLoadingDaggerCall("-m", "caller", "message")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, ".message")
+		require.NotContains(t, out, "declaredClients")
+	})
+
 	t.Run("unresolvable target misses the cache", func(ctx context.Context, t *testctx.T) {
 		ctr := workdir(t)
 		_, err := call(ctr, "1", "message")
