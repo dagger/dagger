@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -15,12 +16,21 @@ import (
 
 func main() {
 	descriptions := flag.Bool("descriptions", false, "include SDL descriptions in the diff")
+	pr := flag.String("pr", "", "preview the SDL diff section for a GitHub PR URL (requires GH_TOKEN)")
+	update := flag.Bool("update", false, "with -pr, publish the section to the PR description")
 	flag.Usage = func() {
-		fmt.Fprintln(flag.CommandLine.Output(), "Usage: sdl-diff [flags] OLD NEW\n\nInputs are SDL files or Git revision:path objects.")
+		fmt.Fprintln(flag.CommandLine.Output(), "Usage: sdl-diff [flags] OLD NEW\n       sdl-diff -pr URL [-update] [-descriptions]\n\nInputs are SDL files or Git revision:path objects. PR mode compares published schema snapshots.")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if flag.NArg() != 2 {
+	if *pr != "" && flag.NArg() == 0 {
+		if err := runPR(context.Background(), *pr, *descriptions, *update); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() != 2 || *pr != "" || *update {
 		flag.Usage()
 		os.Exit(2)
 	}

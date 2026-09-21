@@ -176,6 +176,12 @@ source = "github.com/vito/editor"
 [modules.go-cli]
 source = ".dagger/modules/go-cli"
 
+[modules.sdl-diff]
+source = ".dagger/modules/sdl-diff"
+
+[modules.sdl-diff.settings]
+githubToken = "cmd://gh auth token"
+
 [modules.contributor]
 source = "github.com/vito/agents/contributor"
 
@@ -208,6 +214,9 @@ clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "./.dagg
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-cli"]
+is-module = true
+
+[sdks.dang.scopes.".dagger/modules/sdl-diff"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/mcp-lab"]
