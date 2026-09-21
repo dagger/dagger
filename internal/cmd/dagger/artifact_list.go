@@ -83,10 +83,24 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	for _, address := range addresses {
 		filtered = filtered || len(address.Query) > 0
 	}
-	ws := dag.CurrentWorkspace()
-	defs, err := artifactDimensions(ctx, dag, ws.Artifacts())
-	if err != nil {
-		return err
+	var allArtifacts, targets *dagger.Artifacts
+	var defs artifact.Dimensions
+	if len(listedArtifactKeys(items)) > 0 {
+		// Resolve discovery once. Every formatting query must use this same set,
+		// since currentWorkspace has a new identity on each call.
+		id, err := dag.CurrentWorkspace().Artifacts().ID(ctx)
+		if err != nil {
+			return err
+		}
+		allArtifacts = dagger.Ref[*dagger.Artifacts](dag, id)
+		defs, err = artifactDimensions(ctx, dag, allArtifacts)
+		if err != nil {
+			return err
+		}
+		targets, err = commandArtifactTargets(ctx, dag, cmd, allArtifacts)
+		if err != nil {
+			return err
+		}
 	}
 	candidates := map[string][]string{}
 	// Read only candidate paths and keys. Do not enumerate the whole workspace
@@ -97,14 +111,13 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		if got, ok := candidates[cacheKey]; ok {
 			return slices.Equal(got, listedArtifactIDs(want))
 		}
-		candidate, err := commandArtifacts(ctx, dag, ws, []string{path}, false, keys...)
+		address, err := dagaddress.Parse(path)
 		if err != nil {
 			return false
 		}
-		candidate, err = commandArtifactTargets(ctx, dag, cmd, candidate)
-		if err != nil {
-			return false
-		}
+		address.Absolute = false
+		address.Query = keys
+		candidate := targets.FilterURI(address.String())
 		got, err := readListedArtifacts(ctx, dag, candidate, false)
 		if err != nil {
 			return false
@@ -131,13 +144,16 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	grouped := false
 	for _, path := range paths {
 		group := groups[path]
-		addr, _ := dagaddress.Parse(path)
-		pathDefs, err := artifactDimensions(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{addr.Path}}))
-		if err != nil {
-			return err
-		}
 		rows := make([][]listedArtifact, 0, len(group))
 		keys := listedArtifactKeys(group)
+		var pathDefs artifact.Dimensions
+		if len(keys) > 0 {
+			addr, _ := dagaddress.Parse(path)
+			pathDefs, err = artifactDimensions(ctx, dag, allArtifacts.FilterURI(addr.Path))
+			if err != nil {
+				return err
+			}
+		}
 		if !all && len(group) > 1 && (!filtered && matches(path, nil, group) || matches(path, keys, group)) {
 			rows = append(rows, group)
 			grouped = true
