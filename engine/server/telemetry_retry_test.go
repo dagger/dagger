@@ -79,7 +79,10 @@ func TestSessionLogExporterRetriesOnlyFailedPayloadTargets(t *testing.T) {
 	}
 }
 
-func TestSessionLogExporterDoesNotClaimAbortedBatch(t *testing.T) {
+// A record that cannot be routed (no origin, or an origin the session does
+// not know) must not poison its batch: the routable payloads still land, and
+// nothing is left claimed on their behalf.
+func TestSessionLogExporterSkipsUnroutableRecords(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	srv := &Server{clientDBs: dbs}
 	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
@@ -89,13 +92,30 @@ func TestSessionLogExporterDoesNotClaimAbortedBatch(t *testing.T) {
 	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
 		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
 		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
-	require.Error(t, exporter.Export(t.Context(), []sdklog.Record{record, {}}))
-	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(digest, []string{"client"}))
-	require.Equal(t, []string{"client"}, sess.takeCallPayloadForWrite(digest, []string{"client"}),
-		"an aborted batch must leave no target stuck in the writing state")
-	sess.settleCallPayload(digest, []string{"client"}, false)
-	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
-	require.Empty(t, sess.callPayloadMissingTargets(digest, []string{"client"}))
+	strayBody, strayDigest := serverCallPayload(t, "lookup", "stray")
+	originless := scopedLogRecord(t, "test.core", otellog.BytesValue(strayBody),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	unknownOrigin := scopedLogRecord(t, "test.core", otellog.BytesValue(strayBody),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "nobody"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+	require.True(t, store.ClaimCallPayload(digest))
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{originless, record, unknownOrigin, {}}),
+		"unroutable records are skipped rather than failing the batch")
+	require.Empty(t, sess.callPayloadMissingTargets(digest, []string{"client"}),
+		"the routable payload in the same batch must be delivered")
+	require.False(t, store.ClaimCallPayload(digest))
+	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(strayDigest, []string{"client"}))
+	require.True(t, store.ClaimCallPayload(strayDigest),
+		"a skipped record must not leave its digest claimed or delivered")
+
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
 }
 
 // A payload the producer claimed but whose write failed must be claimable

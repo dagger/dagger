@@ -244,8 +244,11 @@ type routedLogRecord struct {
 // on failure so the payload processor's retry (or a later closure walk) can
 // fill the gap without ever duplicating a row that did land.
 func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
-	// Resolve every record before taking any payload ownership, so a batch that
-	// cannot be routed at all leaves no target stranded in the writing state.
+	// A record that cannot be classified or routed is skipped, not fatal: a
+	// missing or unknown origin never resolves on retry, and failing the whole
+	// batch would have the payload processor retry it for seconds and then
+	// drop its routable siblings too — with their producer claims still held,
+	// so no later walk could re-emit them either.
 	routed := make([]routedLogRecord, 0, len(records))
 	for _, rec := range records {
 		digest, payload, err := classifyCallPayloadRecord(rec)
@@ -255,11 +258,13 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		}
 		origin := logOriginClientID(rec)
 		if origin == "" {
-			return fmt.Errorf("log record is missing telemetry origin client ID")
+			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "digest", digest)
+			continue
 		}
 		route, err := exp.sess.telemetryRouteOriginClientID(origin)
 		if err != nil {
-			return err
+			slog.Warn("dropping unroutable log record", "origin", origin, "payload", payload, "digest", digest, "err", err)
+			continue
 		}
 		if !payload {
 			digest = ""
