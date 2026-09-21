@@ -160,6 +160,106 @@ func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
 	assert.Equal(t, "unchanged", obj.Fields["scalar"])
 }
 
+func TestModuleObjectEmbeddedOutputsReleaseWithOwner(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	root := &Query{}
+	srv := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = srv
+	dag := newCoreDagqlServerForTest(t, root)
+	srv.dag = dag
+	installTypeDefTestClasses(dag)
+	installModuleObjectTestModuleClass(dag)
+	ctx = ContextWithQuery(dagql.ContextWithCache(ctx, cache), root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID: "embedded-output-client", SessionID: "embedded-output-session",
+	})
+
+	// Build Parent.child.leaf from SDK maps, rather than pre-attached results.
+	// Each map is a new output owned by its containing module object.
+	leafDef := NewObjectTypeDef("Leaf", "", nil)
+	leafDefRes := newTypeDefDetachedResult(t, dag, "embeddedLeafDef", leafDef)
+	leafType := newTypeDefDetachedResult(t, dag, "embeddedLeafType", (&TypeDef{}).WithObjectTypeDef(leafDefRes))
+	childDef := NewObjectTypeDef("Child", "", nil)
+	childDef.Fields = dagql.ObjectResultArray[*FieldTypeDef]{
+		newTypeDefDetachedResult(t, dag, "embeddedLeafField", NewFieldTypeDef("leaf", leafType, "", nil)),
+	}
+	childDefRes := newTypeDefDetachedResult(t, dag, "embeddedChildDef", childDef)
+	childType := newTypeDefDetachedResult(t, dag, "embeddedChildType", (&TypeDef{}).WithObjectTypeDef(childDefRes))
+	parentDef := NewObjectTypeDef("Parent", "", nil)
+	parentDef.Fields = dagql.ObjectResultArray[*FieldTypeDef]{
+		newTypeDefDetachedResult(t, dag, "embeddedChildField", NewFieldTypeDef("child", childType, "", nil)),
+	}
+	parentDefRes := newTypeDefDetachedResult(t, dag, "embeddedParentDef", parentDef)
+	parentType := newTypeDefDetachedResult(t, dag, "embeddedParentType", (&TypeDef{}).WithObjectTypeDef(parentDefRes))
+	mod := &Module{
+		NameField: "test", Deps: NewSchemaBuilder(root, nil),
+		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{leafType, childType, parentType},
+	}
+	modRes, err := dagql.NewObjectResultForCall(mod, dag, moduleObjectTestSyntheticCall("embeddedModule", mod))
+	assert.NilError(t, err)
+	for _, def := range []*ObjectTypeDef{leafDef, childDef, parentDef} {
+		dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
+			Typed: &ModuleObject{Module: modRes, TypeDef: def},
+		}))
+	}
+	parent := &ModuleObject{
+		Module: modRes, TypeDef: parentDef,
+		Fields: map[string]any{"child": map[string]any{"leaf": map[string]any{"value": "hello"}}},
+	}
+	parentCall := moduleObjectTestSyntheticCall("embeddedParent", parent)
+	detached, err := dagql.NewResultForCall(parent, parentCall)
+	assert.NilError(t, err)
+	attached, err := cache.AttachResult(ctx, "embedded-output-session", dag, detached)
+	assert.NilError(t, err)
+	parentID, err := attached.ID()
+	assert.NilError(t, err)
+
+	// The parent retains both outputs. Repeating attachment discovers their
+	// attached IDs without changing the SDK map representation of the fields.
+	children, err := parent.AttachDependencyResults(ctx, attached, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+		return cache.AttachResult(ctx, "embedded-output-session", dag, res)
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(children))
+	child, ok := dagql.UnwrapAs[*ModuleObject](children[0])
+	assert.Assert(t, ok)
+	leaves, err := child.AttachDependencyResults(ctx, children[0], func(res dagql.AnyResult) (dagql.AnyResult, error) {
+		return cache.AttachResult(ctx, "embedded-output-session", dag, res)
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(leaves))
+	leaf, ok := dagql.UnwrapAs[*ModuleObject](leaves[0])
+	assert.Assert(t, ok)
+	assert.Equal(t, "hello", leaf.Fields["value"])
+	childID, err := children[0].ID()
+	assert.NilError(t, err)
+	leafID, err := leaves[0].ID()
+	assert.NilError(t, err)
+
+	// Keep only a second session's parent ownership, proving that the parent
+	// retains both nested outputs after their producing session closes.
+	_, err = cache.AttachResult(ctx, "owner-session", dag, attached)
+	assert.NilError(t, err)
+	assert.NilError(t, cache.ReleaseSession(ctx, "embedded-output-session"))
+	for _, id := range []*call.ID{childID, leafID} {
+		_, err := cache.LoadResultByResultID(ctx, "observer-session", dag, id.EngineResultID())
+		assert.NilError(t, err)
+	}
+	assert.NilError(t, cache.ReleaseSession(ctx, "observer-session"))
+
+	// A child receiver must describe provenance without retaining the owner:
+	// otherwise parent -> child -> parent prevents either from being released.
+	assert.NilError(t, cache.ReleaseSession(ctx, "owner-session"))
+	for _, id := range []*call.ID{parentID, childID, leafID} {
+		_, err := cache.LoadResultByResultID(ctx, "released-observer-session", dag, id.EngineResultID())
+		assert.ErrorContains(t, err, "missing shared result")
+	}
+}
+
 func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 	t.Parallel()
 
