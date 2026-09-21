@@ -2181,7 +2181,83 @@ func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
 	require.Nil(t, payload)
 }
 
-func TestTelemetryStreamReportsSingleOversizedRow(t *testing.T) {
+func TestTelemetryStreamSkipsSingleOversizedRow(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	small := &collogspb.ExportLogsServiceRequest{
+		ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: "small"}},
+	}
+	maxPayloadSize := proto.Size(small)
+	var fetches []int64
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
+	err := ps.streamHandlerWithPayloadLimit(
+		resp,
+		req,
+		record,
+		func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+			fetches = append(fetches, since)
+			switch since {
+			case 0:
+				// Row 1 can never fit in a frame; it stays in the DB, so the
+				// stream must get past it rather than end on it.
+				return 1, &collogspb.ExportLogsServiceRequest{
+					ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: strings.Repeat("x", 100)}},
+				}, 1, nil
+			case 1:
+				return 2, small, 1, nil
+			default:
+				return since, nil, 0, nil
+			}
+		},
+		maxPayloadSize,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []int64{0, 1, 2, 2}, fetches, "an oversized row must be skipped, not refetched or fatal")
+
+	kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameHello, kind)
+	require.Equal(t, int64(0), cursor)
+	require.Nil(t, payload)
+
+	// The skipped row is announced as an empty frame so the client's cursor
+	// moves past it and the terminal cursor check still holds.
+	kind, cursor, payload, err = enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameData, kind)
+	require.Equal(t, int64(1), cursor)
+	require.Empty(t, payload)
+
+	kind, cursor, payload, err = enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameData, kind)
+	require.Equal(t, int64(2), cursor)
+	var batch collogspb.ExportLogsServiceRequest
+	require.NoError(t, proto.Unmarshal(payload, &batch))
+	require.Equal(t, "small", batch.ResourceLogs[0].SchemaUrl)
+
+	kind, cursor, payload, err = enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameTerminal, kind)
+	require.Equal(t, int64(2), cursor)
+	require.Nil(t, payload)
+	require.Empty(t, resp.Body.Bytes())
+}
+
+// A fetch failure is usually transient and leaves the cursor valid, so the
+// stream must end without a terminal error frame: the client then reconnects
+// at its cursor instead of giving up on the signal for the rest of the run.
+func TestTelemetryStreamInterruptsOnFetchError(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	ps := &PubSub{srv: &Server{clientDBs: dbs}}
 	record := &clientRecord{
@@ -2194,32 +2270,36 @@ func TestTelemetryStreamReportsSingleOversizedRow(t *testing.T) {
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
 	req.Header.Set("Accept", enginetel.LiveContentType)
-	err := ps.streamHandlerWithPayloadLimit(
-		resp,
-		req,
-		record,
-		func(_ context.Context, _ *clientdb.DB, _ int64, _ int) (int64, proto.Message, int, error) {
-			fetches++
-			return 1, &collogspb.ExportLogsServiceRequest{
-				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: strings.Repeat("x", 100)}},
+	req.Header.Set(enginetel.LiveCursorHeader, "3")
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+		fetches++
+		if since == 3 {
+			return 4, &collogspb.ExportLogsServiceRequest{
+				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: "batch-4"}},
 			}, 1, nil
-		},
-		16,
-	)
-	require.NoError(t, err)
-	require.Equal(t, 1, fetches, "an oversized row must not be fetched repeatedly")
+		}
+		return 0, nil, 0, errors.New("database is locked")
+	})
+	require.NoError(t, err, "a committed stream must not surface an error for httpHandlerFunc to write into the body")
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, 2, fetches)
 
-	kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+	kind, cursor, _, err := enginetel.ReadLiveFrame(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, enginetel.LiveFrameHello, kind)
-	require.Equal(t, int64(0), cursor)
-	require.Nil(t, payload)
+	require.Equal(t, int64(3), cursor)
 
-	_, cursor, payload, err = enginetel.ReadLiveFrame(resp.Body)
-	require.ErrorIs(t, err, enginetel.ErrLiveStream)
-	require.ErrorContains(t, err, "telemetry row at cursor 1")
-	require.Equal(t, int64(0), cursor)
-	require.Nil(t, payload)
+	kind, cursor, _, err = enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameData, kind)
+	require.Equal(t, int64(4), cursor)
+
+	// No DTX1 (or terminal) frame: the connection just ends mid-stream, which
+	// the client treats as reconnectable.
+	_, _, _, err = enginetel.ReadLiveFrame(resp.Body)
+	require.ErrorIs(t, err, io.EOF)
+	require.NotErrorIs(t, err, enginetel.ErrLiveStream)
+	require.NotErrorIs(t, err, enginetel.ErrInvalidLiveFrame)
 }
 
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {

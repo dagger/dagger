@@ -1000,6 +1000,9 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 
 	terminating := false
 	batchLimit := otlpBatchSize
+	// failStream ends the stream for good: the client must not reconnect at
+	// this cursor. Reserved for protocol violations the next attempt would
+	// only repeat (an inconsistent fetcher, an unmarshalable batch).
 	failStream := func(streamErr error) error {
 		logger.Error("terminating OTLP stream", "cursor", since, "err", streamErr)
 		if !binary {
@@ -1009,6 +1012,17 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			return fmt.Errorf("%w; write live stream error: %w", streamErr, err)
 		}
 		flush()
+		return nil
+	}
+	// interruptStream ends the response without a terminal frame, so the
+	// client sees a lost connection and reconnects at its cursor. This is for
+	// transient trouble (a busy store, an I/O hiccup) where the cursor is
+	// still valid. It returns nil rather than the error: the headers are
+	// already committed, so an error would have httpHandlerFunc write an HTTP
+	// error body into the stream, which the client would decode as a bad
+	// frame and treat as permanent.
+	interruptStream := func(streamErr error) error {
+		logger.Warn("interrupting OTLP stream", "cursor", since, "err", streamErr)
 		return nil
 	}
 	for {
@@ -1021,7 +1035,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			if r.Context().Err() != nil {
 				return nil
 			}
-			return failStream(fmt.Errorf("fetch: %w", err))
+			return interruptStream(fmt.Errorf("fetch: %w", err))
 		}
 		if rows == 0 {
 			if terminating {
@@ -1060,7 +1074,19 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			payloadSize := proto.Size(message)
 			if payloadSize > maxPayloadSize {
 				if rows == 1 {
-					return failStream(fmt.Errorf("telemetry row at cursor %d is %d bytes (maximum frame payload %d)", next, payloadSize, maxPayloadSize))
+					// The row stays in the DB, so ending the stream here would
+					// strand the client behind it on every reconnect. Skip it
+					// instead: an empty frame carries the client past the row so
+					// its cursor stays in step with ours (a reconnect resumes
+					// after it, and the terminal frame's cursor still matches).
+					logger.Warn("skipping oversized telemetry row", "cursor", next, "bytes", payloadSize, "maxBytes", maxPayloadSize)
+					if err := enginetel.WriteLiveFrame(w, next, nil); err != nil {
+						return fmt.Errorf("write OTLP skip frame: %w", err)
+					}
+					since = next
+					batchLimit = otlpBatchSize
+					flush()
+					continue
 				}
 				// Refetch a strictly smaller prefix at the same cursor. The row count,
 				// rather than the previous query limit, bounds this to logarithmically

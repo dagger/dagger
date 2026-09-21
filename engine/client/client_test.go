@@ -207,6 +207,51 @@ func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {
 	require.Equal(t, 2, requests)
 }
 
+// The engine announces a row it had to skip (one too large for any frame) as
+// an empty data frame, so the client's cursor must advance on it and the
+// terminal cursor must then match.
+func TestOTLPConsumerAdvancesCursorOnEmptyFrame(t *testing.T) {
+	t.Parallel()
+
+	var stream bytes.Buffer
+	require.NoError(t, enginetel.WriteLiveHello(&stream, 0))
+	require.NoError(t, enginetel.WriteLiveFrame(&stream, 3, []byte("batch one")))
+	require.NoError(t, enginetel.WriteLiveFrame(&stream, 4, nil))
+	require.NoError(t, enginetel.WriteLiveTerminal(&stream, 4))
+
+	var requests int
+	httpClient := &httpClient{
+		inner: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requests++
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header: http.Header{
+						"Content-Type": []string{enginetel.LiveContentType},
+					},
+					Body:    io.NopCloser(bytes.NewReader(stream.Bytes())),
+					Request: req,
+				}, nil
+			}),
+		},
+	}
+
+	telemetryGroup := new(errgroup.Group)
+	consumer := &otlpConsumer{
+		httpClient: httpClient,
+		path:       "/v1/logs",
+		eg:         telemetryGroup,
+	}
+	var batches [][]byte
+	require.NoError(t, consumer.Consume(context.Background(), func(payload []byte, _ liveTelemetryEncoding) error {
+		batches = append(batches, bytes.Clone(payload))
+		return nil
+	}))
+	require.NoError(t, telemetryGroup.Wait())
+	require.Equal(t, [][]byte{[]byte("batch one"), {}}, batches)
+	require.Equal(t, 1, requests, "the terminal cursor matched, so no reconnect")
+}
+
 func TestOTLPConsumerDecodesLegacySSEProtoJSON(t *testing.T) {
 	t.Parallel()
 
