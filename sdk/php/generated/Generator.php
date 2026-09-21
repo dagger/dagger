@@ -11,33 +11,6 @@ namespace Dagger;
 class Generator extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The generated changeset from the last run
-     */
-    public function changes(): Changeset
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Whether the generator complete
-     */
-    public function completed(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('completed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'completed');
-    }
-
-    /**
-     * Return the description of the generator
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this Generator.
      */
     public function id(): Id
@@ -47,21 +20,30 @@ class Generator extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Whether changeset from the last generator run is empty or not
-     */
-    public function isEmpty(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isEmpty');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'isEmpty');
-    }
-
-    /**
      * Return the command name of the generator. Entrypoint targets omit the module prefix.
      */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The path of the generator within its module
+     */
+    public function path(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * Return the description of the generator
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -79,12 +61,12 @@ class Generator extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The path of the generator within its module
+     * The generated changeset from the last run
      */
-    public function path(): array
+    public function changes(): Changeset
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -94,5 +76,23 @@ class Generator extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
         return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Whether changeset from the last generator run is empty or not
+     */
+    public function isEmpty(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isEmpty');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isEmpty');
+    }
+
+    /**
+     * Whether the generator complete
+     */
+    public function completed(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('completed');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'completed');
     }
 }

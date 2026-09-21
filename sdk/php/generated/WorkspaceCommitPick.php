@@ -14,6 +14,15 @@ namespace Dagger;
 class WorkspaceCommitPick extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * A unique identifier for this WorkspaceCommitPick.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
      * The commit in the source workspace.
      */
     public function commit(): GitCommit
@@ -23,21 +32,12 @@ class WorkspaceCommitPick extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+     * Whether this commit can be applied.
      */
-    public function conflictPaths(): array
+    public function status(): WorkspaceCommitPickStatus
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('conflictPaths');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'conflictPaths');
-    }
-
-    /**
-     * A unique identifier for this WorkspaceCommitPick.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('status');
+        return \Dagger\WorkspaceCommitPickStatus::from((string)$this->queryLeaf($leafQueryBuilder, 'status'));
     }
 
     /**
@@ -50,11 +50,11 @@ class WorkspaceCommitPick extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Whether this commit can be applied.
+     * Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
      */
-    public function status(): WorkspaceCommitPickStatus
+    public function conflictPaths(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('status');
-        return \Dagger\WorkspaceCommitPickStatus::from((string)$this->queryLeaf($leafQueryBuilder, 'status'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('conflictPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'conflictPaths');
     }
 }

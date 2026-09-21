@@ -16,18 +16,6 @@ namespace Dagger;
 class AgentMiddlewareGroup extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
-     */
-    public function compose(?LLM $base = null): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('compose');
-        if (null !== $base) {
-        $innerQueryBuilder->setArgument('base', $base);
-        }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * A unique identifier for this AgentMiddlewareGroup.
      */
     public function id(): Id
@@ -43,5 +31,17 @@ class AgentMiddlewareGroup extends Client\AbstractObject implements Client\IdAbl
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('list');
         return (array)$this->queryLeaf($leafQueryBuilder, 'list');
+    }
+
+    /**
+     * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+     */
+    public function compose(?LLM $base = null): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('compose');
+        if (null !== $base) {
+        $innerQueryBuilder->setArgument('base', $base);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

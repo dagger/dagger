@@ -14,16 +14,12 @@ namespace Dagger;
 class WorkspaceGit extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
-     *
-     * Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
-     *
-     * This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
+     * A unique identifier for this WorkspaceGit.
      */
-    public function directory(): Directory
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -36,12 +32,16 @@ class WorkspaceGit extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * A unique identifier for this WorkspaceGit.
+     * Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
+     *
+     * Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
+     *
+     * This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
      */
-    public function id(): Id
+    public function directory(): Directory
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

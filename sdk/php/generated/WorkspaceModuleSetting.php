@@ -14,57 +14,12 @@ namespace Dagger;
 class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The constructor argument's declared default, formatted like value, or empty when the argument has no default.
-     */
-    public function defaultValue(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultValue');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultValue');
-    }
-
-    /**
-     * The constructor argument description.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this WorkspaceModuleSetting.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Whether the setting accepts a list of values.
-     */
-    public function isList(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isList');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'isList');
-    }
-
-    /**
-     * Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
-     */
-    public function isObject(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isObject');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'isObject');
-    }
-
-    /**
-     * Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
-     */
-    public function isString(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isString');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'isString');
     }
 
     /**
@@ -83,5 +38,50 @@ class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdA
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
         return (string)$this->queryLeaf($leafQueryBuilder, 'value');
+    }
+
+    /**
+     * The constructor argument description.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+    }
+
+    /**
+     * The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+     */
+    public function defaultValue(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultValue');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultValue');
+    }
+
+    /**
+     * Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
+     */
+    public function isString(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isString');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isString');
+    }
+
+    /**
+     * Whether the setting accepts a list of values.
+     */
+    public function isList(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isList');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isList');
+    }
+
+    /**
+     * Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
+     */
+    public function isObject(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isObject');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isObject');
     }
 }

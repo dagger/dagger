@@ -14,30 +14,12 @@ namespace Dagger;
 class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Whether the cache entry is actively being used.
+     * A unique identifier for this EngineCacheEntry.
      */
-    public function activelyUsed(): bool
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('activelyUsed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'activelyUsed');
-    }
-
-    /**
-     * The time the cache entry was created, in Unix nanoseconds.
-     */
-    public function createdTimeUnixNano(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('createdTimeUnixNano');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'createdTimeUnixNano');
-    }
-
-    /**
-     * The DagQL call that produced this cache entry.
-     */
-    public function dagqlCall(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dagqlCall');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'dagqlCall');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -59,12 +41,12 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble, N
     }
 
     /**
-     * A unique identifier for this EngineCacheEntry.
+     * The time the cache entry was created, in Unix nanoseconds.
      */
-    public function id(): Id
+    public function createdTimeUnixNano(): int
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('createdTimeUnixNano');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'createdTimeUnixNano');
     }
 
     /**
@@ -74,6 +56,15 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble, N
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('mostRecentUseTimeUnixNano');
         return (int)$this->queryLeaf($leafQueryBuilder, 'mostRecentUseTimeUnixNano');
+    }
+
+    /**
+     * Whether the cache entry is actively being used.
+     */
+    public function activelyUsed(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('activelyUsed');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'activelyUsed');
     }
 
     /**
@@ -92,5 +83,14 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble, N
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('recordTypes');
         return (array)$this->queryLeaf($leafQueryBuilder, 'recordTypes');
+    }
+
+    /**
+     * The DagQL call that produced this cache entry.
+     */
+    public function dagqlCall(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dagqlCall');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'dagqlCall');
     }
 }

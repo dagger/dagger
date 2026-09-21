@@ -14,39 +14,12 @@ namespace Dagger;
 class GeneratedCode extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The directory containing the generated code.
-     */
-    public function code(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('code');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * A unique identifier for this GeneratedCode.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * List of paths to mark generated in version control (i.e. .gitattributes).
-     */
-    public function vcsGeneratedPaths(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsGeneratedPaths');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'vcsGeneratedPaths');
-    }
-
-    /**
-     * List of paths to ignore in version control (i.e. .gitignore).
-     */
-    public function vcsIgnoredPaths(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsIgnoredPaths');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'vcsIgnoredPaths');
     }
 
     /**
@@ -67,5 +40,32 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVCSIgnoredPaths');
         $innerQueryBuilder->setArgument('paths', $paths);
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The directory containing the generated code.
+     */
+    public function code(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('code');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * List of paths to mark generated in version control (i.e. .gitattributes).
+     */
+    public function vcsGeneratedPaths(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsGeneratedPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'vcsGeneratedPaths');
+    }
+
+    /**
+     * List of paths to ignore in version control (i.e. .gitignore).
+     */
+    public function vcsIgnoredPaths(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsIgnoredPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'vcsIgnoredPaths');
     }
 }

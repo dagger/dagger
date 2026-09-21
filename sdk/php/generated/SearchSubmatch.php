@@ -11,21 +11,21 @@ namespace Dagger;
 class SearchSubmatch extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The match's end offset within the matched lines.
-     */
-    public function end(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('end');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'end');
-    }
-
-    /**
      * A unique identifier for this SearchSubmatch.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The matched text.
+     */
+    public function text(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('text');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'text');
     }
 
     /**
@@ -38,11 +38,11 @@ class SearchSubmatch extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
-     * The matched text.
+     * The match's end offset within the matched lines.
      */
-    public function text(): string
+    public function end(): int
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('text');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'text');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('end');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'end');
     }
 }
