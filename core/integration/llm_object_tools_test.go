@@ -397,8 +397,9 @@ type Editor {
 		WithToolResult("call_1", "", false).
 		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
 	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
-	result := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
-		WithPrompt("move the tree").Loop()
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
+	require.NoError(t, err)
+	result := composed.WithPrompt("move the tree").Loop()
 	transcript, err := result.Transcript(ctx)
 	require.NoError(t, err)
 	require.Contains(t, transcript, "exceeds the 200-path inspection budget")
