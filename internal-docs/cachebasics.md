@@ -180,6 +180,28 @@ Examples:
 
 This matters for both retention and pruning: if the cache does not know the edge exists, it cannot keep the dependency alive correctly.
 
+### Embedded outputs: provenance is not producer ownership
+
+An independently owned output embedded in its producer can use
+`dagql.EmbeddedFieldCall(parentCall, field, fieldType)` to describe how to replay
+it as `parent.field`. For example, a merged Changeset owns its materialized
+`after` Directory, but that Directory needs the merge recipe when exported.
+
+Ordinary pending `ResultCallRef.Call` references normalize to retained result
+IDs during attachment. Doing that for this output's receiver would create an
+ownership cycle: producer retains output, output retains producer. The helper
+marks the receiver `InlineRecipe`, keeping the producer's call as provenance
+instead of retaining its materialized result. Nested references still normalize
+and retain their exact inputs, including transitive session-resource requirements.
+The flag survives local cache persistence but does not affect semantic identity
+or the exported recipe.
+
+This is not a weak result reference or a general cycle-breaking switch. The
+output must independently own the payload resources it needs. Ordinary field
+selections, and lazy outputs that require their live parent, must retain that
+parent normally. Explicit dependencies owned by the producer are not implicitly
+transferred by copying its recipe.
+
 ## Detached results
 
 When you create a result with:

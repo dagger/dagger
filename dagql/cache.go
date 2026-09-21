@@ -2677,7 +2677,7 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 	if err := c.normalizePendingResultCallRefsWithSeen(ctx, ref.Call, seen); err != nil {
 		return err
 	}
-	if ref.KeepInline {
+	if ref.InlineRecipe {
 		return nil
 	}
 	resultID, err := c.resultIDForCall(ref.Call)

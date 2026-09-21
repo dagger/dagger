@@ -1568,12 +1568,9 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 	// The embedded directory can escape into other recipes (including saved
 	// agent workspaces). Give it the merge's replayable lineage rather than a
 	// synthetic snapshot identity that only resolves while this engine caches it.
-	// Keep the receiver inline even after attachment: the merge owns After,
-	// so making After retain the merge result would create a dependency cycle.
-	afterCall := dagql.ChildFieldCall(dagql.CurrentCall(ctx), "after", afterDir.Type())
-	if afterCall != nil {
-		afterCall.Receiver.KeepInline = true
-	}
+	// The merge owns the materialized output; its recipe must not retain the
+	// merge result in return.
+	afterCall := dagql.EmbeddedFieldCall(dagql.CurrentCall(ctx), "after", afterDir.Type())
 	after, err := dagql.NewObjectResultForCall(afterDir, srv, afterCall)
 	if err != nil {
 		return nil, fmt.Errorf("create merged directory result: %w", err)

@@ -2182,6 +2182,21 @@ func ChildFieldCall(parent *ResultCall, field string, fieldType *ast.Type) *Resu
 	}
 }
 
+// EmbeddedFieldCall gives an independently owned embedded output the recipe
+// parent.field. The producer may retain this output, so the receiver preserves
+// the parent's recipe without retaining its materialized result and forming an
+// ownership cycle. The recipe's input results are still retained normally.
+//
+// Use only when the output owns the resources needed to use its value. Ordinary
+// field selections and lazy outputs that need a live parent must retain it.
+func EmbeddedFieldCall(parent *ResultCall, field string, fieldType *ast.Type) *ResultCall {
+	child := ChildFieldCall(parent, field, fieldType)
+	if child != nil {
+		child.Receiver.InlineRecipe = true
+	}
+	return child
+}
+
 type srvCtx struct{}
 
 type cacheCtx struct{}
