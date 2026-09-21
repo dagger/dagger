@@ -806,7 +806,7 @@ func (c *Cache) traceShareSkip(ctx context.Context, row *sharedResult, address P
 	if c.testShareSkipped != nil {
 		c.testShareSkipped(row.id, address, cause)
 	}
-	c.observePart(row, address, partObservation{kind: PartEventShareSkipped, detail: cause.Error()})
+	c.observePart(row, address, partObservation{kind: PartEventShareSkipped, cause: cause})
 }
 
 // preflightShareDecode checks, before any shared persisted-decode attempt is

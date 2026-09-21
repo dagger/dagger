@@ -68,12 +68,14 @@ const (
 )
 
 // partObservation is what one observation carries beyond its row and
-// address.
+// address. A delegation's source and a skip's cause are carried as they
+// are and named only once the fixture is known to be enabled, so the
+// disabled path does no work beyond the gate.
 type partObservation struct {
 	kind       TransferFixturePartKind
 	snapshotID string
-	source     *TransferFixturePartSource
-	detail     string
+	delegation *partDelegationProof
+	cause      error
 }
 type partFixtureState struct {
 	// mu guards the part events. A test may hold it to park an operation at
@@ -134,20 +136,22 @@ func (c *Cache) EnableTransferFixtureParts() {
 	c.partFixture.CompareAndSwap(nil, new(partFixtureState))
 }
 
-// partDelegationSource names the parent a delegated part came from.
-func partDelegationSource(proof *partDelegationProof) *TransferFixturePartSource {
-	return &TransferFixturePartSource{ResultID: uint64(proof.parent.id), Address: clonePartAddress(proof.source)}
-}
-
 // observePart is the one entry point for part observations. Off-gate it is
-// one atomic load; enabled, it records the observation under the scenario's
-// bound and never changes the operation.
+// one atomic load and nothing else: the delegation source and the skip's
+// cause text are built only past the gate. Enabled, it records the
+// observation under the scenario's bound and never changes the operation.
 func (c *Cache) observePart(row *sharedResult, address PersistedPartAddress, o partObservation) {
 	state := c.partFixture.Load()
 	if state == nil {
 		return
 	}
-	event := TransferFixturePartEvent{Kind: o.kind, Address: clonePartAddress(address), SnapshotID: o.snapshotID, Source: o.source, Detail: o.detail}
+	event := TransferFixturePartEvent{Kind: o.kind, Address: clonePartAddress(address), SnapshotID: o.snapshotID}
+	if proof := o.delegation; proof != nil {
+		event.Source = &TransferFixturePartSource{ResultID: uint64(proof.parent.id), Address: clonePartAddress(proof.source)}
+	}
+	if o.cause != nil {
+		event.Detail = o.cause.Error()
+	}
 	if row != nil {
 		event.ResultID = uint64(row.id)
 		if frame := row.loadResultCall(); frame != nil {

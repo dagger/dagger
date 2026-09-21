@@ -235,7 +235,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					selected := partObservation{kind: PartEventSelectedReady}
 					switch {
 					case source.delegation != nil:
-						selected = partObservation{kind: PartEventSelectedDelegation, source: partDelegationSource(source.delegation)}
+						selected = partObservation{kind: PartEventSelectedDelegation, delegation: source.delegation}
 					case source.readiness == PartDownloadable:
 						selected.kind = PartEventSelectedChain
 					}

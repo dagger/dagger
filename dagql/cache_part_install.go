@@ -474,7 +474,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 			installed := partObservation{kind: PartEventInstalledReady}
 			switch {
 			case p.source.delegation != nil:
-				installed = partObservation{kind: PartEventInstalledDelegation, source: partDelegationSource(p.source.delegation)}
+				installed = partObservation{kind: PartEventInstalledDelegation, delegation: p.source.delegation}
 			case p.original != nil:
 				installed.kind = PartEventInstalledLazy
 			case p.source.readiness == PartDownloadable:
