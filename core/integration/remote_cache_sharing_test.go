@@ -34,17 +34,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		client           *dagger.Client
 	}
 	stop := func(e *running) {
-		if e.client != nil {
-			require.NoError(t, e.client.Close())
-		}
-		if e.upstream != nil {
-			_, err := e.upstream.Stop(context.WithoutCancel(ctx))
-			require.NoError(t, err)
-		}
-		if e.tunnel != nil {
-			_, err := e.tunnel.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
-		}
+		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
 	}
 	start := func(state string, volume *dagger.CacheVolume, workdir string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
