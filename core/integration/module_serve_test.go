@@ -209,3 +209,112 @@ func (ModuleLoadingSuite) TestServeModulePinnedVersionQuery(ctx context.Context,
 		require.ErrorContains(t, err, fmt.Sprintf("at commit %q, but the requested pin is %q", latest, pinned))
 	})
 }
+
+// A module serves its clients' targets at run time, after the engine has looked
+// up the calling function in the cache. The clients the workspace declares for
+// the module's scope must therefore reach the function's cache key before the
+// lookup, or a changed target leaves the caller's result stale.
+func (ModuleLoadingSuite) TestServeModuleDeclaredClientCache(ctx context.Context, t *testctx.T) {
+	// Each result carries the time the function ran, so an unchanged output
+	// proves a cache hit. Each subtest gets its own caller, so parallel
+	// subtests never hit each other's results.
+	workdir := func(t *testctx.T) *dagger.Container {
+		return goGitBase(t, connect(ctx, t)).
+			WithNewFile("dagger.toml", `[modules.caller]
+source = ".dagger/modules/caller"
+
+[modules.go]
+source = "go"
+
+[sdks.go]
+module = "go"
+
+[sdks.go.scopes.".dagger/modules/caller"]
+is-module = true
+clients = ["./.dagger/modules/hello"]
+`).
+			WithNewFile(".dagger/modules/caller/dagger.json", `{"name":"caller","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
+			WithNewFile(".dagger/modules/caller/main.go", `package main
+
+import (
+	"context"
+	"strconv"
+	"time"
+)
+
+type Caller struct{}
+
+func (m *Caller) Message(ctx context.Context) (string, error) {
+	if err := dag.ServeModule(ctx, "/.dagger/modules/hello"); err != nil {
+		return "", err
+	}
+	var message string
+	q := dag.QueryBuilder().Select("hello").Select("message").Bind(&message)
+	if err := q.Execute(ctx); err != nil {
+		return "", err
+	}
+	return message + " at " + strconv.FormatInt(time.Now().UnixNano(), 10), nil
+}
+
+func (m *Caller) Plain() string {
+	return strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+`).
+			WithNewFile(".dagger/modules/caller/subtest.go", "package main\n\n// "+t.Name()+"\n").
+			WithNewFile(".dagger/modules/hello/dagger-module.toml", serveModuleHelloManifest).
+			WithNewFile(".dagger/modules/hello/main.dang", serveModuleHelloSource)
+	}
+	// run names each CLI invocation, so the exec running it is never itself
+	// a cache hit.
+	call := func(ctr *dagger.Container, run string, args ...string) (string, error) {
+		return ctr.
+			WithEnvVariable("SERVE_MODULE_RUN", run).
+			With(daggerCallAt("caller", args...)).
+			Stdout(ctx)
+	}
+	changedHello := strings.ReplaceAll(serveModuleHelloSource, "hi from hello", "changed hello")
+
+	t.Run("unchanged target hits the cache", func(ctx context.Context, t *testctx.T) {
+		ctr := workdir(t)
+		first, err := call(ctr, "1", "message")
+		require.NoError(t, err)
+		require.Contains(t, first, "hi from hello at ")
+
+		second, err := call(ctr, "2", "message")
+		require.NoError(t, err)
+		require.Equal(t, first, second)
+	})
+
+	t.Run("changed target misses the cache", func(ctx context.Context, t *testctx.T) {
+		ctr := workdir(t)
+		first, err := call(ctr, "1", "message")
+		require.NoError(t, err)
+		require.Contains(t, first, "hi from hello at ")
+
+		ctr = ctr.WithNewFile(".dagger/modules/hello/main.dang", changedHello)
+		changed, err := call(ctr, "2", "message")
+		require.NoError(t, err)
+		require.Contains(t, changed, "changed hello at ")
+
+		again, err := call(ctr, "3", "message")
+		require.NoError(t, err)
+		require.Equal(t, changed, again)
+	})
+
+	t.Run("unresolvable target misses the cache", func(ctx context.Context, t *testctx.T) {
+		ctr := workdir(t)
+		_, err := call(ctr, "1", "message")
+		require.NoError(t, err)
+
+		ctr = ctr.WithoutFile(".dagger/modules/hello/dagger-module.toml")
+		_, err = call(ctr, "2", "plain")
+		require.NoError(t, err)
+
+		out, err := ctr.
+			WithEnvVariable("SERVE_MODULE_RUN", "3").
+			With(moduleLoadingDaggerCallFail("-m", "caller", "message")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "does not contain a dagger config file")
+	})
+}
