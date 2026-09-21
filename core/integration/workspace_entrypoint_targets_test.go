@@ -95,14 +95,14 @@ source = "other"
 	t.Run("caller skip only excludes the entrypoint", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("check", "-l", "--generated=false", "--skip=verify")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag://other/verify", strings.TrimSpace(out))
+		require.Equal(t, "other/verify --generated=false --skip=verify", strings.TrimSpace(out))
 	})
 
 	t.Run("module settings keep local skip names", func(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("dagger.toml", config+"\ncheck.skip = [\"verify\"]\n").
 			With(daggerNonNestedExec("check", "-l", "--generated=false")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag://verify", strings.TrimSpace(out))
+		require.Equal(t, "verify --generated=false", strings.TrimSpace(out))
 	})
 
 	t.Run("value workspace uses its own entrypoint", func(ctx context.Context, t *testctx.T) {
