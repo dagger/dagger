@@ -1240,7 +1240,6 @@ func appendResultCallArgSelfRefs(
 	return nextH, nextInputs, nil
 }
 
-//nolint:dupl // shares recipe encoding with telemetry; historical runtime content encoding remains separate
 func appendResultCallLiteralBytes(
 	lit *ResultCallLiteral,
 	h *hashutil.Hasher,
@@ -1313,7 +1312,6 @@ func appendResultCallLiteralBytes(
 	return h, nil
 }
 
-//nolint:dupl // symmetric with appendResultCallLiteralBytes; each is a distinct ID-digest pass
 func appendResultCallLiteralContentPreferredBytes(
 	c *Cache,
 	lit *ResultCallLiteral,
