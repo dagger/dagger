@@ -7792,6 +7792,14 @@ func TestCacheHitRechecksSessionResourcesAfterAttachBarrier(t *testing.T) {
 }
 
 func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
+	for _, exact := range []bool{false, true} {
+		t.Run(map[bool]string{false: "canonical", true: "exact"}[exact], func(t *testing.T) {
+			testCacheLoadResultByResultIDRechecksAfterAttachBarrier(t, exact)
+		})
+	}
+}
+
+func testCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T, exact bool) {
 	t.Parallel()
 
 	baseCtx := t.Context()
@@ -7851,7 +7859,13 @@ func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
 
 	bDone := make(chan callOutcome, 1)
 	go func() {
-		res, err := c.LoadResultByResultID(bCtx, "loadgrow-b", srv, uint64(parentID))
+		var res AnyResult
+		var err error
+		if exact {
+			res, _, err = c.LoadResultByResultIDExact(bCtx, "loadgrow-b", srv, uint64(parentID))
+		} else {
+			res, err = c.LoadResultByResultID(bCtx, "loadgrow-b", srv, uint64(parentID))
+		}
 		bDone <- callOutcome{res: res, err: err}
 	}()
 
@@ -7880,11 +7894,57 @@ func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
 	bOut := <-bDone
 	assert.Assert(t, bOut.err != nil,
 		"session B's load must be refused once the required set grew past its bound set")
+	assert.Assert(t, bOut.res == nil, "a refused load must not expose the result")
 	assert.ErrorContains(t, bOut.err, "has not bound the session resources this result requires")
 
 	assertCacheRequiredSessionResourcesExact(t, c)
 	assert.NilError(t, c.ReleaseSession(aCtx, "loadgrow-a"))
 	assert.NilError(t, c.ReleaseSession(bCtx, "loadgrow-b"))
+}
+
+func TestCacheExactResultLoadPreservesPayload(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	srv := cacheTestServer(t)
+	firstFrame, secondFrame := cacheTestIntCall("exact-first"), cacheTestIntCall("exact-second")
+	first, err := c.GetOrInitCall(ctx, "producer", srv, &CallRequest{ResultCall: firstFrame}, ValueFunc(cacheTestIntResult(firstFrame, 1)))
+	assert.NilError(t, err)
+	second, err := c.GetOrInitCall(ctx, "producer", srv, &CallRequest{ResultCall: secondFrame}, ValueFunc(cacheTestIntResult(secondFrame, 2)))
+	assert.NilError(t, err)
+
+	// Merge equivalence only after publication, preserving both payloads.
+	c.egraphMu.Lock()
+	var firstClass, secondClass eqClassID
+	for id := range c.outputEqClassesForResultLocked(first.cacheSharedResult().id) {
+		firstClass = id
+		break
+	}
+	for id := range c.outputEqClassesForResultLocked(second.cacheSharedResult().id) {
+		secondClass = id
+		break
+	}
+	c.mergeEqClassesLocked(ctx, firstClass, secondClass)
+	c.egraphMu.Unlock()
+	secondID := uint64(second.cacheSharedResult().id)
+	canonical, err := c.LoadResultByResultID(ctx, "reader", srv, secondID)
+	assert.NilError(t, err)
+	assert.Equal(t, first.cacheSharedResult().id, canonical.cacheSharedResult().id)
+	exact, found, err := c.LoadResultByResultIDExact(ctx, "reader", srv, secondID)
+	assert.NilError(t, err)
+	assert.Assert(t, found)
+	assert.Equal(t, second.cacheSharedResult().id, exact.cacheSharedResult().id)
+	assert.NilError(t, c.ReleaseSession(ctx, "producer"))
+	assert.NilError(t, c.ReleaseSession(ctx, "reader"))
+	_, found, err = c.LoadResultByResultIDExact(ctx, "later", srv, secondID)
+	assert.NilError(t, err)
+	assert.Assert(t, !found)
+	assert.NilError(t, c.ReleaseSession(ctx, "later"))
+	_, found, err = c.LoadResultByResultIDExact(ctx, "later", srv, secondID)
+	assert.Assert(t, errors.Is(err, ErrCacheSessionReleased))
+	assert.Assert(t, !found)
 }
 
 func TestCacheLoadResultByResultIDIgnoresUncleanCanonicalSiblings(t *testing.T) {

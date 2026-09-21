@@ -13,6 +13,10 @@ type CallRequest struct {
 	DoNotCache     bool
 	IsPersistable  bool
 
+	// recipeOnly forbids content/structural substitution for schema replay.
+	// Implementation-equivalent modules can expose different schemas.
+	recipeOnly bool
+
 	// PassthroughTelemetry keeps the call span available for trace metadata while
 	// asking the UI to show its children in its place.
 	PassthroughTelemetry bool
@@ -53,6 +57,7 @@ func (req *CallRequest) Clone() *CallRequest {
 		TTL:                  req.TTL,
 		DoNotCache:           req.DoNotCache,
 		IsPersistable:        req.IsPersistable,
+		recipeOnly:           req.recipeOnly,
 		PassthroughTelemetry: req.PassthroughTelemetry,
 		ReceiverTypeName:     req.ReceiverTypeName,
 		// CacheEvidence is deliberately NOT carried over: it is per-invocation

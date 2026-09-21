@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -346,6 +347,86 @@ func ImplementationScopedModule(
 		return dagql.ObjectResult[*Module]{}, fmt.Errorf("implementation-scoped module: select field: %w", err)
 	}
 	return scoped, nil
+}
+
+// moduleFieldBinding retains portable provenance for the exact module used to
+// install a schema, not its implementation-scoped cache identity. SDK bootstrap
+// modules can share implementation identity with initialized modules while
+// lacking their typedefs, defaults, and runtime metadata.
+//
+// Only the immutable recipe and a non-owning result ID are retained. Each call
+// acquires its own session ownership; schema closures never pin cache results.
+type moduleFieldBinding struct {
+	resultID uint64
+	recipe   *call.ID
+}
+
+func newModuleFieldBinding(ctx context.Context, mod dagql.ObjectResult[*Module]) (*moduleFieldBinding, error) {
+	id, err := mod.ID()
+	if err != nil {
+		return nil, err
+	}
+	if id == nil || id.EngineResultID() == 0 {
+		return nil, fmt.Errorf("module field binding: module is not attached")
+	}
+	ref, err := dagql.ResultCallRefForSchema(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
+	recipe, err := ref.RecipeID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &moduleFieldBinding{resultID: id.EngineResultID(), recipe: recipe}, nil
+}
+
+func (binding *moduleFieldBinding) load(ctx context.Context) (dagql.ObjectResult[*Module], error) {
+	var zero dagql.ObjectResult[*Module]
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return zero, err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return zero, err
+	}
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return zero, err
+	}
+	res, found, err := cache.LoadResultByResultIDExact(ctx, md.SessionID, dag, binding.resultID)
+	if err != nil {
+		return zero, err
+	}
+	if !found {
+		res, err = dag.LoadTypeForSchema(ctx, binding.recipe)
+		if err != nil {
+			return zero, err
+		}
+	}
+	mod, ok := res.(dagql.ObjectResult[*Module])
+	if !ok {
+		return zero, fmt.Errorf("module field binding: expected Module, got %T", res)
+	}
+	return mod, nil
+}
+
+// moduleObjectDef refreshes a schema's immutable type description from the
+// live module when it is a declared object. Generated schema-only objects may
+// not appear in ObjectDefs and retain their installed description.
+func moduleObjectDef(mod dagql.ObjectResult[*Module], installed *ObjectTypeDef) *ObjectTypeDef {
+	if installed == nil {
+		return nil
+	}
+	for _, def := range mod.Self().ObjectDefs {
+		if def.Self().AsObject.Valid {
+			obj := def.Self().AsObject.Value.Self()
+			if obj.OriginalName == installed.OriginalName {
+				return obj
+			}
+		}
+	}
+	return installed
 }
 
 func (mod *Module) RuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Container]] {
@@ -2337,16 +2418,21 @@ func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModu
 		return nil, fmt.Errorf("module provenance: module %q has no source", self.Name())
 	}
 
-	scoped, err := ImplementationScopedModule(ctx, mod.res)
+	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
+		return nil, fmt.Errorf("module provenance: current dagql server: %w", err)
+	}
+	var scoped dagql.ObjectResult[*Module]
+	if err := dag.Select(ctx, mod.res, &scoped, dagql.Selector{Field: "_implementationScoped", ForSchema: true}); err != nil {
 		return nil, fmt.Errorf("module provenance: implementation-scoped module %q: %w", self.Name(), err)
 	}
-	scopedID, err := scoped.ID()
+	// Installed fields and cached object classes can outlive the session that
+	// created this implementation-scoped result. Keep replayable provenance in
+	// the schema instead of its session-owned handle. Dagql resolves the recipe
+	// into the calling session before constructing a result-backed call frame.
+	scopedRef, err := dagql.ResultCallRefForSchema(ctx, scoped)
 	if err != nil {
-		return nil, fmt.Errorf("module provenance: module %q handle ID: %w", self.Name(), err)
-	}
-	if scopedID == nil || scopedID.EngineResultID() == 0 {
-		return nil, fmt.Errorf("module provenance: implementation-scoped module %q is not attached", self.Name())
+		return nil, fmt.Errorf("module provenance: module %q recipe ref: %w", self.Name(), err)
 	}
 
 	src := self.Source.Value.Self()
@@ -2369,7 +2455,7 @@ func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModu
 	}
 
 	return &dagql.ResultCallModule{
-		ResultRef: &dagql.ResultCallRef{ResultID: scopedID.EngineResultID()},
+		ResultRef: scopedRef,
 		Name:      self.Name(),
 		Ref:       ref,
 		Pin:       pin,

@@ -34,6 +34,8 @@ type ModuleFunction struct {
 	metadata   *Function
 	returnType ModType
 	args       map[string]*UserModFunctionArg
+
+	fieldBinding *moduleFieldBinding // only for installed schema resolvers
 }
 
 var _ Callable = &ModuleFunction{}
@@ -81,6 +83,68 @@ func NewModFunction(
 		returnType: returnType,
 		args:       argTypes,
 	}, nil
+}
+
+func newModFunctionForField(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *ObjectTypeDef, metadata *Function) (*ModuleFunction, error) {
+	fn, err := NewModFunction(ctx, mod, objDef, metadata)
+	if err != nil {
+		return nil, err
+	}
+	fn.fieldBinding, err = newModuleFieldBinding(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
+	return fn, nil
+}
+
+// forFieldCall binds an installed function to the exact module that supplied
+// its schema, never to an implementation-equivalent bootstrap module.
+func (fn *ModuleFunction) forFieldCall(ctx context.Context) (*ModuleFunction, error) {
+	if fn.fieldBinding == nil {
+		return nil, fmt.Errorf("function %q has no schema module binding", fn.metadata.Name)
+	}
+	mod, err := fn.fieldBinding.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if sameAttachedResult(mod, fn.mod) {
+		return fn, nil
+	}
+	objDef := moduleObjectDef(mod, fn.objDef)
+	metadata := fn.metadata
+	if objDef != nil {
+		if metadata.OriginalName == "" && objDef.Constructor.Valid {
+			metadata = objDef.Constructor.Value.Self()
+		} else if current, ok := objDef.FunctionByName(metadata.Name); ok {
+			metadata = current
+		}
+	}
+	bound, err := NewModFunction(ctx, mod, objDef, metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := bound.mergeUserDefaultsTypeDefs(ctx); err != nil {
+		return nil, err
+	}
+	return bound, nil
+}
+
+func (fn *ModuleFunction) callForField(ctx context.Context, opts *CallOpts) (dagql.AnyResult, error) {
+	bound, err := fn.forFieldCall(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("bind function %q: %w", fn.metadata.Name, err)
+	}
+	return bound.Call(ctx, opts)
+}
+
+func (fn *ModuleFunction) dynamicInputsForFieldCall(ctx context.Context, parent dagql.AnyResult, args map[string]dagql.Input, view call.View, req *dagql.CallRequest) error {
+	// CurrentCall still names the enclosing operation. Resolve the field's
+	// own captured module, independently of either frame's cache identity.
+	bound, err := fn.forFieldCall(ctx)
+	if err != nil {
+		return fmt.Errorf("bind function %q inputs: %w", fn.metadata.Name, err)
+	}
+	return bound.DynamicInputsForCall(ctx, parent, args, view, req)
 }
 
 type CallOpts struct {

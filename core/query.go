@@ -362,9 +362,12 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 		if ref == nil || ref.ResultID == 0 || frame == nil || frame.Type == nil || frame.Type.NamedType != "Module" {
 			return nil
 		}
-		res, err := cache.LoadResultByResultID(ctx, clientMetadata.SessionID, dag, ref.ResultID)
+		res, found, err := cache.LoadResultByResultIDExact(ctx, clientMetadata.SessionID, dag, ref.ResultID)
 		if err != nil {
 			return fmt.Errorf("load module result %d: %w", ref.ResultID, err)
+		}
+		if !found {
+			return fmt.Errorf("load module result %d: missing shared result", ref.ResultID)
 		}
 		modInst, ok := res.(dagql.ObjectResult[*Module])
 		if !ok {

@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/opencontainers/go-digest"
@@ -12,6 +14,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/engineutil"
 )
 
 type moduleObjectTestServer struct {
@@ -64,7 +67,7 @@ func installModuleObjectTestModuleClass(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleSource]{Typed: &ModuleSource{}}))
 	dagql.Fields[*Module]{
 		dagql.Func("_implementationScoped", func(_ context.Context, self *Module, _ struct{}) (*Module, error) {
-			return self, nil
+			return self.Clone(), nil
 		}),
 	}.Install(srv)
 }
@@ -82,6 +85,302 @@ func (s *moduleObjectTestServer) DefaultDeps(context.Context) (*SchemaBuilder, e
 		return s.defaultDeps, nil
 	}
 	return NewSchemaBuilder(s.root, nil), nil
+}
+
+type moduleObjectReplayRuntime struct {
+	moduleSourceAttachTestSDK
+}
+
+func (sdk *moduleObjectReplayRuntime) AsRuntime() (Runtime, bool)             { return sdk, true }
+func (sdk *moduleObjectReplayRuntime) CloneForModuleSource(*ModuleSource) SDK { return sdk }
+func (sdk *moduleObjectReplayRuntime) Runtime(context.Context, *SchemaBuilder, dagql.ObjectResult[*ModuleSource]) (ModuleRuntime, error) {
+	return sdk, nil
+}
+func (*moduleObjectReplayRuntime) AsContainer() (dagql.ObjectResult[*Container], bool) {
+	return dagql.ObjectResult[*Container]{}, false
+}
+func (*moduleObjectReplayRuntime) Call(ctx context.Context, _ *engineutil.ExecutionMetadata, fnCall *FunctionCall, mod dagql.ObjectResult[*Module]) error {
+	// Container.WithExec scopes this same module-context result before running
+	// the module. Exercise that boundary without starting an engine/container.
+	if _, err := ImplementationScopedModule(ctx, mod); err != nil {
+		return err
+	}
+	if fnCall.Name == "" || fnCall.Name == "copy" {
+		return fnCall.ReturnValue(ctx, JSON(`{"message":"from runtime"}`))
+	}
+	for _, arg := range fnCall.InputArgs {
+		if arg.Name == "label" {
+			return fnCall.ReturnValue(ctx, arg.Value)
+		}
+	}
+	return fnCall.ReturnValue(ctx, JSON(`"ok"`))
+}
+
+func moduleObjectReplayTypeDef(t *testing.T, dag *dagql.Server, explicit bool) dagql.ObjectResult[*TypeDef] {
+	t.Helper()
+	stringType := newTypeDefDetachedResult(t, dag, "example-string", &TypeDef{Kind: TypeDefKindString})
+	objectRef := newTypeDefDetachedResult(t, dag, "example-ref", NewObjectTypeDef("Example", "", nil))
+	objectType := newTypeDefDetachedResult(t, dag, "example-ref-type", (&TypeDef{}).WithObjectTypeDef(objectRef))
+	obj := NewObjectTypeDef("Example", "", nil)
+	obj.Fields = dagql.ObjectResultArray[*FieldTypeDef]{
+		newTypeDefDetachedResult(t, dag, "example-message", NewFieldTypeDef("message", stringType, "", nil)),
+	}
+	check := NewFunction("check", stringType)
+	check.Args = dagql.ObjectResultArray[*FunctionArg]{newTypeDefDetachedResult(t, dag, "example-label", NewFunctionArg("label", stringType, "", nil, "", "", nil, nil))}
+	obj.Functions = dagql.ObjectResultArray[*Function]{
+		newTypeDefDetachedResult(t, dag, "example-check", check),
+		newTypeDefDetachedResult(t, dag, "example-copy", NewFunction("copy", objectType)),
+	}
+	if explicit {
+		obj.Constructor = dagql.NonNull(newTypeDefDetachedResult(t, dag, "example-constructor", NewFunction("", objectType)))
+	}
+	objRes := newTypeDefDetachedResult(t, dag, "example-def", obj)
+	return newTypeDefDetachedResult(t, dag, "example-type", (&TypeDef{}).WithObjectTypeDef(objRes))
+}
+
+// Reloading field provenance must also refresh module results captured by the
+// installed ModuleObject / ModuleFunction closures. A lazy binding can retain
+// the class without retaining any of the producing session's cache results.
+func TestModuleObjectMethodsAfterModuleSessionRelease(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(map[bool]string{false: "default constructor", true: "explicit constructor"}[explicit], func(t *testing.T) {
+			for _, release := range []bool{false, true} {
+				t.Run(map[bool]string{false: "live producer", true: "released producer"}[release], func(t *testing.T) {
+					cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+					assert.NilError(t, err)
+					t.Cleanup(func() { assert.NilError(t, cache.Close(t.Context())) })
+					root := &Query{}
+					testSrv := &moduleObjectTestServer{
+						mockServer: &mockServer{moduleSource: &ModuleSource{Kind: ModuleSourceKindDir}},
+						cache:      cache,
+						root:       root,
+					}
+					root.Server = testSrv
+					dag := newCoreDagqlServerForTest(t, root)
+					testSrv.dag = dag
+					installModuleObjectTestModuleClass(dag)
+					installTypeDefTestClasses(dag)
+					dagql.Fields[*FunctionArg]{
+						dagql.Func("__withDefaultValue", func(_ context.Context, arg *FunctionArg, args struct{ DefaultValue JSON }) (*FunctionArg, error) {
+							return arg.WithDefaultValue(args.DefaultValue), nil
+						}),
+					}.Install(dag)
+					sessionContext := func(id string) context.Context {
+						ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: id, SessionID: id})
+						return ContextWithQuery(dagql.ContextWithCache(ctx, cache), root)
+					}
+					producerCtx := sessionContext("module-producer")
+					var moduleCalls atomic.Int32
+					dagql.Fields[*Query]{
+						dagql.Func("replayableModule", func(ctx context.Context, _ *Query, _ struct{}) (*Module, error) {
+							moduleCalls.Add(1)
+							src := &ModuleSource{
+								Kind:               ModuleSourceKindDir,
+								ModuleName:         "example",
+								ModuleOriginalName: "example",
+								SDKImpl:            &moduleObjectReplayRuntime{},
+								UserDefaults:       NewEnvFile(true).WithVariable("CHECK_LABEL", "from defaults"),
+							}
+							srcRes, err := dagql.NewObjectResultForCall(src, dag, moduleObjectTestSyntheticCall("example-source", src))
+							if err != nil {
+								return nil, err
+							}
+							return &Module{
+								NameField: "example", OriginalName: "example", Source: dagql.NonNull(srcRes),
+								Deps:       NewSchemaBuilder(root, nil),
+								ObjectDefs: dagql.ObjectResultArray[*TypeDef]{moduleObjectReplayTypeDef(t, dag, explicit)},
+							}, nil
+						}),
+					}.Install(dag)
+					var mod dagql.ObjectResult[*Module]
+					assert.NilError(t, dag.Select(producerCtx, dag.Root(), &mod, dagql.Selector{Field: "replayableModule"}))
+					objDef := mod.Self().ObjectDefs[0].Self().AsObject.Value.Self()
+					obj := &ModuleObject{Module: mod, TypeDef: objDef}
+					assert.NilError(t, obj.Install(producerCtx, dag))
+					checkFn, ok := objDef.FunctionByName("check")
+					assert.Assert(t, ok)
+					installedFn, err := newModFunctionForField(producerCtx, mod, objDef, checkFn)
+					assert.NilError(t, err)
+					assert.NilError(t, installedFn.mergeUserDefaultsTypeDefs(producerCtx))
+					if release {
+						assert.NilError(t, cache.ReleaseSession(producerCtx, "module-producer"))
+						assert.Equal(t, 0, cache.Size())
+					}
+
+					// Concurrent readers retain only the installed schema, as lazy tools
+					// do. Rebinding must never overwrite a shared closure's module.
+					t.Run("consumers", func(t *testing.T) {
+						for i := range 4 {
+							t.Run(fmt.Sprint(i), func(t *testing.T) {
+								t.Parallel()
+								sessionID := fmt.Sprintf("module-consumer-%d", i)
+								ctx := sessionContext(sessionID)
+								t.Cleanup(func() { assert.NilError(t, cache.ReleaseSession(ctx, sessionID)) })
+								var result dagql.ObjectResult[*ModuleObject]
+								assert.NilError(t, dag.Select(ctx, dag.Root(), &result, dagql.Selector{Field: "example"}))
+								moduleID, err := result.Self().Module.ID()
+								assert.NilError(t, err)
+								_, err = dag.Load(ctx, moduleID)
+								assert.NilError(t, err, "constructors must return objects with a live module")
+								frame, err := result.ResultCall()
+								assert.NilError(t, err)
+								// Neither the enclosing frame nor the request's scoped cache
+								// identity may replace the exact installed module binding.
+								inputCtx := dagql.ContextWithCall(ctx, &dagql.ResultCall{})
+								assert.NilError(t, installedFn.dynamicInputsForFieldCall(inputCtx, result, map[string]dagql.Input{}, "", &dagql.CallRequest{ResultCall: frame}))
+								bound, err := installedFn.forFieldCall(ctx)
+								assert.NilError(t, err)
+								if !release {
+									assert.Equal(t, installedFn, bound, "warm binding must preserve the fast path")
+								} else {
+									assert.Assert(t, installedFn != bound)
+									assert.Assert(t, installedFn.metadata != bound.metadata)
+								}
+								var output string
+								assert.NilError(t, dag.Select(ctx, result, &output, dagql.Selector{Field: "check"}))
+								assert.Equal(t, "from defaults", output)
+								var copied dagql.ObjectResult[*ModuleObject]
+								assert.NilError(t, dag.Select(ctx, result, &copied, dagql.Selector{Field: "copy"}))
+								moduleID, err = copied.Self().Module.ID()
+								assert.NilError(t, err)
+								_, err = dag.Load(ctx, moduleID)
+								assert.NilError(t, err, "return-type conversion must use the live module")
+								assert.NilError(t, dag.Select(ctx, copied, &output, dagql.Selector{Field: "message"}))
+								assert.Equal(t, "from runtime", output)
+							})
+						}
+					})
+					if release {
+						assert.Assert(t, moduleCalls.Load() >= 2 && moduleCalls.Load() <= 5, "cold loads may run once per concurrent session")
+					} else {
+						assert.Equal(t, int32(1), moduleCalls.Load())
+						assert.NilError(t, cache.ReleaseSession(producerCtx, "module-producer"))
+					}
+					_, err = cache.Prune(t.Context(), []dagql.CachePrunePolicy{{All: true}})
+					assert.NilError(t, err)
+					assert.Equal(t, 0, cache.Size(), "schema closures must not create ownership cycles")
+				})
+			}
+		})
+	}
+}
+
+func TestModuleFieldBindingIgnoresBootstrapEquivalence(t *testing.T) {
+	for _, release := range []bool{false, true} {
+		t.Run(fmt.Sprintf("released=%v", release), func(t *testing.T) {
+			cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+			assert.NilError(t, err)
+			t.Cleanup(func() { assert.NilError(t, cache.Close(t.Context())) })
+			root := &Query{}
+			srv := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+			root.Server = srv
+			dag := newCoreDagqlServerForTest(t, root)
+			srv.dag = dag
+			installModuleObjectTestModuleClass(dag)
+			installTypeDefTestClasses(dag)
+			ctxFor := func(id string) context.Context {
+				return ContextWithQuery(dagql.ContextWithCache(engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+					ClientID: id, SessionID: id,
+				}), cache), root)
+			}
+			bootstrapCtx, producerCtx, consumerCtx := ctxFor("bootstrap"), ctxFor("producer"), ctxFor("consumer")
+			dagql.Fields[*Query]{
+				dagql.Func("moduleForBinding", func(ctx context.Context, _ *Query, args struct {
+					Bootstrap bool `default:"false"`
+				}) (*Module, error) {
+					source := &ModuleSource{Kind: ModuleSourceKindDir, ModuleName: "example", ModuleOriginalName: "example", SDKImpl: &moduleObjectReplayRuntime{}}
+					sourceRes := newTypeDefDetachedResult(t, dag, "binding-source", source)
+					mod := &Module{NameField: "example", OriginalName: "example", Source: dagql.NonNull(sourceRes), Deps: NewSchemaBuilder(root, nil)}
+					if !args.Bootstrap {
+						mod.ObjectDefs = dagql.ObjectResultArray[*TypeDef]{moduleObjectReplayTypeDef(t, dag, true)}
+					}
+					return mod, nil
+				}),
+			}.Install(dag)
+			dagql.Fields[*Module]{
+				dagql.NodeFunc("_implementationScoped", func(ctx context.Context, mod dagql.ObjectResult[*Module], _ struct{}) (dagql.ObjectResult[*Module], error) {
+					res, err := dagql.NewObjectResultForCurrentCall(ctx, dag, mod.Self().Clone())
+					if err != nil {
+						return res, err
+					}
+					return res.WithContentDigest(ctx, digest.FromString("same-sdk-implementation"))
+				}),
+			}.Install(dag)
+			var bootstrap, mod dagql.ObjectResult[*Module]
+			assert.NilError(t, dag.Select(bootstrapCtx, dag.Root(), &bootstrap, dagql.Selector{Field: "moduleForBinding", Args: []dagql.NamedInput{{Name: "bootstrap", Value: dagql.Boolean(true)}}}))
+			_, err = ImplementationScopedModule(bootstrapCtx, bootstrap)
+			assert.NilError(t, err)
+			assert.NilError(t, dag.Select(producerCtx, dag.Root(), &mod, dagql.Selector{Field: "moduleForBinding"}))
+			originalID, err := mod.ID()
+			assert.NilError(t, err)
+			obj := &ModuleObject{Module: mod, TypeDef: mod.Self().ObjectDefs[0].Self().AsObject.Value.Self()}
+			// The check method's required label is irrelevant to the constructor.
+			assert.NilError(t, obj.Install(producerCtx, dag))
+			if release {
+				assert.NilError(t, cache.ReleaseSession(producerCtx, "producer"))
+				_, found, err := cache.LoadResultByResultIDExact(consumerCtx, "consumer", dag, originalID.EngineResultID())
+				assert.NilError(t, err)
+				assert.Assert(t, !found, "the original parent must actually be collected")
+			}
+			var result dagql.ObjectResult[*ModuleObject]
+			assert.NilError(t, dag.Select(consumerCtx, dag.Root(), &result, dagql.Selector{Field: "example"}))
+			assert.Equal(t, 1, len(result.Self().Module.Self().ObjectDefs), "bootstrap module is not valid runtime metadata")
+			currentID, err := result.Self().Module.ID()
+			assert.NilError(t, err)
+			assert.Equal(t, release, originalID.EngineResultID() != currentID.EngineResultID())
+		})
+	}
+}
+
+func TestModuleObjectRetainsEmbeddedModule(t *testing.T) {
+	for _, withFields := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fields=%v", withFields), func(t *testing.T) {
+			cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+			assert.NilError(t, err)
+			t.Cleanup(func() { assert.NilError(t, cache.Close(t.Context())) })
+			dag := newCoreDagqlServerForTest(t, &Query{})
+			installModuleObjectTestModuleClass(dag)
+			ctxFor := func(id string) context.Context {
+				return dagql.ContextWithCache(engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+					ClientID: id, SessionID: id,
+				}), cache)
+			}
+			producer, reader := ctxFor("producer"), ctxFor("reader")
+			mod := &Module{NameField: "owner", OriginalName: "owner"}
+			modCall := moduleObjectTestSyntheticCall("owned-module", mod)
+			modRes, err := dagql.NewObjectResultForCall(mod, dag, modCall)
+			assert.NilError(t, err)
+			modAny, err := cache.GetOrInitCall(producer, "producer", dag, &dagql.CallRequest{ResultCall: modCall}, dagql.ValueFunc(modRes))
+			assert.NilError(t, err)
+			modRes, ok := modAny.(dagql.ObjectResult[*Module])
+			assert.Assert(t, ok)
+			modID, err := modRes.ID()
+			assert.NilError(t, err)
+			obj := &ModuleObject{Module: modRes, TypeDef: NewObjectTypeDef("Ownership", "", nil)}
+			if withFields {
+				obj.Fields = map[string]any{"private": "value"}
+			}
+			dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{Typed: obj}))
+			// Deliberately omit module provenance: the payload's module must be
+			// owned even when its call references a different equivalent scope.
+			objCall := moduleObjectTestSyntheticCall("owned-object", obj)
+			objRes, err := dagql.NewObjectResultForCall(obj, dag, objCall)
+			assert.NilError(t, err)
+			objAny, err := cache.GetOrInitCall(producer, "producer", dag, &dagql.CallRequest{ResultCall: objCall}, dagql.ValueFunc(objRes))
+			assert.NilError(t, err)
+			objID, err := objAny.ID()
+			assert.NilError(t, err)
+			_, found, err := cache.LoadResultByResultIDExact(reader, "reader", dag, objID.EngineResultID())
+			assert.NilError(t, err)
+			assert.Assert(t, found)
+			assert.NilError(t, cache.ReleaseSession(producer, "producer"))
+			_, found, err = cache.LoadResultByResultIDExact(reader, "reader", dag, modID.EngineResultID())
+			assert.NilError(t, err)
+			assert.Assert(t, found, "retaining the object must retain its embedded module")
+			assert.NilError(t, cache.ReleaseSession(reader, "reader"))
+			assert.Equal(t, 0, cache.Size(), "the module must not retain the object in return")
+		})
+	}
 }
 
 func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
