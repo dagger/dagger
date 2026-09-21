@@ -69,10 +69,11 @@ func TestPartSessionlessOwnSubset(t *testing.T) {
 			partTestEquivalent(t, c, receiver, donor)
 			c.egraphMu.Lock()
 			_, err = c.recomputeRequiredSessionResourcesLocked(donor.cacheSharedResult())
-			require.NoError(t, err)
-			_, err = c.recomputeRequiredSessionResourcesLocked(receiver.cacheSharedResult())
-			require.NoError(t, err)
+			if err == nil {
+				_, err = c.recomputeRequiredSessionResourcesLocked(receiver.cacheSharedResult())
+			}
 			c.egraphMu.Unlock()
+			require.NoError(t, err)
 			address := PersistedPartAddress{Part: "snapshot"}
 			_, _, probe, err := c.probePart(ctx, donor.cacheSharedResult(), address)
 			require.NoError(t, err)

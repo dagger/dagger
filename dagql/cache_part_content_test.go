@@ -943,10 +943,12 @@ func exhaustionOffer(chain chainFixture, key string, fixed bool) PersistedPartOf
 func (f *exhaustionFixture) attach(t *testing.T, row AnyResult, offer PersistedPartOffer) {
 	t.Helper()
 	f.cache.egraphMu.Lock()
-	defer f.cache.egraphMu.Unlock()
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, offer.Owner)
+	if err == nil {
+		err = f.cache.attachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{record: offer, owner: owner})
+	}
+	f.cache.egraphMu.Unlock()
 	require.NoError(t, err)
-	require.NoError(t, f.cache.attachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{record: offer, owner: owner}))
 }
 
 // demand repeats the receiver's Lazy-operation decision as the demand

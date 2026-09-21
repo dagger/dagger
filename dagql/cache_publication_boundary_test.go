@@ -62,9 +62,10 @@ func TestCachePersistableAttachmentFailureDoesNotRetain(t *testing.T) {
 	assert.ErrorIs(t, err, attachErr)
 
 	c.egraphMu.RLock()
-	assert.Equal(t, 0, len(c.resultsByID))
-	assert.Equal(t, 0, len(c.persistedEdgesByResult))
+	resultCount, edgeCount := len(c.resultsByID), len(c.persistedEdgesByResult)
 	c.egraphMu.RUnlock()
+	assert.Equal(t, 0, resultCount)
+	assert.Equal(t, 0, edgeCount)
 
 	res, err := c.GetOrInitCall(t.Context(), "replacement", noopTypeResolver{}, &CallRequest{
 		ResultCall:     call,
@@ -203,9 +204,10 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	assert.Equal(t, resultAttachmentFailed, attachFailedResult.attachmentState())
 
 	c.egraphMu.Lock()
-	assert.Assert(t, c.resultsByID[attachFailedResult.id] == attachFailedResult)
+	registered := c.resultsByID[attachFailedResult.id] == attachFailedResult
 	_, persistedAfterFailure := c.persistedEdgesByResult[attachFailedResult.id]
 	c.egraphMu.Unlock()
+	assert.Assert(t, registered)
 	assert.Assert(t, !persistedAfterFailure)
 
 	replacement, err := c.GetOrInitCall(t.Context(), "replacement", srv, &CallRequest{
@@ -235,8 +237,9 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 
 	assert.NilError(t, c.ReleaseSession(t.Context(), "persistable-hit"))
 	c.egraphMu.RLock()
-	assert.Assert(t, c.resultsByID[attachFailedResult.id] == nil)
+	collected := c.resultsByID[attachFailedResult.id] == nil
 	c.egraphMu.RUnlock()
+	assert.Assert(t, collected)
 	assert.NilError(t, c.ReleaseSession(t.Context(), "replacement"))
 	assert.NilError(t, c.ReleaseSession(t.Context(), "digest"))
 	assert.NilError(t, c.ReleaseSession(t.Context(), "id-load"))

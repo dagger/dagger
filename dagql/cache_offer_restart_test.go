@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -17,33 +18,64 @@ import (
 // receiver keeps its own direct edge to the Service but not to the other.
 func requireForwardedOffer(t *testing.T, c *Cache, id uint64) *offerOwner {
 	t.Helper()
+	owner, err := forwardedOfferOwner(c, id)
+	require.NoError(t, err)
+	return owner
+}
+
+func forwardedOfferOwner(c *Cache, id uint64) (*offerOwner, error) {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	row := c.resultsByID[sharedResultID(id)]
-	require.NotNil(t, row)
-	require.Len(t, row.partOffers, 1)
+	if row == nil {
+		return nil, fmt.Errorf("missing imported row %d", id)
+	}
+	if len(row.partOffers) != 1 {
+		return nil, fmt.Errorf("row %d: got %d offers, want 1", id, len(row.partOffers))
+	}
 	var offer *partOffer
 	for _, slot := range row.partOffers {
 		offer = slot
 	}
-	require.Len(t, offer.record.Value.Services, 1)
+	if len(offer.record.Value.Services) != 1 {
+		return nil, fmt.Errorf("got %d services, want 1", len(offer.record.Value.Services))
+	}
 	service := offer.record.Value.Services[0].ServiceResultID
-	require.Len(t, offer.record.Owner.DependencyIDs, 2)
-	require.Contains(t, offer.record.Owner.DependencyIDs, service)
+	if len(offer.record.Owner.DependencyIDs) != 2 {
+		return nil, fmt.Errorf("got %d owner dependencies, want 2", len(offer.record.Owner.DependencyIDs))
+	}
+	if !slices.Contains(offer.record.Owner.DependencyIDs, service) {
+		return nil, fmt.Errorf("owner dependencies do not contain service %d", service)
+	}
 	explicit := offer.record.Owner.DependencyIDs[0]
 	if explicit == service {
 		explicit = offer.record.Owner.DependencyIDs[1]
 	}
-	require.Equal(t, offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs)
-	require.Contains(t, row.deps, sharedResultID(service), "the direct edge survives")
-	require.NotContains(t, row.deps, sharedResultID(explicit), "the explicit-only reference stays offer-owned")
-	for _, dep := range []uint64{service, explicit} {
-		require.NotNil(t, c.resultsByID[sharedResultID(dep)])
-		require.Positive(t, c.resultsByID[sharedResultID(dep)].incomingOwnershipCount)
+	if !slices.Equal(offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
+		return nil, fmt.Errorf("offer dependencies %v differ from owner dependencies %v", offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs)
 	}
-	require.Equal(t, int64(1), offer.owner.slots)
-	require.Equal(t, int64(1), offer.owner.holds, "a fresh owner has only its slot hold")
-	return offer.owner
+	if _, found := row.deps[sharedResultID(service)]; !found {
+		return nil, fmt.Errorf("the direct edge to service %d did not survive", service)
+	}
+	if _, found := row.deps[sharedResultID(explicit)]; found {
+		return nil, fmt.Errorf("explicit-only reference %d must stay offer-owned", explicit)
+	}
+	for _, dep := range []uint64{service, explicit} {
+		row := c.resultsByID[sharedResultID(dep)]
+		if row == nil {
+			return nil, fmt.Errorf("missing dependency %d", dep)
+		}
+		if row.incomingOwnershipCount <= 0 {
+			return nil, fmt.Errorf("dependency %d has nonpositive ownership %d", dep, row.incomingOwnershipCount)
+		}
+	}
+	if offer.owner.slots != 1 {
+		return nil, fmt.Errorf("got %d owner slots, want 1", offer.owner.slots)
+	}
+	if offer.owner.holds != 1 {
+		return nil, fmt.Errorf("a fresh owner has only its slot hold: got %d, want 1", offer.owner.holds)
+	}
+	return offer.owner, nil
 }
 
 func reopenTransferTestCache(t *testing.T, path string) (context.Context, *Cache) {
@@ -137,9 +169,10 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	}
 	b.egraphMu.RLock()
 	row := b.resultsByID[sharedResultID(id)]
-	require.Empty(t, row.partOffers, "settlement retired the installed part's offer")
-	require.Empty(t, b.offerOwners)
+	offerCount, ownerCount := len(row.partOffers), len(b.offerOwners)
 	b.egraphMu.RUnlock()
+	require.Zero(t, offerCount, "settlement retired the installed part's offer")
+	require.Zero(t, ownerCount)
 }
 
 // With no integration, ranking a renewal-only offer allocates nothing and an

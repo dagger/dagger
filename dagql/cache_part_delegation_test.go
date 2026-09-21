@@ -50,16 +50,21 @@ func TestPartDelegationProofAdmission(t *testing.T) {
 	proof := &partDelegationProof{child: row, parent: input, childFrame: row.loadResultCall(), parentFrame: input.loadResultCall(), target: address, source: address, mapping: PartDelegation{ParentResultID: uint64(input.id), Address: address}}
 	source := &PartSourceLease{source: input, target: address, descriptor: PartDescriptor{Address: address}, sessionID: session}
 	cache.egraphMu.Lock()
-	defer cache.egraphMu.Unlock()
-	require.True(t, proof.currentLocked(cache, source, row))
+	initial := proof.currentLocked(cache, source, row)
 	input.expiresAtUnix = 1
-	require.True(t, proof.currentLocked(cache, source, row), "owned exact inputs do not use ordinary donor expiry filtering")
+	expiredInput := proof.currentLocked(cache, source, row)
 	delete(row.deps, input.id)
-	require.False(t, proof.currentLocked(cache, source, row))
+	missingDependency := proof.currentLocked(cache, source, row)
 	row.deps[input.id] = struct{}{}
 	source.sessionID = ""
-	require.False(t, proof.currentLocked(cache, source, row), "delegation is never a sessionless demand fallback")
+	sessionless := proof.currentLocked(cache, source, row)
 	source.sessionID = session
 	input.storeResultCall(input.loadResultCall().clone())
-	require.False(t, proof.currentLocked(cache, source, row), "changed parent provenance requires a new proof")
+	changedFrame := proof.currentLocked(cache, source, row)
+	cache.egraphMu.Unlock()
+	require.True(t, initial)
+	require.True(t, expiredInput, "owned exact inputs do not use ordinary donor expiry filtering")
+	require.False(t, missingDependency)
+	require.False(t, sessionless, "delegation is never a sessionless demand fallback")
+	require.False(t, changedFrame, "changed parent provenance requires a new proof")
 }

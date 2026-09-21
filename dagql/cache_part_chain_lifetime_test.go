@@ -65,9 +65,11 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 			}
 			c.egraphMu.Lock()
 			owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
-			require.NoError(t, err)
-			require.NoError(t, c.attachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner}))
+			if err == nil {
+				err = c.attachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
+			}
 			c.egraphMu.Unlock()
+			require.NoError(t, err)
 			captured, err := c.CapturePersistedRecord(ctx, receiver)
 			require.NoError(t, err)
 			row := receiver.cacheSharedResult()
@@ -116,10 +118,14 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 			case "slot-replaced":
 				c.egraphMu.Lock()
 				replacement, err := c.newOfferOwnerLocked(ctx, record.Owner)
-				require.NoError(t, err)
-				q, err := c.replacePartOfferLocked(ctx, donor.cacheSharedResult(), address, &partOffer{record: record, owner: replacement})
-				require.NoError(t, err)
-				callbacks, err := c.collectUnownedResultsLocked(ctx, q)
+				var callbacks []OnReleaseFunc
+				if err == nil {
+					var q []*sharedResult
+					q, err = c.replacePartOfferLocked(ctx, donor.cacheSharedResult(), address, &partOffer{record: record, owner: replacement})
+					if err == nil {
+						callbacks, err = c.collectUnownedResultsLocked(ctx, q)
+					}
+				}
 				c.egraphMu.Unlock()
 				require.NoError(t, err)
 				require.NoError(t, runOnReleaseFuncs(ctx, callbacks))
@@ -128,9 +134,11 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				_, err := c.removePersistedEdge(ctx, donor.cacheSharedResult().id)
 				require.NoError(t, err)
 				c.egraphMu.RLock()
-				require.Nil(t, c.resultsByID[donor.cacheSharedResult().id])
-				require.Same(t, owner, c.offerOwners[owner.id])
+				donorCollected := c.resultsByID[donor.cacheSharedResult().id] == nil
+				registeredOwner := c.offerOwners[owner.id]
 				c.egraphMu.RUnlock()
+				require.True(t, donorCollected)
+				require.Same(t, owner, registeredOwner)
 			}
 			if mode == "owner-backref-sync-failure" {
 				manager.fail.Store(true)
@@ -147,8 +155,9 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				require.NoError(t, err)
 			}
 			c.egraphMu.RLock()
-			require.Equal(t, owner.slots, owner.holds, "acquisition hold dropped before sync or on rejection")
+			slots, holds := owner.slots, owner.holds
 			c.egraphMu.RUnlock()
+			require.Equal(t, slots, holds, "acquisition hold dropped before sync or on rejection")
 			if mode != "output-backref-rejected" {
 				links := row.loadSnapshotOwnerLinks()
 				if mode == "owner-backref-sync-failure" {
@@ -160,15 +169,25 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				testutil.CheckFile(t, opened, "payload", "admitted chain bytes")
 				require.NoError(t, opened.Release(ctx))
 			}
-			require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+			// The demand wakes before its worker releases the row. Join both
+			// sessions' cleanup before removing the last persisted owners.
+			for _, sessionID := range []string{"test-session", "demand"} {
+				require.NoError(t, c.ReleaseSession(ctx, sessionID))
+				releaseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				err := c.WaitSessionRelease(releaseCtx, sessionID)
+				cancel()
+				require.NoError(t, err)
+			}
 			for _, res := range []AnyResult{donor, dependency, receiver} {
 				_, err := c.removePersistedEdge(ctx, res.cacheSharedResult().id)
 				require.NoError(t, err)
 			}
 			c.egraphMu.RLock()
-			require.Nil(t, c.resultsByID[row.id], "no retained owner/pin self-cycle")
-			require.Empty(t, c.offerOwners)
+			collected := c.resultsByID[row.id] == nil
+			ownerCount := len(c.offerOwners)
 			c.egraphMu.RUnlock()
+			require.True(t, collected, "no retained owner/pin self-cycle")
+			require.Zero(t, ownerCount)
 			require.EqualValues(t, 1, provider.Reads.Load())
 		})
 	}
@@ -239,9 +258,11 @@ func TestPartImportChainRefCleanupHandoff(t *testing.T) {
 			record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}, Chain: OfferedChain{Layers: chain.Layers}}
 			c.egraphMu.Lock()
 			owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
-			require.NoError(t, err)
-			require.NoError(t, c.attachPartOfferLocked(row, address, &partOffer{record: record, owner: owner}))
+			if err == nil {
+				err = c.attachPartOfferLocked(row, address, &partOffer{record: record, owner: owner})
+			}
 			c.egraphMu.Unlock()
+			require.NoError(t, err)
 			provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
 			c.SetPartContentSource(lifetimeChainSource{provider})
 			err = c.RunLazyTask(ctx, receiver, "obtain:cleanup", LazyTaskSpec{Body: func(ctx context.Context) error {
@@ -276,6 +297,12 @@ func TestPartImportChainRefCleanupHandoff(t *testing.T) {
 				require.Positive(t, manager.syncs.Load())
 			}
 			require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+			// RunLazyTask can return before its worker releases the row and
+			// finishes delegated session cleanup. Wait before removing the final
+			// persisted root so collection and its retained cleanup have finished.
+			releaseCtx, cancelRelease := context.WithTimeout(ctx, 5*time.Second)
+			defer cancelRelease()
+			require.NoError(t, c.WaitSessionRelease(releaseCtx, "test-session"))
 			_, err = c.removePersistedEdge(ctx, row.id)
 			require.NoError(t, err)
 			require.False(t, leasePresent(), "collection retries retained cleanup without a graph self-hold")
@@ -283,8 +310,9 @@ func TestPartImportChainRefCleanupHandoff(t *testing.T) {
 			require.EqualValues(t, 1, manager.imports.Load())
 			require.EqualValues(t, 1, provider.Reads.Load())
 			c.egraphMu.RLock()
-			require.Nil(t, c.resultsByID[row.id])
+			collected := c.resultsByID[row.id] == nil
 			c.egraphMu.RUnlock()
+			require.True(t, collected)
 		})
 	}
 }
