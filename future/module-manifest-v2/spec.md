@@ -193,17 +193,21 @@ The entrypoint and its driver use the same engine session. `Workspace` and
 `TypeDef` values are normal Dagger object references. The driver passes their
 object IDs. It does not copy these objects between client schemas.
 
-The engine passes the same module workspace to `types` and `call`. Its root is
-the module's context and its working directory is the module directory. The
-workspace boundary can be above the module directory. Thus, the entrypoint can
-read a file such as `go.mod` above the module directory.
+The engine passes the same module workspace to `types` and `call`. It is a
+synthetic workspace built from the module's own context, with its working
+directory at the module directory. It is the module's workspace, not the
+caller's, whichever source the module was loaded from. A module function that
+declares a `Workspace` argument receives the caller's workspace through that
+argument, which the caller supplies.
 
-For a module in the caller's workspace, the module workspace is the caller's
-workspace. For a module loaded by Git ref, from a directory, or from a local
-path outside the caller's workspace, the engine builds the module workspace
-from the module's own source. The entrypoint never receives the caller's
-workspace for such a module. A module function that declares a `Workspace`
-argument still receives the caller's workspace through that argument.
+The workspace root is the module's context, so the entrypoint can read above
+the module directory within that context. For a module loaded by Git ref the
+context is the repository at the pinned commit. For a directory source it is
+the directory the source was created from. For a local module, or a module
+loaded from a workspace, it is the context the engine loaded for the module:
+its manifest, its own files, and the paths its includes name. A local module
+that needs a file above its directory, such as the `go.mod` of a nested Go
+root, declares it in its includes.
 
 ### Type rules
 

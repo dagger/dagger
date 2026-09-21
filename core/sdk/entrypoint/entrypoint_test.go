@@ -89,56 +89,24 @@ func TestFunctionArgsJSONRejectsInvalidValue(t *testing.T) {
 	require.EqualError(t, err, `function argument "bad" is not valid JSON`)
 }
 
-// The engine's own module loader attaches no workspace to a source, so the
-// module's place in the workspace comes from host paths. That is the path
-// every dagger call takes.
-func TestModuleWorkspacePath(t *testing.T) {
+// The entrypoint's workspace is rooted at the module's own context. Without a
+// loaded context there is no root: no kind falls back to another tree, and a
+// local source never reaches for its host path. The per-kind root choice is
+// covered by the integration tests, which need a loaded source.
+func TestSourceContextDirectoryNeedsLoadedContext(t *testing.T) {
 	t.Parallel()
 
-	ws := &core.Workspace{}
-	ws.SetHostPath("/home/me/repo")
-
-	local := func(contextDir, subpath string) *core.ModuleSource {
-		return &core.ModuleSource{
-			Kind:              core.ModuleSourceKindLocal,
-			Local:             &core.LocalModuleSource{ContextDirectoryPath: contextDir},
-			SourceRootSubpath: subpath,
-		}
+	for _, src := range []*core.ModuleSource{
+		{Kind: core.ModuleSourceKindLocal, Local: &core.LocalModuleSource{ContextDirectoryPath: "/home/me/repo"}, SourceRootSubpath: "mod"},
+		{Kind: core.ModuleSourceKindGit, Git: &core.GitModuleSource{}},
+		{Kind: core.ModuleSourceKindDir, DirSrc: &core.DirModuleSource{}},
+	} {
+		_, err := sourceContextDirectory(src)
+		require.ErrorContains(t, err, "has no context directory", "kind %s", src.Kind)
 	}
 
-	got, ok := moduleWorkspacePath(ws, local("/home/me/repo", ".dagger/modules/tiny"))
-	require.True(t, ok)
-	require.Equal(t, ".dagger/modules/tiny", got)
-
-	// The workspace root can sit below the git root the context is loaded from.
-	got, ok = moduleWorkspacePath(ws, local("/home/me", "repo/.dagger/modules/tiny"))
-	require.True(t, ok)
-	require.Equal(t, ".dagger/modules/tiny", got)
-
-	// A module at the workspace root is ".".
-	got, ok = moduleWorkspacePath(ws, local("/home/me/repo", ""))
-	require.True(t, ok)
-	require.Equal(t, ".", got)
-
-	// A module outside the workspace has no place in it.
-	_, ok = moduleWorkspacePath(ws, local("/home/me/other", "mod"))
-	require.False(t, ok)
-
-	// A git source's files are in its context directory, not the workspace.
-	_, ok = moduleWorkspacePath(ws, &core.ModuleSource{Kind: core.ModuleSourceKindGit, SourceRootSubpath: "mod"})
-	require.False(t, ok)
-
-	// A remote or synthetic workspace has no host path to relate to.
-	_, ok = moduleWorkspacePath(&core.Workspace{}, local("/home/me/repo", "mod"))
-	require.False(t, ok)
-
-	// A rootless workspace holds no files, even where its host path contains
-	// the module.
-	rootless := &core.Workspace{}
-	rootless.SetHostPath("/home/me/repo")
-	rootless.SetSource(core.NewWorkspaceSourceRootlessLocal("/home/me/repo"))
-	_, ok = moduleWorkspacePath(rootless, local("/home/me/repo", "mod"))
-	require.False(t, ok)
+	_, err := sourceContextDirectory(&core.ModuleSource{Kind: "bogus"})
+	require.ErrorContains(t, err, "unsupported module source kind")
 }
 
 func TestValidateConstructorsRejectsObjectWithoutDefinition(t *testing.T) {

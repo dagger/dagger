@@ -322,42 +322,119 @@ func (ModuleSuite) TestModuleEntrypointWorkspaceFromDirectorySource(ctx context.
 	require.Equal(t, "/mods/tiny /marker.txt from-directory-root none", res.Tiny.Probe)
 }
 
-// A local module outside the caller's workspace gets its own context on the
-// caller's host, rooted where the module source is: its git root, or the
-// module directory when there is none.
-func (ModuleSuite) TestModuleEntrypointWorkspaceFromLocalSourceOutsideWorkspace(ctx context.Context, t *testctx.T) {
-	t.Run("git root", func(ctx context.Context, t *testctx.T) {
+// A local module's entrypoint gets the context the engine loaded for the
+// module: its manifest, its own files, and what its includes name. It does not
+// get the host tree the module sits in. A file above the module that the
+// module never declared is not visible, whether the module is outside the
+// caller's workspace or inside it.
+func (ModuleSuite) TestModuleEntrypointWorkspaceFromLocalSource(ctx context.Context, t *testctx.T) {
+	// The marker the entrypoint finds is inside the module. caller.txt sits
+	// above it, in the module's own git root, undeclared: not visible.
+	localModule := func(c *dagger.Client) *dagger.Directory {
+		return c.Directory().
+			WithNewFile("caller.txt", "above-the-module").
+			WithNewFile("mods/tiny/dagger-module.toml", sourceWorkspaceManifest).
+			WithNewFile("mods/tiny/marker.txt", "from-module").
+			WithDirectory(
+				"mods/tiny/entrypoint",
+				c.Host().Directory("./testdata/modules/dang/module-entrypoint-source-workspace"),
+			)
+	}
+
+	t.Run("outside the workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := callerWithFiles(t, c).
-			WithDirectory("/outside", sourceWorkspaceModule(c, "from-local-root")).
+			WithDirectory("/outside", localModule(c)).
 			WithWorkdir("/outside").
 			WithExec([]string{"git", "init"}).
 			WithWorkdir("/work").
 			With(daggerCallAt("/outside/mods/tiny", "probe")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "/mods/tiny /marker.txt from-local-root none", strings.TrimSpace(out))
+		require.Equal(t, "/mods/tiny /mods/tiny/marker.txt from-module none", strings.TrimSpace(out))
 	})
 
-	// With no git root and no workspace config, the engine gives the caller a
-	// rootless workspace, which holds no files even though its path contains
-	// the module.
-	t.Run("rootless caller", func(ctx context.Context, t *testctx.T) {
+	t.Run("inside the workspace", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goGitBase(t, c).
+			WithDirectory(".", localModule(c)).
+			With(daggerCallAt("mods/tiny", "probe")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/mods/tiny /mods/tiny/marker.txt from-module none", strings.TrimSpace(out))
+	})
+
+	// With no git root, the module's directory is its whole context.
+	t.Run("no git root", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := goGitBase(t, c).
 			WithWorkdir("/plain").
-			WithNewFile("caller.txt", "caller").
-			WithNewFile("mods/tiny/dagger-module.toml", sourceWorkspaceManifest).
-			WithNewFile("mods/tiny/marker.txt", "from-module").
-			WithDirectory(
-				"mods/tiny/entrypoint",
-				c.Host().Directory("./testdata/modules/dang/module-entrypoint-source-workspace"),
-			).
+			WithDirectory(".", localModule(c)).
 			With(daggerCallAt("./mods/tiny", "probe")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/ /marker.txt from-module none", strings.TrimSpace(out))
+	})
+}
+
+// The entrypoint's workspace is the module's context, so a file of the caller's
+// that the module never declared is not in it, whether the entrypoint is read
+// from the module's own directory or resolved by reference. types runs when the
+// module is loaded, so both cases are covered at load as well as at call.
+func (ModuleSuite) TestModuleEntrypointWorkspaceHoldsOnlyModuleContext(ctx context.Context, t *testctx.T) {
+	const readingEntrypoint = `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [typeDef.withObject("Reader").withConstructor(function("", typeDef.withObject("Reader")))
+      .withFunction(function("Peek", typeDef.withKind(TypeDefKind.STRING_KIND)))]
+  }
+  pub call(workspace: Workspace!, receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    if (fnName == "") { ("{}" :: JSON!) }
+    else { (JSON.encode(workspace.file("/caller-only.txt").contents) :: JSON!) }
+  }
+}
+`
+
+	t.Run("entrypoint in the module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goGitBase(t, c).
+			WithNewFile("caller-only.txt", "a caller file").
+			WithNewFile(".dagger/modules/reader/dagger-module.toml", `name = "reader"
+
+[entrypoint]
+kind = "dang"
+source = "./ep"
+`).
+			WithNewFile(".dagger/modules/reader/ep/main.dang", readingEntrypoint).
+			With(daggerCallAt(".dagger/modules/reader", "peek")).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.NotContains(t, out, "a caller file")
+	})
+
+	t.Run("entrypoint by reference", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		served := c.Directory().WithNewFile("ep/main.dang", readingEntrypoint)
+		gitDaemon, repoURL := gitService(ctx, t, c, served)
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+
+		out, err := goGitBase(t, c).
+			WithServiceBinding(gitHost, gitDaemon).
+			WithNewFile("caller-only.txt", "a caller file").
+			WithNewFile(".dagger/modules/local/dagger-module.toml", `name = "local"
+
+[entrypoint]
+kind = "dang"
+source = "`+repoURL+`#main:ep"
+`).
+			With(daggerCallAt(".dagger/modules/local", "peek")).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.NotContains(t, out, "a caller file")
 	})
 }
