@@ -576,7 +576,7 @@ func TestModuleObjectDecodeDeclaresDecodingModule(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, resultID(t, mod), resultID(t, template.Module))
 
-	decoded, err := template.DecodePersistedObject(producer, f.dag, 0, nil, []byte(`{}`))
+	decoded, err := template.DecodePersistedObject(producer, dagql.NewPersistDecodeContext(f.dag, 0, nil), []byte(`{}`))
 	require.NoError(t, err)
 	withDeps, ok := decoded.(dagql.HasDecodedDependencyResults)
 	require.True(t, ok)

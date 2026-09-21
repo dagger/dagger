@@ -1106,7 +1106,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
 	}
-	fields, err := obj.fields(ctx)
+	fields, err := obj.fields()
 	if err != nil {
 		return err
 	}
@@ -1438,9 +1438,9 @@ func orderedNamedInputs(specs []dagql.InputSpec, args map[string]dagql.Input) []
 	return inputs
 }
 
-func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*ModuleObject], err error) {
+func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject], err error) {
 	for _, field := range obj.TypeDef.Fields {
-		objField, err := objField(ctx, obj.Module, field.Self())
+		objField, err := objField(obj.Module, field.Self())
 		if err != nil {
 			return nil, err
 		}
@@ -1461,7 +1461,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	return
 }
 
-func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
+func objField(mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
 	moduleID, moduleProvider, err := NewUserMod(mod).FieldModule()
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve module identity for field %q: %w", field.Name, err)

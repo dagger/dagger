@@ -28,7 +28,7 @@ func (*persistDecodeOwnerObj) Type() *ast.Type {
 	return &ast.Type{NamedType: "PersistDecodeOwnerObj", NonNull: true}
 }
 
-func (obj *persistDecodeOwnerObj) EncodePersistedObject(context.Context, PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (obj *persistDecodeOwnerObj) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	payload, err := json.Marshal(persistedDecodeOwnerObj{Name: obj.Name})
 	if err != nil {
 		return PersistedObjectEncoding{}, err
@@ -38,7 +38,7 @@ func (obj *persistDecodeOwnerObj) EncodePersistedObject(context.Context, Persist
 
 // DecodePersistedObject runs on the decoding class's template, so the module
 // comes from that template rather than from the persisted bytes.
-func (obj *persistDecodeOwnerObj) DecodePersistedObject(_ context.Context, _ *Server, _ uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
+func (obj *persistDecodeOwnerObj) DecodePersistedObject(_ context.Context, _ *PersistDecodeContext, payload json.RawMessage) (Typed, error) {
 	var persisted persistedDecodeOwnerObj
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, err
@@ -51,6 +51,14 @@ func (obj *persistDecodeOwnerObj) DecodedDependencyResults() []AnyResult {
 		return nil
 	}
 	return []AnyResult{obj.module}
+}
+
+func init() {
+	RegisterPersistedObjectFamily(PersistedObjectFamily{
+		Name:    "dagql_test.PersistDecodeOwnerObj",
+		Typed:   (*persistDecodeOwnerObj)(nil),
+		Visitor: PersistedNoReferences{},
+	})
 }
 
 func newPersistDecodeOwnerTestServer(module AnyResult) *Server {

@@ -351,18 +351,21 @@ func TestModuleImplementationScopedEquivalentModulesKeepOperationalModule(t *tes
 		moduleRow := frame.Module.ResultRef.ResultID
 		t.Logf("alias frame module row %d; original scoped row %d", moduleRow, originalScopedID)
 
+		// Recovery from the live frame prefers an installed schema module and
+		// otherwise the recorded scoped row, so it yields the alias (its
+		// operational module or the frame's scoped clone of it), never the
+		// equivalent original.
 		deps, err := f.root.ModDepsForCall(callCtx, frame)
 		require.NoError(t, err)
-		recovered, ok := deps.Lookup("renamed")
-		if !ok {
-			names := make([]string, 0, len(deps.Mods()))
-			for _, mod := range deps.Mods() {
-				names = append(names, mod.Name())
-			}
-			t.Logf("schema recovery selected an equivalent module instead of the alias: %v", names)
-		} else {
-			require.Equal(t, renamedID, scopedResultID(t, recovered.ModuleResult()))
+		names := make([]string, 0, len(deps.Mods()))
+		for _, mod := range deps.Mods() {
+			names = append(names, mod.Name())
 		}
+		recovered, ok := deps.Lookup("renamed")
+		require.True(t, ok, "schema recovery must select the alias, got %v", names)
+		require.Equal(t, "renamed", recovered.ModuleResult().Self().Name())
+		require.Len(t, recovered.ModuleResult().Self().ObjectDefs, 1)
+		require.Contains(t, []uint64{renamedID, moduleRow}, scopedResultID(t, recovered.ModuleResult()))
 
 		f.release(installCtx)
 		f.release(parentCtx)

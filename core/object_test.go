@@ -1004,7 +1004,7 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	// though that type is absent from the interface module's dependencies.
 	parentObj, ok := parentAttached.(dagql.ObjectResult[*ModuleObject])
 	assert.Assert(t, ok)
-	field, err := objField(producerCtx, producerModRes, parentObjDef.Fields[0].Self())
+	field, err := objField(producerModRes, parentObjDef.Fields[0].Self())
 	assert.NilError(t, err)
 	read, err := field.Func(producerCtx, parentObj, nil, "")
 	assert.NilError(t, err)
@@ -1267,7 +1267,13 @@ func TestModuleObjectAttachDependencyResultsPreservesInlineMap(t *testing.T) {
 		return sc.AttachResult(ctx, "test-session", dag, detached)
 	})
 	assert.NilError(t, err)
-	assert.Equal(t, len(deps), 1)
+	// The object owns its module and the child result created for the
+	// inline field.
+	assert.Equal(t, len(deps), 2)
+	_, isModule := deps[0].(dagql.ObjectResult[*Module])
+	assert.Assert(t, isModule, "first dependency is the object's module, got %T", deps[0])
+	_, isChild := deps[1].Unwrap().(*ModuleObject)
+	assert.Assert(t, isChild, "second dependency is the inline child, got %T", deps[1].Unwrap())
 	assert.DeepEqual(t, obj.Fields["child"], inline)
 	// ParentFields is sent as raw JSON to the SDK function. It must remain
 	// an inline object, even though attachment created a dependency result.
