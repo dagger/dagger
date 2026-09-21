@@ -291,6 +291,10 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		if args.Path != "" {
 			return nil, fmt.Errorf("report does not accept a path")
 		}
+	case "evaluate":
+		if len(args.IDs) == 0 || args.Path != "" {
+			return nil, fmt.Errorf("evaluate requires handles and no path")
+		}
 	case "recordBody":
 		if args.Path != "" || len(args.IDs) != 0 {
 			return nil, fmt.Errorf("recordBody does not accept path or IDs")
@@ -392,6 +396,13 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 				response, err = fixtureImportedMappings(bundle, values, report.Rows)
 			}
 		}
+	case "evaluate":
+		srv, serverErr := core.CurrentDagqlServer(ctx)
+		if serverErr != nil {
+			return nil, serverErr
+		}
+		err = cache.EvaluateTransferFixtureRoots(ctx, md.SessionID, srv, ids)
+		response = err == nil
 	case "report":
 		var report remoteCacheFixtureReport
 		report.Persistence.PersistenceResetReason = cache.PersistenceResetReason()
