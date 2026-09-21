@@ -668,9 +668,36 @@ func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "directories\tList Directory artifacts\n")
 }
 
+func withoutArtifactListComments(output string) string {
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
+		name, _, _ := strings.Cut(line, "#")
+		lines = append(lines, strings.TrimSpace(name))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
 func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory("/work/selected", artifactSource(c))
+	t.Run("list descriptions", func(ctx context.Context, t *testctx.T) {
+		source, err := base.File("/work/selected/provider/main.dang").Contents(ctx)
+		require.NoError(t, err)
+		source = strings.Replace(source, "  pub broken:", "  \"\"\"A container that must not run.\nMore details.\"\"\"\n  pub broken:", 1)
+		out, err := base.WithNewFile("/work/selected/provider/main.dang", source).
+			With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifact", "list", "broken", "broken")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag://broken   # A container that must not run.\n", out)
+	})
+	t.Run("type descriptions", func(ctx context.Context, t *testctx.T) {
+		source, err := base.File("/work/selected/provider/main.dang").Contents(ctx)
+		require.NoError(t, err)
+		source = strings.Replace(source, "type Docs {", "\"\"\"Documentation files.\nMore details.\"\"\"\ntype Docs {", 1)
+		out, err := base.WithNewFile("/work/selected/provider/main.dang", source).
+			With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifact", "types", "--type", "provider-docs", "--type", "container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Container      # An OCI-compatible container, also known as a Docker container.\nProviderDocs   # Documentation files.\n", out)
+	})
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -701,6 +728,9 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
+			if tc.args[0] == "types" {
+				out = withoutArtifactListComments(out)
+			}
 			require.Equal(t, tc.want, out)
 		})
 	}
@@ -745,6 +775,9 @@ func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T
 			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
+			if tc.args[0] == "types" {
+				out = withoutArtifactListComments(out)
+			}
 			require.Equal(t, tc.want, out)
 		})
 	}
@@ -772,6 +805,9 @@ source = "./does-not-exist"
 			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
+			if tc.args[0] == "types" {
+				out = withoutArtifactListComments(out)
+			}
 			require.Equal(t, tc.want, out)
 		})
 	}

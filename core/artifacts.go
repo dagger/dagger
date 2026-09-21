@@ -28,6 +28,20 @@ func (*ArtifactDimensionKey) Type() *ast.Type {
 	return &ast.Type{NamedType: "ArtifactDimensionKey", NonNull: true}
 }
 
+// ArtifactType describes a type represented in an artifact selection.
+type ArtifactType struct {
+	Name        string `field:"true" doc:"The GraphQL type name."`
+	Description string `field:"true" doc:"The type's description, or an empty string if none is supplied."`
+}
+
+func (*ArtifactType) Type() *ast.Type {
+	return &ast.Type{NamedType: "ArtifactType", NonNull: true}
+}
+
+func (*ArtifactType) TypeDescription() string {
+	return "The name and description of a type represented in an artifact selection."
+}
+
 // Artifact holds a complete address and its deferred object value. The module
 // tree and workspace are retained so evaluation does not depend on the caller.
 type Artifact struct {

@@ -221,7 +221,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		return err
 	}
 	return withEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
-		var lines []string
+		var lines []commandListItem
 		for _, addr := range parsed {
 			artifacts := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})
 			artifacts, err := selectArtifactFilters(cmd, addr, artifacts)
@@ -231,52 +231,82 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 			var selected []string
 			switch cmd.Name() {
 			case "types":
-				selected, err = artifacts.Types(ctx)
+				var types []commandListItem
+				types, err = readArtifactTypes(ctx, ec.Dagger(), artifacts)
+				lines = append(lines, types...)
 			case "dimensions":
 				selected, err = artifacts.Dimensions(ctx)
 			case "keys":
 				selected, err = artifacts.DimensionKeys(ctx, dimension)
 			default:
 				absolute, _ := cmd.Flags().GetBool("absolute")
-				selected, err = artifactURIs(ctx, ec.Dagger(), artifacts, absolute)
+				var items []listedArtifact
+				items, err = readListedArtifacts(ctx, ec.Dagger(), artifacts, absolute)
+				for _, item := range items {
+					lines = append(lines, commandListItem{Name: item.URI, Comment: firstDescriptionLine(item.Description)})
+				}
 			}
 			if err != nil {
 				return err
 			}
-			lines = append(lines, selected...)
-		}
-		slices.Sort(lines)
-		lines = slices.Compact(lines)
-		for _, line := range lines {
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
-				return err
+			for _, name := range selected {
+				lines = append(lines, commandListItem{Name: name})
 			}
 		}
-		return nil
+		slices.SortFunc(lines, func(a, b commandListItem) int { return strings.Compare(a.Name, b.Name) })
+		lines = slices.CompactFunc(lines, func(a, b commandListItem) bool { return a.Name == b.Name })
+		return writeCommandList(cmd.OutOrStdout(), lines)
 	})
 }
 
-// artifactURIs prints one address per artifact, in the form filterUri accepts.
-func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, absolute bool) ([]string, error) {
+func readArtifactTypes(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]commandListItem, error) {
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var res struct {
-		Node struct {
-			Items []struct{ URI string }
-		}
+	var response struct {
+		Node struct{ TypeDefinitions []commandListItem }
 	}
 	err = dag.Do(ctx, &dagger.Request{
-		Query:     `query($id: ID!, $absolute: Boolean!) { node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute) } } } }`,
-		Variables: map[string]any{"id": id, "absolute": absolute},
-	}, &dagger.Response{Data: &res})
+		Query: `query($id: ID!) { node(id: $id) { ... on Artifacts {
+  typeDefinitions { name comment: description }
+ } } }`,
+		Variables: map[string]any{"id": id},
+	}, &dagger.Response{Data: &response})
+	for i := range response.Node.TypeDefinitions {
+		response.Node.TypeDefinitions[i].Comment = firstDescriptionLine(response.Node.TypeDefinitions[i].Comment)
+	}
+	return response.Node.TypeDefinitions, err
+}
+
+// artifactURIs prints one address per artifact, in the form filterUri accepts.
+func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, absolute bool) ([]string, error) {
+	items, err := readListedArtifacts(ctx, dag, artifacts, absolute)
 	if err != nil {
 		return nil, err
 	}
-	lines := make([]string, 0, len(res.Node.Items))
-	for _, item := range res.Node.Items {
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
 		lines = append(lines, item.URI)
 	}
 	return lines, nil
+}
+
+type listedArtifact struct {
+	URI, Description string
+	DimensionKeys    []struct{ Dimension, Key string }
+}
+
+func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, absolute bool) ([]listedArtifact, error) {
+	id, err := selection.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Node struct{ Items []listedArtifact }
+	}
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
+  node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute) description dimensionKeys { dimension key } } } }
+ }`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
+	return response.Node.Items, err
 }

@@ -23,6 +23,8 @@ import (
 type artifactsSchema struct{}
 
 func (s *artifactsSchema) Install(srv *dagql.Server) {
+	srv.InstallObject(dagql.NewClass[*core.ArtifactType](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.ArtifactType]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.ArtifactDimensionKey](srv).View(AfterVersion("v1.0.0-0")))
 	artifactClass := dagql.NewClass[*core.Artifact](srv).View(AfterVersion("v1.0.0-0"))
 	srv.InstallObject(artifactClass)
@@ -36,6 +38,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Artifacts]{
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).DoNotCache("Evaluate each value with its own cache policy.").Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
 		dagql.Func("types", s.types).Doc("List concrete GraphQL types represented in this selection, sorted with no duplicates."),
+		dagql.Func("typeDefinitions", s.typeDefinitions).Doc("List the names and descriptions of types represented in this selection, sorted by name with no duplicates."),
 		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentTypes", s.filterParentTypes).Doc("Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentDirectives", s.filterParentDirectives).Doc("Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
@@ -73,6 +76,27 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		ViewFilter:  AfterVersion("v1.0.0-0"),
 		DoNotCache:  "Evaluate the field with its own cache policy.",
 	}, s.value)
+}
+
+func (*artifactsSchema) typeDefinitions(_ context.Context, parent *core.Artifacts, _ struct{}) ([]*core.ArtifactType, error) {
+	byName := map[string]*core.ArtifactType{}
+	for _, artifact := range parent.Entries {
+		if _, ok := byName[artifact.TypeName]; ok {
+			continue
+		}
+		info := &core.ArtifactType{Name: artifact.TypeName}
+		if obj := artifact.Node.ObjectType(); obj != nil {
+			info.Description = obj.Description
+		} else if artifact.LoadFailure != nil {
+			info.Description = (&core.Check{}).TypeDescription()
+		}
+		byName[info.Name] = info
+	}
+	result := make([]*core.ArtifactType, 0, len(byName))
+	for _, name := range parent.Types() {
+		result = append(result, byName[name])
+	}
+	return result, nil
 }
 
 func (*artifactsSchema) types(_ context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
