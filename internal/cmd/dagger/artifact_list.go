@@ -15,25 +15,6 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-type listedArtifact struct {
-	URI, Description string
-	DimensionKeys    []struct{ Dimension, Key string }
-}
-
-func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, absolute bool) ([]listedArtifact, error) {
-	id, err := selection.ID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var response struct {
-		Node struct{ Items []listedArtifact }
-	}
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
-  node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute) description dimensionKeys { dimension key } } } }
- }`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
-	return response.Node.Items, err
-}
-
 // Compare canonical keys, since dimension aliases depend on the selected scope.
 func listedArtifactIDs(items []listedArtifact) []string {
 	ids := make([]string, 0, len(items))

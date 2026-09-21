@@ -196,7 +196,30 @@ func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]strin
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
+	for _, typ := range types {
+		if name := cliName(typ); name != typ {
+			types = append(types, name)
+		}
+	}
 	return types, cobra.ShellCompDirectiveNoFileComp
+}
+
+func setArtifactTypeHelp(cmd *cobra.Command, types []string) {
+	names := make([]string, len(types))
+	for i, typ := range types {
+		names[i] = cliName(typ)
+	}
+	slices.Sort(names)
+	names = slices.Compact(names)
+	available := "none"
+	if len(names) > 0 {
+		available = strings.Join(names[:min(5, len(names))], ", ")
+		if len(names) > 5 {
+			available += fmt.Sprintf(" (+%d more)", len(names)-5)
+		}
+	}
+	flag := cmd.PersistentFlags().Lookup("type")
+	flag.Usage += ". Available: " + available + ". See 'dagger artifact types' for the full list."
 }
 
 func runArtifacts(cmd *cobra.Command, addresses []string) error {

@@ -741,12 +741,18 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "--help")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "--type")
+	require.Contains(t, out, "Available:")
+	require.Contains(t, out, "(+3 more)")
+	require.Contains(t, out, "dagger artifact types")
 	require.Contains(t, out, "--dimension-key")
 	require.Contains(t, out, "List types of matching artifacts")
 	require.Contains(t, out, "List dimensions of matching artifacts")
 	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "artifacts", "--type", "Pro")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "ProviderDocs\n")
+	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "artifacts", "--type", "pro")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "provider-docs\n")
 
 	reserved := base.
 		WithNewFile("/work/selected/dagger.toml", `[modules.provider]
