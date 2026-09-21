@@ -43,6 +43,18 @@ type ImportedImage struct {
 	Nonlayers    []ocispecs.Descriptor
 }
 
+// Blobs lists every blob of the image: manifest, config, layers and the
+// non-layer descriptors.
+func (img *ImportedImage) Blobs() []ocispecs.Descriptor {
+	if img == nil {
+		return nil
+	}
+	blobs := []ocispecs.Descriptor{img.ManifestDesc, img.ConfigDesc}
+	blobs = append(blobs, img.Layers...)
+	blobs = append(blobs, img.Nonlayers...)
+	return blobs
+}
+
 type ImportImageOpts struct {
 	ImageRef   string
 	RecordType client.UsageRecordType
@@ -71,6 +83,7 @@ type SnapshotManager interface {
 	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
+	PinContent(ctx context.Context, leaseID string, descs []ocispecs.Descriptor) error
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
 	PersistentMetadataRows() PersistentMetadataRows
 	DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error

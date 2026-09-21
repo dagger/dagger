@@ -14,19 +14,21 @@ import (
 	"strings"
 	"testing"
 
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/plugins/content/local"
+	"github.com/opencontainers/go-digest"
+	"github.com/opencontainers/image-spec/specs-go"
+	"github.com/stretchr/testify/require"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/util/gitutil"
-	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/image-spec/specs-go"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/stretchr/testify/require"
 )
 
 type resolverCleanupRef struct {
@@ -208,6 +210,10 @@ func (m *resolverOutputManager) PinSnapshot(ctx context.Context, id string) (bkc
 	return m.GetBySnapshotID(ctx, id)
 }
 func (m *resolverOutputManager) RemoveLease(context.Context, string) error { return nil }
+func (m *resolverOutputManager) PinContent(context.Context, string, []ocispecs.Descriptor) error {
+	return nil
+}
+
 func (m *resolverOutputManager) DeleteStaleDaggerOwnerLeases(context.Context, map[string]struct{}) error {
 	return nil
 }
@@ -427,11 +433,11 @@ func testLazyOperationResolverOutputs(t *testing.T, recorded bool) {
 		require.NoError(t, err)
 		server.content = store
 		config := []byte(`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}`)
-		configDesc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageConfig, Digest: digest.FromBytes(config), Size: int64(len(config))}
+		configDesc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageConfig, Digest: digest.FromBytes(config), Size: int64(len(config))}
 		require.NoError(t, content.WriteBlob(ctx, store, "config", bytes.NewReader(config), configDesc))
-		manifest, err := json.Marshal(ocispec.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageManifest, Config: configDesc, Layers: []ocispec.Descriptor{}})
+		manifest, err := json.Marshal(ocispecs.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispecs.MediaTypeImageManifest, Config: configDesc, Layers: []ocispecs.Descriptor{}})
 		require.NoError(t, err)
-		desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromBytes(manifest), Size: int64(len(manifest))}
+		desc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageManifest, Digest: digest.FromBytes(manifest), Size: int64(len(manifest))}
 		require.NoError(t, content.WriteBlob(ctx, store, "manifest", bytes.NewReader(manifest), desc))
 		if recorded {
 			ctx = operationResolverCall(ctx, "_builtinContainer", &core.Container{})

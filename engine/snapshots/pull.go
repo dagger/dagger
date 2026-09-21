@@ -276,6 +276,12 @@ func (cm *snapshotManager) importLayer(
 		return nil, fmt.Errorf("import image layer %s: unexpected ref type %T", desc.Digest, ref)
 	}
 
+	// Before the blob metadata: a failed label leaves no reusable blob
+	// record behind.
+	if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
+		_ = ref.Release(context.WithoutCancel(ctx))
+		return nil, err
+	}
 	if err := imported.md.queueDiffID(diffID); err != nil {
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
@@ -297,10 +303,6 @@ func (cm *snapshotManager) importLayer(
 		return nil, err
 	}
 	if err := imported.md.appendURLs(desc.URLs); err != nil {
-		_ = ref.Release(context.WithoutCancel(ctx))
-		return nil, err
-	}
-	if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}

@@ -175,6 +175,10 @@ func (*cacheVolumeTestSnapshotManager) PersistentMetadataRows() bkcache.Persiste
 	return bkcache.PersistentMetadataRows{}
 }
 
+func (m *cacheVolumeTestSnapshotManager) PinContent(context.Context, string, []ocispecs.Descriptor) error {
+	return nil
+}
+
 func (m *cacheVolumeTestSnapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error {
 	_ = ctx
 	m.deleteStaleKeep = make(map[string]struct{}, len(keep))

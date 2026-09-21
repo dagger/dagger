@@ -37,7 +37,16 @@ type ensureExportBlobResult struct {
 // snapshot that no longer exists. A snapshot has one blob at a time; a new
 // diff replaces the label and releases the old blob to the collector.
 //
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+// snapshotBlobGCLabel is the label on a layer snapshot that names the blob
+// its content was applied from, or was last diffed into. It is the durable
+// record of which blob belongs to a snapshot: AttachLease reads it when a
+// lease takes a snapshot chain, and adds the blob as a content resource of
+// that lease, so every lease that names a snapshot names its blob too,
+// including after a restart. The label alone protects the blob only from a
+// non-flat lease, since containerd's collector skips label references of
+// snapshots held by flat leases, which the engine's owner leases and pins
+// are; that is why the content resource is added. A snapshot has one blob
+// at a time; a new diff replaces the label.
 const snapshotBlobGCLabel = "containerd.io/gc.ref.content.blob"
 
 // labelSnapshotBlob binds blob to the snapshot for garbage collection.
@@ -55,6 +64,7 @@ func (cm *snapshotManager) labelSnapshotBlob(ctx context.Context, snapshotID str
 	return nil
 }
 
+//nolint:gocyclo // Keep blob reuse, diff computation and metadata commit in one export flow.
 func (cm *snapshotManager) ensureExportBlob(
 	ctx context.Context,
 	parentSnapshotID string,
@@ -88,6 +98,11 @@ func (cm *snapshotManager) ensureExportBlob(
 					if err != nil {
 						return ensureExportBlobResult{}, err
 					}
+				}
+				// Reuse repairs the label, so an update that failed after the
+				// metadata was committed is not left missing.
+				if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
+					return ensureExportBlobResult{}, err
 				}
 				if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
 					return ensureExportBlobResult{}, err
@@ -233,6 +248,11 @@ func (cm *snapshotManager) ensureExportBlob(
 		if err != nil {
 			return ensureExportBlobResult{}, err
 		}
+		// Before the blob metadata is committed: a failed label leaves no
+		// reusable blob behind, and the next export diffs again.
+		if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
+			return ensureExportBlobResult{}, err
+		}
 		ref.mu.Lock()
 		if err := ref.md.queueDiffID(diffID); err != nil {
 			ref.mu.Unlock()
@@ -264,9 +284,6 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 		ref.mu.Unlock()
 		if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
-			return ensureExportBlobResult{}, err
-		}
-		if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
 			return ensureExportBlobResult{}, err
 		}
 		return ensureExportBlobResult{

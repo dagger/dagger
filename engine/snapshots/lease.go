@@ -74,6 +74,42 @@ func (p *resourcePin) release(ctx context.Context) error {
 	return nil
 }
 
+// BuiltinImageLeaseLabel marks the persistent leases that hold the engine's
+// builtin images' blobs; the startup sweeps leave them alone.
+const BuiltinImageLeaseLabel = "dagger.io/builtin-image"
+
+// PinContent holds the given blobs under the persistent lease leaseID,
+// creating it without expiry when it does not exist. The engine ships its
+// builtin images, so their blobs are engine-lifetime resources: with them
+// always present, an export reuses a builtin layer's compressed blob under
+// the digest the builtin store already has, on every engine alike, instead
+// of diffing the snapshot into a fresh tar when the collector has taken
+// the blob between the image's import and the export. A missing blob is
+// still added as a resource; AddResource does not check its target.
+func (cm *snapshotManager) PinContent(ctx context.Context, leaseID string, descs []ocispecs.Descriptor) error {
+	if leaseID == "" {
+		return errors.New("pin content: empty lease ID")
+	}
+	_, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+		l.ID = leaseID
+		l.Labels = map[string]string{BuiltinImageLeaseLabel: "true"}
+		return nil
+	})
+	if err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return errors.Wrapf(err, "create lease %s", leaseID)
+	}
+	for _, desc := range descs {
+		if desc.Digest == "" {
+			continue
+		}
+		err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{ID: desc.Digest.String(), Type: "content"})
+		if err != nil && !cerrdefs.IsAlreadyExists(err) {
+			return errors.Wrapf(err, "attach content %s to lease %s", desc.Digest, leaseID)
+		}
+	}
+	return nil
+}
+
 // pinContent checks presence after attachment. AddResource itself accepts
 // absent targets; containerd serializes its writes with the GC mark/sweep.
 func (cm *snapshotManager) pinContent(ctx context.Context, desc ocispecs.Descriptor) (bool, error) {
