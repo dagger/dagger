@@ -75,8 +75,9 @@ Examples:
 // Both names share one value, including when either flag is explicitly false.
 func registerArtifactListFlags(cmd *cobra.Command) {
 	absolute := new(bool)
-	cmd.Flags().BoolVar(absolute, "absolute", false, "List absolute artifact addresses, including the workspace and revision")
+	cmd.Flags().BoolVar(absolute, "absolute", false, "List absolute artifact addresses, including the workspace and revision (alias: --abs)")
 	cmd.Flags().BoolVar(absolute, "abs", false, "Alias for --absolute")
+	cmd.Flags().Lookup("abs").Hidden = true
 }
 
 func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {

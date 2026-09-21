@@ -31,7 +31,7 @@ func init() {
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
 	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
 	checksCmd.Flags().BoolVar(&checksOnlyGenerate, "generate", false, "Only run generate-as-checks, skip annotated check functions")
-	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching the specified patterns")
+	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching `pattern` (repeat for multiple patterns)")
 	checksCmd.Flags().BoolVar(&checksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	checksCmd.Flags().Lookup("scale-out").Hidden = true
 	checksCmd.MarkFlagsMutuallyExclusive("no-generate", "generate")

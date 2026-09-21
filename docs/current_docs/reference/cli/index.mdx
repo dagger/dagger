@@ -77,8 +77,7 @@ dagger agent [options] [address...]
 ### Options
 
 ```
-      --abs                       Alias for --absolute
-      --absolute                  List absolute artifact addresses, including the workspace and revision
+      --absolute                  List absolute artifact addresses, including the workspace and revision (alias: --abs)
       --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
   -l, --list                      List available agents
       --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
@@ -462,8 +461,7 @@ dagger artifact list [address...]
 ### Options
 
 ```
-      --abs        Alias for --absolute
-      --absolute   List absolute artifact addresses, including the workspace and revision
+      --absolute   List absolute artifact addresses, including the workspace and revision (alias: --abs)
 ```
 
 ### Options inherited from parent commands
@@ -531,8 +529,7 @@ dagger check [options] [address...]
 ### Options
 
 ```
-      --abs                  Alias for --absolute
-      --absolute             List absolute artifact addresses, including the workspace and revision
+      --absolute             List absolute artifact addresses, including the workspace and revision (alias: --abs)
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --eager-runtime        load module runtime eagerly
       --failfast             Cancel remaining checks on first failure
@@ -540,7 +537,7 @@ dagger check [options] [address...]
   -l, --list                 List available checks
   -m, --load-module string   Use a one-off module (local path or git ref)
       --no-generate          Only run annotated check functions, skip generate-as-checks
-      --skip stringArray     Skip checks matching the specified patterns
+      --skip pattern         Skip checks matching pattern (repeat for multiple patterns)
 ```
 
 ### Options inherited from parent commands
@@ -1244,8 +1241,7 @@ dagger generate [options] [address...]
 ### Options
 
 ```
-      --abs            Alias for --absolute
-      --absolute       List absolute artifact addresses, including the workspace and revision
+      --absolute       List absolute artifact addresses, including the workspace and revision (alias: --abs)
   -l, --list           List available generators
       --no-apply       Compute and show a summary of generated changes without applying them
       --require-load   Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)
@@ -2420,8 +2416,7 @@ dagger shell [options] [address]
 ### Options
 
 ```
-      --abs        Alias for --absolute
-      --absolute   List absolute artifact addresses, including the workspace and revision
+      --absolute   List absolute artifact addresses, including the workspace and revision (alias: --abs)
   -l, --list       List available shells
 ```
 
@@ -2510,8 +2505,7 @@ dagger up [options] [address...]
 ### Options
 
 ```
-      --abs        Alias for --absolute
-      --absolute   List absolute artifact addresses, including the workspace and revision
+      --absolute   List absolute artifact addresses, including the workspace and revision (alias: --abs)
   -l, --list       List available services
 ```
 
