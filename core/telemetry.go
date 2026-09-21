@@ -186,6 +186,7 @@ func AroundFunc(
 
 		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, req.ResultCall)
+		dagql.RecordContentPreferredDigest(ctx, span, req.ResultCall, res)
 		recordPending(res, span)
 		recordCacheEvidence(span, req.CacheEvidence, res)
 		logResult(ctx, res, req.ResultCall)
