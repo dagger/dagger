@@ -136,16 +136,20 @@ func TestChainImportFallsThroughWhenTheBuiltinStoreFails(t *testing.T) {
 }
 
 // Only the exact size matches: a layer descriptor that says another size
-// for a digest the builtin store has, zero or otherwise, is downloaded
-// from the provider and takes no builtin lease.
+// for a digest the builtin store has is not taken from the store. With a
+// zero size, which the content copy treats as unknown, the provider path
+// succeeds on the valid bytes; with a larger size the provider path fails
+// on the short read, as it would for any such chain. Either way the layer
+// is asked of the provider and never enters the builtin layers lease.
 func TestChainImportRefusesBuiltinLayersOfAnotherSize(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name string
-		size func(int64) int64
+		name    string
+		size    func(int64) int64
+		imports bool
 	}{
-		{name: "zero", size: func(int64) int64 { return 0 }},
-		{name: "larger", size: func(n int64) int64 { return n + 1 }},
+		{name: "zero", size: func(int64) int64 { return 0 }, imports: true},
+		{name: "larger", size: func(n int64) int64 { return n + 1 }, imports: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -153,26 +157,28 @@ func TestChainImportRefusesBuiltinLayersOfAnotherSize(t *testing.T) {
 			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
 			chain := twoLayerChain(t, producer)
 			consumer.WithBuiltin(t, builtinStoreWith(t, chain, 0, 1))
-			// The chain carries the right blob sizes; the provider serves the
-			// bytes the descriptor names whatever size it claims.
 			layers := []bkcache.ExportLayer{chain.Layers[0], chain.Layers[1]}
 			layers[0].Descriptor.Size = tc.size(layers[0].Descriptor.Size)
-			provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+			var read []digest.Digest
+			provider := &testutil.Provider{InfoReaderProvider: chain.Provider, BeforeRead: func(_ context.Context, desc ocispecs.Descriptor) error {
+				read = append(read, desc.Digest)
+				return nil
+			}}
 			imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: layers, Provider: provider})
-			if tc.name == "zero" {
-				// A zero-size descriptor cannot be verified by the provider path
-				// either; the point is that the builtin copy refused it.
-				if err != nil {
-					all, lerr := consumer.Leases.List(ctx, "id=="+bkcache.BuiltinLayersLeaseID)
-					require.NoError(t, lerr)
-					require.Empty(t, all, "no builtin lease for a refused size")
-					require.EqualValues(t, 1, provider.Reads.Load(), "the provider was asked for that layer")
-					return
-				}
+			require.Equal(t, []digest.Digest{chain.Layers[0].Descriptor.Digest}, read[:1], "the mismatched layer was asked of the provider first")
+			if !tc.imports {
+				require.Error(t, err, "a larger size is a short read on the provider path")
+				require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+				require.Equal(t, 1, len(read), "the import stopped at that layer")
+				all, err := consumer.Leases.List(ctx, "id=="+bkcache.BuiltinLayersLeaseID)
+				require.NoError(t, err)
+				require.Empty(t, all, "no builtin layers lease: the store's blob was refused and nothing else was taken")
+				return
 			}
-			require.NoError(t, err)
+			require.NoError(t, err, "a zero size is unknown to the copy; the provider's bytes are valid")
+			require.Equal(t, []digest.Digest{chain.Layers[0].Descriptor.Digest}, read, "only the mismatched layer came from the provider")
+			testutil.CheckFile(t, imported, "top.txt", "top layer")
 			require.NoError(t, imported.Release(ctx))
-			require.GreaterOrEqual(t, provider.Reads.Load(), int64(1), "the mismatched layer came from the provider")
 			_, _, contents := leaseResources(t, consumer, bkcache.BuiltinLayersLeaseID)
 			require.Equal(t, []string{chain.Layers[1].Descriptor.Digest.String()}, contents, "only the layer with the exact size is held from the builtin store")
 		})
