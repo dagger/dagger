@@ -29,15 +29,6 @@ type ensureExportBlobResult struct {
 }
 
 // snapshotBlobGCLabel is the label on a layer snapshot that names the blob
-// its content was applied from, or was last diffed into. containerd's
-// collector follows gc.ref.content labels from any labeled resource, so the
-// blob lives exactly as long as the snapshot, whatever leases come and go:
-// the reuse path of ensureExportBlob then always finds it, every engine
-// exports the layer under the same digest, and a blob is never held by a
-// snapshot that no longer exists. A snapshot has one blob at a time; a new
-// diff replaces the label and releases the old blob to the collector.
-//
-// snapshotBlobGCLabel is the label on a layer snapshot that names the blob
 // its content was applied from, or was last diffed into. It is the durable
 // record of which blob belongs to a snapshot: AttachLease reads it when a
 // lease takes a snapshot chain, and adds the blob as a content resource of
@@ -100,8 +91,12 @@ func (cm *snapshotManager) ensureExportBlob(
 					}
 				}
 				// Reuse repairs the label, so an update that failed after the
-				// metadata was committed is not left missing.
-				if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
+				// metadata was committed is not left missing. The label names
+				// the recorded blob, not the compression variant a forced
+				// export may have returned: the variant is a separate blob
+				// linked to the recorded one, and the next ordinary export
+				// asks for the recorded one.
+				if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), blobDigest); err != nil {
 					return ensureExportBlobResult{}, err
 				}
 				if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {

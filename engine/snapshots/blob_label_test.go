@@ -333,3 +333,50 @@ func TestLabelUpdateFailureIsRepairedByTheRetry(t *testing.T) {
 	require.Equal(t, blob, exportOnce(t, store, snapshotID))
 	require.NoError(t, store.Manager.RemoveLease(ctx, owner))
 }
+
+// A forced export returns a compression variant of a snapshot's recorded
+// blob; the label keeps naming the recorded blob. After a reload with empty
+// metadata, a new flat owner holds the recorded blob, the earlier owners
+// gone, and the next ordinary export reuses it.
+func TestForcedVariantKeepsTheRecordedBlob(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "e.txt", "recorded uncompressed, forced to gzip")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	recorded := chain.Layers[0].Descriptor.Digest
+
+	imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: &testutil.Provider{InfoReaderProvider: chain.Provider}})
+	require.NoError(t, err)
+	snapshotID := imported.SnapshotID()
+	forced, err := imported.ExportChain(ctx, config.RefConfig{Compression: compression.New(compression.Gzip).SetForce(true)})
+	require.NoError(t, err)
+	variant := forced.Layers[0].Descriptor.Digest
+	require.NotEqual(t, recorded, variant, "the forced export returned a gzip variant")
+	require.Equal(t, ocispecs.MediaTypeImageLayerGzip, forced.Layers[0].Descriptor.MediaType)
+	require.NoError(t, forced.Release(ctx))
+	info, err := consumer.Snapshots.Stat(ctx, snapshotID)
+	require.NoError(t, err)
+	require.Equal(t, recorded.String(), info.Labels[blobLabel], "the label still names the recorded blob")
+	require.NoError(t, imported.Release(ctx), "the import's pin is gone")
+	consumer.Reload(t)
+	require.NoError(t, consumer.Manager.LoadPersistentMetadata(bkcache.PersistentMetadataRows{}))
+
+	const owner = "dagql/result/owner-forced"
+	require.NoError(t, consumer.Manager.AttachLease(ctx, owner, snapshotID))
+	all, err := consumer.Leases.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, all, 1, "the new owner is the only lease")
+	_, _, contents := leaseResources(t, consumer, owner)
+	require.Equal(t, []string{recorded.String()}, contents, "the owner holds the recorded blob")
+	consumer.GC(t)
+	require.True(t, blobPresent(t, consumer, recorded), "the recorded blob survives with the earlier owners gone")
+
+	writes := 0
+	consumer.BeforeWrite = func([]byte) error { writes++; return nil }
+	require.Equal(t, recorded, exportOnce(t, consumer, snapshotID), "the next ordinary export reuses the recorded blob")
+	require.Zero(t, writes, "without writing anything")
+	require.NoError(t, consumer.Manager.RemoveLease(ctx, owner))
+}
