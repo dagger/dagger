@@ -64,7 +64,7 @@ source = "other"
 			} {
 				args := append([]string{test.command, "-l"}, selection.args...)
 				if test.command == "check" {
-					args = append(args, "--no-generate")
+					args = append(args, "--generated=false")
 				}
 				out, err := base.With(daggerNonNestedExec(args...)).Stdout(ctx)
 				require.NoError(t, err, strings.Join(args, " "))
@@ -92,14 +92,14 @@ source = "other"
 	}
 
 	t.Run("caller skip only excludes the entrypoint", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerNonNestedExec("check", "-l", "--no-generate", "--skip=verify")).Stdout(ctx)
+		out, err := base.With(daggerNonNestedExec("check", "-l", "--generated=false", "--skip=verify")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "dag://other/verify", strings.TrimSpace(out))
 	})
 
 	t.Run("module settings keep local skip names", func(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("dagger.toml", config+"\ncheck.skip = [\"verify\"]\n").
-			With(daggerNonNestedExec("check", "-l", "--no-generate")).Stdout(ctx)
+			With(daggerNonNestedExec("check", "-l", "--generated=false")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "dag://verify", strings.TrimSpace(out))
 	})
@@ -134,7 +134,7 @@ source = "other"
 	})
 
 	t.Run("run the entrypoint check only", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerNonNestedExec("check", "verify", "--no-generate")).CombinedOutput(ctx)
+		out, err := base.With(daggerNonNestedExec("check", "verify", "--generated=false")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.NotContains(t, out, "app/verify")
 		require.NotContains(t, out, "other/verify")

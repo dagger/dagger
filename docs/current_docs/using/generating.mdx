@@ -51,7 +51,7 @@ In CI you usually want to check that committed files are up to date rather than 
 
 ```yaml
 # GitHub Actions
-- run: dagger check --generate
+- run: dagger check --generated=true
 ```
 
 A failing generator check means the committed output is stale — run `dagger generate` locally, apply the changeset, and commit.

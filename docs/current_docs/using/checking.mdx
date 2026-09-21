@@ -46,12 +46,15 @@ dagger check --failfast
 
 ## Checks and generators
 
-Each generator returns a `Changeset`. Its `stale` field is a `Check` that passes when the changeset is empty. For example, `dag://assets/generate/stale` checks `dag://assets/generate`. To control which kind runs:
+Each generator returns a `Changeset`. Its `stale` field is a `Check` that passes when the changeset is empty. For example, `dag://assets/generate/stale` checks `dag://assets/generate`.
+
+Generated-file checks run by default, together with annotated check functions. Use `--generated=false` to skip generated-file checks:
 
 ```shell
-dagger check --no-generate     # only annotated check functions
-dagger check --generate        # only generators-run-as-checks
+dagger check --generated=false
 ```
+
+The flag overrides the workspace's `check-generated` setting. Use `--generated=true` to include generated-file checks when that setting is false.
 
 ## In CI
 

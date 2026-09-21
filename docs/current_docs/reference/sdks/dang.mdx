@@ -919,7 +919,7 @@ dagger api call build
 dagger check
 
 # Run generators and verify there's no drift
-dagger check --generate
+dagger check --generated=true
 ```
 
 For more thorough testing, write a separate test module (in any SDK) that depends on yours, exercises its functions, and asserts on the results.

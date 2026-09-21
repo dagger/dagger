@@ -1361,12 +1361,12 @@ func (GeneratorsSuite) TestWorkspaceCheckNarrowsToRequestedModule(ctx context.Co
 	})
 
 	t.Run("running only the healthy module's checks succeeds", func(ctx context.Context, t *testctx.T) {
-		// --no-generate runs only annotated checks; generate-as-checks are
+		// --generated=false runs only annotated checks; generate-as-checks are
 		// excluded because the healthy module's generator legitimately reports
 		// pending output (covered by the generate narrowing test), which is
 		// unrelated to whether the broken module was loaded.
 		out, err := base.
-			With(daggerExec("check", "good", "--no-generate", "--progress=plain")).
+			With(daggerExec("check", "good", "--generated=false", "--progress=report")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, out, "intentionally invalid")

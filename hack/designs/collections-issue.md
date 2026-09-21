@@ -230,7 +230,7 @@ extend type Artifacts {
   withoutUri(uri: String!): Artifacts!
   dimensions: [String!]!
   dimensionKeys(dimension: String!): [String!]!
-  types: [String!]!
+  types: [TypeDef!]!
   items: [Artifact!]!
   one: Artifact!
   uri: String!
