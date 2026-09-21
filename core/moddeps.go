@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 )
 
 const ModuleName = "daggercore"
@@ -161,6 +162,9 @@ func (b *SchemaBuilder) EntrypointMods() []Mod {
 }
 
 func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate module schema"); err != nil {
+		return nil, err
+	}
 	srv, err := b.lazilyLoadSchema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load schema: %w", err)
@@ -194,6 +198,9 @@ func (b *SchemaBuilder) SchemaIntrospectionJSONFileForClient(ctx context.Context
 }
 
 func (b *SchemaBuilder) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "build module type definitions"); err != nil {
+		return nil, err
+	}
 	var typeDefs dagql.ObjectResultArray[*TypeDef]
 	for _, e := range b.entries {
 		modTypeDefs, err := e.mod.TypeDefs(ctx, dag)

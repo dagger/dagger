@@ -28,13 +28,19 @@ func (p *partCleanup) release(ctx context.Context) error {
 	p.done = true
 	return nil
 }
-func (c *Cache) publishEvaluatedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup) error {
+func (c *Cache) publishEvaluatedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup, demand *PartDemandState) error {
+	watch := partReselectWatch{loop: "publishEvaluatedParts"}
 	for {
 		if err := context.Cause(ctx); err != nil {
 			return err
 		}
+		watch.again(ctx, res.cacheSharedResult(), demanded)
 		prepared, err := c.prepareEvaluatedParts(ctx, res, demanded, produced, original, cleanup)
 		if partCanReselect(err) {
+			watch.refused(err)
+			if stuck := demand.refused(watch.loop, watch.n, demanded, err); stuck != nil {
+				return stuck
+			}
 			continue
 		}
 		if err != nil {
@@ -48,6 +54,10 @@ func (c *Cache) publishEvaluatedParts(ctx context.Context, res AnyResult, demand
 			return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
 		}
 		if partCanReselect(err) {
+			watch.refused(err)
+			if stuck := demand.refused(watch.loop, watch.n, demanded, err); stuck != nil {
+				return stuck
+			}
 			continue
 		}
 		return err
@@ -147,7 +157,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 	if err := p.version.check(row); err != nil {
 		return nil, err
 	}
-	return p, nil
+	return p.seal(row, nil)
 }
 
 // addProducedOutputs merges the saved operation's outputs for every write-set

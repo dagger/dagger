@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/dagger/dagger/engine"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -144,20 +145,34 @@ func (c *Cache) joinPartInstallation(ctx context.Context, res AnyResult, token *
 
 //nolint:gocyclo // Intrinsically long demand state machine: probe, route, select, obtain, delegate, run.
 func (c *Cache) demandPart(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "demand part"); err != nil {
+		return err
+	}
 	var err error
 	ctx, err = enterPartDemand(ctx, res.cacheSharedResult(), address)
 	if err != nil {
 		return err
 	}
-	demand := &PartDemandState{}
+	demand := &PartDemandState{target: clonePartAddress(address)}
 	ctx = context.WithValue(ctx, partDemandContextKey{}, demand)
+	outer := partReselectWatch{loop: "demandPart"}
 	for {
+		outer.again(ctx, res.cacheSharedResult(), address)
 		err := c.RunLazyTask(ctx, res, partTaskKey("acquire", address), LazyTaskSpec{Body: func(ctx context.Context) error {
+			watch := partReselectWatch{loop: "demandPart acquire"}
+			// retry notes a refusal in the reselect class that is about to be
+			// retried. It returns an error when the progress rule forbids the
+			// retry.
+			retry := func(err error) error {
+				watch.refused(err)
+				return demand.refused(watch.loop, watch.n, address, err)
+			}
 			for {
 				if err := context.Cause(ctx); err != nil {
 					return err
 				}
 				row := res.cacheSharedResult()
+				watch.again(ctx, row, address)
 				gate := row.partGate.loadOrCreate()
 				key, _ := partAddressKey(address)
 				gate.mu.Lock()
@@ -204,6 +219,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				}
 				source, pendingParent, err := c.selectDemandPartSource(ctx, res, address, route)
 				if partCanReselect(err) {
+					if stuck := retry(err); stuck != nil {
+						return stuck
+					}
 					continue
 				}
 				if err != nil {
@@ -246,7 +264,13 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					if errors.Is(err, errLazyEvaluationBusy) {
 						err = c.joinLazyEvaluation(ctx, res, address)
 					}
-					if err == nil || partCanReselect(err) {
+					if err == nil {
+						continue
+					}
+					if partCanReselect(err) {
+						if stuck := retry(err); stuck != nil {
+							return stuck
+						}
 						continue
 					}
 					return err
@@ -254,6 +278,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				if pendingParent != nil {
 					if err := c.demandDelegatedParent(ctx, pendingParent); err != nil {
 						if partCanReselect(err) {
+							if stuck := retry(err); stuck != nil {
+								return stuck
+							}
 							continue
 						}
 						return errors.Join(demand.causes(), err)
@@ -265,6 +292,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				}
 				err = c.runLazyOperationDecision(ctx, res, address, route, demand)
 				if partCanReselect(err) {
+					if stuck := retry(err); stuck != nil {
+						return stuck
+					}
 					continue
 				}
 				if err != nil {
@@ -273,6 +303,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 			}
 		}})
 		if partCanReselect(err) {
+			outer.refused(err)
 			continue
 		}
 		return err
@@ -368,6 +399,9 @@ func (c *Cache) sourceCheckCurrentLocked(check *SourceCheck) bool {
 	return true
 }
 func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, address PersistedPartAddress, route LazyOperationRoute, demand *PartDemandState) error {
+	if err := engine.CheckSnapshotSharePreparation(ctx, "prepare lazy operation"); err != nil {
+		return err
+	}
 	return c.RunLazyTask(ctx, res, lazyEvaluationTaskKey(route.Group), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 		task := PartTaskFromContext(ctx)
 		drain, outcome, err := c.PrepareOriginal(ctx, res, route.Group, route.WriteSet, task)
@@ -402,6 +436,9 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 		if !ok {
 			return fmt.Errorf("lazy: family has no saved invoker")
 		}
+		if err := engine.CheckSnapshotSharePreparation(ctx, "prepare lazy operation"); err != nil {
+			return err
+		}
 		invocation, err := factory.PrepareLazyOperation(ctx, c.partDecodeContext(ctx, row, record).atPath(address.OutputPath), local, route)
 		if err != nil {
 			return err
@@ -433,6 +470,11 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 					err = c.InstallReadyPart(ctx, res, scan.Source, permit)
 				}
 				if partCanReselect(err) {
+					// The second scan's refusal would otherwise reach the demand
+					// as this loop's own, which names no counters.
+					if stuck := demand.refused("runLazyOperationDecision", uint64(scanAttempt)+1, address, err); stuck != nil {
+						return stuck
+					}
 					continue
 				}
 				return err
@@ -443,6 +485,9 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			}
 			if outcome != GateGranted {
 				return partRefused("decision: final source check refused")
+			}
+			if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
+				return err
 			}
 			c.recordPartFixture(row, address, "lazy-enter")
 			if err := invocation.Run(ctx); err != nil {
@@ -458,7 +503,7 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			if err != nil {
 				return err
 			}
-			return c.publishEvaluatedParts(ctx, res, address, produced, original, cleanup)
+			return c.publishEvaluatedParts(ctx, res, address, produced, original, cleanup, demand)
 		}
 		return partRefused("decision: both scans refused")
 	}})
