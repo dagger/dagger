@@ -251,6 +251,22 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		containerName = containerNamePrefix + id
 	}
 
+	// The common case is an engine that already exists: look it up by name
+	// and start it (a no-op when it already runs), instead of listing every
+	// container on the host first. The listing grows with the host and was
+	// most of a command's connect time. Leftovers from older versions are
+	// still swept, in the background. Only when the engine is missing does
+	// the command list before running a new one.
+	if exists, err := d.backend.ContainerExists(ctx, containerName); err == nil && exists {
+		if err := d.backend.ContainerStart(ctx, containerName); err != nil {
+			return nil, fmt.Errorf("failed to start container: %w", err)
+		}
+		go d.sweepLeftoverEngines(context.WithoutCancel(ctx), opts.cleanup, containerName)
+		return &url.URL{Host: containerName}, nil
+	} else if errors.Is(err, context.Canceled) {
+		return nil, err
+	}
+
 	leftoverEngines, err := d.collectLeftoverEngines(ctx, containerName)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -337,6 +353,22 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	d.garbageCollectEngines(ctx, opts.cleanup, nil, leftoverEngines)
 
 	return &url.URL{Host: containerName}, nil
+}
+
+// sweepLeftoverEngines removes engines of other versions, sparing current.
+// It runs in the background once the engine is known to exist, so a command
+// does not wait for the listing; a sweep cut short by the process exiting
+// is finished by a later command.
+func (d *imageDriver) sweepLeftoverEngines(ctx context.Context, cleanup bool, current string) {
+	if !cleanup {
+		return
+	}
+	leftoverEngines, err := d.collectLeftoverEngines(ctx)
+	if err != nil {
+		slog.SpanLogger(ctx, InstrumentationLibrary).Warn("failed to list containers", "error", err)
+		return
+	}
+	d.garbageCollectEngines(ctx, cleanup, []string{current}, leftoverEngines)
 }
 
 func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, preserveNames, engines []string) {
