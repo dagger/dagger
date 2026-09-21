@@ -198,9 +198,9 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		require.Contains(t, roles, "fs")
 		require.Contains(t, roles, "mount_dir:0")
 		require.Contains(t, roles, "mount_dir:1")
-		require.Len(t, partEventsOf(after.transferFixtureReport, rID, "installed-ready"), 4)
-		require.Len(t, partEventsOf(after.transferFixtureReport, rID, "settled"), 4)
-		for _, kind := range []string{"lazy-enter", "provider-read", "installed-chain", "selected-chain", "selected-ready"} {
+		require.Len(t, partEventsOf(after.transferFixtureReport, rID, dagql.PartEventInstalledReady), 4)
+		require.Len(t, partEventsOf(after.transferFixtureReport, rID, dagql.PartEventSettled), 4)
+		for _, kind := range []dagql.TransferFixturePartKind{dagql.PartEventLazyEnter, dagql.PartEventProviderRead, dagql.PartEventInstalledChain, dagql.PartEventSelectedChain, dagql.PartEventSelectedReady} {
 			require.Empty(t, partEventsOf(after.transferFixtureReport, rID, kind), "%s for R", kind)
 		}
 		require.NotNil(t, after.Storage)
@@ -216,10 +216,10 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		require.NoError(t, b.fixture("gc", "", nil, nil))
 		s.readAll(ctx, t, rHandle)
 		require.NoError(t, b.fixture("report", "", nil, &after))
-		for _, kind := range []string{"lazy-enter", "provider-read", "installed-chain"} {
+		for _, kind := range []dagql.TransferFixturePartKind{dagql.PartEventLazyEnter, dagql.PartEventProviderRead, dagql.PartEventInstalledChain} {
 			require.Empty(t, partEventsOf(after.transferFixtureReport, rID, kind), "after the donor's release: %s", kind)
 		}
-		require.Len(t, partEventsOf(after.transferFixtureReport, rID, "installed-ready"), 4, "nothing was installed again")
+		require.Len(t, partEventsOf(after.transferFixtureReport, rID, dagql.PartEventInstalledReady), 4, "nothing was installed again")
 	})
 
 	// A foreground read of R's handle races R's pass, which is held with all
@@ -265,14 +265,14 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		require.NoError(t, b.fixture("report", "", nil, &after))
 		t.Logf("R=%d events: %v", rID, partKindsOf(after.transferFixtureReport, rID))
 		installs := map[dagql.PartKey]int{}
-		for _, index := range partEventsOf(after.transferFixtureReport, rID, "installed-ready") {
+		for _, index := range partEventsOf(after.transferFixtureReport, rID, dagql.PartEventInstalledReady) {
 			installs[after.Parts[index].Address.Part]++
 		}
 		require.Len(t, installs, 4, "every address of R is installed: %v", installs)
 		for part, n := range installs {
 			require.Equal(t, 1, n, "%s is installed exactly once", part)
 		}
-		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, "lazy-enter"))
+		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, dagql.PartEventLazyEnter))
 		require.NoError(t, b.fixture("gc", "", nil, nil))
 		require.NoError(t, b.fixture("report", "", nil, &after))
 		require.ElementsMatch(t, pinsBefore, after.Storage.TransientPinResources)
@@ -311,16 +311,16 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		causes := map[string]int{}
 		skipped := 0
 		for _, event := range after.Parts {
-			if event.Kind == "share-skipped" {
+			if event.Kind == dagql.PartEventShareSkipped {
 				skipped++
 				causes[event.Detail]++
 			}
 		}
 		t.Logf("measurement: %d slots left alone by sharing passes, by cause: %v", skipped, causes)
-		installs := len(partEventsOf(after.transferFixtureReport, rID, "installed-ready"))
+		installs := len(partEventsOf(after.transferFixtureReport, rID, dagql.PartEventInstalledReady))
 		t.Logf("measurement: R had %d slots installed by sharing or a ready local source", installs)
-		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, "lazy-enter"), "reading a service-backed receiver evaluates nothing")
-		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, "provider-read"))
+		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, dagql.PartEventLazyEnter), "reading a service-backed receiver evaluates nothing")
+		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, dagql.PartEventProviderRead))
 		require.NoError(t, b.fixture("gc", "", nil, nil))
 		require.NoError(t, b.fixture("report", "", nil, &after))
 		require.ElementsMatch(t, pinsBefore, after.Storage.TransientPinResources)
@@ -333,7 +333,7 @@ func (RemoteCacheTransferSuite) TestSharingFinish(ctx context.Context, t *testct
 		s.readAll(ctx, t, rHandle)
 		require.NoError(t, b.fixture("report", "", nil, &after))
 		t.Logf("R=%d events after the donor's release: %v", rID, partKindsOf(after.transferFixtureReport, rID))
-		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, "lazy-enter"))
-		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, "provider-read"))
+		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, dagql.PartEventLazyEnter))
+		require.Empty(t, partEventsOf(after.transferFixtureReport, rID, dagql.PartEventProviderRead))
 	})
 }

@@ -103,8 +103,8 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 		require.Equal(t, "data.txt", name)
 		all, row := s.report(t)
 		require.True(t, row.Imported)
-		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), 1)
-		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"), "the HTTP producer is never entered")
+		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), 1)
+		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), "the HTTP producer is never entered")
 		require.Empty(t, s.originRequests(all), "zero origin requests")
 	})
 
@@ -121,8 +121,8 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 		require.Equal(t, s.body, contents)
 		all, row := s.report(t)
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))
-		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"), 1, "the producer ran once")
-		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"))
+		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), 1, "the producer ran once")
+		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain))
 		require.Len(t, row.SnapshotLinks, 1, "the restored File is owned under the saved identity")
 		requests := s.originRequests(all)
 		require.Len(t, requests, 1, "one origin request")
@@ -162,8 +162,8 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 				all, row := s.report(t)
 				t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))
 				require.Empty(t, row.SnapshotLinks, "no output is installed under the saved File identity")
-				require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-lazy"))
-				require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"))
+				require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledLazy))
+				require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain))
 
 				if tc.name == "changed body" {
 					// A new ordinary call is its own File with the new bytes.
@@ -267,8 +267,8 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 			require.Equal(t, want[i], got, "%q %o: the restored File has A's recorded name, actual mode and bytes", tc.name, tc.permissions)
 			var report fixtureControlsReport
 			require.NoError(t, b.fixture("report", "", nil, &report))
-			require.Len(t, partEventsOf(report.transferFixtureReport, row.ResultID, "lazy-enter"), 1, "%q %o: restored by the saved producer", tc.name, tc.permissions)
-			require.Empty(t, partEventsOf(report.transferFixtureReport, row.ResultID, "installed-chain"))
+			require.Len(t, partEventsOf(report.transferFixtureReport, row.ResultID, dagql.PartEventLazyEnter), 1, "%q %o: restored by the saved producer", tc.name, tc.permissions)
+			require.Empty(t, partEventsOf(report.transferFixtureReport, row.ResultID, dagql.PartEventInstalledChain))
 		}
 	})
 	// Status codes the stateless restoration can meet, asserted as the
@@ -346,7 +346,7 @@ func (RemoteCacheTransferSuite) TestHTTPRestore(ctx context.Context, t *testctx.
 			require.NoError(t, b.fixture("report", "", nil, &report))
 			require.NoError(t, b.fixture("report", "", []string{row.Handle}, &single))
 			require.Len(t, single.Rows, 1)
-			require.Len(t, partEventsOf(report.transferFixtureReport, row.ResultID, "lazy-enter"), 1, "%s: the saved producer ran once", tc.name)
+			require.Len(t, partEventsOf(report.transferFixtureReport, row.ResultID, dagql.PartEventLazyEnter), 1, "%s: the saved producer ran once", tc.name)
 			if tc.failure == "" {
 				require.NoError(t, err, "%s: the writer restores the File", tc.name)
 				require.Equal(t, tc.saved, contents, "%s: a restored File has exactly A's bytes", tc.name)

@@ -136,9 +136,9 @@ func scratchCount(t *testing.T, ctx context.Context, cache *dagql.Cache, session
 		if event.ResultID != row {
 			continue
 		}
-		require.NotEqual(t, "provider-read", event.Kind)
-		require.NotEqual(t, "installed-chain", event.Kind)
-		if event.Kind == "lazy-enter" {
+		require.NotEqual(t, dagql.PartEventProviderRead, event.Kind)
+		require.NotEqual(t, dagql.PartEventInstalledChain, event.Kind)
+		if event.Kind == dagql.PartEventLazyEnter {
 			require.Equal(t, "directory", event.Field)
 			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, event.Address)
 			count++

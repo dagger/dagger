@@ -61,19 +61,19 @@ func TestSharingOwedBookkeepingIsPaidByAnExactDemand(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, b.ReleaseTransferFixtureBarrier(synced.Key, synced.Generation))
 
-	kinds := func() (out []string) {
+	kinds := func() (out []dagql.TransferFixturePartKind) {
 		report, err := b.TransferFixtureSnapshot(bCtx, "b", nil)
 		require.NoError(t, err)
 		for _, e := range report.Parts {
 			// A later pass that meets the installed part skips it and says so;
 			// when it does is the worker's timing, not this test's subject.
-			if e.ResultID == rID && e.Kind != "share-skipped" {
+			if e.ResultID == rID && e.Kind != dagql.PartEventShareSkipped {
 				out = append(out, e.Kind)
 			}
 		}
 		return out
 	}
-	require.Equal(t, []string{"installed-ready", "owner-sync"}, kinds(), "installed, with the failed synchronization owed")
+	require.Equal(t, []dagql.TransferFixturePartKind{dagql.PartEventInstalledReady, dagql.PartEventOwnerSync}, kinds(), "installed, with the failed synchronization owed")
 	donorRow, err := b.PersistedResultID(donor)
 	require.NoError(t, err)
 
@@ -89,17 +89,17 @@ func TestSharingOwedBookkeepingIsPaidByAnExactDemand(t *testing.T) {
 		return row
 	}
 	require.Equal(t, donorRow, load("b"), "the session's read of the receiver's handle is served by its local equivalent")
-	require.Equal(t, []string{"installed-ready", "owner-sync"}, kinds(), "which leaves the receiver and its debt untouched")
+	require.Equal(t, []dagql.TransferFixturePartKind{dagql.PartEventInstalledReady, dagql.PartEventOwnerSync}, kinds(), "which leaves the receiver and its debt untouched")
 
 	require.Equal(t, rID, load(""), "an exact load selects the receiver itself")
 	after := kinds()
-	require.Contains(t, after, "settled", "its demand paid the owed bookkeeping")
+	require.Contains(t, after, dagql.PartEventSettled, "its demand paid the owed bookkeeping")
 	for _, kind := range after {
-		require.Contains(t, []string{"installed-ready", "owner-sync", "settled"}, kind, "and did nothing else")
+		require.Contains(t, []dagql.TransferFixturePartKind{dagql.PartEventInstalledReady, dagql.PartEventOwnerSync, dagql.PartEventSettled}, kind, "and did nothing else")
 	}
 	installs := 0
 	for _, kind := range after {
-		if kind == "installed-ready" {
+		if kind == dagql.PartEventInstalledReady {
 			installs++
 		}
 	}

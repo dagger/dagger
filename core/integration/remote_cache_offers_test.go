@@ -125,8 +125,8 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, joinBounded(t, s.read(ctx), "the demand"))
 		all, row = s.report(t)
-		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), 1)
-		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"))
+		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), 1)
+		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventLazyEnter))
 		require.Empty(t, row.Offers, "the installed offer is retired")
 	})
 
@@ -144,8 +144,8 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 		require.NoError(t, joinBounded(t, done, "the held demand"))
 		all, _ := s.report(t)
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))
-		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"), "the accepted offer invalidated the final source check")
-		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), 1)
+		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), "the accepted offer invalidated the final source check")
+		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), 1)
 	})
 
 	// After the original operation is sealed: the offer is answered
@@ -162,9 +162,9 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 		require.NoError(t, joinBounded(t, done, "the held demand"), "the body was not interrupted")
 		all, row := s.report(t)
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))
-		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"), 1)
-		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-lazy"), 1)
-		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"))
+		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), 1)
+		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledLazy), 1)
+		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain))
 		require.Empty(t, all.reachedAt(dagql.FixtureChainReaderOpen), "a refused offer reads nothing")
 		require.Empty(t, row.Offers)
 	})
@@ -204,8 +204,8 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 		require.NoError(t, joinBounded(t, done, "the held demand"), "O1's acquisition survived the swap and the collection")
 		all, row := s.report(t)
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(all.transferFixtureReport, s.rID))
-		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), 1)
-		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"))
+		require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), 1)
+		require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventLazyEnter))
 		require.Empty(t, row.Offers, "the final settlement retired the replacement as well")
 		require.Len(t, row.SnapshotLinks, 1)
 		require.Equal(t, dagql.TransferFixtureControls{}, all.Controls)
@@ -249,12 +249,12 @@ func (RemoteCacheTransferSuite) TestOffers(ctx context.Context, t *testctx.T) {
 				all, _ := s.report(t)
 				t.Logf("%s: R=%d events: %v", name, s.rID, partKindsOf(all.transferFixtureReport, s.rID))
 				if authorized {
-					require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), 1, "the session that holds the resource installs from the offer")
-					require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"))
+					require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), 1, "the session that holds the resource installs from the offer")
+					require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventLazyEnter))
 				} else {
-					require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, "installed-chain"), "the offer is skipped for a session that lacks its resource")
+					require.Empty(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), "the offer is skipped for a session that lacks its resource")
 					require.Empty(t, all.reachedAt(dagql.FixtureChainReaderOpen), "and none of its content is read")
-					require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, "lazy-enter"), 1, "the saved producer serves it instead")
+					require.Len(t, partEventsOf(all.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), 1, "the saved producer serves it instead")
 				}
 			})
 		}

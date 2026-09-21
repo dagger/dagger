@@ -538,7 +538,7 @@ func TestSnapshotSharingNoJoinRefusal(t *testing.T) {
 	var skipped []TransferFixturePartEvent
 	events, _ := c.partFixtureEvents()
 	for _, event := range events {
-		if event.Kind == "share-skipped" {
+		if event.Kind == PartEventShareSkipped {
 			skipped = append(skipped, event)
 		}
 	}
@@ -1086,9 +1086,9 @@ func TestSnapshotSharingCompletedRowCaptureRefusal(t *testing.T) {
 		require.Equal(t, uint64(row.id), event.ResultID)
 		require.Empty(t, event.Address.Part)
 	}
-	require.Equal(t, "share-skipped", events[0].Kind)
+	require.Equal(t, PartEventShareSkipped, events[0].Kind)
 	require.Contains(t, events[0].Detail, "representation changed during capture")
-	require.Equal(t, "owner-sync", events[1].Kind, "the demand needs only its ordinary owner synchronization")
+	require.Equal(t, PartEventOwnerSync, events[1].Kind, "the demand needs only its ordinary owner synchronization")
 }
 
 // A slot runs as the ordinary obtain task of its address, so an ordinary

@@ -232,15 +232,14 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					if err := c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureSourceSelected, ResultID: uint64(row.id), Address: &address, Detail: string(source.route)}); err != nil {
 						return errors.Join(err, source.Release(context.WithoutCancel(ctx)))
 					}
-					kind := "selected-ready"
-					if source.readiness == PartDownloadable {
-						kind = "selected-chain"
+					selected := partObservation{kind: PartEventSelectedReady}
+					switch {
+					case source.delegation != nil:
+						selected = partObservation{kind: PartEventSelectedDelegation, source: partDelegationSource(source.delegation)}
+					case source.readiness == PartDownloadable:
+						selected.kind = PartEventSelectedChain
 					}
-					if source.delegation != nil {
-						c.recordPartFixtureDelegation(row, address, "selected-delegation", source.delegation)
-					} else {
-						c.recordPartFixture(row, address, kind)
-					}
+					c.observePart(row, address, selected)
 					var ownership atomic.Uint32 // 0 caller, 1 body, 2 caller released before body entry
 					err = c.RunLazyTask(ctx, res, partTaskKey("obtain", address), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 						if !ownership.CompareAndSwap(0, 1) {
@@ -431,7 +430,7 @@ func (c *Cache) beginLazyOriginal(ctx context.Context, check *SourceCheck, row *
 	if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
 		return nil, err
 	}
-	c.recordPartFixture(row, address, "lazy-enter")
+	c.observePart(row, address, partObservation{kind: PartEventLazyEnter})
 	event.Point, event.Detail = FixtureLazyEntry, codec
 	if err := c.fixtureReach(ctx, event); err != nil {
 		return nil, err

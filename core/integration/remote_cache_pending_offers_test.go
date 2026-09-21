@@ -88,8 +88,8 @@ func (RemoteCacheTransferSuite) TestPendingOffersRestart(ctx context.Context, t 
 	installed, all := row(b, rHandle)
 	require.Equal(t, []dagql.PartKey{"mount:/work"}, offered(installed), "the installed offer is redundant once its owner is attached; its sibling is kept raw")
 	require.Equal(t, []string{"fs"}, roles(installed))
-	require.Len(t, partEventsOf(all.transferFixtureReport, rID, "installed-chain"), 1)
-	require.Empty(t, partEventsOf(all.transferFixtureReport, rID, "lazy-enter"))
+	require.Len(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventInstalledChain), 1)
+	require.Empty(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventLazyEnter))
 	fsRef := installed.SnapshotLinks[0].RefKey
 
 	b.restart()
@@ -113,17 +113,17 @@ func (RemoteCacheTransferSuite) TestPendingOffersRestart(ctx context.Context, t 
 	require.NoError(t, err)
 	require.Equal(t, "rootfs "+nonce, payload)
 	_, all = row(b, rHandle)
-	require.Empty(t, partEventsOf(all.transferFixtureReport, rID, "provider-read"), "an owned part reads no offered content")
+	require.Empty(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventProviderRead), "an owned part reads no offered content")
 	out, err := dagger.Ref[*dagger.Container](b.client, dagger.ID(rHandle)).Directory("/work").File("out.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "mount "+nonce, out)
 	both, all := row(b, rHandle)
 	require.Empty(t, offered(both))
 	require.ElementsMatch(t, []string{"fs", mountRole}, roles(both))
-	chains := partEventsOf(all.transferFixtureReport, rID, "installed-chain")
+	chains := partEventsOf(all.transferFixtureReport, rID, dagql.PartEventInstalledChain)
 	require.Len(t, chains, 1)
 	require.Equal(t, mountAddress.Part, all.Parts[chains[0]].Address.Part)
-	require.Empty(t, partEventsOf(all.transferFixtureReport, rID, "lazy-enter"), "the exec never runs on B")
+	require.Empty(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventLazyEnter), "the exec never runs on B")
 
 	// Forward: B exports the row it imported, with the same two selected
 	// chains, and C reads both.
@@ -147,6 +147,6 @@ func (RemoteCacheTransferSuite) TestPendingOffersRestart(ctx context.Context, t 
 	require.True(t, final.Imported)
 	require.Empty(t, offered(final))
 	require.ElementsMatch(t, []string{"fs", mountRole}, roles(final))
-	require.Len(t, partEventsOf(all.transferFixtureReport, cID, "installed-chain"), 2)
-	require.Empty(t, partEventsOf(all.transferFixtureReport, cID, "lazy-enter"), "the exec never runs on C")
+	require.Len(t, partEventsOf(all.transferFixtureReport, cID, dagql.PartEventInstalledChain), 2)
+	require.Empty(t, partEventsOf(all.transferFixtureReport, cID, dagql.PartEventLazyEnter), "the exec never runs on C")
 }

@@ -121,8 +121,8 @@ func (RemoteCacheTransferSuite) TestRenewal(ctx context.Context, t *testctx.T) {
 		require.Zero(t, report.Renewal.Delivered, "the staged reply answered; nothing was left for the harness")
 		require.Len(t, report.reachedAt(dagql.FixtureRenewalEnqueued), 1, "one exchange for the one demand")
 		require.Len(t, report.reachedAt(dagql.FixtureRenewalReplied), 1)
-		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"), "the saved producer never ran")
-		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"), 1)
+		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), "the saved producer never ran")
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), 1)
 		var fetched int
 		for _, request := range report.Transport.Requests {
 			if strings.HasPrefix(request.URL, "https://"+fixturetransport.ContentHost+"/") {
@@ -154,8 +154,8 @@ func (RemoteCacheTransferSuite) TestRenewal(ctx context.Context, t *testctx.T) {
 		require.Len(t, report.Renewal.ArmedReplies, 1)
 		require.Equal(t, "accepted", report.Renewal.ArmedReplies[0].Disposition)
 		require.Len(t, report.reachedAt(dagql.FixtureRenewalEnqueued), 1)
-		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"))
-		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"), 1)
+		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventLazyEnter))
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), 1)
 		for _, request := range report.Transport.Requests {
 			require.NotContains(t, request.URL, "?expired", "an expired address is never requested")
 		}
@@ -176,8 +176,8 @@ func (RemoteCacheTransferSuite) TestRenewal(ctx context.Context, t *testctx.T) {
 		var report fixtureControlsReport
 		require.NoError(t, s.b.fixture("report", "", nil, &report))
 		t.Logf("R=%d events: %v; renewal=%+v", s.rID, partKindsOf(report.transferFixtureReport, s.rID), *report.Renewal)
-		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"), 1, "one fallback")
-		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"))
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), 1, "one fallback")
+		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventInstalledChain))
 		require.Len(t, report.reachedAt(dagql.FixtureRenewalEnqueued), 1, "one episode for the demand, not one per retry")
 		require.Empty(t, report.reachedAt(dagql.FixtureRenewalReplied))
 		require.EqualValues(t, 1, report.Renewal.Delivered)

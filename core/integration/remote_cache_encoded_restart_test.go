@@ -84,8 +84,8 @@ func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testc
 
 		var pending fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &pending))
-		require.Len(t, partEventsOf(pending.transferFixtureReport, s.rID, "installed-ready"), 1, "the output was installed")
-		require.Empty(t, partEventsOf(pending.transferFixtureReport, s.rID, "settled"), "and its bookkeeping is still owed")
+		require.Len(t, partEventsOf(pending.transferFixtureReport, s.rID, dagql.PartEventInstalledReady), 1, "the output was installed")
+		require.Empty(t, partEventsOf(pending.transferFixtureReport, s.rID, dagql.PartEventSettled), "and its bookkeeping is still owed")
 
 		b.restart()
 		var restored fixtureControlsReport
@@ -102,7 +102,7 @@ func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testc
 		require.Equal(t, s.notes, contents)
 		var after fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &after))
-		for _, kind := range []string{"provider-read", "installed-chain", "installed-ready", "lazy-enter"} {
+		for _, kind := range []dagql.TransferFixturePartKind{dagql.PartEventProviderRead, dagql.PartEventInstalledChain, dagql.PartEventInstalledReady, dagql.PartEventLazyEnter} {
 			require.Empty(t, partEventsOf(after.transferFixtureReport, s.rID, kind), "after the restart: %s", kind)
 		}
 	})
@@ -128,8 +128,8 @@ func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testc
 		// is not, and the pass's protection is still held for the retry.
 		var owed fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &owed))
-		require.Len(t, partEventsOf(owed.transferFixtureReport, s.rID, "installed-ready"), 1)
-		require.Empty(t, partEventsOf(owed.transferFixtureReport, s.rID, "settled"))
+		require.Len(t, partEventsOf(owed.transferFixtureReport, s.rID, dagql.PartEventInstalledReady), 1)
+		require.Empty(t, partEventsOf(owed.transferFixtureReport, s.rID, dagql.PartEventSettled))
 		t.Logf("owed bookkeeping: transient pins=%d %v", owed.Storage.TransientPins, owed.Storage.TransientPinResources)
 		require.Positive(t, owed.Storage.TransientPins, "the installed output's protection is kept for the bookkeeping retry")
 
@@ -143,9 +143,9 @@ func (RemoteCacheTransferSuite) TestEncodedRestart(ctx context.Context, t *testc
 		var report fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &report))
 		t.Logf("R=%d events after the retry: %v; reached: %v", s.rID, partKindsOf(report.transferFixtureReport, s.rID), reachedOf(report, s.rID))
-		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-ready"), 1, "no second installation")
-		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "settled"), 1)
-		for _, kind := range []string{"provider-read", "installed-chain", "lazy-enter", "selected-ready", "selected-chain"} {
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventInstalledReady), 1, "no second installation")
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventSettled), 1)
+		for _, kind := range []dagql.TransferFixturePartKind{dagql.PartEventProviderRead, dagql.PartEventInstalledChain, dagql.PartEventLazyEnter, dagql.PartEventSelectedReady, dagql.PartEventSelectedChain} {
 			require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, kind), "the retry is bookkeeping only: %s", kind)
 		}
 		t.Logf("after the retry: transient pins=%d %v", report.Storage.TransientPins, report.Storage.TransientPinResources)

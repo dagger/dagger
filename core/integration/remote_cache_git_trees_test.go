@@ -148,8 +148,8 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 			require.Equal(t, want, got, tc.name)
 			var report fixtureControlsReport
 			require.NoError(t, s.b.fixture("report", "", nil, &report))
-			require.Len(t, partEventsOf(report.transferFixtureReport, rowID, "installed-chain"), 1, tc.name)
-			require.Empty(t, partEventsOf(report.transferFixtureReport, rowID, "lazy-enter"), "%s: no checkout ran on B", tc.name)
+			require.Len(t, partEventsOf(report.transferFixtureReport, rowID, dagql.PartEventInstalledChain), 1, tc.name)
+			require.Empty(t, partEventsOf(report.transferFixtureReport, rowID, dagql.PartEventLazyEnter), "%s: no checkout ran on B", tc.name)
 		}
 	})
 
@@ -169,8 +169,8 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 			var report fixtureControlsReport
 			require.NoError(t, s.b.fixture("report", "", nil, &report))
 			t.Logf("%s: R=%d events: %v", tc.name, rowID, partKindsOf(report.transferFixtureReport, rowID))
-			require.Len(t, partEventsOf(report.transferFixtureReport, rowID, "lazy-enter"), 1, "%s: the saved checkout ran once", tc.name)
-			require.Empty(t, partEventsOf(report.transferFixtureReport, rowID, "installed-chain"), tc.name)
+			require.Len(t, partEventsOf(report.transferFixtureReport, rowID, dagql.PartEventLazyEnter), 1, "%s: the saved checkout ran once", tc.name)
+			require.Empty(t, partEventsOf(report.transferFixtureReport, rowID, dagql.PartEventInstalledChain), tc.name)
 		}
 	})
 	// The local backend: a repository that is an ordinary Directory, built
@@ -234,8 +234,8 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 		var report fixtureControlsReport
 		require.NoError(t, s.b.fixture("report", "", nil, &report))
 		t.Logf("%s: R=%d events: %v", name, rowID, partKindsOf(report.transferFixtureReport, rowID))
-		require.Len(t, partEventsOf(report.transferFixtureReport, rowID, "lazy-enter"), 1, "%s: the saved operation ran once", name)
-		require.Empty(t, partEventsOf(report.transferFixtureReport, rowID, "installed-chain"), name)
+		require.Len(t, partEventsOf(report.transferFixtureReport, rowID, dagql.PartEventLazyEnter), 1, "%s: the saved operation ran once", name)
+		require.Empty(t, partEventsOf(report.transferFixtureReport, rowID, dagql.PartEventInstalledChain), name)
 	}
 
 	// Folded rows, from TestGitLazyOperationsEvaluate (local x Ref and Commit
@@ -264,7 +264,7 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 			require.Equal(t, want, got, "%s download", name)
 			var report fixtureControlsReport
 			require.NoError(t, s.b.fixture("report", "", nil, &report))
-			require.Empty(t, partEventsOf(report.transferFixtureReport, rowID, "lazy-enter"), "%s download: no checkout ran", name)
+			require.Empty(t, partEventsOf(report.transferFixtureReport, rowID, dagql.PartEventLazyEnter), "%s download: no checkout ran", name)
 		}
 		// Fallback needs rows B has not installed yet, so it gets its own B.
 		s.b = newFixtureEngine(ctx, t, outer, "git-local-fallback-b", true)
@@ -370,7 +370,7 @@ func (RemoteCacheTransferSuite) TestGitTrees(ctx context.Context, t *testctx.T) 
 			require.NoError(t, s.b.fixture("report", "", nil, &report))
 			imports := 0
 			for _, event := range report.Parts {
-				if event.Kind == "lazy-enter" {
+				if event.Kind == dagql.PartEventLazyEnter {
 					t.Logf("  %s lazy-enter row=%d field=%s", tc.name, event.ResultID, event.Field)
 					if event.Field == "__withBundleDirectory" {
 						imports++

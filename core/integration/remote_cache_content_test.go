@@ -115,8 +115,8 @@ func contentClassificationCases(t *testctx.T) {
 		require.Equal(t, s.payload, contents)
 		var report fixtureControlsReport
 		require.NoError(t, s.b.fixture("report", "", nil, &report))
-		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"), 1)
-		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"))
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), 1)
+		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventLazyEnter))
 		require.Empty(t, report.reachedAt(dagql.FixtureRenewalEnqueued), "a live address needs no renewal")
 		for i, blob := range s.digests {
 			requests := s.requests(report, blob)
@@ -157,8 +157,8 @@ func contentClassificationCases(t *testctx.T) {
 			for _, request := range report.Transport.Requests {
 				t.Logf("  %s %s range=%q status=%d err=%q read=%d closed=%t", request.Method, request.URL, request.Range, request.Status, request.Error, request.BodyBytesRead, request.Closed)
 			}
-			require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"), 1, "one fallback")
-			require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"))
+			require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), 1, "one fallback")
+			require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventInstalledChain))
 			// The named fault was really exercised: a request reached a blob
 			// of the chain and ended the way the script says.
 			var reached []*fixturetransport.Observation
@@ -207,8 +207,8 @@ func contentClassificationCases(t *testctx.T) {
 		var report fixtureControlsReport
 		require.NoError(t, s.b.fixture("report", "", nil, &report))
 		t.Logf("R=%d events: %v", s.rID, partKindsOf(report.transferFixtureReport, s.rID))
-		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"), 1)
-		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"), "corrupt bytes are never installed")
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), 1)
+		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), "corrupt bytes are never installed")
 		corrupt := s.requests(report, blob)
 		require.NotEmpty(t, corrupt, "the corrupt blob was really fetched")
 		var read int64
@@ -258,7 +258,7 @@ func contentClassificationCases(t *testctx.T) {
 			read += request.BodyBytesRead
 		}
 		require.GreaterOrEqual(t, read, int64(4096), "the whole blob passed the length and digest checks and reached the applier")
-		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, "lazy-enter"), 1, "one fallback")
-		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, "installed-chain"), "a malformed archive is never installed")
+		require.Len(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventLazyEnter), 1, "one fallback")
+		require.Empty(t, partEventsOf(report.transferFixtureReport, s.rID, dagql.PartEventInstalledChain), "a malformed archive is never installed")
 	})
 }

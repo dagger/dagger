@@ -723,7 +723,7 @@ func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address Persi
 	}
 	queue, err := c.retireFinalPartOffersLocked(ctx, row, address)
 	if err == nil {
-		c.recordPartFixture(row, address, "settled")
+		c.observePart(row, address, partObservation{kind: PartEventSettled})
 		state.phase = PartComplete
 		gate.outputs[key] = state
 		gate.revision++

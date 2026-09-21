@@ -64,9 +64,9 @@ func (RemoteCacheTransferSuite) TestHostInputs(ctx context.Context, t *testctx.T
 		var chains, lazy int
 		for _, event := range report.Parts {
 			switch event.Kind {
-			case "installed-chain":
+			case dagql.PartEventInstalledChain:
 				chains++
-			case "lazy-enter":
+			case dagql.PartEventLazyEnter:
 				lazy++
 			}
 		}
@@ -107,7 +107,7 @@ func (RemoteCacheTransferSuite) TestHostInputs(ctx context.Context, t *testctx.T
 		require.Contains(t, entries, "notes.txt")
 		var report fixtureControlsReport
 		require.NoError(t, b.fixture("report", "", nil, &report))
-		require.Len(t, partEventsOf(report.transferFixtureReport, chosen.ResultID, "installed-chain"), 1)
+		require.Len(t, partEventsOf(report.transferFixtureReport, chosen.ResultID, dagql.PartEventInstalledChain), 1)
 		require.Empty(t, partKindsOf(report.transferFixtureReport, sibling.ResultID), "the sibling was never touched")
 		for _, open := range report.reachedAt(dagql.FixtureChainReaderOpen) {
 			require.Equal(t, chosen.ResultID, open.ResultID, "content is opened for the selected address only")
@@ -116,7 +116,7 @@ func (RemoteCacheTransferSuite) TestHostInputs(ctx context.Context, t *testctx.T
 		_, err = dagger.Ref[*dagger.Directory](b.client, dagger.ID(sibling.Handle)).Entries(ctx)
 		require.ErrorContains(t, err, "imported filesystem part is unavailable")
 		require.NoError(t, b.fixture("report", "", nil, &report))
-		for _, kind := range []string{"provider-read", "installed-chain", "lazy-enter"} {
+		for _, kind := range []dagql.TransferFixturePartKind{dagql.PartEventProviderRead, dagql.PartEventInstalledChain, dagql.PartEventLazyEnter} {
 			require.Empty(t, partEventsOf(report.transferFixtureReport, sibling.ResultID, kind), "sibling %s", kind)
 		}
 	})

@@ -115,7 +115,7 @@ func (RemoteCacheTransferSuite) TestSharingDonorRestart(ctx context.Context, t *
 			}
 			require.True(t, ownsLease(shared, rID), "R has its own owner lease: %v", shared.Storage.OwnerLeases)
 			require.True(t, ownsLease(shared, lRow.ResultID), "L still has its own")
-			forbidden := []string{"provider-read", "installed-chain", "lazy-enter", "selected-chain"}
+			forbidden := []dagql.TransferFixturePartKind{dagql.PartEventProviderRead, dagql.PartEventInstalledChain, dagql.PartEventLazyEnter, dagql.PartEventSelectedChain}
 			noForbidden := func(report fixtureControlsReport, when string) {
 				for _, kind := range forbidden {
 					require.Empty(t, partEventsOf(report.transferFixtureReport, rID, kind), "%s: %s for R", when, kind)
@@ -123,9 +123,9 @@ func (RemoteCacheTransferSuite) TestSharingDonorRestart(ctx context.Context, t *
 			}
 			var all fixtureControlsReport
 			require.NoError(t, b.fixture("report", "", nil, &all))
-			require.Len(t, partEventsOf(all.transferFixtureReport, rID, "installed-ready"), 1, "R took its snapshot exactly once")
-			require.Len(t, partEventsOf(all.transferFixtureReport, rID, "settled"), 1)
-			require.Empty(t, partEventsOf(all.transferFixtureReport, rID, "selected-ready"), "the pass installed it; no demand selected a source")
+			require.Len(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventInstalledReady), 1, "R took its snapshot exactly once")
+			require.Len(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventSettled), 1)
+			require.Empty(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventSelectedReady), "the pass installed it; no demand selected a source")
 			noForbidden(all, "after the share")
 
 			// Release the donor: end the session that loaded L, remove its saved
@@ -164,7 +164,7 @@ func (RemoteCacheTransferSuite) TestSharingDonorRestart(ctx context.Context, t *
 			require.Equal(t, notes, contents)
 			require.NoError(t, b.fixture("report", "", nil, &all))
 			noForbidden(all, "after donor collection")
-			require.Len(t, partEventsOf(all.transferFixtureReport, rID, "installed-ready"), 1)
+			require.Len(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventInstalledReady), 1)
 
 			// Clean restart: no reset, R still imported with its own link, and
 			// the same exact read with nothing to fall back on.
@@ -183,7 +183,7 @@ func (RemoteCacheTransferSuite) TestSharingDonorRestart(ctx context.Context, t *
 			require.Equal(t, notes, contents)
 			require.NoError(t, b.fixture("report", "", nil, &all))
 			noForbidden(all, "after the restart")
-			require.Empty(t, partEventsOf(all.transferFixtureReport, rID, "installed-ready"), "nothing is installed again after the restart")
+			require.Empty(t, partEventsOf(all.transferFixtureReport, rID, dagql.PartEventInstalledReady), "nothing is installed again after the restart")
 		})
 	}
 }

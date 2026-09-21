@@ -153,7 +153,7 @@ func execEntries(report fixtureControlsReport, roots ...uint64) int {
 	}
 	n := 0
 	for _, event := range report.Parts {
-		if event.Kind == "lazy-enter" && event.Field == "withExec" && closure[event.ResultID] {
+		if event.Kind == dagql.PartEventLazyEnter && event.Field == "withExec" && closure[event.ResultID] {
 			n++
 		}
 	}
@@ -245,7 +245,7 @@ func (RemoteCacheTransferSuite) TestPipeline(ctx context.Context, t *testctx.T) 
 		require.Zero(t, execEntries(report, s.dirRows(t, built)...), "the saved exec never ran")
 		builtin := 0
 		for _, event := range report.Parts {
-			if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy" || event.Kind == "installed-chain") {
+			if event.Field == "_builtinContainer" && (event.Kind == dagql.PartEventInstalledReady || event.Kind == dagql.PartEventInstalledLazy || event.Kind == dagql.PartEventInstalledChain) {
 				builtin++
 				t.Logf("cold builtin route: row=%d %s %s", event.ResultID, event.Kind, event.Address.Part)
 			}
@@ -342,7 +342,7 @@ func pipelineRetainedExec(ctx context.Context, t *testctx.T) {
 		require.NoError(t, s.b.fixture("report", "", nil, &report))
 		t.Logf("dirs[0] row=%d events: %v", dir0.ResultID, partKindsOf(report.transferFixtureReport, dir0.ResultID))
 		for _, event := range report.Parts {
-			if event.Kind == "lazy-enter" || strings.HasPrefix(event.Kind, "installed-") {
+			if event.Kind == dagql.PartEventLazyEnter || strings.HasPrefix(string(event.Kind), "installed-") {
 				t.Logf("  %s row=%d field=%s part=%s", event.Kind, event.ResultID, event.Field, event.Address.Part)
 			}
 		}
@@ -450,8 +450,8 @@ func pipelineDonorReleased(ctx context.Context, t *testctx.T, restart bool) {
 	var after fixtureControlsReport
 	require.NoError(t, b.fixture("report", "", nil, &after))
 	require.Equal(t, 1, execEntries(after, dir0.ResultID), "the saved exec ran once")
-	require.Empty(t, partEventsOf(after.transferFixtureReport, inputID, "lazy-enter"), "the input was not restored from anywhere: it was already owned")
-	require.Empty(t, partEventsOf(after.transferFixtureReport, inputID, "provider-read"))
+	require.Empty(t, partEventsOf(after.transferFixtureReport, inputID, dagql.PartEventLazyEnter), "the input was not restored from anywhere: it was already owned")
+	require.Empty(t, partEventsOf(after.transferFixtureReport, inputID, dagql.PartEventProviderRead))
 	if after.Transport != nil {
 		require.Equal(t, originBefore, after.Transport.FixtureHosts, "the origin was not resolved again")
 	}

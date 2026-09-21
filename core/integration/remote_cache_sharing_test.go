@@ -103,7 +103,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 
 	var report transferFixtureReport
 	require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &report))
-	counts := map[string]int{}
+	counts := map[dagql.TransferFixturePartKind]int{}
 	selectedBeforeInstall := false
 	installed := false
 	for _, event := range report.Parts {
@@ -111,18 +111,18 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 			continue
 		}
 		counts[event.Kind]++
-		if event.Kind == "selected-ready" && !installed {
+		if event.Kind == dagql.PartEventSelectedReady && !installed {
 			selectedBeforeInstall = true
 		}
-		if event.Kind == "installed-ready" {
+		if event.Kind == dagql.PartEventInstalledReady {
 			installed = true
 		}
 	}
-	require.Equal(t, 1, counts["installed-ready"], "the imported row takes its snapshot exactly once: %v", counts)
-	require.Equal(t, 1, counts["settled"], "its ownership bookkeeping settles once: %v", counts)
-	require.Zero(t, counts["installed-chain"], "a local equivalent is used, never a downloaded chain")
-	require.Zero(t, counts["provider-read"], "no content is requested for a locally available snapshot")
-	require.Zero(t, counts["lazy-enter"], "the imported value's Lazy operation is never evaluated")
+	require.Equal(t, 1, counts[dagql.PartEventInstalledReady], "the imported row takes its snapshot exactly once: %v", counts)
+	require.Equal(t, 1, counts[dagql.PartEventSettled], "its ownership bookkeeping settles once: %v", counts)
+	require.Zero(t, counts[dagql.PartEventInstalledChain], "a local equivalent is used, never a downloaded chain")
+	require.Zero(t, counts[dagql.PartEventProviderRead], "no content is requested for a locally available snapshot")
+	require.Zero(t, counts[dagql.PartEventLazyEnter], "the imported value's Lazy operation is never evaluated")
 	// Whether a demand selected the source first is a route observation, not
 	// a requirement: an early sharing pass emits no selected-ready.
 	t.Logf("shared host directory row=%d selected-ready-before-install=%t counts=%v", rowID, selectedBeforeInstall, counts)
@@ -165,10 +165,10 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 			continue
 		}
 		t.Logf("restored read event for row=%d: %+v", restoredRow.ResultID, event)
-		if event.Kind == "share-skipped" {
+		if event.Kind == dagql.PartEventShareSkipped {
 			continue
 		}
-		require.Equal(t, "owner-sync", event.Kind, "a read of a restored owned snapshot needs no part operation: %+v", event)
+		require.Equal(t, dagql.PartEventOwnerSync, event.Kind, "a read of a restored owned snapshot needs no part operation: %+v", event)
 		require.Empty(t, event.Address.Part, "a read of a restored owned snapshot needs no part operation: %+v", event)
 	}
 }

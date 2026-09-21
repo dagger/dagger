@@ -471,17 +471,16 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	defer func() {
 		rerr = errors.Join(rerr, p.release(ctx, outcome == PartInstalled))
 		if outcome == PartInstalled {
-			kind := "installed-ready"
-			if p.original != nil {
-				kind = "installed-lazy"
-			} else if p.source.readiness == PartDownloadable {
-				kind = "installed-chain"
+			installed := partObservation{kind: PartEventInstalledReady}
+			switch {
+			case p.source.delegation != nil:
+				installed = partObservation{kind: PartEventInstalledDelegation, source: partDelegationSource(p.source.delegation)}
+			case p.original != nil:
+				installed.kind = PartEventInstalledLazy
+			case p.source.readiness == PartDownloadable:
+				installed.kind = PartEventInstalledChain
 			}
-			if p.source.delegation != nil {
-				c.recordPartFixtureDelegation(p.receiver, p.permit.address, "installed-delegation", p.source.delegation)
-			} else {
-				c.recordPartFixture(p.receiver, p.permit.address, kind)
-			}
+			c.observePart(p.receiver, p.permit.address, installed)
 		}
 	}()
 	if err := context.Cause(ctx); err != nil {

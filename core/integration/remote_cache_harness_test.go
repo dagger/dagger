@@ -460,7 +460,7 @@ func (b *armedBarrier) releaseAtCleanup(t *testctx.T) {
 }
 
 // partEvents returns the row's part events of one kind.
-func partEventsOf(report transferFixtureReport, rowID uint64, kind string) []int {
+func partEventsOf(report transferFixtureReport, rowID uint64, kind dagql.TransferFixturePartKind) []int {
 	var indexes []int
 	for i, event := range report.Parts {
 		if event.ResultID == rowID && event.Kind == kind {
@@ -471,8 +471,8 @@ func partEventsOf(report transferFixtureReport, rowID uint64, kind string) []int
 }
 
 // partKindsOf returns the row's part event kinds in order, for failure logs.
-func partKindsOf(report transferFixtureReport, rowID uint64) []string {
-	var kinds []string
+func partKindsOf(report transferFixtureReport, rowID uint64) []dagql.TransferFixturePartKind {
+	var kinds []dagql.TransferFixturePartKind
 	for _, event := range report.Parts {
 		if event.ResultID == rowID {
 			kinds = append(kinds, event.Kind)

@@ -268,18 +268,18 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			saved := callReport(t, b.client, "same")
 			var acquisition transferFixtureReport
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
-			counters := map[string]int{}
+			counters := map[dagql.TransferFixturePartKind]int{}
 			builtinRoute := 0
 			for _, event := range acquisition.Parts {
 				counters[event.Kind]++
-				if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
+				if event.Field == "_builtinContainer" && (event.Kind == dagql.PartEventInstalledReady || event.Kind == dagql.PartEventInstalledLazy) {
 					builtinRoute++
 				}
 			}
-			require.Positive(t, counters["provider-read"], "selected artifact must read its transferred chain")
-			require.Positive(t, counters["installed-chain"])
-			require.Positive(t, counters["owner-sync"])
-			require.Positive(t, counters["settled"])
+			require.Positive(t, counters[dagql.PartEventProviderRead], "selected artifact must read its transferred chain")
+			require.Positive(t, counters[dagql.PartEventInstalledChain])
+			require.Positive(t, counters[dagql.PartEventOwnerSync])
+			require.Positive(t, counters[dagql.PartEventSettled])
 			if cold {
 				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
 				assertColdPartDelegation(t, acquisition)
@@ -541,9 +541,9 @@ func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, import
 		if event.ResultID != scratch.ResultID {
 			continue
 		}
-		require.NotEqual(t, "provider-read", event.Kind)
-		require.NotEqual(t, "selected-chain", event.Kind)
-		if event.Kind == "lazy-enter" {
+		require.NotEqual(t, dagql.PartEventProviderRead, event.Kind)
+		require.NotEqual(t, dagql.PartEventSelectedChain, event.Kind)
+		if event.Kind == dagql.PartEventLazyEnter {
 			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, event.Address)
 			entries++
 		}
@@ -579,10 +579,10 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 	mountWriters := map[string]int{}
 	for _, event := range report.Parts {
 		k := keyOf(event)
-		if event.Kind == "lazy-enter" {
+		if event.Kind == dagql.PartEventLazyEnter {
 			operations[k]++
 		}
-		if event.Kind != "selected-delegation" && event.Kind != "installed-delegation" {
+		if event.Kind != dagql.PartEventSelectedDelegation && event.Kind != dagql.PartEventInstalledDelegation {
 			require.Nil(t, event.Source, "ordinary events cannot carry delegation provenance")
 			continue
 		}
@@ -595,7 +595,7 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 		require.Equal(t, event.Address.Part, event.Source.Address.Part)
 		require.Empty(t, event.Source.Address.OutputPath)
 		require.NotEqual(t, dagql.PartKey("metadata"), event.Address.Part)
-		if event.Kind == "selected-delegation" {
+		if event.Kind == dagql.PartEventSelectedDelegation {
 			selected[k]++
 			continue
 		}
@@ -649,7 +649,7 @@ func assertImportedHostInputsMatched(t *testctx.T, report transferFixtureReport,
 	hostMatches := 0
 	for _, event := range report.Parts {
 		row := rows[event.ResultID]
-		if event.Kind != "installed-ready" || !row.Imported || row.Call == nil || row.Call.Field != "directory" || row.Call.Receiver == nil {
+		if event.Kind != dagql.PartEventInstalledReady || !row.Imported || row.Call == nil || row.Call.Field != "directory" || row.Call.Receiver == nil {
 			continue
 		}
 		parent := rows[row.Call.Receiver.ResultID]

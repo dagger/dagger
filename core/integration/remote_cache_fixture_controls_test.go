@@ -159,9 +159,9 @@ func (RemoteCacheTransferSuite) TestFixtureControls(ctx context.Context, t *test
 			require.Contains(t, entries, "notes.txt")
 			var after fixtureControlsReport
 			require.NoError(t, b.fixture("report", "", nil, &after))
-			require.Len(t, partEventsOf(after.transferFixtureReport, row.ResultID, "installed-chain"), 1, "the output was installed exactly once")
-			require.Len(t, partEventsOf(after.transferFixtureReport, row.ResultID, "settled"), 1)
-			require.Empty(t, partEventsOf(after.transferFixtureReport, row.ResultID, "lazy-enter"))
+			require.Len(t, partEventsOf(after.transferFixtureReport, row.ResultID, dagql.PartEventInstalledChain), 1, "the output was installed exactly once")
+			require.Len(t, partEventsOf(after.transferFixtureReport, row.ResultID, dagql.PartEventSettled), 1)
+			require.Empty(t, partEventsOf(after.transferFixtureReport, row.ResultID, dagql.PartEventLazyEnter))
 			// The exhausted demand's error keeps the injected cause; an error
 			// that had lost it would still read as an unavailable part.
 			switch fault.action {
@@ -177,8 +177,8 @@ func (RemoteCacheTransferSuite) TestFixtureControls(ctx context.Context, t *test
 			if fault.bookkeeping {
 				require.ErrorContains(t, firstErr, dagql.ErrFixtureLocalStorage.Error(), "a failed owner attachment fails that demand")
 				require.Equal(t,
-					len(partEventsOf(before.transferFixtureReport, row.ResultID, "provider-read")),
-					len(partEventsOf(after.transferFixtureReport, row.ResultID, "provider-read")),
+					len(partEventsOf(before.transferFixtureReport, row.ResultID, dagql.PartEventProviderRead)),
+					len(partEventsOf(after.transferFixtureReport, row.ResultID, dagql.PartEventProviderRead)),
 					"the retry completed bookkeeping only: no second content read")
 			}
 		}
