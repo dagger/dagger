@@ -1,0 +1,136 @@
+package snapshots_test
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"testing"
+
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/plugins/content/local"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/stretchr/testify/require"
+)
+
+// builtinStoreWith plays the engine's builtin image store: a local content
+// store holding the given layers of chain, copied from its provider.
+func builtinStoreWith(t *testing.T, chain *bkcache.ExportChain, layers ...int) content.Store {
+	t.Helper()
+	ctx := context.Background()
+	store, err := local.NewStore(t.TempDir())
+	require.NoError(t, err)
+	for _, i := range layers {
+		desc := chain.Layers[i].Descriptor
+		reader, err := chain.Provider.ReaderAt(ctx, desc)
+		require.NoError(t, err)
+		data, err := io.ReadAll(io.NewSectionReader(reader, 0, reader.Size()))
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		require.NoError(t, content.WriteBlob(ctx, store, "builtin-"+desc.Digest.Encoded(), bytes.NewReader(data), desc))
+	}
+	return store
+}
+
+// twoLayerChain builds two layers in producer and exports them gzip, as
+// the builtin store holds its images.
+func twoLayerChain(t *testing.T, producer *testutil.Store) *bkcache.ExportChain {
+	t.Helper()
+	base, _ := producer.Build(t, nil, "base.txt", "base layer")
+	top, _ := producer.Build(t, base, "top.txt", "top layer")
+	chain, err := top.ExportChain(context.Background(), config.RefConfig{Compression: compression.New(compression.Gzip)})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = chain.Release(context.Background()) })
+	require.Len(t, chain.Layers, 2)
+	return chain
+}
+
+// A chain whose layers are all in the builtin store imports with no read
+// from the chain's provider: the blobs come from the engine's own files,
+// are bound to the imported snapshots like any other layer, and are held
+// for the engine's lifetime under the builtin layers lease.
+func TestChainImportTakesBuiltinLayersFromTheBuiltinStore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	chain := twoLayerChain(t, producer)
+	consumer.WithBuiltin(t, builtinStoreWith(t, chain, 0, 1))
+	provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+
+	imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: provider})
+	require.NoError(t, err)
+	require.Zero(t, provider.Reads.Load(), "nothing was read from the chain's provider")
+	testutil.CheckFile(t, imported, "base.txt", "base layer")
+	testutil.CheckFile(t, imported, "top.txt", "top layer")
+	snapshotID := imported.SnapshotID()
+	info, err := consumer.Snapshots.Stat(ctx, snapshotID)
+	require.NoError(t, err)
+	require.Equal(t, chain.Layers[1].Descriptor.Digest.String(), info.Labels[blobLabel], "the copied blob is the snapshot's blob")
+	require.NoError(t, imported.Release(ctx))
+
+	_, _, contents := leaseResources(t, consumer, bkcache.BuiltinLayersLeaseID)
+	require.ElementsMatch(t, []string{chain.Layers[0].Descriptor.Digest.String(), chain.Layers[1].Descriptor.Digest.String()}, contents, "both blobs are held by the builtin layers lease")
+	consumer.GC(t)
+	for _, layer := range chain.Layers {
+		require.True(t, blobPresent(t, consumer, layer.Descriptor.Digest), "%s outlives the import with no snapshot owner", layer.Descriptor.Digest)
+	}
+	require.False(t, snapshotPresent(t, consumer, snapshotID), "the unowned snapshot itself is collected")
+}
+
+// A chain with one layer outside the builtin store reads exactly that
+// layer from the provider.
+func TestChainImportReadsOnlyNonBuiltinLayersFromTheProvider(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	chain := twoLayerChain(t, producer)
+	consumer.WithBuiltin(t, builtinStoreWith(t, chain, 0))
+	var read []digest.Digest
+	provider := &testutil.Provider{InfoReaderProvider: chain.Provider, BeforeRead: func(_ context.Context, desc ocispecs.Descriptor) error {
+		read = append(read, desc.Digest)
+		return nil
+	}}
+
+	imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: provider})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, provider.Reads.Load())
+	require.Equal(t, []digest.Digest{chain.Layers[1].Descriptor.Digest}, read, "only the layer the builtin store lacks")
+	testutil.CheckFile(t, imported, "top.txt", "top layer")
+	require.NoError(t, imported.Release(ctx))
+	_, _, contents := leaseResources(t, consumer, bkcache.BuiltinLayersLeaseID)
+	require.Equal(t, []string{chain.Layers[0].Descriptor.Digest.String()}, contents, "only the builtin layer is held for the engine's lifetime")
+}
+
+// failingBuiltin has every layer but cannot be read from.
+type failingBuiltin struct {
+	content.InfoReaderProvider
+}
+
+func (f failingBuiltin) ReaderAt(context.Context, ocispecs.Descriptor) (content.ReaderAt, error) {
+	return nil, errors.New("builtin store unreadable")
+}
+
+// A builtin store lookup that fails falls through to the provider, as
+// today, and the import still succeeds.
+func TestChainImportFallsThroughWhenTheBuiltinStoreFails(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	chain := twoLayerChain(t, producer)
+	consumer.WithBuiltin(t, failingBuiltin{InfoReaderProvider: builtinStoreWith(t, chain, 0, 1)})
+	provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+
+	imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: provider})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, provider.Reads.Load(), "both layers came from the provider")
+	testutil.CheckFile(t, imported, "top.txt", "top layer")
+	require.NoError(t, imported.Release(ctx))
+	all, err := consumer.Leases.List(ctx, "id=="+bkcache.BuiltinLayersLeaseID)
+	require.NoError(t, err)
+	require.Empty(t, all, "nothing was taken from the builtin store")
+}

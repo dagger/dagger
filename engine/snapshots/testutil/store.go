@@ -41,10 +41,13 @@ type Store struct {
 	BeforeDiff  func(context.Context) error
 	// BeforeSnapshotUpdate runs before each snapshot label update.
 	BeforeSnapshotUpdate func(context.Context, ctdsnapshots.Info) error
-	BeforeAdd            func(context.Context, leases.Lease, leases.Resource) error
-	AfterAdd             func(context.Context, leases.Lease, leases.Resource)
-	AfterCreate          func(leases.Lease)
-	root                 string
+	// Builtin, when set before the manager is (re)opened, plays the engine's
+	// builtin image store for chain imports.
+	Builtin     content.InfoReaderProvider
+	BeforeAdd   func(context.Context, leases.Lease, leases.Resource) error
+	AfterAdd    func(context.Context, leases.Lease, leases.Resource)
+	AfterCreate func(leases.Lease)
+	root        string
 }
 
 func NewStore(t testing.TB) *Store {
@@ -79,12 +82,21 @@ func (s *Store) openManager(t testing.TB) {
 	observed := observedContent{Store: s.Content, owner: s}
 	s.Manager, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter: &observedSnapshotter{Snapshotter: s.Snapshots, store: s}, ContentStore: observed,
-		LeaseManager:  &observedLeases{Manager: s.Leases, store: s},
-		Applier:       &observedApplier{Applier: inPlaceApplier{store: observed}, store: s},
-		Differ:        &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
-		MountPoolRoot: filepath.Join(s.root, "mounts"),
+		LeaseManager:   &observedLeases{Manager: s.Leases, store: s},
+		Applier:        &observedApplier{Applier: inPlaceApplier{store: observed}, store: s},
+		Differ:         &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
+		MountPoolRoot:  filepath.Join(s.root, "mounts"),
+		BuiltinContent: s.Builtin,
 	})
 	require.NoError(t, err)
+}
+
+// WithBuiltin reopens the manager with provider as the builtin image store,
+// keeping the persistent metadata.
+func (s *Store) WithBuiltin(t testing.TB, provider content.InfoReaderProvider) {
+	t.Helper()
+	s.Builtin = provider
+	s.Reload(t)
 }
 
 func (s *Store) Reload(t testing.TB) {

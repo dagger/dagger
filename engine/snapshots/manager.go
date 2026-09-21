@@ -33,6 +33,10 @@ type SnapshotManagerOpt struct {
 	Applier       diff.Applier
 	Differ        diff.Comparer
 	MountPoolRoot string
+	// BuiltinContent is the engine's builtin image store, consulted by
+	// chain imports for a layer blob before the chain's provider. Nil means
+	// no such store.
+	BuiltinContent content.InfoReaderProvider
 }
 
 type ImportedImage struct {
@@ -105,6 +109,8 @@ type snapshotManager struct {
 	Applier       diff.Applier
 	Differ        diff.Comparer
 	metadataStore *metadataStore
+	// builtinContent is SnapshotManagerOpt.BuiltinContent.
+	builtinContent content.InfoReaderProvider
 
 	snapshotContentDigests map[string]map[digest.Digest]struct{}
 	importedLayerByBlob    map[ImportedLayerBlobKey]string
@@ -124,6 +130,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		LeaseManager:           opt.LeaseManager,
 		Applier:                opt.Applier,
 		Differ:                 opt.Differ,
+		builtinContent:         opt.BuiltinContent,
 		metadataStore:          newMetadataStore(),
 		records:                make(map[string]*cacheRecord),
 		snapshotContentDigests: make(map[string]map[digest.Digest]struct{}),
