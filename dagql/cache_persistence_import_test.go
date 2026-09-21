@@ -241,6 +241,184 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	cacheTestReleaseSession(t, cacheB, rootCtxB)
 }
 
+// persistSelfBinderObj records the attached result the cache hands a decoded
+// payload through PersistedSelfBinder.
+type persistSelfBinderObj struct {
+	Name      string
+	boundSelf AnyResult
+	bindErr   error
+}
+
+func (*persistSelfBinderObj) Type() *ast.Type {
+	return &ast.Type{NamedType: "PersistSelfBinderObj", NonNull: true}
+}
+
+func (obj *persistSelfBinderObj) EncodePersistedObject(context.Context, PersistedObjectCache) (PersistedObjectEncoding, error) {
+	payload, err := json.Marshal(persistedPersistConcurrentDecodeObj{Name: obj.Name})
+	if err != nil {
+		return PersistedObjectEncoding{}, err
+	}
+	return PersistedObjectEncoding{JSON: payload}, nil
+}
+
+// persistSelfBinderBindErrs injects a BindPersistedSelf failure keyed by the
+// decoded payload's name; result IDs are not unique across parallel tests'
+// separate stores.
+var persistSelfBinderBindErrs sync.Map
+
+func (*persistSelfBinderObj) DecodePersistedObject(_ context.Context, _ *Server, _ uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
+	var persisted persistedPersistConcurrentDecodeObj
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, err
+	}
+	obj := &persistSelfBinderObj{Name: persisted.Name}
+	if errAny, ok := persistSelfBinderBindErrs.Load(persisted.Name); ok {
+		obj.bindErr = errAny.(error)
+	}
+	return obj, nil
+}
+
+func (obj *persistSelfBinderObj) BindPersistedSelf(_ context.Context, self AnyResult) error {
+	if obj.bindErr != nil {
+		return obj.bindErr
+	}
+	obj.boundSelf = self
+	return nil
+}
+
+func newPersistSelfBinderTestServer(name string) *Server {
+	srv, err := NewServer(context.Background(), &persistCodecRoot{})
+	if err != nil {
+		panic(err)
+	}
+	srv.InstallObject(NewClass(srv, ClassOpts[*persistSelfBinderObj]{}))
+	Fields[*persistCodecRoot]{
+		NodeFunc("objSelfBinder", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistSelfBinderObj], error) {
+			return NewObjectResultForCurrentCall(ctx, srv, &persistSelfBinderObj{Name: name})
+		}).IsPersistable(),
+	}.Install(srv)
+	return srv
+}
+
+// A decoded payload that references its own result gets that result once it
+// is installed on the cache row: the decode-time wrapper is a detached shell,
+// so the bound result must be the row itself, carrying its engine result ID
+// and the decoded value.
+func TestCachePersistenceImportedObjectBindsPersistedSelf(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	srvA := newPersistSelfBinderTestServer("bind-ok")
+	rootCtxA := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-self-binder-root",
+	})
+	rootCtxA = ContextWithCache(rootCtxA, cacheA)
+	rootCtxA = srvToContext(rootCtxA, srvA)
+
+	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{Field: "objSelfBinder"})
+	assert.NilError(t, err)
+	idA, err := resA.ID()
+	assert.NilError(t, err)
+	// A freshly computed value is never "bound": it was attached normally.
+	objA, ok := UnwrapAs[*persistSelfBinderObj](resA.Unwrap())
+	assert.Assert(t, ok)
+	assert.Assert(t, objA.boundSelf == nil)
+	cacheTestReleaseSession(t, cacheA, rootCtxA)
+	assert.NilError(t, cacheA.persistCurrentState(ctx))
+	assert.NilError(t, cacheA.Close(context.Background()))
+
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cacheB.Close(context.Background()))
+	}()
+	srvB := newPersistSelfBinderTestServer("bind-ok")
+	rootCtxB := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-self-binder-root",
+	})
+	rootCtxB = ContextWithCache(rootCtxB, cacheB)
+	rootCtxB = srvToContext(rootCtxB, srvB)
+
+	resB, err := srvB.root.Select(rootCtxB, srvB, Selector{Field: "objSelfBinder"})
+	assert.NilError(t, err)
+	assert.Assert(t, resB.HitCache())
+	objB, ok := UnwrapAs[*persistSelfBinderObj](resB.Unwrap())
+	assert.Assert(t, ok)
+	assert.Equal(t, "bind-ok", objB.Name)
+	assert.Assert(t, objB.boundSelf != nil, "decoded payload was not handed its own result")
+
+	boundObj, ok := UnwrapAs[*persistSelfBinderObj](objB.boundSelf.Unwrap())
+	assert.Assert(t, ok)
+	assert.Assert(t, boundObj == objB, "bound result must wrap the installed payload")
+	boundID, err := objB.boundSelf.ID()
+	assert.NilError(t, err)
+	assert.Assert(t, boundID.EngineResultID() != 0)
+	assert.Equal(t, idA.EngineResultID(), boundID.EngineResultID())
+	cacheTestReleaseSession(t, cacheB, rootCtxB)
+}
+
+// A bind failure must not leave a half-initialized payload installed: the
+// demand fails, and the next one decodes again.
+func TestCachePersistenceImportedObjectBindPersistedSelfFailureRedecodes(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	srvA := newPersistSelfBinderTestServer("bind-fail")
+	rootCtxA := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-self-binder-fail-root",
+	})
+	rootCtxA = ContextWithCache(rootCtxA, cacheA)
+	rootCtxA = srvToContext(rootCtxA, srvA)
+
+	_, err = srvA.root.Select(rootCtxA, srvA, Selector{Field: "objSelfBinder"})
+	assert.NilError(t, err)
+	cacheTestReleaseSession(t, cacheA, rootCtxA)
+	assert.NilError(t, cacheA.persistCurrentState(ctx))
+	assert.NilError(t, cacheA.Close(context.Background()))
+
+	bindErr := errors.New("bind boom")
+	persistSelfBinderBindErrs.Store("bind-fail", bindErr)
+
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cacheB.Close(context.Background()))
+	}()
+	srvB := newPersistSelfBinderTestServer("bind-fail")
+	rootCtxB := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-self-binder-fail-root",
+	})
+	rootCtxB = ContextWithCache(rootCtxB, cacheB)
+	rootCtxB = srvToContext(rootCtxB, srvB)
+
+	_, err = srvB.root.Select(rootCtxB, srvB, Selector{Field: "objSelfBinder"})
+	assert.ErrorIs(t, err, bindErr)
+
+	persistSelfBinderBindErrs.Delete("bind-fail")
+	resB, err := srvB.root.Select(rootCtxB, srvB, Selector{Field: "objSelfBinder"})
+	assert.NilError(t, err)
+	objB, ok := UnwrapAs[*persistSelfBinderObj](resB.Unwrap())
+	assert.Assert(t, ok)
+	assert.Assert(t, objB.boundSelf != nil)
+	cacheTestReleaseSession(t, cacheB, rootCtxB)
+}
+
 func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	t.Parallel()
 

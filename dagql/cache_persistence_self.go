@@ -58,6 +58,30 @@ type PersistedObjectDecoder interface {
 	DecodePersistedObject(context.Context, *Server, uint64, *ResultCall, json.RawMessage) (Typed, error)
 }
 
+// PersistedSelfBinder is implemented by decoded object payloads that hold a
+// reference to their own result — e.g. a module that lists itself among its
+// dependencies. DecodePersistedObject runs before the result exists, so such
+// references cannot be rebuilt there; the cache calls BindPersistedSelf with
+// the attached result once the decoded payload is installed on it, mirroring
+// the self argument AttachDependencyResults receives for freshly computed
+// results.
+type PersistedSelfBinder interface {
+	BindPersistedSelf(context.Context, AnyResult) error
+}
+
+// bindPersistedSelf hands a freshly decoded self-referencing payload its own
+// attached result. res must already carry the decoded value.
+func bindPersistedSelf(ctx context.Context, res *sharedResult, resolver TypeResolver, binder PersistedSelfBinder) error {
+	selfRes, err := wrapSharedResultWithResolver(ctx, res, false, resolver)
+	if err != nil {
+		return fmt.Errorf("bind self: %w", err)
+	}
+	if err := binder.BindPersistedSelf(ctx, selfRes); err != nil {
+		return fmt.Errorf("bind self: %w", err)
+	}
+	return nil
+}
+
 // PersistedSelfCodec is the shared interface used to encode/decode result self
 // payloads for disk persistence.
 type PersistedSelfCodec interface {

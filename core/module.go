@@ -99,6 +99,7 @@ func (*Module) TypeDescription() string {
 
 var _ dagql.PersistedObject = (*Module)(nil)
 var _ dagql.PersistedObjectDecoder = (*Module)(nil)
+var _ dagql.PersistedSelfBinder = (*Module)(nil)
 var _ dagql.HasDependencyResults = (*Module)(nil)
 
 func (mod *Module) Name() string {
@@ -1205,6 +1206,45 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}
 
 	return mod, nil
+}
+
+// BindPersistedSelf restores the self entry in a decoded module's Deps.
+// EncodePersistedObject leaves it out (it would reference the row being
+// encoded), and DecodePersistedObject runs before the row's result exists,
+// so a rehydrated self-calling module would otherwise be served a deps-only
+// schema: its SDK runtime then can't see the module's own types, and a
+// self-typed reference in its source (e.g. Dang's
+// `currentNode.{{... on Dagger.Self!}}`) fails to typecheck.
+func (mod *Module) BindPersistedSelf(_ context.Context, self dagql.AnyResult) error {
+	if mod == nil || !mod.IncludeSelfInDeps {
+		return nil
+	}
+	if mod.Deps == nil {
+		return fmt.Errorf("bind module self dependency: missing module deps")
+	}
+	attachedSelf, ok := self.(dagql.ObjectResult[*Module])
+	if !ok {
+		return fmt.Errorf("bind module self dependency: expected module result, got %T", self)
+	}
+	attachedSelfID, err := attachedSelf.ID()
+	if err != nil {
+		return fmt.Errorf("bind module self dependency: self ID: %w", err)
+	}
+	for _, dep := range mod.Deps.entries {
+		depInst := dep.mod.ModuleResult()
+		if depInst.Self() == nil {
+			continue
+		}
+		depID, err := depInst.ID()
+		if err != nil {
+			return fmt.Errorf("bind module self dependency %q: dep ID: %w", dep.mod.Name(), err)
+		}
+		if depID != nil && attachedSelfID != nil && depID.EngineResultID() == attachedSelfID.EngineResultID() {
+			return nil
+		}
+	}
+	mod.Deps = mod.Deps.Append(NewUserMod(attachedSelf))
+	return nil
 }
 
 func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
