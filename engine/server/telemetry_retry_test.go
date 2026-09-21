@@ -14,6 +14,23 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
+// callPayloadMissingTargets reports the route targets whose DB does not hold
+// the digest yet, in route order. Test-only: production code never needs to
+// observe delivery state outside the claim/take/settle transitions.
+func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []string) []string {
+	sess.callPayloadMu.Lock()
+	defer sess.callPayloadMu.Unlock()
+
+	states := sess.callPayloadStates(digest, false)
+	missing := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if states[target] != callPayloadDelivered {
+			missing = append(missing, target)
+		}
+	}
+	return missing
+}
+
 func TestSessionLogExporterRetriesPayloadAfterStoreFailure(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "store")
 	require.NoError(t, os.WriteFile(root, []byte("temporarily unavailable"), 0600))

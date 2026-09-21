@@ -1427,10 +1427,11 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	maps.Copy(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	// Flush the headers right away rather than waiting for the first body
-	// write. The engine flushes an empty 200 to signal a telemetry stream is
-	// attached, and the nested client blocks on those headers before it
-	// proceeds; a quiet stream (e.g. /v1/metrics with nothing to report)
-	// would otherwise never let the nested client past subscription.
+	// write. The telemetry streams no longer depend on this — the engine
+	// writes a DTS1 hello frame (or the SSE "subscribed" event) right after
+	// the headers, and those body bytes flush through writeFlusher below —
+	// but it is cheap and keeps other streamed responses, and any nested
+	// client waiting on headers alone, from stalling behind an idle body.
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}

@@ -3606,22 +3606,6 @@ func (sess *daggerSession) settleCallPayload(digest string, targets []string, de
 	}
 }
 
-// callPayloadMissingTargets reports the route targets whose DB does not hold
-// the digest yet, in route order.
-func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []string) []string {
-	sess.callPayloadMu.Lock()
-	defer sess.callPayloadMu.Unlock()
-
-	states := sess.callPayloadStates(digest, false)
-	missing := make([]string, 0, len(targets))
-	for _, target := range targets {
-		if states[target] != callPayloadDelivered {
-			missing = append(missing, target)
-		}
-	}
-	return missing
-}
-
 // The DagQL server for the current client's session
 func (srv *Server) Server(ctx context.Context) (*dagql.Server, error) {
 	client, err := srv.executableClientFromContext(ctx)
