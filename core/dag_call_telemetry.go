@@ -90,10 +90,11 @@ func recordCallPayloads(
 
 	id, err := frame.RecipeID(ctx)
 	if err != nil {
-		// Debug, not Warn: a recipe that cannot be rebuilt (a handle-form
-		// reference to a shared result, a frame the cache no longer holds)
-		// is a known shape, and this runs once per distinct call digest —
-		// warning would mean thousands of identical lines for one bad chain.
+		// Debug, not Warn: synthetic operations have no replayable API, and
+		// referenced results may no longer exist. Call payloads are replay
+		// recipes, not a serialization of arbitrary diagnostic frames. Omit
+		// unexportable recipes without affecting execution or inventing fields.
+		// This runs once per digest; warning would flood one bad chain's logs.
 		slog.DebugContext(ctx, "failed to rebuild recipe ID for call payloads", "digest", callDigest, "err", err)
 		return
 	}
