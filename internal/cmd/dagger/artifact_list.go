@@ -202,10 +202,8 @@ func artifactListArguments(cmd *cobra.Command, path string, keys []dagaddress.Pa
 	}
 	// Keep explicit check policy options when the line is copied into a new command.
 	if cmd.Name() == "check" {
-		for _, name := range []string{"generate", "no-generate"} {
-			if cmd.Flags().Changed(name) {
-				args = append(args, "--"+name+"="+cmd.Flag(name).Value.String())
-			}
+		if cmd.Flags().Changed("generated") {
+			args = append(args, "--generated="+cmd.Flag("generated").Value.String())
 		}
 		skip, _ := cmd.Flags().GetStringArray("skip")
 		for _, pattern := range skip {

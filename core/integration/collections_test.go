@@ -722,9 +722,9 @@ func (CollectionsSuite) TestBatchReplacement(ctx context.Context, t *testctx.T) 
 	})
 	t.Run("CLI query and flags", func(ctx context.Context, t *testctx.T) {
 		for _, args := range [][]string{
-			{"check", "--no-generate", "items/verify?item=a&item=b"},
-			{"check", "--no-generate", "items/verify", "--item=a", "--item=b"},
-			{"check", "--no-generate", "items/verify?item=a", "items/verify?item=b"},
+			{"check", "--generated=false", "items/verify?item=a&item=b"},
+			{"check", "--generated=false", "items/verify", "--item=a", "--item=b"},
+			{"check", "--generated=false", "items/verify?item=a", "items/verify?item=b"},
 		} {
 			out, err := base.With(daggerExec(args...)).CombinedOutput(ctx)
 			require.NoError(t, err, out)
@@ -746,7 +746,7 @@ func (CollectionsSuite) TestBatchScaleOut(ctx context.Context, t *testctx.T) {
 		"items/verify?item=a&item=b",
 		"parents/items/verify?item=left&item=right&item=common",
 	} {
-		out, err := base.With(daggerNonNestedExec("check", "--scale-out", "--no-generate", uri)).CombinedOutput(ctx)
+		out, err := base.With(daggerNonNestedExec("check", "--scale-out", "--generated=false", uri)).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 	}
 }
