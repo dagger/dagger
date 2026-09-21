@@ -107,9 +107,16 @@ func snapshotPresent(t *testing.T, store *testutil.Store, snapshotID string) boo
 	return true
 }
 
-func exportOnce(t *testing.T, store *testutil.Store, snapshotID string) digest.Digest {
+// exportOnce exports the kept snapshot's chain uncompressed and returns the
+// top layer's digest and how many content writes the export made: a reuse
+// writes nothing, a diff writes the blob. Writes, not the differ counter,
+// because a store may diff through a differ the counter does not see.
+func exportOnce(t *testing.T, store *testutil.Store, snapshotID string) (digest.Digest, int) {
 	t.Helper()
 	ctx := context.Background()
+	writes := 0
+	store.BeforeWrite = func([]byte) error { writes++; return nil }
+	defer func() { store.BeforeWrite = nil }()
 	kept, err := store.Manager.GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
 	require.NoError(t, err)
 	chain, err := kept.ExportChain(ctx, uncompressed)
@@ -118,7 +125,7 @@ func exportOnce(t *testing.T, store *testutil.Store, snapshotID string) digest.D
 	dgst := chain.Layers[len(chain.Layers)-1].Descriptor.Digest
 	require.NoError(t, chain.Release(ctx))
 	require.NoError(t, kept.Release(ctx))
-	return dgst
+	return dgst, writes
 }
 
 // An imported layer's blob follows its snapshot into every lease that
@@ -158,9 +165,9 @@ func TestImportedLayerBlobIsBoundToItsSnapshot(t *testing.T) {
 	require.True(t, blobPresent(t, consumer, blob), "the blob outlives the import's pin under the owner lease")
 	require.True(t, snapshotPresent(t, consumer, snapshotID))
 
-	diffsBefore := consumer.Diffs.Load()
-	require.Equal(t, blob, exportOnce(t, consumer, snapshotID), "the export reuses the imported blob")
-	require.Equal(t, diffsBefore, consumer.Diffs.Load(), "without diffing the snapshot")
+	exported, writes := exportOnce(t, consumer, snapshotID)
+	require.Equal(t, blob, exported, "the export reuses the imported blob")
+	require.Zero(t, writes, "without writing anything: the recorded blob survived the reload")
 	consumer.GC(t)
 	require.True(t, blobPresent(t, consumer, blob), "the export's own pin left nothing behind that the owner did not hold")
 
@@ -196,10 +203,9 @@ func TestFlatLeaseNamingOnlyTheSnapshotLosesTheBlob(t *testing.T) {
 	require.True(t, snapshotPresent(t, consumer, snapshotID))
 	require.False(t, blobPresent(t, consumer, blob), "a flat lease does not follow the snapshot's label to the blob")
 
-	diffsBefore := consumer.Diffs.Load()
-	again := exportOnce(t, consumer, snapshotID)
+	again, writes := exportOnce(t, consumer, snapshotID)
 	require.NotEqual(t, blob, again, "the export had to diff the layer again, under another digest")
-	require.Equal(t, diffsBefore+1, consumer.Diffs.Load())
+	require.Positive(t, writes, "and wrote the new blob")
 	info, err = consumer.Snapshots.Stat(ctx, snapshotID)
 	require.NoError(t, err)
 	require.Equal(t, again.String(), info.Labels[blobLabel], "the fresh diff is labeled in turn")
@@ -239,9 +245,9 @@ func TestDiffedBlobIsBoundToItsSnapshot(t *testing.T) {
 	require.Equal(t, []string{blob.String()}, contents)
 	store.GC(t)
 	require.True(t, blobPresent(t, store, blob), "the diffed blob outlives the build's owner")
-	diffsBefore := store.Diffs.Load()
-	require.Equal(t, blob, exportOnce(t, store, snapshotID))
-	require.Equal(t, diffsBefore, store.Diffs.Load())
+	exported, writes := exportOnce(t, store, snapshotID)
+	require.Equal(t, blob, exported)
+	require.Zero(t, writes, "reused without a write")
 
 	require.NoError(t, store.Manager.RemoveLease(ctx, owner))
 	store.GC(t)
@@ -314,10 +320,12 @@ func TestLabelUpdateFailureIsRepairedByTheRetry(t *testing.T) {
 	info, err := store.Snapshots.Stat(ctx, snapshotID)
 	require.NoError(t, err)
 	require.Empty(t, info.Labels[blobLabel], "no label after the refused update")
-	diffsBefore := store.Diffs.Load()
+	writes := 0
+	store.BeforeWrite = func([]byte) error { writes++; return nil }
 	chain, err := built.ExportChain(ctx, uncompressed)
+	store.BeforeWrite = nil
 	require.NoError(t, err, "the retry succeeds")
-	require.Equal(t, diffsBefore+1, store.Diffs.Load(), "the retry diffed again: nothing reusable was committed by the failed export")
+	require.Positive(t, writes, "the retry diffed again: nothing reusable was committed by the failed export")
 	blob := chain.Layers[0].Descriptor.Digest
 	require.NoError(t, chain.Release(ctx))
 	info, err = store.Snapshots.Stat(ctx, snapshotID)
@@ -330,7 +338,9 @@ func TestLabelUpdateFailureIsRepairedByTheRetry(t *testing.T) {
 	require.NoError(t, store.Manager.RemoveLease(ctx, buildOwner))
 	store.GC(t)
 	require.True(t, blobPresent(t, store, blob))
-	require.Equal(t, blob, exportOnce(t, store, snapshotID))
+	exported, writes := exportOnce(t, store, snapshotID)
+	require.Equal(t, blob, exported)
+	require.Zero(t, writes)
 	require.NoError(t, store.Manager.RemoveLease(ctx, owner))
 }
 
@@ -374,9 +384,8 @@ func TestForcedVariantKeepsTheRecordedBlob(t *testing.T) {
 	consumer.GC(t)
 	require.True(t, blobPresent(t, consumer, recorded), "the recorded blob survives with the earlier owners gone")
 
-	writes := 0
-	consumer.BeforeWrite = func([]byte) error { writes++; return nil }
-	require.Equal(t, recorded, exportOnce(t, consumer, snapshotID), "the next ordinary export reuses the recorded blob")
+	exported, writes := exportOnce(t, consumer, snapshotID)
+	require.Equal(t, recorded, exported, "the next ordinary export reuses the recorded blob")
 	require.Zero(t, writes, "without writing anything")
 	require.NoError(t, consumer.Manager.RemoveLease(ctx, owner))
 }

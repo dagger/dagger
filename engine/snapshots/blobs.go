@@ -55,6 +55,56 @@ func (cm *snapshotManager) labelSnapshotBlob(ctx context.Context, snapshotID str
 	return nil
 }
 
+// restoreRecordedBlobFromLabel reads the snapshot's blob label and, when
+// the blob is still in the content store with its stored descriptor,
+// re-queues the ref's blob metadata from it and returns the digest. An
+// unlabeled snapshot, or one whose blob is gone, returns "" so the caller
+// diffs as before.
+func (cm *snapshotManager) restoreRecordedBlobFromLabel(ctx context.Context, ref *immutableRef) (digest.Digest, error) {
+	info, err := cm.Snapshotter.Stat(ctx, ref.SnapshotID())
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return "", nil
+		}
+		return "", errors.Wrapf(err, "stat snapshot %s for its blob label", ref.SnapshotID())
+	}
+	labeled := info.Labels[snapshotBlobGCLabel]
+	if labeled == "" {
+		return "", nil
+	}
+	blob := digest.Digest(labeled)
+	if err := blob.Validate(); err != nil {
+		return "", errors.Wrapf(err, "blob label of snapshot %s", ref.SnapshotID())
+	}
+	desc, err := getBlobDesc(ctx, cm.ContentStore, blob)
+	if cerrdefs.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	diffID, err := diffIDFromDescriptor(desc)
+	if err != nil {
+		return "", err
+	}
+	ref.mu.Lock()
+	defer ref.mu.Unlock()
+	for _, queue := range []error{
+		ref.md.queueDiffID(diffID),
+		ref.md.queueBlob(desc.Digest),
+		ref.md.queueMediaType(desc.MediaType),
+		ref.md.queueBlobSize(desc.Size),
+		ref.md.queueBlobOnly(false),
+		ref.md.appendURLs(desc.URLs),
+		ref.md.commitMetadata(),
+	} {
+		if queue != nil {
+			return "", queue
+		}
+	}
+	return desc.Digest, nil
+}
+
 //nolint:gocyclo // Keep blob reuse, diff computation and metadata commit in one export flow.
 func (cm *snapshotManager) ensureExportBlob(
 	ctx context.Context,
@@ -74,7 +124,18 @@ func (cm *snapshotManager) ensureExportBlob(
 	}
 	defer unlock()
 	result, err := func() (_ ensureExportBlobResult, err error) {
-		if blobDigest := ref.md.getBlob(); blobDigest != "" {
+		blobDigest := ref.md.getBlob()
+		if blobDigest == "" {
+			// A ref reopened after a restart is rehydrated with no blob
+			// record; the snapshot's label is the durable record. Restore
+			// the metadata from it and the blob's stored descriptor.
+			restored, err := cm.restoreRecordedBlobFromLabel(ctx, ref)
+			if err != nil {
+				return ensureExportBlobResult{}, err
+			}
+			blobDigest = restored
+		}
+		if blobDigest != "" {
 			present, err := cm.pinContent(ctx, ocispecs.Descriptor{Digest: blobDigest})
 			if err != nil {
 				return ensureExportBlobResult{}, err
