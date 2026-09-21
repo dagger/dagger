@@ -315,6 +315,9 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 		return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath, query.CleanMountNS())
 	}))
 
+	// Nil unless the engine enabled the test fixture's Git mapping at startup.
+	opts = append(opts, remoteCacheFixtureGitOptions()...)
+
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
 

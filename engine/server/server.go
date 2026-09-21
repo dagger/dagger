@@ -159,6 +159,8 @@ type Server struct {
 	engineCache *dagql.Cache
 	// remoteCacheAdapter is nil unless an integration is configured.
 	remoteCacheAdapter *RemoteCacheAdapter
+	// remoteCacheFixture is nil unless the test fixture gate is set.
+	remoteCacheFixture *remoteCacheFixtureController
 
 	//
 	// session+client state
@@ -484,7 +486,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// The integration attaches after local cache initialization and before
 	// the server dispatches any request.
-	if err := srv.startRemoteCacheIntegration(opts.RemoteCacheIntegration); err != nil {
+	if err := enableRemoteCacheFixtureTransports(); err != nil {
+		return nil, fmt.Errorf("enable remote cache fixture transports: %w", err)
+	}
+	if err := srv.startRemoteCacheIntegration(srv.remoteCacheFixtureIntegration(opts.RemoteCacheIntegration)); err != nil {
 		return nil, err
 	}
 

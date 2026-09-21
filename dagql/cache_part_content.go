@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -42,6 +43,13 @@ type PartContentOverride interface {
 	// Available is a pure address check; it must not request content.
 	Available(PersistedPartOffer, time.Time) bool
 	Provider(context.Context, PersistedPartOffer, *PartDemandState) content.InfoReaderProvider
+}
+
+// PartContentOverrideScope is optionally implemented by an override that
+// leaves some offers to the real source. The gated fixture uses it: an offer
+// that carries addresses or a renewal key is fetched over the real HTTP path.
+type PartContentOverrideScope interface {
+	Overrides(PersistedPartOffer) bool
 }
 
 type partContentOverride struct{ PartContentOverride }
@@ -87,6 +95,15 @@ func (s *PartContentSource) loadOverride() PartContentOverride {
 	return nil
 }
 
+// overrideFor returns the override that serves this offer, if any.
+func (s *PartContentSource) overrideFor(offer PersistedPartOffer) PartContentOverride {
+	override := s.loadOverride()
+	if scope, ok := override.(PartContentOverrideScope); ok && !scope.Overrides(offer) {
+		return nil
+	}
+	return override
+}
+
 func (s *PartContentSource) attachedBridge() *RemoteCacheBridge {
 	if s == nil {
 		return nil
@@ -105,14 +122,16 @@ func (s *PartContentSource) roundTripper() http.RoundTripper {
 	if s != nil && s.transport != nil {
 		return s.transport
 	}
-	return defaultPartTransport()
+	// The gated test fixture's dispatcher answers its own content host and
+	// delegates the rest; off-gate Wrap returns its argument unchanged.
+	return fixturetransport.Wrap(defaultPartTransport())
 }
 
 // Available reports whether an offer can supply bytes now. An empty chain is
 // scratch; otherwise every blob needs a usable address, or the offer needs a
 // renewal key with a bridge attached. It performs no I/O.
 func (s *PartContentSource) Available(offer PersistedPartOffer, now time.Time) bool {
-	if override := s.loadOverride(); override != nil {
+	if override := s.overrideFor(offer); override != nil {
 		return override.Available(offer, now)
 	}
 	if len(offer.Chain.Layers) == 0 || chainAddressesUsable(&offer, now) {
@@ -131,7 +150,7 @@ func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOff
 	if engine.IsSnapshotSharePreparation(ctx) {
 		return refusingContentProvider{}
 	}
-	if override := s.loadOverride(); override != nil {
+	if override := s.overrideFor(offer); override != nil {
 		return override.Provider(ctx, offer, demand)
 	}
 	// Always a map: an offer may carry a renewal key and no address yet, and
@@ -704,7 +723,7 @@ func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address Persi
 	}
 	queue, err := c.retireFinalPartOffersLocked(ctx, row, address)
 	if err == nil {
-		c.recordPartFixture(row, address, "settled")
+		c.observePart(row, address, partObservation{kind: PartEventSettled})
 		state.phase = PartComplete
 		gate.outputs[key] = state
 		gate.revision++

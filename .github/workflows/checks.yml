@@ -35,6 +35,8 @@ jobs:
           - "test-split/test-llm"
           - "test-split/test-module-runtimes"
           - "test-split/test-modules"
+          - "test-split/test-remote-cache"
+          - "tla-check/quick"
           - "engine-dev/**"
           - "go-sdk/**"
           - "python-sdk/**"

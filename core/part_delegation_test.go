@@ -253,12 +253,12 @@ func assertDelegationReport(t *testing.T, bctx context.Context, b *dagql.Cache, 
 	require.NoError(t, err)
 	installs := 0
 	for _, event := range report.Parts {
-		if event.Kind == "installed-delegation" {
+		if event.Kind == dagql.PartEventInstalledDelegation {
 			installs++
 			require.Equal(t, childID, event.ResultID)
 			require.NotNil(t, event.Source)
 			require.Equal(t, dagql.PersistedPartAddress{Part: "fs"}, event.Source.Address)
-		} else if event.Kind != "selected-delegation" {
+		} else if event.Kind != dagql.PartEventSelectedDelegation {
 			require.Nil(t, event.Source)
 		}
 	}
@@ -316,7 +316,7 @@ func testNativeDelegationRestart(t *testing.T, store *testutil.Store, snapshotID
 	require.NoError(t, err)
 	installs := 0
 	for _, event := range report.Parts {
-		if event.Kind == "installed-delegation" {
+		if event.Kind == dagql.PartEventInstalledDelegation {
 			installs++
 		}
 	}

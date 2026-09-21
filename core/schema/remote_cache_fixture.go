@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/fixturetransport"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
@@ -50,6 +52,14 @@ type remoteCacheFixtureReport struct {
 	dagql.TransferFixtureReport
 	Bodies      []remoteCacheBodyCount             `json:"bodies"`
 	Persistence core.RemoteCacheFixturePersistence `json:"persistence"`
+	// Transport is what the in-process dispatcher saw of requests to the
+	// fixture's own hosts, and how many other requests it delegated.
+	Transport *fixturetransport.Report `json:"transport,omitempty"`
+	// Storage is read from the engine's real stores; absent where the
+	// fixture runs without an engine server.
+	Storage *core.RemoteCacheFixtureStorage `json:"storage,omitempty"`
+	// Renewal is what the fixture's consumer loop did; absent likewise.
+	Renewal *core.RemoteCacheFixtureRenewals `json:"renewal,omitempty"`
 }
 
 func installRemoteCacheFixture(srv *dagql.Server) error {
@@ -269,34 +279,8 @@ func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 
 //nolint:gocyclo // one phase per fixture scenario kind; splitting hides the order of the phases
 func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args remoteCacheFixtureArgs) (core.JSON, error) {
-	if args.Operation != "export" && len(args.OutputIDs) != 0 {
-		return nil, fmt.Errorf("selected outputs require export")
-	}
-	switch args.Operation {
-	case "export":
-		if len(args.IDs) == 0 {
-			return nil, fmt.Errorf("export requires handles")
-		}
-		if err := fixtureBundlePath(args.Path); err != nil {
-			return nil, err
-		}
-	case "import":
-		if len(args.IDs) != 0 {
-			return nil, fmt.Errorf("import does not accept IDs")
-		}
-		if err := fixtureBundlePath(args.Path); err != nil {
-			return nil, err
-		}
-	case "report":
-		if args.Path != "" {
-			return nil, fmt.Errorf("report does not accept a path")
-		}
-	case "recordBody":
-		if args.Path != "" || len(args.IDs) != 0 {
-			return nil, fmt.Errorf("recordBody does not accept path or IDs")
-		}
-	default:
-		return nil, fmt.Errorf("unknown fixture operation %q", args.Operation)
+	if err := validateFixtureOperation(args); err != nil {
+		return nil, err
 	}
 	if err := context.Cause(ctx); err != nil {
 		return nil, err
@@ -413,6 +397,31 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		}
 		defer root.Close()
 		report.Bodies, err = readFixtureBodies(root)
+		if dispatcher := fixturetransport.Current(); dispatcher != nil && err == nil {
+			transport := dispatcher.Report()
+			if transport.Overflowed {
+				err = fmt.Errorf("%w: transport", dagql.ErrTransferFixtureOverflow)
+			}
+			report.Transport = &transport
+		}
+		if controls, controlsErr := fixtureControls(q); controlsErr == nil && err == nil {
+			// An engine whose server has the controls but no controller (a
+			// real integration is configured beside the gate) reports without
+			// the storage and renewal groups; any other storage error fails.
+			storage, storageErr := controls.RemoteCacheFixtureStorage(ctx)
+			switch {
+			case storageErr == nil:
+				report.Storage = &storage
+			case !errors.Is(storageErr, core.ErrRemoteCacheFixtureNoController):
+				err = storageErr
+			}
+			if renewals, renewalErr := controls.RemoteCacheFixtureRenewals(); renewalErr == nil {
+				report.Renewal = &renewals
+				if renewals.Overflowed && err == nil {
+					err = fmt.Errorf("%w: renewal", dagql.ErrTransferFixtureOverflow)
+				}
+			}
+		}
 		response = report
 	case "recordBody":
 		fn, callErr := q.CurrentFunctionCall(ctx)
@@ -436,6 +445,8 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		defer root.Close()
 		err = writeFixtureJSON(ctx, root, identity.NewID()+".json", entry)
 		response = entry
+	default:
+		response, err = runFixtureControl(ctx, q, cache, md.SessionID, path, args, ids)
 	}
 	if err != nil {
 		return nil, err

@@ -22,6 +22,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		upstream := devEngineContainerAsService(ctr)
+		unwatch := watchNestedEngine(t, outer, upstream, t.Name())
 		tunnel, err := outer.Host().Tunnel(upstream).Start(ctx)
 		require.NoError(t, err)
 		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
@@ -29,11 +30,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(t.TempDir()), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			require.NoError(t, client.Close())
-			_, err := upstream.Stop(context.WithoutCancel(ctx))
-			require.NoError(t, err)
-			_, err = tunnel.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
+			require.NoError(t, stopNestedEngine(ctx, &client, unwatch, &upstream, &tunnel))
 		})
 		return client
 	}
@@ -66,7 +63,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 		require.Len(t, report.Rows, 1)
 		return report
 	}
-	rootEvents := func(report transferFixtureReport, kind string) []dagql.TransferFixturePartEvent {
+	rootEvents := func(report transferFixtureReport, kind dagql.TransferFixturePartKind) []dagql.TransferFixturePartEvent {
 		var events []dagql.TransferFixturePartEvent
 		for _, event := range report.Parts {
 			if event.ResultID == rowID && event.Kind == kind {
@@ -88,15 +85,15 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	require.NoError(t, err)
 	require.NotEmpty(t, metadata)
 	before := readReport()
-	require.Empty(t, rootEvents(before, "provider-read"), "known metadata must not demand a layer")
-	require.Empty(t, rootEvents(before, "lazy-enter"), "known metadata must not enter an operation")
+	require.Empty(t, rootEvents(before, dagql.PartEventProviderRead), "known metadata must not demand a layer")
+	require.Empty(t, rootEvents(before, dagql.PartEventLazyEnter), "known metadata must not enter an operation")
 	contents, err := loaded.File("/payload").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "downloaded filesystem", contents)
 	fsOnly := readReport()
-	require.Len(t, rootEvents(fsOnly, "installed-chain"), 1)
-	require.Positive(t, len(rootEvents(fsOnly, "provider-read")))
-	require.Empty(t, rootEvents(fsOnly, "lazy-enter"))
+	require.Len(t, rootEvents(fsOnly, dagql.PartEventInstalledChain), 1)
+	require.Positive(t, len(rootEvents(fsOnly, dagql.PartEventProviderRead)))
+	require.Empty(t, rootEvents(fsOnly, dagql.PartEventLazyEnter))
 	for _, link := range fsOnly.Rows[0].SnapshotLinks {
 		require.NotEqual(t, "meta", link.Role, "FS-only demand cannot complete execMeta")
 	}
@@ -108,26 +105,26 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	latency := time.Since(started)
 	after := readReport()
 	require.Equal(t, originalFS, fsSnapshot(after), "first installed filesystem wins")
-	require.Len(t, rootEvents(after, "lazy-enter"), 1)
-	require.Len(t, rootEvents(after, "installed-lazy"), 1)
-	require.Equal(t, dagql.PartKey("execMeta"), rootEvents(after, "installed-lazy")[0].Address.Part)
-	released := rootEvents(after, "lazy-ref-released")
+	require.Len(t, rootEvents(after, dagql.PartEventLazyEnter), 1)
+	require.Len(t, rootEvents(after, dagql.PartEventInstalledLazy), 1)
+	require.Equal(t, dagql.PartKey("execMeta"), rootEvents(after, dagql.PartEventInstalledLazy)[0].Address.Part)
+	released := rootEvents(after, dagql.PartEventLazyRefReleased)
 	require.Len(t, released, 1, "the actual redundant private FS ref must be released once")
 	require.NotEmpty(t, released[0].SnapshotID)
 	require.NotEqual(t, originalFS, released[0].SnapshotID)
-	require.Empty(t, rootEvents(after, "lazy-ref-release-error"))
+	require.Empty(t, rootEvents(after, dagql.PartEventLazyRefReleaseError))
 	var releaseSeen, syncSeen, settlementSeen bool
 	for _, event := range after.Parts[len(fsOnly.Parts):] {
 		if event.ResultID != rowID {
 			continue
 		}
 		switch event.Kind {
-		case "lazy-ref-released":
+		case dagql.PartEventLazyRefReleased:
 			releaseSeen = true
-		case "owner-sync":
+		case dagql.PartEventOwnerSync:
 			require.True(t, releaseSeen, "redundant ref release precedes owner sync")
 			syncSeen = true
-		case "settled":
+		case dagql.PartEventSettled:
 			require.True(t, syncSeen)
 			settlementSeen = true
 		}
@@ -140,6 +137,6 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	contents, err = loaded.File("/payload").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "downloaded filesystem", contents)
-	require.Len(t, rootEvents(readReport(), "lazy-enter"), 1)
-	t.Logf("mixed private exec latency=%s originalFS=%s redundantFS=%s rootEvents=%v", latency, originalFS, released[0].SnapshotID, rootEvents(after, "lazy-enter"))
+	require.Len(t, rootEvents(readReport(), dagql.PartEventLazyEnter), 1)
+	t.Logf("mixed private exec latency=%s originalFS=%s redundantFS=%s rootEvents=%v", latency, originalFS, released[0].SnapshotID, rootEvents(after, dagql.PartEventLazyEnter))
 }

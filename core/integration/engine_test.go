@@ -87,15 +87,20 @@ func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, with
 	}
 
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
-	return ctr.
+	ctr = ctr.
 		WithMountedCache("/var/lib/dagger", c.CacheVolume(stateCacheKey)).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithDefaultArgs([]string{
-			"--addr", "tcp://0.0.0.0:1234",
-			// avoid network conflicts with other tests
-			"--network-name", deviceName,
-			"--network-cidr", cidr,
-		})
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp})
+	// With the opt-in hang diagnostic on, every nested engine also serves its
+	// debug endpoint; off, this returns both arguments unchanged. The debug
+	// port is exposed after 1234: a tunnel's default endpoint is the first
+	// exposed port, and that must stay the engine's own.
+	ctr, args := withNestedEngineDebugEndpoint(ctr, []string{
+		"--addr", "tcp://0.0.0.0:1234",
+		// avoid network conflicts with other tests
+		"--network-name", deviceName,
+		"--network-cidr", cidr,
+	})
+	return ctr.WithDefaultArgs(args)
 }
 
 func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, config.Config) config.Config) func(*dagger.Container) *dagger.Container {

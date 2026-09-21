@@ -293,8 +293,8 @@ func TestHTTPChainAvoidsOperation(t *testing.T) {
 		require.NoError(t, err)
 		installed := 0
 		for _, event := range report.Parts {
-			require.NotEqual(t, "lazy-enter", event.Kind)
-			if event.Kind == "installed-chain" {
+			require.NotEqual(t, dagql.PartEventLazyEnter, event.Kind)
+			if event.Kind == dagql.PartEventInstalledChain {
 				installed++
 			}
 		}

@@ -97,15 +97,38 @@ type TransferFixtureRow struct {
 	SnapshotLinks []PersistedSnapshotRefLink `json:"snapshotLinks,omitempty"`
 }
 type TransferFixtureReport struct {
-	Parts  []TransferFixturePartEvent `json:"parts,omitempty"`
-	Rows   []TransferFixtureRow       `json:"rows"`
-	Owners []CacheDebugOfferOwner     `json:"owners"`
+	Parts []TransferFixturePartEvent `json:"parts,omitempty"`
+	// Reached is every point of the closed barrier set the cache passed, in
+	// order, on the same sequence counter as Parts.
+	Reached []FixtureObservation   `json:"reached,omitempty"`
+	Rows    []TransferFixtureRow   `json:"rows"`
+	Owners  []CacheDebugOfferOwner `json:"owners"`
+	// Controls is what the fixture itself still holds in this cache. Both
+	// counts are zero after a restart: neither a hold token nor an armed
+	// barrier survives the cache that made it.
+	Controls TransferFixtureControls `json:"controls"`
 }
+
+// TransferFixtureControls counts the fixture's own outstanding state.
+type TransferFixtureControls struct {
+	HoldTokens    int `json:"holdTokens"`
+	ArmedBarriers int `json:"armedBarriers"`
+}
+
+// ErrTransferFixtureOverflow fails a report whose observation bound was
+// exceeded: events are never dropped silently.
+var ErrTransferFixtureOverflow = errors.New("fixture observation bound exceeded")
 
 // TransferFixtureSnapshot copies raw metadata without demanding values or
 // retaining rows. Filesystem counters are read separately by the fixture.
 func (c *Cache) TransferFixtureSnapshot(ctx context.Context, sessionID string, ids []*call.ID) (report TransferFixtureReport, rerr error) {
-	report.Parts = c.partFixtureEvents()
+	var overflowed bool
+	report.Parts, overflowed = c.partFixtureEvents()
+	if overflowed {
+		return report, ErrTransferFixtureOverflow
+	}
+	report.Reached = c.partFixtureReached()
+	report.Controls = TransferFixtureControls{HoldTokens: c.TransferFixtureHoldCount(), ArmedBarriers: c.TransferFixtureBarrierCount()}
 	op, err := c.beginSessionOperation(sessionID)
 	if err != nil {
 		return report, err

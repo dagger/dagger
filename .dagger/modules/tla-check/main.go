@@ -36,6 +36,47 @@ const temporalOutcome = "temporal"
 var expectedOutcome = map[string]string{
 	"snapshot_import": "",
 	"snapshot_export": "",
+	// RemoteParts.tla and RemoteOwners.tla: remote-cache part acquisition and
+	// offer ownership, separate modules. A fault or witness configuration
+	// names the one invariant it must violate; a witness is a reachability
+	// probe, the negation of what it shows. None is in the quick set.
+	"remote_parts":                                  "",
+	"remote_parts_fault_certify_sibling":            "ServedOutputIsComplete",
+	"remote_parts_fault_accept_after_seal":          "OfferAfterSealCannotPublish",
+	"remote_parts_fault_wrong_expectation":          "NoProgressIsUnreachable",
+	"remote_parts_fault_wrong_expectation_round":    "",
+	"remote_parts_witness_downloaded_fs":            "WitnessDownloadedFsPendingMeta",
+	"remote_parts_witness_late_offer":               "WitnessLateOfferWinsDuringPreparing",
+	"remote_parts_witness_fs_beside_meta":           "WitnessFsAcquiredBesideProducedMeta",
+	"remote_owners":                                 "",
+	"remote_owners_fault_release_on_replace":        "OwnerLivesWhileHeld",
+	"remote_owners_fault_offer_resources_in_lookup": "OrdinaryHitNotGatedByOffers",
+	"remote_owners_fault_retain_owner_in_retry":     "OwnerLivesWhileHeld",
+	"remote_owners_witness_old_acquisition":         "WitnessOldAcquisitionSurvivesReplacement",
+	"remote_owners_witness_unauthorized_hit":        "WitnessUnauthorizedHitOfferSkipped",
+	"remote_owners_witness_offer_row_outlives":      "WitnessOfferRowOutlivesItsRetention",
+	// RemoteSharing.tla and RemoteCheckpoint.tla, on the same convention.
+	"remote_sharing":                                  "",
+	"remote_sharing_decoded":                          "",
+	"remote_sharing_fault_finish_before_release":      "MembersReleasedBeforeFinish",
+	"remote_sharing_fault_stale_role_map":             "DesiredCoversInstalled",
+	"remote_sharing_fault_decrement_before_successor": "MembersAreLive",
+	"remote_sharing_fault_typed_two_slots":            "DecodedReceiverOneSlotPerPass",
+	"remote_sharing_fault_retry_repins":               "PinsBalanced",
+	"remote_sharing_witness_donor_collected":          "WitnessDonorCollectedBeforeReceiverRead",
+	"remote_sharing_witness_decoded_while_finish":     "WitnessDecodedWhileFinishPaused",
+	"remote_sharing_witness_two_parts_one_pass":       "WitnessTwoPartsInOnePass",
+	"remote_sharing_witness_successor_fills":          "WitnessSuccessorFillsDecodedReceiver",
+	"remote_sharing_witness_stale_revision":           "WitnessStaleRevisionRefusesSlot",
+	"remote_checkpoint":                               "",
+	"remote_checkpoint_fault_unpin_before_attach":     "DesiredRolesStayProtected",
+	"remote_checkpoint_fault_repeat_producer":         "ProducerRunsOnce",
+	"remote_checkpoint_fault_restore_applied_only":    "CheckpointHasCompleteDesiredRoles",
+	"remote_checkpoint_fault_drop_operation":          "OperationRetained",
+	"remote_checkpoint_witness_desired_survives":      "WitnessInstalledDesiredSurvivesEpoch",
+	"remote_checkpoint_witness_last_owner":            "WitnessFailedFinishLastOwnerCollected",
+	"remote_checkpoint_witness_producer_preserved":    "WitnessProducerPreservedAcrossRestart",
+	"remote_checkpoint_witness_pending_offer":         "WitnessPendingOfferRestored",
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
@@ -199,12 +240,11 @@ var quickConfigs = []string{
 //
 // WARNING: the full run is expensive - well over an hour wall with four
 // TLC JVMs, and the largest configurations reach more than 110 million
-// distinct states each. Run it sparingly: it is required before pushing changes
-// under dagql/tla (it no longer runs in CI), but for iteration prefer
-// Quick (seconds), Some (chosen configurations with their expectations
-// enforced), or One (a single configuration, raw output, optional probe
-// injection).
-// +check
+// distinct states each. It is not a check, so CI never schedules it: run it
+// by hand, `dagger call tla-check cache-lifecycle`, before pushing changes
+// under dagql/tla. For iteration prefer Quick (seconds, the check CI runs),
+// Some (chosen configurations with their expectations enforced), or One (a
+// single configuration, raw output, optional probe injection).
 func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 	names := make([]string, 0, len(expectedOutcome))
 	for name := range expectedOutcome {
@@ -214,9 +254,9 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 }
 
 // Quick model-checks only the cheap configurations (quickConfigs), with
-// their expectations enforced. It finishes in about a minute and is the
-// right default while iterating; it does not replace the full
-// CacheLifecycle run before a push.
+// their expectations enforced. It finishes in about a minute, is the check
+// CI runs, and is the right default while iterating; it does not replace
+// the full CacheLifecycle run before a push.
 // +check
 func (m *TlaCheck) Quick(ctx context.Context) error {
 	return m.runConfigs(ctx, quickConfigs)
@@ -287,8 +327,8 @@ func (m *TlaCheck) runConfigs(ctx context.Context, names []string) error {
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
 // nested-client ownership, authoritative session teardown, and the final
-// telemetry barrier.
-// +check
+// telemetry barrier. It is not a check, so CI never schedules it: run it
+// by hand, `dagger call tla-check client-lifecycle`.
 func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
 	base := m.base(m.ClientSource)
 
@@ -521,6 +561,16 @@ func modelFiles(name string) (string, string) {
 		return "SnapshotChain.tla", "SnapshotChain_import.cfg"
 	case "snapshot_export":
 		return "SnapshotChain.tla", "SnapshotChain_export.cfg"
+	}
+	switch {
+	case strings.HasPrefix(name, "remote_parts"):
+		return "RemoteParts.tla", fmt.Sprintf("RemoteParts_%s.cfg", name)
+	case strings.HasPrefix(name, "remote_owners"):
+		return "RemoteOwners.tla", fmt.Sprintf("RemoteOwners_%s.cfg", name)
+	case strings.HasPrefix(name, "remote_sharing"):
+		return "RemoteSharing.tla", fmt.Sprintf("RemoteSharing_%s.cfg", name)
+	case strings.HasPrefix(name, "remote_checkpoint"):
+		return "RemoteCheckpoint.tla", fmt.Sprintf("RemoteCheckpoint_%s.cfg", name)
 	default:
 		return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
 	}

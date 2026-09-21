@@ -109,9 +109,9 @@ func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 				continue
 			}
 			switch event.Kind {
-			case "lazy-enter":
+			case dagql.PartEventLazyEnter:
 				operations++
-			case "lazy-ref-released":
+			case dagql.PartEventLazyRefReleased:
 				releases++
 			}
 		}
@@ -152,8 +152,8 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 		require.NoError(t, err)
 		var operationEntries int
 		for _, event := range report.Parts {
-			require.NotEqual(t, "provider-read", event.Kind)
-			if event.Kind == "lazy-enter" {
+			require.NotEqual(t, dagql.PartEventProviderRead, event.Kind)
+			if event.Kind == dagql.PartEventLazyEnter {
 				operationEntries++
 				require.Equal(t, ContainerPartMetadata, event.Address.Part)
 			}

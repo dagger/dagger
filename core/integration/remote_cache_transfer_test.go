@@ -134,23 +134,11 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		upstream, tunnel *dagger.Service
 		client           *dagger.Client
 		endpoint         string
+		unwatch          func()
 	}
 	stop := func(t *testctx.T, e *running) {
 		t.Helper()
-		if e.client != nil {
-			require.NoError(t, e.client.Close())
-			e.client = nil
-		}
-		if e.upstream != nil {
-			_, err := e.upstream.Stop(ctx)
-			require.NoError(t, err)
-			e.upstream = nil
-		}
-		if e.tunnel != nil {
-			_, err := e.tunnel.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
-			e.tunnel = nil
-		}
+		require.NoError(t, stopNestedEngine(ctx, &e.client, e.unwatch, &e.upstream, &e.tunnel))
 	}
 	start := func(t *testctx.T, state string, volume *dagger.CacheVolume, checkout string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
@@ -162,6 +150,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		}
 		e := &running{upstream: devEngineContainerAsService(ctr)}
+		e.unwatch = watchNestedEngine(t, outer, e.upstream, t.Name()+" state="+state)
 		var err error
 		e.tunnel, err = outer.Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
@@ -279,18 +268,18 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			saved := callReport(t, b.client, "same")
 			var acquisition transferFixtureReport
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
-			counters := map[string]int{}
+			counters := map[dagql.TransferFixturePartKind]int{}
 			builtinRoute := 0
 			for _, event := range acquisition.Parts {
 				counters[event.Kind]++
-				if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
+				if event.Field == "_builtinContainer" && (event.Kind == dagql.PartEventInstalledReady || event.Kind == dagql.PartEventInstalledLazy) {
 					builtinRoute++
 				}
 			}
-			require.Positive(t, counters["provider-read"], "selected artifact must read its transferred chain")
-			require.Positive(t, counters["installed-chain"])
-			require.Positive(t, counters["owner-sync"])
-			require.Positive(t, counters["settled"])
+			require.Positive(t, counters[dagql.PartEventProviderRead], "selected artifact must read its transferred chain")
+			require.Positive(t, counters[dagql.PartEventInstalledChain])
+			require.Positive(t, counters[dagql.PartEventOwnerSync])
+			require.Positive(t, counters[dagql.PartEventSettled])
 			if cold {
 				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
 				assertColdPartDelegation(t, acquisition)
@@ -404,7 +393,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			// result from a client with no installed module candidates.
 			writer, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
 			require.NoError(t, err)
-			defer writer.Close()
+			defer func() { require.NoError(t, closeClientBounded(ctx, writer)) }()
 			nativeModule := writer.ModuleSource(".").AsModule().WithDescription("native recorded control")
 			require.NoError(t, nativeModule.Serve(ctx))
 			nativeID := callReport(t, writer, "native recorded control")
@@ -441,7 +430,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			require.True(t, lowerEquivalent, "the eligible native recorded Module has a lower imported equivalent")
 			bare, err := dagger.Connect(ctx, dagger.WithRunnerHost(b.endpoint), dagger.WithWorkdir(bDir))
 			require.NoError(t, err)
-			defer bare.Close()
+			defer func() { require.NoError(t, closeClientBounded(ctx, bare)) }()
 			text := transferContextTool(ctx, t, bare, nativeID)
 			require.Contains(t, text, "consumer directory notes after restart")
 			require.NotContains(t, text, "local module context belongs to another engine")
@@ -552,9 +541,9 @@ func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, import
 		if event.ResultID != scratch.ResultID {
 			continue
 		}
-		require.NotEqual(t, "provider-read", event.Kind)
-		require.NotEqual(t, "selected-chain", event.Kind)
-		if event.Kind == "lazy-enter" {
+		require.NotEqual(t, dagql.PartEventProviderRead, event.Kind)
+		require.NotEqual(t, dagql.PartEventSelectedChain, event.Kind)
+		if event.Kind == dagql.PartEventLazyEnter {
 			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, event.Address)
 			entries++
 		}
@@ -590,10 +579,10 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 	mountWriters := map[string]int{}
 	for _, event := range report.Parts {
 		k := keyOf(event)
-		if event.Kind == "lazy-enter" {
+		if event.Kind == dagql.PartEventLazyEnter {
 			operations[k]++
 		}
-		if event.Kind != "selected-delegation" && event.Kind != "installed-delegation" {
+		if event.Kind != dagql.PartEventSelectedDelegation && event.Kind != dagql.PartEventInstalledDelegation {
 			require.Nil(t, event.Source, "ordinary events cannot carry delegation provenance")
 			continue
 		}
@@ -606,7 +595,7 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 		require.Equal(t, event.Address.Part, event.Source.Address.Part)
 		require.Empty(t, event.Source.Address.OutputPath)
 		require.NotEqual(t, dagql.PartKey("metadata"), event.Address.Part)
-		if event.Kind == "selected-delegation" {
+		if event.Kind == dagql.PartEventSelectedDelegation {
 			selected[k]++
 			continue
 		}
@@ -660,7 +649,7 @@ func assertImportedHostInputsMatched(t *testctx.T, report transferFixtureReport,
 	hostMatches := 0
 	for _, event := range report.Parts {
 		row := rows[event.ResultID]
-		if event.Kind != "installed-ready" || !row.Imported || row.Call == nil || row.Call.Field != "directory" || row.Call.Receiver == nil {
+		if event.Kind != dagql.PartEventInstalledReady || !row.Imported || row.Call == nil || row.Call.Field != "directory" || row.Call.Receiver == nil {
 			continue
 		}
 		parent := rows[row.Call.Receiver.ResultID]

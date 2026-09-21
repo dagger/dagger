@@ -1650,7 +1650,20 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	if c == nil || c.snapshotManager == nil || res == nil || res.id == 0 {
 		return nil
 	}
+	err := c.syncResultSnapshotLeasesGuarded(ctx, res)
+	// The gated fixture observes the finished reconciliation outside the
+	// row's lease guard. It reports the outcome and never alters it.
+	if c.partFixture.Load() != nil {
+		detail := "ok"
+		if err != nil {
+			detail = err.Error()
+		}
+		_ = c.fixtureReach(ctx, FixtureBarrierEvent{Point: FixtureOwnerSyncDone, ResultID: uint64(res.id), Detail: detail})
+	}
+	return err
+}
 
+func (c *Cache) syncResultSnapshotLeasesGuarded(ctx context.Context, res *sharedResult) error {
 	// Serialize the read-diff-write per result: two interleaved syncs can
 	// transiently store a link set missing a link the other just attached.
 	// Concurrent per-group attempts make concurrent syncs routine, so the
@@ -1716,11 +1729,26 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 			}
 			res.snapshotLeaseCleanupRoles[key] = struct{}{}
 			res.payloadMu.Unlock()
+			// The gated fixture decorates this one real attachment. A fault
+			// before it claims no attachment; a fault after it follows the
+			// real side effects, and the attempted-role cleanup above stays
+			// responsible either way.
+			var attach FixtureBarrierEvent
+			if c.partFixture.Load() != nil {
+				attach = FixtureBarrierEvent{Point: FixtureBeforeOwnerAttach, ResultID: uint64(res.id), Detail: key.Role + " " + key.Path + " " + newLink.RefKey}
+			}
+			if err := c.fixtureReach(ctx, attach); err != nil {
+				return err
+			}
 			if err := c.snapshotManager.AttachLease(
 				ctx,
 				resultSnapshotLeaseIDForKey(res.id, key),
 				newLink.RefKey,
 			); err != nil {
+				return err
+			}
+			attach.Point = FixtureAfterOwnerAttach
+			if err := c.fixtureReach(ctx, attach); err != nil {
 				return err
 			}
 		}
@@ -1861,7 +1889,9 @@ func wipeSQLiteFiles(dbPath string) error {
 }
 
 type Cache struct {
-	partFixture              atomic.Pointer[partFixtureState]
+	partFixture atomic.Pointer[partFixtureState]
+	// fixtureHolds are the gated test fixture's hold tokens; empty off-gate.
+	fixtureHolds             fixtureHolds
 	testTransferCopied       func(uint64)
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
@@ -1890,6 +1920,7 @@ type Cache struct {
 	shareNotify        *snapshotShareNotifications
 	sharePending       map[eqClassID]*snapshotShareItem
 	shareQueue         []eqClassID
+	sharePassSeq       uint64
 	shareWorkerStarted bool
 	shareWorkerCancel  context.CancelCauseFunc
 	shareWake          chan struct{}
@@ -4631,6 +4662,13 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 		// here, or fails admission. Placed before it, an enqueue in between
 		// could strand a counted operation with no worker.
 		c.closeSnapshotSharing()
+		// Release every operation paused at a fixture barrier so its real
+		// cleanup drains; a no-op off-gate.
+		c.closeFixtureBarriers()
+		// A fixture hold token never outlives the cache; none exists off-gate.
+		if err := c.releaseAllFixtureHolds(context.WithoutCancel(ctx)); err != nil {
+			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("release fixture holds: %w", err))
+		}
 		if err := c.waitForQuiescence(ctx); err != nil {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
