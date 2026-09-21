@@ -160,15 +160,25 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				testutil.CheckFile(t, opened, "payload", "admitted chain bytes")
 				require.NoError(t, opened.Release(ctx))
 			}
-			require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+			// The demand wakes before its worker releases the row. Join both
+			// sessions' cleanup before removing the last persisted owners.
+			for _, sessionID := range []string{"test-session", "demand"} {
+				require.NoError(t, c.ReleaseSession(ctx, sessionID))
+				releaseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				err := c.WaitSessionRelease(releaseCtx, sessionID)
+				cancel()
+				require.NoError(t, err)
+			}
 			for _, res := range []AnyResult{donor, dependency, receiver} {
 				_, err := c.removePersistedEdge(ctx, res.cacheSharedResult().id)
 				require.NoError(t, err)
 			}
 			c.egraphMu.RLock()
-			require.Nil(t, c.resultsByID[row.id], "no retained owner/pin self-cycle")
-			require.Empty(t, c.offerOwners)
+			collected := c.resultsByID[row.id] == nil
+			ownerCount := len(c.offerOwners)
 			c.egraphMu.RUnlock()
+			require.True(t, collected, "no retained owner/pin self-cycle")
+			require.Zero(t, ownerCount)
 			require.EqualValues(t, 1, provider.Reads.Load())
 		})
 	}
