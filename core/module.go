@@ -1378,11 +1378,10 @@ func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDe
 	if gqlFieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 	}
-	if fn.IsCheck && fn.CheckReturnType.Self() == nil &&
-		fn.ReturnType.Self().Kind != TypeDefKindVoid && fn.ReturnType.Self().Kind != TypeDefKindString &&
+	if fn.IsCheck && fn.CheckReturnType.Self() == nil && fn.ReturnType.Self().Kind != TypeDefKindVoid &&
 		mod.Source.Valid && AfterVersion("v1.0.0-0").Contains(call.View(mod.Source.Value.Self().EngineVersion)) {
 		if obj.SourceModuleName == "" || fn.ReturnType.Self().ToType().Name() != "Check" {
-			return fmt.Errorf("check %s.%s must return Void or String", obj.Name, fn.Name)
+			return fmt.Errorf("check %s.%s must return Void", obj.Name, fn.Name)
 		}
 	}
 	if fn.IsUp {

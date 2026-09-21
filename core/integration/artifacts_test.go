@@ -932,10 +932,11 @@ func (ArtifactsSuite) TestCheckReturnTypes(ctx context.Context, t *testctx.T) {
 		name, returnType, body string
 		invalid, fails         bool
 	}{
-		{name: "string", returnType: "String!", body: `"ok"`},
-		{name: "nullable string", returnType: "String", body: `"ok"`},
-		{name: "null string", returnType: "String", body: "null"},
-		{name: "failed string", returnType: "String!", body: `raise "check failed"`, fails: true},
+		{name: "void", returnType: "Void", body: "null"},
+		{name: "failed void", returnType: "Void", body: `raise "check failed"`, fails: true},
+		{name: "string", returnType: "String!", body: `"ok"`, invalid: true},
+		{name: "nullable string", returnType: "String", body: `"ok"`, invalid: true},
+		{name: "null string", returnType: "String", body: "null", invalid: true},
 		{name: "integer", returnType: "Int!", body: "42", invalid: true},
 		{name: "boolean", returnType: "Boolean!", body: "true", invalid: true},
 		{name: "object", returnType: "Container!", body: "container", invalid: true},
@@ -954,7 +955,7 @@ source = "dang"
 			loadError, err := checkArtifact.LoadError(ctx)
 			require.NoError(t, err)
 			if tc.invalid {
-				require.Contains(t, loadError, "must return Void or String")
+				require.Contains(t, loadError, "must return Void")
 				return
 			}
 			require.Empty(t, loadError)
