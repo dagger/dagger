@@ -375,7 +375,10 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 	if err := m.syncMCPSessions(ctx); err != nil {
 		return err
 	}
-	for serverName, sess := range m.mcpSessions {
+	// Serve servers in a fixed order: the tool list is part of every
+	// request's cached prefix, and a map walk would reshuffle it per call.
+	for _, serverName := range slices.Sorted(maps.Keys(m.mcpSessions)) {
+		sess := m.mcpSessions[serverName]
 		for tool, err := range sess.Tools(ctx, nil) {
 			if err != nil {
 				return err
