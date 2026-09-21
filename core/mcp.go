@@ -904,7 +904,7 @@ func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.
 		Field: "log",
 		Args: []dagql.NamedInput{
 			{Name: "limit", Value: dagql.NewInt(workspaceMoveLogLimit + 1)},
-			{Name: "base", Value: dagql.NewID[*GitRef](baseID)},
+			{Name: "base", Value: dagql.Opt(dagql.NewID[*GitRef](baseID))},
 		},
 	}); err != nil {
 		return 0, err

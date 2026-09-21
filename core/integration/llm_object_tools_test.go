@@ -764,6 +764,75 @@ func (LLMSuite) TestToolReturningUnrelatedWorkspaceIsNotDiffed(ctx context.Conte
 	})
 }
 
+// TestToolReturningSameOriginWorkspaceReportsDistance exercises the real log
+// selectors used by the move summary, not just rendering precomputed counts.
+func (LLMSuite) TestToolReturningSameOriginWorkspaceReportsDistance(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return").
+		WithNewFile(".dagger/modules/swapper/main.dang", `
+type Swapper {
+  swap(ws: Workspace!): Workspace! {
+    ws.git.head.asRepository.branch("new").asWorkspace
+  }
+}
+`).
+		WithExec([]string{"sh", "-ec", `
+			git add . && git commit -m A
+			git checkout -b old
+			echo B > revision.txt && git add revision.txt && git commit -m B
+			git checkout -b new HEAD~1
+			echo C > revision.txt && git add revision.txt && git commit -m C
+			echo D > revision.txt && git add revision.txt && git commit -m D
+			git checkout old
+		`})
+	gitDaemon := base.
+		WithExec([]string{"apk", "add", "git-daemon"}).
+		WithExec([]string{"git", "clone", "--bare", "/work", "/srv/repo.git"}).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"git", "daemon", "--export-all", "--base-path=/srv"}).
+		AsService()
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+	base = base.WithServiceBinding(gitHost, gitDaemon)
+
+	// old: A -> B; new: A -> C -> D. Both directions must be counted:
+	// merely adopting the workspace or reporting "Workspace moved" also
+	// succeeds when the best-effort log calls fail and omit the counts.
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("swap the workspace").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swap"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	loopThen := func(ctx context.Context, t *testctx.T, then string) string {
+		t.Helper()
+		out, err := base.With(daggerShell(fmt.Sprintf(`
+repo=$(git git://%s/repo.git)
+ws=$($repo | branch old | as-workspace)
+llm --model="%s" | with-workspace --workspace $ws | with-tools $(swapper) | with-prompt "swap the workspace" | loop | %s
+`, gitHost, model, then))).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("the new revision is adopted", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, "D", strings.TrimSpace(loopThen(ctx, t, "workspace | file revision.txt | contents")))
+	})
+
+	t.Run("the model sees ahead and behind counts, not a patch", func(ctx context.Context, t *testctx.T) {
+		transcript := loopThen(ctx, t, "transcript")
+		require.Contains(t, transcript, "Workspace moved:")
+		require.Contains(t, transcript, "2 commit(s) ahead of and 1 behind")
+		require.Contains(t, transcript, "Files were not diffed")
+		require.NotContains(t, transcript, "Workspace replaced:")
+		require.NotContains(t, transcript, "diff --git")
+	})
+}
+
 // TestToolReturningLLMContinues locks in the continuation ring of the state-return
 // convention: a tool that returns an LLM replaces the conversation, and the loop
 // resumes from the returned one (routeObjectMethodResult -> applyStateReturn ->
