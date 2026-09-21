@@ -23,7 +23,7 @@ func TestArtifactDimensionFlags(t *testing.T) {
 	child, _, err := cmd.Find([]string{"types"})
 	require.NoError(t, err)
 	require.NoError(t, child.ParseFlags([]string{
-		"--type=Container", "--type=Directory",
+		"--type=container", "--type=Directory",
 		"--go-module=sdk/go", "--go-module=cmd/codegen",
 		"--dimension-key=go-module=lib,a=b",
 		"--go-test=TestConnect", "--dimension-key=type=app",
@@ -38,7 +38,7 @@ func TestArtifactDimensionFlags(t *testing.T) {
 	require.NoError(t, err)
 	_, err = selected.Types(t.Context())
 	require.ErrorIs(t, err, errArtifactQueryCaptured)
-	require.Contains(t, recorder.query, `filterTypes(types:["Container","Directory"])`)
+	require.Contains(t, recorder.query, `filterUri(uri:"dag+container+directory://")`)
 	require.Contains(t, recorder.query, `filterUri(uri:"dag://?go-module=lib,a%3Db&type=app&go-module=sdk/go&go-module=cmd/codegen&go-test=TestConnect")`)
 	require.NotContains(t, recorder.query, "env=")
 }
