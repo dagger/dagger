@@ -1015,7 +1015,7 @@ func (r *Artifact) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// One key per dimension along the path. Unordered; empty for static artifacts.
+// The selected keys for each dimension. Empty for static artifacts.
 func (r *Artifact) DimensionKeys(ctx context.Context) ([]ArtifactDimensionKey, error) {
 	q := r.query.Select("dimensionKeys")
 

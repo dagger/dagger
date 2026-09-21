@@ -188,11 +188,11 @@ func (item *Item) Verify() error {
 		args []string
 		want string
 	}{
-		{"query", []string{"dag://items/verify?item=a&item=b"}, "--collections-items=a\n--collections-items=b\n"},
-		{"dimension flag", []string{"items/verify", "--item=a", "--item=b"}, "--collections-items=a\n--collections-items=b\n"},
-		{"generic flag", []string{"items/verify", "--dimension-key=item=a", "--dimension-key=item=b"}, "--collections-items=a\n--collections-items=b\n"},
-		{"query and flag", []string{"items/verify?item=a", "--collections-items=b"}, "--collections-items=a\n--collections-items=b\n"},
-		{"separate addresses", []string{"items/verify?item=a", "other/verify?item=b"}, "--collections-items=a\n--collections-other=b\n"},
+		{"query", []string{"dag://items/verify?item=a&item=b"}, "items/verify --item=a\nitems/verify --item=b\n"},
+		{"dimension flag", []string{"items/verify", "--item=a", "--item=b"}, "items/verify --item=a\nitems/verify --item=b\n"},
+		{"generic flag", []string{"items/verify", "--dimension-key=item=a", "--dimension-key=item=b"}, "items/verify --item=a\nitems/verify --item=b\n"},
+		{"query and flag", []string{"items/verify?item=a", "--collections-items=b"}, "items/verify --item=a\nitems/verify --item=b\n"},
+		{"separate addresses", []string{"items/verify?item=a", "other/verify?item=b"}, "items/verify --item=a\nother/verify --item=b\n"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerExec(append([]string{"check", "-l", "--all"}, tc.args...)...)).Stdout(ctx)
@@ -231,10 +231,10 @@ func (item *Item) Verify() error {
 		require.Equal(t, 1, strings.Count(combined, "# Use --all to list each key combination."))
 		out, err = base.With(daggerExec("check", "-l", "items/verify?item=a&item=b&item=c")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "--collections-items=b --collections-items=a --collections-items=c\n", out)
+		require.Equal(t, "items/verify --item=b --item=a --item=c\n", out)
 		out, err = base.With(daggerExec("check", "-l", "items/verify?item=a&item=b")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "--collections-items=b --collections-items=a\n", out)
+		require.Equal(t, "items/verify --item=b --item=a\n", out)
 		// Replay each printed row. Item c fails if grouping loses the filter.
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			if strings.HasPrefix(line, "#") {
@@ -559,3 +559,194 @@ type Items @collection {
 }
 type Item { pub name: String! }
 `
+
+const batchCollectionSource = `package main
+import (
+  "context"
+  "fmt"
+  "strings"
+  "dagger/collections/internal/dagger"
+)
+type Collections struct{}
+func (*Collections) Items() *Items { return &Items{Keys: []string{"b", "a", "c"}, All: []string{"b", "a", "c"}} }
+func (*Collections) Numbers() *Numbers { return &Numbers{Keys: []int{2, 1, 3}} }
+func (*Collections) Parents() *Parents { return &Parents{Keys: []string{"left", "right"}} }
+// +collection
+type Parents struct { Keys []string }
+func (*Parents) Get(key string) *Parent { return &Parent{Name: key} }
+type Parent struct { Name string }
+func (p *Parent) Items() *Items { return &Items{Keys: []string{p.Name, "common", "c"}, All: []string{p.Name, "common", "c"}} }
+// +collection
+type Items struct {
+  Keys []string
+  All []string
+  // +delta
+  Delta *dagger.CollectionDelta
+}
+func (*Items) Get(key string) *Item { return &Item{Name: key} }
+// +check
+func (items *Items) Verify(ctx context.Context) error {
+  if len(items.Keys) != 2 { return fmt.Errorf("expected two keys in one batch, got %v", items.Keys) }
+  removed, err := items.Delta.RemovedKeys(ctx)
+  if err != nil { return err }
+  var expected []string
+  for _, key := range items.All {
+    found := false
+    for _, selected := range items.Keys { if key == selected { found = true } }
+    if !found { expected = append(expected, key) }
+  }
+  if fmt.Sprint(removed) != fmt.Sprint(expected) { return fmt.Errorf("bad delta: %v != %v", removed, expected) }
+  for _, key := range items.Keys { if key == "c" { return fmt.Errorf("unselected key c ran") } }
+  return nil
+}
+// +generate
+func (items *Items) Write() *dagger.Changeset {
+  return dag.Directory().WithNewFile("selected", strings.Join(items.Keys, ",")).Changes(dag.Directory())
+}
+// +check
+func (items *Items) OnlyBatch(ctx context.Context) error { return items.Verify(ctx) }
+// +collection
+type Numbers struct { Keys []int }
+func (*Numbers) Get(key int) *Number { return &Number{} }
+// +check
+func (numbers *Numbers) Verify() error {
+  if fmt.Sprint(numbers.Keys) != "[2 1]" { return fmt.Errorf("bad numeric subset: %v", numbers.Keys) }
+  return nil
+}
+type Number struct{}
+// +check
+func (*Number) Verify() error { return fmt.Errorf("replaced numeric check ran") }
+type Item struct { Name string }
+// +check
+func (*Item) Verify() error { return fmt.Errorf("replaced item check ran") }
+// +generate
+func (*Item) Write() *dagger.Changeset { panic("replaced item generator ran") }
+// +check
+func (item *Item) Other() error {
+  if item.Name == "c" { return fmt.Errorf("unselected fallback ran") }
+  return nil
+}
+`
+
+func (CollectionsSuite) TestBatchReplacement(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).
+		WithNewFile("collections/main.go", batchCollectionSource)).WithWorkdir("/work")
+	all := base.Directory("/work").AsWorkspace().Artifacts()
+	type evaluation struct {
+		Artifact struct{ URI string }
+		Value    json.RawMessage
+		Error    *struct{ Message string }
+	}
+	evaluate := func(t *testctx.T, selection *dagger.Artifacts) []evaluation {
+		t.Helper()
+		id, err := selection.ID(ctx)
+		require.NoError(t, err)
+		got, err := testutil.QueryWithClient[struct{ Node struct{ Values []evaluation } }](c, t, `query($id: ID!) {
+ node(id: $id) { ... on Artifacts { values {
+  artifact { uri } error { message }
+  value { ... on Check { pass } ... on Changeset { after { file(path: "selected") { contents } } } }
+ } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
+		require.NoError(t, err)
+		return got.Node.Values
+	}
+	for _, tc := range []struct {
+		name      string
+		selection *dagger.Artifacts
+		count     int
+	}{
+		{"selected checks", all.FilterURI("items/verify?item=a&item=b"), 1},
+		{"numeric keys", all.FilterURI("numbers/verify?number=1&number=2"), 1},
+		{"union", all.FilterURI("items/verify?item=a").WithArtifacts(all.FilterURI("items/verify?item=b")), 1},
+		{"exclusion", all.FilterURI("items/verify").WithoutURI("items/verify?item=c"), 1},
+		{"fallback", all.FilterURI("items/other?item=a&item=b"), 2},
+		{"nested parents", all.FilterURI("parents/items/verify?item=left&item=right&item=common"), 2},
+		{"no matches", all.FilterURI("items/verify?item=missing"), 0},
+		{"empty filter", all.FilterURI("items/verify").FilterDimensionKeys("item", []string{}), 0},
+		{"batch only", all.FilterURI("items/only-batch?item=a&item=b"), 1},
+		{"combined checks", all.FilterURI("items/*?item=a&item=b").FilterDirectives([]string{"check"}).FilterParentTypes([]string{"Changeset"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true}), 4},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			results := evaluate(t, tc.selection)
+			require.Len(t, results, tc.count)
+			for _, result := range results {
+				require.Nil(t, result.Error, "%s: %+v", result.Artifact.URI, result.Error)
+				require.JSONEq(t, `{"pass":true}`, string(result.Value))
+			}
+		})
+	}
+	t.Run("saved batch result", func(ctx context.Context, t *testctx.T) {
+		results, err := all.FilterURI("items/verify?item=a&item=b").Values(ctx)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		failure, err := results[0].Error(ctx)
+		require.NoError(t, err)
+		require.Nil(t, failure)
+		id, err := results[0].Artifact().ID(ctx)
+		require.NoError(t, err)
+		got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($id: ID!) {
+ node(id: $id) { ... on Artifact { value { ... on Check { pass } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
+		require.NoError(t, err)
+		require.JSONEq(t, `{"node":{"value":{"pass":true}}}`, string(*got))
+		// The result address must reproduce the complete batch on another engine.
+		uri, err := results[0].Artifact().URI(ctx)
+		require.NoError(t, err)
+		replayed := evaluate(t, all.FilterURI(uri))
+		require.Len(t, replayed, 1)
+		require.Nil(t, replayed[0].Error)
+	})
+	t.Run("generator", func(ctx context.Context, t *testctx.T) {
+		results := evaluate(t, all.FilterURI("items/write?item=a&item=b"))
+		require.Len(t, results, 1)
+		require.Nil(t, results[0].Error)
+		require.JSONEq(t, `{"after":{"file":{"contents":"b,a"}}}`, string(results[0].Value))
+	})
+	t.Run("generator stale check", func(ctx context.Context, t *testctx.T) {
+		results := evaluate(t, all.FilterURI("items/write/stale?item=a&item=b"))
+		require.Len(t, results, 1)
+		require.NotNil(t, results[0].Error)
+		require.Contains(t, results[0].Error.Message, "generated files are not up to date")
+		require.NotContains(t, results[0].Error.Message, "replaced item generator ran")
+	})
+	t.Run("direct item", func(ctx context.Context, t *testctx.T) {
+		id, err := all.FilterURI("items/verify?item=a").One().ID(ctx)
+		require.NoError(t, err)
+		got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($id: ID!) {
+ node(id: $id) { ... on Artifact { value { ... on Check { pass error { message } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
+		require.NoError(t, err)
+		require.Contains(t, string(*got), `"pass":false`)
+		require.Contains(t, string(*got), "replaced item check ran")
+	})
+	t.Run("CLI query and flags", func(ctx context.Context, t *testctx.T) {
+		for _, args := range [][]string{
+			{"check", "--no-generate", "items/verify?item=a&item=b"},
+			{"check", "--no-generate", "items/verify", "--item=a", "--item=b"},
+			{"check", "--no-generate", "items/verify?item=a", "items/verify?item=b"},
+		} {
+			out, err := base.With(daggerExec(args...)).CombinedOutput(ctx)
+			require.NoError(t, err, out)
+		}
+	})
+}
+
+func (CollectionsSuite) TestBatchScaleOut(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	target := devEngineContainerAsService(devEngineContainer(c))
+	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("scaleout-engine", target).
+			WithEnvVariable("_DAGGER_TESTS_CLOUD_RUNNER_HOST", "tcp://scaleout-engine:1234")
+	}))
+	base := engineClientContainer(ctx, t, c, source).
+		WithWorkdir("/work").WithExec([]string{"apk", "add", "git"}).WithExec([]string{"git", "init"}).
+		WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", batchCollectionSource))
+	for _, uri := range []string{
+		"items/verify?item=a&item=b",
+		"parents/items/verify?item=left&item=right&item=common",
+	} {
+		out, err := base.With(daggerNonNestedExec("check", "--scale-out", "--no-generate", uri)).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+	}
+}

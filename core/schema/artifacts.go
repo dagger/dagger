@@ -41,7 +41,8 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
 		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
-		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).DoNotCache("Evaluate each value with its own cache policy.").Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
+		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
+		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
 		dagql.Func("filterCheckCommand", s.filterCheckCommand).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
 		dagql.Func("filterGenerateCommand", s.filterGenerateCommand).Doc("Select Changeset artifacts marked generate, using each workspace's generator settings."),
@@ -62,11 +63,14 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			Args(dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")),
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
+		dagql.Func("__evaluationItems", s.evaluationItems),
 		dagql.Func("items", s.items).Doc("Enumerate complete artifacts without evaluating their values."),
 		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),
 		dagql.Func("uri", s.uri).Doc("The DAG address that selects this whole selection: filterUri(uri) selects the same set."),
 	}.Install(srv)
 	dagql.Fields[*core.Artifact]{
+		dagql.Func("__remoteCheck", s.remoteCheck),
+		dagql.Func("__failedCheck", s.failedCheck),
 		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
 		dagql.Func("arguments", s.arguments).Doc("The arguments accepted by the artifact field."),
 		dagql.Func("description", s.description).Doc("The description of the field that supplies this artifact."),
@@ -340,14 +344,36 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 			if err != nil {
 				return nil, fmt.Errorf("encode cloud arguments: %w", err)
 			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Check{RemoteArtifact: artifact.Clone(), RemoteArguments: core.JSON(remoteArguments)})
+			var check dagql.ObjectResult[*core.Check]
+			err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &check, dagql.Selector{Field: "__remoteCheck", Args: []dagql.NamedInput{{Name: "arguments", Value: core.JSON(remoteArguments)}}})
+			return check, err
 		}
 	}
 	var result dagql.AnyObjectResult
 	if err := evaluateArtifact(ctx, artifact, &result, inputs...); err != nil {
-		return nil, err
+		if artifact.TypeName != "Check" {
+			return nil, err
+		}
+		failure := err.Error()
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__failedCheck", Args: []dagql.NamedInput{{Name: "message", Value: dagql.String(failure)}}}); err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
+}
+
+// Construct checks through concrete Check fields. An Artifact.value call has
+// the interface type Node, which cannot supply the identity of a new Check.
+func (*artifactsSchema) remoteCheck(_ context.Context, artifact *core.Artifact, args struct{ Arguments core.JSON }) (*core.Check, error) {
+	return &core.Check{RemoteArtifact: artifact.Clone(), RemoteArguments: args.Arguments}, nil
+}
+
+func (*artifactsSchema) failedCheck(_ context.Context, _ *core.Artifact, args struct{ Message string }) (*core.Check, error) {
+	return &core.Check{Failure: args.Message}, nil
 }
 
 // Object inputs need recipes on another engine. Scalar strings remain opaque.
@@ -401,20 +427,12 @@ func evaluateArtifact(ctx context.Context, artifact *core.Artifact, dest any, in
 	if artifact.LoadFailure != nil {
 		err = fmt.Errorf("%s", artifact.LoadFailure.Message)
 	}
-	if err != nil && artifact.TypeName != "Check" {
+	if err != nil {
 		return err
 	}
 	srv, srvErr := core.CurrentDagqlServer(ctx)
 	if srvErr != nil {
 		return srvErr
-	}
-	if artifact.TypeName == "Check" {
-		if err != nil {
-			value, err = dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Check{Failure: err.Error()})
-			if err != nil {
-				return err
-			}
-		}
 	}
 	if llm, ok := value.Unwrap().(*core.LLM); ok {
 		llm.WarnToolNameCollisions(ctx)
@@ -803,6 +821,16 @@ func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ 
 	return parent.Node.Description, nil
 }
 
+// Keep planned artifacts in the query graph so value evaluation, remote
+// execution, and saved result IDs all refer to the same batch selection.
+func (*artifactsSchema) evaluationItems(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
+	selection, err := expandArtifacts(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	return selection.Batch(ctx)
+}
+
 func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], args struct {
 	FailFast  bool      `default:"false"`
 	Arguments core.JSON `default:"{}"`
@@ -811,14 +839,19 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return nil, err
 	}
-	selection, err := expandArtifacts(ctx, parent.Self())
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	results := make([]*core.ArtifactResult, len(selection.Entries))
-	evaluationErrors := make([]error, len(selection.Entries))
+	var selection dagql.ObjectResultArray[*core.Artifact]
+	if err := srv.Select(ctx, parent, &selection, dagql.Selector{Field: "__evaluationItems"}); err != nil {
+		return nil, err
+	}
+	results := make([]*core.ArtifactResult, len(selection))
+	evaluationErrors := make([]error, len(selection))
 	jobs := parallel.New().WithContextualTracer(true).WithFailFast(args.FailFast).WithRollupLogs(true).WithRollupSpans(true)
-	for i, artifact := range selection.Entries {
+	for i, selected := range selection {
+		artifact := selected.Self()
 		uri, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
 		if err != nil {
 			return nil, err
@@ -838,7 +871,7 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 			srv, err := core.CurrentDagqlServer(ctx)
 			if err == nil {
 				// Keep the value's subtree visible, including deferred execution logs.
-				err = srv.Select(dagql.WithNonInternalTelemetry(ctx), parent, &result.Value, dagql.Selector{Field: "items", Nth: i + 1}, dagql.Selector{Field: "value", Args: []dagql.NamedInput{{Name: "arguments", Value: args.Arguments}}})
+				err = srv.Select(dagql.WithNonInternalTelemetry(ctx), selected, &result.Value, dagql.Selector{Field: "value", Args: []dagql.NamedInput{{Name: "arguments", Value: args.Arguments}}})
 			}
 			if err == nil {
 				if sync, ok := result.Value.ObjectType().FieldSpec("sync", srv.View); ok && !sync.Args.HasRequired(srv.View) {

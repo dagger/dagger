@@ -1457,9 +1457,7 @@ class Artifact(Type):
         return await _ctx.execute(str)
 
     async def dimension_keys(self) -> list["ArtifactDimensionKey"]:
-        """One key per dimension along the path. Unordered; empty for static
-        artifacts.
-        """
+        """The selected keys for each dimension. Empty for static artifacts."""
         _args: list[Arg] = []
         _ctx = self._select("dimensionKeys", _args)
         return await _ctx.execute_object_list(ArtifactDimensionKey)

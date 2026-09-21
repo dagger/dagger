@@ -65,6 +65,13 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 	if err != nil {
 		return nil, err
 	}
+	// currentWorkspace has a new identity on each call. Resolve it once so
+	// address selections from this command can share a collection batch.
+	workspaceID, err := ws.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ws = dagger.Ref[*dagger.Workspace](dag, workspaceID)
 	all := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)})
 	if strict {
 		failures, err := artifactLoadFailures(ctx, dag, all)

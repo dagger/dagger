@@ -33,6 +33,8 @@ type ModTreeNode struct {
 	WorkspaceEntrypoint bool
 	CollectionDimension *ArtifactDimension
 	CollectionKey       *string
+	// CollectionKeys selects the subset used by an implicit batch node.
+	CollectionKeys []string
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -181,7 +183,30 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 		if err != nil {
 			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
 		}
-		if node.CollectionDimension != nil {
+		if node.CollectionDimension != nil && node.Name == "batch" {
+			members, err := parentObjType.CollectionMembers()
+			if err != nil {
+				return err
+			}
+			keys := node.CollectionKeys
+			if node.CollectionKey != nil {
+				keys = []string{*node.CollectionKey}
+			}
+			inputs := make([]dagql.Input, 0, len(keys))
+			for _, text := range keys {
+				key, err := collectionInputFromText(members.Get.Args[0].Self().TypeDef.Self(), text)
+				if err != nil {
+					return err
+				}
+				inputs = append(inputs, key)
+			}
+			keyList := dagql.DynamicArrayInput{Elem: members.Get.Args[0].Self().TypeDef.Self().ToInput(), Values: inputs}
+			if err := srv.Select(ctx, parentObjValue, &parentObjValue, dagql.Selector{
+				Field: "subset", Args: []dagql.NamedInput{{Name: "keys", Value: keyList}},
+			}); err != nil {
+				return err
+			}
+		} else if node.CollectionDimension != nil {
 			if node.CollectionKey == nil {
 				return fmt.Errorf("collection item %q has no key", node.CollectionDimension.Identifier)
 			}
@@ -531,6 +556,7 @@ type persistedModTree struct {
 type persistedModTreeNode struct {
 	CollectionDimension    *ArtifactDimension `json:"collectionDimension,omitempty"`
 	CollectionKey          *string            `json:"collectionKey,omitempty"`
+	CollectionKeys         []string           `json:"collectionKeys,omitempty"`
 	RootValueResultID      uint64             `json:"rootValueResultID,omitempty"`
 	ID                     int                `json:"id"`
 	ParentID               int                `json:"parentID,omitempty"`
@@ -580,6 +606,7 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 	persisted := persistedModTreeNode{
 		CollectionDimension: node.CollectionDimension,
 		CollectionKey:       node.CollectionKey,
+		CollectionKeys:      node.CollectionKeys,
 		ID:                  id,
 		ParentID:            parentID,
 		Name:                node.Name,
@@ -632,6 +659,7 @@ func decodePersistedModTree(ctx context.Context, dec *dagql.PersistDecodeContext
 		node := &ModTreeNode{
 			CollectionDimension: persisted.CollectionDimension,
 			CollectionKey:       persisted.CollectionKey,
+			CollectionKeys:      persisted.CollectionKeys,
 			Name:                persisted.Name,
 			Description:         persisted.Description,
 			Directives:          persisted.Directives,

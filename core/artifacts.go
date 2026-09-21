@@ -33,7 +33,7 @@ func (*ArtifactDimensionKey) Type() *ast.Type {
 type Artifact struct {
 	DimensionNames map[string]string
 	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
-	DimensionKeys  []*ArtifactDimensionKey `field:"true" doc:"One key per dimension along the path. Unordered; empty for static artifacts."`
+	DimensionKeys  []*ArtifactDimensionKey `field:"true" doc:"The selected keys for each dimension. Empty for static artifacts."`
 	TypeName       string
 	Directives     []string `field:"true" doc:"The directives carried by this artifact."`
 	LoadFailure    *ModuleLoadFailure

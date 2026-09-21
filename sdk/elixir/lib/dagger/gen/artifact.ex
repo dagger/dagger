@@ -50,7 +50,7 @@ defmodule Dagger.Artifact do
   end
 
   @doc """
-  One key per dimension along the path. Unordered; empty for static artifacts.
+  The selected keys for each dimension. Empty for static artifacts.
   """
   @spec dimension_keys(t()) :: {:ok, [Dagger.ArtifactDimensionKey.t()]} | {:error, term()}
   def dimension_keys(%__MODULE__{} = artifact) do
