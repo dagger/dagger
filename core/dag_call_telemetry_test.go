@@ -242,6 +242,31 @@ func TestAroundFuncLogsOnlyPayloadsMissingFromSpans(t *testing.T) {
 		"a payload carried by a recording span must not also be logged")
 }
 
+func TestAroundFuncOmitsSyntheticRecipes(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		frame := &dagql.ResultCall{
+			Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "internal_only",
+			Type: dagql.NewResultCallType((&Void{}).Type()),
+		}
+		if nested {
+			frame = testResultCall("child", &Void{}, frame)
+		}
+		t.Run(frame.Field+frame.SyntheticOp, func(t *testing.T) {
+			recorder, ctx := payloadRecorderCtx(t)
+			ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
+				mockServer: &mockServer{}, payloadStore: &testSeenKeys{}, spanStore: &testSeenKeys{},
+			}})
+			_, err := frame.RecipeDigest(ctx)
+			require.NoError(t, err, "internal identity does not require a replayable API")
+			_, done := AroundFunc(ctx, &dagql.CallRequest{ResultCall: frame})
+			var callErr error
+			done(nil, false, &callErr)
+			require.NoError(t, callErr, "diagnostic export must not fail the operation")
+			require.Zero(t, recorder.emissionCount(), "do not advertise synthetic fields as replayable calls")
+		})
+	}
+}
+
 func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	agent, withSkills, dir := skillsChain()
