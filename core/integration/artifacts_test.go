@@ -987,7 +987,10 @@ source = "dang"
 `).WithNewFile("example/main.dang", `type Example {
  pub passing: Void @check { null }
  pub failing: Void @check { raise "check failed" }
+ """Generate clean files."""
  pub clean(ws: Workspace!): Changeset! @generate { ws.changes(ws) }
+ """Regenerate dirty files:
+More details."""
  pub dirty(ws: Workspace!): Changeset! @generate { ws.withNewFile("generated", "new").changes(ws) }
  pub broken: Container! { raise "metadata evaluated a leaf" }
  pub edit(ws: Workspace!): Changeset! { ws.withNewFile("edited", "new").changes(ws) }
@@ -1064,6 +1067,10 @@ source = "dang"
 			require.NoError(t, err)
 			require.Contains(t, out, "dag://clean")
 			require.Contains(t, out, "dag://dirty")
+			if command == "check" {
+				require.Contains(t, out, `# Did you "generate clean files"?`)
+				require.Contains(t, out, `# Did you "regenerate dirty files"?`)
+			}
 			require.NotContains(t, out, "edit")
 		})
 	}
@@ -1085,10 +1092,14 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	source := artifactSource(c)
 	provider, err := source.File("provider/main.dang").Contents(ctx)
 	require.NoError(t, err)
-	source = source.WithNewFile("provider/main.dang", strings.Replace(provider, "pub label:", `pub gen: Changeset! @generate { raise "metadata evaluated generator" }
+	source = source.WithNewFile("provider/main.dang", strings.Replace(provider, "pub label:", `"""Generate assets."""
+  pub gen: Changeset! @generate { raise "metadata evaluated generator" }
   pub edit: Changeset! { raise "metadata evaluated edit" }
   pub label:`, 1))
 	all := source.AsWorkspace().Artifacts()
+	description, err := all.FilterURI("dag://gen/stale").One().Description(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `Did you "generate assets"?`, description)
 	uris := func(ctx context.Context, t *testctx.T, selection *dagger.Artifacts) []string {
 		id, err := selection.ID(ctx)
 		require.NoError(t, err)

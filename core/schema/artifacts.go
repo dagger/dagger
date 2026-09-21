@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -631,6 +633,18 @@ func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ 
 	}
 	if parent.Node == nil {
 		return "", nil
+	}
+	generator := parent.Node.Parent
+	if parent.Node.Name == "stale" && generator != nil && slices.Contains(generator.Directives, "generate") {
+		if obj := generator.ObjectType(); obj != nil && obj.Name == "Changeset" && obj.SourceModuleName == "" {
+			description, _, _ := strings.Cut(generator.Description, "\n")
+			description = strings.TrimRight(strings.TrimSpace(description), ".:;!?")
+			if description == "" {
+				return "", nil
+			}
+			first, size := utf8.DecodeRuneInString(description)
+			return fmt.Sprintf("Did you %q?", string(unicode.ToLower(first))+description[size:]), nil
+		}
 	}
 	return parent.Node.Description, nil
 }
