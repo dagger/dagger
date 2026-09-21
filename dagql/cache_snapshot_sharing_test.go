@@ -364,7 +364,8 @@ func TestSnapshotSharingIndependentParts(t *testing.T) {
 // still donates its own unchanged completed part in the same pass, even
 // though its whole payload revision moved.
 func TestSnapshotSharingDonorReceivesSibling(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
+	ctx, c, srv := transferTestCache(t)
+	c.snapshotManager = &shareTestManager{}
 	barrier := newSharePassBarrier(c)
 	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
 	// D owns fs and is missing mount; R is missing fs. Both are imported, so
@@ -377,7 +378,12 @@ func TestSnapshotSharingDonorReceivesSibling(t *testing.T) {
 	partTestEquivalent(t, c, middle, source)
 	partTestEquivalent(t, c, receiver, middle)
 	partTestEquivalent(t, c, receiver, source)
+	// Build the whole cohort before admitting a pass. Otherwise the worker can
+	// take source and middle before the receiver joins, testing two passes
+	// instead of a donor whose sibling changes in the same pass.
 	shareTestUnite(t, ctx, c, "donor-receives-sibling", source, middle, receiver)
+	require.NoError(t, c.EnableSnapshotSharing())
+	c.notifySnapshotShareCompletion(ctx, middle.cacheSharedResult())
 
 	require.Equal(t, 2, barrier.awaitPass(t), "the middle row receives one part and donates another")
 	require.True(t, shareTestHasLink(middle, "mount-snap"), "middle received its missing mount")
