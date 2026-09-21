@@ -155,7 +155,10 @@ func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, flags []
 
 func artifactKeyFlags(cmd *cobra.Command) ([]dagaddress.Pair, error) {
 	var pairs []dagaddress.Pair
-	keys, _ := cmd.Flags().GetStringArray("dimension-key")
+	var keys []string
+	if flag := cmd.Flag("dimension-key"); flag != nil {
+		keys = flag.Value.(pflag.SliceValue).GetSlice()
+	}
 	for _, key := range keys {
 		dimension, value, ok := strings.Cut(key, "=")
 		if !ok || dimension == "" {
@@ -165,7 +168,8 @@ func artifactKeyFlags(cmd *cobra.Command) ([]dagaddress.Pair, error) {
 	}
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		if dimension := flag.Annotations[artifactDimensionFlag]; len(dimension) > 0 {
-			values, _ := cmd.Flags().GetStringArray(flag.Name)
+			// GetStringArray serializes through CSV and loses a single empty key.
+			values := flag.Value.(pflag.SliceValue).GetSlice()
 			for _, value := range values {
 				pairs = append(pairs, dagaddress.Pair{Dimension: dimension[0], Key: value, HasKey: true})
 			}

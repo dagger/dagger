@@ -846,9 +846,9 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
 
 	listOut, err := ctr.With(compatDaggerExec("generate", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, listOut, "dag://hello-with-generators/generate-files")
-	require.NotContains(t, listOut, "dag://hello-with-generators/generate-other-files")
-	require.NotContains(t, listOut, "dag://hello-with-generators/other-generators/gen-things")
+	require.Contains(t, listOut, "hello-with-generators/generate-files")
+	require.NotContains(t, listOut, "hello-with-generators/generate-other-files")
+	require.NotContains(t, listOut, "hello-with-generators/other-generators/gen-things")
 
 	runCtr := ctr.With(compatDaggerExec("generate", "hello-with-generators:generate-*", "-y", "--progress=plain"))
 	runOut, err := runCtr.CombinedOutput(ctx)
@@ -954,9 +954,9 @@ func (WorkspaceCompatSuite) TestCompatUpSkipsAndPortMappingsBeforeMigration(ctx 
 
 	listOut, err := ctr.With(compatDaggerExec("up", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, listOut, "dag://hello-with-services/web")
-	require.NotContains(t, listOut, "dag://hello-with-services/redis")
-	require.NotContains(t, listOut, "dag://hello-with-services/infra/database")
+	require.Contains(t, listOut, "hello-with-services/web")
+	require.NotContains(t, listOut, "hello-with-services/redis")
+	require.NotContains(t, listOut, "hello-with-services/infra/database")
 
 	out, err := ctr.
 		With(daggerUpVerify("", "http://localhost:3000", "nginx",

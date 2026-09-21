@@ -45,6 +45,22 @@ func TestArtifactDimensionFlags(t *testing.T) {
 	require.NotContains(t, recorder.query, "env=")
 }
 
+func TestArtifactEmptyDimensionKey(t *testing.T) {
+	for _, arg := range []string{"--part=", "--dimension-key=part="} {
+		t.Run(arg, func(t *testing.T) {
+			cmd := newArtifactsCommand()
+			registerArtifactDimensionFlags(cmd, []string{"part"})
+			require.NoError(t, cmd.ParseFlags([]string{arg}))
+			keys, err := artifactKeyFlags(cmd)
+			require.NoError(t, err)
+			require.Len(t, keys, 1)
+			require.Equal(t, "part", keys[0].Dimension)
+			require.True(t, keys[0].HasKey)
+			require.Empty(t, keys[0].Key)
+		})
+	}
+}
+
 func TestArtifactDimensionFlagPreparation(t *testing.T) {
 	for _, tc := range []struct {
 		name string

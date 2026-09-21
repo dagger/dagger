@@ -65,7 +65,7 @@ var agentCmd = &cobra.Command{
 				if agentTrace != "" {
 					llmID, err = freshAgentBase(ctx, dag)
 				} else {
-					llmID, err = composeAgents(ctx, dag, args)
+					llmID, err = composeAgents(ctx, dag, args, cmd)
 				}
 				if err != nil {
 					return err
@@ -123,7 +123,7 @@ func (f agentSessionFlag) SessionID() string {
 }
 
 func init() {
-	registerArtifactListFlags(agentCmd)
+	registerCommandArtifactFlags(agentCmd)
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
 	agentCmd.Flags().VarP(&agentResume, "resume", "r", "Resume a saved session (interactive picker if no id given)")
 	// A bare -r (no value) resolves to the picker keyword, opening the
@@ -160,12 +160,12 @@ func freshAgentBase(ctx context.Context, dag *dagger.Client) (string, error) {
 	return res.LLM.ID, nil
 }
 
-func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (string, error) {
+func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) (string, error) {
 	workspace, err := snapshotWorkspace(ctx, dag)
 	if err != nil {
 		return "", err
 	}
-	all, err := commandArtifacts(ctx, dag, workspace, include, true)
+	all, err := commandArtifactsWithFlags(ctx, dag, workspace, cmd, include, true)
 	if err != nil {
 		return "", err
 	}
@@ -237,7 +237,7 @@ func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspa
 }
 
 func listAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) error {
-	all, err := commandArtifacts(ctx, dag, dag.CurrentWorkspace(), include, true)
+	all, err := commandArtifactsWithFlags(ctx, dag, dag.CurrentWorkspace(), cmd, include, true)
 	if err != nil {
 		return err
 	}

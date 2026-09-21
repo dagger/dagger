@@ -44,7 +44,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		}
 	}
 	cmd, commandArgs := resolveCommand(root, args)
-	if cmd != listCmd && cmd.Parent() != listCmd && cmd != checksCmd {
+	if cmd != listCmd && cmd.Parent() != listCmd && !isArtifactCommand(cmd) {
 		return nil
 	}
 	if !discover {

@@ -10,7 +10,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
-	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 )
 
@@ -116,6 +115,9 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 type artifactLoadFailure struct{ URI, LoadError string }
 
 func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]artifactLoadFailure, error) {
+	// Synthetic load checks live at <module>/load. Narrow before enumerating
+	// items, so looking for load errors does not construct unrelated collections.
+	artifacts = artifacts.FilterURI("dag://*/load")
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -138,15 +140,54 @@ func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *da
 	return failures, nil
 }
 
-func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, cmd *cobra.Command) error {
-	ctx, span := Tracer().Start(ctx, "list artifacts", telemetry.Encapsulate())
-	defer span.End()
-	absolute, _ := cmd.Flags().GetBool("absolute")
-	items, err := readListedArtifacts(ctx, dag, selection, absolute, true)
-	if err != nil {
-		return err
+// Command list output uses the same dimension flags as command execution.
+func registerCommandArtifactFlags(cmd *cobra.Command) {
+	registerArtifactListFlags(cmd)
+	cmd.Flags().BoolP("all", "a", false, "List each dimension key combination")
+	cmd.Flags().StringArray("dimension-key", nil, "Keep a dimension key: DIMENSION=KEY (repeat for alternatives)")
+}
+
+func isArtifactCommand(cmd *cobra.Command) bool {
+	switch cmd {
+	case checksCmd, upCmd, shellCmd, generateCmd, agentCmd:
+		return true
 	}
-	return writeArtifactCLI(cmd.OutOrStdout(), items, nil, artifactListReplayArgs(cmd))
+	return false
+}
+
+func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, cmd *cobra.Command, addresses []string, strict bool) (*dagger.Artifacts, error) {
+	keys, err := artifactKeyFlags(cmd)
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) > 0 {
+		parsed, err := parseArtifactAddresses(addresses)
+		if err != nil {
+			return nil, err
+		}
+		defs, err := artifactDimensions(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}))
+		if err != nil {
+			return nil, err
+		}
+		if err := validateArtifactDimensionFlags(cmd, defs); err != nil {
+			return nil, err
+		}
+		if err := bindArtifactDimensions(keys, defs); err != nil {
+			return nil, err
+		}
+	}
+	return commandArtifacts(ctx, dag, ws, addresses, strict, keys...)
+}
+
+func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, artifacts *dagger.Artifacts) (*dagger.Artifacts, error) {
+	switch cmd.Name() {
+	case "check":
+		return selectCommandChecks(ctx, dag.CurrentWorkspace(), artifacts, cmd)
+	case "shell":
+		return artifacts.FilterTypes([]string{"Container", "Directory"}), nil
+	default:
+		return artifacts.FilterDirectives([]string{cmd.Name()}), nil
+	}
 }
 
 // Preserve explicit check selection policy when a listed row is copied.

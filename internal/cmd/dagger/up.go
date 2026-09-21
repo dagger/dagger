@@ -21,7 +21,7 @@ import (
 var upListMode bool
 
 func init() {
-	registerArtifactListFlags(upCmd)
+	registerCommandArtifactFlags(upCmd)
 	upCmd.Flags().BoolVarP(&upListMode, "list", "l", false, "List available services")
 }
 
@@ -48,7 +48,7 @@ var upCmd = &cobra.Command{
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
 				ws := dag.CurrentWorkspace()
-				all, err := commandArtifacts(ctx, dag, ws, args, true)
+				all, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, true)
 				if err != nil {
 					return err
 				}

@@ -188,14 +188,14 @@ func (item *Item) Verify() error {
 		args []string
 		want string
 	}{
-		{"query", []string{"dag://items/verify?item=a&item=b"}, "dag://items/verify?item=a\ndag://items/verify?item=b\n"},
-		{"dimension flag", []string{"items/verify", "--item=a", "--item=b"}, "dag://items/verify?item=a\ndag://items/verify?item=b\n"},
-		{"generic flag", []string{"items/verify", "--dimension-key=item=a", "--dimension-key=item=b"}, "dag://items/verify?item=a\ndag://items/verify?item=b\n"},
-		{"query and flag", []string{"items/verify?item=a", "--collections-items=b"}, "dag://items/verify?item=a\ndag://items/verify?item=b\n"},
-		{"separate addresses", []string{"items/verify?item=a", "other/verify?item=b"}, "dag://items/verify?item=a\ndag://other/verify?item=b\n"},
+		{"query", []string{"dag://items/verify?item=a&item=b"}, "--collections-items=a\n--collections-items=b\n"},
+		{"dimension flag", []string{"items/verify", "--item=a", "--item=b"}, "--collections-items=a\n--collections-items=b\n"},
+		{"generic flag", []string{"items/verify", "--dimension-key=item=a", "--dimension-key=item=b"}, "--collections-items=a\n--collections-items=b\n"},
+		{"query and flag", []string{"items/verify?item=a", "--collections-items=b"}, "--collections-items=a\n--collections-items=b\n"},
+		{"separate addresses", []string{"items/verify?item=a", "other/verify?item=b"}, "--collections-items=a\n--collections-other=b\n"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			out, err := base.With(daggerExec(append([]string{"check", "-l"}, tc.args...)...)).Stdout(ctx)
+			out, err := base.With(daggerExec(append([]string{"check", "-l", "--all"}, tc.args...)...)).Stdout(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, strings.Fields(tc.want), strings.Fields(out))
 			out, err = base.With(daggerExec(append([]string{"check"}, tc.args...)...)).CombinedOutput(ctx)
@@ -214,10 +214,93 @@ func (item *Item) Verify() error {
 		_, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
 		requireErrOut(t, err, tc.want)
 	}
+	t.Run("shell flags leave unrelated collections deferred", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("shell", "-l", "-a", "items/broken?item=a")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "--collections-items=a\n", out)
+		replay, err := base.With(daggerExec("shell", "-l", "-a", strings.TrimSpace(out))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out, replay)
+	})
+	t.Run("grouped", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "items/verify")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "items/verify\n", out)
+		combined, err := base.With(daggerExec("check", "-l", "items/verify")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 1, strings.Count(combined, "# Use --all to list each key combination."))
+		out, err = base.With(daggerExec("check", "-l", "items/verify?item=a&item=b&item=c")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "--collections-items=b --collections-items=a --collections-items=c\n", out)
+		out, err = base.With(daggerExec("check", "-l", "items/verify?item=a&item=b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "--collections-items=b --collections-items=a\n", out)
+		// Replay each printed row. Item c fails if grouping loses the filter.
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if strings.HasPrefix(line, "#") {
+				continue
+			}
+			result, err := base.With(daggerExec(append([]string{"check"}, strings.Fields(line)...)...)).CombinedOutput(ctx)
+			require.NoError(t, err, result)
+		}
+	})
 	out, err := base.With(daggerExec("check", "items/verify", "--help")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "--item")
 	require.Contains(t, out, "--dimension-key")
+	require.Contains(t, out, "--all")
+}
+
+func (CollectionsSuite) TestCommandLists(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := collectionGoSource + `
+// +check
+func (*Item) Verify() error { return nil }
+// +check
+func (*Item) OtherCheck() error { return nil }
+// +generate
+func (*Item) Write() *dagger.Changeset { panic("list evaluated generator") }
+// +up
+func (*Item) Serve() *dagger.Service { panic("list evaluated service") }
+// +agent
+func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("list evaluated agent") }
+// +check
+func (*Part) Verify() error { return nil }
+`
+	source = strings.Replace(source, `if item.Name != "item:a" { panic("excluded parent must stay deferred") }`, "", 1)
+	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
+	for _, tc := range []struct{ command, path string }{
+		{"shell", "items/broken"}, {"up", "items/serve"}, {"generate", "items/write"}, {"agent", "items/assistant"},
+	} {
+		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
+			out, err := base.With(daggerExec(tc.command, "-l", tc.path)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.path+"\n", out)
+			out, err = base.With(daggerExec(tc.command, "-l", "-a", tc.path, "--item=a")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "--collections-items=a\n", out)
+			replay, err := base.With(daggerExec(tc.command, "-l", "-a", strings.TrimSpace(out))).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, out, replay)
+		})
+	}
+	t.Run("keep path when another check matches the keys", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "-a", "items/verify", "--item=a")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "items/verify --item=a\n", out)
+	})
+	t.Run("keep correlated keys separate", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "items/parts/verify?item=a&part=x", "items/parts/verify?item=b&part=")).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "# Use --all")
+		require.Len(t, strings.Split(strings.TrimSpace(out), "\n"), 2)
+		// Parsing these lines in a shell must preserve the empty key as well.
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			replay, err := base.WithExec([]string{"sh", "-c", "dagger check -l -a " + line}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, line+"\n", replay)
+		}
+	})
 }
 
 func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {

@@ -27,7 +27,7 @@ var (
 )
 
 func init() {
-	registerArtifactListFlags(shellCmd)
+	registerCommandArtifactFlags(shellCmd)
 	shellCmd.Flags().BoolVarP(&terminalListMode, "list", "l", false, "List available shells")
 	shellCmd.Flags().StringVarP(&terminalCommand, "command", "c", "", "Run a shell `command` and return its exit code")
 	shellCmd.Flags().StringArrayVar(&terminalCopies, "copy", nil, "Copy a directory into the container: `[PATH=]SOURCE` (repeatable)")
@@ -79,7 +79,7 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 		params,
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			all, err := commandArtifacts(ctx, dag, dag.CurrentWorkspace(), args, true)
+			all, err := commandArtifactsWithFlags(ctx, dag, dag.CurrentWorkspace(), cmd, args, true)
 			if err != nil {
 				return err
 			}
