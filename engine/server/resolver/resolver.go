@@ -440,23 +440,27 @@ type localizedImageClosure struct {
 	Nonlayers    []ocispecs.Descriptor
 }
 
-// Reuse source-matched metadata for a pinned pull even when its layers have
-// not arrived yet. Config resolution already verifies and retains this data.
-// Tags, force-pulls and service-bound registry names keep remote resolution.
+// Config resolution has usually already fetched and checked this image's
+// manifest and config. If the ref is pinned to a digest and that metadata
+// came from the same registry and repository, start from it instead of
+// asking the registry again. The layers are downloaded as usual.
+//
+// Tags and forced pulls still ask the registry.
+//
+// Pulls from a registry that runs as a Dagger service also still ask the
+// registry. Those refs look like "registry:5000/app", where "registry" is
+// just the name this pipeline gave its service. Another pipeline can give
+// the same name to a different registry. A cached blob only remembers the
+// name, so it cannot tell us which registry it really came from. Asking the
+// registry is the only safe option.
 func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, opts PullOpts) (string, ocispecs.Descriptor, remotes.Resolver, error) {
 	if opts.ResolveMode == ResolveModeDefault && len(opts.Network.HostAliases) == 0 {
-		resolvedRef, dgst, _, found, err := r.tryLocalCanonicalConfigMetadata(ctx, ref, ResolveImageConfigOpts{Platform: &opts.Platform})
+		resolvedRef, rootDesc, _, found, err := r.tryLocalCanonicalConfigMetadata(ctx, ref, ResolveImageConfigOpts{Platform: &opts.Platform})
 		if err != nil {
 			return "", ocispecs.Descriptor{}, nil, err
 		}
 		if found {
-			rootDesc, found, err := r.localCanonicalRootDescriptor(ctx, dgst)
-			if err != nil {
-				return "", ocispecs.Descriptor{}, nil, err
-			}
-			if found {
-				return resolvedRef, rootDesc, docker.NewResolver(docker.ResolverOptions{Hosts: r.registryHosts(opts.Network, opts.RegistryTransport)}), nil
-			}
+			return resolvedRef, rootDesc, docker.NewResolver(docker.ResolverOptions{Hosts: r.registryHosts(opts.Network, opts.RegistryTransport)}), nil
 		}
 	}
 	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
@@ -478,7 +482,8 @@ func (r *Resolver) tryLocalCanonicalConfig(
 	ref string,
 	opts ResolveImageConfigOpts,
 ) (string, digest.Digest, []byte, bool, error) {
-	return r.tryLocalCanonicalConfigMetadata(ctx, ref, opts)
+	resolvedRef, rootDesc, configBytes, found, err := r.tryLocalCanonicalConfigMetadata(ctx, ref, opts)
+	return resolvedRef, rootDesc.Digest, configBytes, found, err
 }
 
 func (r *Resolver) tryLocalCanonicalClosure(
