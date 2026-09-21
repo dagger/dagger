@@ -68,13 +68,17 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 		require.Equal(t, OfferAccepted, out[0].Outcome)
 		row := receiver.cacheSharedResult()
 		c.egraphMu.Lock()
-		require.Equal(t, int64(1), depRow.incomingOwnershipCount, "only the published slot owns it")
+		owners := depRow.incomingOwnershipCount
 		queue, err := c.retirePartOfferLocked(ctx, row, testLiveOffer().Address)
-		require.NoError(t, err)
-		callbacks, err := c.collectUnownedResultsLocked(ctx, queue)
-		require.NoError(t, err)
-		require.Nil(t, c.resultsByID[depRow.id], "the slot was its last owner")
+		var callbacks []OnReleaseFunc
+		if err == nil {
+			callbacks, err = c.collectUnownedResultsLocked(ctx, queue)
+		}
+		depCollected := c.resultsByID[depRow.id] == nil
 		c.egraphMu.Unlock()
+		require.Equal(t, int64(1), owners, "only the published slot owns it")
+		require.NoError(t, err)
+		require.True(t, depCollected, "the slot was its last owner")
 		require.NoError(t, runOnReleaseFuncs(ctx, callbacks))
 	})
 	for _, mode := range []string{"new offer", "same-owner refresh", "different-owner replacement"} {
@@ -110,19 +114,39 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 			require.Equal(t, OfferUnavailable, out[0].Outcome)
 			require.False(t, out[0].Replaced)
 			c.egraphMu.RLock()
-			defer c.egraphMu.RUnlock()
-			require.Equal(t, revision, row.transferRevision, "nothing published")
-			require.Equal(t, depBase, dep.cacheSharedResult().incomingOwnershipCount)
-			require.Equal(t, otherBase, other.cacheSharedResult().incomingOwnershipCount)
+			currentRevision := row.transferRevision
+			depOwners, otherOwners := dep.cacheSharedResult().incomingOwnershipCount, other.cacheSharedResult().incomingOwnershipCount
+			offerCount, ownerCount := len(row.partOffers), len(c.offerOwners)
+			slot := row.partOffers[key]
+			var slotOwner *offerOwner
+			var record PersistedPartOffer
+			var holds int64
+			var copyErr error
+			if slot != nil {
+				slotOwner = slot.owner
+				records, err := clonePartOffers([]PersistedPartOffer{slot.record})
+				copyErr = err
+				if err == nil {
+					record = records[0]
+				}
+			}
+			if owner != nil {
+				holds = owner.holds
+			}
+			c.egraphMu.RUnlock()
+			require.Equal(t, revision, currentRevision, "nothing published")
+			require.Equal(t, depBase, depOwners)
+			require.Equal(t, otherBase, otherOwners)
 			if mode == "new offer" {
-				require.Empty(t, row.partOffers)
-				require.Empty(t, c.offerOwners, "the prepared owner was released")
+				require.Zero(t, offerCount)
+				require.Zero(t, ownerCount, "the prepared owner was released")
 				return
 			}
-			require.Same(t, owner, row.partOffers[key].owner)
-			require.Equal(t, initial, row.partOffers[key].record, "the slot keeps its record")
-			require.Equal(t, int64(1), owner.holds, "the preparation hold was released exactly once")
-			require.Len(t, c.offerOwners, 1)
+			require.NoError(t, copyErr)
+			require.Same(t, owner, slotOwner)
+			require.Equal(t, initial, record, "the slot keeps its record")
+			require.Equal(t, int64(1), holds, "the preparation hold was released exactly once")
+			require.Equal(t, 1, ownerCount)
 		})
 	}
 }
@@ -215,23 +239,26 @@ func (f *settlementFixture) requireSettled(t *testing.T, firstBase, secondBase i
 	t.Helper()
 	row := f.receiver.cacheSharedResult()
 	f.cache.egraphMu.RLock()
-	require.Empty(t, row.partOffers, "settlement removed every current offer")
-	require.Empty(t, f.cache.offerOwners)
+	offerCount, ownerCount := len(row.partOffers), len(f.cache.offerOwners)
 	f.cache.egraphMu.RUnlock()
+	require.Zero(t, offerCount, "settlement removed every current offer")
+	require.Zero(t, ownerCount)
 	first, second := f.counts()
 	require.Equal(t, firstBase, first, "no double decrement")
 	require.Equal(t, secondBase, second, "no double decrement")
 	key, _ := partAddressKey(f.address)
 	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
-	require.Equal(t, PartComplete, gate.outputs[key].phase)
+	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
+	require.Equal(t, PartComplete, phase)
 	out, err := f.cache.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 	require.NoError(t, err)
 	require.Equal(t, OfferAlreadyComplete, out[0].Outcome)
 	f.cache.egraphMu.RLock()
-	require.Empty(t, row.partOffers, "a final part attracts no offer")
+	finalOfferCount := len(row.partOffers)
 	f.cache.egraphMu.RUnlock()
+	require.Zero(t, finalOfferCount, "a final part attracts no offer")
 }
 
 func TestOfferSettlementReplacement(t *testing.T) {
@@ -249,9 +276,10 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		require.Equal(t, OfferAccepted, out[0].Outcome)
 		require.True(t, out[0].Replaced)
 		f.cache.egraphMu.RLock()
-		require.Equal(t, int64(0), winner.slots)
-		require.Equal(t, int64(1), winner.holds, "the admitted acquisition keeps its own hold")
+		slots, holds := winner.slots, winner.holds
 		f.cache.egraphMu.RUnlock()
+		require.Equal(t, int64(0), slots)
+		require.Equal(t, int64(1), holds, "the admitted acquisition keeps its own hold")
 		f.resume()
 		require.NoError(t, within(t, done))
 		// The winner's owner ended with its acquisition; the replacement
@@ -271,8 +299,9 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, OfferAlreadyComplete, out[0].Outcome, "an installed output closes offer admission")
 		f.cache.egraphMu.RLock()
-		require.Len(t, f.receiver.cacheSharedResult().partOffers, 1, "the older slot waits for settlement")
+		offerCount := len(f.receiver.cacheSharedResult().partOffers)
 		f.cache.egraphMu.RUnlock()
+		require.Equal(t, 1, offerCount, "the older slot waits for settlement")
 		opened.Do(func() { close(syncReady) })
 		require.NoError(t, within(t, done))
 		f.requireSettled(t, firstBase-1, secondBase)
@@ -295,9 +324,14 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			key, _ := partAddressKey(f.address)
 			f.cache.egraphMu.RLock()
 			slot := row.partOffers[key]
-			require.NotNil(t, slot, "settlement has not run")
-			require.Equal(t, slot.owner.slots, slot.owner.holds, "the acquisition hold ended before sync")
+			present := slot != nil
+			var slots, holds int64
+			if present {
+				slots, holds = slot.owner.slots, slot.owner.holds
+			}
 			f.cache.egraphMu.RUnlock()
+			require.True(t, present, "settlement has not run")
+			require.Equal(t, slots, holds, "the acquisition hold ended before sync")
 			require.NotEmpty(t, row.loadPayloadState().snapshotLinkIntent.Links, "the installed output is retained")
 			out, err := f.cache.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 			require.NoError(t, err)
@@ -357,8 +391,9 @@ func TestOfferResourcesDoNotGateLookup(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	c.egraphMu.RLock()
-	require.True(t, row.requiredSessionResources == nil || row.requiredSessionResources.Empty(), "offer-only resources are not lookup requirements")
+	noRequirements := row.requiredSessionResources == nil || row.requiredSessionResources.Empty()
 	c.egraphMu.RUnlock()
+	require.True(t, noRequirements, "offer-only resources are not lookup requirements")
 	require.Equal(t, generation, row.requiredSessionResourcesGen.Load())
 	require.Same(t, row, ordinary("no-socket"), "a session without the socket still hits the receiver")
 
@@ -367,8 +402,9 @@ func TestOfferResourcesDoNotGateLookup(t *testing.T) {
 	require.EqualValues(t, 1, f.operation.runs.Load())
 	require.Zero(t, f.transport.total())
 	c.egraphMu.RLock()
-	require.Len(t, row.partOffers, 1, "skipping does not remove the slot")
+	offerCount := len(row.partOffers)
 	c.egraphMu.RUnlock()
+	require.Equal(t, 1, offerCount, "skipping does not remove the slot")
 
 	// An authorized demand installs the exact references; ordinary
 	// requirements then propagate.
@@ -380,9 +416,11 @@ func TestOfferResourcesDoNotGateLookup(t *testing.T) {
 	require.True(t, f.installed())
 	require.EqualValues(t, 1, f.operation.runs.Load())
 	c.egraphMu.RLock()
-	require.Contains(t, row.deps, sharedResultID(socketID), "installed references are direct edges")
-	require.True(t, row.requiredSessionResources.Contains("socket"))
+	_, ownsSocket := row.deps[sharedResultID(socketID)]
+	requiresSocket := cacheTestSessionResourceSetContains(row.requiredSessionResources, "socket")
 	c.egraphMu.RUnlock()
+	require.True(t, ownsSocket, "installed references are direct edges")
+	require.True(t, requiresSocket)
 	require.Greater(t, row.requiredSessionResourcesGen.Load(), generation)
 	require.Nil(t, ordinary("no-socket"), "the installed output's requirement now gates lookup")
 	require.Same(t, row, ordinary(session))
@@ -444,14 +482,20 @@ func TestRenewalShutdownDrainsOwnership(t *testing.T) {
 	requireReleased := func(t *testing.T, f *exhaustionFixture) {
 		t.Helper()
 		f.cache.egraphMu.RLock()
-		defer f.cache.egraphMu.RUnlock()
+		type ownership struct{ slots, holds int64 }
+		owners := make([]ownership, 0, len(f.cache.offerOwners))
 		for _, owner := range f.cache.offerOwners {
-			require.Equal(t, owner.slots, owner.holds, "no acquisition hold remains")
+			owners = append(owners, ownership{owner.slots, owner.holds})
 		}
 		gate := f.receiver.cacheSharedResult().partGate.loadOrCreate()
 		gate.mu.Lock()
-		require.Empty(t, gate.writers, "no permit remains")
+		writerCount := len(gate.writers)
 		gate.mu.Unlock()
+		f.cache.egraphMu.RUnlock()
+		for _, owner := range owners {
+			require.Equal(t, owner.slots, owner.holds, "no acquisition hold remains")
+		}
+		require.Zero(t, writerCount, "no permit remains")
 	}
 	t.Run("delivered renewal", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain)

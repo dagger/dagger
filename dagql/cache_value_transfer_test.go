@@ -128,11 +128,13 @@ func transferTestDependency(c *Cache, ctx context.Context, parent, child AnyResu
 func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, child AnyResult) {
 	t.Helper()
 	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
 	record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(child.cacheSharedResult().id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
+	if err == nil {
+		err = c.attachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner})
+	}
+	c.egraphMu.Unlock()
 	require.NoError(t, err)
-	require.NoError(t, c.attachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner}))
 }
 
 func TestValueTransferCapture(t *testing.T) {
@@ -384,7 +386,10 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 			value.release = func(context.Context) error { losingReleases.Add(1); return nil }
 			row.payloadMu.Lock()
 			next, err := clonePersistedEnvelope(*row.persistedEnvelope)
-			require.NoError(t, err)
+			if err != nil {
+				row.payloadMu.Unlock()
+				return err
+			}
 			next.ObjectJSON = json.RawMessage(`{"text":"new"}`)
 			row.persistedEnvelope = &next
 			row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}

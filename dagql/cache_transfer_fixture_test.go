@@ -69,9 +69,9 @@ func TestSchemaModuleSelectionFallback(t *testing.T) {
 	require.ErrorContains(t, err, "missing shared result")
 	c.testBeforeServeRequirementRecheck = func(row *sharedResult) {
 		c.egraphMu.Lock()
-		defer c.egraphMu.Unlock()
 		row.sessionResourceHandle = "late-socket"
 		_, err := c.recomputeRequiredSessionResourcesLocked(row)
+		c.egraphMu.Unlock()
 		require.NoError(t, err)
 	}
 	_, err = c.LoadResultByResultIDForSchema(ctx, "test-session", srv, recorded, nil)
@@ -133,13 +133,17 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 		<-entered
 		c.egraphMu.Lock()
 		owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{DependencyIDs: []uint64{uint64(next.cacheSharedResult().id)}})
-		require.NoError(t, err)
-		address := PersistedPartAddress{Part: "snapshot"}
-		queue, err := c.replacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
-		require.NoError(t, err)
-		releases, err := c.collectUnownedResultsLocked(ctx, queue)
-		require.NoError(t, err)
+		var releases []OnReleaseFunc
+		if err == nil {
+			address := PersistedPartAddress{Part: "snapshot"}
+			var queue []*sharedResult
+			queue, err = c.replacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			if err == nil {
+				releases, err = c.collectUnownedResultsLocked(ctx, queue)
+			}
+		}
 		c.egraphMu.Unlock()
+		require.NoError(t, err)
 		require.NoError(t, runOnReleaseFuncs(ctx, releases))
 		for _, row := range []AnyResult{root, old, next} {
 			_, err := c.removePersistedEdge(ctx, row.cacheSharedResult().id)
@@ -149,8 +153,9 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 		snapshot := c.snapshotPruneState(nil, pruneSnapshotMetadata, 10)
 		require.Contains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
 		c.egraphMu.RLock()
-		require.Len(t, c.offerOwners, 2)
+		ownerCount := len(c.offerOwners)
 		c.egraphMu.RUnlock()
+		require.Equal(t, 2, ownerCount)
 		close(finish)
 		require.NoError(t, <-done)
 		require.Empty(t, c.resultsByID)
@@ -177,8 +182,9 @@ func testValueTransferImportConcurrent(t *testing.T) {
 		close(commit)
 		require.NoError(t, <-done)
 		b.egraphMu.RLock()
-		require.Len(t, b.resultsByID, len(bundle.Values))
+		resultCount := len(b.resultsByID)
 		b.egraphMu.RUnlock()
+		require.Equal(t, len(bundle.Values), resultCount)
 		for _, value := range bundle.Values {
 			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
 			require.NoError(t, err)

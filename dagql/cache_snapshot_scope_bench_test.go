@@ -80,9 +80,9 @@ func TestScopedCollectorConcurrentPublicationCost(t *testing.T) {
 			// First force a guarded rejection; it must expose no partial desired map.
 			leaves[len(leaves)/2].mu.Lock()
 			links, err := collectSnapshotOwnerLinks(self, frame, false)
+			leaves[len(leaves)/2].mu.Unlock()
 			require.ErrorIs(t, err, ErrPersistStateNotReady)
 			require.Nil(t, links)
-			leaves[len(leaves)/2].mu.Unlock()
 			var publications atomic.Int64
 			done := make(chan struct{})
 			started := make(chan struct{})

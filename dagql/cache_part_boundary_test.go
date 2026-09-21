@@ -176,9 +176,11 @@ func TestPartDecisionPreparationArrival(t *testing.T) {
 					record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}, Chain: OfferedChain{Layers: chain.Layers, RenewalKey: "late-chain"}}
 					c.egraphMu.Lock()
 					owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
-					require.NoError(t, err)
-					require.NoError(t, c.attachPartOfferLocked(row, address, &partOffer{record: record, owner: owner}))
+					if err == nil {
+						err = c.attachPartOfferLocked(row, address, &partOffer{record: record, owner: owner})
+					}
 					c.egraphMu.Unlock()
+					require.NoError(t, err)
 					c.SetPartContentSource(lifetimeChainSource{chain.Provider})
 				} else {
 					local, _ := b.Build(t, nil, "payload", "late source bytes")
@@ -306,8 +308,9 @@ func TestPartDecisionOfferAfterRunning(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, GateExecutionStarted, outcome)
 		original.gate.mu.Lock()
-		require.Equal(t, LazyEvaluationRunning, original.gate.groups[lazyGroupAddressKey(original.group)].phase)
+		phase := original.gate.groups[lazyGroupAddressKey(original.group)].phase
 		original.gate.mu.Unlock()
+		require.Equal(t, LazyEvaluationRunning, phase)
 		return nil
 	}}))
 }

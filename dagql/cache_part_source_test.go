@@ -86,8 +86,9 @@ func TestPartOfferSessionAdmission(t *testing.T) {
 	require.Equal(t, PartDownloadable, source.Readiness())
 	require.Nil(t, source.source)
 	c.egraphMu.RLock()
-	require.Nil(t, receiver.cacheSharedResult().requiredSessionResources)
+	requirementsNil := receiver.cacheSharedResult().requiredSessionResources == nil
 	c.egraphMu.RUnlock()
+	require.True(t, requirementsNil)
 	require.NoError(t, source.Release(ctx))
 }
 func TestReadyPartReceipt(t *testing.T) {
@@ -161,23 +162,29 @@ func TestPartSettlementRetiresReplacement(t *testing.T) {
 	gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: task, installation: 9}
 	record := PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(second.cacheSharedResult().id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
-	require.NoError(t, err)
-	queue, err := c.replacePartOfferLocked(ctx, row, address, &partOffer{record: record, owner: owner})
-	require.NoError(t, err)
+	var queue []*sharedResult
+	if err == nil {
+		queue, err = c.replacePartOfferLocked(ctx, row, address, &partOffer{record: record, owner: owner})
+	}
 	gate.mu.Unlock()
-	callbacks, err := c.collectUnownedResultsLocked(ctx, queue)
+	var callbacks []OnReleaseFunc
+	if err == nil {
+		callbacks, err = c.collectUnownedResultsLocked(ctx, queue)
+	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
 	require.NoError(t, runOnReleaseFuncs(ctx, callbacks))
 	require.NoError(t, c.settlePart(ctx, row, address, task, 9))
 	require.NoError(t, c.settlePart(ctx, row, address, task, 9))
 	c.egraphMu.RLock()
-	require.Empty(t, row.partOffers)
-	require.Empty(t, c.offerOwners)
+	offerCount, ownerCount := len(row.partOffers), len(c.offerOwners)
 	c.egraphMu.RUnlock()
+	require.Zero(t, offerCount)
+	require.Zero(t, ownerCount)
 	gate.mu.Lock()
-	require.Equal(t, PartComplete, gate.outputs[key].phase)
+	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
+	require.Equal(t, PartComplete, phase)
 }
 
 func TestPartDecisionFinalSource(t *testing.T) {
@@ -238,15 +245,22 @@ func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
 			address := PersistedPartAddress{Part: "snapshot"}
 			var winnerOwner *offerOwner
 			c.egraphMu.Lock()
+			var setupErr error
 			for _, row := range []*sharedResult{winner.cacheSharedResult(), loser.cacheSharedResult()} {
 				owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{})
-				require.NoError(t, err)
-				require.NoError(t, c.attachPartOfferLocked(row, address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner}))
+				if err == nil {
+					err = c.attachPartOfferLocked(row, address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner})
+				}
+				if err != nil {
+					setupErr = err
+					break
+				}
 				if row == winner.cacheSharedResult() {
 					winnerOwner = owner
 				}
 			}
 			c.egraphMu.Unlock()
+			require.NoError(t, setupErr)
 			c.SetPartContentSource(&partAvailabilityHook{fn: func() {
 				require.NoError(t, c.ReleaseSession(ctx, "test-session"))
 				_, err := c.removePersistedEdge(ctx, loser.cacheSharedResult().id)
@@ -257,11 +271,14 @@ func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
 			require.Nil(t, source, "no winning ownership escapes an error")
 			require.Equal(t, 1, releases)
 			c.egraphMu.RLock()
-			require.Nil(t, c.resultsByID[loser.cacheSharedResult().id])
-			require.Equal(t, winnerOwner.slots, winnerOwner.holds)
-			// Only the durable edge remains; both probe and selected Ready holds ended.
-			require.EqualValues(t, 1, winner.cacheSharedResult().incomingOwnershipCount)
+			loserCollected := c.resultsByID[loser.cacheSharedResult().id] == nil
+			slots, holds := winnerOwner.slots, winnerOwner.holds
+			owners := winner.cacheSharedResult().incomingOwnershipCount
 			c.egraphMu.RUnlock()
+			require.True(t, loserCollected)
+			require.Equal(t, slots, holds)
+			// Only the durable edge remains; both probe and selected Ready holds ended.
+			require.EqualValues(t, 1, owners)
 		})
 	}
 }
@@ -292,14 +309,16 @@ func TestPartNativeCompletionRetiresOffer(t *testing.T) {
 	require.Equal(t, 1, bodies)
 	row := receiver.cacheSharedResult()
 	c.egraphMu.RLock()
-	require.Empty(t, row.partOffers)
-	require.Empty(t, c.offerOwners)
+	offerCount, ownerCount := len(row.partOffers), len(c.offerOwners)
 	c.egraphMu.RUnlock()
+	require.Zero(t, offerCount)
+	require.Zero(t, ownerCount)
 	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	key, _ := partAddressKey(address)
-	require.Equal(t, PartComplete, gate.outputs[key].phase)
+	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
+	require.Equal(t, PartComplete, phase)
 }
 
 // A candidate whose probe is not ready has no record in this scan, so it must

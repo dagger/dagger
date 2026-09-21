@@ -221,12 +221,17 @@ func (b *sharePassBarrier) skipCauses() []error {
 // planned. The wait is bounded so a failure cannot hang the package.
 func (b *sharePassBarrier) awaitPass(t *testing.T) int {
 	t.Helper()
+	planned, err := b.waitPass()
+	require.NoError(t, err)
+	return planned
+}
+
+func (b *sharePassBarrier) waitPass() (int, error) {
 	select {
 	case planned := <-b.passes:
-		return planned
+		return planned, nil
 	case <-time.After(10 * time.Second):
-		t.Fatal("no snapshot sharing pass finished")
-		return 0
+		return 0, errors.New("no snapshot sharing pass finished")
 	}
 }
 
@@ -653,11 +658,16 @@ func TestSnapshotSharingStructuralRequirements(t *testing.T) {
 				transferTestOffer(t, c, ctx, receiver, resource)
 			}
 			c.egraphMu.Lock()
+			var requirementErr error
 			for _, row := range []AnyResult{donor, receiver} {
 				_, err := c.recomputeRequiredSessionResourcesLocked(row.cacheSharedResult())
-				require.NoError(t, err)
+				if err != nil {
+					requirementErr = err
+					break
+				}
 			}
 			c.egraphMu.Unlock()
+			require.NoError(t, requirementErr)
 
 			shareTestUnite(t, ctx, c, "structural-"+mode, donor, receiver)
 			barrier.awaitPass(t)
@@ -791,8 +801,9 @@ func TestSnapshotSharingDecodeWhileFinishPaused(t *testing.T) {
 	key, _ := partAddressKey(PersistedPartAddress{Part: "fs"})
 	gate := row.partGate.gate.Load()
 	gate.mu.Lock()
-	require.Equal(t, PartOutputInstalled, gate.outputs[key].phase, "installed and not yet settled")
+	installedPhase := gate.outputs[key].phase
 	gate.mu.Unlock()
+	require.Equal(t, PartOutputInstalled, installedPhase, "installed and not yet settled")
 	require.False(t, receipt.task.settled.Load())
 
 	loaded, err := c.LoadResultByResultID(ctx, "", srv, uint64(row.id))
@@ -805,8 +816,9 @@ func TestSnapshotSharingDecodeWhileFinishPaused(t *testing.T) {
 	resumeFinish()
 	require.Equal(t, 1, barrier.awaitPass(t))
 	gate.mu.Lock()
-	require.Equal(t, PartComplete, gate.outputs[key].phase, "only the owning task settles")
+	settledPhase := gate.outputs[key].phase
 	gate.mu.Unlock()
+	require.Equal(t, PartComplete, settledPhase, "only the owning task settles")
 }
 
 // Shutdown: close waits for an active pass, drops what is still queued, and
@@ -1179,15 +1191,27 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	published := make(chan struct{})
 	receiverValue.afterStoreUnlock = sync.OnceFunc(func() { close(published) })
 
-	shareTestUnite(t, ctx, c, "cancel-after-publication", donor, receiver)
+	content := digest.FromString("cancel-after-publication")
+	donorErr := c.TeachContentDigest(ctx, donor, content)
+	receiverErr := c.TeachContentDigest(ctx, receiver, content)
+	var publishedInTime bool
 	select {
 	case <-published:
+		publishedInTime = true
 	case <-time.After(10 * time.Second):
-		t.Fatal("the slot never published")
 	}
 	c.closeSnapshotSharing()
-	shareTestNoPassYet(t, barrier, "while its Body still held an undelivered receipt")
+	var completedEarly bool
+	select {
+	case <-barrier.passes:
+		completedEarly = true
+	case <-time.After(200 * time.Millisecond):
+	}
 	release()
+	require.NoError(t, donorErr)
+	require.NoError(t, receiverErr)
+	require.True(t, publishedInTime, "the slot never published")
+	require.False(t, completedEarly, "the pass completed while its Body still held an undelivered receipt")
 	require.Equal(t, 1, barrier.awaitPass(t))
 
 	key, _ := partAddressKey(PersistedPartAddress{Part: "fs"})
@@ -1238,8 +1262,9 @@ func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
 	_, err := c.removePersistedEdge(ctx, row.id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
-	require.Same(t, row, c.resultsByID[row.id], "the receipt and the task still hold the installed receiver")
+	installedRegistered := c.resultsByID[row.id] == row
 	c.egraphMu.RUnlock()
+	require.True(t, installedRegistered, "the receipt and the task still hold the installed receiver")
 	require.Zero(t, manager.released.Load())
 
 	resumeFinish()
@@ -1377,10 +1402,13 @@ func TestSnapshotSharingImportTriggers(t *testing.T) {
 			_, err := b.ImportValues(ctx, bundle)
 			require.Error(t, err)
 			b.egraphMu.RLock()
-			defer b.egraphMu.RUnlock()
-			require.Empty(t, b.sharePending)
-			require.False(t, b.shareWorkerStarted, "nothing was ever queued, so no worker was started")
-			require.Nil(t, b.shareNotify, "the failed import left no collector behind")
+			pendingCount := len(b.sharePending)
+			workerStarted := b.shareWorkerStarted
+			notifyNil := b.shareNotify == nil
+			b.egraphMu.RUnlock()
+			require.Zero(t, pendingCount)
+			require.False(t, workerStarted, "nothing was ever queued, so no worker was started")
+			require.True(t, notifyNil, "the failed import left no collector behind")
 		})
 	}
 }
@@ -1501,8 +1529,9 @@ func TestSnapshotSharingTypedSuccessorHoldsTheDonor(t *testing.T) {
 	_, err := c.removePersistedEdge(ctx, donorRow.id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
-	require.Same(t, donorRow, c.resultsByID[donorRow.id])
+	donorRegistered := c.resultsByID[donorRow.id] == donorRow
 	c.egraphMu.RUnlock()
+	require.True(t, donorRegistered)
 
 	release()
 	require.Equal(t, 1, barrier.awaitPass(t), "the first pass installs one part")
@@ -1557,11 +1586,17 @@ func TestSnapshotSharingDonorLeaseReconciliationIsBusy(t *testing.T) {
 	donorRow.leaseSyncMu.Lock()
 	reconciled := sync.OnceFunc(donorRow.leaseSyncMu.Unlock)
 	defer reconciled()
-	shareTestUnite(t, ctx, c, "lease-reconciliation", donor, receiver)
-	require.Equal(t, 0, barrier.awaitPass(t), "a reconciling donor is not Ready, and the probe did not wait for it")
-	require.Zero(t, manager.pins.Load())
-
+	content := digest.FromString("lease-reconciliation")
+	donorErr := c.TeachContentDigest(ctx, donor, content)
+	receiverErr := c.TeachContentDigest(ctx, receiver, content)
+	planned, passErr := barrier.waitPass()
+	pins := manager.pins.Load()
 	reconciled()
+	require.NoError(t, donorErr)
+	require.NoError(t, receiverErr)
+	require.NoError(t, passErr)
+	require.Equal(t, 0, planned, "a reconciling donor is not Ready, and the probe did not wait for it")
+	require.Zero(t, pins)
 	c.notifySnapshotShareCompletion(ctx, donorRow)
 	require.Equal(t, 1, barrier.awaitPass(t))
 	require.True(t, shareTestHasLink(receiver, "fs-snap"))

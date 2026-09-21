@@ -15,6 +15,11 @@ import (
 
 func assertCacheOwnershipExact(t *testing.T, c *Cache, activeHolds ...*ongoingCall) {
 	t.Helper()
+	err := cacheOwnershipError(c, activeHolds...)
+	assert.NilError(t, err)
+}
+
+func cacheOwnershipError(c *Cache, activeHolds ...*ongoingCall) error {
 	c.egraphMu.RLock()
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
@@ -24,7 +29,9 @@ func assertCacheOwnershipExact(t *testing.T, c *Cache, activeHolds ...*ongoingCa
 	for sessionID, resultIDs := range c.sessionResultIDsBySession {
 		for resultID := range resultIDs {
 			_, found := c.resultsByID[resultID]
-			assert.Assert(t, found, "session %q references missing result %d", sessionID, resultID)
+			if !found {
+				return fmt.Errorf("session %q references missing result %d", sessionID, resultID)
+			}
 			expected[resultID]++
 		}
 	}
@@ -33,9 +40,13 @@ func assertCacheOwnershipExact(t *testing.T, c *Cache, activeHolds ...*ongoingCa
 			expected[resultID] += int64(shared.depParents.Size())
 			for parentID := range shared.depParents.Items() {
 				parent := c.resultsByID[parentID]
-				assert.Assert(t, parent != nil, "result %d references missing parent %d", resultID, parentID)
+				if parent == nil {
+					return fmt.Errorf("result %d references missing parent %d", resultID, parentID)
+				}
 				_, found := parent.deps[resultID]
-				assert.Assert(t, found, "parent %d is missing dependency %d", parentID, resultID)
+				if !found {
+					return fmt.Errorf("parent %d is missing dependency %d", parentID, resultID)
+				}
 			}
 		}
 		if _, found := c.persistedEdgesByResult[resultID]; found {
@@ -46,20 +57,31 @@ func assertCacheOwnershipExact(t *testing.T, c *Cache, activeHolds ...*ongoingCa
 				expected[resultID]++
 			}
 		}
-		assert.Equal(t, shared.incomingOwnershipCount, expected[resultID],
-			"result %d ownership count", resultID)
+		if shared.incomingOwnershipCount != expected[resultID] {
+			return fmt.Errorf("result %d ownership count: got %v, want %v", resultID, shared.incomingOwnershipCount, expected[resultID])
+		}
 
 		for depID := range shared.deps {
 			dep := c.resultsByID[depID]
-			assert.Assert(t, dep != nil, "result %d references missing dependency %d", resultID, depID)
-			assert.Assert(t, dep.depParents != nil && dep.depParents.Contains(resultID),
-				"dependency %d is missing parent %d", depID, resultID)
+			if dep == nil {
+				return fmt.Errorf("result %d references missing dependency %d", resultID, depID)
+			}
+			if dep.depParents == nil || !dep.depParents.Contains(resultID) {
+				return fmt.Errorf("dependency %d is missing parent %d", depID, resultID)
+			}
 		}
 	}
+
+	return nil
 }
 
 func assertArbitraryOwnershipExact(t *testing.T, c *Cache) {
 	t.Helper()
+	err := arbitraryOwnershipError(c)
+	assert.NilError(t, err)
+}
+
+func arbitraryOwnershipError(c *Cache) error {
 	c.callsMu.Lock()
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
@@ -80,14 +102,19 @@ func assertArbitraryOwnershipExact(t *testing.T, c *Cache) {
 				continue
 			}
 			seen[shared] = struct{}{}
-			assert.Equal(t, shared.ownerSessionCount, expected[callKey],
-				"arbitrary value %q ownership count", callKey)
+			if shared.ownerSessionCount != expected[callKey] {
+				return fmt.Errorf("arbitrary value %q ownership count: got %v, want %v", callKey, shared.ownerSessionCount, expected[callKey])
+			}
 		}
 	}
 	for callKey := range expected {
 		_, found := registered[callKey]
-		assert.Assert(t, found, "session references missing arbitrary value %q", callKey)
+		if !found {
+			return fmt.Errorf("session references missing arbitrary value %q", callKey)
+		}
 	}
+
+	return nil
 }
 
 func newSessionOwnershipTestResult(t *testing.T, c *Cache, sessionID string) AnyResult {
