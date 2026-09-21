@@ -186,13 +186,29 @@ func (processor *CallPayloadBatchProcessor) run() {
 		}
 		timerC = nil
 	}
-	export := func(ctx context.Context) error {
+	// export runs exportPass over the queue. A failed batch arms its retry
+	// backoff. Records that arrived during a pass are coalesced like a fresh
+	// burst — the delay is re-armed rather than draining them at once, so a
+	// sustained trickle still exports in closure-sized batches instead of one
+	// Export per handful of records — unless drain is set, in which case
+	// passes continue until the queue is observed empty.
+	export := func(ctx context.Context, drain bool) error {
 		disarm()
-		retryIn, err := processor.exportQueued(ctx)
-		if retryIn > 0 {
-			arm(retryIn)
+		var errs error
+		for {
+			retryIn, more, err := processor.exportPass(ctx)
+			errs = errors.Join(errs, err)
+			switch {
+			case retryIn > 0:
+				arm(retryIn)
+				return errs
+			case !more:
+				return errs
+			case !drain:
+				arm(CallPayloadExportDelay)
+				return errs
+			}
 		}
-		return err
 	}
 	for {
 		select {
@@ -203,71 +219,68 @@ func (processor *CallPayloadBatchProcessor) run() {
 			// A pending retry backoff keeps its schedule; the new records
 			// queue up behind the failed batch and export with it.
 		case <-timerC:
-			if err := export(context.Background()); err != nil {
+			if err := export(context.Background(), false); err != nil {
 				otel.Handle(err)
 			}
 		case request := <-processor.flush:
-			request.done <- export(request.ctx)
+			request.done <- export(request.ctx, true)
 		case request := <-processor.shutdown:
-			request.done <- export(request.ctx)
+			request.done <- export(request.ctx, true)
 			return
 		}
 	}
 }
 
-// exportQueued drains the queue in bounded exporter batches, in order. On a
-// failed export the unexported tail (failed batch first) goes back to the
-// head of the queue and retryIn says how long to back off before trying
-// again; 0 means the queue is empty or the batch was given up on. Records
-// arriving during a successful drain are picked up by the same drain, so
-// ForceFlush and Shutdown return only once they observe the queue empty.
-func (processor *CallPayloadBatchProcessor) exportQueued(ctx context.Context) (retryIn time.Duration, err error) {
-	for {
-		processor.mu.Lock()
-		queued := processor.queue
-		processor.queue = nil
-		failures := processor.failures
-		processor.mu.Unlock()
-		if len(queued) == 0 {
-			return 0, err
-		}
+// exportPass takes everything currently queued and exports it in bounded
+// batches, in order. On a failed export the unexported tail (failed batch
+// first) goes back to the head of the queue and retryIn says how long to back
+// off before trying again; 0 means the pass completed, with any batch that
+// exceeded its attempts given up on. more reports whether records arrived
+// while the pass ran and are now queued.
+func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (retryIn time.Duration, more bool, err error) {
+	processor.mu.Lock()
+	queued := processor.queue
+	processor.queue = nil
+	failures := processor.failures
+	processor.mu.Unlock()
 
-		for len(queued) > 0 {
-			batchSize := min(len(queued), LogExportMaxBatchSize)
-			batch := queued[:batchSize]
-			exportErr := processor.exporter.Export(ctx, batch)
-			if exportErr == nil {
-				failures = 0
-				clear(batch)
-				queued = queued[batchSize:]
-				continue
-			}
-			failures++
-			if failures < CallPayloadMaxExportAttempts {
-				processor.mu.Lock()
-				processor.queue = append(queued, processor.queue...)
-				processor.failures = failures
-				processor.mu.Unlock()
-				return callPayloadRetryDelay(failures), errors.Join(err, exportErr)
-			}
-			// Give up on this batch alone; the rest of the queue gets a fresh
-			// start. This can leave a client's closure permanently partial
-			// (see CallPayloadMaxExportAttempts), so name the casualties.
-			digests := callPayloadDigests(batch)
-			slog.Warn("dropping call payload records after repeated export failures",
-				"records", batchSize,
-				"attempts", failures,
-				"digests", digests,
-				"err", exportErr)
-			err = errors.Join(err, fmt.Errorf("dropping %d call payload records after %d failed exports: %w", batchSize, failures, exportErr))
+	for len(queued) > 0 {
+		batchSize := min(len(queued), LogExportMaxBatchSize)
+		batch := queued[:batchSize]
+		exportErr := processor.exporter.Export(ctx, batch)
+		if exportErr == nil {
 			failures = 0
 			clear(batch)
 			queued = queued[batchSize:]
+			continue
 		}
-		processor.mu.Lock()
-		processor.failures = 0
-		processor.mu.Unlock()
+		failures++
+		if failures < CallPayloadMaxExportAttempts {
+			processor.mu.Lock()
+			processor.queue = append(queued, processor.queue...)
+			processor.failures = failures
+			processor.mu.Unlock()
+			return callPayloadRetryDelay(failures), false, errors.Join(err, exportErr)
+		}
+		// Give up on this batch alone; the rest of the queue gets a fresh
+		// start. This can leave a client's closure permanently partial
+		// (see CallPayloadMaxExportAttempts), so name the casualties.
+		digests := callPayloadDigests(batch)
+		slog.Warn("dropping call payload records after repeated export failures",
+			"records", batchSize,
+			"attempts", failures,
+			"digests", digests,
+			"err", exportErr)
+		err = errors.Join(err, fmt.Errorf("dropping %d call payload records after %d failed exports: %w", batchSize, failures, exportErr))
+		failures = 0
+		clear(batch)
+		queued = queued[batchSize:]
 	}
+	processor.mu.Lock()
+	processor.failures = 0
+	more = len(processor.queue) > 0
+	processor.mu.Unlock()
+	return 0, more, err
 }
 
 func callPayloadRetryDelay(failures int) time.Duration {

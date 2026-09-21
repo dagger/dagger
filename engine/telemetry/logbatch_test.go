@@ -533,6 +533,40 @@ func (e *blockingLogExporter) stats() (int, []int) {
 func (*blockingLogExporter) Shutdown(context.Context) error   { return nil }
 func (*blockingLogExporter) ForceFlush(context.Context) error { return nil }
 
+// Records that arrive while a pass is exporting must wait out the coalescing
+// delay like a fresh burst rather than being drained immediately, so a
+// sustained trickle produces closure-sized batches instead of one Export per
+// handful of records.
+func TestCallPayloadBatchProcessorRecoalescesBetweenPasses(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		exp := &blockingLogExporter{started: make(chan struct{}), release: make(chan struct{})}
+		proc := NewCallPayloadBatchProcessor(exp)
+		provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+		logger := provider.Logger("test.core")
+
+		logger.Emit(t.Context(), payloadRecordWithBody("first"))
+		<-exp.started
+		// Arrives while the first pass is inside the exporter.
+		logger.Emit(t.Context(), payloadRecordWithBody("second"))
+		close(exp.release)
+		synctest.Wait()
+		// Arrives inside the re-armed coalescing window.
+		logger.Emit(t.Context(), payloadRecordWithBody("third"))
+		synctest.Wait()
+		_, batches := exp.stats()
+		require.Equal(t, []int{1}, batches, "records arriving mid-pass must wait out the coalescing delay")
+
+		time.Sleep(CallPayloadExportDelay)
+		synctest.Wait()
+		_, batches = exp.stats()
+		require.Equal(t, []int{1, 2}, batches, "the trickle must export as one coalesced batch")
+
+		require.NoError(t, proc.Shutdown(t.Context()))
+	})
+}
+
 func TestCallPayloadBatchProcessorLosslessWhileExporterBlocked(t *testing.T) {
 	t.Parallel()
 
