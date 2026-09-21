@@ -8,6 +8,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	cerrdefs "github.com/containerd/errdefs"
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/converter"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
+	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
@@ -26,7 +28,33 @@ type ensureExportBlobResult struct {
 	hasLayer bool
 }
 
+// snapshotBlobGCLabel is the label on a layer snapshot that names the blob
+// its content was applied from, or was last diffed into. containerd's
+// collector follows gc.ref.content labels from any labeled resource, so the
+// blob lives exactly as long as the snapshot, whatever leases come and go:
+// the reuse path of ensureExportBlob then always finds it, every engine
+// exports the layer under the same digest, and a blob is never held by a
+// snapshot that no longer exists. A snapshot has one blob at a time; a new
+// diff replaces the label and releases the old blob to the collector.
+//
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+const snapshotBlobGCLabel = "containerd.io/gc.ref.content.blob"
+
+// labelSnapshotBlob binds blob to the snapshot for garbage collection.
+func (cm *snapshotManager) labelSnapshotBlob(ctx context.Context, snapshotID string, blob digest.Digest) error {
+	if snapshotID == "" || blob == "" {
+		return nil
+	}
+	_, err := cm.Snapshotter.Update(ctx, snapshots.Info{
+		Name:   snapshotID,
+		Labels: map[string]string{snapshotBlobGCLabel: blob.String()},
+	}, "labels."+snapshotBlobGCLabel)
+	if err != nil {
+		return errors.Wrapf(err, "label snapshot %s with blob %s", snapshotID, blob)
+	}
+	return nil
+}
+
 func (cm *snapshotManager) ensureExportBlob(
 	ctx context.Context,
 	parentSnapshotID string,
@@ -236,6 +264,9 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 		ref.mu.Unlock()
 		if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
+			return ensureExportBlobResult{}, err
+		}
+		if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
 			return ensureExportBlobResult{}, err
 		}
 		return ensureExportBlobResult{

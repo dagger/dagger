@@ -300,6 +300,10 @@ func (cm *snapshotManager) importLayer(
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
+	if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
+		_ = ref.Release(context.WithoutCancel(ctx))
+		return nil, err
+	}
 	if opts.RecordType != "" {
 		if err := imported.SetRecordType(opts.RecordType); err != nil {
 			_ = ref.Release(context.WithoutCancel(ctx))
