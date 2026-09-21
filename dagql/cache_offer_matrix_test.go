@@ -196,11 +196,14 @@ func newSettlementFixture(t *testing.T) *settlementFixture {
 	return f
 }
 
-// acquire installs the receiver's own offer in an obtain task.
-func (f *settlementFixture) acquire(syncReady <-chan struct{}, committed chan<- struct{}) <-chan error {
+// acquire installs the receiver's own offer in an obtain task. finishBody can
+// hold the installed output before settlement: OwnerSyncReady cannot gate this
+// path because installChainPart's inline handoff already opens ownerSync.
+func (f *settlementFixture) acquire(finishBody <-chan struct{}, committed chan<- struct{}) <-chan error {
 	done := make(chan error, 1)
 	go func() {
-		done <- f.cache.RunLazyTask(f.ctx, f.receiver, "obtain:settlement", LazyTaskSpec{OwnerSyncReady: syncReady, Body: func(ctx context.Context) error {
+		defer close(done)
+		done <- f.cache.RunLazyTask(f.ctx, f.receiver, "obtain:settlement", LazyTaskSpec{Body: func(ctx context.Context) error {
 			source, err := f.cache.AcquireEquivalentPartSource(ctx, f.receiver, f.address)
 			if err != nil {
 				return err
@@ -216,7 +219,17 @@ func (f *settlementFixture) acquire(syncReady <-chan struct{}, committed chan<- 
 			if committed != nil {
 				close(committed)
 			}
-			return err
+			if err != nil || finishBody == nil {
+				return err
+			}
+			select {
+			case <-finishBody:
+				return nil
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			case <-time.After(5 * time.Second):
+				return errors.New("timed out waiting to finish the acquisition body")
+			}
 		}})
 	}()
 	return done
@@ -289,11 +302,21 @@ func TestOfferSettlementReplacement(t *testing.T) {
 	t.Run("acceptance after commit is already complete", func(t *testing.T) {
 		f := newSettlementFixture(t)
 		firstBase, secondBase := f.counts()
-		syncReady, committed := make(chan struct{}), make(chan struct{})
-		var opened sync.Once
-		defer opened.Do(func() { close(syncReady) })
+		finishBody, committed := make(chan struct{}), make(chan struct{})
+		releaseBody := sync.OnceFunc(func() { close(finishBody) })
 		f.resume()
-		done := f.acquire(syncReady, committed)
+		done := f.acquire(finishBody, committed)
+		t.Cleanup(func() {
+			releaseBody()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("acquisition cleanup: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Error("timed out joining the acquisition")
+			}
+		})
 		waitWithinT(t, committed, done)
 		out, err := f.cache.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 		require.NoError(t, err)
@@ -302,7 +325,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		offerCount := len(f.receiver.cacheSharedResult().partOffers)
 		f.cache.egraphMu.RUnlock()
 		require.Equal(t, 1, offerCount, "the older slot waits for settlement")
-		opened.Do(func() { close(syncReady) })
+		releaseBody()
 		require.NoError(t, within(t, done))
 		f.requireSettled(t, firstBase-1, secondBase)
 	})
