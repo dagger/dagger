@@ -2295,11 +2295,8 @@ func TestTelemetryStreamInterruptsOnFetchError(t *testing.T) {
 	require.Equal(t, int64(4), cursor)
 
 	// No DTX1 (or terminal) frame: the connection just ends mid-stream, which
-	// the client treats as reconnectable.
-	_, _, _, err = enginetel.ReadLiveFrame(resp.Body)
-	require.ErrorIs(t, err, io.EOF)
-	require.NotErrorIs(t, err, enginetel.ErrLiveStream)
-	require.NotErrorIs(t, err, enginetel.ErrInvalidLiveFrame)
+	// the client's ReadLiveFrame surfaces as a plain EOF and reconnects on.
+	require.Empty(t, resp.Body.Bytes())
 }
 
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {

@@ -1014,17 +1014,6 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		flush()
 		return nil
 	}
-	// interruptStream ends the response without a terminal frame, so the
-	// client sees a lost connection and reconnects at its cursor. This is for
-	// transient trouble (a busy store, an I/O hiccup) where the cursor is
-	// still valid. It returns nil rather than the error: the headers are
-	// already committed, so an error would have httpHandlerFunc write an HTTP
-	// error body into the stream, which the client would decode as a bad
-	// frame and treat as permanent.
-	interruptStream := func(streamErr error) error {
-		logger.Warn("interrupting OTLP stream", "cursor", since, "err", streamErr)
-		return nil
-	}
 	for {
 		fetchStart := time.Now()
 		next, message, rows, err := fetcher(r.Context(), db, since, batchLimit)
@@ -1035,7 +1024,15 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			if r.Context().Err() != nil {
 				return nil
 			}
-			return interruptStream(fmt.Errorf("fetch: %w", err))
+			// A fetch failure is transient trouble (a busy store, an I/O
+			// hiccup) and the cursor is still valid, so end the response
+			// without a terminal frame: the client sees a lost connection and
+			// reconnects at its cursor. Return nil rather than the error — the
+			// headers are already committed, so an error would have
+			// httpHandlerFunc write an HTTP error body into the stream, which
+			// the client would decode as a bad frame and treat as permanent.
+			logger.Warn("interrupting OTLP stream", "cursor", since, "err", err)
+			return nil
 		}
 		if rows == 0 {
 			if terminating {
