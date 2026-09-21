@@ -170,6 +170,9 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		}
 	}
 	if withExecCall == nil {
+		if err := evaluateContainerMetadata(ctx, parent); err != nil {
+			return inst, err
+		}
 		// no withExec found, so just rely on the entrypoint!
 		svc, err := parent.Self().AsService(ctx, parent, core.ContainerAsServiceArgs{
 			UseEntrypoint: true,
@@ -244,6 +247,9 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		rebuilt = next
 	}
 
+	if err := evaluateContainerMetadata(ctx, rebuilt); err != nil {
+		return inst, err
+	}
 	expandedArgs := make([]string, len(withExecArgs.Args))
 	for i, arg := range withExecArgs.Args {
 		expandedArg, err := expandEnvVar(ctx, rebuilt.Self(), arg, withExecArgs.Expand)

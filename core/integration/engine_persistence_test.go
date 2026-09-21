@@ -12,13 +12,19 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/distconsts"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -27,6 +33,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql"
 )
 
 //nolint:gocyclo // Independent restart subtests share engine fixtures; the metric counts their bodies together.
@@ -107,6 +114,541 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			require.NoError(t, err)
 		}
 	}
+
+	type savedSnapshotRow struct {
+		ID      uint64                          `json:"shared_result_id"`
+		Payload string                          `json:"payload_state"`
+		Call    *dagql.ResultCall               `json:"result_call"`
+		Links   []struct{ RefKey, Role string } `json:"snapshot_links"`
+		Value   *struct {
+			StoredSnapshotID string            `json:"storedSnapshotID"`
+			OpenSnapshotID   string            `json:"openSnapshotID"`
+			Counts           map[string]uint64 `json:"counts"`
+		} `json:"value_state"`
+	}
+	snapshotTestOptions := func(ctx context.Context, t *testctx.T) []func(*dagger.Container) *dagger.Container {
+		return []func(*dagger.Container) *dagger.Container{
+			engineWithPersistenceTestGC(ctx, t),
+			engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+				cfg.GRPC.DebugAddress = "0.0.0.0:6060"
+				return cfg
+			}),
+			func(ctr *dagger.Container) *dagger.Container {
+				return ctr.WithEnvVariable("_DAGGER_TEST_CONTAINER_PART_DIAGNOSTICS", "1")
+			},
+		}
+	}
+	readSnapshotRows := func(ctx context.Context, t *testctx.T, c *dagger.Client, svc *dagger.Service) map[uint64]savedSnapshotRow {
+		t.Helper()
+		raw, err := c.Container().From(alpineImage).WithServiceBinding("snapshot-engine", svc).
+			WithEnvVariable("READ_NUMBER", identity.NewID()).
+			WithExec([]string{"wget", "-qO-", "http://snapshot-engine:6060/debug/dagql/cache"}).Stdout(ctx)
+		require.NoError(t, err)
+		var snapshot struct {
+			Results []savedSnapshotRow `json:"results"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(raw), &snapshot))
+		rows := make(map[uint64]savedSnapshotRow, len(snapshot.Results))
+		for _, row := range snapshot.Results {
+			rows[row.ID] = row
+		}
+		return rows
+	}
+	snapshotResultID := func(t *testctx.T, raw string) uint64 {
+		t.Helper()
+		var id call.ID
+		require.NoError(t, id.Decode(raw))
+		require.True(t, id.IsHandle())
+		return id.EngineResultID()
+	}
+	checkSnapshotClosed := func(t *testctx.T, row savedSnapshotRow, snapshotID string) {
+		t.Helper()
+		require.NotNil(t, row.Value)
+		require.Equal(t, snapshotID, row.Value.StoredSnapshotID)
+		require.Empty(t, row.Value.OpenSnapshotID)
+		require.Zero(t, row.Value.Counts["storedOpen"])
+	}
+	logSnapshotRow := func(t *testctx.T, checkpoint string, row savedSnapshotRow) {
+		t.Helper()
+		data, err := json.Marshal(row)
+		require.NoError(t, err)
+		t.Logf("%s: %s", checkpoint, data)
+	}
+
+	t.Run("lazy values survive restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		requests := atomic.Int64{}
+		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); fmt.Fprint(w, "saved HTTP body\n") }))
+		defer origin.Close()
+		port := origin.Listener.Addr().(*net.TCPAddr).Port
+		const hostname = "saved-operation-origin"
+		source := c.Host().Service([]dagger.PortForward{{Backend: port, Frontend: port}}).WithHostname(hostname)
+		opts := snapshotTestOptions(ctx, t)
+		opts = append(opts, func(ctr *dagger.Container) *dagger.Container { return ctr.WithServiceBinding(hostname, source) })
+		stateKey := "lazy-operations-" + identity.NewID()
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		file := a.HTTP(fmt.Sprintf("http://%s:%d/data", hostname, port))
+		body, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "saved HTTP body\n", body)
+		fileID, err := file.ID(ctx)
+		require.NoError(t, err)
+		manifest, err := devEngineContainer(c).EnvVariable(ctx, distconsts.GoSDKManifestDigestEnvName)
+		require.NoError(t, err)
+		require.NotEmpty(t, manifest)
+		var sdk struct {
+			Builtin struct {
+				ID dagger.ID `json:"id"`
+			} `json:"_builtinContainer"`
+			Schema struct {
+				ID       dagger.ID `json:"id"`
+				Contents string    `json:"contents"`
+			} `json:"__schemaJSONFile"`
+		}
+		require.NoError(t, a.Do(ctx, &dagger.Request{Query: `query($digest: String!) { _builtinContainer(digest: $digest) { id } __schemaJSONFile { id contents } }`, Variables: map[string]any{"digest": manifest}}, &dagger.Response{Data: &sdk}))
+		require.NotEmpty(t, sdk.Schema.Contents)
+		rowsA := readSnapshotRows(ctx, t, c, upA)
+		fileRowID := snapshotResultID(t, string(fileID))
+		schemaRowID := snapshotResultID(t, string(sdk.Schema.ID))
+		builtinRowID := snapshotResultID(t, string(sdk.Builtin.ID))
+		require.Equal(t, "__httpFile", rowsA[fileRowID].Call.Field)
+		require.Equal(t, "__schemaJSONFile", rowsA[schemaRowID].Call.Field)
+		require.Equal(t, "_builtinContainer", rowsA[builtinRowID].Call.Field)
+		require.Empty(t, rowsA[builtinRowID].Links, "unused builtin must remain pending across the first shutdown")
+		requestsBefore := requests.Load()
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA = nil
+		tunnelA = nil
+		a = nil
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		fileB := dagger.Ref[*dagger.File](b, fileID)
+		body, err = fileB.Contents(ctx, dagger.FileContentsOpts{LimitLines: 1})
+		require.NoError(t, err)
+		require.Equal(t, "saved HTTP body\n", body)
+		schemaB := dagger.Ref[*dagger.File](b, sdk.Schema.ID)
+		body, err = schemaB.Contents(ctx, dagger.FileContentsOpts{LimitLines: 1})
+		require.NoError(t, err)
+		require.Equal(t, sdk.Schema.Contents, body)
+		entries, err := dagger.Ref[*dagger.Container](b, sdk.Builtin.ID).Rootfs().Entries(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, entries)
+		require.Equal(t, requestsBefore, requests.Load(), "ready HTTP snapshot contacted its origin")
+		rowsB := readSnapshotRows(ctx, t, c, upB)
+		require.EqualValues(t, 1, rowsB[fileRowID].Value.Counts["storedOpen"])
+		require.EqualValues(t, 1, rowsB[schemaRowID].Value.Counts["storedOpen"])
+		require.Zero(t, rowsB[builtinRowID].Value.Counts["storedOpen:fs"], "pending builtin evaluates its saved operation after restart")
+		require.NotEmpty(t, rowsB[builtinRowID].Links)
+	})
+
+	t.Run("changeset merge operation survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "changeset-operation-" + identity.NewID()
+		opts := snapshotTestOptions(ctx, t)
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		base := a.Directory().WithNewFile("base.txt", "base")
+		ours := base.WithNewFile("ours.txt", "ours").Changes(base)
+		theirs := base.WithNewFile("theirs.txt", "theirs").Changes(base)
+		third := base.WithNewFile("third.txt", "third").Changes(base)
+		empty := base.Changes(base)
+		oursID, err := ours.ID(ctx)
+		require.NoError(t, err)
+		theirsID, err := theirs.ID(ctx)
+		require.NoError(t, err)
+		thirdID, err := third.ID(ctx)
+		require.NoError(t, err)
+		cases := []struct {
+			field  string
+			value  *dagger.Changeset
+			inputs []dagger.ID
+		}{
+			{"__mergeWithChangeset", ours.WithChangeset(theirs, dagger.ChangesetWithChangesetOpts{OnConflict: dagger.ChangesetMergeConflictFail}), []dagger.ID{theirsID}},
+			{"__mergeWithChangesets", ours.WithChangesets([]*dagger.Changeset{empty, theirs, empty, third}, dagger.ChangesetWithChangesetsOpts{OnConflict: dagger.ChangesetsMergeConflictFail}), []dagger.ID{theirsID, thirdID}},
+		}
+		var savedIDs []dagger.ID
+		var afterIDs []dagger.ID
+		var beforeIDs []dagger.ID
+		for _, tc := range cases {
+			contents, err := tc.value.After().File("ours.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ours", contents)
+			contents, err = tc.value.After().File("theirs.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "theirs", contents)
+			if len(tc.inputs) == 2 {
+				contents, err = tc.value.After().File("third.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "third", contents)
+			}
+			id, err := tc.value.ID(ctx)
+			require.NoError(t, err)
+			savedIDs = append(savedIDs, id)
+			afterID, err := tc.value.After().ID(ctx)
+			require.NoError(t, err)
+			afterIDs = append(afterIDs, afterID)
+			beforeID, err := tc.value.Before().ID(ctx)
+			require.NoError(t, err)
+			beforeIDs = append(beforeIDs, beforeID)
+			frame := readSnapshotRows(ctx, t, c, upA)[snapshotResultID(t, string(afterID))].Call
+			require.NotNil(t, frame)
+			require.Equal(t, dagql.ResultCallKindField, frame.Kind)
+			require.Equal(t, tc.field, frame.Field)
+			require.NotNil(t, frame.Receiver)
+			require.Equal(t, snapshotResultID(t, string(oursID)), frame.Receiver.ResultID)
+			args := map[string]*dagql.ResultCallLiteral{}
+			for _, arg := range frame.Args {
+				args[arg.Name] = arg.Value
+			}
+			require.NotNil(t, args["onConflict"])
+			require.NotNil(t, args["changes"])
+			require.Equal(t, "FAIL", args["onConflict"].EnumValue)
+			inputs := args["changes"].ListItems
+			if len(tc.inputs) == 1 {
+				inputs = []*dagql.ResultCallLiteral{args["changes"]}
+			}
+			require.Len(t, inputs, len(tc.inputs))
+			for i, input := range inputs {
+				require.NotNil(t, input.ResultRef)
+				require.Equal(t, snapshotResultID(t, string(tc.inputs[i])), input.ResultRef.ResultID)
+			}
+		}
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		for i, id := range savedIDs {
+			restored := dagger.Ref[*dagger.Changeset](b, id)
+			afterID, err := restored.After().ID(ctx)
+			require.NoError(t, err)
+			require.Equal(t, afterIDs[i], afterID)
+			beforeID, err := restored.Before().ID(ctx)
+			require.NoError(t, err)
+			require.Equal(t, beforeIDs[i], beforeID)
+			contents, err := restored.After().File("theirs.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "theirs", contents)
+		}
+	})
+
+	t.Run("directory and file restore without opening", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "directory-file-" + identity.NewID()
+		opts := snapshotTestOptions(ctx, t)
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		d := a.Directory().WithNewFile("a.txt", "hello")
+		g := d.File("a.txt").WithName("b.txt")
+		h := d.File("a.txt").WithName("c.txt")
+		p1 := a.Directory().WithNewFile("sub/base", "one").Directory("sub").WithNewFile("probe", "p1")
+		p2 := a.Directory().WithNewFile("sub/base", "two").Directory("sub").WithNewFile("probe", "p2")
+		for _, dir := range []*dagger.Directory{d, p1, p2} {
+			_, err := dir.Sync(ctx)
+			require.NoError(t, err)
+		}
+		for _, file := range []*dagger.File{g, h} {
+			_, err := file.Sync(ctx)
+			require.NoError(t, err)
+		}
+		dID, err := d.ID(ctx)
+		require.NoError(t, err)
+		gID, err := g.ID(ctx)
+		require.NoError(t, err)
+		hID, err := h.ID(ctx)
+		require.NoError(t, err)
+		p1ID, err := p1.ID(ctx)
+		require.NoError(t, err)
+		p2ID, err := p2.ID(ctx)
+		require.NoError(t, err)
+		m, err := a.Container().From(alpineImage).Sync(ctx)
+		require.NoError(t, err)
+		mID, err := m.ID(ctx)
+		require.NoError(t, err)
+		qID, err := m.WithExec([]string{"sh", "-ec", "echo pending > /pending"}).ID(ctx)
+		require.NoError(t, err)
+		ids := map[string]uint64{
+			"d": snapshotResultID(t, string(dID)), "g": snapshotResultID(t, string(gID)),
+			"h": snapshotResultID(t, string(hID)), "p1": snapshotResultID(t, string(p1ID)), "p2": snapshotResultID(t, string(p2ID)),
+		}
+		rows := readSnapshotRows(ctx, t, c, upA)
+		saved := map[string]string{}
+		for name, id := range ids {
+			require.NotNil(t, rows[id].Value)
+			saved[name] = rows[id].Value.OpenSnapshotID
+			require.NotEmpty(t, saved[name])
+			logSnapshotRow(t, "before first shutdown "+name, rows[id])
+		}
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		dB, gB := dagger.Ref[*dagger.Directory](b, dID), dagger.Ref[*dagger.File](b, gID)
+		name, err := dB.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/", name)
+		name, err = gB.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "b.txt", name)
+		rows = readSnapshotRows(ctx, t, c, upB)
+		for _, name := range []string{"d", "g"} {
+			checkSnapshotClosed(t, rows[ids[name]], saved[name])
+		}
+		_, err = dagger.Ref[*dagger.Directory](b, p1ID).Diff(dagger.Ref[*dagger.Directory](b, p2ID)).ID(ctx)
+		require.NoError(t, err)
+		hB := dagger.Ref[*dagger.File](b, hID)
+		fresh := b.Directory().WithNewFile("seed", "fresh").File("seed").WithName("fresh.txt")
+		_, err = b.Directory().WithFiles("/copy", []*dagger.File{hB, fresh}).ID(ctx)
+		require.NoError(t, err)
+		freshID, err := fresh.ID(ctx)
+		require.NoError(t, err)
+		_, err = dagger.Ref[*dagger.Container](b, qID).WithFiles("/copy", []*dagger.File{hB}).ID(ctx)
+		require.NoError(t, err)
+		rows = readSnapshotRows(ctx, t, c, upB)
+		for name, id := range ids {
+			checkSnapshotClosed(t, rows[id], saved[name])
+		}
+		require.NotEmpty(t, rows[snapshotResultID(t, string(freshID))].Value.OpenSnapshotID, "fresh source still evaluates during name collection")
+		mB, err := dagger.Ref[*dagger.Container](b, mID).Sync(ctx)
+		require.NoError(t, err)
+		_, err = mB.WithFiles("/copy", []*dagger.File{hB}).ID(ctx)
+		require.NoError(t, err)
+		rows = readSnapshotRows(ctx, t, c, upB)
+		require.EqualValues(t, 1, rows[ids["h"]].Value.Counts["storedOpen"], "materialized container copies eagerly")
+		for _, name := range []string{"d", "g", "p1", "p2"} {
+			checkSnapshotClosed(t, rows[ids[name]], saved[name])
+			logSnapshotRow(t, "middle engine "+name, rows[ids[name]])
+		}
+		stopEngine(ctx, t, upB, tunnelB, b)
+		upB, tunnelB, b = nil, nil, nil
+
+		upC, tunnelC, last := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upC, tunnelC, last) })
+		dC, gC := dagger.Ref[*dagger.Directory](last, dID), dagger.Ref[*dagger.File](last, gID)
+		_, err = dC.ID(ctx)
+		require.NoError(t, err)
+		_, err = gC.ID(ctx)
+		require.NoError(t, err)
+		rows = readSnapshotRows(ctx, t, c, upC)
+		for _, name := range []string{"d", "g"} {
+			checkSnapshotClosed(t, rows[ids[name]], saved[name])
+		}
+		contents, err := gC.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello", contents)
+		entries, err := dC.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt"}, entries)
+		rows = readSnapshotRows(ctx, t, c, upC)
+		for _, name := range []string{"d", "g"} {
+			require.Equal(t, saved[name], rows[ids[name]].Value.OpenSnapshotID)
+			require.EqualValues(t, 1, rows[ids[name]].Value.Counts["storedOpen"])
+			logSnapshotRow(t, "last engine after demand "+name, rows[ids[name]])
+		}
+	})
+
+	t.Run("module function directory list survives repeated restarts", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "directory-list-" + identity.NewID()
+		opts := snapshotTestOptions(ctx, t)
+		request := func(client *dagger.Client, fields string) []string {
+			t.Helper()
+			raw, err := moduleFixture(t, client, "go/persisted-directory-list").
+				WithEnvVariable("REQUEST_NUMBER", identity.NewID()).
+				With(daggerQueryAt(".", "{directories{"+fields+"}} ")).Stdout(ctx)
+			require.NoError(t, err)
+			var response struct {
+				Directories []struct {
+					ID      string   `json:"id"`
+					Entries []string `json:"entries"`
+				} `json:"directories"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(raw), &response))
+			require.Len(t, response.Directories, 2)
+			ids := make([]string, len(response.Directories))
+			for i, dir := range response.Directories {
+				ids[i] = dir.ID
+				if fields != "id" {
+					require.NotEmpty(t, dir.Entries, "every first-engine directory is evaluated")
+				}
+			}
+			return ids
+		}
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		ids := request(a, "id entries")
+		rows := readSnapshotRows(ctx, t, c, upA)
+		var listID uint64
+		for id, row := range rows {
+			if row.Call != nil && row.Call.Field == "directories" && row.Call.Type != nil &&
+				row.Call.Type.Elem != nil && row.Call.Type.Elem.NamedType == "Directory" {
+				require.Zero(t, listID, "one module function list row")
+				listID = id
+			}
+		}
+		require.NotZero(t, listID)
+		require.Equal(t, "materialized", rows[listID].Payload)
+		logSnapshotRow(t, "list first engine parent", rows[listID])
+		saved := make([]string, len(ids))
+		for i, id := range ids {
+			row := rows[snapshotResultID(t, id)]
+			require.NotNil(t, row.Value)
+			saved[i] = row.Value.OpenSnapshotID
+			require.NotEmpty(t, saved[i])
+			logSnapshotRow(t, "list first engine", row)
+		}
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		rows = readSnapshotRows(ctx, t, c, upB)
+		require.Equal(t, "imported_lazy_envelope", rows[listID].Payload)
+		logSnapshotRow(t, "list middle engine before request", rows[listID])
+		middleIDs := request(b, "id")
+		for i, id := range middleIDs {
+			require.Equal(t, snapshotResultID(t, ids[i]), snapshotResultID(t, id), "middle engine preserves each exact child row")
+		}
+		rows = readSnapshotRows(ctx, t, c, upB)
+		require.Equal(t, "materialized", rows[listID].Payload)
+		logSnapshotRow(t, "list middle engine after request", rows[listID])
+		for i, id := range middleIDs {
+			row := rows[snapshotResultID(t, id)]
+			checkSnapshotClosed(t, row, saved[i])
+			logSnapshotRow(t, "list middle engine IDs only", row)
+		}
+		stopEngine(ctx, t, upB, tunnelB, b)
+		upB, tunnelB, b = nil, nil, nil
+		upC, tunnelC, last := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upC, tunnelC, last) })
+		lastIDs := request(last, "id")
+		for i, id := range lastIDs {
+			require.Equal(t, snapshotResultID(t, ids[i]), snapshotResultID(t, id))
+		}
+		contents, err := dagger.Ref[*dagger.Directory](last, dagger.ID(lastIDs[0])).File("one.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "first", contents)
+		rows = readSnapshotRows(ctx, t, c, upC)
+		first := rows[snapshotResultID(t, lastIDs[0])]
+		require.EqualValues(t, 1, first.Value.Counts["storedOpen"])
+		require.Equal(t, saved[0], first.Value.OpenSnapshotID)
+		checkSnapshotClosed(t, rows[snapshotResultID(t, lastIDs[1])], saved[1])
+		logSnapshotRow(t, "list last engine first child read", first)
+	})
+
+	t.Run("module core metadata returns survive restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "core-metadata-returns-" + identity.NewID()
+		opts := snapshotTestOptions(ctx, t)
+		type response struct {
+			EnvVar struct {
+				ID    string `json:"id"`
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			} `json:"envVar"`
+			Ports []struct {
+				ID          string  `json:"id"`
+				Port        int     `json:"port"`
+				Description *string `json:"description"`
+			} `json:"ports"`
+			Schema struct {
+				ID string `json:"id"`
+			} `json:"schema"`
+			Clients []struct {
+				ID        string `json:"id"`
+				Generator string `json:"generator"`
+				Directory string `json:"directory"`
+			} `json:"clients"`
+		}
+		request := func(client *dagger.Client) response {
+			t.Helper()
+			raw, err := moduleFixture(t, client, "go/persisted-core-returns").
+				WithEnvVariable("REQUEST_NUMBER", identity.NewID()).
+				With(daggerQueryAt(".", "{envVar{id name value} ports{id port description} schema{id} clients{id generator directory}}")).Stdout(ctx)
+			require.NoError(t, err)
+			var res response
+			require.NoError(t, json.Unmarshal([]byte(raw), &res))
+			require.Equal(t, "CI", res.EnvVar.Name)
+			require.Equal(t, "true", res.EnvVar.Value)
+			require.Len(t, res.Ports, 2)
+			// Container.exposedPorts iterates a Go map and returns the ports in
+			// no defined order; compare them sorted by port number.
+			sort.Slice(res.Ports, func(i, j int) bool { return res.Ports[i].Port < res.Ports[j].Port })
+			require.Equal(t, 8080, res.Ports[0].Port)
+			require.NotNil(t, res.Ports[0].Description)
+			require.Equal(t, "web", *res.Ports[0].Description)
+			require.Equal(t, 9090, res.Ports[1].Port)
+			require.Nil(t, res.Ports[1].Description)
+			require.Len(t, res.Clients, 1)
+			require.Equal(t, "go", res.Clients[0].Generator)
+			require.Equal(t, "./gen", res.Clients[0].Directory)
+			return res
+		}
+		rowIDs := func(res response) map[string]uint64 {
+			return map[string]uint64{
+				"envVar": snapshotResultID(t, res.EnvVar.ID),
+				"port0":  snapshotResultID(t, res.Ports[0].ID),
+				"port1":  snapshotResultID(t, res.Ports[1].ID),
+				"schema": snapshotResultID(t, res.Schema.ID),
+				"client": snapshotResultID(t, res.Clients[0].ID),
+			}
+		}
+		checkByID := func(client *dagger.Client, res response) {
+			t.Helper()
+			value, err := dagger.Ref[*dagger.EnvVariable](client, dagger.ID(res.EnvVar.ID)).Value(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "true", value)
+			description, err := dagger.Ref[*dagger.Port](client, dagger.ID(res.Ports[0].ID)).Description(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "web", description)
+			port, err := dagger.Ref[*dagger.Port](client, dagger.ID(res.Ports[1].ID)).Port(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 9090, port)
+			contents, err := dagger.Ref[*dagger.Schema](client, dagger.ID(res.Schema.ID)).Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, string(contents), `"sourceMap"`)
+			generator, err := dagger.Ref[*dagger.ModuleConfigClient](client, dagger.ID(res.Clients[0].ID)).Generator(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "go", generator)
+		}
+
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		first := request(a)
+		ids := rowIDs(first)
+		rows := readSnapshotRows(ctx, t, c, upA)
+		for name, id := range ids {
+			require.Contains(t, rows, id, "%s row is retained on the first engine", name)
+			logSnapshotRow(t, "first engine "+name, rows[id])
+		}
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+
+		// Middle engine: the saved rows load by ID before the module runs,
+		// then the module request preserves each exact row, then the engine
+		// saves again from the typed-read state.
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		rows = readSnapshotRows(ctx, t, c, upB)
+		for name, id := range ids {
+			require.Contains(t, rows, id, "%s row survived the restart", name)
+			logSnapshotRow(t, "middle engine before read "+name, rows[id])
+		}
+		checkByID(b, first)
+		middle := request(b)
+		require.Equal(t, ids, rowIDs(middle), "the middle engine hands back the exact saved rows")
+		stopEngine(ctx, t, upB, tunnelB, b)
+		upB, tunnelB, b = nil, nil, nil
+
+		upC, tunnelC, last := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upC, tunnelC, last) })
+		checkByID(last, first)
+		require.Equal(t, ids, rowIDs(request(last)), "the second save preserved every row")
+		rows = readSnapshotRows(ctx, t, c, upC)
+		for name, id := range ids {
+			logSnapshotRow(t, "last engine "+name, rows[id])
+		}
+	})
 
 	t.Run("container parts preserve mutations and unopened snapshots", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

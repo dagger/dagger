@@ -91,10 +91,12 @@ const (
 // cache's live results and symbolic graph. It intentionally models only the
 // existing result, term, and allocated eq-class cardinalities.
 type CacheMetadataEstimate struct {
-	ResultCount    int
-	TermCount      int
-	ClassSlotCount int
-	EstimatedBytes int64
+	ResultCount     int
+	TermCount       int
+	ClassSlotCount  int
+	OfferOwnerCount int
+	OfferOwnerBytes int64
+	EstimatedBytes  int64
 }
 
 // CacheMetadataPruneReport summarizes an automatic structural pruning pass.
@@ -132,6 +134,13 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
+// 19: self payload envelopes are version 3: attached absent values keep
+// their row identity, scalars decode losslessly, lists rebuild their declared
+// recursive type from the recorded call, object envelopes name their codec
+// family, and list items naming another row carry no duplicated body. Older
+// envelopes flatten list types and lose absent-row identity, so they are
+// wiped on import.
+//
 // 18: container payloads retain completion and snapshot descriptors per part,
 // replacing the whole-container ready/recipe split. Older payloads cannot
 // express that distinction and are wiped on import.
@@ -140,12 +149,15 @@ type persistedEdge struct {
 // persisted as result refs. Older snapshots may hold untracked scalar handle
 // strings whose referents were never retained (and whose IDs may have been
 // reused), so they are wiped rather than imported.
-const cachePersistenceSchemaVersion = "18"
+// Schema 20 includes canonical output_path and the (result_id, output_path,
+// role) storage key. Earlier private schema-20 stores reset on import failure.
+const cachePersistenceSchemaVersion = "21"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
 var ErrCacheSessionNotReleased = errors.New("cache session release not started")
 var ErrCacheClosed = errors.New("cache closed")
+var ErrUnavailablePart = errors.New("imported filesystem part is unavailable")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
 // errAttachRefusedByProducerRelease classifies a dependency-attachment
@@ -422,6 +434,9 @@ func NewCache(
 	}
 
 	if dbPath == "" {
+		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
+			return nil, err
+		}
 		return c, nil
 	}
 
@@ -443,19 +458,10 @@ func NewCache(
 		c.persistenceResetReason = CachePersistenceResetSchemaMismatch
 		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
 		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
-		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
-			return nil, errors.Join(fmt.Errorf("close db before schema-version wipe"), closeErr)
-		}
-		if err := wipeSQLiteFiles(dbPath); err != nil {
-			return nil, fmt.Errorf("wipe schema-mismatched persistence db: %w", err)
-		}
-
-		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
-		if err != nil {
+		if err := c.reopenWiped(ctx, dbPath, "close db before schema-version wipe", "wipe schema-mismatched persistence db"); err != nil {
 			return nil, err
 		}
-		c.sqlDB = db
-		c.pdb = persistDB
+		db = c.sqlDB
 	}
 
 	cleanShutdownVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
@@ -469,36 +475,37 @@ func NewCache(
 		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
-		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
-			return nil, errors.Join(fmt.Errorf("close db before wipe"), closeErr)
-		}
-		if err := wipeSQLiteFiles(dbPath); err != nil {
-			return nil, fmt.Errorf("wipe unclean persistence db: %w", err)
-		}
-
-		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
-		if err != nil {
+		if err := c.reopenWiped(ctx, dbPath, "close db before wipe", "wipe unclean persistence db"); err != nil {
 			return nil, err
 		}
-		c.sqlDB = db
-		c.pdb = persistDB
+		db = c.sqlDB
 	}
 	if err := c.importPersistedState(ctx); err != nil {
+		if errors.Is(err, errOwnerLeaseReconciliation) {
+			return nil, errors.Join(err, closeCacheDBs(db, c.pdb))
+		}
 		c.persistenceResetReason = CachePersistenceResetImportFailure
 		c.tracePersistStoreWipedImportFailure(ctx, err)
 		slog.Warn("dagql persistence import failed; wiping and cold-starting", "err", err)
-		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
-			return nil, errors.Join(fmt.Errorf("close db before import-wipe"), closeErr)
-		}
-		if err := wipeSQLiteFiles(dbPath); err != nil {
-			return nil, fmt.Errorf("wipe persistence db after import failure: %w", err)
-		}
-		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
-		if err != nil {
+		if err := c.reopenWiped(ctx, dbPath, "close db before import-wipe", "wipe persistence db after import failure"); err != nil {
 			return nil, err
 		}
-		c.sqlDB = db
-		c.pdb = persistDB
+		db, persistDB = c.sqlDB, c.pdb
+		// No caller has been admitted. Discard the failed import's graph and
+		// private decoded values before accepting the empty replacement store.
+		var releases []OnReleaseFunc
+		for _, row := range c.resultsByID {
+			if row != nil && row.onRelease != nil {
+				releases = append(releases, row.onRelease)
+			}
+		}
+		if err := runOnReleaseFuncs(context.WithoutCancel(ctx), releases); err != nil {
+			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
+		}
+		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, persistenceResetReason: CachePersistenceResetImportFailure, sqlDB: db, pdb: persistDB}
+		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
+			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
+		}
 	}
 
 	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, cachePersistenceSchemaVersion); err != nil {
@@ -514,6 +521,25 @@ func NewCache(
 		return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
 	}
 	return c, nil
+}
+
+// reopenWiped closes the persistence databases, deletes their files and opens
+// fresh ones for a cold start after a rejected store. closeMsg and wipeMsg
+// name the stage in errors.
+func (c *Cache) reopenWiped(ctx context.Context, dbPath, closeMsg, wipeMsg string) error {
+	if closeErr := closeCacheDBs(c.sqlDB, c.pdb); closeErr != nil {
+		return errors.Join(errors.New(closeMsg), closeErr)
+	}
+	if err := wipeSQLiteFiles(dbPath); err != nil {
+		return fmt.Errorf("%s: %w", wipeMsg, err)
+	}
+	db, persistDB, err := prepareCacheDBs(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	c.sqlDB = db
+	c.pdb = persistDB
+	return nil
 }
 
 // acquireSessionResultLocked records a session edge and its ownership unit in
@@ -1050,9 +1076,9 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 		return false
 	}
 	// Attempt and pending-bookkeeping checks come before object-side state:
-	// a callback body clears its object-side pointer while its attempt is
-	// still running cache-side bookkeeping, so object-side state is only
-	// trustworthy when no attempt is in flight. Any group with an attempt,
+	// body completion becomes visible through the retained operation's state
+	// while its attempt is still running cache-side bookkeeping. Object-side
+	// completion is sufficient only when no attempt is in flight. Any group with an attempt,
 	// pending bookkeeping, or an armed stored callback is pending work.
 	if g := &shared.lazyWhole; g.attempt != nil || g.syncPending || g.eval != nil {
 		return true
@@ -1082,12 +1108,12 @@ func HasPendingLazyComputation(res AnyResult) bool {
 }
 
 // Read attempts and owed bookkeeping before object consumption. Their purpose
-// belongs to the typed value and stays valid after its operation is cleared.
+// belongs to the typed value and stays valid after its retained operation completes.
 func pendingLazyComputationLocked(shared *sharedResult, reporting HasLazyEvaluationReporting) bool {
 	if shared.lazyEvalComplete {
 		return false
 	}
-	if !shared.lazyWhole.settled() {
+	if reporting.LazyGroupStoredPart(LazyGroupWhole) == "" && !shared.lazyWhole.settled() {
 		return true
 	}
 	for key, group := range shared.lazyPartGroups {
@@ -1370,6 +1396,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge = persistedEdge{
 			resultID:          res.id,
 			createdAtUnixNano: createdAtUnixNano,
+			expiresAtUnix:     expiresAtUnix,
 		}
 		c.incrementIncomingOwnershipLocked(ctx, res)
 	}
@@ -1492,6 +1519,12 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			continue
 		}
 
+		for _, offer := range res.partOffers {
+			more, err := c.retirePartOfferLocked(ctx, res, offer.record.Address)
+			queue = append(queue, more...)
+			rerr = errors.Join(rerr, err)
+		}
+
 		depIDs := make([]sharedResultID, 0, len(res.deps))
 		for depID := range res.deps {
 			depIDs = append(depIDs, depID)
@@ -1531,8 +1564,20 @@ func runOnReleaseFuncs(ctx context.Context, onReleases []OnReleaseFunc) error {
 	return rerr
 }
 
-func resultSnapshotLeaseID(resultID sharedResultID, role string) string {
-	return fmt.Sprintf("dagql/result/%d/%s", resultID, url.PathEscape(role))
+func resultSnapshotLeaseID(resultID sharedResultID, role string, path ...PersistedRefPath) string {
+	var scope PersistedRefPath
+	if len(path) != 0 {
+		scope = path[0]
+	}
+	canonical, err := canonicalPath(scope)
+	if err != nil {
+		panic(err)
+	} // all callers validate the map first
+	return resultSnapshotLeaseIDForKey(resultID, snapshotOwnerKey{Path: canonical, Role: role})
+}
+func resultSnapshotLeaseIDForKey(resultID sharedResultID, key snapshotOwnerKey) string {
+	data, _ := json.Marshal([2]any{json.RawMessage(key.Path), key.Role})
+	return fmt.Sprintf("dagql/result/%d/%s", resultID, url.PathEscape(string(data)))
 }
 
 func joinOnRelease(a, b OnReleaseFunc) OnReleaseFunc {
@@ -1549,23 +1594,22 @@ func joinOnRelease(a, b OnReleaseFunc) OnReleaseFunc {
 }
 
 type snapshotOwnerKey struct {
+	Path string
 	Role string
 }
 
-func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink {
+func desiredSnapshotLinksForResult(res *sharedResult, forSync bool) ([]PersistedSnapshotRefLink, error) {
 	if res == nil {
-		return nil
+		return nil, nil
 	}
-
 	state := res.loadPayloadState()
 	if state.hasValue && state.self != nil {
-		return snapshotOwnerLinksFromTyped(state.self)
+		return collectSnapshotOwnerLinks(state.self, res.loadResultCall(), forSync)
 	}
-
-	if len(state.snapshotOwnerLinks) == 0 {
-		return nil
+	if state.snapshotLinkIntent != nil {
+		return cloneSnapshotRefLinks(state.snapshotLinkIntent.Links), nil
 	}
-	return slices.Clone(state.snapshotOwnerLinks)
+	return cloneSnapshotRefLinks(state.snapshotOwnerLinks), nil
 }
 
 func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
@@ -1578,21 +1622,25 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 			return nil
 		}
 
-		links := res.loadSnapshotOwnerLinks()
-
-		seen := make(map[snapshotOwnerKey]struct{}, len(links))
+		seen := make(map[snapshotOwnerKey]struct{})
 		var rerr error
-		for _, link := range links {
-			key := snapshotOwnerKey{Role: link.Role}
-			if _, alreadySeen := seen[key]; alreadySeen {
+		for _, link := range res.loadSnapshotOwnerLinks() {
+			key, err := snapshotLinkKey(link)
+			if err != nil {
+				rerr = errors.Join(rerr, err)
 				continue
 			}
 			seen[key] = struct{}{}
-			rerr = errors.Join(rerr, c.snapshotManager.RemoveLease(
-				ctx,
-				resultSnapshotLeaseID(res.id, link.Role),
-			))
 		}
+		res.payloadMu.RLock()
+		for key := range res.snapshotLeaseCleanupRoles {
+			seen[key] = struct{}{}
+		}
+		res.payloadMu.RUnlock()
+		for key := range seen {
+			rerr = errors.Join(rerr, c.snapshotManager.RemoveLease(ctx, resultSnapshotLeaseIDForKey(res.id, key)))
+		}
+
 		return rerr
 	}
 }
@@ -1609,7 +1657,10 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	res.leaseSyncMu.Lock()
 	defer res.leaseSyncMu.Unlock()
 
-	links := desiredSnapshotLinksForResult(res)
+	links, err := desiredSnapshotLinksForResult(res, true)
+	if err != nil {
+		return err
+	}
 
 	oldLinks := res.loadSnapshotOwnerLinks()
 
@@ -1617,11 +1668,21 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
 
 	for _, link := range oldLinks {
-		oldByKey[snapshotOwnerKey{Role: link.Role}] = link
+		key, err := snapshotLinkKey(link)
+		if err != nil {
+			return err
+		}
+		oldByKey[key] = link
 	}
 	for _, link := range links {
-		key := snapshotOwnerKey{Role: link.Role}
-		if prev, found := newByKey[key]; found && prev.RefKey != link.RefKey {
+		key, err := snapshotLinkKey(link)
+		if err != nil {
+			return err
+		}
+		if link.RefKey == "" {
+			return fmt.Errorf("empty snapshot key")
+		}
+		if prev, found := newByKey[key]; found {
 			return fmt.Errorf(
 				"sync result %d snapshot owner leases: conflicting desired links for %q: %q vs %q",
 				res.id,
@@ -1638,7 +1699,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		if !ok || newLink.RefKey != oldLink.RefKey {
 			if err := c.snapshotManager.RemoveLease(
 				ctx,
-				resultSnapshotLeaseID(res.id, key.Role),
+				resultSnapshotLeaseIDForKey(res.id, key),
 			); err != nil {
 				return err
 			}
@@ -1648,9 +1709,15 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	for key, newLink := range newByKey {
 		oldLink, ok := oldByKey[key]
 		if !ok || oldLink.RefKey != newLink.RefKey {
+			res.payloadMu.Lock()
+			if res.snapshotLeaseCleanupRoles == nil {
+				res.snapshotLeaseCleanupRoles = map[snapshotOwnerKey]struct{}{}
+			}
+			res.snapshotLeaseCleanupRoles[key] = struct{}{}
+			res.payloadMu.Unlock()
 			if err := c.snapshotManager.AttachLease(
 				ctx,
-				resultSnapshotLeaseID(res.id, key.Role),
+				resultSnapshotLeaseIDForKey(res.id, key),
 				newLink.RefKey,
 			); err != nil {
 				return err
@@ -1684,9 +1751,9 @@ func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult
 	return c.syncResultSnapshotLeases(ctx, shared)
 }
 
-func (c *Cache) desiredImportedOwnerLeaseIDs() map[string]struct{} {
+func (c *Cache) desiredImportedOwnerLeaseIDs() (map[string]struct{}, error) {
 	if c == nil {
-		return nil
+		return nil, nil
 	}
 
 	c.egraphMu.RLock()
@@ -1700,13 +1767,16 @@ func (c *Cache) desiredImportedOwnerLeaseIDs() map[string]struct{} {
 
 	desired := make(map[string]struct{})
 	for _, res := range results {
-		links := desiredSnapshotLinksForResult(res)
+		links, err := desiredSnapshotLinksForResult(res, false)
+		if err != nil {
+			return nil, err
+		}
 		for _, link := range links {
-			desired[resultSnapshotLeaseID(res.id, link.Role)] = struct{}{}
+			desired[resultSnapshotLeaseID(res.id, link.Role, link.OutputPath)] = struct{}{}
 		}
 	}
 
-	return desired
+	return desired, nil
 }
 
 func prepareCacheDBs(ctx context.Context, dbPath string) (*sql.DB, *persistdb.Queries, error) {
@@ -1790,6 +1860,14 @@ func wipeSQLiteFiles(dbPath string) error {
 }
 
 type Cache struct {
+	partFixture              atomic.Pointer[partFixtureState]
+	testTransferCopied       func(uint64)
+	testTransferPlanPrepared func(int) error
+	testBeforeTransferCommit func()
+	testAfterTransferCommit  func()
+
+	offerOwners      map[offerOwnerID]*offerOwner
+	nextOfferOwnerID offerOwnerID
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
 	callsMu sync.Mutex
 	// sessionMu protects per-session tracked cache-backed results, arbitrary
@@ -1932,8 +2010,9 @@ type Cache struct {
 	traceSeq        uint64
 	traceImportRuns uint64
 
-	snapshotManager bkcache.SnapshotManager
-	snapshotGC      func(context.Context) error
+	snapshotManager   bkcache.SnapshotManager
+	partContentSource atomic.Pointer[partContentSourceBinding]
+	snapshotGC        func(context.Context) error
 
 	// Test hooks are nil in production. Tests use them to pause inside or
 	// between lifecycle critical sections without timing-based coordination.
@@ -1946,6 +2025,10 @@ type Cache struct {
 	testAfterSessionOperationEnter  func(string)
 	testBeforeSessionOperationExit  func(string)
 	testAfterCacheClosing           func()
+	// testAfterLazyAttemptReleased runs on the attempt's goroutine after its
+	// row hold is released and before its operation ends: the point after
+	// which a caller returned by attempt.done can count ownership.
+	testAfterLazyAttemptReleased func(*lazyEvalAttempt)
 	// persisted-decode singleflight hooks (ensurePersistedHitValueLoaded):
 	// before acquiring persistDecodeMu in the join-or-lead region, after a
 	// joiner captured the published channel, and after a leader published
@@ -1984,6 +2067,7 @@ type sharedResultID uint64
 // attempt's state. All fields except the immutable done channel are read or
 // written under the shared result's lazyMu.
 type lazyEvalAttempt struct {
+	token   *PartTaskToken
 	done    chan struct{}
 	cancel  context.CancelCauseFunc
 	waiters int
@@ -2072,6 +2156,14 @@ type cacheUsageMayChange interface {
 
 // sharedResult holds cache-entry state and shared payload published to per-call Result values.
 type sharedResult struct {
+	inlineBorrow *PartHost
+	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
+	imported                    bool
+	partOffers                  map[string]*partOffer
+	transferRevision            uint64
+	dependencyOwnershipRevision uint64
+	// Reverse offer ownership does not propagate lookup requirements.
+	offerParents map[offerOwnerID]struct{}
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
 
@@ -2129,7 +2221,10 @@ type sharedResult struct {
 	// cleanup and debug output. Persistence export for newly encoded objects
 	// derives links from the same object encode pass that produced the payload.
 	// They are not child-result deps.
-	snapshotOwnerLinks []PersistedSnapshotRefLink
+	snapshotOwnerLinks        []PersistedSnapshotRefLink
+	snapshotLinkIntent        *snapshotLinkIntent
+	payloadRevision           uint64
+	snapshotLeaseCleanupRoles map[snapshotOwnerKey]struct{}
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
@@ -2170,6 +2265,9 @@ type sharedResult struct {
 	// unsynchronized.
 	persistLeaseSyncPending bool
 
+	partGate       PartGateCell
+	lazyGeneration uint64 // lazyMu; zero is never issued
+
 	// lazyMu guards lazyWhole, lazyPartGroups, and lazyEvalComplete.
 	lazyMu sync.Mutex
 	// lazyPartGroups holds the named evaluation groups of a parts value
@@ -2199,6 +2297,8 @@ type sharedResult struct {
 // fields, per group. All fields are guarded by the owning sharedResult's
 // lazyMu.
 type lazyGroupState struct {
+	continuation       *lazyTaskContinuation
+	nativeInstallation *PartTaskToken
 	// eval is the stored callback for this group.
 	eval LazyEvalFunc
 	// complete records that this group's evaluation succeeded.
@@ -2261,7 +2361,13 @@ func (res *sharedResult) attachmentState() resultAttachmentState {
 	}
 }
 
+// A non-nil intent describes the complete desired map, even when empty.
+type snapshotLinkIntent struct{ Links []PersistedSnapshotRefLink }
+
 type sharedResultPayloadState struct {
+	payloadRevision    uint64
+	imported           bool
+	snapshotLinkIntent *snapshotLinkIntent
 	self               Typed
 	isObject           bool
 	hasValue           bool
@@ -2312,12 +2418,15 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	}
 	res.payloadMu.RLock()
 	state := sharedResultPayloadState{
+		payloadRevision:    res.payloadRevision,
+		imported:           res.imported,
+		snapshotLinkIntent: res.snapshotLinkIntent,
 		self:               res.self,
 		isObject:           res.isObject,
 		hasValue:           res.hasValue,
 		objClass:           res.objClass,
 		persistedEnvelope:  res.persistedEnvelope,
-		snapshotOwnerLinks: slices.Clone(res.snapshotOwnerLinks),
+		snapshotOwnerLinks: cloneSnapshotRefLinks(res.snapshotOwnerLinks),
 		createdAtUnixNano:  res.createdAtUnixNano,
 		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
 	}
@@ -2345,7 +2454,7 @@ func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
 		return nil
 	}
 	res.payloadMu.RLock()
-	links := slices.Clone(res.snapshotOwnerLinks)
+	links := cloneSnapshotRefLinks(res.snapshotOwnerLinks)
 	res.payloadMu.RUnlock()
 	return links
 }
@@ -2355,7 +2464,8 @@ func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLin
 		return
 	}
 	res.payloadMu.Lock()
-	res.snapshotOwnerLinks = slices.Clone(links)
+	res.snapshotOwnerLinks = cloneSnapshotRefLinks(links)
+	res.payloadRevision++
 	res.payloadMu.Unlock()
 }
 
@@ -2416,10 +2526,23 @@ func sharedResultObjectTypeName(res *sharedResult, state sharedResultPayloadStat
 // Persisted-envelope decoding still uses this directly because there is no
 // in-memory value to derive a class from at decode time.
 func resolverForSharedResultObject(ctx context.Context, resolver TypeResolver, res *sharedResult, typeName string) (TypeResolver, error) {
+	return resolverForSharedResultType(ctx, resolver, res, persistedEnvelopeTypeName{name: typeName, object: true})
+}
+
+// resolverForSharedResultType generalizes resolverForSharedResultObject to
+// scalar and enum types: a persisted enum or custom scalar defined by a module
+// needs that module's schema installed before its envelope can decode, exactly
+// as a module object does.
+func resolverForSharedResultType(ctx context.Context, resolver TypeResolver, res *sharedResult, typ persistedEnvelopeTypeName) (TypeResolver, error) {
+	typeName := typ.name
 	if resolver == nil || res == nil || typeName == "" {
 		return resolver, nil
 	}
-	if _, ok := resolver.ObjectType(typeName); ok {
+	if typ.object {
+		if _, ok := resolver.ObjectType(typeName); ok {
+			return resolver, nil
+		}
+	} else if _, ok := resolver.ScalarType(typeName); ok {
 		return resolver, nil
 	}
 	srv, ok := resolver.(*Server)
@@ -2805,7 +2928,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
 	if hit {
-		c.registerLazyEvaluation(hitRes.cacheSharedResult(), hitRes)
+		c.registerLazyEvaluation(hitRes.cacheSharedResult(), hitRes, resolver)
 		return hitRes, nil
 	}
 
@@ -2904,6 +3027,7 @@ func (c *Cache) addExplicitDependencyLocked(
 	}
 
 	parentRes.deps[depRes.id] = struct{}{}
+	parentRes.dependencyOwnershipRevision++
 	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
@@ -3189,32 +3313,8 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 		return detached, nil
 	}
 
-	childShared := detached.cacheSharedResult()
-	if childShared != nil && childShared.id != 0 {
-		srv := CurrentDagqlServer(ctx)
-		if srv == nil {
-			return nil, fmt.Errorf("load %dth value from %T: missing dagql server in context", nth, self)
-		}
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, self, err)
-		}
-		if clientMetadata.SessionID == "" {
-			return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, self)
-		}
-		cache, err := EngineCache(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
-		}
-		touchSharedResultLastUsed(childShared, time.Now().UnixNano())
-		retResAny, err := wrapSharedResultWithResolver(ctx, childShared, true, srv)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: reconstruct result: %w", nth, self, err)
-		}
-		if err := cache.trackSessionResult(ctx, clientMetadata.SessionID, retResAny, true); err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: claim cache-backed result: %w", nth, self, err)
-		}
-		return retResAny, nil
+	if childShared := detached.cacheSharedResult(); childShared != nil && childShared.id != 0 {
+		return r.claimCacheBackedNthValue(ctx, nth, self, childShared)
 	}
 
 	srv := CurrentDagqlServer(ctx)
@@ -3244,9 +3344,52 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 	if err != nil {
 		return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
 	}
+	if child := detached.cacheSharedResult(); child != nil {
+		if binding, ok := UnwrapAs[HasPartHostBinding](detached); ok {
+			child.inlineBorrow = binding.PartHostBinding()
+		}
+		if child.inlineBorrow == nil {
+			if _, list := UnwrapAs[Enumerable](detached); list {
+				host := cache.partHostFor(r.shared)
+				if r.shared.inlineBorrow != nil {
+					host = r.shared.inlineBorrow
+				}
+				child.inlineBorrow = host.at(host.path.Field("items").Index(nth - 1))
+			}
+		}
+	}
 	return cache.GetOrInitCall(ctx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return detached, nil
 	})
+}
+
+// claimCacheBackedNthValue returns an element that already has its own cache
+// row: reconstructed through the resolver and claimed by the caller's session.
+func (r Result[T]) claimCacheBackedNthValue(ctx context.Context, nth int, self T, childShared *sharedResult) (AnyResult, error) {
+	srv := CurrentDagqlServer(ctx)
+	if srv == nil {
+		return nil, fmt.Errorf("load %dth value from %T: missing dagql server in context", nth, self)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, self, err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, self)
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
+	}
+	touchSharedResultLastUsed(childShared, time.Now().UnixNano())
+	retResAny, err := wrapSharedResultWithResolver(ctx, childShared, true, srv)
+	if err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: reconstruct result: %w", nth, self, err)
+	}
+	if err := cache.trackSessionResult(ctx, clientMetadata.SessionID, retResAny, true); err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: claim cache-backed result: %w", nth, self, err)
+	}
+	return retResAny, nil
 }
 
 func (r Result[T]) resultWithDerefView() Result[T] {
@@ -3276,7 +3419,9 @@ func derefTyped(val Typed) (Typed, bool) {
 	return derefable.Deref()
 }
 
-func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest) (Result[T], error) {
+// WithContentDigest sets the content identity and optionally attaches the same
+// digest under additional informational labels. Existing labelled entries remain.
+func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest, additionalLabels ...string) (Result[T], error) {
 	if contentDigest == "" {
 		return r, fmt.Errorf("set content digest on %T: empty digest", r.Self())
 	}
@@ -3288,7 +3433,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 		if err != nil {
 			return r, fmt.Errorf("set content digest on %T: current dagql cache: %w", r.Self(), err)
 		}
-		if err := cache.TeachContentDigest(ctx, r, contentDigest); err != nil {
+		if err := cache.TeachContentDigest(ctx, r, contentDigest, additionalLabels...); err != nil {
 			return r, err
 		}
 		return r, nil
@@ -3362,6 +3507,12 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			Label:  call.ExtraDigestLabelContent,
 			Digest: contentDigest,
 		})
+	}
+	for _, label := range additionalLabels {
+		extra := call.ExtraDigest{Digest: contentDigest, Label: label}
+		if !slices.Contains(frame.ExtraDigests, extra) {
+			frame.ExtraDigests = append(frame.ExtraDigests, extra)
+		}
 	}
 	return r, nil
 }
@@ -3459,8 +3610,8 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
-func (r Result[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
-	return r.WithContentDigest(ctx, customDigest)
+func (r Result[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest, additionalLabels ...string) (AnyResult, error) {
+	return r.WithContentDigest(ctx, customDigest, additionalLabels...)
 }
 
 func (r Result[T]) WithSessionResourceHandleAny(ctx context.Context, handle SessionResourceHandle) (AnyResult, error) {
@@ -3579,8 +3730,8 @@ func (r ObjectResult[T]) Receiver(ctx context.Context, srv *Server) (AnyObjectRe
 	return obj, nil
 }
 
-func (r ObjectResult[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest) (ObjectResult[T], error) {
-	res, err := r.Result.WithContentDigest(ctx, contentDigest)
+func (r ObjectResult[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest, additionalLabels ...string) (ObjectResult[T], error) {
+	res, err := r.Result.WithContentDigest(ctx, contentDigest, additionalLabels...)
 	if err != nil {
 		return ObjectResult[T]{}, err
 	}
@@ -3603,8 +3754,8 @@ func (r ObjectResult[T]) WithSessionResourceHandle(ctx context.Context, handle S
 
 // WithContentDigestAny is WithContentDigest but returns an AnyResult, required
 // for polymorphic code paths like module function call plumbing.
-func (r ObjectResult[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest) (AnyResult, error) {
-	res, err := r.Result.WithContentDigest(ctx, customDigest)
+func (r ObjectResult[T]) WithContentDigestAny(ctx context.Context, customDigest digest.Digest, additionalLabels ...string) (AnyResult, error) {
+	res, err := r.Result.WithContentDigest(ctx, customDigest, additionalLabels...)
 	if err != nil {
 		return nil, err
 	}
@@ -3669,10 +3820,15 @@ func lazyEvalFuncOfResult(val AnyResult) LazyEvalFunc {
 	return lazy.LazyEvalFunc()
 }
 
-func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
+func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult, resolver TypeResolver) {
+	if server := resolverServer(resolver); server != nil {
+		shared.partGate.server.CompareAndSwap(nil, server)
+	}
 	if shared == nil || val == nil {
 		return
 	}
+
+	c.bindPartHost(shared, val)
 
 	// A parts value never stores its whole-result callback: its per-group
 	// callbacks are re-read at attempt start (evaluateGroup), and a stored
@@ -3853,7 +4009,13 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 	}()
 
-	return c.evaluateResolved(ctx, res, shared, nil)
+	for {
+		err := c.evaluateResolved(ctx, res, shared, nil)
+		if partCanReselect(err) {
+			continue
+		}
+		return err
+	}
 }
 
 // EvaluateParts forces only the named parts of one result. On a value
@@ -3874,13 +4036,22 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 		}
 	}()
 
-	return c.evaluateResolved(ctx, res, shared, parts)
+	for {
+		err := c.evaluateResolved(ctx, res, shared, parts)
+		if partCanReselect(err) {
+			continue
+		}
+		return err
+	}
 }
 
 // evaluateResolved routes one attached result's demand to its evaluation
 // groups: the whole-result group for plain lazy values, the resolved
 // named groups for parts values. nil or empty parts means "everything".
 func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sharedResult, parts []PartKey) error {
+	if c.usesPartAcquisition(res, shared) {
+		return c.evaluateAcquiredParts(ctx, res, shared, parts)
+	}
 	shared.lazyMu.Lock()
 	if shared.lazyEvalComplete {
 		shared.lazyMu.Unlock()
@@ -4055,7 +4226,15 @@ func prepareLazyGroupEvalLocked(
 // published attempt, trust settled object-side state, or lead a fresh
 // attempt. For LazyGroupWhole with a nil partsVal this is exactly the
 // former whole-result evaluateOne loop.
-func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *sharedResult, group LazyGroupKey, partsVal HasLazyEvaluationParts) (rerr error) {
+func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *sharedResult, group LazyGroupKey, partsVal HasLazyEvaluationParts) error {
+	if isPartTaskKey(group) {
+		return c.runLazyTask(ctx, res, shared, group, nil, &LazyTaskSpec{})
+	}
+	return c.runLazyTask(ctx, res, shared, group, partsVal, nil)
+}
+
+//nolint:gocyclo // Keep joining, cancellation, and retirement in one shared attempt loop.
+func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedResult, group LazyGroupKey, partsVal HasLazyEvaluationParts, spec *LazyTaskSpec) (rerr error) {
 	stack := lazyEvalStackFromContext(ctx)
 	if stack != nil && lazyEvalStackContains(stack, shared.id, group) {
 		return fmt.Errorf("recursive lazy evaluation detected")
@@ -4071,9 +4250,13 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 	shared.lazyMu.Unlock()
 	for {
 		shared.lazyMu.Lock()
-		if shared.lazyEvalComplete || g.complete {
+		if spec == nil && (shared.lazyEvalComplete || g.complete) {
 			shared.lazyMu.Unlock()
 			return nil
+		}
+		if spec != nil && spec.NoJoin && (g.attempt != nil || g.syncPending) {
+			shared.lazyMu.Unlock()
+			return ErrLazyTaskBusy
 		}
 		// Consult the published attempt before any object-side lazy state.
 		// Callback bodies clear their object-side callback pointer while the
@@ -4131,7 +4314,19 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 		// attempt retries only the bookkeeping even if the value still
 		// exposes a non-nil callback. Otherwise a nil object-side callback
 		// means nothing deferred remains for this group.
-		if prepareLazyGroupEvalLocked(res, shared, g, group, partsVal) {
+		if spec != nil {
+			if g.syncPending {
+				g.eval = nil
+			} else {
+				if spec.Body == nil {
+					shared.lazyMu.Unlock()
+					return fmt.Errorf("lazy task %q: missing supplied body", group)
+				}
+				g.eval = spec.Body
+				g.complete = false
+				g.continuation = nil
+			}
+		} else if prepareLazyGroupEvalLocked(res, shared, g, group, partsVal) {
 			shared.lazyMu.Unlock()
 			return nil
 		}
@@ -4159,7 +4354,23 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 		if resultCall != nil {
 			evalCtx = ContextWithCall(evalCtx, resultCall)
 		}
+		shared.lazyGeneration++
+		token := &PartTaskToken{ownerSync: make(chan struct{}), row: shared, key: group, generation: shared.lazyGeneration}
+		token.active.Store(true)
+		installationToken := token
+		if g.syncPending && g.nativeInstallation != nil {
+			installationToken = g.nativeInstallation
+		}
+		var continuation *lazyTaskContinuation
+		if spec != nil {
+			continuation = g.continuation
+			if continuation == nil {
+				continuation = &lazyTaskContinuation{spec: *spec, token: token}
+			}
+		}
+		evalCtx = context.WithValue(evalCtx, partTaskContextKey{}, token)
 		attempt := &lazyEvalAttempt{
+			token:   token,
 			done:    make(chan struct{}),
 			cancel:  cancel,
 			waiters: 1,
@@ -4192,7 +4403,7 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			lazyIsResume    bool
 		)
 		var storedPart PartKey
-		if reporting, ok := UnwrapAs[HasLazyEvaluationReporting](res); ok {
+		if reporting, ok := UnwrapAs[HasLazyEvaluationReporting](res); ok && spec == nil {
 			storedPart = reporting.LazyGroupStoredPart(group)
 		}
 		if OTelProfActive(evalCtx) && !producerSkip {
@@ -4202,17 +4413,36 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 		g.attempt = attempt
 		shared.lazyMu.Unlock()
 
+		if spec != nil {
+			c.egraphMu.Lock()
+			c.incrementIncomingOwnershipLocked(ctx, shared)
+			c.egraphMu.Unlock()
+		}
 		go func() {
 			// Finish the cache operation (including any deferred ReleaseSession
 			// cleanup) before releasing the runtime that owns this work.
 			defer clientScopeLease.Release()
 			defer attemptOp.finish(false)
+			if spec != nil {
+				defer func() {
+					if err := c.releasePartRow(context.WithoutCancel(attemptCtx), shared); err != nil {
+						c.recordReleaseCleanupError(attemptOp.sessionID, true, err)
+					}
+					if c.testAfterLazyAttemptReleased != nil {
+						c.testAfterLazyAttemptReleased(attempt)
+					}
+				}()
+			}
 			// The lazy op span and re-pointed callback context were minted under
 			// lazyMu before this attempt was published. A span created on one
 			// goroutine and ended on another is safe.
 			partial := false
 			abandoned := false
-			bodyDone, err := c.runLazyEvalBody(lazyCallbackCtx, shared, lazyEval)
+			defer c.endPartTaskBody(token, false)
+			callbackCtx, bodyDone, err := c.runLazyEvalBody(lazyCallbackCtx, shared, lazyEval, token, continuation)
+			if err == nil && spec == nil {
+				err = c.completeNativePartTask(callbackCtx, installationToken)
+			}
 			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 			shared.lazyMu.Lock()
@@ -4222,13 +4452,19 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			attempt.cancel = nil
 			if err == nil {
 				g.complete = true
-				if partsVal == nil {
+				if partsVal == nil && spec == nil {
 					shared.lazyEvalComplete = true
 				}
 				g.eval = nil
 				g.syncPending = false
+				g.continuation = nil
+				g.nativeInstallation = nil
 			} else if bodyDone {
 				g.syncPending = true
+				g.continuation = continuation
+				if spec == nil {
+					g.nativeInstallation = installationToken
+				}
 			}
 			// Retire the shared pointer only after the callback has finished. Old
 			// waiters retain attempt, so they cannot read or decrement a retry's
@@ -4236,7 +4472,7 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// still names this attempt: publishing a successor requires it to be
 			// nil, and only this path clears it.
 			g.attempt = nil
-			if err == nil && partsVal != nil {
+			if err == nil && partsVal != nil && spec == nil {
 				partial = lazyPartsEvaluationPartialLocked(shared, res)
 			}
 			shared.lazyMu.Unlock()
@@ -4274,29 +4510,49 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 }
 
 // runLazyEvalBody runs one lazy attempt's callback body under an operation
-// lease and then syncs the result's snapshot leases. It returns whether the
+// lease, ends the part task's body phase, and then finishes the supplied
+// continuation or syncs the result's snapshot leases. It returns the context
+// the body ran under (the leased context, or the input when no lease could be
+// acquired), whether the
 // body succeeded and consumed its object-side state (bodyDone: any later
 // error in the attempt is cache-side bookkeeping, which stays retryable), and
 // the first error.
-func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResult, lazyEval func(context.Context) error) (bool, error) {
-	callbackCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResult, lazyEval func(context.Context) error, token *PartTaskToken, continuation *lazyTaskContinuation) (context.Context, bool, error) {
+	leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
 	if leaseErr != nil {
-		return false, fmt.Errorf("acquire operation lease: %w", leaseErr)
+		return callbackCtx, false, fmt.Errorf("acquire operation lease: %w", leaseErr)
 	}
+	callbackCtx = leaseCtx
 
 	var err error
 	bodyDone := false
 	if lazyEval != nil {
 		err = lazyEval(callbackCtx)
 	}
-	if err == nil {
+	c.endPartTaskBody(token, err == nil)
+	if continuation != nil && continuation.token.installed.Load() != nil {
 		bodyDone = true
-		err = c.syncResultSnapshotLeases(callbackCtx, shared)
+	}
+	if err == nil {
+		bodyDone = continuation == nil || continuation.token.installed.Load() != nil
+		if continuation != nil {
+			err = continuation.finish(callbackCtx, c, shared)
+		} else {
+			err = c.syncResultSnapshotLeases(callbackCtx, shared)
+		}
 	}
 	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
 		err = releaseErr
 	}
-	return bodyDone, err
+	if err == nil && continuation != nil {
+		// Content equivalence requires successful operation-lease cleanup too.
+		// Bookkeeping retries retain the original installation's identity.
+		err = c.teachTaskContentIdentity(callbackCtx, continuation.token)
+		if err == nil {
+			continuation.token.settled.Store(true)
+		}
+	}
+	return callbackCtx, bodyDone, err
 }
 
 func (c *Cache) Close(ctx context.Context) error {
@@ -4428,11 +4684,15 @@ func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
 		classSlots = 0
 	}
 	estimate := CacheMetadataEstimate{
-		ResultCount:    len(c.resultsByID),
-		TermCount:      len(c.egraphTerms),
-		ClassSlotCount: classSlots,
+		ResultCount:     len(c.resultsByID),
+		TermCount:       len(c.egraphTerms),
+		ClassSlotCount:  classSlots,
+		OfferOwnerCount: len(c.offerOwners),
 	}
-	estimate.EstimatedBytes = cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
+	for _, owner := range c.offerOwners {
+		estimate.OfferOwnerBytes += offerMetadataBytes(owner)
+	}
+	estimate.EstimatedBytes = estimate.OfferOwnerBytes + cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
 		cacheMetadataTermEstimatedBytes*int64(estimate.TermCount) +
 		cacheMetadataClassSlotEstimatedBytes*int64(estimate.ClassSlotCount)
 	return estimate
@@ -4620,7 +4880,7 @@ func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
 			identities = cacheUsageIdentitiesFromSelf(state.self)
 			sizeMayChange = cacheUsageSizeMayChangeFromSelf(state.self)
 		} else {
-			snapshotLinks = slices.Clone(state.snapshotOwnerLinks)
+			snapshotLinks = cloneSnapshotRefLinks(state.snapshotOwnerLinks)
 			identities = cacheUsageIdentitiesFromSnapshotLinks(snapshotLinks)
 		}
 		if len(identities) == 0 {
@@ -5521,6 +5781,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 
 			resWasCacheBacked = true
 		} else {
+			if source := oc.val.cacheSharedResult(); source != nil && source.inlineBorrow != nil {
+				if err := c.validateInlineBorrow(source.inlineBorrow, req, oc.val); err != nil {
+					return err
+				}
+				oc.res.inlineBorrow = source.inlineBorrow
+			}
 			oc.res.self = oc.val.Unwrap()
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				if frame := shared.loadResultCall(); frame != nil {
@@ -5537,8 +5803,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_request_frame", nil, oc.res.loadResultCall())
 			}
 			oc.res.hasValue = true
+			oc.res.payloadRevision++
 
-			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
+			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok && oc.res.inlineBorrow == nil {
 				oc.res.onRelease = onReleaser.OnRelease
 			}
 			isObject, objClass, err := resultIsObject(oc.val, resolver)
@@ -5795,6 +6062,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			continue
 		}
 		oc.res.deps[depID] = struct{}{}
+		oc.res.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
@@ -5843,7 +6111,14 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			return attachErr
 		}
 	}
-	if err := c.syncResultSnapshotLeases(ctx, oc.res); err != nil {
+	if err := func() error {
+		if !resWasCacheBacked {
+			if err := c.attachInlineHosts(oc.res, oc.val); err != nil {
+				return err
+			}
+		}
+		return c.syncResultSnapshotLeases(ctx, oc.res)
+	}(); err != nil {
 		c.egraphMu.Lock()
 		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
 		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
@@ -5853,7 +6128,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		finishAttachDeps(attachErr)
 		return attachErr
 	}
-	c.registerLazyEvaluation(oc.res, oc.val)
+	c.registerLazyEvaluation(oc.res, oc.val, resolver)
 	finishAttachDeps(nil)
 
 	return nil
@@ -5874,7 +6149,7 @@ func AttachmentResolverServer(ctx context.Context) *Server {
 }
 
 func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
-	if parent == nil || val == nil {
+	if parent == nil || val == nil || parent.inlineBorrow != nil {
 		return nil
 	}
 	withKinds, hasKinds := UnwrapAs[HasDependencyResultsKinds](val)

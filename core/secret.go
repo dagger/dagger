@@ -52,7 +52,7 @@ type persistedSecretPayload struct {
 	Name   string                      `json:"name,omitempty"`
 }
 
-func (secret *Secret) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (secret *Secret) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	payload := persistedSecretPayload{}
 	if secret != nil {
 		payload.Handle = secret.Handle
@@ -61,7 +61,7 @@ func (secret *Secret) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*Secret) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Secret) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedSecretPayload
 	if len(payload) > 0 {
 		if err := json.Unmarshal(payload, &persisted); err != nil {

@@ -26,8 +26,8 @@ type UpGroup struct {
 	// `Workspace.services` was called on, including any overlay edits. Run threads
 	// it into the context (WorkspaceToContext) so each service leaf's auto-injected
 	// Workspace! (and any currentWorkspace read) resolves against it, rather than
-	// the session's frozen current workspace. Transient (not persisted): it is
-	// re-established when `services` re-runs after loading the ID.
+	// the session's frozen current workspace. It is persisted as an exact retained
+	// reference, so a restored group keeps the workspace it was rolled up from.
 	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 

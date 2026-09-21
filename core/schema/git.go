@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	telemetry "github.com/dagger/otel-go"
@@ -90,6 +91,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRepository]{
+		dagql.NodeFunc("__resolvedRef", s.resolvedRef).
+			View(AllVersion).
+			IsPersistable().
+			Doc(`(Internal-only) Returns a Git ref identified by its resolved name and commit.`),
 		// Named ref lookups consult the calling client's workspace lock (which
 		// pin applies, and whether one should be written), so their results
 		// are scoped per client even though the repository itself is shared.
@@ -1488,7 +1493,7 @@ func (s *gitSchema) withBundleDirectory(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRepository],
 	args gitWithBundleArgs,
-) (inst dagql.ObjectResult[*core.Directory], _ error) {
+) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -1497,9 +1502,15 @@ func (s *gitSchema) withBundleDirectory(
 	if err != nil {
 		return inst, fmt.Errorf("load git bundle: %w", err)
 	}
-	dir, err := core.ImportGitBundle(ctx, parent.Self(), bundle.Self(), args.PrerequisiteRef)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
+	}
+	dir := &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     &core.DirectoryGitBundleImportLazy{LazyState: core.NewLazyState(), Repo: parent, Bundle: bundle, PrerequisiteRef: args.PrerequisiteRef},
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1576,7 +1587,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 				Name: args.LockName,
 				SHA:  lockedSHA,
 			}
-			return s.gitRefResult(ctx, parent, ref)
+			return s.selectResolvedRef(ctx, parent, ref)
 		}
 	}
 
@@ -1629,7 +1640,32 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		}
 	}
 
-	return s.gitRefResult(ctx, parent, ref)
+	return s.selectResolvedRef(ctx, parent, ref)
+}
+
+type resolvedRefArgs struct {
+	Name   string
+	Commit string
+}
+
+func (s *gitSchema) resolvedRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args resolvedRefArgs) (dagql.Result[*core.GitRef], error) {
+	if !gitutil.IsCommitSHA(args.Commit) {
+		return dagql.Result[*core.GitRef]{}, fmt.Errorf("invalid commit SHA: %q", args.Commit)
+	}
+	return s.gitRefResult(ctx, parent, &gitutil.Ref{Name: args.Name, SHA: args.Commit})
+}
+
+func (s *gitSchema) selectResolvedRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], ref *gitutil.Ref) (dagql.Result[*core.GitRef], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.Result[*core.GitRef]{}, err
+	}
+	var result dagql.ObjectResult[*core.GitRef]
+	err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "__resolvedRef", Args: []dagql.NamedInput{
+		{Name: "name", Value: dagql.String(ref.Name)},
+		{Name: "commit", Value: dagql.String(ref.SHA)},
+	}})
+	return result.Result, err
 }
 
 func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], ref *gitutil.Ref) (inst dagql.Result[*core.GitRef], _ error) {
@@ -1677,17 +1713,18 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 		dgstInputs = append(dgstInputs, "localRepo", dirDgst.String())
 	}
 	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		dgstInputs = append(dgstInputs, "authUsername", remoteRepo.AuthUsername)
 		if remoteRepo.SSHAuthSocket.Self() != nil {
 			dgstInputs = append(dgstInputs, "sshAuthSock", string(remoteRepo.SSHAuthSocket.Self().Handle))
 		}
 		if remoteRepo.AuthToken.Self() != nil {
-			dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(remoteRepo.AuthToken.Self() != nil))
+			dgstInputs = append(dgstInputs, "authToken", string(remoteRepo.AuthToken.Self().Handle))
 		}
 		if remoteRepo.AuthHeader.Self() != nil {
-			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
+			dgstInputs = append(dgstInputs, "authHeader", string(remoteRepo.AuthHeader.Self().Handle))
 		}
 	}
-	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...), call.ExtraDigestLabelRemoteCache)
 	if err != nil {
 		return inst, err
 	}
@@ -1804,12 +1841,44 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 	return dagql.NewStringArray(remote.Filter(patterns).Branches().ShortNames()...), nil
 }
 
-func (s *gitSchema) cleaned(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	dir, err := parent.Self().Backend.Cleaned(ctx)
+func (s *gitSchema) cleaned(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.ObjectResult[*core.Directory], rerr error) {
+	local, ok := parent.Self().Backend.(*core.LocalGitRepository)
+	if !ok {
+		return parent.Self().Backend.Cleaned(ctx)
+	}
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dir, nil
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir := &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     &core.DirectoryGitCleanedLazy{LazyState: core.NewLazyState(), Repo: parent},
+	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			rerr = errors.Join(rerr, dir.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
+	unchanged, err := dir.Lazy.(*core.DirectoryGitCleanedLazy).EvaluateForCall(ctx, dir)
+	if err != nil {
+		return inst, err
+	}
+	if unchanged {
+		return local.Directory, nil
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		return inst, err
+	}
+	handedOff = true
+	return inst, nil
 }
 
 func (s *gitSchema) uncommitted(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.ObjectResult[*core.Changeset], _ error) {
@@ -2033,7 +2102,7 @@ type treeArgs struct {
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
-func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -2061,11 +2130,18 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		// metadata, even when callers spell the public default args differently.
 		err = srv.Select(ctx, parent, &inst, dagql.Selector{Field: "__fullCheckout"})
 	} else {
-		var dir *core.Directory
-		dir, err = ref.Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
-		if err == nil {
-			inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+		var query *core.Query
+		query, err = core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, err
 		}
+		dir := &core.Directory{
+			Platform: query.Platform(),
+			Dir:      new(core.LazyAccessor[string, *core.Directory]),
+			Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+			Lazy:     &core.DirectoryGitTreeLazy{LazyState: core.NewLazyState(), Ref: parent, DiscardGitDir: args.DiscardGitDir, Depth: args.Depth, IncludeTags: args.IncludeTags},
+		}
+		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	}
 	if err != nil {
 		return inst, err
@@ -2076,9 +2152,13 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if err != nil {
 			return inst, err
 		}
-		inst, err = inst.WithContentDigest(ctx, dgst)
-		if err != nil {
-			return inst, err
+		if lazy, ok := inst.Self().Lazy.(*core.DirectoryGitTreeLazy); ok {
+			lazy.ContentDigest = dgst
+		} else {
+			inst, err = inst.WithContentDigest(ctx, dgst, call.ExtraDigestLabelRemoteCache)
+			if err != nil {
+				return inst, err
+			}
 		}
 	}
 
@@ -2145,17 +2225,18 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 		dgstInputs = append(dgstInputs, "localRepo", dirDgst.String())
 	}
 	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		dgstInputs = append(dgstInputs, "authUsername", remoteRepo.AuthUsername)
 		if remoteRepo.SSHAuthSocket.Self() != nil {
 			dgstInputs = append(dgstInputs, "sshAuthSock", string(remoteRepo.SSHAuthSocket.Self().Handle))
 		}
 		if remoteRepo.AuthToken.Self() != nil {
-			dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(remoteRepo.AuthToken.Self() != nil))
+			dgstInputs = append(dgstInputs, "authToken", string(remoteRepo.AuthToken.Self().Handle))
 		}
 		if remoteRepo.AuthHeader.Self() != nil {
-			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
+			dgstInputs = append(dgstInputs, "authHeader", string(remoteRepo.AuthHeader.Self().Handle))
 		}
 	}
-	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...), call.ExtraDigestLabelRemoteCache)
 	if err != nil {
 		return inst, err
 	}
@@ -2168,7 +2249,7 @@ type commitTreeArgs struct {
 	IncludeTags   bool `default:"false"`
 }
 
-func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args commitTreeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args commitTreeArgs) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -2185,9 +2266,15 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 		})
 	}
 
-	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
+	}
+	dir := &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     &core.DirectoryGitCommitTreeLazy{LazyState: core.NewLazyState(), Commit: parent, DiscardGitDir: args.DiscardGitDir, Depth: args.Depth, IncludeTags: args.IncludeTags},
 	}
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
@@ -2208,10 +2295,7 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, err
 		}
-		inst, err = inst.WithContentDigest(ctx, dgst)
-		if err != nil {
-			return inst, err
-		}
+		dir.Lazy.(*core.DirectoryGitCommitTreeLazy).ContentDigest = dgst
 	}
 
 	return inst, nil
@@ -2418,7 +2502,7 @@ func (s *gitSchema) commitReleaseTag(
 		return none, nil
 	}
 
-	ref, err := s.gitRefResult(ctx, parent.Self().Repo, &gitutil.Ref{
+	ref, err := s.selectResolvedRef(ctx, parent.Self().Repo, &gitutil.Ref{
 		Name: tag.RefName,
 		SHA:  tag.SHA,
 	})
@@ -2786,7 +2870,7 @@ func (s *gitSchema) latest(
 		if err != nil {
 			return inst, err
 		}
-		return s.gitRefResult(ctx, parent, ref)
+		return s.selectResolvedRef(ctx, parent, ref)
 	}
 
 	var lockOptions []workspace.LookupOption

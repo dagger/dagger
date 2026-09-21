@@ -29,6 +29,8 @@ func (prov cachePersistInputProvenance) validate() error {
 }
 
 type persistResultSnapshot struct {
+	imported              bool
+	pendingOffers         []PersistedPartOffer
 	resultID              sharedResultID
 	frame                 *ResultCall
 	self                  Typed

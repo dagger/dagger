@@ -125,7 +125,7 @@ type AnyResult interface {
 	NullableWrapped() AnyResult
 
 	// WithContentDigest returns a new AnyResult with the given content digest.
-	WithContentDigestAny(context.Context, digest.Digest) (AnyResult, error)
+	WithContentDigestAny(context.Context, digest.Digest, ...string) (AnyResult, error)
 	// WithSessionResourceHandle returns a new AnyResult with the given session resource handle.
 	WithSessionResourceHandleAny(context.Context, SessionResourceHandle) (AnyResult, error)
 
@@ -167,7 +167,8 @@ type LazyEvalFunc func(context.Context) error
 // HasLazyEvaluation is implemented by values carrying deferred work that
 // Cache.Evaluate forces. A successful callback run consumes the value's
 // deferred work; implementations should return nil from LazyEvalFunc
-// afterwards (core types clear their object-side Lazy pointer on success).
+// afterwards. Core types retain their Lazy operation and report completion
+// through its state before cache-side bookkeeping finishes.
 // The cache enforces the consumption independently: once a callback body has
 // succeeded, later attempts retry only cache-side bookkeeping and never
 // re-read the value's callback, so an implementation that keeps returning a

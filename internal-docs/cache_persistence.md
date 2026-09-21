@@ -392,7 +392,10 @@ For standalone `Directory` and `File`, persisted object encoding
 often has two broad forms:
 
 - **snapshot form**
-  - the object already has a materialized snapshot/accessor value
+  - the object has a completed snapshot, open or retained by saved identity
+  - `lazyKind` and `lazyJSON` retain the completed Lazy operation's original inputs,
+    when present; completed-row decode keeps these raw bytes without loading
+    the operation's input values
 - **lazy form**
   - the object has not been fully materialized, but it still has a structured
     lazy operation that can be serialized
@@ -411,7 +414,9 @@ Today `Directory` and `File` explicitly do this when they have neither snapshot
 nor lazy state available to encode.
 
 `Container` uses one payload with consumed metadata, a record for each snapshot
-part, and its original recipe only while computation remains. Each part is
+part, and its original Lazy operation inputs even after computation completes.
+Completed-row decode retains the operation's raw bytes without decoding its
+input values. Each part is
 pending, absent, or a completed directory, file, or exec-metadata snapshot.
 Completion comes from object-side group consumption, including final parent
 copies, independently of cache bookkeeping completion. A settled mapping error
@@ -421,11 +426,14 @@ Decode installs metadata and immutable descriptors without opening the stored
 container outputs. It seeds the original completed groups and uses ordinary
 attempts with separate `open:<part>` groups to open saved snapshots on demand.
 Joint computation outputs can open independently after restart. Descriptors
-remain on the Container after opening and after the operational lazy pointer
-clears, so typed decode, usage accounting, owner-lease sync, and a second flush
-retain the same identities. Absence needs no opening. Pending recipe inputs
-still use the existing standalone Directory/File decoders, which may open their
-own snapshots immediately.
+remain on the Container after opening and after the retained operation
+completes, so typed decode, usage accounting, owner-lease sync, and a second flush
+retain the same identities. Absence needs no opening. Pending recipe inputs use the standalone
+Directory/File decoders. These retain saved snapshot identity and path, and open
+through the ordinary whole-result attempt on the first filesystem demand.
+The stored identity remains after opening and supports links, usage and another
+flush. Metadata path readers use saved paths only on restored snapshot forms;
+fresh work still evaluates even when a path was prefilled.
 
 This container payload change is persistence schema 18. Older stores are wiped;
 there is no migration. See `core/container_persistence.go` and the bounded model
@@ -470,6 +478,52 @@ Separately, the snapshot manager exports:
 
 Those rows are written into the snapshot metadata tables and loaded back into
 the snapshot manager at startup.
+
+### Immutable snapshot transfers
+
+Local snapshot export now populates the same parent/blob and parent/diff
+indexes as image import. Registration uses the descriptor actually returned,
+including an explicitly requested encoding. The first emitted layer uses the
+empty parent key when export omits scratch or an empty root. Actual snapshot
+ancestry is unchanged. These entries use the existing persistent tables; they
+are reuse hints and do not own resources.
+
+`SnapshotManager.ImportChain` imports one `ExportChain` from an in-process
+provider. It shares `importLayer` with `ImportImage`. Under the parent/diff
+exclusion, it first attaches and validates an existing snapshot, then checks
+local content, and only then opens the provider. Content writer acquisition can
+also find bytes supplied by another operation and avoid a source read. A lost
+snapshot candidate is a miss; other attachment failures remain errors. Both
+import and export key waits observe cancellation, so a waiting caller can
+release its own pins while another transfer continues.
+
+Nonempty chain imports and image imports own a temporary resource lease
+through the returned ref's `Release`. Empty generic chains use ordinary scratch.
+Ordinary result snapshot-link ownership must be established before that release. `AttachLease` validates snapshot presence after attachment because
+containerd accepts resource references to absent targets. Snapshot reuse does
+not require restoring missing optional historical export blobs. New exports
+add their content to continuing snapshot owners.
+
+`ExportChain.Release` ends ownership of the exported provider's snapshots and
+content. Copies share the same release handle. Image assembly retains original
+chains and a separate lease for image metadata and rewritten layers until
+`ExportedImage.Release`. Prepared images keep that ownership through the
+existing arbitrary-cache `OnRelease` hook. Arbitrary completion and cancellation
+transfer that callback under `callsMu`. An independent cache operation keeps
+late initialization and abandoned-value cleanup visible to `Cache.Close`.
+Cleanup runs outside the lock, including when the entry was removed before
+the value arrived. Failure removes only the transfer's temporary ownership. Other result owners remain intact. Committed prefixes
+retain reuse entries and remain reusable while present.
+
+A clean shutdown can preserve typed results without releasing their process-local
+refs. Leases from `newResourcePin` carry `dagger.io/snapshot-transfer=true`.
+At server startup, after `NewCache` restores durable owners and reports no reset,
+`ReleaseTransferLeasesAfterRestart` removes exactly those marked leases before
+new transfers can start. The previous process no longer owns their Go refs.
+Result owner leases and unrelated temporary leases remain intact. This helper
+is specific to server startup; ordinary cache construction can occur while a
+live transfer exists and must not call it. Cleanup errors fail startup through
+the existing error return.
 
 ## Snapshot Owner Leases On Import
 
@@ -524,6 +578,12 @@ The implementation detail behind that is important:
 - so object payloads that cannot be reconstructed in that reduced context remain
   as persisted envelopes and are decoded later by
   `ensurePersistedHitValueLoaded`
+- lists with referenced child rows also defer before lookup when the server is
+  absent, including lists of scalars
+- live list decode loads each nonzero child ID through the exact empty-session
+  loader, preserving its shared state and existing dependency ownership
+- zero-ID list elements remain inline; referenced children resolve their schema
+  from their own authoritative calls rather than the enclosing list call
 
 This matches the current code path and is not just a vague policy choice.
 

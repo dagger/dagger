@@ -131,6 +131,10 @@ func (m *cacheVolumeTestSnapshotManager) GetMutableBySnapshotID(ctx context.Cont
 	return ref, nil
 }
 
+func (*cacheVolumeTestSnapshotManager) ImportChain(context.Context, *bkcache.ExportChain) (bkcache.ImmutableRef, error) {
+	panic("unexpected ImportChain call")
+}
+
 func (*cacheVolumeTestSnapshotManager) ImportImage(context.Context, *bkcache.ImportedImage, bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
 	panic("unexpected ImportImage call")
 }
@@ -426,7 +430,7 @@ func TestCacheVolumeEncodePersistsSourceResultID(t *testing.T) {
 		"1000:1000",
 	)
 
-	payload, err := cache.EncodePersistedObject(context.Background(), persisted)
+	payload, err := cache.EncodePersistedObject(context.Background(), dagql.NewPersistEncodeContext(persisted, 0, nil))
 	require.NoError(t, err)
 
 	var raw persistedCacheVolumePayload
@@ -650,3 +654,7 @@ var _ bkcache.ImmutableRef = (*cacheVolumeTestImmutableRef)(nil)
 var _ bkcache.MutableRef = (*cacheVolumeTestMutableRef)(nil)
 var _ bkcache.SnapshotManager = (*cacheVolumeTestSnapshotManager)(nil)
 var _ dagql.PersistedObject = (*CacheVolume)(nil)
+
+func (*cacheVolumeTestSnapshotManager) PinSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
+	panic("unexpected PinSnapshot")
+}

@@ -114,7 +114,7 @@ type persistedServiceBinding struct {
 	Aliases         AliasSet `json:"aliases,omitempty"`
 }
 
-func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (svc *Service) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if svc == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted service: nil service")
@@ -132,19 +132,19 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 	}
 	var err error
 	if svc.Container.Self() != nil {
-		payload.ContainerResultID, err = encodePersistedObjectRef(cache, svc.Container, "service container")
+		payload.ContainerResultID, err = encodePersistedObjectRef(enc, svc.Container, "service container")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
 	}
 	if svc.ModuleContext.Self() != nil {
-		payload.ModuleContextResultID, err = encodePersistedObjectRef(cache, svc.ModuleContext, "service module context")
+		payload.ModuleContextResultID, err = encodePersistedObjectRef(enc, svc.ModuleContext, "service module context")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
 	}
 	if svc.TunnelUpstream.Self() != nil {
-		payload.TunnelUpstreamResultID, err = encodePersistedObjectRef(cache, svc.TunnelUpstream, "service tunnel upstream")
+		payload.TunnelUpstreamResultID, err = encodePersistedObjectRef(enc, svc.TunnelUpstream, "service tunnel upstream")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -161,27 +161,27 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 			SourceClientID: sock.SourceClientID,
 		})
 	}
-	enc, err := json.Marshal(payload)
+	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted service payload: %w", err)
 	}
-	return encodePersistedObjectRawJSON(enc), nil
+	return encodePersistedObjectRawJSON(encoded), nil
 }
 
-func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Service) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedServicePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted service payload: %w", err)
 	}
-	container, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ContainerResultID, "service container")
+	container, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ContainerResultID, "service container")
 	if err != nil {
 		return nil, err
 	}
-	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleContextResultID, "service module context")
+	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, persisted.ModuleContextResultID, "service module context")
 	if err != nil {
 		return nil, err
 	}
-	tunnelUpstream, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.TunnelUpstreamResultID, "service tunnel upstream")
+	tunnelUpstream, err := loadPersistedObjectResultByResultID[*Service](ctx, dec, persisted.TunnelUpstreamResultID, "service tunnel upstream")
 	if err != nil {
 		return nil, err
 	}
@@ -252,13 +252,13 @@ func (svc *Service) AttachDependencyResults(
 	return owned, nil
 }
 
-func encodePersistedServiceBindings(cache dagql.PersistedObjectCache, owner string, bindings ServiceBindings) ([]persistedServiceBinding, error) {
+func encodePersistedServiceBindings(enc *dagql.PersistEncodeContext, owner string, bindings ServiceBindings) ([]persistedServiceBinding, error) {
 	if len(bindings) == 0 {
 		return nil, nil
 	}
 	persisted := make([]persistedServiceBinding, 0, len(bindings))
 	for _, binding := range bindings {
-		serviceID, err := encodePersistedObjectRef(cache, binding.Service, fmt.Sprintf("%s service %q", owner, binding.Hostname))
+		serviceID, err := encodePersistedObjectRef(enc, binding.Service, fmt.Sprintf("%s service %q", owner, binding.Hostname))
 		if err != nil {
 			return nil, err
 		}
@@ -271,13 +271,13 @@ func encodePersistedServiceBindings(cache dagql.PersistedObjectCache, owner stri
 	return persisted, nil
 }
 
-func decodePersistedServiceBindings(ctx context.Context, dag *dagql.Server, owner string, persisted []persistedServiceBinding) (ServiceBindings, error) {
+func decodePersistedServiceBindings(ctx context.Context, dec *dagql.PersistDecodeContext, owner string, persisted []persistedServiceBinding) (ServiceBindings, error) {
 	if len(persisted) == 0 {
 		return nil, nil
 	}
 	bindings := make(ServiceBindings, 0, len(persisted))
 	for _, binding := range persisted {
-		service, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, binding.ServiceResultID, fmt.Sprintf("%s service %q", owner, binding.Hostname))
+		service, err := loadPersistedObjectResultByResultID[*Service](ctx, dec, binding.ServiceResultID, fmt.Sprintf("%s service %q", owner, binding.Hostname))
 		if err != nil {
 			return nil, err
 		}
@@ -1565,8 +1565,8 @@ func (svc *Service) runAndSnapshotChanges(
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	snapshot.Dir.setValue(sourceDirPath)
-	snapshot.Snapshot.setValue(immutableRef)
+	snapshot.SetPath(sourceDirPath)
+	snapshot.SetSnapshot(immutableRef)
 
 	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
 	if err != nil {

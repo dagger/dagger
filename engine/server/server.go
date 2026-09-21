@@ -424,6 +424,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		Platforms:        srv.enabledPlatforms,
 		NetworkProviders: srv.networkProviders,
 		Snapshotter:      workerSnapshotter,
+		LeaseManager:     srv.leaseManager,
 		ContentStore:     srv.contentStore,
 		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
 		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
@@ -527,10 +528,17 @@ func (srv *Server) initRecursiveReadOnlyMounts(ctx context.Context) {
 }
 
 func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {
+	var bootReset core.RemoteCacheFixturePersistence
 	for attempt := 0; attempt < 2; attempt++ {
 		resetReason, err := srv.initLocalCacheStateOnce(ctx, cfg, ociCfg)
 		if resetReason == localCacheStateResetNone {
-			return err
+			if err != nil {
+				return err
+			}
+			return srv.updateRemoteCacheFixturePersistence(func(report *core.RemoteCacheFixturePersistence) {
+				report.PersistenceResetReason = bootReset.PersistenceResetReason
+				report.LocalCacheResetReason = bootReset.LocalCacheResetReason
+			})
 		}
 		if attempt == 1 {
 			if err != nil {
@@ -541,6 +549,10 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 
 		if resetReason == localCacheStateResetBoltDBInitFailed {
 			srv.corruptDBReset = true
+		}
+		bootReset.LocalCacheResetReason = string(resetReason)
+		if srv.engineCache != nil {
+			bootReset.PersistenceResetReason = srv.engineCache.PersistenceResetReason()
 		}
 		slog.Warn("local cache state invalid; resetting worker and dagql persistence state", "reason", resetReason, "error", err)
 		if closeErr := srv.closeLocalCacheStateForReset(); closeErr != nil {
@@ -619,6 +631,11 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	}
 	if resetReason := srv.engineCache.PersistenceResetReason(); resetReason != dagql.CachePersistenceResetNone {
 		return localCacheStateResetReason("dagql_" + string(resetReason)), nil
+	}
+	// NewCache has restored durable snapshot owners. Previous process transfer
+	// refs no longer exist, and this server has not admitted any new work yet.
+	if err := bkcache.ReleaseTransferLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("release previous snapshot transfers: %w", err)
 	}
 
 	return localCacheStateResetNone, nil

@@ -23,11 +23,12 @@ const (
 // Snapshot identity lives in the envelope's ordinary role links. The part
 // record carries the detached value needed to construct its accessor later.
 type persistedContainerPart struct {
-	Kind     string                    `json:"kind"`
-	Role     string                    `json:"role,omitempty"`
-	Path     string                    `json:"path,omitempty"`
-	Platform *Platform                 `json:"platform,omitempty"`
-	Services []persistedServiceBinding `json:"services,omitempty"`
+	ValueKind string                    `json:"valueKind,omitempty"`
+	Kind      string                    `json:"kind"`
+	Role      string                    `json:"role,omitempty"`
+	Path      string                    `json:"path,omitempty"`
+	Platform  *Platform                 `json:"platform,omitempty"`
+	Services  []persistedServiceBinding `json:"services,omitempty"`
 }
 
 type containerStoredPart struct {
@@ -39,43 +40,117 @@ type containerStoredPart struct {
 	Services   ServiceBindings
 }
 
-func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
 	}
-	lazy := container.lazyOpForRouting()
-	metadata, err := container.encodeContainerMetadata(cache)
+	if view := container.acquiredOutput.Load(); view != nil {
+		raw, err := json.Marshal(view.Payload)
+		return dagql.PersistedObjectEncoding{JSON: raw, SnapshotLinks: dagql.ClonePersistedSnapshotLinks(view.Links)}, err
+	}
+	// Read the operation before its state latch. Re-taking lazyOpMu while
+	// holding LazyMu would invert the blocking ownership reader's lock order.
+	lazy, recipeJSON := container.lazyForPersistence()
+	unlock, err := container.lockLazyForPersistence(lazy, enc.Quiescent())
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
-	pending, parts, links, err := container.encodeContainerParts(ctx, cache, lazy)
+	defer unlock()
+	metadata, err := container.encodeContainerMetadata(enc)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	pending, parts, links, err := container.encodeContainerPartsLocked(ctx, enc, lazy)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload := persistedContainerPayload{
-		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputed(ctx, lazy, ContainerPartMetadata), Value: metadata},
+		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputedLocked(ctx, lazy, ContainerPartMetadata), Value: metadata},
 		Parts:    parts,
 	}
-	if pending {
-		if restore, ok := lazy.(*ContainerRestoreLazy); ok {
-			lazy = restore.recipe
-		}
-		if lazy == nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
-		}
-		payload.LazyJSON, err = lazy.EncodePersisted(ctx, cache)
+	recipe := lazy
+	if restore, ok := recipe.(*ContainerRestoreLazy); ok {
+		recipe = restore.recipe
+	}
+	if pending && recipe == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
+	}
+	if recipe != nil {
+		payload.LazyJSON, err = recipe.EncodePersisted(ctx, enc)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
-		if len(payload.LazyJSON) == 0 {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: empty recipe")
-		}
+	} else {
+		payload.LazyJSON = recipeJSON
+	}
+	if pending && len(payload.LazyJSON) == 0 {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: empty recipe")
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container: %w", err)
 	}
 	return dagql.PersistedObjectEncoding{JSON: encoded, SnapshotLinks: links}, nil
+}
+
+// lockForPersistence excludes direct object-side evaluation, which need not
+// have a dagql attempt. LazyMu prevents whole-op bodies and new group runners;
+// each registered group's mutex excludes runners that already passed LazyMu.
+// No evaluation is started, and sibling groups still run in parallel normally.
+func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
+	lazy, _ := container.lazyForPersistence()
+	return container.lockLazyForPersistence(lazy, quiescent)
+}
+
+func (container *Container) lockLazyForPersistence(lazy Lazy[*Container], quiescent bool) (func(), error) {
+	if lazy == nil {
+		return func() {}, nil
+	}
+	provider, ok := lazy.(interface{ ContainerLazyState() *LazyState })
+	if !ok {
+		return nil, fmt.Errorf("encode persisted container: missing lazy state for %T", lazy)
+	}
+	state := provider.ContainerLazyState()
+	if state == nil || state.LazyMu == nil {
+		return nil, fmt.Errorf("encode persisted container: missing lazy mutex for %T", lazy)
+	}
+	// Restore wrappers share their operation's state. Release lazyOpMu
+	// before taking the body latch; bodies can read the routing pointer.
+	if quiescent {
+		// Operations have drained; a diagnostic reader may still briefly
+		// hold this latch. Waiting preserves ordinary shutdown persistence.
+		state.LazyMu.Lock()
+	} else if !state.LazyMu.TryLock() {
+		// Live capture may hold the cache's lazy lock, so it must not wait
+		// for a whole-op body that could itself need the cache.
+		return nil, fmt.Errorf("%w: container lazy state in use", dagql.ErrPersistStateNotReady)
+	}
+	locked := make([]*lazyGroupOnce, 0, len(state.groups))
+	unlock := func() {
+		for _, group := range locked {
+			group.mu.Unlock()
+		}
+		state.LazyMu.Unlock()
+	}
+	for key, group := range state.groups {
+		if group.done.Load() {
+			continue
+		}
+		// Bodies may consult LazyMu. A busy group must release every lock
+		// immediately, rather than waiting with LazyMu held.
+		if !group.mu.TryLock() {
+			unlock()
+			return nil, fmt.Errorf("%w: container group %q in use", dagql.ErrPersistStateNotReady, key)
+		}
+		locked = append(locked, group)
+	}
+	return unlock, nil
+}
+
+func (container *Container) lazyForPersistence() (Lazy[*Container], json.RawMessage) {
+	container.lazyOpMu.Lock()
+	defer container.lazyOpMu.Unlock()
+	return container.Lazy, container.lazyJSON
 }
 
 func containerStoredOpenGroup(part dagql.PartKey) dagql.LazyGroupKey {
@@ -98,6 +173,10 @@ func (container *Container) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.
 func (container *Container) HasPendingLazyComputation() bool {
 	if container == nil {
 		return false
+	}
+	if container.acquiredOutput.Load() != nil {
+		_, err := container.resolveTransferParts(nil)
+		return err != nil
 	}
 	lazy := container.lazyOpForRouting()
 	if lazy == nil {
@@ -122,10 +201,24 @@ func (container *Container) HasPendingLazyComputation() bool {
 // same settled mapping before consuming its body. Other parts can still have
 // succeeded, such as an exec metadata copy beside an unsupported write target.
 func (container *Container) containerPartComputed(ctx context.Context, lazy Lazy[*Container], part dagql.PartKey) bool {
+	if op, ok := lazy.(LazyContainerParts); ok {
+		state := op.ContainerLazyState()
+		if state.LazyMu == nil {
+			return false
+		}
+		state.LazyMu.Lock()
+		defer state.LazyMu.Unlock()
+	}
+	return container.containerPartComputedLocked(ctx, lazy, part)
+}
+
+// containerPartComputedLocked requires the op's LazyMu or exclusive access to
+// an unpublished object. Restore wrappers and their recipes share this state.
+func (container *Container) containerPartComputedLocked(ctx context.Context, lazy Lazy[*Container], part dagql.PartKey) bool {
 	if _, stored := container.storedParts[part]; stored {
 		return true
 	}
-	if lazy == nil {
+	if lazy == nil || lazy.IsEvaluated() {
 		return true
 	}
 	if restore, ok := lazy.(*ContainerRestoreLazy); ok {
@@ -139,14 +232,14 @@ func (container *Container) containerPartComputed(ctx context.Context, lazy Lazy
 		return false
 	}
 	state := op.ContainerLazyState()
-	if !state.GroupConsumed(ContainerLazyGroupMetadata) {
+	if !state.groupConsumedLocked(ContainerLazyGroupMetadata) {
 		return false
 	}
 	if part == ContainerPartMetadata {
 		return true
 	}
 	groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part})
-	return err == nil && len(groups) == 1 && state.GroupConsumed(groups[0])
+	return err == nil && len(groups) == 1 && state.groupConsumedLocked(groups[0])
 }
 
 // ContainerRestoreLazy is constructed only by persisted decode. Pending work
@@ -177,11 +270,11 @@ func (lazy *ContainerRestoreLazy) AttachDependencies(ctx context.Context, attach
 	return lazy.recipe.AttachDependencies(ctx, attach)
 }
 
-func (lazy *ContainerRestoreLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (lazy *ContainerRestoreLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	if lazy.recipe == nil {
 		return nil, nil
 	}
-	return lazy.recipe.EncodePersisted(ctx, cache)
+	return lazy.recipe.EncodePersisted(ctx, enc)
 }
 
 func (lazy *ContainerRestoreLazy) ContainerLazyGroups(ctx context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
@@ -221,7 +314,7 @@ func hasStoredContainerPart(ctr *Container, part dagql.PartKey) bool {
 
 // containerPartValue describes the container-owned value, without evaluating
 // an accessor or opening a snapshot. Stored descriptors remain authoritative
-// after opening, and after the restore operation has been cleared.
+// after opening the stored snapshot.
 func (container *Container) containerPartValue(part dagql.PartKey) (containerStoredPart, error) {
 	if stored, ok := container.storedParts[part]; ok {
 		return stored, nil
@@ -297,15 +390,17 @@ func (container *Container) containerPartValue(part dagql.PartKey) (containerSto
 	return value, nil
 }
 
-func (container *Container) encodeContainerParts(ctx context.Context, cache dagql.PersistedObjectCache, lazy Lazy[*Container]) (bool, map[dagql.PartKey]persistedContainerPart, []dagql.PersistedSnapshotRefLink, error) {
+// encodeContainerPartsLocked requires the persistence locks or exclusive access
+// to a quiescent object.
+func (container *Container) encodeContainerPartsLocked(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Container]) (bool, map[dagql.PartKey]persistedContainerPart, []dagql.PersistedSnapshotRefLink, error) {
 	parts := make(map[dagql.PartKey]persistedContainerPart)
-	if !container.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
+	if !container.containerPartComputedLocked(ctx, lazy, ContainerPartMetadata) {
 		return true, parts, nil, nil
 	}
 	pending := false
 	var links []dagql.PersistedSnapshotRefLink
 	for _, part := range containerSnapshotParts(container) {
-		if !container.containerPartComputed(ctx, lazy, part) {
+		if !container.containerPartComputedLocked(ctx, lazy, part) {
 			parts[part] = persistedContainerPart{Kind: containerPartPending}
 			pending = true
 			continue
@@ -314,7 +409,7 @@ func (container *Container) encodeContainerParts(ctx context.Context, cache dagq
 		if err != nil {
 			return false, nil, nil, err
 		}
-		services, err := encodePersistedServiceBindings(cache, "container part", value.Services)
+		services, err := encodePersistedServiceBindings(enc, "container part", value.Services)
 		if err != nil {
 			return false, nil, nil, err
 		}
@@ -339,7 +434,7 @@ func (container *Container) encodeContainerParts(ctx context.Context, cache dagq
 // error, and remain attached to their original recipe.
 //
 //nolint:gocyclo // Validate every part and restore its shared recipe state before publication.
-func (container *Container) installContainerParts(ctx context.Context, dag *dagql.Server, metadataConsumed bool, parts map[dagql.PartKey]persistedContainerPart, links []dagql.PersistedSnapshotRefLink, recipe Lazy[*Container]) error {
+func (container *Container) installContainerParts(ctx context.Context, dec *dagql.PersistDecodeContext, metadataConsumed bool, parts map[dagql.PartKey]persistedContainerPart, links []dagql.PersistedSnapshotRefLink, recipe Lazy[*Container]) error {
 	if !metadataConsumed {
 		if len(parts) != 0 {
 			return fmt.Errorf("container with pending metadata has snapshot part records")
@@ -418,7 +513,7 @@ func (container *Container) installContainerParts(ctx context.Context, dag *dagq
 			if byRole[role] == "" {
 				return fmt.Errorf("container part %q has no snapshot link for role %q", part, role)
 			}
-			services, err := decodePersistedServiceBindings(ctx, dag, "container part", record.Services)
+			services, err := decodePersistedServiceBindings(ctx, dec, "container part", record.Services)
 			if err != nil {
 				return err
 			}
@@ -498,9 +593,9 @@ func (container *Container) openStoredContainerPart(ctx context.Context, part da
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			Platform: stored.Platform, Services: slices.Clone(stored.Services),
 		}
-		dir.Dir.setValue(stored.Path)
+		dir.SetPath(stored.Path)
 		publish = func(ref bkcache.ImmutableRef) {
-			dir.Snapshot.setValue(ref)
+			dir.SetSnapshot(ref)
 			dest.setValue(dir)
 		}
 	case containerPartFile:
@@ -514,9 +609,9 @@ func (container *Container) openStoredContainerPart(ctx context.Context, part da
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 			Platform: stored.Platform, Services: slices.Clone(stored.Services),
 		}
-		file.File.setValue(stored.Path)
+		file.SetPath(stored.Path)
 		publish = func(ref bkcache.ImmutableRef) {
-			file.Snapshot.setValue(ref)
+			file.SetSnapshot(ref)
 			mnt.FileSource.setValue(file)
 		}
 	default:

@@ -2,12 +2,15 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
@@ -37,6 +40,10 @@ func (s *httpSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("url").Doc(`HTTP url to get the content from.`),
 			),
+		dagql.NodeFunc("__httpFile", s.httpFile).
+			View(AllVersion).
+			IsPersistable().
+			Doc(`(Internal-only) Returns the HTTP file identified by its resolved body.`),
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.HTTPState](srv).View(AfterVersion("v0.21.0")))
@@ -162,10 +169,59 @@ func (s *httpSchema) httpStateResolve(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
+	defer func() { err = errors.Join(err, fetched.File.OnRelease(context.WithoutCancel(ctx))) }()
 	if err := cache.SyncResultSnapshotOwnerLeases(ctx, parent); err != nil {
 		return inst, fmt.Errorf("sync http state snapshot owner leases: %w", err)
 	}
-	return s.newHTTPFileResult(ctx, srv, fetched, args.Permissions, args.Checksum)
+	err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
+		Field: "__httpFile",
+		Args: []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(parent.Self().URL)},
+			{Name: "bodyDigest", Value: dagql.String(fetched.ContentDigest.String())},
+			{Name: "name", Value: dagql.String(args.Name)},
+			{Name: "permissions", Value: dagql.Int(args.Permissions)},
+			{Name: "checksum", Value: args.Checksum},
+			{Name: "lastModified", Value: dagql.String(fetched.LastModified)},
+			{Name: "platform", Value: fetched.File.Platform},
+		},
+	})
+	return inst, err
+}
+
+type httpFileArgs struct {
+	URL          string
+	BodyDigest   string
+	Name         string
+	Permissions  int
+	Checksum     dagql.Optional[dagql.String]
+	LastModified string
+	Platform     core.Platform
+}
+
+func (s *httpSchema) httpFile(ctx context.Context, _ dagql.ObjectResult[*core.Query], args httpFileArgs) (inst dagql.ObjectResult[*core.File], err error) {
+	bodyDigest, err := digest.Parse(args.BodyDigest)
+	if err != nil {
+		return inst, fmt.Errorf("HTTP File body digest: %w", err)
+	}
+	if bodyDigest.Algorithm() != digest.SHA256 {
+		return inst, fmt.Errorf("HTTP File body digest must be SHA-256")
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	file := &core.File{
+		Platform: args.Platform,
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+		Lazy:     &core.FileHTTPResolveLazy{LazyState: core.NewLazyState(), URL: args.URL, Filename: args.Name, Permissions: args.Permissions, Checksum: args.Checksum, BodyDigest: bodyDigest},
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+	if err != nil {
+		return inst, err
+	}
+	outputDigest := hashutil.HashStrings(args.Name, fmt.Sprint(args.Permissions), bodyDigest.String(), args.LastModified, string(args.Checksum.GetOr(dagql.String(""))))
+	return inst.WithContentDigest(ctx, outputDigest, call.ExtraDigestLabelRemoteCache)
 }
 
 func (s *httpSchema) resolveHTTPSessionContext(
@@ -236,7 +292,7 @@ func (s *httpSchema) newHTTPFileResult(
 		_ = fetched.File.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
-	inst, err = inst.WithContentDigest(ctx, outputDigest)
+	inst, err = inst.WithContentDigest(ctx, outputDigest, call.ExtraDigestLabelRemoteCache)
 	if err != nil {
 		_ = fetched.File.OnRelease(context.WithoutCancel(ctx))
 		return inst, err

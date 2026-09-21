@@ -221,9 +221,32 @@ func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, part
 	if isResume && *errPtr != nil && blockedOnPrerequisite(*errPtr, sharedID) {
 		span.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
 	}
+	// A reselect is not a failure of this attempt: part acquisition observed
+	// that its sources changed under it and the evaluation loop tries again
+	// at once (evaluateOne, EvaluateParts). The span records what was
+	// observed as an event and ends without error status, so the trace does
+	// not paint a passing operation red; the retried attempt has its own
+	// span, and a real failure still ends with its cause.
+	if *errPtr != nil && partCanReselect(*errPtr) {
+		span.AddEvent(lazyReselectEvent, trace.WithAttributes(attribute.String(lazyReselectReasonAttr, (*errPtr).Error())))
+		var none error
+		if isResume {
+			telemetry.EndWithCause(span, &none)
+		} else {
+			EndProfSpan(span, &none)
+		}
+		return
+	}
 	if isResume {
 		telemetry.EndWithCause(span, errPtr)
 	} else {
 		EndProfSpan(span, errPtr)
 	}
 }
+
+// lazyReselectEvent is the event a lazy op span records when its attempt
+// ended with a part reselect that the evaluation loop retries.
+const lazyReselectEvent = "part reselect"
+
+// lazyReselectReasonAttr carries the reselect's message on that event.
+const lazyReselectReasonAttr = "dagger.io/lazy.reselect"

@@ -596,6 +596,9 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	if repo.Mirror.Self() == nil {
 		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
 	}
+	if err := EnsureBackingSnapshot(ctx, repo.Mirror); err != nil {
+		return err
+	}
 	remoteRef, releaseMirror, err := repo.Mirror.Self().acquire(ctx, query)
 	if err != nil {
 		return err
@@ -710,8 +713,8 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	dir.Dir.setValue("/")
-	dir.Snapshot.setValue(snap)
+	dir.SetPath("/")
+	dir.SetSnapshot(snap)
 	return dir, nil
 }
 

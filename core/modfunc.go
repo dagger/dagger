@@ -960,7 +960,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			// it returned. This ensures downstream calls that reference this
 			// result get a different cache key when the underlying content
 			// changes.
-			returnValue, err = returnValue.WithContentDigestAny(ctx, returnedContent.Digest())
+			returnValue, err = returnValue.WithContentDigestAny(ctx, returnedContent.Digest(), call.ExtraDigestLabelRemoteCache)
 			if err != nil {
 				return nil, fmt.Errorf("set content digest on module function return value: %w", err)
 			}

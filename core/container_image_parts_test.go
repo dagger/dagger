@@ -52,7 +52,8 @@ func TestContainerFromSuccessfulFSConsumesFinalDelegations(t *testing.T) {
 	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "from-final-child", child)
 
 	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartFS))
-	require.Nil(t, child.lazyOpForRouting())
+	require.NotNil(t, child.lazyOpForRouting())
+	require.Nil(t, child.LazyEvalFunc())
 	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
 	_, parentFSSet := parent.FS.Peek()
 	require.False(t, parentFSSet)

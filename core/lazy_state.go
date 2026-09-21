@@ -13,12 +13,14 @@ import (
 )
 
 type Lazy[T dagql.Typed] interface {
+	IsEvaluated() bool
 	Evaluate(context.Context, T) error
 	AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error)
-	EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error)
+	EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error)
 }
 
 type LazyState struct {
+	outputRevision atomic.Uint64
 	// LazyMu guards the latch transitions and groups. For whole-op
 	// evaluation (Evaluate) it is additionally held across the body, as
 	// it always was. Per-group evaluation (EvaluateGroup) holds it only
@@ -48,21 +50,38 @@ type lazyGroupOnce struct {
 	done atomic.Bool
 }
 
+// awaitUnlocked returns once the current holder of LazyMu, if any, has
+// released it. Callers that must take LazyMu after another lock wait here
+// with nothing held and then retry their own lock sequence, instead of
+// holding LazyMu across it and inverting their lock order.
+func (lazy *LazyState) awaitUnlocked() {
+	lazy.LazyMu.Lock()
+	defer lazy.LazyMu.Unlock()
+}
+
+// awaitUnlocked returns once the group's running body, if any, has released
+// the group; see LazyState.awaitUnlocked.
+func (group *lazyGroupOnce) awaitUnlocked() {
+	group.mu.Lock()
+	defer group.mu.Unlock()
+}
+
 func NewLazyState() LazyState {
 	return LazyState{
 		LazyMu: new(sync.Mutex),
 	}
 }
 
+// IsEvaluated reports successful whole-operation completion. Named groups
+// retain their separate completion state, queried through GroupConsumed.
+func (lazy *LazyState) IsEvaluated() bool {
+	return lazy != nil && lazy.lazyInitComplete.Load()
+}
+
 func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(context.Context) error) (rerr error) {
 	if lazy.lazyInitComplete.Load() {
 		return nil
 	}
-	if run == nil {
-		lazy.lazyInitComplete.Store(true)
-		return nil
-	}
-
 	if lazy.LazyMu == nil {
 		return fmt.Errorf("invalid %s: missing LazyMu", typeName)
 	}
@@ -89,9 +108,15 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 		slog.InfoContext(ctx, "end lazy evaluation", args...)
 	}()
 
-	if rerr = run(ctx); rerr != nil {
-		return rerr
+	if run != nil {
+		if rerr = run(ctx); rerr != nil {
+			lazy.outputRevision.Add(1)
+			return rerr
+		}
 	}
+	// Publish the revision before completion permits readers to bypass the
+	// body latch. Nothing belonging to this body changes after completion.
+	lazy.outputRevision.Add(1)
 	lazy.lazyInitComplete.Store(true)
 	return nil
 }
@@ -126,6 +151,7 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 		return nil
 	}
 	if run == nil {
+		lazy.outputRevision.Add(1)
 		g.done.Store(true)
 		return nil
 	}
@@ -148,8 +174,10 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 	}()
 
 	if rerr = run(ctx); rerr != nil {
+		lazy.outputRevision.Add(1)
 		return rerr
 	}
+	lazy.outputRevision.Add(1)
 	g.done.Store(true)
 	return nil
 }

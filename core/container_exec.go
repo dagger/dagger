@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -95,6 +96,9 @@ type ContainerExecState struct {
 	ExecMD        *engineutil.ExecutionMetadata
 	ModuleContext dagql.ObjectResult[*Module]
 	FunctionCall  *FunctionCall
+
+	// ExecMD changes during execution and retries. Persist the supplied input.
+	originalExecMD *engineutil.ExecutionMetadata
 }
 
 type ContainerExecLazy struct {
@@ -125,6 +129,10 @@ func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) err
 		return nil
 	}
 	return ctr.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerExecLazy) IsEvaluated() bool {
+	return lazy != nil && lazy.State != nil && lazy.State.IsEvaluated()
 }
 
 func (lazy *ContainerExecLazy) ContainerLazyState() *LazyState {
@@ -232,20 +240,20 @@ func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach fu
 	return deps, nil
 }
 
-func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	if lazy == nil || lazy.State == nil {
 		return nil, fmt.Errorf("encode persisted container withExec lazy: nil state")
 	}
 	if lazy.State.FunctionCall != nil {
 		return nil, fmt.Errorf("cannot persist container exec with active function call")
 	}
-	parentID, err := encodePersistedObjectRef(cache, lazy.State.Parent, "container withExec parent")
+	parentID, err := encodePersistedObjectRef(enc, lazy.State.Parent, "container withExec parent")
 	if err != nil {
 		return nil, err
 	}
 	var moduleContextID uint64
 	if lazy.State.ModuleContext.Self() != nil {
-		moduleContextID, err = encodePersistedObjectRef(cache, lazy.State.ModuleContext, "container withExec module context")
+		moduleContextID, err = encodePersistedObjectRef(enc, lazy.State.ModuleContext, "container withExec module context")
 		if err != nil {
 			return nil, err
 		}
@@ -254,8 +262,21 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 		ParentResultID:        parentID,
 		ModuleContextResultID: moduleContextID,
 		Opts:                  lazy.State.Opts,
-		ExecMD:                lazy.State.ExecMD,
+		ExecMD:                lazy.State.originalExecMD,
 	})
+}
+
+// execMeta copies the metadata by value, but mutates HostAliases in place.
+func copyExecInputMetadata(input *engineutil.ExecutionMetadata) *engineutil.ExecutionMetadata {
+	if input == nil {
+		return nil
+	}
+	copy := *input
+	copy.HostAliases = maps.Clone(input.HostAliases)
+	for host, aliases := range copy.HostAliases {
+		copy.HostAliases[host] = slices.Clone(aliases)
+	}
+	return &copy
 }
 
 func (lazy *ContainerVolatileExecCacheHitLazy) Evaluate(ctx context.Context, container *Container) error {
@@ -288,11 +309,11 @@ func (lazy *ContainerVolatileExecCacheHitLazy) AttachDependencies(ctx context.Co
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	if lazy == nil {
 		return nil, fmt.Errorf("encode persisted container volatile exec cache hit lazy: nil lazy")
 	}
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container volatile exec cache hit parent")
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container volatile exec cache hit parent")
 	if err != nil {
 		return nil, err
 	}
@@ -953,10 +974,8 @@ func prepareMounts(
 			if cacheSrc.Volume.Self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil cache volume source", i)
 			}
-			if cacheSrc.Volume.Self().getSnapshot() == nil {
-				if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
-					return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
-				}
+			if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
+				return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
 			}
 			cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
 			if cacheSnapshot == nil {
@@ -1267,12 +1286,13 @@ func (container *Container) WithExec(
 	functionCall *FunctionCall,
 ) error {
 	state := &ContainerExecState{
-		LazyState:     NewLazyState(),
-		Parent:        parent,
-		Opts:          opts,
-		ExecMD:        execMD,
-		ModuleContext: moduleContext,
-		FunctionCall:  functionCall,
+		LazyState:      NewLazyState(),
+		Parent:         parent,
+		Opts:           opts,
+		ExecMD:         execMD,
+		ModuleContext:  moduleContext,
+		FunctionCall:   functionCall,
+		originalExecMD: copyExecInputMetadata(execMD),
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
@@ -1450,8 +1470,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				Dir:      new(LazyAccessor[string, *Directory]),
 				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			}
-			output.Dir.setValue(dirPath)
-			output.Snapshot.setValue(ref)
+			output.SetPath(dirPath)
+			output.SetSnapshot(ref)
 			if container.FS == nil {
 				container.FS = new(LazyAccessor[*Directory, *Container])
 			}
@@ -1487,8 +1507,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 						Dir:      new(LazyAccessor[string, *Directory]),
 						Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 					}
-					output.Dir.setValue(dirPath)
-					output.Snapshot.setValue(ref)
+					output.SetPath(dirPath)
+					output.SetSnapshot(ref)
 					if container.Mounts[idx].DirectorySource == nil {
 						container.Mounts[idx].DirectorySource = new(LazyAccessor[*Directory, *Container])
 					}
@@ -1511,8 +1531,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 						File:     new(LazyAccessor[string, *File]),
 						Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 					}
-					output.File.setValue(filePath)
-					output.Snapshot.setValue(ref)
+					output.SetPath(filePath)
+					output.SetSnapshot(ref)
 					if container.Mounts[idx].FileSource == nil {
 						container.Mounts[idx].FileSource = new(LazyAccessor[*File, *Container])
 					}
@@ -1793,10 +1813,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				if cacheSrc.Volume.Self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil cache volume source", i))
 				}
-				if cacheSrc.Volume.Self().getSnapshot() == nil {
-					if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
-						return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
-					}
+				if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
+					return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
 				}
 				cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
 				if cacheSnapshot == nil {
@@ -2079,8 +2097,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 							Dir:      new(LazyAccessor[string, *Directory]),
 							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 						}
-						rootDir.Dir.setValue(rootDirPath)
-						rootDir.Snapshot.setValue(rootRef)
+						rootDir.SetPath(rootDirPath)
+						rootDir.SetSnapshot(rootRef)
 						untrackResolvedRef(rootRef)
 						if terminalContainer.FS == nil {
 							terminalContainer.FS = new(LazyAccessor[*Directory, *Container])
@@ -2115,8 +2133,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 							Dir:      new(LazyAccessor[string, *Directory]),
 							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 						}
-						outputDir.Dir.setValue(dirPath)
-						outputDir.Snapshot.setValue(mountRef)
+						outputDir.SetPath(dirPath)
+						outputDir.SetSnapshot(mountRef)
 						untrackResolvedRef(mountRef)
 						if ctrMount.DirectorySource == nil {
 							ctrMount.DirectorySource = new(LazyAccessor[*Directory, *Container])
@@ -2136,8 +2154,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 							File:     new(LazyAccessor[string, *File]),
 							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 						}
-						outputFile.File.setValue(filePath)
-						outputFile.Snapshot.setValue(mountRef)
+						outputFile.SetPath(filePath)
+						outputFile.SetSnapshot(mountRef)
 						untrackResolvedRef(mountRef)
 						if ctrMount.FileSource == nil {
 							ctrMount.FileSource = new(LazyAccessor[*File, *Container])
@@ -2367,7 +2385,7 @@ func execInputMounts(mounts ContainerMounts, parent *Container) (ContainerMounts
 
 func decodePersistedContainerExecLazy(
 	ctx context.Context,
-	dag *dagql.Server,
+	dec *dagql.PersistDecodeContext,
 	payload json.RawMessage,
 ) (Lazy[*Container], error) {
 	var persisted persistedContainerExecLazy
@@ -2375,7 +2393,7 @@ func decodePersistedContainerExecLazy(
 		return nil, fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
 	}
 	if persisted.VolatileCacheHitParentResultID != 0 {
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")
 		if err != nil {
 			return nil, err
 		}
@@ -2385,20 +2403,21 @@ func decodePersistedContainerExecLazy(
 			VolatileEnv: slices.Clone(persisted.VolatileCacheHitVolatileEnv),
 		}, nil
 	}
-	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container exec parent")
+	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container exec parent")
 	if err != nil {
 		return nil, err
 	}
-	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleContextResultID, "container exec module context")
+	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, persisted.ModuleContextResultID, "container exec module context")
 	if err != nil {
 		return nil, err
 	}
 	state := &ContainerExecState{
-		LazyState:     NewLazyState(),
-		Parent:        parent,
-		Opts:          persisted.Opts,
-		ExecMD:        persisted.ExecMD,
-		ModuleContext: moduleContext,
+		LazyState:      NewLazyState(),
+		Parent:         parent,
+		Opts:           persisted.Opts,
+		ExecMD:         persisted.ExecMD,
+		ModuleContext:  moduleContext,
+		originalExecMD: copyExecInputMetadata(persisted.ExecMD),
 	}
 	return &ContainerExecLazy{State: state}, nil
 }

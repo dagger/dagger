@@ -466,7 +466,7 @@ func (gg *GeneratorGroup) Clone() *GeneratorGroup {
 }
 
 func encodePersistedGeneratorPayload(
-	cache dagql.PersistedObjectCache,
+	enc *dagql.PersistEncodeContext,
 	tree *persistedModTreeEncoder,
 	g *Generator,
 ) (persistedGeneratorPayload, error) {
@@ -490,7 +490,7 @@ func encodePersistedGeneratorPayload(
 		{g.WorkspaceResult, &payload.WorkspaceResultID},
 	} {
 		if ref.value.Self() != nil {
-			id, err := encodePersistedObjectRef(cache, ref.value, "generator workspace")
+			id, err := encodePersistedObjectRef(enc, ref.value, "generator workspace")
 			if err != nil {
 				return persistedGeneratorPayload{}, err
 			}
@@ -498,7 +498,7 @@ func encodePersistedGeneratorPayload(
 		}
 	}
 	if g.Completed && g.Changes.Self() != nil {
-		changesID, err := encodePersistedObjectRef(cache, g.Changes, "generator changes")
+		changesID, err := encodePersistedObjectRef(enc, g.Changes, "generator changes")
 		if err != nil {
 			return persistedGeneratorPayload{}, err
 		}
@@ -509,7 +509,7 @@ func encodePersistedGeneratorPayload(
 
 func decodePersistedGeneratorPayload(
 	ctx context.Context,
-	dag *dagql.Server,
+	dec *dagql.PersistDecodeContext,
 	nodes map[int]*ModTreeNode,
 	payload persistedGeneratorPayload,
 ) (*Generator, error) {
@@ -529,7 +529,7 @@ func decodePersistedGeneratorPayload(
 		Completed: payload.Completed,
 	}
 	if payload.ChangesResultID != 0 {
-		changes, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dag, payload.ChangesResultID, "generator changes")
+		changes, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dec, payload.ChangesResultID, "generator changes")
 		if err != nil {
 			return nil, err
 		}
@@ -543,7 +543,7 @@ func decodePersistedGeneratorPayload(
 		{payload.WorkspaceResultID, &g.WorkspaceResult},
 	} {
 		if ref.id != 0 {
-			ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, ref.id, "generator workspace")
+			ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dec, ref.id, "generator workspace")
 			if err != nil {
 				return nil, err
 			}
@@ -553,10 +553,10 @@ func decodePersistedGeneratorPayload(
 	return g, nil
 }
 
-func (g *Generator) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (g *Generator) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	tree := newPersistedModTreeEncoder(cache)
-	generatorPayload, err := encodePersistedGeneratorPayload(cache, tree, g)
+	tree := newPersistedModTreeEncoder(enc)
+	generatorPayload, err := encodePersistedGeneratorPayload(enc, tree, g)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -570,22 +570,16 @@ func (g *Generator) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 	return encodePersistedObjectRawJSON(payload), nil
 }
 
-func (*Generator) DecodePersistedObject(
-	ctx context.Context,
-	dag *dagql.Server,
-	_ uint64,
-	_ *dagql.ResultCall,
-	payload json.RawMessage,
-) (dagql.Typed, error) {
+func (*Generator) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedGeneratorObjectPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted generator payload: %w", err)
 	}
-	nodes, err := decodePersistedModTree(ctx, dag, persisted.Tree)
+	nodes, err := decodePersistedModTree(ctx, dec, persisted.Tree)
 	if err != nil {
 		return nil, err
 	}
-	return decodePersistedGeneratorPayload(ctx, dag, nodes, persisted.Generator)
+	return decodePersistedGeneratorPayload(ctx, dec, nodes, persisted.Generator)
 }
 
 func (g *Generator) AttachDependencyResults(
@@ -635,19 +629,19 @@ func (g *Generator) AttachDependencyResults(
 	return owned, nil
 }
 
-func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if gg == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted generator group: nil generator group")
 	}
-	tree := newPersistedModTreeEncoder(cache)
+	tree := newPersistedModTreeEncoder(enc)
 	nodeID, err := tree.Add(gg.Node)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	generatorPayloads := make([]persistedGeneratorPayload, 0, len(gg.Generators))
 	for _, generator := range gg.Generators {
-		generatorPayload, err := encodePersistedGeneratorPayload(cache, tree, generator)
+		generatorPayload, err := encodePersistedGeneratorPayload(enc, tree, generator)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -660,7 +654,7 @@ func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql
 		LoadFailures: gg.LoadFailures,
 	}
 	if gg.BoundWorkspace.Self() != nil {
-		wsID, err := encodePersistedObjectRef(cache, gg.BoundWorkspace, "bound workspace")
+		wsID, err := encodePersistedObjectRef(enc, gg.BoundWorkspace, "bound workspace")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -674,18 +668,12 @@ func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql
 	return encodePersistedObjectRawJSON(payload), nil
 }
 
-func (*GeneratorGroup) DecodePersistedObject(
-	ctx context.Context,
-	dag *dagql.Server,
-	_ uint64,
-	_ *dagql.ResultCall,
-	payload json.RawMessage,
-) (dagql.Typed, error) {
+func (*GeneratorGroup) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedGeneratorGroupPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted generator group payload: %w", err)
 	}
-	nodes, err := decodePersistedModTree(ctx, dag, persisted.Tree)
+	nodes, err := decodePersistedModTree(ctx, dec, persisted.Tree)
 	if err != nil {
 		return nil, err
 	}
@@ -699,7 +687,7 @@ func (*GeneratorGroup) DecodePersistedObject(
 	}
 	generators := make([]*Generator, 0, len(persisted.Generators))
 	for _, generatorPayload := range persisted.Generators {
-		generator, err := decodePersistedGeneratorPayload(ctx, dag, nodes, generatorPayload)
+		generator, err := decodePersistedGeneratorPayload(ctx, dec, nodes, generatorPayload)
 		if err != nil {
 			return nil, err
 		}
@@ -711,7 +699,7 @@ func (*GeneratorGroup) DecodePersistedObject(
 		LoadFailures: persisted.LoadFailures,
 	}
 	if persisted.BoundWorkspaceResultID != 0 {
-		ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.BoundWorkspaceResultID, "bound workspace")
+		ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dec, persisted.BoundWorkspaceResultID, "bound workspace")
 		if err != nil {
 			return nil, err
 		}

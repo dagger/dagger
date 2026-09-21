@@ -386,6 +386,14 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
+		dagql.NodeFunc("__mergeWithChangeset", s.changesetMergeWithChangeset).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`(Internal-only) Produce the directory obtained by merging another changeset.`),
+		dagql.NodeFunc("__mergeWithChangesets", s.changesetMergeWithChangesets).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`(Internal-only) Produce the directory obtained by merging two or more ordered, nonempty changesets.`),
 		dagql.NodeFunc("withChangesets", s.changesetWithChangesets).
 			IsPersistable().
 			// ensure we are not exposing this feature on engines < v0.15.0
@@ -422,29 +430,23 @@ func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, 
 	return parent, nil
 }
 
-func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Query], _ struct{}) (inst dagql.ObjectResult[*core.Directory], _ error) {
+func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Query], _ struct{}) (inst dagql.ObjectResult[*core.Directory], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 	platform := parent.Self().Platform()
 
-	finalRef, err := parent.Self().SnapshotManager().Scratch(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load scratch ref: %w", err)
-	}
-
 	dir := &core.Directory{
 		Platform: platform,
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     &core.DirectoryScratchLazy{LazyState: core.NewLazyState()},
 	}
-	dir.Dir.SetValue("/")
-	dir.Snapshot.SetValue(finalRef)
+	dir.SetPath("/")
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
-		_ = dir.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
 	return inst, nil
@@ -498,7 +500,7 @@ func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.Obj
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -546,7 +548,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
@@ -612,7 +614,7 @@ func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, par
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -715,13 +717,13 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.Objec
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 func (s *directorySchema) name(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct{}) (dagql.String, error) {
-	dirPath, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	dirPath, err := parent.Self().PathOrEval(ctx, parent)
 	if err != nil {
 		return "", err
 	}
@@ -799,7 +801,7 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -832,7 +834,7 @@ func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.Object
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -922,7 +924,7 @@ func (s *directorySchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
@@ -973,7 +975,7 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -995,29 +997,19 @@ func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
-	cache, err := dagql.EngineCache(ctx)
+	paths, err := core.SourceFilePaths(ctx, files)
 	if err != nil {
-		return inst, err
-	}
-	evals := make([]dagql.AnyResult, len(files))
-	for i, file := range files {
-		evals[i] = file
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
 		return inst, err
 	}
 
 	inst = parent
-	for _, file := range files {
+	for i, file := range files {
 		fileID, err := file.ID()
 		if err != nil {
 			return inst, err
 		}
 
-		filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
-		if err != nil {
-			return inst, err
-		}
+		filePath := paths[i]
 		withFileArgs := []dagql.NamedInput{
 			{Name: "path", Value: dagql.String(path.Join(args.Path, path.Base(filePath)))},
 			{Name: "source", Value: dagql.NewID[*core.File](fileID)},
@@ -1044,7 +1036,6 @@ type withoutDirectoryArgs struct {
 	Path string
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withoutFile; sharing hides the directory vs file semantic
 func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1063,7 +1054,7 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1072,7 +1063,6 @@ type withoutFileArgs struct {
 	Path string
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withoutDirectory; sharing hides the file vs directory semantic
 func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1091,7 +1081,7 @@ func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1118,7 +1108,7 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1162,7 +1152,7 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		return res, err
 	}
 
-	parentDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	parentDir, err := parent.Self().PathOrEval(ctx, parent)
 	if err != nil {
 		return res, err
 	}
@@ -1191,7 +1181,7 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		return res, err
 	}
 
-	otherDirPath, err := otherDir.Self().Dir.GetOrEval(ctx, otherDir.Result)
+	otherDirPath, err := otherDir.Self().PathOrEval(ctx, otherDir)
 	if err != nil {
 		return res, err
 	}
@@ -1226,7 +1216,7 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.Dir.SetValue("/")
+	dir.SetPath("/")
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1332,7 +1322,7 @@ func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectRe
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1580,9 +1570,21 @@ func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dag
 		return nil, err
 	}
 
-	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
-
-	return parent.Self().WithChangeset(ctx, change.Self(), onConflictStrategy)
+	var after dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent, &after, dagql.Selector{
+		Field: "__mergeWithChangeset",
+		Args: []dagql.NamedInput{
+			{Name: "changes", Value: args.Changes},
+			{Name: "onConflict", Value: args.OnConflict},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	before, err := core.MergeBeforeDirectories(ctx, parent.Self(), change.Self())
+	if err != nil {
+		return nil, err
+	}
+	return core.NewChangeset(ctx, before, after)
 }
 
 type changesetWithChangesetsArgs struct {
@@ -1596,6 +1598,75 @@ func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent da
 		return nil, err
 	}
 
+	changes := make([]dagql.ObjectResult[*core.Changeset], len(args.Changes))
+	for i, changeID := range args.Changes {
+		change, err := changeID.Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("load changeset %d: %w", i, err)
+		}
+		changes[i] = change
+	}
+
+	changes, err = core.FilterNonemptyChangesets(ctx, changes)
+	if err != nil {
+		return nil, err
+	}
+	if len(changes) == 0 {
+		return parent.Self(), nil
+	}
+	changeIDs := make(dagql.ArrayInput[dagql.ID[*core.Changeset]], len(changes))
+	changeValues := make([]*core.Changeset, len(changes))
+	for i, change := range changes {
+		id, err := change.ID()
+		if err != nil {
+			return nil, err
+		}
+		changeIDs[i] = dagql.NewID[*core.Changeset](id)
+		changeValues[i] = change.Self()
+	}
+	if len(changes) == 1 {
+		onConflict := core.FailOnMergeConflict
+		if mergeConflictsStrategyToCore(args.OnConflict) == core.FailEarlyOnConflicts {
+			onConflict = core.FailEarlyOnMergeConflict
+		}
+		return s.changesetWithChangeset(ctx, parent, changesetWithChangesetArgs{
+			Changes: changeIDs[0], OnConflict: onConflict,
+		})
+	}
+	var after dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent, &after, dagql.Selector{
+		Field: "__mergeWithChangesets",
+		Args: []dagql.NamedInput{
+			{Name: "changes", Value: changeIDs},
+			{Name: "onConflict", Value: args.OnConflict},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	before, err := core.MergeBeforeDirectories(ctx, parent.Self(), changeValues...)
+	if err != nil {
+		return nil, err
+	}
+	return core.NewChangeset(ctx, before, after)
+}
+
+func (s *directorySchema) changesetMergeWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (*core.Directory, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	change, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return parent.Self().MergeWithChangeset(ctx, change.Self(), mergeConflictStrategyToCore(args.OnConflict))
+}
+
+func (s *directorySchema) changesetMergeWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Directory, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	changes := make([]*core.Changeset, len(args.Changes))
 	for i, changeID := range args.Changes {
 		change, err := changeID.Load(ctx, srv)
@@ -1604,10 +1675,7 @@ func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent da
 		}
 		changes[i] = change.Self()
 	}
-
-	onConflictStrategy := mergeConflictsStrategyToCore(args.OnConflict)
-
-	return parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
+	return parent.Self().MergeWithChangesets(ctx, changes, mergeConflictsStrategyToCore(args.OnConflict))
 }
 
 func (s *directorySchema) changeset(ctx context.Context, q *core.Query, args struct{}) (*core.Changeset, error) {
@@ -1896,7 +1964,7 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -1937,7 +2005,7 @@ func (s *directorySchema) chown(
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.Dir.SetValue(parentDir)
+		dir.SetPath(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }

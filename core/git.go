@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -633,9 +634,86 @@ type persistedRemoteGitRepositoryPayload struct {
 	SSHKnownHosts string   `json:"sshKnownHosts,omitempty"`
 	AuthUsername  string   `json:"authUsername,omitempty"`
 	Platform      Platform `json:"platform"`
+
+	// The retained mirror, authentication handles and service bindings are
+	// exact row references. Attachment owns them; decode loads them exactly
+	// and never selects a mirror by URL. Zero keeps an absent value absent,
+	// and the ordinary use path reports a missing mirror. Secret and socket
+	// material is resolved only through fresh session binding at use time.
+	MirrorResultID        uint64                    `json:"mirrorResultID,omitempty"`
+	SSHAuthSocketResultID uint64                    `json:"sshAuthSocketResultID,omitempty"`
+	AuthTokenResultID     uint64                    `json:"authTokenResultID,omitempty"`
+	AuthHeaderResultID    uint64                    `json:"authHeaderResultID,omitempty"`
+	Services              []persistedServiceBinding `json:"services,omitempty"`
 }
 
-func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func encodePersistedRemoteGitRepository(enc *dagql.PersistEncodeContext, backend *RemoteGitRepository) (*persistedRemoteGitRepositoryPayload, error) {
+	if backend.URL == nil {
+		return nil, fmt.Errorf("encode persisted git repository: remote backend missing URL")
+	}
+	payload := &persistedRemoteGitRepositoryPayload{
+		URL:           backend.URL.String(),
+		SSHKnownHosts: backend.SSHKnownHosts,
+		AuthUsername:  backend.AuthUsername,
+		Platform:      backend.Platform,
+	}
+	var err error
+	if backend.Mirror.Self() != nil {
+		if payload.MirrorResultID, err = encodePersistedObjectRef(enc, backend.Mirror, "git repository remote mirror"); err != nil {
+			return nil, err
+		}
+	}
+	if backend.SSHAuthSocket.Self() != nil {
+		if payload.SSHAuthSocketResultID, err = encodePersistedObjectRef(enc, backend.SSHAuthSocket, "git repository ssh auth socket"); err != nil {
+			return nil, err
+		}
+	}
+	if backend.AuthToken.Self() != nil {
+		if payload.AuthTokenResultID, err = encodePersistedObjectRef(enc, backend.AuthToken, "git repository auth token"); err != nil {
+			return nil, err
+		}
+	}
+	if backend.AuthHeader.Self() != nil {
+		if payload.AuthHeaderResultID, err = encodePersistedObjectRef(enc, backend.AuthHeader, "git repository auth header"); err != nil {
+			return nil, err
+		}
+	}
+	if payload.Services, err = encodePersistedServiceBindings(enc, "git repository", backend.Services); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func decodePersistedRemoteGitRepository(ctx context.Context, dec *dagql.PersistDecodeContext, persisted *persistedRemoteGitRepositoryPayload) (*RemoteGitRepository, error) {
+	parsedURL, err := gitutil.ParseURL(persisted.URL)
+	if err != nil {
+		return nil, fmt.Errorf("decode persisted git repository URL: %w", err)
+	}
+	backend := &RemoteGitRepository{
+		URL:           parsedURL,
+		SSHKnownHosts: persisted.SSHKnownHosts,
+		AuthUsername:  persisted.AuthUsername,
+		Platform:      persisted.Platform,
+	}
+	if backend.Mirror, err = loadPersistedObjectResultByResultID[*RemoteGitMirror](ctx, dec, persisted.MirrorResultID, "git repository remote mirror"); err != nil {
+		return nil, err
+	}
+	if backend.SSHAuthSocket, err = loadPersistedObjectResultByResultID[*Socket](ctx, dec, persisted.SSHAuthSocketResultID, "git repository ssh auth socket"); err != nil {
+		return nil, err
+	}
+	if backend.AuthToken, err = loadPersistedObjectResultByResultID[*Secret](ctx, dec, persisted.AuthTokenResultID, "git repository auth token"); err != nil {
+		return nil, err
+	}
+	if backend.AuthHeader, err = loadPersistedObjectResultByResultID[*Secret](ctx, dec, persisted.AuthHeaderResultID, "git repository auth header"); err != nil {
+		return nil, err
+	}
+	if backend.Services, err = decodePersistedServiceBindings(ctx, dec, "git repository", persisted.Services); err != nil {
+		return nil, err
+	}
+	return backend, nil
+}
+
+func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if repo == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: nil repository")
 	}
@@ -655,7 +733,7 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 	}
 	switch backend := repo.Backend.(type) {
 	case *LocalGitRepository:
-		dirID, err := encodePersistedObjectRef(cache, backend.Directory, "git repository directory")
+		dirID, err := encodePersistedObjectRef(enc, backend.Directory, "git repository directory")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -664,16 +742,12 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 			DirectoryResultID: dirID,
 		}
 	case *RemoteGitRepository:
-		if backend.URL == nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: remote backend missing URL")
+		remote, err := encodePersistedRemoteGitRepository(enc, backend)
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.Form = persistedGitRepositoryFormRemote
-		payload.Remote = &persistedRemoteGitRepositoryPayload{
-			URL:           backend.URL.String(),
-			SSHKnownHosts: backend.SSHKnownHosts,
-			AuthUsername:  backend.AuthUsername,
-			Platform:      backend.Platform,
-		}
+		payload.Remote = remote
 	default:
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: unsupported backend %T", repo.Backend)
 	}
@@ -684,7 +758,7 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 	return encodePersistedObjectRawJSON(payloadJSON), nil
 }
 
-func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedGitRepositoryPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted git repository payload: %w", err)
@@ -711,7 +785,7 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 		if persisted.Local == nil {
 			return nil, fmt.Errorf("decode persisted git repository: missing local payload")
 		}
-		dir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.Local.DirectoryResultID, "git repository directory")
+		dir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.Local.DirectoryResultID, "git repository directory")
 		if err != nil {
 			return nil, err
 		}
@@ -720,28 +794,12 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 		if persisted.Remote == nil {
 			return nil, fmt.Errorf("decode persisted git repository: missing remote payload")
 		}
-		parsedURL, err := gitutil.ParseURL(persisted.Remote.URL)
+		backend, err := decodePersistedRemoteGitRepository(ctx, dec, persisted.Remote)
 		if err != nil {
-			return nil, fmt.Errorf("decode persisted git repository URL: %w", err)
+			return nil, err
 		}
-		backend := &RemoteGitRepository{
-			URL:           parsedURL,
-			SSHKnownHosts: persisted.Remote.SSHKnownHosts,
-			AuthUsername:  persisted.Remote.AuthUsername,
-			Platform:      persisted.Remote.Platform,
-		}
-		var mirror dagql.ObjectResult[*RemoteGitMirror]
-		if err := dag.Select(ctx, dag.Root(), &mirror, dagql.Selector{
-			Field: "_remoteGitMirror",
-			Args: []dagql.NamedInput{
-				{Name: "remoteURL", Value: dagql.String(parsedURL.Remote())},
-			},
-		}); err != nil {
-			return nil, fmt.Errorf("decode persisted git repository remote mirror: %w", err)
-		}
-		backend.Mirror = mirror
 		repo.Backend = backend
-		repo.URL = dagql.NonNull(dagql.String(parsedURL.String()))
+		repo.URL = dagql.NonNull(dagql.String(backend.URL.String()))
 	default:
 		return nil, fmt.Errorf("decode persisted git repository: unsupported form %q", persisted.Form)
 	}
@@ -754,7 +812,7 @@ type persistedGitRefPayload struct {
 	SHA          string `json:"sha"`
 }
 
-func (ref *GitRef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (ref *GitRef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if ref == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git ref: nil ref")
@@ -762,7 +820,7 @@ func (ref *GitRef) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	if ref.Ref == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git ref: missing ref")
 	}
-	repoID, err := encodePersistedObjectRef(cache, ref.Repo, "git ref repo")
+	repoID, err := encodePersistedObjectRef(enc, ref.Repo, "git ref repo")
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -777,12 +835,12 @@ func (ref *GitRef) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	return encodePersistedObjectRawJSON(payloadJSON), nil
 }
 
-func (*GitRef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*GitRef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedGitRefPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted git ref payload: %w", err)
 	}
-	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dag, persisted.RepoResultID, "git ref repo")
+	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dec, persisted.RepoResultID, "git ref repo")
 	if err != nil {
 		return nil, err
 	}
@@ -807,7 +865,7 @@ type persistedGitCommitPayload struct {
 	FetchName    string `json:"fetchName,omitempty"`
 }
 
-func (commit *GitCommit) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (commit *GitCommit) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if commit == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git commit: nil commit")
@@ -818,7 +876,7 @@ func (commit *GitCommit) EncodePersistedObject(ctx context.Context, cache dagql.
 	if commit.Ref.SHA == "" {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git commit: missing commit SHA")
 	}
-	repoID, err := encodePersistedObjectRef(cache, commit.Repo, "git commit repo")
+	repoID, err := encodePersistedObjectRef(enc, commit.Repo, "git commit repo")
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -837,12 +895,12 @@ func (commit *GitCommit) EncodePersistedObject(ctx context.Context, cache dagql.
 	return encodePersistedObjectRawJSON(payloadJSON), nil
 }
 
-func (*GitCommit) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*GitCommit) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedGitCommitPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted git commit payload: %w", err)
 	}
-	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dag, persisted.RepoResultID, "git commit repo")
+	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dec, persisted.RepoResultID, "git commit repo")
 	if err != nil {
 		return nil, err
 	}
@@ -1403,4 +1461,230 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 		return nil, nil, nil, err
 	}
 	return git, commits, cleanup, nil
+}
+
+// visitPersistedRemoteGitRepositoryRefs walks every declared reference of a
+// remote Git repository payload: the retained mirror row, the authentication
+// handles and the ordered service bindings.
+func visitPersistedRemoteGitRepositoryRefs(w *persistedRefWalker, p *persistedRemoteGitRepositoryPayload) error {
+	if err := w.child("mirrorResultID", &p.MirrorResultID); err != nil {
+		return err
+	}
+	if err := w.child("sshAuthSocketResultID", &p.SSHAuthSocketResultID); err != nil {
+		return err
+	}
+	if err := w.child("authTokenResultID", &p.AuthTokenResultID); err != nil {
+		return err
+	}
+	if err := w.child("authHeaderResultID", &p.AuthHeaderResultID); err != nil {
+		return err
+	}
+	return w.services("services", p.Services)
+}
+
+const persistedDirectoryLazyKindGitTree = "gitTree"
+
+type DirectoryGitTreeLazy struct {
+	LazyState
+	ContentDigest digest.Digest
+	Ref           dagql.ObjectResult[*GitRef]
+	DiscardGitDir bool
+	Depth         int
+	IncludeTags   bool
+}
+
+type persistedDirectoryGitTreeLazy struct {
+	ContentDigest digest.Digest `json:"contentDigest,omitempty"`
+	RefResultID   uint64        `json:"refResultID"`
+	DiscardGitDir bool          `json:"discardGitDir"`
+	Depth         int           `json:"depth"`
+	IncludeTags   bool          `json:"includeTags"`
+}
+
+func (p *persistedDirectoryGitTreeLazy) validate() error {
+	if p.RefResultID == 0 {
+		return fmt.Errorf("DirectoryGitTreeLazy: missing refResultID")
+	}
+	return nil
+}
+func (lazy *DirectoryGitTreeLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	if err := deferGitTreeContentDigest(ctx, dir, lazy.ContentDigest); err != nil {
+		return err
+	}
+	return evaluateGitTreeInto(ctx, &lazy.LazyState, "GitRef.tree", dir, func(ctx context.Context, srv *dagql.Server) (*Directory, error) {
+		input := lazy.Ref.Self()
+		if input == nil || input.Ref == nil || input.Ref.SHA == "" {
+			return nil, fmt.Errorf("DirectoryGitTreeLazy: missing Ref SHA")
+		}
+		return gitRefTreeInto(ctx, dir, input, srv, lazy.DiscardGitDir, lazy.Depth, lazy.IncludeTags)
+	})
+}
+
+// A tree's recipe retains its credential-bearing ref until materialization.
+// Only successful materialization may equate outputs across those scopes.
+func deferGitTreeContentDigest(ctx context.Context, dir *Directory, contentDigest digest.Digest) error {
+	if contentDigest == "" || dir == nil || dir.PartHostBinding() == nil {
+		return nil
+	}
+	return dir.PartHostBinding().SetContentDigestAfterEvaluation(ctx, contentDigest, call.ExtraDigestLabelRemoteCache)
+}
+
+func deferPrivateGitTreeContentDigest(ctx context.Context, operation Lazy[*Directory]) error {
+	var contentDigest digest.Digest
+	switch lazy := operation.(type) {
+	case *DirectoryGitTreeLazy:
+		contentDigest = lazy.ContentDigest
+	case *DirectoryGitCommitTreeLazy:
+		contentDigest = lazy.ContentDigest
+	}
+	if contentDigest == "" {
+		return nil
+	}
+	return dagql.PartTaskFromContext(ctx).SetContentDigestAfterEvaluation(contentDigest, call.ExtraDigestLabelRemoteCache)
+}
+
+// evaluateGitTreeInto is the shared evaluation of the two git tree recipes:
+// validate the receiver, resolve the server, produce the tree into dir, and
+// release whatever the producer left unmoved.
+func evaluateGitTreeInto(ctx context.Context, state *LazyState, op string, dir *Directory, produce func(context.Context, *dagql.Server) (*Directory, error)) error {
+	var unmoved *Directory
+	err := dir.evaluateLazy(ctx, state, op, func(ctx context.Context) error {
+		if err := validateLazyDirectoryReceiver(dir); err != nil {
+			return err
+		}
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return err
+		}
+		unmoved, err = produce(ctx, srv)
+		return err
+	})
+	if unmoved != nil {
+		err = errors.Join(err, unmoved.OnRelease(context.WithoutCancel(ctx)))
+	}
+	return err
+}
+
+func gitRefTreeInto(ctx context.Context, dst *Directory, input *GitRef, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
+		return nil, err
+	}
+	src, err := input.Tree(ctx, srv, discardGitDir, depth, includeTags)
+	if err != nil {
+		return nil, err
+	}
+	if err := moveDirectoryOutput(dst, src); err != nil {
+		return src, err
+	}
+	return nil, nil
+}
+func (lazy *DirectoryGitTreeLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	ref, err := attachLazyInput(attach, lazy.Ref, "DirectoryGitTreeLazy.Ref")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Ref = ref
+	return []dagql.AnyResult{ref}, nil
+}
+func (lazy *DirectoryGitTreeLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	refID, err := encodePersistedObjectRef(enc, lazy.Ref, "DirectoryGitTreeLazy.Ref")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedDirectoryGitTreeLazy{ContentDigest: lazy.ContentDigest, RefResultID: refID, DiscardGitDir: lazy.DiscardGitDir, Depth: lazy.Depth, IncludeTags: lazy.IncludeTags})
+}
+func decodeDirectoryGitTreeLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
+	var p persistedDirectoryGitTreeLazy
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("decode DirectoryGitTreeLazy: %w", err)
+	}
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	ref, err := loadPersistedObjectResultByResultID[*GitRef](ctx, dec, p.RefResultID, "DirectoryGitTreeLazy.Ref")
+	if err != nil {
+		return nil, err
+	}
+	return &DirectoryGitTreeLazy{LazyState: NewLazyState(), ContentDigest: p.ContentDigest, Ref: ref, DiscardGitDir: p.DiscardGitDir, Depth: p.Depth, IncludeTags: p.IncludeTags}, nil
+}
+
+const persistedDirectoryLazyKindGitCommitTree = "gitCommitTree"
+
+type DirectoryGitCommitTreeLazy struct {
+	LazyState
+	ContentDigest digest.Digest
+	Commit        dagql.ObjectResult[*GitCommit]
+	DiscardGitDir bool
+	Depth         int
+	IncludeTags   bool
+}
+
+type persistedDirectoryGitCommitTreeLazy struct {
+	ContentDigest  digest.Digest `json:"contentDigest,omitempty"`
+	CommitResultID uint64        `json:"commitResultID"`
+	DiscardGitDir  bool          `json:"discardGitDir"`
+	Depth          int           `json:"depth"`
+	IncludeTags    bool          `json:"includeTags"`
+}
+
+func (p *persistedDirectoryGitCommitTreeLazy) validate() error {
+	if p.CommitResultID == 0 {
+		return fmt.Errorf("DirectoryGitCommitTreeLazy: missing commitResultID")
+	}
+	return nil
+}
+func (lazy *DirectoryGitCommitTreeLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	if err := deferGitTreeContentDigest(ctx, dir, lazy.ContentDigest); err != nil {
+		return err
+	}
+	return evaluateGitTreeInto(ctx, &lazy.LazyState, "GitCommit.tree", dir, func(ctx context.Context, srv *dagql.Server) (*Directory, error) {
+		input := lazy.Commit.Self()
+		if input == nil || input.Ref == nil || input.Ref.SHA == "" {
+			return nil, fmt.Errorf("DirectoryGitCommitTreeLazy: missing Commit SHA")
+		}
+		return gitCommitTreeInto(ctx, dir, input, srv, lazy.DiscardGitDir, lazy.Depth, lazy.IncludeTags)
+	})
+}
+
+func gitCommitTreeInto(ctx context.Context, dst *Directory, input *GitCommit, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
+	if err := validateLazyDirectoryReceiver(dst); err != nil {
+		return nil, err
+	}
+	src, err := input.Tree(ctx, srv, discardGitDir, depth, includeTags)
+	if err != nil {
+		return nil, err
+	}
+	if err := moveDirectoryOutput(dst, src); err != nil {
+		return src, err
+	}
+	return nil, nil
+}
+func (lazy *DirectoryGitCommitTreeLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	commit, err := attachLazyInput(attach, lazy.Commit, "DirectoryGitCommitTreeLazy.Commit")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Commit = commit
+	return []dagql.AnyResult{commit}, nil
+}
+func (lazy *DirectoryGitCommitTreeLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	commitID, err := encodePersistedObjectRef(enc, lazy.Commit, "DirectoryGitCommitTreeLazy.Commit")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedDirectoryGitCommitTreeLazy{ContentDigest: lazy.ContentDigest, CommitResultID: commitID, DiscardGitDir: lazy.DiscardGitDir, Depth: lazy.Depth, IncludeTags: lazy.IncludeTags})
+}
+func decodeDirectoryGitCommitTreeLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
+	var p persistedDirectoryGitCommitTreeLazy
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("decode DirectoryGitCommitTreeLazy: %w", err)
+	}
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	commit, err := loadPersistedObjectResultByResultID[*GitCommit](ctx, dec, p.CommitResultID, "DirectoryGitCommitTreeLazy.Commit")
+	if err != nil {
+		return nil, err
+	}
+	return &DirectoryGitCommitTreeLazy{LazyState: NewLazyState(), ContentDigest: p.ContentDigest, Commit: commit, DiscardGitDir: p.DiscardGitDir, Depth: p.Depth, IncludeTags: p.IncludeTags}, nil
 }

@@ -18,11 +18,14 @@ import (
 )
 
 type ClientFilesyncMirror struct {
-	StableClientID string
-	Drive          string
-	EphemeralID    string
+	foreignUninitialized bool
+	StableClientID       string
+	Drive                string
+	EphemeralID          string
 
-	mu sync.Mutex
+	// backingMu is EnsureBackingSnapshot's lock; see backingSnapshotMu.
+	backingMu sync.Mutex
+	mu        sync.Mutex
 
 	snapshot bkcache.MutableRef
 
@@ -97,13 +100,14 @@ func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context, _ dagql.Cache
 }
 
 type persistedClientFilesyncMirrorPayload struct {
+	Form           string `json:"form"`
 	StableClientID string `json:"stableClientID"`
 	Drive          string `json:"drive,omitempty"`
 }
 
-func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if m == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted client filesync mirror: nil mirror")
 	}
@@ -120,6 +124,7 @@ func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, cache 
 	}
 	m.mu.Unlock()
 	payload, err := json.Marshal(persistedClientFilesyncMirrorPayload{
+		Form:           persistedBackingForm(m.foreignUninitialized, len(links) != 0),
 		StableClientID: m.StableClientID,
 		Drive:          m.Drive,
 	})
@@ -132,24 +137,31 @@ func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, cache 
 	}, nil
 }
 
-func (*ClientFilesyncMirror) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*ClientFilesyncMirror) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedClientFilesyncMirrorPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted client filesync mirror payload: %w", err)
 	}
 	mirror := &ClientFilesyncMirror{
-		StableClientID: persisted.StableClientID,
-		Drive:          persisted.Drive,
+		foreignUninitialized: persisted.Form == foreignUninitialized,
+		StableClientID:       persisted.StableClientID,
+		Drive:                persisted.Drive,
 	}
-	if resultID == 0 {
+	if persisted.Form == foreignUninitialized {
+		if err := foreignFamilyCodec("ClientFilesyncMirror").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload}); err != nil {
+			return nil, err
+		}
+		return mirror, nil
+	}
+	if dec.ResultID() == 0 {
 		return mirror, nil
 	}
 
-	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, "client filesync mirror", "snapshot")
+	link, err := loadPersistedSnapshotLinkByResultID(ctx, dec, "client filesync mirror", "snapshot")
 	if err != nil {
 		return nil, err
 	}
-	query, err := persistedDecodeQuery(dag)
+	query, err := persistedDecodeQuery(dec)
 	if err != nil {
 		return nil, err
 	}

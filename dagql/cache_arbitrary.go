@@ -145,6 +145,15 @@ func (c *Cache) getOrInitArbitrary(
 		return nil, fmt.Errorf("acquire arbitrary client scope: %w", err)
 	}
 	callCtx, cancel := context.WithCancelCause(sharedWorkCtx)
+	// The initializer can finish after every waiter leaves. Keep its value
+	// handoff and any late release visible to Close independently of waiters.
+	callbackOp, err := c.beginCacheOperation()
+	if err != nil {
+		cancel(err)
+		clientScopeLease.Release()
+		c.callsMu.Unlock()
+		return nil, err
+	}
 	c.nextArbitraryResultID++
 	res := &sharedArbitraryResult{
 		id:      c.nextArbitraryResultID,
@@ -157,13 +166,13 @@ func (c *Cache) getOrInitArbitrary(
 	c.ongoingArbitraryCalls[callKey] = res
 
 	go func() {
-		defer func() {
-			// Release lifecycle ownership before publishing callback completion so
-			// every waiter observes the terminal lease transition on return.
-			clientScopeLease.Release()
-			close(res.waitCh)
-		}()
+		defer callbackOp.finish(false)
 		val, err := fn(callCtx)
+		// Release lifecycle ownership before publishing callback completion so
+		// every waiter observes the terminal lease transition on return.
+		clientScopeLease.Release()
+
+		c.callsMu.Lock()
 		res.err = err
 		if err == nil {
 			res.value = val
@@ -171,13 +180,16 @@ func (c *Cache) getOrInitArbitrary(
 				res.onRelease = onReleaser.OnRelease
 			}
 		}
-
 		// The callback no longer needs cancellation. Drop the cancel closure
 		// before this result can become a completed cache entry so the cache does
 		// not turn its detached runtime context into a cold capability.
-		c.callsMu.Lock()
 		res.cancel = nil
+		close(res.waitCh)
+		onRelease := c.removeUnownedArbitraryLocked(res)
 		c.callsMu.Unlock()
+		if err := runArbitraryOnRelease(callCtx, onRelease); err != nil {
+			c.recordReleaseCleanupError(sessionID, true, err)
+		}
 	}()
 
 	c.callsMu.Unlock()
@@ -234,10 +246,10 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 		return ret, nil
 	}
 
-	c.removeUnownedArbitraryLocked(res)
+	onRelease := c.removeUnownedArbitraryLocked(res)
 
 	c.callsMu.Unlock()
-	return nil, err
+	return nil, errors.Join(err, runArbitraryOnRelease(ctx, onRelease))
 }
 
 // removeUnownedArbitraryLocked drops an arbitrary value that has neither a
@@ -246,19 +258,18 @@ func (c *Cache) removeUnownedArbitraryLocked(res *sharedArbitraryResult) OnRelea
 	if res == nil || res.ownerSessionCount != 0 || res.waiters != 0 {
 		return nil
 	}
-	removed := false
 	if existing := c.ongoingArbitraryCalls[res.callKey]; existing != nil && existing.id == res.id {
 		delete(c.ongoingArbitraryCalls, res.callKey)
-		removed = true
 	}
 	if existing := c.completedArbitraryCalls[res.callKey]; existing != nil && existing.id == res.id {
 		delete(c.completedArbitraryCalls, res.callKey)
-		removed = true
 	}
-	if !removed {
-		return nil
-	}
-	return res.onRelease
+	// Cancellation may have removed the entry before its value arrived.
+	// Taking the callback once also covers that late completion without
+	// touching a newer entry with the same call key.
+	onRelease := res.onRelease
+	res.onRelease = nil
+	return onRelease
 }
 
 func runArbitraryOnRelease(ctx context.Context, onRelease OnReleaseFunc) error {

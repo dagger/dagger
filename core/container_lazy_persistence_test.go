@@ -1,0 +1,157 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/stretchr/testify/require"
+)
+
+func TestContainerEvaluatedLazyOperationAttachesParentAtPublication(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "completed-container-publication")
+	ctx, cache, srv := env.open(t)
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	parentRes := env.attach(t, ctx, cache, srv, "operation-parent", NewContainer(platform)).(dagql.ObjectResult[*Container])
+	parentID := persistedRowID(t, cache, parentRes)
+	child := NewContainer(platform)
+	recipe := &ContainerWithLabelLazy{LazyState: NewLazyState(), Parent: parentRes, Name: "retained", Value: "yes"}
+	child.Lazy = recipe
+	require.NoError(t, child.Evaluate(ctx))
+	require.NotNil(t, child.lazyOpForRouting())
+	require.Nil(t, child.LazyEvalFunc())
+	require.Same(t, recipe, child.Lazy)
+
+	// This synthetic call has no receiver or arguments, so only the retained
+	// recipe can supply the parent's direct dependency at publication.
+	childRes := env.attach(t, ctx, cache, srv, "withLabel", child)
+	childID := persistedRowID(t, cache, childRes)
+	for _, row := range cache.DebugEGraphSnapshot().Results {
+		if row.SharedResultID == childID {
+			require.Equal(t, []uint64{parentID}, row.ExplicitDeps)
+			return
+		}
+	}
+	t.Fatal("published child missing from cache graph")
+}
+
+func TestContainerEvaluatedLazyOperationPersistsWithoutLoadingParents(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "completed-container")
+	ctx, cache, srv := env.open(t)
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	parent := NewContainer(platform)
+	parent.FS.setValue(containerPersistenceTestDirectory("operation-fs", "/selected"))
+	parent.MetaSnapshot.setValue(&cacheVolumeTestImmutableRef{id: "operation-meta", snapshotID: "operation-meta"})
+	parentRes := env.attach(t, ctx, cache, srv, "operation-parent", parent).(dagql.ObjectResult[*Container])
+	otherParent := env.attach(t, ctx, cache, srv, "operation-other-parent", NewContainer(platform))
+	parentID := persistedRowID(t, cache, parentRes)
+	otherParentID := persistedRowID(t, cache, otherParent)
+	child := NewContainer(platform)
+	child.Lazy = &ContainerWithLabelLazy{LazyState: NewLazyState(), Parent: parentRes, Name: "retained", Value: "yes"}
+	childRes := env.attach(t, ctx, cache, srv, "withLabel", child)
+	pendingRecipe, err := child.Lazy.EncodePersisted(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
+	require.NoError(t, err)
+	pending, err := cache.CapturePersistedRecord(ctx, childRes)
+	require.NoError(t, err)
+	var pendingPayload persistedContainerPayload
+	require.NoError(t, json.Unmarshal(pending.Envelope.ObjectJSON, &pendingPayload))
+	require.False(t, pendingPayload.Metadata.Consumed)
+	require.JSONEq(t, string(pendingRecipe), string(pendingPayload.LazyJSON))
+	require.True(t, dagql.HasPendingLazyEvaluation(childRes))
+	require.NoError(t, cache.Evaluate(ctx, childRes))
+	require.Equal(t, "yes", child.Config.Labels["retained"])
+	require.NotNil(t, child.lazyOpForRouting())
+	require.Nil(t, child.LazyEvalFunc())
+	require.NotNil(t, child.Lazy)
+	rec, err := cache.CapturePersistedRecord(ctx, childRes)
+	require.NoError(t, err)
+	var payload persistedContainerPayload
+	require.NoError(t, json.Unmarshal(rec.Envelope.ObjectJSON, &payload))
+	require.JSONEq(t, string(pendingRecipe), string(payload.LazyJSON))
+	fsOpens := env.manager.openCount("operation-fs")
+	metaOpens := env.manager.openCount("operation-meta")
+
+	ctx, cache, srv = env.restart(t, ctx, cache)
+	assertParentsUnloaded := func() {
+		t.Helper()
+		found := 0
+		for _, row := range cache.DebugEGraphSnapshot().Results {
+			if row.SharedResultID == parentID || row.SharedResultID == otherParentID {
+				require.False(t, row.HasValue, "parent %d was decoded", row.SharedResultID)
+				found++
+			}
+		}
+		require.Equal(t, 2, found)
+	}
+	assertParentsUnloaded()
+	loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, rec.ResultID)
+	require.NoError(t, err)
+	restored, ok := dagql.UnwrapAs[*Container](loaded)
+	require.True(t, ok)
+	require.IsType(t, &ContainerRestoreLazy{}, restored.Lazy)
+	require.JSONEq(t, string(pendingRecipe), string(restored.lazyJSON))
+	assertParentsUnloaded()
+	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartMetadata))
+	require.Equal(t, "yes", restored.Config.Labels["retained"])
+	require.Equal(t, fsOpens, env.manager.openCount("operation-fs"))
+	require.Equal(t, metaOpens, env.manager.openCount("operation-meta"))
+
+	wantErr := errors.New("local snapshot unavailable")
+	env.manager.beforeOpen = func(_ context.Context, id string) error {
+		if id == "operation-fs" {
+			return wantErr
+		}
+		return nil
+	}
+	require.ErrorIs(t, cache.EvaluateParts(ctx, loaded, ContainerPartFS), wantErr)
+	assertParentsUnloaded()
+	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartExecMeta))
+	require.Equal(t, metaOpens+1, env.manager.openCount("operation-meta"))
+	_, fsReady := restored.FS.Peek()
+	require.False(t, fsReady)
+	env.manager.beforeOpen = nil
+	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartFS))
+	require.Equal(t, fsOpens+2, env.manager.openCount("operation-fs"))
+	require.NotNil(t, restored.lazyOpForRouting())
+	require.Nil(t, restored.LazyEvalFunc())
+	require.JSONEq(t, string(pendingRecipe), string(restored.lazyJSON))
+	enc := dagql.NewPersistEncodeContext(cache, rec.ResultID, rec.Call)
+	reencoded, err := restored.EncodePersistedObject(ctx, enc)
+	require.NoError(t, err)
+	require.JSONEq(t, string(rec.Envelope.ObjectJSON), string(reencoded.JSON))
+	assertParentsUnloaded()
+
+	t.Run("completed operation references relocate without loading", func(t *testing.T) {
+		reloc := &relocationVisitor{mapping: map[uint64]uint64{rec.ResultID: rec.ResultID, parentID: otherParentID}}
+		out, err := dagql.VisitEncodedReferences(rec, reloc.visit)
+		require.NoError(t, err)
+		require.Equal(t, map[string]uint64{"objectJSON.lazyJSON.parentResultID": parentID}, reloc.childIDs())
+		var relocated persistedContainerPayload
+		require.NoError(t, json.Unmarshal(out.Envelope.ObjectJSON, &relocated))
+		var recipe persistedContainerWithLabelLazy
+		require.NoError(t, json.Unmarshal(relocated.LazyJSON, &recipe))
+		require.Equal(t, otherParentID, recipe.ParentResultID)
+		value, err := (&Container{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, out.ResultID, out.Call), out.Envelope.ObjectJSON)
+		require.NoError(t, err)
+		again, err := value.(*Container).EncodePersistedObject(ctx, enc)
+		require.NoError(t, err)
+		require.JSONEq(t, string(out.Envelope.ObjectJSON), string(again.JSON))
+		assertParentsUnloaded()
+	})
+
+	t.Run("old complete rows without operation bytes", func(t *testing.T) {
+		payload.LazyJSON = nil
+		oldJSON, err := json.Marshal(payload)
+		require.NoError(t, err)
+		value, err := (&Container{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, rec.ResultID, rec.Call), oldJSON)
+		require.NoError(t, err)
+		old := value.(*Container)
+		require.Empty(t, old.lazyJSON)
+		again, err := old.EncodePersistedObject(ctx, enc)
+		require.NoError(t, err)
+		require.JSONEq(t, string(oldJSON), string(again.JSON))
+		assertParentsUnloaded()
+	})
+}

@@ -2076,8 +2076,16 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 	case core.ModuleSourceKindLocal:
 		switch relatedSrc.Kind {
 		case core.ModuleSourceKindLocal:
-			parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
-			relatedSrcRoot := filepath.Join(relatedSrc.Local.ContextDirectoryPath, relatedSrc.SourceRootSubpath)
+			parentPath, err := parentSrc.LocalContextDirectoryPath()
+			if err != nil {
+				return nil, err
+			}
+			relatedPath, err := relatedSrc.LocalContextDirectoryPath()
+			if err != nil {
+				return nil, err
+			}
+			parentSrcRoot := filepath.Join(parentPath, parentSrc.SourceRootSubpath)
+			relatedSrcRoot := filepath.Join(relatedPath, relatedSrc.SourceRootSubpath)
 			rel, err := pathutil.LexicalRelativePath(parentSrcRoot, relatedSrcRoot)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get relative path: %w", err)
@@ -3471,7 +3479,7 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, err
 	}
-	return inst.WithContentDigest(ctx, scopedDigest)
+	return inst.WithContentDigest(ctx, scopedDigest, call.ExtraDigestLabelRemoteCache)
 }
 
 // resolveDefaultPathContextSource selects the context for legacy default paths
@@ -3842,6 +3850,11 @@ func (s *moduleSourceSchema) loadDependencyModules(
 			}
 			var dpRef, dpPin string
 			if defaultPathContextSrc.Self() != nil {
+				if defaultPathContextSrc.Self().Kind == core.ModuleSourceKindLocal {
+					if _, err := defaultPathContextSrc.Self().LocalContextDirectoryPath(); err != nil {
+						return err
+					}
+				}
 				dpRef = defaultPathContextSrc.Self().AsString()
 				dpPin = defaultPathContextSrc.Self().Pin()
 			}

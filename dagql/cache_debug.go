@@ -25,6 +25,7 @@ const (
 )
 
 type EGraphDebugSnapshot struct {
+	OfferOwners        []CacheDebugOfferOwner     `json:"offer_owners,omitempty"`
 	TraceFormatVersion int                        `json:"trace_format_version"`
 	BootID             string                     `json:"boot_id"`
 	CapturedAtSeq      uint64                     `json:"captured_at_seq"`
@@ -37,6 +38,7 @@ type EGraphDebugSnapshot struct {
 }
 
 type CacheDebugSnapshot struct {
+	OfferOwners             []CacheDebugOfferOwner        `json:"offer_owners,omitempty"`
 	TraceFormatVersion      int                           `json:"trace_format_version"`
 	BootID                  string                        `json:"boot_id"`
 	CapturedAtSeq           uint64                        `json:"captured_at_seq"`
@@ -767,9 +769,9 @@ func (c *Cache) traceImportResultLoaded(ctx context.Context, importRunID string,
 	})
 }
 
-func (c *Cache) traceImportResultSnapshotLinkLoaded(ctx context.Context, importRunID string, resID sharedResultID, refKey, role string) {
+func (c *Cache) traceImportResultSnapshotLinkLoaded(ctx context.Context, importRunID string, resID sharedResultID, refKey, role, outputPath string) {
 	c.traceLazy(ctx, "import_result_snapshot_link_loaded", func() []any {
-		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "ref_key", refKey, "role", role}
+		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "ref_key", refKey, "role", role, "output_path", outputPath}
 	})
 }
 
@@ -960,6 +962,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 	defer c.egraphMu.RUnlock()
 
 	snap := &EGraphDebugSnapshot{
+		OfferOwners:        c.debugOfferOwnersLocked(),
 		TraceFormatVersion: egraphTraceFormatV1,
 		BootID:             c.traceBootID,
 		CapturedAtSeq:      atomic.LoadUint64(&c.traceSeq),
@@ -1218,6 +1221,12 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	}
 
 	if _, err := bw.WriteString("{"); err != nil {
+		return err
+	}
+	if err := writeField("offer_owners"); err != nil {
+		return err
+	}
+	if err := writeValue(c.debugOfferOwnersLocked()); err != nil {
 		return err
 	}
 	if err := writeField("trace_format_version"); err != nil {

@@ -88,9 +88,19 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 
+		offers, err := res.pendingOffersLocked()
+		if err != nil {
+			c.egraphMu.RUnlock()
+			return persistStateSnapshot{}, err
+		}
 		payload := res.loadPayloadState()
+		if payload.snapshotLinkIntent != nil {
+			payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
+		}
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:              resultID,
+			imported:              res.imported,
+			pendingOffers:         offers,
 			frame:                 res.loadResultCall().clone(),
 			self:                  payload.self,
 			isObject:              payload.isObject,
@@ -264,7 +274,10 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
 		}
 		resultSnapshot.row.SelfPayload = payload
-		resultSnapshot.resultSnapshotLinks = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
+		resultSnapshot.resultSnapshotLinks, err = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
+		if err != nil {
+			return persistStateSnapshot{}, err
+		}
 	}
 	return snapshot, nil
 }
@@ -291,7 +304,7 @@ func (c *Cache) snapshotPersistedRootClosureLocked() (map[sharedResultID]struct{
 		if res.attachmentState() != resultAttachmentClean {
 			markInvalid(resultID)
 		}
-		for depID := range res.deps {
+		for depID := range c.ownedResultIDsLocked(res) {
 			parentsByDependency[depID] = append(parentsByDependency[depID], resultID)
 			if c.resultsByID[depID] == nil {
 				markInvalid(resultID)
@@ -334,7 +347,7 @@ func (c *Cache) snapshotPersistedRootClosureLocked() (map[sharedResultID]struct{
 			continue
 		}
 		selected[resultID] = struct{}{}
-		for depID := range res.deps {
+		for depID := range c.ownedResultIDsLocked(res) {
 			stack = append(stack, depID)
 		}
 	}
@@ -437,60 +450,67 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 	return nil
 }
 
-func resultSnapshotLinkRows(resultID sharedResultID, links []PersistedSnapshotRefLink) []persistdb.MirrorResultSnapshotLink {
-	if len(links) == 0 {
-		return nil
-	}
-	links = slices.Clone(links)
-	slices.SortFunc(links, func(a, b PersistedSnapshotRefLink) int {
-		switch {
-		case a.RefKey < b.RefKey:
-			return -1
-		case a.RefKey > b.RefKey:
-			return 1
-		case a.Role < b.Role:
-			return -1
-		case a.Role > b.Role:
-			return 1
-		default:
-			return 0
-		}
-	})
+func resultSnapshotLinkRows(resultID sharedResultID, links []PersistedSnapshotRefLink) ([]persistdb.MirrorResultSnapshotLink, error) {
 	rows := make([]persistdb.MirrorResultSnapshotLink, 0, len(links))
 	for _, link := range links {
-		rows = append(rows, persistdb.MirrorResultSnapshotLink{
-			ResultID: int64(resultID),
-			RefKey:   link.RefKey,
-			Role:     link.Role,
-		})
+		key, err := snapshotLinkKey(link)
+		if err != nil {
+			return nil, err
+		}
+		if link.RefKey == "" {
+			return nil, fmt.Errorf("empty snapshot key")
+		}
+		rows = append(rows, persistdb.MirrorResultSnapshotLink{ResultID: int64(resultID), RefKey: link.RefKey, Role: key.Role, OutputPath: key.Path})
 	}
-	return rows
+	slices.SortFunc(rows, func(a, b persistdb.MirrorResultSnapshotLink) int {
+		if a.OutputPath < b.OutputPath {
+			return -1
+		}
+		if a.OutputPath > b.OutputPath {
+			return 1
+		}
+		if a.Role < b.Role {
+			return -1
+		}
+		if a.Role > b.Role {
+			return 1
+		}
+		return 0
+	})
+	return rows, nil
 }
 
-func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (PersistedResultEncoding, error) {
+func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (encoding PersistedResultEncoding, rerr error) {
+	defer func() {
+		if rerr == nil && snapshot != nil {
+			encoding.Envelope.Imported = snapshot.imported
+			encoding.Envelope.PendingOffers, rerr = clonePartOffers(snapshot.pendingOffers)
+		}
+	}()
 	if snapshot != nil && snapshot.persistedEnvelope != nil {
 		return PersistedResultEncoding{
 			Envelope:      *snapshot.persistedEnvelope,
 			SnapshotLinks: snapshot.snapshotOwnerLinks,
 		}, nil
 	}
-	if snapshot == nil || !snapshot.hasValue {
-		return PersistedResultEncoding{
-			Envelope: PersistedResultEnvelope{
-				Version: 1,
-				Kind:    persistedResultKindNull,
-			},
-		}, nil
+	if snapshot == nil {
+		return PersistedResultEncoding{}, fmt.Errorf("persist result envelope: nil snapshot")
 	}
-	if snapshot.self == nil {
-		return PersistedResultEncoding{
-			Envelope: PersistedResultEnvelope{
-				Version:               2,
-				Kind:                  persistedResultKindNull,
-				ResultID:              uint64(snapshot.resultID),
-				SessionResourceHandle: snapshot.sessionResourceHandle,
-			},
-		}, nil
+	// Shutdown has drained cache operations, but diagnostic readers can still
+	// briefly hold object latches. This permission belongs only to the persister,
+	// never to live capture through the same codec.
+	ctx = context.WithValue(ctx, quiescentPersistKey{}, true)
+	if !snapshot.hasValue || snapshot.self == nil {
+		// A row without a value is an attached absent value: it keeps its
+		// identity and recorded call so restart restores the same row. The
+		// declaration is checked here, at capture, so a contradictory row
+		// fails this save by name instead of wiping the store on import.
+		return encodePersistedAbsentValue(
+			NewPersistEncodeContext(c, uint64(snapshot.resultID), snapshot.frame),
+			uint64(snapshot.resultID),
+			snapshot.sessionResourceHandle,
+			true,
+		)
 	}
 	if snapshot.frame == nil {
 		if snapshot.self == nil || snapshot.self.Type() == nil || snapshot.self.Type().Name() != "Query" {

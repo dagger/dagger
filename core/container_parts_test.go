@@ -55,10 +55,10 @@ type containerPartsTestDirectorySourceOp struct {
 }
 
 func (op *containerPartsTestDirectorySourceOp) Evaluate(ctx context.Context, dir *Directory) error {
-	return op.LazyState.Evaluate(ctx, "test.directorySource", func(context.Context) error {
+	return dir.evaluateLazy(ctx, &op.LazyState, "test.directorySource", func(context.Context) error {
 		op.runs.Add(1)
 		dir.Dir.SetValue("/source")
-		dir.Lazy = nil
+		dir.SetSnapshot(nil)
 		return nil
 	})
 }
@@ -67,7 +67,7 @@ func (op *containerPartsTestDirectorySourceOp) AttachDependencies(context.Contex
 	return nil, nil
 }
 
-func (op *containerPartsTestDirectorySourceOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerPartsTestDirectorySourceOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 
@@ -77,10 +77,10 @@ type containerPartsTestFileSourceOp struct {
 }
 
 func (op *containerPartsTestFileSourceOp) Evaluate(ctx context.Context, file *File) error {
-	return op.LazyState.Evaluate(ctx, "test.fileSource", func(context.Context) error {
+	return file.evaluateLazy(ctx, &op.LazyState, "test.fileSource", func(context.Context) error {
 		op.runs.Add(1)
 		file.File.SetValue("/source/file")
-		file.Lazy = nil
+		file.SetSnapshot(nil)
 		return nil
 	})
 }
@@ -89,7 +89,7 @@ func (op *containerPartsTestFileSourceOp) AttachDependencies(context.Context, fu
 	return nil, nil
 }
 
-func (op *containerPartsTestFileSourceOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerPartsTestFileSourceOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 
@@ -113,7 +113,7 @@ func (op *containerPartsTestBaseOp) AttachDependencies(context.Context, func(dag
 	return nil, nil
 }
 
-func (op *containerPartsTestBaseOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerPartsTestBaseOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 
@@ -145,6 +145,7 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			}
 			dir.Dir.SetValue("/")
+			dir.Snapshot.SetValue(nil)
 			ctr.ensureFSAccessor().SetValue(dir)
 			if op.fsBodyHook != nil {
 				op.fsBodyHook()
@@ -176,6 +177,7 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 					Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 				}
 				dir.Dir.SetValue("/")
+				dir.Snapshot.SetValue(nil)
 				if snapshot := op.mountSnapshots[target]; snapshot != nil {
 					dir.Snapshot.SetValue(snapshot)
 				}
@@ -465,7 +467,8 @@ func TestContainerMetadataOnlyMountMutationParts(t *testing.T) {
 			require.True(t, dagql.HasPendingLazyEvaluation(childRes))
 			if test.consumeAll {
 				require.NoError(t, cache.Evaluate(ctx, childRes))
-				require.Nil(t, child.lazyOpForRouting())
+				require.NotNil(t, child.lazyOpForRouting())
+				require.Nil(t, child.LazyEvalFunc())
 			}
 		})
 	}
@@ -654,7 +657,8 @@ func TestContainerMountedSourceWriterParts(t *testing.T) {
 			require.Equal(t, int32(0), baseOp.fsRuns.Load())
 
 			require.NoError(t, cache.Evaluate(ctx, childRes))
-			require.Nil(t, child.lazyOpForRouting())
+			require.NotNil(t, child.lazyOpForRouting())
+			require.Nil(t, child.LazyEvalFunc())
 		})
 	}
 }
@@ -769,7 +773,8 @@ func TestContainerMountedSourceWriterShadowsNestedMount(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, groups, containerDelegationGroup(ContainerPartMount("/new/sub")))
 	require.NoError(t, cache.Evaluate(ctx, childRes))
-	require.Nil(t, child.lazyOpForRouting())
+	require.NotNil(t, child.lazyOpForRouting())
+	require.Nil(t, child.LazyEvalFunc())
 	require.Equal(t, 0, baseOp.mountRunsFor("/new/sub"))
 }
 
@@ -998,7 +1003,8 @@ func TestContainerWithoutPathFullEvaluationWithEmptyRootFS(t *testing.T) {
 	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "without-path-empty-child", child)
 
 	require.NoError(t, cache.Evaluate(ctx, childRes))
-	require.Nil(t, child.lazyOpForRouting())
+	require.NotNil(t, child.lazyOpForRouting())
+	require.Nil(t, child.LazyEvalFunc())
 	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
 	_, fsSet := child.FS.Peek()
 	require.False(t, fsSet)
@@ -1111,10 +1117,11 @@ func TestContainerMetadataChainLeavesSnapshotGroupsPending(t *testing.T) {
 	require.Equal(t, "/", childFSDir)
 
 	// Full evaluation consumes the remaining exec-meta delegation and
-	// clears the ops.
+	// completes the ops while retaining them.
 	require.NoError(t, cache.Evaluate(ctx, childRes))
 	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
-	require.Nil(t, child.Lazy)
+	require.NotNil(t, child.Lazy)
+	require.Nil(t, child.LazyEvalFunc())
 	require.Equal(t, int32(1), baseOp.metaRuns.Load())
 	require.Equal(t, int32(1), baseOp.fsRuns.Load())
 }
@@ -1151,7 +1158,8 @@ func TestContainerDirectEvaluateRunsRefinedGroups(t *testing.T) {
 	require.NoError(t, child.Evaluate(ctx))
 	require.Equal(t, "guest", child.Config.User)
 	require.Equal(t, "/base", child.Config.WorkingDir)
-	require.Nil(t, child.Lazy)
+	require.NotNil(t, child.Lazy)
+	require.Nil(t, child.LazyEvalFunc())
 	require.Equal(t, int32(1), baseOp.metaRuns.Load())
 	require.Equal(t, int32(1), baseOp.fsRuns.Load())
 }
@@ -1166,9 +1174,9 @@ type containerPartsTestUnrefinedWriterOp struct {
 	parent dagql.ObjectResult[*Container]
 	newDir string
 	runs   atomic.Int32
-	// preClearHook, when set, runs inside the body right before the op
-	// consumes itself (used to rendezvous readers with the inline clear).
-	preClearHook func()
+	// beforeCompletion, when set, runs inside the body right before the op
+	// completes (used to rendezvous readers with the body).
+	beforeCompletion func()
 }
 
 func (op *containerPartsTestUnrefinedWriterOp) Evaluate(ctx context.Context, ctr *Container) error {
@@ -1179,11 +1187,11 @@ func (op *containerPartsTestUnrefinedWriterOp) Evaluate(ctx context.Context, ctr
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 		}
 		dir.Dir.SetValue(op.newDir)
+		dir.Snapshot.SetValue(nil)
 		ctr.ensureFSAccessor().SetValue(dir)
-		if op.preClearHook != nil {
-			op.preClearHook()
+		if op.beforeCompletion != nil {
+			op.beforeCompletion()
 		}
-		ctr.consumeLazyOp()
 		return nil
 	})
 }
@@ -1200,7 +1208,7 @@ func (op *containerPartsTestUnrefinedWriterOp) AttachDependencies(_ context.Cont
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (op *containerPartsTestUnrefinedWriterOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerPartsTestUnrefinedWriterOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 
@@ -1220,6 +1228,7 @@ func TestContainerDelegationOverwritesStalePreCopiedAccessor(t *testing.T) {
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
 	oldDir.Dir.SetValue("/old")
+	oldDir.Snapshot.SetValue(nil)
 	base := &Container{
 		FS:           new(LazyAccessor[*Directory, *Container]),
 		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
@@ -1270,11 +1279,9 @@ func TestContainerDelegationOverwritesStalePreCopiedAccessor(t *testing.T) {
 	require.Equal(t, "/new", gotDir)
 }
 
-// Two sibling groups finishing concurrently both observe full
-// consumption and both clear container.Lazy; the clear must be
-// serialized under the op's LazyMu (write/write on the interface word
-// otherwise, which the race detector flags).
-func TestContainerConcurrentGroupCompletionClearsLazyOnce(t *testing.T) {
+// Sibling groups can finish concurrently while routing and capture continue
+// to read the same operation and its independently synchronized group states.
+func TestContainerConcurrentGroupCompletionRetainsLazy(t *testing.T) {
 	t.Parallel()
 	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
 
@@ -1298,7 +1305,7 @@ func TestContainerConcurrentGroupCompletionClearsLazyOnce(t *testing.T) {
 		},
 		Lazy: baseOp,
 	}
-	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "concurrent-clear-base", base)
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "concurrent-completion-base", base)
 
 	// Consume every group except the two mounts.
 	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartMetadata))
@@ -1306,7 +1313,7 @@ func TestContainerConcurrentGroupCompletionClearsLazyOnce(t *testing.T) {
 	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartExecMeta))
 
 	// The last two groups finish together: their bodies rendezvous, so
-	// both completions race the all-consumed check and the Lazy clear.
+	// both completions race the all-groups completion check.
 	errA := make(chan error, 1)
 	errB := make(chan error, 1)
 	go func() { errA <- cache.EvaluateParts(ctx, baseRes, ContainerPartMount("/a")) }()
@@ -1314,7 +1321,8 @@ func TestContainerConcurrentGroupCompletionClearsLazyOnce(t *testing.T) {
 	require.NoError(t, <-errA)
 	require.NoError(t, <-errB)
 
-	require.Nil(t, base.Lazy)
+	require.NotNil(t, base.Lazy)
+	require.Nil(t, base.LazyEvalFunc())
 	require.False(t, dagql.HasPendingLazyEvaluation(baseRes))
 }
 
@@ -1322,18 +1330,18 @@ func TestContainerConcurrentGroupCompletionClearsLazyOnce(t *testing.T) {
 // narrow force (evaluatePartsDirect) read the op pointer before any
 // group state is consulted, so no attempt-retirement ordering covers
 // them; they must share a synchronization point with the refined
-// clear. Two readers hammer both paths while the op's final group
-// completes and clears - red under -race without the shared lock.
-func TestContainerRoutingReadsRaceRefinedClear(t *testing.T) {
+// completion. Two readers exercise both paths while the final group
+// completes; the operation pointer stays attached throughout.
+func TestContainerRoutingReadsRaceRefinedCompletion(t *testing.T) {
 	t.Parallel()
 	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
 
-	clearImminent := make(chan struct{})
+	completionImminent := make(chan struct{})
 	baseOp := &containerPartsTestBaseOp{
 		LazyState: NewLazyState(),
 		workdir:   "/base",
 		fsBodyHook: func() {
-			close(clearImminent)
+			close(completionImminent)
 			// Hold the body open briefly so the readers below overlap
 			// the window between body return and attempt retirement.
 			for range 2000 {
@@ -1348,7 +1356,7 @@ func TestContainerRoutingReadsRaceRefinedClear(t *testing.T) {
 	}
 	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "routing-race-base", base)
 
-	// Consume everything except fs, so the fs completion is the clear.
+	// Complete everything except fs, leaving one final group in flight.
 	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartMetadata))
 	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartExecMeta))
 
@@ -1359,7 +1367,7 @@ func TestContainerRoutingReadsRaceRefinedClear(t *testing.T) {
 		finalErr <- cache.EvaluateParts(ctx, baseRes, ContainerPartFS)
 	}()
 
-	<-clearImminent
+	<-completionImminent
 	resolveErr := make(chan error, 1)
 	go func() {
 		// The cache resolver path: ResolveLazyEvalGroups' pointer read.
@@ -1396,23 +1404,24 @@ func TestContainerRoutingReadsRaceRefinedClear(t *testing.T) {
 	require.NoError(t, <-finalErr)
 	require.NoError(t, <-resolveErr)
 	require.NoError(t, <-directErr)
-	require.Nil(t, base.Lazy)
+	require.NotNil(t, base.Lazy)
+	require.Nil(t, base.LazyEvalFunc())
 }
 
-// The routing reads must also be ordered against UNREFINED ops' clears -
+// Routing reads must also remain safe while whole operations complete -
 // the dominant everyday writer (every from(image) body ends with one).
 // Two clients reading metadata of the same pending unrefined container
 // while its whole-result body finishes is routine.
-func TestContainerRoutingReadsRaceUnrefinedClear(t *testing.T) {
+func TestContainerRoutingReadsRaceUnrefinedCompletion(t *testing.T) {
 	t.Parallel()
 	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
 
-	clearImminent := make(chan struct{})
+	completionImminent := make(chan struct{})
 	op := &containerPartsTestUnrefinedWriterOp{
 		LazyState: NewLazyState(),
 		newDir:    "/made",
-		preClearHook: func() {
-			close(clearImminent)
+		beforeCompletion: func() {
+			close(completionImminent)
 			for range 2000 {
 				runtime.Gosched()
 			}
@@ -1423,7 +1432,7 @@ func TestContainerRoutingReadsRaceUnrefinedClear(t *testing.T) {
 		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
 		Lazy:         op,
 	}
-	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "unrefined-clear-race-base", base)
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "unrefined-completion-race-base", base)
 
 	done := make(chan struct{})
 	finalErr := make(chan error, 1)
@@ -1432,7 +1441,7 @@ func TestContainerRoutingReadsRaceUnrefinedClear(t *testing.T) {
 		finalErr <- cache.Evaluate(ctx, baseRes)
 	}()
 
-	<-clearImminent
+	<-completionImminent
 	resolveErr := make(chan error, 1)
 	go func() {
 		// The cache resolver path's routing read.
@@ -1469,27 +1478,28 @@ func TestContainerRoutingReadsRaceUnrefinedClear(t *testing.T) {
 	require.NoError(t, <-finalErr)
 	require.NoError(t, <-resolveErr)
 	require.NoError(t, <-directErr)
-	require.Nil(t, base.Lazy)
+	require.NotNil(t, base.Lazy)
+	require.Nil(t, base.LazyEvalFunc())
 	require.Equal(t, int32(1), op.runs.Load())
 }
 
 // HasPendingLazyEvaluation's fallback (LazyEvalFunc's op-pointer read)
-// must be ordered against the direct-path clear: when every group was
+// must reflect direct completion: when every group was
 // consumed through the direct narrow force, the shared result carries no
 // cache-side lazy state, so the fallback read is reached on every call
 // (the cloneContainerForSchemaChild path) while evaluatePartsDirect's
-// final-group completion clears the op.
-func TestContainerHasPendingFallbackRacesDirectClear(t *testing.T) {
+// final group completes with the same operation still attached.
+func TestContainerHasPendingFallbackRacesDirectCompletion(t *testing.T) {
 	t.Parallel()
 	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
 	_ = cache
 
-	clearImminent := make(chan struct{})
+	completionImminent := make(chan struct{})
 	baseOp := &containerPartsTestBaseOp{
 		LazyState: NewLazyState(),
 		workdir:   "/base",
 		fsBodyHook: func() {
-			close(clearImminent)
+			close(completionImminent)
 			for range 2000 {
 				runtime.Gosched()
 			}
@@ -1515,7 +1525,7 @@ func TestContainerHasPendingFallbackRacesDirectClear(t *testing.T) {
 		finalErr <- base.evaluatePartsDirect(ctx, ContainerPartFS)
 	}()
 
-	<-clearImminent
+	<-completionImminent
 	pendingDone := make(chan struct{})
 	go func() {
 		defer close(pendingDone)
@@ -1531,6 +1541,7 @@ func TestContainerHasPendingFallbackRacesDirectClear(t *testing.T) {
 
 	require.NoError(t, <-finalErr)
 	<-pendingDone
-	require.Nil(t, base.Lazy)
+	require.NotNil(t, base.Lazy)
+	require.Nil(t, base.LazyEvalFunc())
 	require.False(t, dagql.HasPendingLazyEvaluation(baseRes))
 }

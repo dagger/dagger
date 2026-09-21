@@ -102,18 +102,18 @@ func (e *Error) Type() *ast.Type {
 	}
 }
 
-func (e *Error) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (e *Error) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if e == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted error: nil error")
 	}
 	return encodePersistedObjectPayload(e)
 }
 
-func (*Error) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Error) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var e Error
 	if err := json.Unmarshal(payload, &e); err != nil {
 		return nil, fmt.Errorf("decode persisted error payload: %w", err)
@@ -154,18 +154,18 @@ func (e *ErrorValue) Type() *ast.Type {
 	}
 }
 
-func (e *ErrorValue) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (e *ErrorValue) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if e == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted error value: nil error value")
 	}
 	return encodePersistedObjectPayload(e)
 }
 
-func (*ErrorValue) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*ErrorValue) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var e ErrorValue
 	if err := json.Unmarshal(payload, &e); err != nil {
 		return nil, fmt.Errorf("decode persisted error value payload: %w", err)

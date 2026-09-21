@@ -448,9 +448,10 @@ func lazySyncState(shared *sharedResult) (pending, complete bool) {
 	return shared.lazyWhole.syncPending, shared.lazyEvalComplete
 }
 
-// A callback body consumes its object-side lazy state (mirroring how core
-// types clear their Lazy pointer) before the attempt's snapshot-lease
-// bookkeeping settles. During that window a second Evaluate must join the
+// A callback body reports object-side completion before the attempt's snapshot-lease
+// bookkeeping settles. Core types retain their operation; this generic test
+// value discards its callback after its body succeeds. During that window a
+// second Evaluate must join the
 // running attempt rather than observe the nil object-side callback and
 // report success. A failed bookkeeping step must stay retryable instead of
 // being swallowed as completed evaluation, and the retry must not re-run
@@ -714,4 +715,42 @@ func TestCacheHitRegistrationDoesNotRaceLazyCallback(t *testing.T) {
 	for range 10 {
 		hit()
 	}
+}
+
+// armLazyAttemptReleased observes every lazy attempt's row release from here
+// on. A lazy attempt closes its done channel, which returns its caller,
+// before its deferred row release runs on the attempt's goroutine, so a
+// caller that reads ownership counts straight after RunLazyTask can see the
+// attempt's own hold. The hook runs after that release; the test waits for
+// it with waitLazyAttemptReleased, once per attempt it started.
+func armLazyAttemptReleased(c *Cache) <-chan struct{} {
+	released := make(chan struct{}, 64)
+	c.testAfterLazyAttemptReleased = func(*lazyEvalAttempt) {
+		select {
+		case released <- struct{}{}:
+		default:
+		}
+	}
+	return released
+}
+
+func waitLazyAttemptReleased(t *testing.T, released <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-released:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the lazy attempt never released its row hold")
+	}
+}
+
+// ownershipCounts copies the rows' incoming ownership counts under the graph
+// lock, so an assertion that fails cannot leave the lock held.
+func ownershipCounts(c *Cache, rows ...*sharedResult) []int64 {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	counts := make([]int64, len(rows))
+	for i, row := range rows {
+		counts[i] = row.incomingOwnershipCount
+	}
+	return counts
 }

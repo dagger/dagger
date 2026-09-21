@@ -67,7 +67,7 @@ func (obj *cacheTestPartsObject) PersistedSnapshotRefLinks() []PersistedSnapshot
 	}
 	obj.mu.Lock()
 	defer obj.mu.Unlock()
-	return append([]PersistedSnapshotRefLink(nil), obj.snapshotLinks...)
+	return cloneSnapshotRefLinks(obj.snapshotLinks)
 }
 
 func (obj *cacheTestPartsObject) LazyEvalFunc() LazyEvalFunc {
@@ -868,9 +868,8 @@ func waitForCondition(t *testing.T, cond func() bool, description string) {
 	t.Fatalf("timed out waiting for %s", description)
 }
 
-// partsTestConsumptionAwareResolve mirrors the container's real resolver
-// shape after full consumption: once every group's work is consumed (the
-// container.Lazy == nil analog) it under-reports and returns zero
+// partsTestConsumptionAwareResolve models a resolver that omits consumed
+// groups: once every group's work is consumed it returns zero
 // groups. Cache-side state can still be pending at that point (a body
 // consumed its work while its attempt's bookkeeping failed or is in
 // flight), and the cache must not treat empty resolution as completion.
@@ -974,4 +973,46 @@ func TestEvaluatePartsEmptyResolutionRetriesPendingBookkeeping(t *testing.T) {
 			t.Fatalf("output body ran %d times after settling, want 1", got)
 		}
 	})
+}
+
+type cacheTestWholeStoredOpen struct {
+	Int
+	stored bool
+}
+
+func (v cacheTestWholeStoredOpen) HasPendingLazyComputation() bool { return false }
+
+func (v cacheTestWholeStoredOpen) LazyGroupStoredPart(group LazyGroupKey) PartKey {
+	if v.stored && group == LazyGroupWhole {
+		return "snapshot"
+	}
+	return ""
+}
+
+func TestPendingLazyComputationWholeGroupStoredOpen(t *testing.T) {
+	for name, state := range map[string]lazyGroupState{
+		"armed":       {eval: func(context.Context) error { return nil }},
+		"in flight":   {attempt: &lazyEvalAttempt{}},
+		"bookkeeping": {syncPending: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, stored := range []bool{false, true} {
+				shared := &sharedResult{
+					id: 1, hasValue: true,
+					self: cacheTestWholeStoredOpen{stored: stored}, lazyWhole: state,
+				}
+				res := Result[Typed]{shared: shared}
+				if !HasPendingLazyEvaluation(res) {
+					t.Fatal("unfinished whole group must remain operational work")
+				}
+				if got := HasPendingLazyComputation(res); got != !stored {
+					t.Fatalf("stored=%v: pending computation=%v", stored, got)
+				}
+				shared.lazyEvalComplete = true
+				if HasPendingLazyComputation(res) || HasPendingLazyEvaluation(res) {
+					t.Fatal("completed result still reports pending")
+				}
+			}
+		})
+	}
 }

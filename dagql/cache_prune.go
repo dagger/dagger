@@ -29,6 +29,7 @@ type pruneSnapshotResult struct {
 	resultID                 sharedResultID
 	incomingCount            int64
 	deps                     []sharedResultID
+	offers                   []offerOwnerID
 	directResultBytes        int64
 	usageIdentities          []string
 	entry                    CacheUsageEntry
@@ -39,7 +40,15 @@ type pruneSnapshotResult struct {
 	expiresAtUnix            int64
 }
 
+type pruneSnapshotOwner struct {
+	holds int64
+	slots int64
+	deps  []sharedResultID
+	bytes int64
+}
+
 type pruneSnapshot struct {
+	owners          map[offerOwnerID]pruneSnapshotOwner
 	results         map[sharedResultID]pruneSnapshotResult
 	usageIdentities map[string]pruneUsageIdentityState
 	usedBytes       int64
@@ -51,6 +60,7 @@ type prunePlanEntry struct {
 }
 
 type pruneSimulationState struct {
+	remainingOwnerHolds       map[offerOwnerID]int64
 	remainingIncomingCount    map[sharedResultID]int64
 	aliveCountByUsageIdentity map[string]int
 	sizeBytesByUsageIdentity  map[string]int64
@@ -384,6 +394,7 @@ func (c *Cache) snapshotPruneStateCancelable(
 
 	snapshot := pruneSnapshot{
 		results:         make(map[sharedResultID]pruneSnapshotResult, len(c.resultsByID)),
+		owners:          make(map[offerOwnerID]pruneSnapshotOwner, len(c.offerOwners)),
 		usageIdentities: make(map[string]pruneUsageIdentityState),
 	}
 	if err := checker.checkNow(); err != nil {
@@ -391,6 +402,17 @@ func (c *Cache) snapshotPruneStateCancelable(
 	}
 	if len(c.resultsByID) == 0 {
 		return snapshot, nil
+	}
+
+	for id, owner := range c.offerOwners {
+		copy := pruneSnapshotOwner{holds: owner.holds, slots: owner.slots}
+		for dep := range offerOwnershipChildrenLocked(owner) {
+			copy.deps = append(copy.deps, dep.id)
+		}
+		if mode == pruneSnapshotMetadata {
+			copy.bytes = offerMetadataBytes(owner)
+		}
+		snapshot.owners[id] = copy
 	}
 
 	if mode == pruneSnapshotDisk {
@@ -483,6 +505,11 @@ func (c *Cache) snapshotPruneStateCancelable(
 			snapshotResult.callFrame = callFrame
 			snapshot.usedBytes += sizeBytes
 		}
+		for child := range c.resultOwnershipChildrenLocked(res) {
+			if child.owner != nil {
+				snapshotResult.offers = append(snapshotResult.offers, child.owner.id)
+			}
+		}
 		snapshot.results[resID] = snapshotResult
 	}
 
@@ -535,11 +562,14 @@ func pruneActiveClosureCancelable(
 	if err := checker.checkNow(); err != nil {
 		return nil, err
 	}
-	if len(activeRoots) == 0 {
-		return nil, nil
-	}
+
 	closure := make(map[sharedResultID]struct{}, len(activeRoots))
 	stack := make([]sharedResultID, 0, len(activeRoots))
+	for _, owner := range snapshot.owners {
+		if owner.holds > owner.slots {
+			stack = append(stack, owner.deps...)
+		}
+	}
 	for resultID := range activeRoots {
 		if checker != nil {
 			if err := checker.check(); err != nil {
@@ -565,6 +595,9 @@ func pruneActiveClosureCancelable(
 		cur, ok := snapshot.results[curID]
 		if !ok {
 			continue
+		}
+		for _, id := range cur.offers {
+			stack = append(stack, snapshot.owners[id].deps...)
 		}
 		for _, depID := range cur.deps {
 			if checker != nil {
@@ -791,9 +824,13 @@ func buildPrunePlanCancelable(
 func newPruneSimulationStateCancelable(snapshot pruneSnapshot, checker *pruneCancellationChecker) (pruneSimulationState, error) {
 	state := pruneSimulationState{
 		remainingIncomingCount:    make(map[sharedResultID]int64, len(snapshot.results)),
+		remainingOwnerHolds:       make(map[offerOwnerID]int64, len(snapshot.owners)),
 		aliveCountByUsageIdentity: make(map[string]int, len(snapshot.usageIdentities)),
 		sizeBytesByUsageIdentity:  make(map[string]int64, len(snapshot.usageIdentities)),
 		collected:                 make(map[sharedResultID]struct{}),
+	}
+	for id, owner := range snapshot.owners {
+		state.remainingOwnerHolds[id] = owner.holds
 	}
 	for resultID, res := range snapshot.results {
 		if checker != nil {
@@ -874,7 +911,16 @@ func (s *pruneSimulationState) applyCandidateCancelable(
 			}
 		}
 
-		for _, depID := range cur.deps {
+		deps := slices.Clone(cur.deps)
+		for _, id := range cur.offers {
+			s.remainingOwnerHolds[id]--
+			if s.remainingOwnerHolds[id] == 0 {
+				owner := snapshot.owners[id]
+				deps = append(deps, owner.deps...)
+				reclaimed += owner.bytes
+			}
+		}
+		for _, depID := range deps {
 			if checker != nil {
 				if err := checker.check(); err != nil {
 					return 0, 0, err

@@ -44,9 +44,9 @@ func (*persistConcurrentDecodeObj) Type() *ast.Type {
 	}
 }
 
-func (obj *persistConcurrentDecodeObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (obj *persistConcurrentDecodeObj) EncodePersistedObject(ctx context.Context, enc *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	payload, err := json.Marshal(persistedPersistConcurrentDecodeObj{Name: obj.Name})
 	if err != nil {
 		return PersistedObjectEncoding{}, err
@@ -54,8 +54,8 @@ func (obj *persistConcurrentDecodeObj) EncodePersistedObject(ctx context.Context
 	return PersistedObjectEncoding{JSON: payload}, nil
 }
 
-func (*persistConcurrentDecodeObj) DecodePersistedObject(ctx context.Context, dag *Server, resultID uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
-	_ = dag
+func (*persistConcurrentDecodeObj) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, payload json.RawMessage) (Typed, error) {
+	resultID := dec.ResultID()
 	var persisted persistedPersistConcurrentDecodeObj
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, err
@@ -554,7 +554,7 @@ func TestCachePersistenceSchemaMismatchWipesStore(t *testing.T) {
 
 	db, q, err := prepareCacheDBs(ctx, dbPath)
 	assert.NilError(t, err)
-	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, "old-schema"))
+	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, "20"))
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"))
 	assert.NilError(t, closeCacheDBs(db, q))
 
@@ -672,9 +672,9 @@ func (*persistRetryDecodeObj) Type() *ast.Type {
 	}
 }
 
-func (obj *persistRetryDecodeObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (obj *persistRetryDecodeObj) EncodePersistedObject(ctx context.Context, enc *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	payload, err := json.Marshal(persistedPersistRetryDecodeObj{Name: obj.Name})
 	if err != nil {
 		return PersistedObjectEncoding{}, err
@@ -696,8 +696,9 @@ func (*persistRetryDecodeObj) PersistedSnapshotRefLinks() []PersistedSnapshotRef
 	}}
 }
 
-func (*persistRetryDecodeObj) DecodePersistedObject(ctx context.Context, dag *Server, resultID uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
-	_ = dag
+func (*persistRetryDecodeObj) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, payload json.RawMessage) (Typed, error) {
+	resultID := dec.ResultID()
+	_ = dec
 	var persisted persistedPersistRetryDecodeObj
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, err
@@ -858,6 +859,7 @@ func TestCachePersistenceImportedDecodeLeaseSyncCancelRetriesSync(t *testing.T) 
 	managerB := &fakeSnapshotManager{}
 	cB, err := NewCache(ctx, dbPath, managerB, nil)
 	assert.NilError(t, err)
+	assert.Equal(t, cB.PersistenceResetReason(), CachePersistenceResetNone)
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -1217,9 +1219,9 @@ func (*persistResourceScopedObj) Type() *ast.Type {
 	}
 }
 
-func (obj *persistResourceScopedObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (obj *persistResourceScopedObj) EncodePersistedObject(ctx context.Context, enc *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	payload, err := json.Marshal(persistedResourceScopedObj{Name: obj.Name})
 	if err != nil {
 		return PersistedObjectEncoding{}, err
@@ -1227,9 +1229,9 @@ func (obj *persistResourceScopedObj) EncodePersistedObject(ctx context.Context, 
 	return PersistedObjectEncoding{JSON: payload}, nil
 }
 
-func (*persistResourceScopedObj) DecodePersistedObject(ctx context.Context, dag *Server, _ uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
+func (*persistResourceScopedObj) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, payload json.RawMessage) (Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var persisted persistedResourceScopedObj
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, err

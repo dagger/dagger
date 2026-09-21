@@ -27,9 +27,9 @@ func (*persistSnapshotValue) Type() *ast.Type {
 	}
 }
 
-func (v *persistSnapshotValue) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (v *persistSnapshotValue) EncodePersistedObject(ctx context.Context, enc *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	payload, err := json.Marshal(struct {
 		Name string `json:"name"`
 	}{
@@ -119,6 +119,10 @@ func (*fakeSnapshotManager) GetMutable(context.Context, string, ...bkcache.RefOp
 
 func (*fakeSnapshotManager) GetMutableBySnapshotID(context.Context, string, ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	panic("unexpected GetMutableBySnapshotID call")
+}
+
+func (*fakeSnapshotManager) ImportChain(context.Context, *bkcache.ExportChain) (bkcache.ImmutableRef, error) {
+	panic("unexpected ImportChain call")
 }
 
 func (*fakeSnapshotManager) ImportImage(context.Context, *bkcache.ImportedImage, bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
@@ -456,12 +460,17 @@ func TestCachePersistenceWorkerUsesEncodedSnapshotLinks(t *testing.T) {
 	rows, err := c.pdb.ListMirrorResultSnapshotLinks(ctx)
 	assert.NilError(t, err)
 	assert.DeepEqual(t, rows, []persistdb.MirrorResultSnapshotLink{{
-		ResultID: int64(resultID),
-		RefKey:   "snapshot-after",
-		Role:     "snapshot",
+		ResultID:   int64(resultID),
+		RefKey:     "snapshot-after",
+		OutputPath: "[]",
+		Role:       "snapshot",
 	}})
 }
 
 var _ bkcache.SnapshotManager = (*fakeSnapshotManager)(nil)
 var _ PersistedObject = (*persistSnapshotValue)(nil)
 var _ PersistedSnapshotRefLinkProvider = (*persistSnapshotValue)(nil)
+
+func (*fakeSnapshotManager) PinSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
+	panic("unexpected PinSnapshot")
+}

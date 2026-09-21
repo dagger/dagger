@@ -24,6 +24,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
@@ -41,6 +42,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		}).Doc(`Queries the host environment.`),
 
 		dagql.NodeFunc("_builtinContainer", s.builtinContainer).
+			WithInput(engineDefaultPlatformInput).
 			IsPersistable().
 			Doc("Retrieves a container builtin to the engine."),
 	}.Install(srv)
@@ -154,6 +156,11 @@ func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, ctr.OnRelease(context.WithoutCancel(ctx)))
+		}
+	}()
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
@@ -327,6 +334,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}); err != nil {
 			return inst, fmt.Errorf("failed to load client filesync mirror: %w", err)
 		}
+		if err := core.EnsureBackingSnapshot(ctx, persistedMirror); err != nil {
+			return inst, fmt.Errorf("failed to create client filesync mirror: %w", err)
+		}
 		mirror = persistedMirror.Self()
 	} else {
 		mirror = core.NewEphemeralClientFilesyncMirror(drive)
@@ -352,15 +362,15 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.Dir.SetValue("/")
-	dir.Snapshot.SetValue(ref)
+	dir.SetPath("/")
+	dir.SetSnapshot(ref)
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
 		_ = dir.OnRelease(context.WithoutCancel(ctx))
 		return inst, fmt.Errorf("failed to create directory result: %w", err)
 	}
-	inst, err = inst.WithContentDigest(ctx, contentDgst)
+	inst, err = inst.WithContentDigest(ctx, contentDgst, call.ExtraDigestLabelRemoteCache)
 	if err != nil {
 		_ = dir.OnRelease(context.WithoutCancel(ctx))
 		return inst, err

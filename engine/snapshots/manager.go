@@ -59,12 +59,14 @@ type Accessor interface {
 	GetMutable(ctx context.Context, id string, opts ...RefOption) (MutableRef, error) // Rebase?
 	GetMutableBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (MutableRef, error)
 	ImportImage(ctx context.Context, img *ImportedImage, opts ImportImageOpts) (ImmutableRef, error)
+	ImportChain(ctx context.Context, chain *ExportChain) (ImmutableRef, error)
 	ApplySnapshotDiff(ctx context.Context, lower, upper ImmutableRef, opts ...RefOption) (ImmutableRef, error)
 	Merge(ctx context.Context, parents []ImmutableRef, opts ...RefOption) (ImmutableRef, error)
 }
 
 type SnapshotManager interface {
 	Accessor
+	PinSnapshot(context.Context, string) (ImmutableRef, error)
 	SnapshotSize(ctx context.Context, snapshotID string) (int64, error)
 	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
@@ -95,7 +97,8 @@ type snapshotManager struct {
 	importedLayerByBlob    map[ImportedLayerBlobKey]string
 	importedLayerByDiff    map[ImportedLayerDiffKey]string
 	snapshotOwnerLeases    map[string]map[string]struct{}
-	importLayerLocker      *locker.Locker
+	importLayerLocker      keyedLocker
+	exportLayerLocker      keyedLocker
 	ownerLeaseLocker       *locker.Locker
 
 	mountPool sharableMountPool
@@ -114,7 +117,6 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		importedLayerByBlob:    make(map[ImportedLayerBlobKey]string),
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
-		importLayerLocker:      locker.New(),
 		ownerLeaseLocker:       locker.New(),
 	}
 

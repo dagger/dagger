@@ -1,5 +1,7 @@
 # Stage 2 — Per-Part Evaluation
 
+The current operation lifetime is specified in [Lazy values](lazy-values.md). The earlier completion traces below predate retention of evaluated operations; pointer presence no longer reports pending work.
+
 Design for stage 2 of the remote-cache engine foundations. Written against
 commit `de3bb48fe9`, the head of the remediation stack. Sits under the
 guiding requirements and principles document and the engine-foundations
