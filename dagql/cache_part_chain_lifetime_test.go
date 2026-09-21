@@ -276,6 +276,12 @@ func TestPartImportChainRefCleanupHandoff(t *testing.T) {
 				require.Positive(t, manager.syncs.Load())
 			}
 			require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+			// RunLazyTask can return before its worker releases the row and
+			// finishes delegated session cleanup. Wait before removing the final
+			// persisted root so collection and its retained cleanup have finished.
+			releaseCtx, cancelRelease := context.WithTimeout(ctx, 5*time.Second)
+			defer cancelRelease()
+			require.NoError(t, c.WaitSessionRelease(releaseCtx, "test-session"))
 			_, err = c.removePersistedEdge(ctx, row.id)
 			require.NoError(t, err)
 			require.False(t, leasePresent(), "collection retries retained cleanup without a graph self-hold")
