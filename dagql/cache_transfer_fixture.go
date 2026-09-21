@@ -85,6 +85,24 @@ func (c *Cache) transferFixtureRowLocked(sessionID string, id *call.ID) (*shared
 	return row, nil
 }
 
+// EvaluateTransferFixtureRoots demands the exact held fixture rows. An ordinary
+// handle load can select a completed equivalent instead, which does not exercise
+// acquisition or restored ownership on the row the fixture is inspecting.
+func (c *Cache) EvaluateTransferFixtureRoots(ctx context.Context, sessionID string, resolver TypeResolver, ids []*call.ID) error {
+	return c.WithTransferFixtureRoots(ctx, sessionID, ids, func(roots []AnyResult) error {
+		for _, root := range roots {
+			loaded, err := c.ensurePersistedHitValueLoaded(ctx, resolver, root)
+			if err != nil {
+				return err
+			}
+			if err := c.Evaluate(ctx, loaded); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 type TransferFixtureRow struct {
 	ResultID      uint64                     `json:"resultID"`
 	Call          *ResultCall                `json:"call"`
