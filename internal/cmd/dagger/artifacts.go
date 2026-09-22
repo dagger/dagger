@@ -85,7 +85,7 @@ func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions artifact.Dimen
 			key = "key"
 		}
 		placeholder := strings.ToUpper(key)
-		flag.Usage = fmt.Sprintf("Select %s by `%s`. List values: 'dagger list %s'", artifactItemLabel(dimension.ItemType), key, cliName(dimension.CollectionType))
+		flag.Usage = fmt.Sprintf("Select %s by `%s`. values: 'dagger list %s'", artifactItemLabel(dimension.ItemType), key, cliName(dimension.CollectionType))
 		if description := strings.TrimSpace(dimension.KeyDescription); description != "" {
 			flag.Usage += "\n" + placeholder + ": " + description
 		}
