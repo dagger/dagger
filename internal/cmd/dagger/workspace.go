@@ -275,6 +275,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
+	workspaceCmd.AddCommand(workspaceDoctorCmd)
 
 	addWorkspaceHereFlag(workspaceConfigCmd)
 	activityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")

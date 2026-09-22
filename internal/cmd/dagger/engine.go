@@ -204,9 +204,13 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		}
 	}
 
-	ca, err := auth.GetCloudAuth(ctx)
-	if err != nil {
-		return params, err
+	ca, checked := ctx.Value(doctorCloudAuthKey{}).(*auth.Cloud)
+	if !checked {
+		var err error
+		ca, err = auth.GetCloudAuth(ctx)
+		if err != nil {
+			return params, err
+		}
 	}
 	params.CloudAuth = ca
 
