@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
@@ -156,44 +157,86 @@ func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, 
 		return "", err
 	}
 	name := "recipe-capture-" + identity.NewID()
-	_, err = rehydrateAgent(ctx, c, string(seed), identity.NewID(), name, "IDLE", "")
+	_, err = rehydrateAgent(ctx, c, string(seed), name, name, "IDLE", "")
 	if err != nil {
 		return "", err
 	}
 	return sink.committedRecipe(ctx, name)
 }
 
+// captureShellRecipe captures a nested shell's committed conversation after its
+// client exits. The outer session's telemetry carries the nested control records.
+func (sink *agentTraceSink) captureShellRecipe(ctx context.Context, t *testctx.T, base *dagger.Container, selection string) (string, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	name := "shell-recipe-" + identity.NewID()
+	_, err := base.With(daggerShell(selection + " | spawn --handle " + name + " --name " + name)).Sync(ctx)
+	if err != nil {
+		return "", err
+	}
+	id, err := sink.committedRecipe(ctx, name)
+	return string(id), err
+}
+
 // committedRecipe also serves containerized shell fixtures: they spawn a named
 // inert agent instead of invoking a serialization API, then the enclosing client
 // observes that agent's committed recipe in forwarded telemetry.
-func (sink *agentTraceSink) committedRecipe(ctx context.Context, name string) (dagger.ID, error) {
+func (sink *agentTraceSink) committedRecipe(ctx context.Context, handle string) (dagger.ID, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	var source agentcontrol.Key
 	var lastErr error
 	for {
 		var encoded string
+		var invalid error
 		sink.read(func(db *dagui.DB) {
-			for _, agent := range db.Agents() {
-				if agent.Name != name || agent.SnapshotDigest == "" {
-					continue
-				}
-				id, err := db.CallIDForDigest(agent.SnapshotDigest)
-				if err != nil {
-					lastErr = err
-					return
-				}
-				encoded, lastErr = id.Encode()
+			agents, _, err := db.AgentControl()
+			if err != nil {
+				invalid = err
 				return
 			}
+			var selected *agentcontrol.Agent
+			for _, agent := range agents {
+				if agent.Handle != handle {
+					continue
+				}
+				if selected != nil || (source.Handle != "" && source != agent.Key) {
+					invalid = fmt.Errorf("capture handle %q appeared in multiple source namespaces", handle)
+					return
+				}
+				source = agent.Key
+				selected = &agent
+			}
+			if selected == nil {
+				return
+			}
+			if _, err := selected.RestoreState(); err != nil {
+				invalid = err
+				return
+			}
+			if selected.Removed {
+				invalid = fmt.Errorf("capture agent %q was removed", handle)
+				return
+			}
+			id, err := db.CallIDForDigest(selected.Digest)
+			if err != nil {
+				lastErr = err
+				return
+			}
+			encoded, lastErr = id.Encode()
 		})
+		if invalid != nil {
+			return "", invalid
+		}
 		if encoded != "" {
 			return dagger.ID(encoded), nil
 		}
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("capture committed recipe %q: %w (last closure error: %v)", name, ctx.Err(), lastErr)
+			return "", fmt.Errorf("capture committed recipe %q: %w (last closure error: %v)", handle, ctx.Err(), lastErr)
 		case <-ticker.C:
 		}
 	}

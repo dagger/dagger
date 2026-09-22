@@ -20,6 +20,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -179,7 +181,7 @@ func restoreAgent(ctx context.Context, t *testctx.T, c *dagger.Client, db *dagui
 	snapshotID, err := callID.Encode()
 	require.NoError(t, err)
 
-	h, err := rehydrateAgent(ctx, c, snapshotID, entry.ID, entry.Name, entry.State, entry.Error)
+	h, err := rehydrateAgentWithParent(ctx, c, snapshotID, entry.ID, entry.Name, entry.State, entry.Error, entry.ParentAgentID)
 	require.NoError(t, err, "re-hydrating agent %q", entry.Name)
 	return h
 }
@@ -438,13 +440,9 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 // pre-teardown state mapping, and preservation of failure information across two
 // restores. None of the destination agents may run a model merely by restoring.
 func (AgentRestoreSuite) TestRestoreDormantLifecycleGraph(ctx context.Context, t *testctx.T) {
-	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
-		t.Skip("needs independent CLI sessions to capture telemetry")
-	}
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
 	defer cancel()
-	sink := newAgentTraceSink(t)
-	source := connect(ctx, t, sink.clientOpts()...)
+	source, sink := connectWithTrace(ctx, t)
 	spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "dormant"})
 	paused := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "paused"})
 	require.Equal(t, "PAUSED", paused.mustVerb(ctx, t, "pause"))
@@ -473,8 +471,8 @@ func (AgentRestoreSuite) TestRestoreDormantLifecycleGraph(ctx context.Context, t
 		}
 		plan := db.RestorePlan()
 		require.Len(t, plan, len(wantStates))
-		sink = newAgentTraceSink(t)
-		target := connect(ctx, t, sink.clientOpts()...)
+		target, targetSink := connectWithTrace(ctx, t)
+		sink = targetSink
 		for _, entry := range plan {
 			require.Equal(t, wantStates[entry.Name], entry.State, "%s", entry.Name)
 			h := restoreAgent(ctx, t, target, db, entry)
@@ -495,15 +493,11 @@ func (AgentRestoreSuite) TestRestoreDormantLifecycleGraph(ctx context.Context, t
 // the source connection is closed and its checkout has been removed. A distinct
 // destination checkout intentionally disagrees with both frozen and pending data.
 func (AgentRestoreSuite) TestRestoreWorkspaceAfterSourceDisappears(ctx context.Context, t *testctx.T) {
-	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
-		t.Skip("needs independent CLI sessions to capture telemetry")
-	}
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 	sourceDir, _ := workspaceExportCheckout(ctx, t)
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "authority.txt"), []byte("source"), 0o644))
-	sink := newAgentTraceSink(t)
-	source := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(sourceDir))...)
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "base.txt"), []byte("source"), 0o644))
+	source, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: sourceDir})
 	frozen := snapshotWorkspace(ctx, t, source, source.CurrentWorkspace())
 	wsID, err := frozen.WithNewFile("pending.txt", "unexported").ID(ctx)
 	require.NoError(t, err)
@@ -513,9 +507,9 @@ func (AgentRestoreSuite) TestRestoreWorkspaceAfterSourceDisappears(ctx context.C
 	require.NoError(t, os.RemoveAll(sourceDir))
 
 	destinationDir, _ := workspaceExportCheckout(ctx, t)
-	require.NoError(t, os.WriteFile(filepath.Join(destinationDir, "authority.txt"), []byte("destination"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(destinationDir, "base.txt"), []byte("destination"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(destinationDir, "pending.txt"), []byte("not the pending edit"), 0o644))
-	target := connect(ctx, t, dagger.WithWorkdir(destinationDir))
+	target, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: destinationDir})
 	traces, logs := sink.capture()
 	db := restoringDB(t)
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
@@ -528,13 +522,116 @@ func (AgentRestoreSuite) TestRestoreWorkspaceAfterSourceDisappears(ctx context.C
 	plan := db.RestorePlan()
 	require.Len(t, plan, 1)
 	h := restoreAgent(ctx, t, target, db, plan[0])
-	out := h.mustRun(ctx, t, `snapshot { workspace { source: file(path: "authority.txt") { contents } pending: file(path: "pending.txt") { contents } } }`)
+	out := h.mustRun(ctx, t, `snapshot { workspace { source: file(path: "base.txt") { contents } pending: file(path: "pending.txt") { contents } } }`)
 	require.Equal(t, "source", out.Get("snapshot.workspace.source.contents").String())
 	require.Equal(t, "unexported", out.Get("snapshot.workspace.pending.contents").String())
 	require.Equal(t, "IDLE", h.state(ctx, t))
-	local, err := os.ReadFile(filepath.Join(destinationDir, "authority.txt"))
+	local, err := os.ReadFile(filepath.Join(destinationDir, "base.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "destination", string(local), "restore must not implicitly export")
+}
+
+// TestRestoreNotificationGraph uses the actual published watched-to-subscriber
+// graph, including a non-parent filter replacement and a removal tombstone.
+// Pending source mailbox events are deliberately excluded from the guarantee.
+func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	source, sink := connectWithTrace(ctx, t)
+	workerModel := cannedRecordingModel(ctx, t, source, source.LLM().
+		WithPrompt("old task").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "old completion"}}).
+		WithPrompt("new task").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "new completion"}}))
+	chiefModel := cannedRecordingModel(ctx, t, source, source.LLM().
+		WithPrompt(agentIdleEventText("worker", "new completion")).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "new completion noted"}}))
+	chief := spawnAgent(ctx, t, source, spawnOpts{model: chiefModel, name: "chief"})
+	chiefID := chief.mustRun(ctx, t, "handle").Get("handle").String()
+	worker := spawnAgent(ctx, t, source, spawnOpts{model: workerModel, name: "worker", parentHandle: chiefID, handle: identity.NewID()})
+	observer := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "observer"})
+	removed := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "removed"})
+	_, reply, err := worker.sendAndWait(ctx, t, "old task")
+	require.NoError(t, err)
+	require.Equal(t, "old completion", reply)
+	for _, sub := range []struct {
+		agent  *agentHandle
+		states string
+	}{
+		{chief, "IDLE"}, {observer, "IDLE"}, {observer, "FAILED"}, {removed, "FAILED"}, {removed, ""},
+	} {
+		worker.mustRun(ctx, t, fmt.Sprintf(`notify(subscriber: %q, on: [%s])`, sub.agent.agentID, sub.states))
+	}
+	sink.awaitRestorable(t, 4)
+	require.NoError(t, source.Close())
+	traces, logs := sink.capture()
+	db := restoringDB(t)
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+	for _, batch := range traces {
+		require.NoError(t, importer.ImportSpans(ctx, batch))
+	}
+	for _, batch := range logs {
+		require.NoError(t, importer.ImportLogs(ctx, batch))
+	}
+	plan := planByName(t, db.RestorePlan())
+	require.Len(t, plan, 4)
+	require.Equal(t, plan["chief"].ID, plan["worker"].ParentAgentID)
+	_, edges, err := db.AgentControl()
+	require.NoError(t, err)
+	require.Len(t, edges, 3)
+	target, _ := connectWithTrace(ctx, t)
+	restored := map[string]*agentHandle{}
+	for _, name := range []string{"chief", "worker", "observer", "removed"} {
+		entry := plan[name]
+		restored[entry.ID] = restoreAgent(ctx, t, target, db, entry)
+	}
+	for _, edge := range edges {
+		require.Equal(t, plan["worker"].Source.Namespace, edge.Namespace)
+		require.Equal(t, plan["worker"].ID, edge.Watched)
+		switch edge.Subscriber {
+		case plan["chief"].ID:
+			require.Equal(t, []string{"IDLE"}, edge.States)
+		case plan["observer"].ID:
+			require.Equal(t, []string{"FAILED"}, edge.States)
+		case plan["removed"].ID:
+			require.Empty(t, edge.States)
+		default:
+			t.Fatalf("unexpected subscriber %s", edge.Subscriber)
+		}
+		restored[edge.Watched].mustRun(ctx, t, fmt.Sprintf(`restoreNotify(subscriber: %q, on: [%s])`, restored[edge.Subscriber].agentID, strings.Join(edge.States, ",")))
+	}
+	restoredChief := restored[plan["chief"].ID]
+	restoredObserver := restored[plan["observer"].ID]
+	restoredRemoved := restored[plan["removed"].ID]
+	for _, h := range []*agentHandle{restoredChief, restoredObserver, restoredRemoved} {
+		h.mustRun(ctx, t, "resume")
+	}
+	// An immediate public notify level check would queue the old completion.
+	// Explicitly start the subscriber loops to expose even queued stale events.
+	require.Never(t, func() bool {
+		for _, h := range []*agentHandle{restoredChief, restoredObserver, restoredRemoved} {
+			if h.state(ctx, t) != "IDLE" || len(h.mustRun(ctx, t, "snapshot { messages { role } }").Get("snapshot.messages").Array()) != 0 {
+				return true
+			}
+		}
+		return false
+	}, time.Second, 100*time.Millisecond, "restore synthesized a historical notification")
+	restoredWorker := restored[plan["worker"].ID]
+	_, reply, err = restoredWorker.sendAndWait(ctx, t, "new task")
+	require.NoError(t, err)
+	require.Equal(t, "new completion", reply)
+	require.Eventually(t, func() bool { _, reply := restoredChief.snapshot(ctx, t); return reply == "new completion noted" }, time.Minute, 100*time.Millisecond)
+	require.Equal(t, "IDLE", restoredObserver.state(ctx, t), "FAILED-only subscriber must not hear IDLE")
+	_, err = restoredWorker.sendNoWait(ctx, t, "exhaust recording")
+	require.NoError(t, err)
+	restoredWorker.mustRun(ctx, t, "wait")
+	require.Equal(t, "FAILED", restoredWorker.state(ctx, t))
+	// The matching FAILED notification wakes the observer's empty provider;
+	// its failure proves delivery without requiring unstable rendered error text.
+	require.Eventually(t, func() bool { return restoredObserver.state(ctx, t) == "FAILED" }, time.Minute, 100*time.Millisecond)
+	out := restoredObserver.mustRun(ctx, t, `snapshot { messages { origin { kind agentName } } }`)
+	require.Equal(t, "EVENT", out.Get("snapshot.messages.0.origin.kind").String())
+	require.Equal(t, "worker", out.Get("snapshot.messages.0.origin.agentName").String())
+	require.Equal(t, "IDLE", restoredRemoved.state(ctx, t))
+	require.Empty(t, restoredRemoved.mustRun(ctx, t, "snapshot { messages { role } }").Get("snapshot.messages").Array())
 }
 
 // withoutSpanCallPayloads strips the dagger.io/dag.call attribute from every
