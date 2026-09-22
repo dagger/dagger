@@ -44,6 +44,15 @@ func TestArtifactListFormats(t *testing.T) {
 		out := render(t, "table", []listedArtifact{{URI: "dag+container://dev", Description: "Development"}})
 		require.Regexp(t, `DESCRIPTION +VARIANT\nDevelopment +dev\n`, out)
 	})
+	t.Run("empty keys differ from missing dimensions", func(t *testing.T) {
+		out := render(t, "table", []listedArtifact{
+			{URI: "dag+test://one?go-test=", DimensionKeys: []struct{ Dimension, Key string }{{"GoModule.tests", ""}}},
+			{URI: "dag+test://two", DimensionKeys: nil},
+		})
+		require.Regexp(t, `(?m)^"" +one$`, out)
+		require.Regexp(t, `(?m)^ +two$`, out)
+	})
+
 	t.Run("links retain all keys", func(t *testing.T) {
 		require.Equal(t, items[0].URI+"\n"+items[1].URI+"\n", render(t, "link", items))
 	})

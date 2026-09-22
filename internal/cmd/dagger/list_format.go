@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -33,9 +34,46 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	if len(items) == 0 {
 		return nil
 	}
+	if format == "link" {
+		for _, item := range items {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), item.URI); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if format == "cli" {
+		var lines []commandListItem
+		for _, item := range items {
+			addr, err := dagaddress.Parse(item.URI)
+			if err != nil {
+				return err
+			}
+			addr.Query = nil
+			var flags []string
+			for _, key := range item.DimensionKeys {
+				name := names[key.Dimension]
+				if name == "" {
+					name = key.Dimension
+				}
+				value, err := quoteArtifactArgument(key.Key)
+				if err != nil {
+					return err
+				}
+				flags = append(flags, "--"+name+"="+value)
+			}
+			// Keys alone can select paths outside this type or address filter.
+			link, err := quoteArtifactArgument(addr.String())
+			if err != nil {
+				return err
+			}
+			flags = append(flags, link)
+			lines = append(lines, commandListItem{Name: strings.Join(flags, " "), Comment: firstDescriptionLine(item.Description)})
+		}
+		return writeCommandList(cmd.OutOrStdout(), lines)
+	}
 	var dimensions []string
 	var rows [][]string
-	var lines []commandListItem
 	described, needsVariant := false, false
 	var paths []string
 	for _, item := range items {
@@ -52,23 +90,17 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		if err != nil {
 			return err
 		}
-		addr.Query = nil
 		values := make([]string, len(dimensions))
-		var flags []string
 		for _, key := range item.DimensionKeys {
-			values[slices.Index(dimensions, key.Dimension)] = key.Key
-			name := names[key.Dimension]
-			if name == "" {
-				name = key.Dimension
+			value := key.Key
+			// An empty key differs from an absent dimension. Quote control
+			// characters and literal quoted strings so they remain distinct.
+			if value == "" || strings.HasPrefix(value, "\"") || strings.ContainsAny(value, "\t\r\n") {
+				value = strconv.Quote(value)
 			}
-			value, err := quoteArtifactArgument(key.Key)
-			if err != nil {
-				return err
-			}
-			flags = append(flags, "--"+name+"="+value)
+			values[slices.Index(dimensions, key.Dimension)] = value
 		}
-		// The visible dimension tuple must distinguish every row. An empty
-		// key and a missing key both print blank, so also need a variant.
+		// Compare the displayed tuple, including absent and empty keys.
 		identity, _ := json.Marshal(values)
 		needsVariant = needsVariant || len(item.DimensionKeys) == 0 || seenKeys[string(identity)]
 		seenKeys[string(identity)] = true
@@ -77,22 +109,6 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		}
 		rows = append(rows, append(values, addr.Path))
 		paths = append(paths, addr.Path)
-		switch format {
-		case "link":
-			lines = append(lines, commandListItem{Name: item.URI})
-		case "cli":
-			// Retain the typed path. Keys alone can select other artifact paths,
-			// including paths outside this command's type or address filter.
-			link, err := quoteArtifactArgument(addr.String())
-			if err != nil {
-				return err
-			}
-			flags = append(flags, link)
-			lines = append(lines, commandListItem{Name: strings.Join(flags, " "), Comment: firstDescriptionLine(item.Description)})
-		}
-	}
-	if format != "table" {
-		return writeCommandList(cmd.OutOrStdout(), lines)
 	}
 	var header []string
 	for _, dimension := range dimensions {
@@ -112,7 +128,10 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	if _, err := fmt.Fprintln(writer, strings.Join(header, "\t")); err != nil {
 		return err
 	}
-	variants := artifactVariantLabels(paths)
+	var variants map[string]string
+	if needsVariant {
+		variants = artifactVariantLabels(paths)
+	}
 	for _, row := range rows {
 		if needsVariant {
 			row[len(row)-1] = variants[row[len(row)-1]]
