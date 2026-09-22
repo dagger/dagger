@@ -91,20 +91,27 @@ func replaceSection(body, section string) (string, error) {
 	return body[:start] + section + body[end+len(sectionEnd):], nil
 }
 
-func renderSection(diff, base, head string, descriptions bool) string {
+func fenced(language, text string) string {
+	// Descriptions can contain Markdown fences or HTML, including </details>.
+	// A fence longer than every run in the content keeps all of it literal.
+	fence := "```"
+	for strings.Contains(text, fence) {
+		fence += "`"
+	}
+	return fence + language + "\n" + strings.TrimRight(text, "\n") + "\n" + fence
+}
+
+func renderSection(diff schemaDiff, base, head string, descriptions bool) string {
 	command := "go -C hack/sdl-diff run ."
 	if !descriptions {
 		command += " -descriptions=false"
 	}
 	command += " " + base + ":" + schemaPath + " " + head + ":" + schemaPath
 	content := "No semantic API changes."
-	if diff != "" {
-		// Descriptions can themselves contain Markdown fences.
-		fence := "```"
-		for strings.Contains(diff, fence) {
-			fence += "`"
-		}
-		content = fence + "graphql\n" + strings.TrimRight(diff, "\n") + "\n" + fence
+	if diff.summary != "" {
+		content = fenced("graphql", diff.summary) +
+			"\n\n<details>\n<summary>Detailed diff</summary>\n\n" +
+			fenced("diff", diff.details) + "\n\n</details>"
 	}
 	return sectionStart + "\n## API changes\n\n" +
 		"`" + command + "`\n\n" +
@@ -149,8 +156,8 @@ func (g githubClient) updatePR(ctx context.Context, repo, number string, descrip
 	if err != nil {
 		return "", err
 	}
-	diff := semanticDiff(oldDoc, newDoc)
-	if strings.Contains(diff, sectionStart) || strings.Contains(diff, sectionEnd) {
+	diff := compareSchemas(oldDoc, newDoc)
+	if strings.Contains(diff.summary+diff.details, sectionStart) || strings.Contains(diff.summary+diff.details, sectionEnd) {
 		return "", fmt.Errorf("SDL diff contains reserved section markers; nothing published")
 	}
 	section := renderSection(diff, base, pr.Head.SHA, descriptions)
