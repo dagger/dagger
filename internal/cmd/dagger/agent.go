@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -180,8 +181,8 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cm
 	return string(id), err
 }
 
-// Attempt the effectful capture once before binding or composing tools. Capture
-// is best effort: startup and reload can use the live workspace if it fails.
+// Capture once before binding or composing tools. A failed capture must not
+// silently introduce a live checkout dependency into the committed recipe.
 func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
 	workspace := dag.CurrentWorkspace()
 	id, err := workspace.Snapshot().ID(ctx)
@@ -189,8 +190,7 @@ func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspa
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.WarnContext(ctx, "could not snapshot workspace; continuing with the live workspace", "error", err)
-		return workspace, nil
+		return nil, fmt.Errorf("capture workspace for agent: %w", err)
 	}
 	return dagger.Ref[*dagger.Workspace](dag, id), nil
 }

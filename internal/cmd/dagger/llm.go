@@ -327,6 +327,9 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	attached := s.newAgent(name)
 	attached.bindRuntime(rt, agentHandle, encodedID, owned)
 	snapshot := dagger.Ref[*dagger.LLM](s.dag, snapID)
+	// Reset remains trace-authoritative even after export advances its separate
+	// comparison baseline, or an explicit Ctrl+U imports a new client workspace.
+	attached.tracedReset = snapshot.WithoutMessageHistory()
 	// An attached/trace-restored conversation does not carry the checkpoint it
 	// originally synchronized from. Its current snapshot workspace is the safe
 	// best-effort baseline: it is portable with the snapshot and cannot trigger

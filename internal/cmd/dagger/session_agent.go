@@ -210,6 +210,10 @@ type sessionAgent struct {
 	// without resurrecting a stale checkpoint.
 	initialLLM *dagger.LLM
 
+	// tracedReset is captured once on attachment. Unlike the export baseline,
+	// it never advances on Ctrl+S or reads the destination checkout on .clear.
+	tracedReset *dagger.LLM
+
 	// lastSyncedWorkspace is the immutable save/reload boundary in this
 	// conversation's own history, not a mirror of the live checkout. Export
 	// advances it without rebinding the LLM; reload captures the host instead.
@@ -383,6 +387,17 @@ func (a *sessionAgent) updateSyncedLLM(llm *dagger.LLM, workspace *dagger.Worksp
 }
 
 func (a *sessionAgent) reset() {
+	a.updateLLM(a.resetLLM()) //nolint:errcheck
+}
+
+func (a *sessionAgent) resetLLM() *dagger.LLM {
+	if a.tracedReset != nil {
+		llm := a.tracedReset
+		if a.model != "" {
+			llm = llm.WithModel(a.model)
+		}
+		return llm
+	}
 	// Reset to the initially selected agent group (e.g. `dagger agent`), if
 	// any, so .clear returns to those agents rather than a blank LLM. Preserve
 	// the currently selected model, but bind the original composition to the
@@ -400,23 +415,19 @@ func (a *sessionAgent) reset() {
 			baseline = candidate
 		}
 	}
-	if baseline == nil {
-		// A truly unbound trace anchor has no checkpoint to recover. Keep .clear
-		// usable by binding the destination workspace; the next explicit reset
-		// replaces it with a portable checkpoint.
-		baseline = dag.CurrentWorkspace()
-	}
 	var llm *dagger.LLM
 	if a.initialLLM != nil {
-		llm = a.initialLLM.WithWorkspace(baseline)
+		llm = a.initialLLM
 		if a.model != "" {
 			llm = llm.WithModel(a.model)
 		}
 	} else {
-		llm = dag.LLM(dagger.LLMOpts{Model: a.model}).
-			WithWorkspace(baseline)
+		llm = dag.LLM(dagger.LLMOpts{Model: a.model})
 	}
-	a.updateLLM(llm) //nolint:errcheck
+	if baseline != nil {
+		llm = llm.WithWorkspace(baseline)
+	}
+	return llm
 }
 
 // currentAgent returns the runtime backing this conversation's turns,
@@ -1231,8 +1242,8 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 // LLM to the live workspace without exporting first.
 // It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
 // "uploads" the host's current state to the agent by throwing away the agent's
-// accumulated changes rather than writing them out. Try to capture a fresh
-// baseline from the checkout, falling back to the live workspace otherwise.
+// accumulated changes rather than writing them out. Capture a fresh immutable
+// baseline from the checkout; capture failure leaves the conversation unchanged.
 // Bind it eagerly so binding failures surface here.
 func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
 	if a.llm == nil {
