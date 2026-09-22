@@ -249,7 +249,7 @@ func (node *ModTreeNode) terminalContainer(ctx context.Context, setup TerminalSe
 		if err := coreSrv.Select(ctx, coreSrv.Root(), &ctr,
 			dagql.Selector{
 				Field: "container",
-				Args:  []dagql.NamedInput{{Name: "platform", Value: dir.Self().Platform}},
+				Args:  []dagql.NamedInput{{Name: "platform", Value: dagql.Opt(dir.Self().Platform)}},
 			},
 			dagql.Selector{
 				Field: "from",
