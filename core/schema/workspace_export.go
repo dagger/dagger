@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	gitsession "github.com/dagger/dagger/engine/session/git"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -22,6 +23,71 @@ type workspaceSaveArgs struct {
 	From           dagql.Optional[dagql.ID[*core.Workspace]]
 	CommitterName  string
 	CommitterEmail string
+}
+
+func (s *workspaceSchema) export(ctx context.Context, source dagql.ObjectResult[*core.Workspace], args workspaceExportArgs) (core.Void, error) {
+	ws := source.Self()
+	if _, synthetic := ws.BaseSource().(*core.WorkspaceSourceDirectory); synthetic {
+		return core.Void{}, fmt.Errorf("cannot export a synthetic workspace")
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return core.Void{}, err
+	}
+	caller, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return core.Void{}, err
+	}
+	if args.Path == "" {
+		// Resolve the destination independently of the source (which may be a
+		// portable value) and of any agent/tool workspace bound into ctx.
+		destination, err := query.Server.CurrentWorkspace(ctx)
+		if err != nil {
+			return core.Void{}, fmt.Errorf("resolve export destination: %w", err)
+		}
+		args.Path, err = destination.ExportHostPath()
+		if err != nil {
+			return core.Void{}, fmt.Errorf("resolve export destination: %w; specify a local checkout path", err)
+		}
+		if destination.ClientID != caller.ClientID {
+			return core.Void{}, fmt.Errorf("export destination is not a local workspace of the calling client; specify a local checkout path")
+		}
+	}
+
+	// A live overlay on this client's destination checkout cannot contain
+	// independent commits: withCommit/reset/pull produce stable Git values.
+	// Keep this case sparse, including when the destination was explicit.
+	if ws.ClientLocalBase() && ws.ClientID == caller.ClientID {
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return core.Void{}, err
+		}
+		destination, err := bk.AbsPath(ctx, args.Path)
+		if err != nil {
+			return core.Void{}, err
+		}
+		if destination == ws.HostPath() {
+			compatible := true
+			if args.From.Valid {
+				srv, err := core.CurrentDagqlServer(ctx)
+				if err != nil {
+					return core.Void{}, err
+				}
+				from, err := args.From.Value.Load(ctx, srv)
+				if err != nil {
+					return core.Void{}, fmt.Errorf("load comparison workspace: %w", err)
+				}
+				compatible = from.Self().ClientLocalBase() && from.Self().ClientID == ws.ClientID && from.Self().HostPath() == ws.HostPath()
+			}
+			if compatible {
+				return s.exportOverlay(ctx, source, args)
+			}
+		}
+	}
+	// Different baselines need Git integration, even if there happen to be no
+	// new commits. Only live inputs require capture; stable values stay pinned.
+	defer invalidateExportedWorkspace(ctx)
+	return core.Void{}, s.saveWorkspace(ctx, source, args)
 }
 
 func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.ObjectResult[*core.Workspace], args workspaceExportArgs) error {
