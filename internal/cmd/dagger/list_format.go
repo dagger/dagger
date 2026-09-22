@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -35,7 +36,8 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	var dimensions []string
 	var rows [][]string
 	var lines []commandListItem
-	described, needsLink := false, false
+	described, needsVariant := false, false
+	var paths []string
 	for _, item := range items {
 		for _, key := range item.DimensionKeys {
 			if !slices.Contains(dimensions, key.Dimension) {
@@ -65,28 +67,16 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 			}
 			flags = append(flags, "--"+name+"="+value)
 		}
-		// Length prefixes distinguish empty keys, missing keys, and separator
-		// characters. Different artifacts with the same tuple need a link.
-		var identity strings.Builder
-		for _, dimension := range dimensions {
-			found := false
-			for _, key := range item.DimensionKeys {
-				if key.Dimension == dimension {
-					fmt.Fprintf(&identity, "%d:%s;", len(key.Key), key.Key)
-					found = true
-					break
-				}
-			}
-			if !found {
-				identity.WriteString("-;")
-			}
-		}
-		needsLink = needsLink || len(item.DimensionKeys) == 0 || seenKeys[identity.String()]
-		seenKeys[identity.String()] = true
+		// The visible dimension tuple must distinguish every row. An empty
+		// key and a missing key both print blank, so also need a variant.
+		identity, _ := json.Marshal(values)
+		needsVariant = needsVariant || len(item.DimensionKeys) == 0 || seenKeys[string(identity)]
+		seenKeys[string(identity)] = true
 		if described {
 			values = append(values, firstDescriptionLine(item.Description))
 		}
-		rows = append(rows, append(values, addr.String()))
+		rows = append(rows, append(values, addr.Path))
+		paths = append(paths, addr.Path)
 		switch format {
 		case "link":
 			lines = append(lines, commandListItem{Name: item.URI})
@@ -115,15 +105,18 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	if described {
 		header = append(header, "DESCRIPTION")
 	}
-	if needsLink {
-		header = append(header, "LINK")
+	if needsVariant {
+		header = append(header, "VARIANT")
 	}
 	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(writer, strings.Join(header, "\t")); err != nil {
 		return err
 	}
+	variants := artifactVariantLabels(paths)
 	for _, row := range rows {
-		if !needsLink {
+		if needsVariant {
+			row[len(row)-1] = variants[row[len(row)-1]]
+		} else {
 			row = row[:len(row)-1]
 		}
 		for i, value := range row {
@@ -134,6 +127,35 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		}
 	}
 	return writer.Flush()
+}
+
+// Count each suffix once per distinct path. Labels depend only on paths, not
+// their order or how many dimension rows use each path.
+func artifactVariantLabels(paths []string) map[string]string {
+	parts := map[string][]string{}
+	counts := map[string]int{}
+	for _, path := range paths {
+		if _, exists := parts[path]; exists {
+			continue
+		}
+		parts[path] = strings.Split(path, "/")
+		for i := range parts[path] {
+			counts[strings.Join(parts[path][i:], "/")]++
+		}
+	}
+	labels := map[string]string{}
+	for path, segments := range parts {
+		label := path
+		for i := len(segments) - 1; i >= 0; i-- {
+			suffix := strings.Join(segments[i:], "/")
+			if counts[suffix] == 1 {
+				label = suffix
+				break
+			}
+		}
+		labels[path] = label
+	}
+	return labels
 }
 
 func quoteArtifactArgument(value string) (string, error) {

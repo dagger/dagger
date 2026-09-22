@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -27,21 +28,21 @@ func TestArtifactListFormats(t *testing.T) {
 		out := render(t, "table", items)
 		require.Contains(t, out, "GO-MODULE")
 		require.Contains(t, out, "GO-TEST")
-		require.NotContains(t, out, "LINK")
+		require.NotContains(t, out, "VARIANT")
 		require.Regexp(t, `\./api +TestHealth +Check health`, out)
 		require.Regexp(t, `\./worker +TestHealth`, out)
 	})
-	t.Run("different paths with the same keys need a link", func(t *testing.T) {
+	t.Run("different paths with the same keys need a variant", func(t *testing.T) {
 		other := items[0]
 		other.URI = "dag+test://other/tests?go-module=.%2Fapi&go-test=TestHealth"
 		out := render(t, "table", []listedArtifact{items[0], other})
-		require.Regexp(t, `DESCRIPTION +LINK\n`, out)
-		require.Contains(t, out, "dag+test://go/modules/tests")
-		require.Contains(t, out, "dag+test://other/tests")
+		require.Regexp(t, `DESCRIPTION +VARIANT\n`, out)
+		require.Contains(t, out, "modules/tests")
+		require.Contains(t, out, "other/tests")
 	})
-	t.Run("static artifacts need a link", func(t *testing.T) {
+	t.Run("static artifacts need a variant", func(t *testing.T) {
 		out := render(t, "table", []listedArtifact{{URI: "dag+container://dev", Description: "Development"}})
-		require.Regexp(t, `DESCRIPTION +LINK\nDevelopment +dag\+container://dev\n`, out)
+		require.Regexp(t, `DESCRIPTION +VARIANT\nDevelopment +dev\n`, out)
 	})
 	t.Run("links retain all keys", func(t *testing.T) {
 		require.Equal(t, items[0].URI+"\n"+items[1].URI+"\n", render(t, "link", items))
@@ -54,4 +55,17 @@ func TestArtifactListFormats(t *testing.T) {
 	t.Run("duplicate selections print once", func(t *testing.T) {
 		require.Equal(t, items[0].URI+"\n", render(t, "link", []listedArtifact{items[0], items[0]}))
 	})
+}
+
+func TestArtifactVariantLabels(t *testing.T) {
+	paths := []string{"go/modules/test", "python/modules/test", "engine/dev", "go/modules/test", "go/modules/lint"}
+	want := map[string]string{
+		"go/modules/test":     "go/modules/test",
+		"python/modules/test": "python/modules/test",
+		"engine/dev":          "dev",
+		"go/modules/lint":     "lint",
+	}
+	require.Equal(t, want, artifactVariantLabels(paths))
+	slices.Reverse(paths)
+	require.Equal(t, want, artifactVariantLabels(paths))
 }
