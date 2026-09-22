@@ -135,25 +135,23 @@ func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *da
 func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, cmd *cobra.Command) error {
 	ctx, span := Tracer().Start(ctx, "list artifacts", telemetry.Encapsulate())
 	defer span.End()
-	id, err := selection.ID(ctx)
-	if err != nil {
-		return err
-	}
-	var response struct {
-		Node struct {
-			Items []struct{ URI, Description string }
-		}
-	}
 	absolute, _ := cmd.Flags().GetBool("absolute")
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
-		node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute) description } } }
-	}`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
+	items, err := readListedArtifacts(ctx, dag, selection, absolute, true)
 	if err != nil {
 		return err
 	}
-	items := make([]commandListItem, 0, len(response.Node.Items))
-	for _, item := range response.Node.Items {
-		items = append(items, commandListItem{Name: item.URI, Comment: firstDescriptionLine(item.Description)})
+	return writeArtifactCLI(cmd.OutOrStdout(), items, nil, artifactListReplayArgs(cmd))
+}
+
+// Preserve explicit check selection policy when a listed row is copied.
+func artifactListReplayArgs(cmd *cobra.Command) []string {
+	var args []string
+	if cmd.Flags().Changed("generated") {
+		args = append(args, "--generated="+cmd.Flag("generated").Value.String())
 	}
-	return writeCommandList(cmd.OutOrStdout(), items)
+	skip, _ := cmd.Flags().GetStringArray("skip")
+	for _, pattern := range skip {
+		args = append(args, "--skip="+pattern)
+	}
+	return args
 }

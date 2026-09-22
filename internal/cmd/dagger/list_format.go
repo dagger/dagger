@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -43,36 +44,7 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		return nil
 	}
 	if format == "cli" {
-		var lines []commandListItem
-		for _, item := range items {
-			addr, err := dagaddress.Parse(item.URI)
-			if err != nil {
-				return err
-			}
-			addr.Query = nil
-			var flags []string
-			for _, key := range item.DimensionKeys {
-				name := names[key.Dimension]
-				if name == "" {
-					name = key.Dimension
-				}
-				value, err := quoteArtifactArgument(key.Key)
-				if err != nil {
-					return err
-				}
-				flags = append(flags, "--"+name+"="+value)
-			}
-			if !item.CLIFlagsOnly || len(item.DimensionKeys) == 0 {
-				// Keys alone do not encode an artifact type or operation.
-				link, err := quoteArtifactArgument(addr.String())
-				if err != nil {
-					return err
-				}
-				flags = append(flags, link)
-			}
-			lines = append(lines, commandListItem{Name: strings.Join(flags, " "), Comment: firstDescriptionLine(item.Description)})
-		}
-		return writeCommandList(cmd.OutOrStdout(), lines)
+		return writeArtifactCLI(cmd.OutOrStdout(), items, names, nil)
 	}
 	var dimensions []string
 	var rows [][]string
@@ -149,6 +121,53 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		}
 	}
 	return writer.Flush()
+}
+
+func writeArtifactCLI(w io.Writer, items []listedArtifact, names map[string]string, options []string) error {
+	lines := make([]commandListItem, 0, len(items))
+	for _, item := range items {
+		args, err := artifactCLIArguments(item, names, options)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, commandListItem{Name: args, Comment: firstDescriptionLine(item.Description)})
+	}
+	return writeCommandList(w, lines)
+}
+
+func artifactCLIArguments(item listedArtifact, names map[string]string, options []string) (string, error) {
+	var args []string
+	for _, key := range item.DimensionKeys {
+		name := names[key.Dimension]
+		if name == "" {
+			name = key.Dimension
+		}
+		value, err := quoteArtifactArgument(key.Key)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, "--"+name+"="+value)
+	}
+	for _, option := range options {
+		quoted, err := quoteArtifactArgument(option)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, quoted)
+	}
+	if item.URI != "" && !item.CLIFlagsOnly {
+		addr, err := dagaddress.Parse(item.URI)
+		if err != nil {
+			return "", err
+		}
+		addr.Query = nil
+		link, err := quoteArtifactArgument(addr.String())
+		if err != nil {
+			return "", err
+		}
+		args = append(args, link)
+	}
+	return strings.Join(args, " "), nil
 }
 
 // Keep each row's innermost dimension. Remove a parent column only if the
