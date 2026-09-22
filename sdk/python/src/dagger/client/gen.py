@@ -1789,6 +1789,29 @@ class Artifacts(Type):
         _ctx = self._select("dimensions", _args)
         return await _ctx.execute(list[str])
 
+    def filter_agent(self) -> Self:
+        """Select LLM artifacts marked agent."""
+        _args: list[Arg] = []
+        _ctx = self._select("filterAgent", _args)
+        return Artifacts(_ctx)
+
+    def filter_check(self, *, generated: bool | None = None) -> Self:
+        """Select Check artifacts for dagger check, using each workspace's check
+        and generator settings. Include stale checks only for Changesets
+        marked generate.
+
+        Parameters
+        ----------
+        generated:
+            Include generated-file checks. Defaults to the workspace check-
+            generated setting, or true when unset.
+        """
+        _args = [
+            Arg("generated", generated, None),
+        ]
+        _ctx = self._select("filterCheck", _args)
+        return Artifacts(_ctx)
+
     def filter_dimension_keys(self, dimension: str, keys: list[str]) -> Self:
         """Keep artifacts with any listed key in this dimension."""
         _args = [
@@ -1812,7 +1835,8 @@ class Artifacts(Type):
         *,
         exclude: bool | None = False,
     ) -> Self:
-        """Keep artifacts with any listed directive.
+        """Keep artifacts with any listed directive. Does not filter by type or
+        workspace settings.
 
         Parameters
         ----------
@@ -1825,6 +1849,14 @@ class Artifacts(Type):
             Arg("exclude", exclude, False),
         ]
         _ctx = self._select("filterDirectives", _args)
+        return Artifacts(_ctx)
+
+    def filter_generate(self) -> Self:
+        """Select Changeset artifacts marked generate, using each workspace's
+        generator settings.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("filterGenerate", _args)
         return Artifacts(_ctx)
 
     def filter_parent_directives(
@@ -1898,6 +1930,14 @@ class Artifacts(Type):
             Arg("exclude", exclude, False),
         ]
         _ctx = self._select("filterTypes", _args)
+        return Artifacts(_ctx)
+
+    def filter_up(self) -> Self:
+        """Select Service artifacts marked up, using each workspace's service
+        settings.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("filterUp", _args)
         return Artifacts(_ctx)
 
     def filter_uri(self, uri: str) -> Self:

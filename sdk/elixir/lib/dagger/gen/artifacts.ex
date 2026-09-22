@@ -38,6 +38,36 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
+  Select LLM artifacts marked agent.
+  """
+  @spec filter_agent(t()) :: Dagger.Artifacts.t()
+  def filter_agent(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("filterAgent")
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
+  Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+  """
+  @spec filter_check(t(), [{:generated, boolean() | nil}]) :: Dagger.Artifacts.t()
+  def filter_check(%__MODULE__{} = artifacts, optional_args \\ []) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("filterCheck")
+      |> QB.maybe_put_arg("generated", optional_args[:generated])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
   Keep artifacts with any listed key in this dimension.
   """
   @spec filter_dimension_keys(t(), String.t(), [String.t()]) :: Dagger.Artifacts.t()
@@ -71,7 +101,7 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  Keep artifacts with any listed directive.
+  Keep artifacts with any listed directive. Does not filter by type or workspace settings.
   """
   @spec filter_directives(t(), [String.t()], [{:exclude, boolean() | nil}]) ::
           Dagger.Artifacts.t()
@@ -81,6 +111,20 @@ defmodule Dagger.Artifacts do
       |> QB.select("filterDirectives")
       |> QB.put_arg("directives", directives)
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
+  Select Changeset artifacts marked generate, using each workspace's generator settings.
+  """
+  @spec filter_generate(t()) :: Dagger.Artifacts.t()
+  def filter_generate(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("filterGenerate")
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -148,6 +192,20 @@ defmodule Dagger.Artifacts do
       |> QB.select("filterTypes")
       |> QB.put_arg("types", types)
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
+  Select Service artifacts marked up, using each workspace's service settings.
+  """
+  @spec filter_up(t()) :: Dagger.Artifacts.t()
+  def filter_up(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("filterUp")
 
     %Dagger.Artifacts{
       query_builder: query_builder,

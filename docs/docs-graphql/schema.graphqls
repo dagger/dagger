@@ -502,19 +502,40 @@ type Artifacts implements Node {
   """
   dimensions: [String!]!
 
+  """Select LLM artifacts marked agent."""
+  filterAgent: Artifacts!
+
+  """
+  Select Check artifacts for dagger check, using each workspace's check and
+  generator settings. Include stale checks only for Changesets marked generate.
+  """
+  filterCheck(
+    """
+    Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
+    """
+    generated: Boolean
+  ): Artifacts!
+
   """Keep artifacts with any listed key in this dimension."""
   filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
 
   """Keep artifacts selected through any listed dimension."""
   filterDimensions(dimensions: [String!]!): Artifacts!
 
-  """Keep artifacts with any listed directive."""
+  """
+  Keep artifacts with any listed directive. Does not filter by type or workspace settings.
+  """
   filterDirectives(
     directives: [String!]!
 
     """Remove the matching artifacts instead."""
     exclude: Boolean = false
   ): Artifacts!
+
+  """
+  Select Changeset artifacts marked generate, using each workspace's generator settings.
+  """
+  filterGenerate: Artifacts!
 
   """
   Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
@@ -546,6 +567,11 @@ type Artifacts implements Node {
     """Remove the matching artifacts instead."""
     exclude: Boolean = false
   ): Artifacts!
+
+  """
+  Select Service artifacts marked up, using each workspace's service settings.
+  """
+  filterUp: Artifacts!
 
   """
   Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.

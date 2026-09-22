@@ -1424,6 +1424,36 @@ func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Select LLM artifacts marked agent.
+func (r *Artifacts) FilterAgent() *Artifacts {
+	q := r.query.Select("filterAgent")
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// ArtifactsFilterCheckOpts contains options for Artifacts.FilterCheck
+type ArtifactsFilterCheckOpts struct {
+	// Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
+	Generated bool
+}
+
+// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+func (r *Artifacts) FilterCheck(opts ...ArtifactsFilterCheckOpts) *Artifacts {
+	q := r.query.Select("filterCheck")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `generated` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Generated) {
+			q = q.Arg("generated", opts[i].Generated)
+		}
+	}
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
 // Keep artifacts with any listed key in this dimension.
 func (r *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
 	q := r.query.Select("filterDimensionKeys")
@@ -1451,7 +1481,7 @@ type ArtifactsFilterDirectivesOpts struct {
 	Exclude bool
 }
 
-// Keep artifacts with any listed directive.
+// Keep artifacts with any listed directive. Does not filter by type or workspace settings.
 func (r *Artifacts) FilterDirectives(directives []string, opts ...ArtifactsFilterDirectivesOpts) *Artifacts {
 	q := r.query.Select("filterDirectives")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1461,6 +1491,15 @@ func (r *Artifacts) FilterDirectives(directives []string, opts ...ArtifactsFilte
 		}
 	}
 	q = q.Arg("directives", directives)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Select Changeset artifacts marked generate, using each workspace's generator settings.
+func (r *Artifacts) FilterGenerate() *Artifacts {
+	q := r.query.Select("filterGenerate")
 
 	return &Artifacts{
 		query: q,
@@ -1537,6 +1576,15 @@ func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts
 		}
 	}
 	q = q.Arg("types", types)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Select Service artifacts marked up, using each workspace's service settings.
+func (r *Artifacts) FilterUp() *Artifacts {
+	q := r.query.Select("filterUp")
 
 	return &Artifacts{
 		query: q,

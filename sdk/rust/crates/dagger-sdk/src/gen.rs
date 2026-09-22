@@ -1290,6 +1290,12 @@ pub struct Artifacts {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsFilterCheckOpts {
+    /// Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
+    #[builder(setter(into, strip_option), default)]
+    pub generated: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterDirectivesOpts {
     /// Remove the matching artifacts instead.
     #[builder(setter(into, strip_option), default)]
@@ -1360,6 +1366,44 @@ impl Artifacts {
         let query = self.selection.select("dimensions");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Select LLM artifacts marked agent.
+    pub fn filter_agent(&self) -> Artifacts {
+        let query = self.selection.select("filterAgent");
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_check(&self) -> Artifacts {
+        let query = self.selection.select("filterCheck");
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_check_opts(&self, opts: ArtifactsFilterCheckOpts) -> Artifacts {
+        let mut query = self.selection.select("filterCheck");
+        if let Some(generated) = opts.generated {
+            query = query.arg("generated", generated);
+        }
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Keep artifacts with any listed key in this dimension.
     pub fn filter_dimension_keys(
         &self,
@@ -1394,7 +1438,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Keep artifacts with any listed directive.
+    /// Keep artifacts with any listed directive. Does not filter by type or workspace settings.
     ///
     /// # Arguments
     ///
@@ -1414,7 +1458,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Keep artifacts with any listed directive.
+    /// Keep artifacts with any listed directive. Does not filter by type or workspace settings.
     ///
     /// # Arguments
     ///
@@ -1435,6 +1479,15 @@ impl Artifacts {
         if let Some(exclude) = opts.exclude {
             query = query.arg("exclude", exclude);
         }
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select Changeset artifacts marked generate, using each workspace's generator settings.
+    pub fn filter_generate(&self) -> Artifacts {
+        let query = self.selection.select("filterGenerate");
         Artifacts {
             proc: self.proc.clone(),
             selection: query,
@@ -1577,6 +1630,15 @@ impl Artifacts {
         if let Some(exclude) = opts.exclude {
             query = query.arg("exclude", exclude);
         }
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select Service artifacts marked up, using each workspace's service settings.
+    pub fn filter_up(&self) -> Artifacts {
+        let query = self.selection.select("filterUp");
         Artifacts {
             proc: self.proc.clone(),
             selection: query,

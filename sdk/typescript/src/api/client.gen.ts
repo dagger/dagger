@@ -228,6 +228,13 @@ export type ArtifactValueOpts = {
   arguments: JSON
 }
 
+export type ArtifactsFilterCheckOpts = {
+  /**
+   * Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
+   */
+  generated?: boolean
+}
+
 export type ArtifactsFilterDirectivesOpts = {
   /**
    * Remove the matching artifacts instead.
@@ -5117,6 +5124,23 @@ export class Artifacts extends BaseClient {
   }
 
   /**
+   * Select LLM artifacts marked agent.
+   */
+  filterAgent = (): Artifacts => {
+    const ctx = this._ctx.select("filterAgent")
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+   * @param opts.generated Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
+   */
+  filterCheck = (opts?: ArtifactsFilterCheckOpts): Artifacts => {
+    const ctx = this._ctx.select("filterCheck", { ...opts })
+    return new Artifacts(ctx)
+  }
+
+  /**
    * Keep artifacts with any listed key in this dimension.
    */
   filterDimensionKeys = (dimension: string, keys: string[]): Artifacts => {
@@ -5133,7 +5157,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Keep artifacts with any listed directive.
+   * Keep artifacts with any listed directive. Does not filter by type or workspace settings.
    * @param opts.exclude Remove the matching artifacts instead.
    */
   filterDirectives = (
@@ -5141,6 +5165,14 @@ export class Artifacts extends BaseClient {
     opts?: ArtifactsFilterDirectivesOpts,
   ): Artifacts => {
     const ctx = this._ctx.select("filterDirectives", { directives, ...opts })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Select Changeset artifacts marked generate, using each workspace's generator settings.
+   */
+  filterGenerate = (): Artifacts => {
+    const ctx = this._ctx.select("filterGenerate")
     return new Artifacts(ctx)
   }
 
@@ -5188,6 +5220,14 @@ export class Artifacts extends BaseClient {
     opts?: ArtifactsFilterTypesOpts,
   ): Artifacts => {
     const ctx = this._ctx.select("filterTypes", { types, ...opts })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Select Service artifacts marked up, using each workspace's service settings.
+   */
+  filterUp = (): Artifacts => {
+    const ctx = this._ctx.select("filterUp")
     return new Artifacts(ctx)
   }
 

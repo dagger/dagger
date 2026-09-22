@@ -33,6 +33,27 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Select LLM artifacts marked agent.
+     */
+    public function filterAgent(): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterAgent');
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+     */
+    public function filterCheck(?bool $generated = null): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterCheck');
+        if (null !== $generated) {
+        $innerQueryBuilder->setArgument('generated', $generated);
+        }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Keep artifacts with any listed key in this dimension.
      */
     public function filterDimensionKeys(string $dimension, array $keys): Artifacts
@@ -54,7 +75,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Keep artifacts with any listed directive.
+     * Keep artifacts with any listed directive. Does not filter by type or workspace settings.
      */
     public function filterDirectives(array $directives, ?bool $exclude = false): Artifacts
     {
@@ -63,6 +84,15 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Select Changeset artifacts marked generate, using each workspace's generator settings.
+     */
+    public function filterGenerate(): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterGenerate');
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -112,6 +142,15 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Select Service artifacts marked up, using each workspace's service settings.
+     */
+    public function filterUp(): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUp');
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
