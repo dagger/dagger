@@ -112,7 +112,7 @@ func (s GitAttachable) Close() error {
 
 func (s GitAttachable) PreparePushSSHAuth(ctx context.Context, req *PreparePushSSHAuthRequest) (*PreparePushSSHAuthResponse, error) {
 	if s.pushSSH == nil {
-		return nil, fmt.Errorf("client does not support preparing SSH push authentication")
+		return nil, fmt.Errorf("client does not support preparing SSH authentication")
 	}
 	path, err := s.pushSSH.prepare(ctx, req.GetRemote())
 	if err != nil {
