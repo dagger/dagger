@@ -83,7 +83,8 @@ source = "other"
 			require.NoError(t, err)
 			require.NotContains(t, out, test.target)
 
-			out, err = ordinary.With(daggerNonNestedExec("-m", "./app", test.command, "-l", test.target)).Stdout(ctx)
+			out, err = ordinary.WithEnvVariable("DAGGER_MODULE", "./app").
+				With(daggerNonNestedExec(test.command, "-l", test.target)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, test.target)
 			require.NotContains(t, out, "dag://app/"+test.target)
