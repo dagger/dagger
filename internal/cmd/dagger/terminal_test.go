@@ -27,22 +27,18 @@ func TestShellCommandWithoutTargetShowsGuidance(t *testing.T) {
 `, out.String())
 }
 
-func TestShellLegacyCommandStopsBeforeSetup(t *testing.T) {
+func TestShellCommandFlagValidation(t *testing.T) {
 	parent := shellCmd.Parent()
 	oldListMode := terminalListMode
-	oldSilenceUsage := shellCmd.SilenceUsage
+	oldCommand := terminalCommand
 	commandFlag := shellCmd.Flags().Lookup("command")
-	oldCommand := commandFlag.Value.String()
-	oldCommandChanged := commandFlag.Changed
 	listFlag := shellCmd.Flags().Lookup("list")
-	oldListChanged := listFlag.Changed
 	t.Cleanup(func() {
 		parent.AddCommand(shellCmd)
 		terminalListMode = oldListMode
-		shellCmd.SilenceUsage = oldSilenceUsage
-		require.NoError(t, commandFlag.Value.Set(oldCommand))
-		commandFlag.Changed = oldCommandChanged
-		listFlag.Changed = oldListChanged
+		terminalCommand = oldCommand
+		commandFlag.Changed = false
+		listFlag.Changed = false
 	})
 
 	setupCalled := false
@@ -60,31 +56,29 @@ func TestShellLegacyCommandStopsBeforeSetup(t *testing.T) {
 	parent.RemoveCommand(shellCmd)
 	root.AddCommand(shellCmd)
 
-	for _, args := range [][]string{
-		{"-c"},
-		{"-c", ".echo hello"},
-		{"-c", ""},
-		{"--command=.echo hello"},
-		{"--command"},
-		{"-l", "-c", ".echo hello"},
-		{"go:dev", "-c", ".echo hello"},
+	for _, tc := range []struct {
+		args []string
+		err  string
+	}{
+		{[]string{"-c", "ls"}, "--command requires a shell NAME"},
+		{[]string{"-l", "-c", "ls"}, "--list and --command cannot be used together"},
+		{[]string{"go:dev", "-l", "-c", "ls"}, "--list and --command cannot be used together"},
+		{[]string{"go:dev", "ls"}, "accepts at most 1 arg(s), received 2"},
 	} {
-		t.Run(fmt.Sprint(args), func(t *testing.T) {
+		t.Run(fmt.Sprint(tc.args), func(t *testing.T) {
 			commandFlag.Changed = false
 			listFlag.Changed = false
 			terminalListMode = false
-			shellCmd.SilenceUsage = oldSilenceUsage
 			setupCalled = false
-			root.SetArgs(append([]string{"shell"}, args...))
+			root.SetArgs(append([]string{"shell"}, tc.args...))
 
 			err := root.Execute()
-			require.EqualError(t, err, "'dagger shell -c' is no longer supported; use 'dagger -c' to run Dagger scripts")
+			require.EqualError(t, err, tc.err)
 			require.False(t, setupCalled)
-			require.True(t, shellCmd.SilenceUsage)
 		})
 	}
 
 	help := renderHelp(t, shellCmd)
-	require.NotContains(t, help, "--command")
+	require.Contains(t, help, "--command")
 	require.Contains(t, help, "--list")
 }

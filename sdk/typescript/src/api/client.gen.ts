@@ -16304,11 +16304,11 @@ export class TerminalGroup extends BaseClient {
   }
 
   /**
-   * Run a command non-interactively in the selected terminal target, and return the container after execution. Any exit code is allowed.
-   * @param args Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "test", "./..."].
+   * Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+   * @param stdin Content to write to the command's standard input. Example: "go test ./..."
    */
-  exec = (args: string[]): Container => {
-    const ctx = this._ctx.select("exec", { args })
+  exec = (stdin: string): Container => {
+    const ctx = this._ctx.select("exec", { stdin })
     return new Container(ctx)
   }
 

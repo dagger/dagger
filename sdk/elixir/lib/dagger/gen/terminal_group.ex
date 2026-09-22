@@ -16,12 +16,12 @@ defmodule Dagger.TerminalGroup do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Run a command non-interactively in the selected terminal target, and return the container after execution. Any exit code is allowed.
+  Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
   """
-  @spec exec(t(), [String.t()]) :: Dagger.Container.t()
-  def exec(%__MODULE__{} = terminal_group, args) do
+  @spec exec(t(), String.t()) :: Dagger.Container.t()
+  def exec(%__MODULE__{} = terminal_group, stdin) do
     query_builder =
-      terminal_group.query_builder |> QB.select("exec") |> QB.put_arg("args", args)
+      terminal_group.query_builder |> QB.select("exec") |> QB.put_arg("stdin", stdin)
 
     %Dagger.Container{
       query_builder: query_builder,

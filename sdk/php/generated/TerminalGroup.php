@@ -38,12 +38,12 @@ class TerminalGroup extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Run a command non-interactively in the selected terminal target, and return the container after execution. Any exit code is allowed.
+     * Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
      */
-    public function exec(array $args): Container
+    public function exec(string $stdin): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('exec');
-        $innerQueryBuilder->setArgument('args', $args);
+        $innerQueryBuilder->setArgument('stdin', $stdin);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

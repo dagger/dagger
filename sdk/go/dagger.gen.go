@@ -16563,10 +16563,10 @@ func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGro
 	}
 }
 
-// Run a command non-interactively in the selected terminal target, and return the container after execution. Any exit code is allowed.
-func (r *TerminalGroup) Exec(args []string) *Container {
+// Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+func (r *TerminalGroup) Exec(stdin string) *Container {
 	q := r.query.Select("exec")
-	q = q.Arg("args", args)
+	q = q.Arg("stdin", stdin)
 
 	return &Container{
 		query: q,

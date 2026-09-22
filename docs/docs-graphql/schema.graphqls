@@ -6088,14 +6088,14 @@ type TerminalGroup implements Node {
   run: TerminalGroup!
 
   """
-  Run a command non-interactively in the selected terminal target, and return
-  the container after execution. Any exit code is allowed.
+  Run the selected terminal target's command non-interactively, and return the
+  container after execution. Any exit code is allowed.
   """
   exec(
     """
-    Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "test", "./..."].
+    Content to write to the command's standard input. Example: "go test ./..."
     """
-    args: [String!]!
+    stdin: String!
   ): Container!
 }
 

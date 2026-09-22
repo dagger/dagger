@@ -16005,18 +16005,18 @@ class Terminal(Type):
 
 @typecheck
 class TerminalGroup(Type):
-    def exec(self, args: list[str]) -> Container:
-        """Run a command non-interactively in the selected terminal target, and
+    def exec(self, stdin: str) -> Container:
+        """Run the selected terminal target's command non-interactively, and
         return the container after execution. Any exit code is allowed.
 
         Parameters
         ----------
-        args:
-            Command to execute. Must be valid exec() arguments, not a shell
-            command. Example: ["go", "test", "./..."].
+        stdin:
+            Content to write to the command's standard input. Example: "go
+            test ./..."
         """
         _args = [
-            Arg("args", args),
+            Arg("stdin", stdin),
         ]
         _ctx = self._select("exec", _args)
         return Container(_ctx)

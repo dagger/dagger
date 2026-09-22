@@ -67,18 +67,15 @@ func (r *TerminalGroup) Run(ctx context.Context) error {
 	return target.Node.RunTerminal(r.workspaceContext(ctx))
 }
 
-// Exec runs args non-interactively in the selected terminal target, and
-// returns the container after execution. Any exit code is allowed, so the
-// caller can inspect it.
-func (r *TerminalGroup) Exec(ctx context.Context, args []string) (dagql.ObjectResult[*Container], error) {
-	if len(args) == 0 {
-		return dagql.ObjectResult[*Container]{}, fmt.Errorf("no command to execute")
-	}
+// Exec runs the selected terminal target's command non-interactively, with
+// stdin as its standard input, and returns the container after execution. Any
+// exit code is allowed, so the caller can inspect it.
+func (r *TerminalGroup) Exec(ctx context.Context, stdin string) (dagql.ObjectResult[*Container], error) {
 	target, err := r.selected()
 	if err != nil {
 		return dagql.ObjectResult[*Container]{}, err
 	}
-	return target.Node.ExecTerminal(r.workspaceContext(ctx), args)
+	return target.Node.ExecTerminal(r.workspaceContext(ctx), stdin)
 }
 
 func (r *TerminalGroup) selected() (*TerminalTarget, error) {
@@ -158,9 +155,10 @@ func (node *ModTreeNode) RunTerminal(ctx context.Context) error {
 	)
 }
 
-// ExecTerminal runs args in the container that RunTerminal would open, without
-// attaching a terminal. Like a terminal, each call runs the command again.
-func (node *ModTreeNode) ExecTerminal(ctx context.Context, args []string) (res dagql.ObjectResult[*Container], _ error) {
+// ExecTerminal runs the command that RunTerminal would open, in the same
+// container, with stdin as its standard input instead of a terminal. Like a
+// terminal, each call runs the command again.
+func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string) (res dagql.ObjectResult[*Container], _ error) {
 	if !supportsTerminal(node) {
 		return res, fmt.Errorf("%q: unsupported terminal target type", node.PathString())
 	}
@@ -217,12 +215,18 @@ func (node *ModTreeNode) ExecTerminal(ctx context.Context, args []string) (res d
 		return res, fmt.Errorf("attach terminal container: expected %T, got %T", ctr, attached)
 	}
 
+	// Match the terminal's command, and its fallback to sh.
 	defaults := ctr.Self().DefaultTerminalCmd
+	args := defaults.Args
+	if len(args) == 0 {
+		args = []string{"sh"}
+	}
 	ctx = dagql.WithNonInternalTelemetry(ctx)
 	if err := srv.Select(ctx, ctr, &res, dagql.Selector{
 		Field: "withExec",
 		Args: []dagql.NamedInput{
 			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args...))},
+			{Name: "stdin", Value: dagql.String(stdin)},
 			{Name: "expect", Value: ReturnAny},
 			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(defaults.ExperimentalPrivilegedNesting.Value.Bool())},
 			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(defaults.InsecureRootCapabilities.Value.Bool())},

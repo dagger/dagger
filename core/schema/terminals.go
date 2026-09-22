@@ -22,10 +22,10 @@ func (s terminalsSchema) Install(srv *dagql.Server) {
 			DoNotCache("Opens an interactive terminal and then returns the original group.").
 			Doc("Open the selected terminal target"),
 		dagql.NodeFunc("exec", s.exec).
-			DoNotCache("Runs a command in the selected terminal target on each call.").
-			Doc("Run a command non-interactively in the selected terminal target, and return the container after execution. Any exit code is allowed.").
+			DoNotCache("Runs the command again on each call, like a terminal.").
+			Doc("Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.").
 			Args(
-				dagql.Arg("args").Doc(`Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "test", "./..."].`),
+				dagql.Arg("stdin").Doc(`Content to write to the command's standard input. Example: "go test ./..."`),
 			),
 	}.Install(srv)
 
@@ -50,11 +50,11 @@ func (s terminalsSchema) run(ctx context.Context, parent dagql.ObjectResult[*cor
 }
 
 type terminalExecArgs struct {
-	Args []string
+	Stdin string
 }
 
 func (s terminalsSchema) exec(ctx context.Context, parent dagql.ObjectResult[*core.TerminalGroup], args terminalExecArgs) (dagql.ObjectResult[*core.Container], error) {
-	return parent.Self().Exec(ctx, args.Args)
+	return parent.Self().Exec(ctx, args.Stdin)
 }
 
 func (s terminalsSchema) name(_ context.Context, parent *core.TerminalTarget, _ struct{}) (string, error) {

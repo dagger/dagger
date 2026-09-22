@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Netflix/go-expect"
@@ -93,13 +94,12 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		require.NoError(t, cmd.Wait())
 	})
 
-	t.Run("top-level command with command argument", func(ctx context.Context, t *testctx.T) {
+	t.Run("top-level command with -c", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
 		run := func() string {
-			// -c belongs to the command, not to dagger shell.
-			cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr", "sh", "-c",
+			cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr", "-c",
 				`echo "$COOLENV in $PWD"; cat /proc/sys/kernel/random/uuid; exit 3`)
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
@@ -112,6 +112,15 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		}
 		// Like a terminal, each call runs the command again.
 		require.NotEqual(t, run(), run())
+
+		// Without -c, read the command from stdin if it is not a terminal.
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr")
+		cmd.Stdin = strings.NewReader(`echo "$COOLENV from stdin"`)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		require.NoError(t, err, stderr.String())
+		require.Contains(t, string(out), "woo from stdin\n", stderr.String())
 	})
 
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {

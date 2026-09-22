@@ -15917,17 +15917,14 @@ impl TerminalGroup {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Run a command non-interactively in the selected terminal target, and return the container after execution. Any exit code is allowed.
+    /// Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
     ///
     /// # Arguments
     ///
-    /// * `args` - Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "test", "./..."].
-    pub fn exec(&self, args: Vec<impl Into<String>>) -> Container {
+    /// * `stdin` - Content to write to the command's standard input. Example: "go test ./..."
+    pub fn exec(&self, stdin: impl Into<String>) -> Container {
         let mut query = self.selection.select("exec");
-        query = query.arg(
-            "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
-        );
+        query = query.arg("stdin", stdin.into());
         Container {
             proc: self.proc.clone(),
             selection: query,
