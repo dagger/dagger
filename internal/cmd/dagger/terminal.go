@@ -49,14 +49,13 @@ As with sh: with -c, the command reads standard input. Without -c, if standard
 input is a pipe or a file, run it as a script.
 
 Examples:
-  dagger shell                                # Open the default shell
-  dagger shell -l                             # List all available shells
-  dagger shell go:dev                         # Open the go:dev shell
-  dagger sh go:dev                            # Use the short command alias
-  dagger shell go:dev -c 'go test ./...'      # Run a command in the go:dev shell
-  echo 'go test ./...' | dagger shell go:dev  # Read the script from stdin
-  dagger shell --copy /src=. --init 'go mod download'
-                                              # Set up the shell before it opens
+  dagger shell                                    # Open the default shell
+  dagger shell -l                                 # List all available shells
+  dagger shell go:dev                             # Open the go:dev shell
+  dagger sh go:dev                                # Use the short command alias
+  dagger shell go:dev -c 'go test ./...'          # Run a command in the go:dev shell
+  echo 'go test ./...' | dagger shell go:dev      # Read the script from stdin
+  dagger shell --copy . --init 'go mod download'  # Set up the shell first
 `,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if terminalListMode {
