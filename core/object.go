@@ -817,7 +817,7 @@ func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, enc *dagql.P
 	// it as a child reference would require recursively decoding the same value.
 	if obj.CollectionBase != nil && obj.CollectionBase.Unwrap() != obj {
 		var err error
-		payload.CollectionBase, err = encodePersistedObjectRef(cache, obj.CollectionBase, "collection base")
+		payload.CollectionBase, err = encodePersistedObjectRef(enc, obj.CollectionBase, "collection base")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -866,7 +866,7 @@ func (obj *ModuleObject) DecodePersistedObject(ctx context.Context, dec *dagql.P
 	}
 	if payload.CollectionBase != 0 {
 		var err error
-		decoded.CollectionBase, err = loadPersistedResultByResultID(ctx, dag, payload.CollectionBase, "collection base")
+		decoded.CollectionBase, err = loadPersistedResultByResultID(ctx, dec, payload.CollectionBase, "collection base")
 		if err != nil {
 			return nil, err
 		}

@@ -151,20 +151,20 @@ func (def *CollectionTypeDef) AttachDependencyResults(_ context.Context, _ dagql
 	return []dagql.AnyResult{obj}, nil
 }
 
-func (def *CollectionTypeDef) EncodePersistedObject(_ context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
-	id, err := encodePersistedObjectRef(cache, def.Object, "collection typedef object")
+func (def *CollectionTypeDef) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	id, err := encodePersistedObjectRef(enc, def.Object, "collection typedef object")
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(id)
 }
 
-func (*CollectionTypeDef) DecodePersistedObject(ctx context.Context, srv *dagql.Server, _ uint64, _ *dagql.ResultCall, raw json.RawMessage) (dagql.Typed, error) {
+func (*CollectionTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	var id uint64
 	if err := json.Unmarshal(raw, &id); err != nil {
 		return nil, err
 	}
-	obj, err := loadPersistedObjectResultByResultID[*ObjectTypeDef](ctx, srv, id, "collection typedef object")
+	obj, err := loadPersistedObjectResultByResultID[*ObjectTypeDef](ctx, dec, id, "collection typedef object")
 	if err != nil {
 		return nil, err
 	}
@@ -184,11 +184,11 @@ func (delta *CollectionDelta) Clone() *CollectionDelta {
 	return &CollectionDelta{AddedKeys: slices.Clone(delta.AddedKeys), RemovedKeys: slices.Clone(delta.RemovedKeys)}
 }
 
-func (delta *CollectionDelta) EncodePersistedObject(_ context.Context, _ dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (delta *CollectionDelta) EncodePersistedObject(_ context.Context, _ *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	return encodePersistedObjectPayload(delta)
 }
 
-func (*CollectionDelta) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uint64, _ *dagql.ResultCall, raw json.RawMessage) (dagql.Typed, error) {
+func (*CollectionDelta) DecodePersistedObject(_ context.Context, _ *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	var delta CollectionDelta
 	if err := json.Unmarshal(raw, &delta); err != nil {
 		return nil, err

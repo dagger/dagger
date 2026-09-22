@@ -76,7 +76,7 @@ func TestCollectionSubsetDelta(t *testing.T) {
 	obj.Module = newTypeDefDetachedResult(t, dag, "module", &Module{})
 	encoded, err := obj.EncodePersistedObject(context.Background(), nil)
 	require.NoError(t, err)
-	decoded, err := obj.DecodePersistedObject(context.Background(), dag, 0, nil, encoded.JSON)
+	decoded, err := obj.DecodePersistedObject(context.Background(), dagql.NewPersistDecodeContext(dag, 0, nil), encoded.JSON)
 	require.NoError(t, err)
 	reloaded := decoded.(*ModuleObject)
 	attachCollectionTestObject(t, reloaded)
