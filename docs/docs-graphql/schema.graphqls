@@ -496,6 +496,23 @@ type ArtifactDimensionKey implements Node {
   key: String!
 }
 
+"""
+A schema path and its dimensions. The path can exist even when its collections have no runtime items.
+"""
+type ArtifactPath implements Node {
+  """A unique identifier for this ArtifactPath."""
+  id: ID!
+
+  """The DAG address of this path, without dimension keys."""
+  uri: String!
+
+  """The description of the field at this path."""
+  description: String!
+
+  """The dimension identifiers required by this path."""
+  dimensions: [String!]!
+}
+
 type ArtifactResult implements Node {
   """A unique identifier for this ArtifactResult."""
   id: ID!
@@ -518,6 +535,14 @@ nothing. Filters never change addresses or dimension identifiers.
 type Artifacts implements Node {
   """A unique identifier for this Artifacts."""
   id: ID!
+
+  """
+  List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+  """
+  pathDefinitions(
+    """Prefix each address with the workspace's Git address and commit."""
+    absolute: Boolean = false
+  ): [ArtifactPath!]!
 
   """
   List dimensions on the selected schema paths, including empty collections. Does not read runtime values.

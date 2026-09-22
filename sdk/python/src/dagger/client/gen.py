@@ -1780,6 +1780,103 @@ class ArtifactDimensionKey(Type):
 
 
 @typecheck
+class ArtifactPath(Type):
+    """A schema path and its dimensions. The path can exist even when its
+    collections have no runtime items."""
+
+    async def description(self) -> str:
+        """The description of the field at this path.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def dimensions(self) -> list[str]:
+        """The dimension identifiers required by this path.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dimensions", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this ArtifactPath.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def uri(self) -> str:
+        """The DAG address of this path, without dimension keys.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uri", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class ArtifactResult(Type):
     def artifact(self) -> Artifact:
         """The artifact that was evaluated."""
@@ -2099,6 +2196,23 @@ class Artifacts(Type):
         _args: list[Arg] = []
         _ctx = self._select("one", _args)
         return Artifact(_ctx)
+
+    async def path_definitions(
+        self, *, absolute: bool | None = False
+    ) -> list[ArtifactPath]:
+        """List selected schema paths, including empty collections. Does not read
+        runtime values or resolve dimension-key filters.
+
+        Parameters
+        ----------
+        absolute:
+            Prefix each address with the workspace's Git address and commit.
+        """
+        _args = [
+            Arg("absolute", absolute, False),
+        ]
+        _ctx = self._select("pathDefinitions", _args)
+        return await _ctx.execute_object_list(ArtifactPath)
 
     async def types(self) -> list["TypeDef"]:
         """List concrete type definitions represented in this selection, sorted
@@ -19023,6 +19137,7 @@ __all__ = [
     "Artifact",
     "ArtifactDimension",
     "ArtifactDimensionKey",
+    "ArtifactPath",
     "ArtifactResult",
     "Artifacts",
     "BuildArg",

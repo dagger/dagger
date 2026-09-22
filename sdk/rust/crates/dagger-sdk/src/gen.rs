@@ -1255,6 +1255,64 @@ impl Node for ArtifactDimensionKey {
     }
 }
 #[derive(Clone)]
+pub struct ArtifactPath {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for ArtifactPath {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ArtifactPath {
+    fn graphql_type() -> &'static str {
+        "ArtifactPath"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ArtifactPath {
+    /// A unique identifier for this ArtifactPath.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The DAG address of this path, without dimension keys.
+    pub async fn uri(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("uri");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The description of the field at this path.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The dimension identifiers required by this path.
+    pub async fn dimensions(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("dimensions");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ArtifactPath {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct ArtifactResult {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -1343,6 +1401,12 @@ pub struct Artifacts {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsPathDefinitionsOpts {
+    /// Prefix each address with the workspace's Git address and commit.
+    #[builder(setter(into, strip_option), default)]
+    pub absolute: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsValuesOpts {
     /// Field arguments applied to each artifact, as a JSON object.
     #[builder(setter(into, strip_option), default)]
@@ -1409,6 +1473,54 @@ impl Artifacts {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn path_definitions(&self) -> Result<Vec<ArtifactPath>, DaggerError> {
+        let query = self.selection.select("pathDefinitions");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| ArtifactPath {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ArtifactPath"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn path_definitions_opts(
+        &self,
+        opts: ArtifactsPathDefinitionsOpts,
+    ) -> Result<Vec<ArtifactPath>, DaggerError> {
+        let mut query = self.selection.select("pathDefinitions");
+        if let Some(absolute) = opts.absolute {
+            query = query.arg("absolute", absolute);
+        }
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| ArtifactPath {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ArtifactPath"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
     pub async fn dimension_definitions(&self) -> Result<Vec<ArtifactDimension>, DaggerError> {

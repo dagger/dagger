@@ -1380,6 +1380,105 @@ func (r *ArtifactDimensionKey) AsNode() Node {
 	}
 }
 
+// A schema path and its dimensions. The path can exist even when its collections have no runtime items.
+type ArtifactPath struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	uri         *string
+}
+
+func (r *ArtifactPath) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactPath {
+	return &ArtifactPath{
+		query: q,
+	}
+}
+
+// The description of the field at this path.
+func (r *ArtifactPath) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The dimension identifiers required by this path.
+func (r *ArtifactPath) Dimensions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("dimensions")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ArtifactPath.
+func (r *ArtifactPath) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactPath) XXX_GraphQLType() string {
+	return "ArtifactPath"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactPath) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactPath) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactPath) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The DAG address of this path, without dimension keys.
+func (r *ArtifactPath) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactPath as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactPath) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ArtifactResult struct {
 	query *querybuilder.Selection
 
@@ -1818,6 +1917,51 @@ func (r *Artifacts) One() *Artifact {
 	return &Artifact{
 		query: q,
 	}
+}
+
+// ArtifactsPathDefinitionsOpts contains options for Artifacts.PathDefinitions
+type ArtifactsPathDefinitionsOpts struct {
+	// Prefix each address with the workspace's Git address and commit.
+	Absolute bool
+}
+
+// List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+func (r *Artifacts) PathDefinitions(ctx context.Context, opts ...ArtifactsPathDefinitionsOpts) ([]ArtifactPath, error) {
+	q := r.query.Select("pathDefinitions")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `absolute` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Absolute) {
+			q = q.Arg("absolute", opts[i].Absolute)
+		}
+	}
+
+	q = q.Select("id")
+
+	type pathDefinitions struct {
+		Id ID
+	}
+
+	convert := func(fields []pathDefinitions) []ArtifactPath {
+		out := []ArtifactPath{}
+
+		for i := range fields {
+			val := ArtifactPath{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactPath")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []pathDefinitions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // List concrete type definitions represented in this selection, sorted by name with no duplicates.

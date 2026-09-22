@@ -301,6 +301,33 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
+  List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+  """
+  @spec path_definitions(t(), [{:absolute, boolean() | nil}]) ::
+          {:ok, [Dagger.ArtifactPath.t()]} | {:error, term()}
+  def path_definitions(%__MODULE__{} = artifacts, optional_args \\ []) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("pathDefinitions")
+      |> QB.maybe_put_arg("absolute", optional_args[:absolute])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.ArtifactPath{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ArtifactPath"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   List concrete type definitions represented in this selection, sorted by name with no duplicates.
   """
   @spec types(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}

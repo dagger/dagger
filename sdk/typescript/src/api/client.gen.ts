@@ -263,6 +263,13 @@ export type ArtifactsFilterTypesOpts = {
   exclude?: boolean
 }
 
+export type ArtifactsPathDefinitionsOpts = {
+  /**
+   * Prefix each address with the workspace's Git address and commit.
+   */
+  absolute?: boolean
+}
+
 export type ArtifactsValuesOpts = {
   /**
    * Cancel remaining work after the first failure.
@@ -5090,6 +5097,82 @@ export class ArtifactDimensionKey extends BaseClient {
   }
 }
 
+/**
+ * A schema path and its dimensions. The path can exist even when its collections have no runtime items.
+ */
+export class ArtifactPath extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _uri?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _uri?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._uri = _uri
+  }
+
+  /**
+   * A unique identifier for this ArtifactPath.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the field at this path.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The dimension identifiers required by this path.
+   */
+  dimensions = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("dimensions")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The DAG address of this path, without dimension keys.
+   */
+  uri = async (): Promise<string> => {
+    if (this._uri) {
+      return this._uri
+    }
+
+    const ctx = this._ctx.select("uri")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
 export class ArtifactResult extends BaseClient {
   private readonly _id?: ID = undefined
 
@@ -5368,6 +5451,26 @@ export class Artifacts extends BaseClient {
   one = (): Artifact => {
     const ctx = this._ctx.select("one")
     return new Artifact(ctx)
+  }
+
+  /**
+   * List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+   * @param opts.absolute Prefix each address with the workspace's Git address and commit.
+   */
+  pathDefinitions = async (
+    opts?: ArtifactsPathDefinitionsOpts,
+  ): Promise<ArtifactPath[]> => {
+    type pathDefinitions = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("pathDefinitions", { ...opts }).select("id")
+
+    const response: Awaited<pathDefinitions[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new ArtifactPath(ctx.copy().selectNode(r.id, "ArtifactPath")),
+    )
   }
 
   /**

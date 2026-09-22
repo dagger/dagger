@@ -23,6 +23,18 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+     */
+    public function pathDefinitions(?bool $absolute = false): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pathDefinitions');
+        if (null !== $absolute) {
+        $leafQueryBuilder->setArgument('absolute', $absolute);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'pathDefinitions');
+    }
+
+    /**
      * List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
      */
     public function dimensionDefinitions(): array
