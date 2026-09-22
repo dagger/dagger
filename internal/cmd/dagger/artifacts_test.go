@@ -45,6 +45,60 @@ func TestArtifactDimensionFlags(t *testing.T) {
 	require.NotContains(t, recorder.query, "env=")
 }
 
+func TestArtifactDimensionHelp(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		defs    artifact.Dimensions
+		visible []string
+		hidden  []string
+	}{
+		{
+			name: "short name",
+			defs: artifact.Dimensions{
+				{Identifier: "Go.modules", Name: "go-module", QualifiedName: "go-modules"},
+			},
+			visible: []string{"go-module"},
+			hidden:  []string{"go-modules", "Go.modules"},
+		},
+		{
+			name: "ambiguous short name",
+			defs: artifact.Dimensions{
+				{Identifier: "Go.modules", Name: "go-module", QualifiedName: "go-modules"},
+				{Identifier: "App.modules", Name: "go-module", QualifiedName: "app-modules"},
+			},
+			visible: []string{"go-modules", "app-modules"},
+			hidden:  []string{"go-module", "Go.modules", "App.modules"},
+		},
+		{
+			name: "flag collision",
+			defs: artifact.Dimensions{
+				{Identifier: "Go.all", Name: "all", QualifiedName: "go-all"},
+			},
+			hidden: []string{"go-all", "Go.all"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := &cobra.Command{Use: "check"}
+			cmd.InitDefaultHelpFlag()
+			registerCommandArtifactFlags(cmd)
+			registerArtifactDimensionHelp(cmd, tc.defs)
+			require.NoError(t, cmd.ParseFlags(nil))
+			help := cmd.Flags().FlagUsages()
+			for _, name := range tc.visible {
+				require.Contains(t, help, "--"+name+" key ")
+			}
+			for _, name := range tc.hidden {
+				require.NotContains(t, help, "--"+name+" ")
+				// Hidden aliases still parse, including alongside --help.
+				require.NoError(t, cmd.ParseFlags([]string{"--" + name + "=./app", "--help"}))
+			}
+			require.Contains(t, help, "--dimension-key DIMENSION=KEY")
+			require.NotContains(t, help, "stringArray")
+			require.False(t, cmd.Flag("all").Hidden)
+		})
+	}
+}
+
 func TestArtifactEmptyDimensionKey(t *testing.T) {
 	for _, arg := range []string{"--part=", "--dimension-key=part="} {
 		t.Run(arg, func(t *testing.T) {

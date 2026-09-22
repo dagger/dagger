@@ -16,6 +16,7 @@ import (
 )
 
 const artifactDimensionFlag = "dagger.io/artifact-dimension"
+const artifactDimensionKeyUsage = "Select items with `DIMENSION=KEY` (repeat to select more)"
 
 const artifactListType = "dagger.io/list-type"
 const artifactListDimension = "dagger.io/list-dimension"
@@ -62,11 +63,28 @@ func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {
 		if cmd.Flag(dimension) != nil {
 			continue // Keep the command flag; use another dimension name or a link query.
 		}
-		cmd.PersistentFlags().StringArray(dimension, nil, "Keep this "+dimension+" key (repeat for alternatives)")
+		cmd.PersistentFlags().StringArray(dimension, nil, "Select items with this `key` (repeat to select more)")
 		cmd.PersistentFlags().Lookup(dimension).Annotations = map[string][]string{
 			artifactDimensionFlag: {dimension},
 		}
 	}
+}
+
+// Show one unambiguous name per dimension. Other names remain accepted aliases.
+func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions artifact.Dimensions) {
+	visible := map[string]bool{}
+	for _, dimension := range dimensions {
+		registerArtifactDimensionFlags(cmd, []string{dimension.Name, dimension.QualifiedName, dimension.Identifier})
+		name := dimensions.DisplayName(dimension)
+		if name != dimension.Identifier {
+			visible[name] = true
+		}
+	}
+	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if len(flag.Annotations[artifactDimensionFlag]) > 0 {
+			flag.Hidden = !visible[flag.Name]
+		}
+	})
 }
 
 // Keep each address intact: its type and dimension filters apply only to its path.

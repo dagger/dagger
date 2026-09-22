@@ -111,11 +111,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		if err != nil {
 			return err
 		}
-		var names []string
-		for _, def := range definitions {
-			names = append(names, def.Name, def.QualifiedName, def.Identifier)
-		}
-		registerArtifactDimensionFlags(cmd, names)
+		registerArtifactDimensionHelp(cmd, definitions)
 		return nil
 	})
 }
