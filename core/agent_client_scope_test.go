@@ -62,6 +62,51 @@ func TestAgentClientScopeLifetime(t *testing.T) {
 	require.Zero(t, held(engine.ClientLeaseAgentTombstone))
 }
 
+func TestAgentCaptureRetainsExecutableScope(t *testing.T) {
+	var acquired, released atomic.Int32
+	var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+	newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
+		acquired.Add(1)
+		return engine.NewClientLifecycleLease(kind, owner, func() { released.Add(1) }, func(k engine.ClientLeaseKind, o string) (*engine.ClientLifecycleLease, error) {
+			return newLease(k, o), nil
+		})
+	}
+	request := newLease(engine.ClientLeaseRequest, "request")
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, request)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+	require.NoError(t, err)
+	rt := &AgentRuntime{key: "capture", spanCtx: agentTelemetryContext(ctx)}
+	rt.captureConversationLocked(ctx)
+	capture := rt.controlCapture
+	request.Release() // resolver has returned before capture starts
+	_, child, err := engine.DetachClientScope(capture.ctx, engine.ClientLeaseSharedWork, "recipe-selection")
+	require.NoError(t, err, "queued recipe evaluation must use its own held scope, not the expired request holder")
+	child.Release()
+	_, err = capture.resolve()
+	require.ErrorContains(t, err, "no committed conversation")
+	require.Equal(t, acquired.Load(), released.Load(), "capture failure releases its scope")
+}
+
+func TestAgentCaptureCoalescingReleasesScopes(t *testing.T) {
+	var released atomic.Int32
+	capture := func() *agentCapture {
+		c := &agentCapture{lease: engine.NewClientLifecycleLease(engine.ClientLeaseSharedWork, "capture", func() { released.Add(1) }, nil)}
+		c.refs.Store(1)
+		return c
+	}
+	p := &agentControlPublisher{wake: make(chan struct{}, 1)}
+	old, next := capture(), capture()
+	p.enqueue(agentControlJob{capture: old})
+	old.release() // replaced runtime tip, publisher still owns pending capture
+	require.Zero(t, released.Load())
+	p.enqueue(agentControlJob{capture: next})
+	require.EqualValues(t, 1, released.Load(), "superseded pending capture releases its executable scope")
+	next.release()
+	p.pending.capture.release()
+	require.EqualValues(t, 2, released.Load())
+}
+
 func TestAgentCreateLeaseOutsideRegistryLock(t *testing.T) {
 	registry := NewAgentRuntimes()
 	var acquired, released atomic.Int32
@@ -69,6 +114,9 @@ func TestAgentCreateLeaseOutsideRegistryLock(t *testing.T) {
 	proceed := make(chan struct{})
 	request := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "request", nil,
 		func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			if kind != engine.ClientLeaseAgentTombstone {
+				return engine.NewClientLifecycleLease(kind, owner, nil, nil), nil
+			}
 			// Lifecycle callbacks must be able to inspect the registry, including
 			// while two constructors for the same handle are staging.
 			registry.mu.Lock()

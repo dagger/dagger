@@ -606,6 +606,7 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 	ars.mu.Lock()
 	if _, found := ars.entries[key]; found || ars.closing {
 		ars.mu.Unlock()
+		rt.controlCapture.release()
 		lease.Release()
 		return nil, fmt.Errorf("agent %q acquired a runtime entry or registry closed while creation was staging", name)
 	}
@@ -1075,7 +1076,7 @@ func (ars *AgentRuntimes) MessageResponse(ctx context.Context, msg *AgentMessage
 // restores such an agent in the state it held before teardown, instead of
 // reading a clean exit as a session-wide dismissal.
 func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
-	_, err := ars.CloseControl(ctx)
+	_, err := ars.closeControl(ctx, cause)
 	return err
 }
 
