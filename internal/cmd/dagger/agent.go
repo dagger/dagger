@@ -17,7 +17,7 @@ import (
 )
 
 var agentListMode bool
-var agentResume agentSessionFlag
+var agentResume string
 var agentTrace string
 var agentFocus string
 var agentPartial bool
@@ -31,22 +31,20 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
-With --trace, a past session is restored from the trace it published to Dagger
-Cloud: every agent it ran comes back under the same identity, with the
-conversation and lifecycle state it had, and the old session's whole progress
-view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
-agents are still running FORKS them — the restored instances are new runtimes
-in this session, not a hand-off of the live ones. And messages that were
-enqueued but never consumed are not in the trace at all, so they are not
-restored; anything a turn actually consumed is part of its conversation and is.
+With --trace, a verified archive restores every agent, its committed conversation,
+Workspace, tools, lifecycle state, and notification subscriptions. No destination
+agent modules are composed. The prompt becomes usable before unrelated historical
+telemetry finishes loading; original telemetry supplies scrollback.
+
+Restore forks new inert runtimes; it does not hand off a live session or start a
+model turn. Pending messages not committed to a conversation are not recovered.
+Legacy local JSON session files and -r/--resume are no longer supported.
 
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=<session>       # Resume a specific saved session
-  dagger agent --trace <id>       # Restore a past session from its Dagger Cloud trace
+  dagger agent --trace <id>       # Restore a verified trace archive
 `,
 	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
@@ -104,20 +102,12 @@ Examples:
 				if err != nil {
 					return err
 				}
-				// -r/--resume optionally restores a saved session before the
-				// prompt starts: a session id resumes it directly, the picker
-				// keyword (what a bare -r resolves to) opens the interactive
-				// picker. --trace restores a past session from its published
-				// trace instead.
-				sessionID := agentResume.SessionID()
 				restore := traceRestore{
 					traceID: agentTrace,
 					agent:   agentFocus,
 					partial: agentPartial,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
-					sessionID:            sessionID,
-					resume:               resume,
 					restore:              restore,
 					generateSessionTitle: true,
 				})
@@ -126,46 +116,13 @@ Examples:
 	},
 }
 
-// agentSessionFlag is the -r/--resume flag value: a saved session id, or the
-// reserved word "picker" to open the interactive session picker. Implementing
-// pflag.Value (rather than using a plain string flag) keeps the help text
-// readable — `--resume session[=picker]` — since pflag renders a custom type's
-// NoOptDefVal unquoted after the Type() name. Saved session ids are UUIDs, so
-// the keyword can't shadow a real session.
-type agentSessionFlag string
-
-// agentSessionPicker is the reserved --resume value naming the interactive
-// session picker; it's also what a bare -r resolves to (via NoOptDefVal).
-const agentSessionPicker agentSessionFlag = "picker"
-
-func (f *agentSessionFlag) String() string { return string(*f) }
-
-func (f *agentSessionFlag) Set(value string) error {
-	*f = agentSessionFlag(value)
-	return nil
-}
-
-func (f *agentSessionFlag) Type() string { return "session" }
-
-// SessionID resolves the flag to the session to resume: empty for the
-// interactive picker, otherwise the session id itself.
-func (f agentSessionFlag) SessionID() string {
-	if f == agentSessionPicker {
-		return ""
-	}
-	return string(f)
-}
-
 func init() {
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
-	agentCmd.Flags().VarP(&agentResume, "resume", "r", "Resume a saved session (interactive picker if no id given)")
-	// A bare -r (no value) resolves to the picker keyword, opening the
-	// interactive picker; -r=<id> resumes that session directly. (NoOptDefVal
-	// flags require '=' to attach a value — a space-separated one would be
-	// parsed as a positional agent name.)
-	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentSessionPicker)
+	agentCmd.Flags().StringVarP(&agentResume, "resume", "r", "", "Unsupported: use --trace with a verified trace ID")
+	agentCmd.Flags().Lookup("resume").NoOptDefVal = "removed"
+	_ = agentCmd.Flags().MarkHidden("resume")
 	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
-		"Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback")
+		"Restore agents and their Workspaces from a verified trace archive; load scrollback in the background")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentPartial, "partial", false, "Unsupported: restore requires a complete verified agent graph")

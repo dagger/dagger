@@ -195,9 +195,8 @@ type sessionAgent struct {
 	refreshQueued   bool
 	refreshL        sync.Mutex
 
-	// stepWG tracks this conversation's asynchronous auto-saves. Rewind waits
-	// for the canceled turn's save before exposing the edit, otherwise that older
-	// save can finish after the reworded turn and overwrite its truncated history.
+	// stepWG tracks asynchronous presentation callbacks. Rewind drains the old
+	// turn's callbacks before publishing its edited state.
 	stepWG sync.WaitGroup
 
 	autoCompact  bool
@@ -705,9 +704,7 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *dagger.LLM) erro
 		}
 	}
 
-	// WithPrompt schedules its auto-save before endTurn closes done. Waiting
-	// here therefore drains every save from the abandoned branch before the
-	// replacement prompt is exposed and can produce a newer save.
+	// Drain the abandoned turn's presentation callbacks before exposing the edit.
 	a.stepWG.Wait()
 
 	if rt != nil {
@@ -1183,6 +1180,20 @@ func (a *sessionAgent) refreshUIFromRuntime() {
 	}
 	if err := a.updateStatusLine(llm); err != nil {
 		slog.Debug("could not refresh status line", "error", err)
+	}
+	// $agent is a session-local reference, not a persistence recipe. Keep it
+	// pointed at the focused conversation without serializing portable IDs.
+	if a.session.shell != nil {
+		id, err := llm.ID(a.session.plumbingCtx)
+		if err != nil {
+			slog.Debug("could not refresh $agent", "error", err)
+			return
+		}
+		a.session.mu.Lock()
+		if a.session.target == a {
+			a.session.shell.assignAgent(id)
+		}
+		a.session.mu.Unlock()
 	}
 }
 
