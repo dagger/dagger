@@ -1107,6 +1107,7 @@ func TestSnapshotSharingCancelDuringPreparation(t *testing.T) {
 		map[string]sharePartState{"fs": {}},
 	)
 	donorHolds, receiverHolds := shareTestHolds(c, donor), shareTestHolds(c, receiver)
+	released := armLazyAttemptReleased(c)
 	entered, resume := make(chan struct{}), make(chan struct{})
 	unblock := sync.OnceFunc(func() { close(resume) })
 	defer unblock()
@@ -1121,6 +1122,9 @@ func TestSnapshotSharingCancelDuringPreparation(t *testing.T) {
 	shareTestNoPassYet(t, barrier, "while its Body was still inside PinSnapshot")
 	unblock()
 	require.Equal(t, 1, barrier.awaitPass(t))
+	// The pass joins RunLazyTask, whose caller wakes before the attempt's
+	// deferred receiver hold is released. Observe that release before counting.
+	waitLazyAttemptReleased(t, released)
 	require.False(t, shareTestHasLink(receiver, "fs-snap"), "a canceled preparation installs nothing")
 	require.Equal(t, manager.pins.Load(), manager.released.Load(), "the canceled preparation released its pin")
 	require.Equal(t, donorHolds, shareTestHolds(c, donor))
