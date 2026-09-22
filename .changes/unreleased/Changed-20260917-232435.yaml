@@ -1,0 +1,5 @@
+kind: Changed
+body: Avoid a redundant registry request when pulling an image whose pinned metadata has already been resolved.
+time: 2026-09-17T23:24:35Z
+custom:
+  Author: grouville
