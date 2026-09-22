@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/iotest"
 	"time"
@@ -25,6 +27,166 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
+
+func TestCallBatchReadOnlyOverlapsWrites(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass[*Workspace](srv))
+	workspace := func(address string) dagql.ObjectResult[*Workspace] {
+		ws := &Workspace{Address: address}
+		res, err := dagql.NewObjectResultForCall(ws, srv, &dagql.ResultCall{
+			Kind: dagql.ResultCallKindSynthetic, SyntheticOp: address,
+			Type: dagql.NewResultCallType(ws.Type()),
+		})
+		require.NoError(t, err)
+		return res
+	}
+	initial, updated := workspace("file:///initial"), workspace("file:///updated")
+	m := newMCP()
+	m.workspace = initial
+	// A registered server with no session exercises MCP scheduling without
+	// requiring a live transport; writes take the regular-call fallback.
+	m.mcpServers["external"] = &MCPServerConfig{Name: "external"}
+	regularStarted, externalStarted := make(chan struct{}, 1), make(chan struct{}, 1)
+	written := make(chan struct{})
+	read := func(started chan<- struct{}) LLMToolFunc {
+		return func(ctx context.Context, _ any) (any, error) {
+			before, ok := WorkspaceFromContext(ctx)
+			if !ok {
+				return nil, fmt.Errorf("missing workspace before write")
+			}
+			started <- struct{}{}
+			select {
+			case <-written:
+			case <-ctx.Done():
+				return nil, fmt.Errorf("read did not overlap write: %w", ctx.Err())
+			}
+			after, ok := WorkspaceFromContext(ctx)
+			if !ok {
+				return nil, fmt.Errorf("missing workspace after write")
+			}
+			return before.Self().Address + " -> " + after.Self().Address, nil
+		}
+	}
+	tools := []LLMTool{
+		{Name: "read", ReadOnly: true, Call: read(regularStarted)},
+		{Name: "external_read", Server: "external", ReadOnly: true, Call: read(externalStarted)},
+		{Name: "write", Call: func(ctx context.Context, _ any) (any, error) {
+			// Neither read may wait for the write lane, nor may the external
+			// read wait for the regular read lane to finish.
+			for _, started := range []<-chan struct{}{regularStarted, externalStarted} {
+				select {
+				case <-started:
+				case <-ctx.Done():
+					return nil, fmt.Errorf("write did not overlap both reads: %w", ctx.Err())
+				}
+			}
+			m.workspace = updated
+			return "written", nil
+		}},
+		{Name: "external_write", Server: "external", Call: func(context.Context, any) (any, error) {
+			// Reads stay in flight through the later MCP-write phase too.
+			close(written)
+			return "external written", nil
+		}},
+		{Name: "failed_read", ReadOnly: true, Call: func(context.Context, any) (any, error) {
+			return nil, fmt.Errorf("read failure")
+		}},
+	}
+	calls := []*LLMToolCall{
+		{Name: "read", CallID: "read"},
+		{Name: "external_read", CallID: "external"},
+		{Name: "write", CallID: "write"},
+		{Name: "external_write", CallID: "external_write"},
+		{Name: "failed_read", CallID: "failed"},
+		{Name: "missing", CallID: "missing"},
+	}
+	results := batchResultsByID(t, m.CallBatch(ctx, tools, calls, nil))
+	require.Len(t, results, len(calls))
+	for _, id := range []string{"read", "external"} {
+		require.False(t, results[id].Errored, results[id].ContentText())
+		require.Equal(t, "file:///initial -> file:///initial", results[id].ContentText())
+	}
+	require.False(t, results["write"].Errored, results["write"].ContentText())
+	require.Equal(t, "written", results["write"].ContentText())
+	require.False(t, results["external_write"].Errored, results["external_write"].ContentText())
+	require.Equal(t, "external written", results["external_write"].ContentText())
+	require.True(t, results["failed"].Errored)
+	require.Contains(t, results["failed"].ContentText(), "read failure")
+	require.True(t, results["missing"].Errored)
+	require.Contains(t, results["missing"].ContentText(), "missing")
+	require.Same(t, updated.Self(), m.workspace.Self())
+
+	// Reuse the tool slice: a batch snapshot must not replace the caller's
+	// tool closures or leak into later batches.
+	next := batchResultsByID(t, m.CallBatch(ctx, tools, calls[:2], nil))
+	for _, id := range []string{"read", "external"} {
+		require.False(t, next[id].Errored, next[id].ContentText())
+		require.Equal(t, "file:///updated -> file:///updated", next[id].ContentText())
+	}
+}
+
+func TestCallBatchWritePipelineOrdering(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	m := newMCP()
+	m.mcpServers["external"] = &MCPServerConfig{Name: "external"}
+	var mu sync.Mutex
+	var events []string
+	record := func(name string, want []string) LLMToolFunc {
+		return func(context.Context, any) (any, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if !slices.Equal(events, want) {
+				return nil, fmt.Errorf("%s ran after %v, want %v", name, events, want)
+			}
+			events = append(events, name)
+			// Failures must not short-circuit the remaining write pipeline.
+			if name == "changeset" {
+				return nil, fmt.Errorf("changeset failure")
+			}
+			return name, nil
+		}
+	}
+	tools := []LLMTool{
+		{Name: "first", Call: record("first", nil)},
+		{Name: "second", Call: record("second", []string{"first"})},
+		{Name: "changeset", ReturnsChangeset: true, Call: record("changeset", []string{"first", "second"})},
+		{Name: "external_write", Server: "external", Call: record("external", []string{"first", "second", "changeset"})},
+	}
+	// Input order intentionally differs from phase order. Destructive regular
+	// calls retain their relative order before changesets and MCP writes.
+	calls := []*LLMToolCall{
+		{Name: "external_write", CallID: "external"},
+		{Name: "changeset", CallID: "changeset"},
+		{Name: "first", CallID: "first"},
+		{Name: "second", CallID: "second"},
+	}
+	results := batchResultsByID(t, m.CallBatch(ctx, tools, calls, nil))
+	require.Equal(t, []string{"first", "second", "changeset", "external"}, events)
+	require.Len(t, results, len(calls))
+	for _, id := range []string{"first", "second", "external"} {
+		require.False(t, results[id].Errored, results[id].ContentText())
+		require.Equal(t, id, results[id].ContentText())
+	}
+	require.True(t, results["changeset"].Errored)
+	require.Contains(t, results["changeset"].ContentText(), "changeset failure")
+}
+
+func batchResultsByID(t *testing.T, messages []*LLMMessage) map[string]*LLMContentBlock {
+	t.Helper()
+	results := make(map[string]*LLMContentBlock, len(messages))
+	for _, message := range messages {
+		require.Equal(t, LLMMessageRoleUser, message.Role)
+		require.Len(t, message.Content, 1)
+		result := message.Content[0]
+		require.Equal(t, LLMContentToolResult, result.Kind)
+		require.NotContains(t, results, result.CallID, "duplicate result")
+		results[result.CallID] = result
+	}
+	return results
+}
 
 func TestToolErrorResponseScopesLogs(t *testing.T) {
 	const traceID = "000102030405060708090a0b0c0d0e0f"

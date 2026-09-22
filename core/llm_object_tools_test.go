@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -666,6 +667,115 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 			})
 		}
 	})
+}
+
+type batchSnapshotTestObject struct {
+	label string
+}
+
+func (*batchSnapshotTestObject) Type() *ast.Type {
+	return &ast.Type{NamedType: "BatchSnapshotTestObject", NonNull: true}
+}
+
+func TestCallBatchObjectToolSnapshot(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID: "batch-snapshot-test", SessionID: "batch-snapshot-test",
+	})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass[*batchSnapshotTestObject](srv))
+	srv.InstallObject(dagql.NewClass[*LLM](srv))
+	dagql.Fields[*Query]{
+		dagql.Func("batchObject", func(_ context.Context, _ *Query, args struct {
+			Label dagql.String
+		}) (*batchSnapshotTestObject, error) {
+			return &batchSnapshotTestObject{label: args.Label.String()}, nil
+		}),
+		dagql.Func("batchLLM", func(context.Context, *Query, struct{}) (*LLM, error) {
+			return &LLM{}, nil
+		}),
+	}.Install(srv)
+	dagql.Fields[*batchSnapshotTestObject]{
+		dagql.Func("read", func(_ context.Context, obj *batchSnapshotTestObject, _ struct {
+			LLM dagql.ID[*LLM]
+		}) (dagql.String, error) {
+			// The required hidden argument also proves the batch snapshot kept
+			// selfLLM, which an ordinary MCP.Clone deliberately clears.
+			return dagql.String(obj.label), nil
+		}),
+	}.Install(srv)
+	object := func(label string) dagql.AnyObjectResult {
+		var obj dagql.AnyObjectResult
+		require.NoError(t, srv.Select(ctx, srv.Root(), &obj, dagql.Selector{
+			Field: "batchObject", Args: []dagql.NamedInput{{Name: "label", Value: dagql.String(label)}},
+		}))
+		return obj
+	}
+	initial, updated := object("initial"), object("updated")
+	var llm dagql.ObjectResult[*LLM]
+	require.NoError(t, srv.Select(ctx, srv.Root(), &llm, dagql.Selector{Field: "batchLLM"}))
+	m := newMCP().WithTools(initial, srv.Schema(), nil)
+	m.SetSelfLLM(llm)
+	toolsets, err := m.boundToolsets(srv)
+	require.NoError(t, err)
+	require.Len(t, toolsets, 1)
+	tools := toolsets[0].tools
+	require.Len(t, tools, 1)
+	require.Equal(t, "read", tools[0].Name)
+	require.True(t, tools[0].ReadOnly)
+	require.NotNil(t, tools[0].withMCP)
+
+	started, written := make(chan struct{}, 1), make(chan struct{})
+	gate := func(call LLMToolFunc) LLMToolFunc {
+		return func(ctx context.Context, args any) (any, error) {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			select {
+			case <-written:
+			case <-ctx.Done():
+				return nil, fmt.Errorf("object read did not overlap write: %w", ctx.Err())
+			}
+			// Delay the generated closure itself, not just the field resolver:
+			// receiver lookup must happen AFTER the live binding is replaced.
+			return call(ctx, args)
+		}
+	}
+	bind := tools[0].withMCP
+	tools[0].Call = gate(tools[0].Call)
+	tools[0].withMCP = func(snapshot *MCP) LLMToolFunc { return gate(bind(snapshot)) }
+	tools = append(tools, LLMTool{Name: "write", Call: func(ctx context.Context, _ any) (any, error) {
+		select {
+		case <-started:
+		case <-ctx.Done():
+			return nil, fmt.Errorf("object write did not overlap read: %w", ctx.Err())
+		}
+		if err := m.rebindBoundTool("BatchSnapshotTestObject", updated); err != nil {
+			return nil, err
+		}
+		close(written)
+		return "written", nil
+	}})
+	calls := []*LLMToolCall{{Name: "write", CallID: "write"}, {Name: "read", CallID: "read"}}
+	results := batchResultsByID(t, m.CallBatch(ctx, tools, calls, nil))
+	require.Len(t, results, 2)
+	require.False(t, results["write"].Errored, results["write"].ContentText())
+	require.False(t, results["read"].Errored, results["read"].ContentText())
+	require.Equal(t, "initial", results["read"].ContentText())
+
+	// A direct call detects accidentally overwriting tools[0].Call in place,
+	// which a later batch might hide by rebinding it again via withMCP.
+	text, failed := m.Call(ctx, tools, calls[1])
+	require.False(t, failed, text)
+	require.Equal(t, "updated", text)
+	next := batchResultsByID(t, m.CallBatch(ctx, tools, calls[1:], nil))
+	require.False(t, next["read"].Errored, next["read"].ContentText())
+	require.Equal(t, "updated", next["read"].ContentText())
 }
 
 // TestBuildObjectMethodSelector covers argument dispatch against a
