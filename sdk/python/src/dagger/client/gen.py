@@ -1597,19 +1597,24 @@ class AgentMiddlewareGroup(Type):
         replacing their owned system prompts and tool bindings while
         preserving tool object state.
 
+        Ownership follows the installed module name and middleware path, not
+        its source location. Moving a module between remote, local, or forked
+        sources preserves compatible state when its installation name and
+        intrinsic module and object identities stay the same.
+
         Caller-added prompts and unrelated middleware contributions are
-        retained. Prompts from older conversations without ownership metadata
-        are never removed automatically. Other middleware effects retain
-        compose semantics; this is not a general rollback of arbitrary
-        middleware changes.
+        retained. Prompts without ownership metadata are never removed
+        automatically. Other middleware effects retain compose semantics; this
+        is not a general rollback of arbitrary middleware changes.
 
         Existing field values win over new defaults; fields added by the new
         revision take its defaults. Changing a binding's withTools version
         resets that object's state to the new defaults instead. With an
         unchanged version, visibly incompatible state (a public field that
         changed type, or a value whose shape differs from the new default) is
-        an error. Discarded bindings or a changed module origin are errors
-        regardless of version. The base workspace is preserved.
+        an error. Discarded bindings or changed module or object identities
+        are errors regardless of version. Ownership checks still apply. The
+        base workspace is preserved.
 
         .. caution::
             Experimental: Agent APIs are likely to change.
@@ -11689,7 +11694,7 @@ class LLM(Type):
             compatible state when the version is unchanged and resets to the
             newly bound object's defaults when it differs. Change this when
             the state layout changes incompatibly. Same-type tool returns
-            retain the version. Module origin and ownership checks still
+            retain the version. Module identity and ownership checks still
             apply.
         """
         _args = [

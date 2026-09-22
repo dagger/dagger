@@ -1119,8 +1119,9 @@ impl AgentMiddlewareGroup {
             .collect())
     }
     /// Recompose the selected agent middlewares onto an existing LLM, replacing their owned system prompts and tool bindings while preserving tool object state.
-    /// Caller-added prompts and unrelated middleware contributions are retained. Prompts from older conversations without ownership metadata are never removed automatically. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
-    /// Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or a changed module origin are errors regardless of version. The base workspace is preserved.
+    /// Ownership follows the installed module name and middleware path, not its source location. Moving a module between remote, local, or forked sources preserves compatible state when its installation name and intrinsic module and object identities stay the same.
+    /// Caller-added prompts and unrelated middleware contributions are retained. Prompts without ownership metadata are never removed automatically. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+    /// Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or changed module or object identities are errors regardless of version. Ownership checks still apply. The base workspace is preserved.
     ///
     /// # Arguments
     ///
@@ -11203,7 +11204,7 @@ pub struct LlmWithToolsOpts<'a> {
     /// Method names to exclude from the toolset (e.g. constructors, entrypoints).
     #[builder(setter(into, strip_option), default)]
     pub except: Option<Vec<&'a str>>,
-    /// Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module origin and ownership checks still apply.
+    /// Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<isize>,
 }

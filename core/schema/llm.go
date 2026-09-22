@@ -169,7 +169,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					// no longer be reproducible).
 					LazyRef(),
 				dagql.Arg("except").Doc("Method names to exclude from the toolset (e.g. constructors, entrypoints)."),
-				dagql.Arg("version").Doc("Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module origin and ownership checks still apply."),
+				dagql.Arg("version").Doc("Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply."),
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),

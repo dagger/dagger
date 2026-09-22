@@ -2493,7 +2493,7 @@ export type LLMWithToolsOpts = {
   except?: string[]
 
   /**
-   * Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module origin and ownership checks still apply.
+   * Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
    */
   version?: number
 }
@@ -4888,9 +4888,11 @@ export class AgentMiddlewareGroup extends BaseClient {
   /**
    * Recompose the selected agent middlewares onto an existing LLM, replacing their owned system prompts and tool bindings while preserving tool object state.
    *
-   * Caller-added prompts and unrelated middleware contributions are retained. Prompts from older conversations without ownership metadata are never removed automatically. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+   * Ownership follows the installed module name and middleware path, not its source location. Moving a module between remote, local, or forked sources preserves compatible state when its installation name and intrinsic module and object identities stay the same.
    *
-   * Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or a changed module origin are errors regardless of version. The base workspace is preserved.
+   * Caller-added prompts and unrelated middleware contributions are retained. Prompts without ownership metadata are never removed automatically. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+   *
+   * Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or changed module or object identities are errors regardless of version. Ownership checks still apply. The base workspace is preserved.
    * @param base The existing conversation whose tool state should be preserved.
    * @experimental
    */
@@ -12521,7 +12523,7 @@ export class LLM extends BaseClient {
    * Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
    * @param object The object whose methods become tools.
    * @param opts.except Method names to exclude from the toolset (e.g. constructors, entrypoints).
-   * @param opts.version Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module origin and ownership checks still apply.
+   * @param opts.version Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
    */
   withTools = (object: Node, opts?: LLMWithToolsOpts): LLM => {
     const ctx = this._ctx.select("withTools", { object, ...opts })
