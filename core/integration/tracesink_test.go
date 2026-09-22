@@ -1,16 +1,22 @@
 package core
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -109,6 +115,67 @@ func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+// connectWithTrace creates a source session whose agent control records and
+// payloads are observable by tests. The resulting recipes come from committed
+// agent telemetry, never from an engine-local LLM handle or a public portable-ID
+// API. Nested clients cannot configure their parent session's OTLP exporters.
+func connectWithTrace(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) (*dagger.Client, *agentTraceSink) {
+	t.Helper()
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to capture committed agent recipes")
+	}
+	sink := newAgentTraceSink(t)
+	return connect(ctx, t, append(sink.clientOpts(), opts...)...), sink
+}
+
+// captureLLMRecipe seeds an inert agent with the given conversation and waits for
+// its committed anchor's entire payload closure to cross the telemetry wire. The
+// temporary agent never starts a loop. Returning an encoded recipe rather than
+// its local seed ID allows the caller to close the source and use a fresh client.
+// This is capture evidence, not archive finalization evidence.
+func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) (dagger.ID, error) {
+	t.Helper()
+	seed, err := llm.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	name := "recipe-capture-" + identity.NewID()
+	_, err = rehydrateAgent(ctx, c, string(seed), identity.NewID(), name, "IDLE", "")
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		var encoded string
+		sink.read(func(db *dagui.DB) {
+			for _, agent := range db.Agents() {
+				if agent.Name != name || agent.SnapshotDigest == "" {
+					continue
+				}
+				id, err := db.CallIDForDigest(agent.SnapshotDigest)
+				if err != nil {
+					lastErr = err
+					return
+				}
+				encoded, lastErr = id.Encode()
+				return
+			}
+		})
+		if encoded != "" {
+			return dagger.ID(encoded), nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("capture committed recipe %q: %w (last closure error: %v)", name, ctx.Err(), lastErr)
+		case <-ticker.C:
+		}
+	}
 }
 
 // read runs fn against the DB with ingest held off.

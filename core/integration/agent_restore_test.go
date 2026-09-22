@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -431,6 +432,109 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 		"the PROJECTION is fine — the trace says what to restore; it is the rebuild that cannot")
 	_, err = db.CallIDForDigest(entry.SnapshotDigest)
 	require.ErrorContains(t, err, "never reached this client")
+}
+
+// TestRestoreDormantLifecycleGraph exercises creation-only control publication,
+// pre-teardown state mapping, and preservation of failure information across two
+// restores. None of the destination agents may run a model merely by restoring.
+func (AgentRestoreSuite) TestRestoreDormantLifecycleGraph(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs independent CLI sessions to capture telemetry")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+	defer cancel()
+	sink := newAgentTraceSink(t)
+	source := connect(ctx, t, sink.clientOpts()...)
+	spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "dormant"})
+	paused := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "paused"})
+	require.Equal(t, "PAUSED", paused.mustVerb(ctx, t, "pause"))
+	failed := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "failed"})
+	_, err := failed.sendNoWait(ctx, t, "fail once")
+	require.NoError(t, err)
+	failed.mustRun(ctx, t, "wait")
+	require.Equal(t, "FAILED", failed.state(ctx, t))
+	failure := failed.mustRun(ctx, t, "error").Get("error").String()
+	require.Contains(t, failure, "no more messages")
+	stopped := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "dismissed"})
+	require.Equal(t, "STOPPED", stopped.mustVerb(ctx, t, "stop"))
+
+	sink.awaitRestorable(t, 4)
+	require.NoError(t, source.Close())
+	wantStates := map[string]string{"dormant": "IDLE", "paused": "PAUSED", "failed": "FAILED", "dismissed": "STOPPED"}
+	for range 2 {
+		traces, logs := sink.capture()
+		db := restoringDB(t)
+		importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+		for _, batch := range traces {
+			require.NoError(t, importer.ImportSpans(ctx, batch))
+		}
+		for _, batch := range logs {
+			require.NoError(t, importer.ImportLogs(ctx, batch))
+		}
+		plan := db.RestorePlan()
+		require.Len(t, plan, len(wantStates))
+		sink = newAgentTraceSink(t)
+		target := connect(ctx, t, sink.clientOpts()...)
+		for _, entry := range plan {
+			require.Equal(t, wantStates[entry.Name], entry.State, "%s", entry.Name)
+			h := restoreAgent(ctx, t, target, db, entry)
+			require.Equal(t, wantStates[entry.Name], h.state(ctx, t))
+			if entry.Name == "failed" {
+				require.Equal(t, failure, entry.Error)
+				require.Equal(t, failure, h.mustRun(ctx, t, "error").Get("error").String())
+			}
+			// All providers are empty recordings: a spontaneous turn would fail
+			// an idle/paused agent, or change the preserved failure text.
+		}
+		sink.awaitRestorable(t, 4)
+		require.NoError(t, target.Close())
+	}
+}
+
+// TestRestoreWorkspaceAfterSourceDisappears resolves only a traced anchor after
+// the source connection is closed and its checkout has been removed. A distinct
+// destination checkout intentionally disagrees with both frozen and pending data.
+func (AgentRestoreSuite) TestRestoreWorkspaceAfterSourceDisappears(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs independent CLI sessions to capture telemetry")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	defer cancel()
+	sourceDir, _ := workspaceExportCheckout(ctx, t)
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "authority.txt"), []byte("source"), 0o644))
+	sink := newAgentTraceSink(t)
+	source := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(sourceDir))...)
+	frozen := snapshotWorkspace(ctx, t, source, source.CurrentWorkspace())
+	wsID, err := frozen.WithNewFile("pending.txt", "unexported").ID(ctx)
+	require.NoError(t, err)
+	spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "frozen", wsID: wsID})
+	sink.awaitRestorable(t, 1)
+	require.NoError(t, source.Close())
+	require.NoError(t, os.RemoveAll(sourceDir))
+
+	destinationDir, _ := workspaceExportCheckout(ctx, t)
+	require.NoError(t, os.WriteFile(filepath.Join(destinationDir, "authority.txt"), []byte("destination"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(destinationDir, "pending.txt"), []byte("not the pending edit"), 0o644))
+	target := connect(ctx, t, dagger.WithWorkdir(destinationDir))
+	traces, logs := sink.capture()
+	db := restoringDB(t)
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+	for _, batch := range traces {
+		require.NoError(t, importer.ImportSpans(ctx, batch))
+	}
+	for _, batch := range logs {
+		require.NoError(t, importer.ImportLogs(ctx, batch))
+	}
+	plan := db.RestorePlan()
+	require.Len(t, plan, 1)
+	h := restoreAgent(ctx, t, target, db, plan[0])
+	out := h.mustRun(ctx, t, `snapshot { workspace { source: file(path: "authority.txt") { contents } pending: file(path: "pending.txt") { contents } } }`)
+	require.Equal(t, "source", out.Get("snapshot.workspace.source.contents").String())
+	require.Equal(t, "unexported", out.Get("snapshot.workspace.pending.contents").String())
+	require.Equal(t, "IDLE", h.state(ctx, t))
+	local, err := os.ReadFile(filepath.Join(destinationDir, "authority.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "destination", string(local), "restore must not implicitly export")
 }
 
 // withoutSpanCallPayloads strips the dagger.io/dag.call attribute from every
