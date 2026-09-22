@@ -3688,15 +3688,6 @@ type ObjectTypeDef implements Node {
   """A unique identifier for this ObjectTypeDef."""
   id: ID!
 
-  """Static fields defined on this object, if any."""
-  fields: [FieldTypeDef!]!
-
-  """Functions defined on this object, if any."""
-  functions: [Function!]!
-
-  """The function used to construct new instances of this object, if any."""
-  constructor: Function
-
   """The name of the object."""
   name: String!
 
@@ -3713,6 +3704,15 @@ type ObjectTypeDef implements Node {
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
   sourceModuleName: String!
+
+  """Static fields defined on this object, if any."""
+  fields: [FieldTypeDef!]!
+
+  """Functions defined on this object, if any."""
+  functions: [Function!]!
+
+  """The function used to construct new instances of this object, if any."""
+  constructor: Function
 }
 
 """A unique identifier for an object."""
@@ -4028,6 +4028,12 @@ type Query implements Node {
   """Load a GeneratedCode from its ID."""
   loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
 
+  """Load a TypeDef from its ID."""
+  loadTypeDefFromID(id: TypeDefID!): TypeDef!
+
+  """Load a ObjectTypeDef from its ID."""
+  loadObjectTypeDefFromID(id: ObjectTypeDefID!): ObjectTypeDef!
+
   """Create a new module."""
   module: Module!
 
@@ -4105,12 +4111,6 @@ type Query implements Node {
 
   """Load a SourceMap from its ID."""
   loadSourceMapFromID(id: SourceMapID!): SourceMap!
-
-  """Load a TypeDef from its ID."""
-  loadTypeDefFromID(id: TypeDefID!): TypeDef!
-
-  """Load a ObjectTypeDef from its ID."""
-  loadObjectTypeDefFromID(id: ObjectTypeDefID!): ObjectTypeDef!
 
   """Load a InterfaceTypeDef from its ID."""
   loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
@@ -4492,6 +4492,15 @@ type TypeDef implements Node {
   """A unique identifier for this TypeDef."""
   id: ID!
 
+  """The canonical non-optional name of the type."""
+  name: String!
+
+  """The kind of type this is (e.g. primitive, list, object)."""
+  kind: TypeDefKind!
+
+  """Whether this type can be set to null. Defaults to false."""
+  optional: Boolean!
+
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!
 
@@ -4602,15 +4611,6 @@ type TypeDef implements Node {
     """If deprecated, the reason or migration path."""
     deprecated: String
   ): TypeDef!
-
-  """The canonical non-optional name of the type."""
-  name: String!
-
-  """The kind of type this is (e.g. primitive, list, object)."""
-  kind: TypeDefKind!
-
-  """Whether this type can be set to null. Defaults to false."""
-  optional: Boolean!
 
   """
   If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
