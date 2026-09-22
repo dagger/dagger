@@ -137,18 +137,18 @@ func loadListCommands(ctx context.Context, ec *client.Client) error {
 	if err != nil {
 		return err
 	}
-	dimensions, err := artifacts.Dimensions(ctx)
+	dimensions, err := artifactDimensions(ctx, dag, artifacts)
 	if err != nil {
 		return err
 	}
 	typeCommands := artifactTypeCommands(artifactTypeNames(types))
 	for _, dimension := range dimensions {
-		name := dimension
+		name := dimensions.DisplayName(dimension)
 		if typeName, exists := typeCommands[name]; exists {
-			return fmt.Errorf("list name %q matches both type %s and dimension %s", name, typeName, dimension)
+			return fmt.Errorf("list name %q matches both type %s and dimension %s", name, typeName, dimension.Identifier)
 		}
 	}
-	registerArtifactDimensionFlags(listCmd, dimensions)
+	registerArtifactDimensionHelp(listCmd, dimensions)
 	for name, typeName := range typeCommands {
 		short := "List " + typeName + " artifacts"
 		for _, typ := range types {
@@ -160,8 +160,8 @@ func loadListCommands(ctx context.Context, ec *client.Client) error {
 		addListCommand(name, short, "types", artifactListType, typeName)
 	}
 	for _, dimension := range dimensions {
-		name := dimension
-		addListCommand(name, "List "+name+" values", "dimensions", artifactListDimension, dimension)
+		name := dimensions.DisplayName(dimension)
+		addListCommand(name, "List "+name+" values", "dimensions", artifactListDimension, dimension.Identifier)
 	}
 	return nil
 }

@@ -347,7 +347,7 @@ dagger call golang modules get --key=sdk/go tests subset --keys=TestConnect --ke
 
 ### 6. Select checks and generators
 
-`dagger check` and `dagger generate` use the shared Artifacts selection API. Add dimension filters to their path and directive filters. The dimension names, key text, and filter rules are the same as for `dagger artifacts`.
+`dagger check` and `dagger generate` use the shared Artifacts selection API. Add dimension filters to their path and directive filters. The dimension names, key text, and filter rules are the same as for `dagger list`.
 
 Resolve dimension names within the selected paths. Then merge keys for the same dimension with OR, and combine different dimensions with AND. An omitted dimension selects all keys. An empty key list matches nothing.
 

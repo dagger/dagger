@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/artifact"
@@ -222,24 +221,6 @@ func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]strin
 	return types, cobra.ShellCompDirectiveNoFileComp
 }
 
-func setArtifactTypeHelp(cmd *cobra.Command, types []string) {
-	names := make([]string, len(types))
-	for i, typ := range types {
-		names[i] = cliName(typ)
-	}
-	slices.Sort(names)
-	names = slices.Compact(names)
-	available := "none"
-	if len(names) > 0 {
-		available = strings.Join(names[:min(5, len(names))], ", ")
-		if len(names) > 5 {
-			available += fmt.Sprintf(" (+%d more)", len(names)-5)
-		}
-	}
-	flag := cmd.PersistentFlags().Lookup("type")
-	flag.Usage += ". Available: " + available + ". See 'dagger artifact types' for the full list."
-}
-
 func runArtifacts(cmd *cobra.Command, addresses []string) error {
 	dimension := cmd.Annotations[artifactListDimension]
 	parsed, err := parseArtifactAddresses(addresses)
@@ -356,23 +337,6 @@ func bindArtifactDimensions(pairs []dagaddress.Pair, defs artifact.Dimensions) e
 		pairs[i].Dimension = id
 	}
 	return nil
-}
-
-func printArtifactDimensions(cmd *cobra.Command, defs artifact.Dimensions) error {
-	if len(defs) == 0 {
-		return nil
-	}
-	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(writer, "NAME\tIDENTIFIER"); err != nil {
-		return err
-	}
-	for _, def := range defs {
-		name := defs.DisplayName(def)
-		if _, err := fmt.Fprintf(writer, "%s\t%s\n", name, def.Identifier); err != nil {
-			return err
-		}
-	}
-	return writer.Flush()
 }
 
 func readArtifactTypes(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]commandListItem, error) {

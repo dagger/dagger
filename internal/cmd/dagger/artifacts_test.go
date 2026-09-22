@@ -102,7 +102,7 @@ func TestArtifactDimensionHelp(t *testing.T) {
 func TestArtifactEmptyDimensionKey(t *testing.T) {
 	for _, arg := range []string{"--part=", "--dimension-key=part="} {
 		t.Run(arg, func(t *testing.T) {
-			cmd := newArtifactsCommand()
+			cmd := newListCommand()
 			registerArtifactDimensionFlags(cmd, []string{"part"})
 			require.NoError(t, cmd.ParseFlags([]string{arg}))
 			keys, err := artifactKeyFlags(cmd)
@@ -137,9 +137,9 @@ func TestArtifactDimensionFlagPreparation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := &cobra.Command{Use: "dagger"}
 			root.PersistentFlags().String("env", "", "Workspace environment")
-			cmd := newArtifactsCommand()
+			cmd := newListCommand()
 			root.AddCommand(cmd)
-			child, _, err := root.Find([]string{"artifact", "list"})
+			child, _, err := root.Find([]string{"list"})
 			require.NoError(t, err)
 			help, err := prepareArtifactDimensionFlags(child, tc.args)
 			if tc.err != "" {
@@ -172,8 +172,8 @@ func TestArtifactDimensionFlagValidation(t *testing.T) {
 	}
 	for _, name := range []string{"go-module", "golang-modules", "Golang.modules", "does-not-exist"} {
 		t.Run(name, func(t *testing.T) {
-			cmd := newArtifactsCommand()
-			child, _, err := cmd.Find([]string{"list"})
+			cmd := newListCommand()
+			child, _, err := cmd.Find(nil)
 			require.NoError(t, err)
 			args := []string{"--" + name + "=sdk/go"}
 			_, err = prepareArtifactDimensionFlags(child, args)
@@ -190,18 +190,17 @@ func TestArtifactDimensionFlagValidation(t *testing.T) {
 }
 
 func TestArtifactPreparationDoesNotConnect(t *testing.T) {
-	previous := artifactsCmd
-	t.Cleanup(func() { artifactsCmd = previous })
+	previous := listCmd
+	t.Cleanup(func() { listCmd = previous })
 	for _, args := range [][]string{
-		{"artifact", "list"},
-		{"artifact", "types", "--type=Container"},
-		{"artifact", "dimensions"},
-		{"artifact", "keys", "go-test", "--go-module=sdk/go"},
+		{"list", "-a"},
+		{"list", "-a", "--type=Container"},
+		{"list", "-a", "--go-module=sdk/go"},
 	} {
 		t.Run(args[1], func(t *testing.T) {
 			root := &cobra.Command{Use: "dagger"}
-			artifactsCmd = newArtifactsCommand()
-			root.AddCommand(artifactsCmd)
+			listCmd = newListCommand()
+			root.AddCommand(listCmd)
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel() // Any engine call during preparation must fail.
 			require.NoError(t, prepareArtifactCommands(ctx, root, parseGlobalFlags(root, args), args))

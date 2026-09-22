@@ -159,17 +159,17 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"artifacts", "list", "items/file", "--item=a"}, "dag://items/file?item=a\n"},
-		{[]string{"artifacts", "list", "items/file", "--collections-items=a"}, "dag://items/file?item=a\n"},
-		{[]string{"artifacts", "list", "items/file?item=a", "other/file?item=c"}, "dag://items/file?item=a\ndag://other/file?item=c\n"},
-		{[]string{"artifacts", "list", "items/file?item=a", "--collections-items=c"}, "dag://items/file?item=a\ndag://items/file?item=c\n"},
-		{[]string{"artifacts", "keys", "item", "items"}, "a\nb\nc\n"},
+		{[]string{"list", "-a", "items/file", "--item=a"}, "dag://items/file?item=a\n"},
+		{[]string{"list", "-a", "items/file", "--collections-items=a"}, "dag://items/file?item=a\n"},
+		{[]string{"list", "-a", "items/file?item=a", "other/file?item=c"}, "dag://items/file?item=a\ndag://other/file?item=c\n"},
+		{[]string{"list", "-a", "items/file?item=a", "--collections-items=c"}, "dag://items/file?item=a\ndag://items/file?item=c\n"},
+		{[]string{"list", "item", "items"}, "a\nb\nc\n"},
 	} {
 		out, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, tc.want, out)
 	}
-	_, err := base.With(daggerExec("artifacts", "list", "--item=a")).Stdout(ctx)
+	_, err := base.With(daggerExec("list", "-a", "--item=a")).Stdout(ctx)
 	requireErrOut(t, err, "ambiguous dimension")
 }
 
@@ -341,7 +341,7 @@ func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") 
 		out, err = base.With(daggerExec("check", "-l", "--all", "empty/verify")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Empty(t, out)
-		out, err = base.With(daggerExec("artifact", "list", "empty/verify")).Stdout(ctx)
+		out, err = base.With(daggerExec("list", "-a", "empty/verify")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Empty(t, out)
 	})
