@@ -91,6 +91,9 @@ type spawnOpts struct {
 	model string
 	// name is the display label passed to spawn (optional).
 	name string
+	// parentHandle records lineage independently of notification subscriptions.
+	parentHandle string
+	handle       string
 	// toolIDs optionally binds objects' methods as tools (one llm.withTools
 	// per object, in order), for the recordings that contain tool calls.
 	toolIDs []dagger.ID
@@ -111,10 +114,24 @@ func trySpawnAgent(ctx context.Context, c *dagger.Client, opts spawnOpts) (strin
 	}
 	decls := []string{"$model: String!"}
 	inner := `spawn`
+	var spawnArgs []string
 	if opts.name != "" {
-		inner = `spawn(name: $name)`
+		spawnArgs = append(spawnArgs, "name: $name")
 		decls = append(decls, "$name: String!")
 		vars["name"] = opts.name
+	}
+	if opts.handle != "" {
+		spawnArgs = append(spawnArgs, "handle: $handle")
+		decls = append(decls, "$handle: String!")
+		vars["handle"] = opts.handle
+	}
+	if opts.parentHandle != "" {
+		spawnArgs = append(spawnArgs, "parentHandle: $parent")
+		decls = append(decls, "$parent: String!")
+		vars["parent"] = opts.parentHandle
+	}
+	if len(spawnArgs) > 0 {
+		inner += "(" + strings.Join(spawnArgs, ", ") + ")"
 	}
 	path := "spawn"
 	for i := len(opts.toolIDs) - 1; i >= 0; i-- {
@@ -362,20 +379,25 @@ func llmWithPrompt(ctx context.Context, t *testctx.T, c *dagger.Client, model, p
 // returns a handle on the restored instance. Error-returning, because half
 // the point of a restore is which calls it refuses.
 func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText string) (*agentHandle, error) {
+	return rehydrateAgentWithParent(ctx, c, llmID, handle, name, state, errText, "")
+}
+
+func rehydrateAgentWithParent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText, parent string) (*agentHandle, error) {
 	res := map[string]any{}
 	if err := c.Do(ctx,
 		&dagger.Request{
-			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
+			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!, $parent: String!) {
 				node(id: $llm) { ... on LLM {
-					spawn(handle: $id, name: $name, state: $state, error: $error)
+					spawn(handle: $id, name: $name, state: $state, error: $error, parentHandle: $parent)
 				} }
 			}`,
 			Variables: map[string]any{
-				"llm":   llmID,
-				"id":    handle,
-				"name":  name,
-				"state": state,
-				"error": errText,
+				"llm":    llmID,
+				"id":     handle,
+				"name":   name,
+				"state":  state,
+				"error":  errText,
+				"parent": parent,
 			},
 		},
 		&dagger.Response{Data: &res},
@@ -1037,7 +1059,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 // TestSendContent exercises file resolution, validation before enqueue and the
 // real mailbox drain against a keyless recording, including a paused queue.
 func (AgentRuntimeSuite) TestSendContent(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	file := c.Container().From(alpineImage).
 		WithNewFile("/image.b64", mediaPNG).
 		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
@@ -1081,7 +1103,7 @@ func (AgentRuntimeSuite) TestSendContent(ctx context.Context, t *testctx.T) {
 				require.Equal(t, "a picture", reply)
 				snapshot := agent.Snapshot()
 				require.Equal(t, mediaHistory(t, c, expected), mediaHistory(t, c, snapshot))
-				portable, err := snapshot.PortableID(ctx)
+				portable, err := sink.captureLLMRecipe(ctx, t, c, snapshot)
 				require.NoError(t, err)
 				require.Equal(t, mediaHistory(t, c, snapshot), mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, portable)))
 			})
