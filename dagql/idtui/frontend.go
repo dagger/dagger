@@ -219,9 +219,9 @@ var _ TraceFrontend = (*frontendPretty)(nil)
 // span DB to restore from, so `--trace` fails there rather than silently
 // restoring nothing.
 type AgentRestorer interface {
-	// WaitForImport acknowledges application of all previously enqueued telemetry,
+	// WaitForEventLoop acknowledges application of all previously enqueued telemetry,
 	// not just its delivery to the exporters. Call from outside the UI event loop.
-	WaitForImport(context.Context) error
+	WaitForEventLoop(context.Context) error
 	// AgentRestorePlan projects the imported trace's agents into what the
 	// restore needs to re-hydrate them, live-session agents excluded
 	// (dagui.DB.RestorePlan).

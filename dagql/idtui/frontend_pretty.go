@@ -6832,10 +6832,10 @@ func encodedIDForCallDigest(db *dagui.DB, digest string) (string, error) {
 	return id.Encode()
 }
 
-// WaitForImport is an application barrier, rather than an exporter flush. The
+// WaitForEventLoop is an application barrier, rather than an exporter flush. The
 // marker uses the same ordered dispatch queue as spans, logs, and metrics; when
 // it runs their DB mutations are visible to subsequent restore-plan reads.
-func (fe *frontendPretty) WaitForImport(ctx context.Context) error {
+func (fe *frontendPretty) WaitForEventLoop(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
