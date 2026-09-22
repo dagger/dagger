@@ -32,6 +32,7 @@ type Key struct {
 type Agent struct {
 	Key
 	Revision         int64
+	Removed          bool // rollback tombstone; identity/revision still witnessed
 	Name             string
 	Parent           string
 	CallDigest       string
@@ -110,6 +111,9 @@ func (a Agent) Validate() error {
 func (a Agent) RestoreState() (string, error) {
 	if err := a.Validate(); err != nil {
 		return "", err
+	}
+	if a.Removed {
+		return "", errors.New("agent was removed")
 	}
 	if a.CaptureError != "" {
 		return "", fmt.Errorf("agent %q capture failed: %s", a.Handle, a.CaptureError)
@@ -250,13 +254,31 @@ func (idx *Index) Verify(want Expectation) error {
 		if !ok || a.Revision != revision {
 			return fmt.Errorf("missing final revision %d for agent %q", revision, key.Handle)
 		}
+		if a.Removed {
+			continue
+		}
 		if _, err := a.RestoreState(); err != nil {
 			return err
 		}
 		if a.Parent != "" {
-			if _, ok := want.Agents[Key{a.Namespace, a.Parent}]; !ok {
+			parent, ok := idx.agents[Key{a.Namespace, a.Parent}]
+			if !ok || parent.Removed {
 				return fmt.Errorf("parent %q is outside restore roster", a.Parent)
 			}
+		}
+	}
+	for key := range want.Agents {
+		seen := map[Key]bool{}
+		for current := key; current.Handle != ""; {
+			if seen[current] {
+				return fmt.Errorf("agent parent cycle at %q", current.Handle)
+			}
+			seen[current] = true
+			a := idx.agents[current]
+			if a.Removed {
+				break
+			}
+			current = Key{a.Namespace, a.Parent}
 		}
 	}
 	for key, revision := range want.Subscriptions {
@@ -265,7 +287,8 @@ func (idx *Index) Verify(want Expectation) error {
 			return fmt.Errorf("missing final subscription revision %d", revision)
 		}
 		for _, handle := range []string{s.Watched, s.Subscriber} {
-			if _, ok := want.Agents[Key{s.Namespace, handle}]; !ok {
+			endpoint, ok := idx.agents[Key{s.Namespace, handle}]
+			if !ok || (len(s.States) > 0 && endpoint.Removed) {
 				return fmt.Errorf("subscription endpoint %q is outside restore roster", handle)
 			}
 		}
