@@ -49,10 +49,12 @@ type logStream[Row any] struct {
 	cond       *sync.Cond
 	capWaiters int
 
-	spillReq chan struct{}
-	closeReq chan chan error
-	closed   bool
-	fatalErr error
+	spillReq      chan struct{}
+	checkpointReq chan chan error
+	lifecycleMu   sync.Mutex
+	closeReq      chan chan error
+	closed        bool
+	fatalErr      error
 }
 
 func openLogStream[Row any](
@@ -78,15 +80,16 @@ func openLogStream[Row any](
 		hardCap = budget * telemetryTailHardCapMultiplier
 	}
 	stream := &logStream[Row]{
-		codec:    codec,
-		nextID:   spill.lastID + 1,
-		tailBase: spill.lastID + 1,
-		budget:   budget,
-		hardCap:  hardCap,
-		spill:    spill,
-		onAppend: onAppend,
-		spillReq: make(chan struct{}, 1),
-		closeReq: make(chan chan error),
+		codec:         codec,
+		nextID:        spill.lastID + 1,
+		tailBase:      spill.lastID + 1,
+		budget:        budget,
+		hardCap:       hardCap,
+		spill:         spill,
+		onAppend:      onAppend,
+		spillReq:      make(chan struct{}, 1),
+		checkpointReq: make(chan chan error),
+		closeReq:      make(chan chan error),
 	}
 	stream.cond = sync.NewCond(&stream.mu)
 	go stream.runSpiller()
@@ -280,6 +283,23 @@ func (s *logStream[Row]) runSpiller() {
 					break
 				}
 			}
+		case response := <-s.checkpointReq:
+			var err error
+			for {
+				spilled, spillErr := s.spillOnce(true)
+				err = errors.Join(err, spillErr)
+				if spillErr != nil || !spilled {
+					break
+				}
+			}
+			if err == nil {
+				if s.spill.testSyncHook != nil {
+					err = s.spill.testSyncHook()
+				} else {
+					err = s.spill.file.Sync()
+				}
+			}
+			response <- err
 		case response := <-s.closeReq:
 			var err error
 			for {
@@ -359,7 +379,54 @@ func (s *logStream[Row]) setFatal(err error) {
 	s.mu.Unlock()
 }
 
+func (s *logStream[Row]) checkpoint(ctx context.Context) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	s.mu.Lock()
+	err := s.stateErrLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	response := make(chan error, 1)
+	select {
+	case s.checkpointReq <- response:
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	select {
+	case err := <-response:
+		return err
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
+func (s *logStream[Row]) highWater() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.nextID - 1
+}
+
+func (s *logStream[Row]) Range(ctx context.Context, after, through int64, limit int) ([]Row, error) {
+	if after >= through {
+		return nil, nil
+	}
+	rows, err := s.Since(ctx, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	for i, row := range rows {
+		if s.codec.getID(row) > through {
+			return rows[:i], nil
+		}
+	}
+	return rows, nil
+}
+
 func (s *logStream[Row]) close() error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
