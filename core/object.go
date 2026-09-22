@@ -523,7 +523,7 @@ func (obj *ModuleObject) AttachDependencyResults(
 	if obj == nil {
 		return nil, nil
 	}
-	owned, err := obj.attachCollectionBase(ctx, self, attach)
+	owned, err := obj.attachCollectionBase(self, attach)
 	if err != nil {
 		return nil, err
 	}

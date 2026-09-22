@@ -33,7 +33,7 @@ func attachCollectionTestObject(t *testing.T, obj *ModuleObject) {
 	t.Helper()
 	self, err := dagql.NewResultForCall(obj, moduleObjectTestSyntheticCall("collection", obj))
 	require.NoError(t, err)
-	_, err = obj.attachCollectionBase(t.Context(), self, func(value dagql.AnyResult) (dagql.AnyResult, error) { return value, nil })
+	_, err = obj.attachCollectionBase(self, func(value dagql.AnyResult) (dagql.AnyResult, error) { return value, nil })
 	require.NoError(t, err)
 }
 

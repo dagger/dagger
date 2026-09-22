@@ -361,38 +361,8 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			batchNode := &ModTreeNode{Parent: node, Name: "batch", Type: batch.Value,
 				Module: node.Module, OriginalModule: node.OriginalModule, DagqlServer: node.DagqlServer, types: node.types}
 			visit(batchNode)
-			children, err := batchNode.Children(ctx)
-			if err != nil {
+			if err := walkArtifactBatch(ctx, batchNode, item, visit, visiting); err != nil {
 				return err
-			}
-			// Batch results are leaves. Enumerating collections below one
-			// would execute a batch during discovery.
-			seen := map[string]bool{}
-			for _, child := range children {
-				if typ := child.Type.Self(); !seen[child.Name] && typ != nil && !typ.Optional && typ.Kind == TypeDefKindObject {
-					seen[child.Name] = true
-					if artifactBatchDirective(child) != "" {
-						// Use the item operation's address when it has a matching
-						// batch. Batch-only operations use the same implicit dimension.
-						counterpart, err := item.Child(ctx, child.Name)
-						if err != nil {
-							return err
-						}
-						if counterpart != nil && artifactBatchDirective(counterpart) == artifactBatchDirective(child) && counterpart.Type.Self().ToType().Name() == child.Type.Self().ToType().Name() {
-							continue
-						}
-						receiver := *batchNode
-						receiver.CollectionDimension = dim
-						child.Parent = &receiver
-						// Checks and Changesets have no runtime collections to
-						// enumerate. Include Changeset.stale without calling the batch.
-						if err := walkArtifactNodes(ctx, child, visit, visiting); err != nil {
-							return err
-						}
-					} else {
-						visit(child)
-					}
-				}
 			}
 		}
 		return nil
@@ -409,6 +379,43 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		seen[child.Name] = true
 		if err := walkArtifactNodes(ctx, child, visit, visiting); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func walkArtifactBatch(ctx context.Context, batchNode, item *ModTreeNode, visit func(*ModTreeNode), visiting map[string]bool) error {
+	children, err := batchNode.Children(ctx)
+	if err != nil {
+		return err
+	}
+	// Batch results are leaves. Enumerating collections below one
+	// would execute a batch during discovery.
+	seen := map[string]bool{}
+	for _, child := range children {
+		if typ := child.Type.Self(); !seen[child.Name] && typ != nil && !typ.Optional && typ.Kind == TypeDefKindObject {
+			seen[child.Name] = true
+			if artifactBatchDirective(child) != "" {
+				// Use the item operation's address when it has a matching
+				// batch. Batch-only operations use the same implicit dimension.
+				counterpart, err := item.Child(ctx, child.Name)
+				if err != nil {
+					return err
+				}
+				if counterpart != nil && artifactBatchDirective(counterpart) == artifactBatchDirective(child) && counterpart.Type.Self().ToType().Name() == child.Type.Self().ToType().Name() {
+					continue
+				}
+				receiver := *batchNode
+				receiver.CollectionDimension = item.CollectionDimension
+				child.Parent = &receiver
+				// Checks and Changesets have no runtime collections to
+				// enumerate. Include Changeset.stale without calling the batch.
+				if err := walkArtifactNodes(ctx, child, visit, visiting); err != nil {
+					return err
+				}
+			} else {
+				visit(child)
+			}
 		}
 	}
 	return nil

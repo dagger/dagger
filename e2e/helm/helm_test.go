@@ -7,6 +7,7 @@
 //go:test:include ../../analytics
 //go:test:include ../../cmd/codegen
 //go:test:include ../../cmd/dagger
+//go:test:include ../../core/artifact
 //go:test:include ../../core/dagaddress
 //go:test:include ../../core/gitref
 //go:test:include ../../core/modules

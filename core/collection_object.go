@@ -225,7 +225,7 @@ func (obj *ModuleObject) InitializeResultReference(self dagql.AnyResult) {
 	}
 }
 
-func (obj *ModuleObject) attachCollectionBase(ctx context.Context, self dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+func (obj *ModuleObject) attachCollectionBase(self dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	if obj.TypeDef == nil || obj.TypeDef.Collection == nil || !obj.TypeDef.Collection.Enabled {
 		return nil, nil
 	}

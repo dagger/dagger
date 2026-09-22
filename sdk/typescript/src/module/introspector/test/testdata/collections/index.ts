@@ -1,9 +1,11 @@
 import { collection, delta, field, func, get, keys, object, CollectionDelta } from "../../../../../index.js"
 
 @object()
-export class Collections {
-  @func()
-  items(): Items { return new Items() }
+export class Item {
+  @field()
+  name: string
+
+  constructor(name: string) { this.name = name }
 }
 
 @collection()
@@ -25,9 +27,7 @@ export class Items {
 }
 
 @object()
-export class Item {
-  @field()
-  name: string
-
-  constructor(name: string) { this.name = name }
+export class Collections {
+  @func()
+  items(): Items { return new Items() }
 }
