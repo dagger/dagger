@@ -11,12 +11,12 @@ namespace Dagger;
 class SearchResult extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The byte offset of this line within the file.
+     * A unique identifier for this SearchResult.
      */
-    public function absoluteOffset(): int
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('absoluteOffset');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'absoluteOffset');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -29,21 +29,21 @@ class SearchResult extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * A unique identifier for this SearchResult.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
      * The first line that matched.
      */
     public function lineNumber(): int
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('lineNumber');
         return (int)$this->queryLeaf($leafQueryBuilder, 'lineNumber');
+    }
+
+    /**
+     * The byte offset of this line within the file.
+     */
+    public function absoluteOffset(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('absoluteOffset');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'absoluteOffset');
     }
 
     /**

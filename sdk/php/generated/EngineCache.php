@@ -14,18 +14,6 @@ namespace Dagger;
 class EngineCache extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The current set of entries in the cache
-     */
-    public function entrySet(?string $key = ''): EngineCacheEntrySet
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('entrySet');
-        if (null !== $key) {
-        $innerQueryBuilder->setArgument('key', $key);
-        }
-        return new \Dagger\EngineCacheEntrySet($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * A unique identifier for this EngineCache.
      */
     public function id(): Id
@@ -35,21 +23,15 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The maximum bytes to keep in the cache without pruning.
+     * The current set of entries in the cache
      */
-    public function maxUsedSpace(): int
+    public function entrySet(?string $key = ''): EngineCacheEntrySet
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('maxUsedSpace');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'maxUsedSpace');
-    }
-
-    /**
-     * The target amount of free disk space the garbage collector will attempt to leave.
-     */
-    public function minFreeSpace(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('minFreeSpace');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'minFreeSpace');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('entrySet');
+        if (null !== $key) {
+        $innerQueryBuilder->setArgument('key', $key);
+        }
+        return new \Dagger\EngineCacheEntrySet($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -90,12 +72,12 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The minimum amount of disk space this policy is guaranteed to retain.
+     * The maximum bytes to keep in the cache without pruning.
      */
-    public function reservedSpace(): int
+    public function maxUsedSpace(): int
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reservedSpace');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'reservedSpace');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('maxUsedSpace');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'maxUsedSpace');
     }
 
     /**
@@ -105,5 +87,23 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('targetSpace');
         return (int)$this->queryLeaf($leafQueryBuilder, 'targetSpace');
+    }
+
+    /**
+     * The minimum amount of disk space this policy is guaranteed to retain.
+     */
+    public function reservedSpace(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reservedSpace');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'reservedSpace');
+    }
+
+    /**
+     * The target amount of free disk space the garbage collector will attempt to leave.
+     */
+    public function minFreeSpace(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('minFreeSpace');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'minFreeSpace');
     }
 }

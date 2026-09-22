@@ -29,15 +29,6 @@ class CheckGroup extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Generate a markdown report
-     */
-    public function report(): File
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('report');
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Execute all selected checks
      */
     public function run(?bool $failFast = null): CheckGroup
@@ -47,5 +38,14 @@ class CheckGroup extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('failFast', $failFast);
         }
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Generate a markdown report
+     */
+    public function report(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('report');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

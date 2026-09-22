@@ -13,16 +13,16 @@ namespace Dagger;
  */
 class ExportableClient extends Client\AbstractObject implements Exportable, Client\IdAble
 {
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
     public function export(string $path): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
         return (string)$this->queryLeaf($leafQueryBuilder, 'export');
-    }
-
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

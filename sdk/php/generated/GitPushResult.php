@@ -14,30 +14,12 @@ namespace Dagger;
 class GitPushResult extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * How the remote ref was updated.
-     */
-    public function disposition(): GitPushDisposition
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('disposition');
-        return \Dagger\GitPushDisposition::from((string)$this->queryLeaf($leafQueryBuilder, 'disposition'));
-    }
-
-    /**
      * A unique identifier for this GitPushResult.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * The previous remote object ID; empty when the ref was created.
-     */
-    public function previousSHA(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('previousSHA');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'previousSHA');
     }
 
     /**
@@ -50,11 +32,29 @@ class GitPushResult extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The previous remote object ID; empty when the ref was created.
+     */
+    public function previousSHA(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('previousSHA');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'previousSHA');
+    }
+
+    /**
      * The object ID pushed to the remote.
      */
     public function sha(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sha');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sha');
+    }
+
+    /**
+     * How the remote ref was updated.
+     */
+    public function disposition(): GitPushDisposition
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('disposition');
+        return \Dagger\GitPushDisposition::from((string)$this->queryLeaf($leafQueryBuilder, 'disposition'));
     }
 }

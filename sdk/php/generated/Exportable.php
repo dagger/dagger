@@ -15,7 +15,7 @@ namespace Dagger;
  */
 interface Exportable
 {
-    function export(string $path): string;
-
     function id(): Id;
+
+    function export(string $path): string;
 }

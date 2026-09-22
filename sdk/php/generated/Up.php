@@ -11,15 +11,6 @@ namespace Dagger;
 class Up extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The description of the service
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this Up.
      */
     public function id(): Id
@@ -38,12 +29,12 @@ class Up extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The original module in which the service has been defined
+     * The description of the service
      */
-    public function originalModule(): Module
+    public function description(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -53,6 +44,15 @@ class Up extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * The original module in which the service has been defined
+     */
+    public function originalModule(): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

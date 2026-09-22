@@ -16,24 +16,6 @@ namespace Dagger;
 class FieldTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The reason this enum member is deprecated, if any.
-     */
-    public function deprecated(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
-    }
-
-    /**
-     * A doc string for the field, if any.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this FieldTypeDef.
      */
     public function id(): Id
@@ -43,12 +25,30 @@ class FieldTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The type of the field.
+     */
+    public function typeDef(): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('typeDef');
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The name of the field in lowerCamelCase format.
      */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * A doc string for the field, if any.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -66,11 +66,11 @@ class FieldTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The type of the field.
+     * The reason this enum member is deprecated, if any.
      */
-    public function typeDef(): TypeDef
+    public function deprecated(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('typeDef');
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
     }
 }

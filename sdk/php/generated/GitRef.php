@@ -14,90 +14,12 @@ namespace Dagger;
 class GitRef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Return this ref's repository with HEAD pinned to the selected commit.
-     *
-     * Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
-     */
-    public function asRepository(): GitRepository
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asRepository');
-        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Creates a synthetic workspace from this git ref.
-     */
-    public function asWorkspace(?string $cwd = '/'): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
-        if (null !== $cwd) {
-        $innerQueryBuilder->setArgument('cwd', $cwd);
-        }
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The resolved commit id at this ref.
-     */
-    public function commit(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
-    }
-
-    /**
-     * The resolved commit SHA at this ref.
-     */
-    public function commitSHA(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commitSHA');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'commitSHA');
-    }
-
-    /**
-     * Find the best common ancestor between this ref and another ref.
-     */
-    public function commonAncestor(GitRef $other): GitRef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commonAncestor');
-        $innerQueryBuilder->setArgument('other', $other);
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * A unique identifier for this GitRef.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
-     */
-    public function log(?int $limit = 10, ?array $paths = null, ?GitRef $base = null): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('log');
-        if (null !== $limit) {
-        $leafQueryBuilder->setArgument('limit', $limit);
-        }
-        if (null !== $paths) {
-        $leafQueryBuilder->setArgument('paths', $paths);
-        }
-        if (null !== $base) {
-        $leafQueryBuilder->setArgument('base', $base);
-        }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'log');
-    }
-
-    /**
-     * The resolved name of this ref.
-     */
-    public function name(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
@@ -130,21 +52,21 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The resolved ref name at this ref.
-     */
-    public function ref(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'ref');
-    }
-
-    /**
      * The commit this ref resolves to.
      */
     public function targetCommit(): GitCommit
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('targetCommit');
         return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The resolved commit SHA at this ref.
+     */
+    public function commitSHA(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commitSHA');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'commitSHA');
     }
 
     /**
@@ -163,6 +85,61 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('includeTags', $includeTags);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The resolved commit id at this ref.
+     */
+    public function commit(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
+    }
+
+    /**
+     * The resolved name of this ref.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The resolved ref name at this ref.
+     */
+    public function ref(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'ref');
+    }
+
+    /**
+     * Find the best common ancestor between this ref and another ref.
+     */
+    public function commonAncestor(GitRef $other): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commonAncestor');
+        $innerQueryBuilder->setArgument('other', $other);
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+     */
+    public function log(?int $limit = 10, ?array $paths = null, ?GitRef $base = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('log');
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $base) {
+        $leafQueryBuilder->setArgument('base', $base);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'log');
     }
 
     /**
@@ -206,5 +183,28 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('signoff', $signoff);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this ref's repository with HEAD pinned to the selected commit.
+     *
+     * Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+     */
+    public function asRepository(): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asRepository');
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Creates a synthetic workspace from this git ref.
+     */
+    public function asWorkspace(?string $cwd = '/'): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        if (null !== $cwd) {
+        $innerQueryBuilder->setArgument('cwd', $cwd);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

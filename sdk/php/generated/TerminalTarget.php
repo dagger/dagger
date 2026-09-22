@@ -11,15 +11,6 @@ namespace Dagger;
 class TerminalTarget extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The description of the terminal target
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this TerminalTarget.
      */
     public function id(): Id
@@ -38,12 +29,12 @@ class TerminalTarget extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
-     * The module in which the terminal target is defined
+     * The description of the terminal target
      */
-    public function originalModule(): Module
+    public function description(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -53,5 +44,14 @@ class TerminalTarget extends Client\AbstractObject implements Client\IdAble, Nod
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * The module in which the terminal target is defined
+     */
+    public function originalModule(): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

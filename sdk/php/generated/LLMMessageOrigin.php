@@ -16,15 +16,6 @@ namespace Dagger;
 class LLMMessageOrigin extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The display name of the sending agent (for AGENT origins) or the observed agent (for EVENT origins).
-     */
-    public function agentName(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('agentName');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'agentName');
-    }
-
-    /**
      * A unique identifier for this LLMMessageOrigin.
      */
     public function id(): Id
@@ -40,6 +31,15 @@ class LLMMessageOrigin extends Client\AbstractObject implements Client\IdAble, N
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
         return \Dagger\LLMMessageOriginKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+    }
+
+    /**
+     * The display name of the sending agent (for AGENT origins) or the observed agent (for EVENT origins).
+     */
+    public function agentName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('agentName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'agentName');
     }
 
     /**
