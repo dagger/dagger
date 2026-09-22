@@ -17878,13 +17878,13 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 type WorkspaceExportOpts struct {
 	// Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
 	Path string
-	// Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
+	// Earlier workspace state to compare against. With path, live inputs are snapshotted at export time; use a snapshot to retain the baseline of a previous export.
 	From *Workspace
 }
 
 // Write this workspace's commits and pending changes to a checkout on the calling client.
 //
-// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+// With path, snapshot live inputs automatically, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. Capturing untracked source files requires interactive approval. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
 //
 // Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
 func (r *Workspace) Export(ctx context.Context, opts ...WorkspaceExportOpts) error {

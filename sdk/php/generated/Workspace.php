@@ -787,7 +787,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Write this workspace's commits and pending changes to a checkout on the calling client.
      *
-     * With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+     * With path, snapshot live inputs automatically, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. Capturing untracked source files requires interactive approval. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
      *
      * Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
      */
