@@ -33,6 +33,7 @@ func workspaceArtifactCommands(types []string) map[string]string {
 }
 
 func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []string) error {
+	completing := len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
 	helping := false
 	if len(args) > 0 {
 		switch args[0] {
@@ -71,26 +72,11 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 		}
 		return artifactsCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
 	}
-	err := withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, ec *client.Client) error {
-		types, err := readArtifactTypes(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts())
-		if err != nil {
-			return err
-		}
-		for name, typeName := range workspaceArtifactCommands(artifactTypeNames(types)) {
-			cmd := &cobra.Command{
-				Use:   name,
-				Short: "List " + typeName + " artifacts",
-				Args:  cobra.NoArgs,
-				RunE: func(cmd *cobra.Command, _ []string) error {
-					return runWorkspaceArtifacts(cmd, typeName)
-				},
-			}
-			registerArtifactListFlags(cmd)
-			setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace)
-			workspaceCmd.AddCommand(cmd)
-		}
+	// Group help discovers type shortcuts after the progress frontend is ready.
+	if len(commandArgs) == 0 && !completing {
 		return nil
-	})
+	}
+	err := withEngineSilent(ctx, client.Params{SkipWorkspaceModules: true}, loadWorkspaceArtifactCommands)
 	// Type shortcuts are optional for group help and completion. Keep errors
 	// for actual shortcut invocations, where discovery is required to execute.
 	if err != nil && (helping || len(commandArgs) == 0) {
@@ -98,6 +84,36 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 		return nil
 	}
 	return err
+}
+
+func workspaceHelp(cmd *cobra.Command, args []string) {
+	if cmd == workspaceCmd {
+		if err := withEngine(cmd.Context(), client.Params{SkipWorkspaceModules: true}, loadWorkspaceArtifactCommands); err != nil {
+			slog.Debug("skip workspace artifact commands", "error", err)
+		}
+	}
+	rootCmd.HelpFunc()(cmd, args)
+}
+
+func loadWorkspaceArtifactCommands(ctx context.Context, ec *client.Client) error {
+	types, err := readArtifactTypes(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts())
+	if err != nil {
+		return err
+	}
+	for name, typeName := range workspaceArtifactCommands(artifactTypeNames(types)) {
+		cmd := &cobra.Command{
+			Use:   name,
+			Short: "List " + typeName + " artifacts",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				return runWorkspaceArtifacts(cmd, typeName)
+			},
+		}
+		registerArtifactListFlags(cmd)
+		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace)
+		workspaceCmd.AddCommand(cmd)
+	}
+	return nil
 }
 
 func runWorkspaceArtifacts(cmd *cobra.Command, typeName string) error {

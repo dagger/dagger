@@ -650,6 +650,7 @@ func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		})
 	}
 	for _, args := range [][]string{
+		{"workspace"},
 		{"workspace", "--help"},
 		{"ws", "--help"},
 		{"help", "ws"},

@@ -257,6 +257,7 @@ var (
 )
 
 func init() {
+	workspaceCmd.SetHelpFunc(workspaceHelp)
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigUnset, "unset", "u", false, "Remove the value at the given key")
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigGlobal, "global", "g", false, "Write to user-level config instead of the repository, keyed by the workspace's git remote")
 
