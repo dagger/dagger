@@ -14,42 +14,6 @@ namespace Dagger;
 class Artifact extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The arguments accepted by the artifact field.
-     */
-    public function arguments(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('arguments');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'arguments');
-    }
-
-    /**
-     * The description of the field that supplies this artifact.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
-     * The selected keys for each dimension. Empty for static artifacts.
-     */
-    public function dimensionKeys(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
-    }
-
-    /**
-     * The directives carried by this artifact.
-     */
-    public function directives(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('directives');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'directives');
-    }
-
-    /**
      * A unique identifier for this Artifact.
      */
     public function id(): Id
@@ -68,12 +32,21 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+     * The arguments accepted by the artifact field.
      */
-    public function path(): array
+    public function arguments(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('arguments');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'arguments');
+    }
+
+    /**
+     * The description of the field that supplies this artifact.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -92,6 +65,33 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
         $leafQueryBuilder->setArgument('typeAssertion', $typeAssertion);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'uri');
+    }
+
+    /**
+     * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+     */
+    public function path(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * The selected keys for each dimension. Empty for static artifacts.
+     */
+    public function dimensionKeys(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
+    }
+
+    /**
+     * The directives carried by this artifact.
+     */
+    public function directives(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('directives');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'directives');
     }
 
     /**

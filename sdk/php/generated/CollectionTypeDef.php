@@ -11,20 +11,6 @@ namespace Dagger;
 class CollectionTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The type of batch operations, or null when there are none.
-     */
-    public function batchType(): ?TypeDef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('batchType');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\TypeDef::class, new \Dagger\Id((string)$id), 'TypeDef');
-    }
-
-    /**
      * A unique identifier for this CollectionTypeDef.
      */
     public function id(): Id
@@ -49,5 +35,19 @@ class CollectionTypeDef extends Client\AbstractObject implements Client\IdAble, 
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('valueType');
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The type of batch operations, or null when there are none.
+     */
+    public function batchType(): ?TypeDef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('batchType');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\TypeDef::class, new \Dagger\Id((string)$id), 'TypeDef');
     }
 }

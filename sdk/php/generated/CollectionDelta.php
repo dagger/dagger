@@ -11,21 +11,21 @@ namespace Dagger;
 class CollectionDelta extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Current keys absent from the original collection, in current order.
-     */
-    public function addedKeys(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('addedKeys');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'addedKeys');
-    }
-
-    /**
      * A unique identifier for this CollectionDelta.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Current keys absent from the original collection, in current order.
+     */
+    public function addedKeys(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('addedKeys');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'addedKeys');
     }
 
     /**
