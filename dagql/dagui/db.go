@@ -21,6 +21,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
@@ -216,9 +217,11 @@ type DB struct {
 	// DB.Agents: an agent born inside a module call is precisely what the
 	// roster exists to surface), so unlike the surfacing memos above it
 	// keys on db.mutations alone.
-	agents     []*AgentNode
-	agentsAt   uint64
-	agentsInit bool
+	agents          []*AgentNode
+	agentsAt        uint64
+	agentsInit      bool
+	agentControl    agentcontrol.Index
+	agentControlErr error
 
 	// Rewinds are session-wide for the same reason as the roster, and their
 	// memo doubles as the superseded-message index (see DB.Rewinds).
@@ -561,6 +564,9 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 		}
 		if db.ingestProgress(log) {
 			// streaming progress data, not log text
+			continue
+		}
+		if db.ingestAgentControl(log) {
 			continue
 		}
 		if db.ingestAgentState(log) {
