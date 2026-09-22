@@ -579,6 +579,37 @@ type Other {
 	}
 }
 
+func (LLMSuite) TestRecomposeNestedCompositionPrompts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := c.Directory().
+		WithNewFile("dagger.toml", "[modules.outer]\nsource = \"outer\"\n[modules.inner]\nsource = \"inner\"\n").
+		WithNewFile("outer/dagger.json", `{"name":"outer","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("outer/main.dang", `
+type Outer {
+  agent(base: LLM!, ws: Workspace!): LLM! @agent {
+    ws.agents(include: ["inner"]).compose(base: base.withSystemPrompt("outer prompt"))
+  }
+}
+`).
+		WithNewFile("inner/dagger.json", `{"name":"inner","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("inner/main.dang", `
+type Inner {
+  agent(base: LLM!): LLM! @agent { base.withSystemPrompt("inner prompt") }
+}
+`)
+	ws := fixture.AsWorkspace()
+	llm := ws.Agents(dagger.WorkspaceAgentsOpts{Include: []string{"outer"}}).Compose()
+	expected := []string{"outer prompt", "inner prompt"}
+	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm))
+	for range 2 {
+		var err error
+		llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
+		require.NoError(t, err)
+		require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm),
+			"recomposing the same middleware must not accumulate its nested composition's prompts")
+	}
+}
+
 func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	const prompt = "An unowned prompt that also happens to be the module prompt."
