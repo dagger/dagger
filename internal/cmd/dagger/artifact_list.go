@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/core/dagaddress"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
-	"mvdan.cc/sh/v3/syntax"
 )
 
 // Compare canonical keys, since dimension aliases depend on the selected scope.
@@ -252,17 +251,4 @@ func artifactListArguments(cmd *cobra.Command, path string, keys []dagaddress.Pa
 		args = append(args, quoted)
 	}
 	return strings.Join(args, " "), nil
-}
-
-func quoteArtifactArgument(value string) (string, error) {
-	// Quote also handles newlines, so every item stays on one physical line.
-	quoted, err := syntax.Quote(value, syntax.LangBash)
-	if err != nil {
-		return "", err
-	}
-	// Protect interactive shell history expansion too.
-	if strings.Contains(value, "!") && !strings.HasPrefix(quoted, "$'") {
-		quoted = "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-	}
-	return quoted, nil
 }

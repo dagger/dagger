@@ -159,11 +159,11 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "items/file", "--item=a"}, "dag://items/file?item=a\n"},
-		{[]string{"list", "-a", "items/file", "--collections-items=a"}, "dag://items/file?item=a\n"},
-		{[]string{"list", "-a", "items/file?item=a", "other/file?item=c"}, "dag://items/file?item=a\ndag://other/file?item=c\n"},
-		{[]string{"list", "-a", "items/file?item=a", "--collections-items=c"}, "dag://items/file?item=a\ndag://items/file?item=c\n"},
-		{[]string{"list", "collections-items", "items"}, "a\nb\nc\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file", "--item=a"}, "dag+file://items/file?item=a\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-items=a"}, "dag+file://items/file?item=a\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?item=a", "other/file?item=c"}, "dag+file://items/file?item=a\ndag+file://other/file?item=c\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?item=a", "--collections-items=c"}, "dag+file://items/file?item=a\ndag+file://items/file?item=c\n"},
+		{[]string{"list", "collections-items", "items", "-f", "link"}, "dag+collections-item://items?item=a\ndag+collections-item://items?item=b\ndag+collections-item://items?item=c\n"},
 	} {
 		out, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
 		require.NoError(t, err)
@@ -171,6 +171,40 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	}
 	_, err := base.With(daggerExec("list", "-a", "--item=a")).Stdout(ctx)
 	requireErrOut(t, err, "ambiguous dimension")
+}
+
+func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := strings.Replace(collectionGoSource,
+		`if item.Name != "item:a" { panic("excluded parent must stay deferred") }`,
+		`if item.Name == "item:c" { panic("excluded parent must stay deferred") }`, 1)
+	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
+	t.Run("table preserves parent and child keys", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("list", "collections-parts", "items/parts?item=a&item=b&part=x")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `ITEM +PART\n`, out)
+		require.Regexp(t, `(?m)^a +x$`, out)
+		require.Regexp(t, `(?m)^b +x$`, out)
+		require.NotContains(t, out, "LINK")
+	})
+	t.Run("parent listing honors child filters", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("list", "collections-items", "items?item=a&item=b&part=x", "-f=link")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag+collections-item://items?item=a\ndag+collections-item://items?item=b\n", out)
+	})
+	t.Run("type table does not evaluate leaf values", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("list", "containers", "items/broken?item=a&item=b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ITEM\na\nb\n", out)
+	})
+	t.Run("cli output can select the same container", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("list", "containers", "items/broken?item=b", "-f=cli")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "--item=b dag+container://items/broken\n", out)
+		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, strings.Fields(out)...)...)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag+container://items/broken?item=b\n", replayed)
+	})
 }
 
 func (CollectionsSuite) TestCheckSelection(ctx context.Context, t *testctx.T) {

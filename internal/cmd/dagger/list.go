@@ -24,7 +24,7 @@ func artifactTypeCommands(types []string, collectionTypes map[string]bool) map[s
 	commands := map[string]string{}
 	for name, matches := range byName {
 		// A collection owns its declared name, even when an item type has
-		// the same plural: GoModules lists keys, not GoModule artifacts.
+		// the same plural: GoModules selects its collection items.
 		for _, typeName := range matches {
 			if collectionTypes[typeName] {
 				commands[name] = typeName
@@ -161,7 +161,7 @@ func loadListCommands(ctx context.Context, ec *client.Client) error {
 	registerArtifactDimensionHelp(listCmd, dimensions)
 	for name, typeName := range artifactTypeCommands(artifactTypeNames(types), collectionTypes) {
 		if collectionTypes[typeName] {
-			addListCommand(name, "List "+typeName+" keys", "collections", artifactListCollection, typeName)
+			addListCommand(name, "List "+typeName+" items", "collections", artifactListCollection, typeName)
 			continue
 		}
 		short := "List " + typeName + " artifacts"
