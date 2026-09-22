@@ -100,7 +100,6 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	target := &sessionRestore{
 		dag:     handler.dag,
 		session: handler.llmSession,
-		base:    handler.llmSession.Target().initialLLM,
 	}
 	return executeRestorePlan(ctx, restorer, target, req)
 }
@@ -315,10 +314,6 @@ func restoreNotice(ctx context.Context, msg string) {
 type sessionRestore struct {
 	dag     *dagger.Client
 	session *LLMSession
-	// base is the composed agent group `dagger agent` started with, kept as
-	// each restored conversation's reset target so .clear returns to the
-	// selected agents rather than a blank workspace-bound LLM.
-	base *dagger.LLM
 }
 
 var _ restoreTarget = (*sessionRestore)(nil)
@@ -363,12 +358,8 @@ func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore
 }
 
 func (r *sessionRestore) Adopt(ctx context.Context, entry dagui.AgentRestore, agentID string) error {
-	conv, err := r.session.AttachRestored(ctx, entry.ID, entry.Name, agentID)
-	if err != nil {
-		return err
-	}
-	conv.initialLLM = r.base
-	return nil
+	_, err := r.session.AttachRestored(ctx, entry.ID, entry.Name, agentID)
+	return err
 }
 
 func (r *sessionRestore) Focus(ctx context.Context, entry dagui.AgentRestore, agentID string) error {
