@@ -14,12 +14,30 @@ namespace Dagger;
 class Check extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The assertion that is false when this check fails.
+     * A unique identifier for this Check.
      */
-    public function assertion(): string
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('assertion');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'assertion');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Run the check and retain its result.
+     */
+    public function sync(): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Run the check and return whether it passes.
+     */
+    public function pass(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pass');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'pass');
     }
 
     /**
@@ -37,21 +55,12 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * A unique identifier for this Check.
+     * The assertion that is false when this check fails.
      */
-    public function id(): Id
+    public function assertion(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Run the check and return whether it passes.
-     */
-    public function pass(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pass');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'pass');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('assertion');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'assertion');
     }
 
     /**
@@ -66,14 +75,5 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
             return null;
         }
         return $this->client->loadObjectFromId(\Dagger\Directory::class, new \Dagger\Id((string)$id), 'Directory');
-    }
-
-    /**
-     * Run the check and retain its result.
-     */
-    public function sync(): Check
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

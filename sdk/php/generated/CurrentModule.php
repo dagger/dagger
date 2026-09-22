@@ -14,6 +14,15 @@ namespace Dagger;
 class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * A unique identifier for this CurrentModule.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
      * The dependencies of the module.
      */
     public function dependencies(): array
@@ -29,15 +38,6 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * A unique identifier for this CurrentModule.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

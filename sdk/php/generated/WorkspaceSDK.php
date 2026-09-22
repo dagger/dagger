@@ -14,24 +14,6 @@ namespace Dagger;
 class WorkspaceSDK extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Clients generated with this SDK.
-     */
-    public function clients(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clients');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'clients');
-    }
-
-    /**
-     * Generate the modules and clients managed by this SDK.
-     */
-    public function generate(): Changeset
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generate');
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * A unique identifier for this WorkspaceSDK.
      */
     public function id(): Id
@@ -41,12 +23,12 @@ class WorkspaceSDK extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Modules authored with this SDK.
+     * Generate the modules and clients managed by this SDK.
      */
-    public function modules(): array
+    public function generate(): Changeset
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('modules');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'modules');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generate');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -65,5 +47,23 @@ class WorkspaceSDK extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
         return (string)$this->queryLeaf($leafQueryBuilder, 'ref');
+    }
+
+    /**
+     * Modules authored with this SDK.
+     */
+    public function modules(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('modules');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'modules');
+    }
+
+    /**
+     * Clients generated with this SDK.
+     */
+    public function clients(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clients');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'clients');
     }
 }

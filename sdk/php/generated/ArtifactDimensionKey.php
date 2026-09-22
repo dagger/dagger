@@ -11,21 +11,21 @@ namespace Dagger;
 class ArtifactDimensionKey extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The dimension identifier, fixed across the workspace schema.
-     */
-    public function dimension(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimension');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'dimension');
-    }
-
-    /**
      * A unique identifier for this ArtifactDimensionKey.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The dimension identifier, fixed across the workspace schema.
+     */
+    public function dimension(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimension');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'dimension');
     }
 
     /**

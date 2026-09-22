@@ -14,58 +14,31 @@ namespace Dagger;
 class Changeset extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
-     * Files and directories that were added in the newer directory.
+     * A unique identifier for this Changeset.
      */
-    public function addedPaths(): array
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('addedPaths');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'addedPaths');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * The newer/upper snapshot.
+     * A check that passes when the changeset is empty.
      */
-    public function after(): Directory
+    public function stale(): Check
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('after');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stale');
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Return a Git-compatible patch of the changes
+     * Force evaluation in the engine.
      */
-    public function asPatch(): File
+    public function sync(): Changeset
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asPatch');
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The older/lower snapshot to compare against.
-     */
-    public function before(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('before');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Structured per-path diff statistics (kind and line counts) for this changeset.
-     */
-    public function diffStats(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('diffStats');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'diffStats');
-    }
-
-    /**
-     * Applies the diff represented by this changeset to a path on the host.
-     */
-    public function export(string $path): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
-        $leafQueryBuilder->setArgument('path', $path);
-        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\Changeset::class, new \Dagger\Id((string)$id), 'Changeset');
     }
 
     /**
@@ -86,12 +59,31 @@ class Changeset extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * A unique identifier for this Changeset.
+     * Return a snapshot containing only the created and modified files
      */
-    public function id(): Id
+    public function layer(): Directory
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('layer');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a Git-compatible patch of the changes
+     */
+    public function asPatch(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asPatch');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Applies the diff represented by this changeset to a path on the host.
+     */
+    public function export(string $path): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
+        $leafQueryBuilder->setArgument('path', $path);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**
@@ -104,12 +96,12 @@ class Changeset extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Return a snapshot containing only the created and modified files
+     * Files and directories that were added in the newer directory.
      */
-    public function layer(): Directory
+    public function addedPaths(): array
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('layer');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('addedPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'addedPaths');
     }
 
     /**
@@ -131,22 +123,12 @@ class Changeset extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * A check that passes when the changeset is empty.
+     * Structured per-path diff statistics (kind and line counts) for this changeset.
      */
-    public function stale(): Check
+    public function diffStats(): array
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stale');
-        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Force evaluation in the engine.
-     */
-    public function sync(): Changeset
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this->client->loadObjectFromId(\Dagger\Changeset::class, new \Dagger\Id((string)$id), 'Changeset');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('diffStats');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'diffStats');
     }
 
     /**
@@ -179,5 +161,23 @@ class Changeset extends Client\AbstractObject implements Client\IdAble, Exportab
         $innerQueryBuilder->setArgument('onConflict', $onConflict);
         }
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The older/lower snapshot to compare against.
+     */
+    public function before(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('before');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The newer/upper snapshot.
+     */
+    public function after(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('after');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -11,6 +11,15 @@ namespace Dagger;
 class ArtifactResult extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * A unique identifier for this ArtifactResult.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
      * The artifact that was evaluated.
      */
     public function artifact(): Artifact
@@ -31,15 +40,6 @@ class ArtifactResult extends Client\AbstractObject implements Client\IdAble, Nod
             return null;
         }
         return $this->client->loadObjectFromId(\Dagger\Error::class, new \Dagger\Id((string)$id), 'Error');
-    }
-
-    /**
-     * A unique identifier for this ArtifactResult.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
