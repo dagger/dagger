@@ -101,7 +101,7 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	"Agent(*core.Agent encode=false decode=false family=false)",
 	"AgentMessage(*core.AgentMessage encode=false decode=false family=false)",
 	// Artifact metadata and evaluation wrappers have no persisted representation.
-	"ArtifactDimension(*core.ArtifactDimension encode=false decode=false family=false)",
+	"ArtifactDimension(*artifact.Dimension encode=false decode=false family=false)",
 	"ArtifactDimensionKey(*core.ArtifactDimensionKey encode=false decode=false family=false)",
 	"ArtifactResult(*core.ArtifactResult encode=false decode=false family=false)",
 	// Check constructors and projected functions explicitly disable persistence.

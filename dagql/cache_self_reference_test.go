@@ -24,10 +24,10 @@ func (obj *persistedSelfReference) AttachDependencyResults(_ context.Context, se
 	obj.InitializeResultReference(self)
 	return nil, nil
 }
-func (*persistedSelfReference) EncodePersistedObject(context.Context, PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (*persistedSelfReference) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	return PersistedObjectEncoding{JSON: json.RawMessage(`{}`)}, nil
 }
-func (*persistedSelfReference) DecodePersistedObject(context.Context, *Server, uint64, *ResultCall, json.RawMessage) (Typed, error) {
+func (*persistedSelfReference) DecodePersistedObject(context.Context, *PersistDecodeContext, json.RawMessage) (Typed, error) {
 	return &persistedSelfReference{}, nil
 }
 
