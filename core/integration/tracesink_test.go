@@ -6,13 +6,13 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
@@ -120,14 +120,26 @@ func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) 
 // connectWithTrace creates a source session whose agent control records and
 // payloads are observable by tests. The resulting recipes come from committed
 // agent telemetry, never from an engine-local LLM handle or a public portable-ID
-// API. Nested clients cannot configure their parent session's OTLP exporters.
-func connectWithTrace(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) (*dagger.Client, *agentTraceSink) {
+// API. It explicitly starts the from-source CLI even when the test process is
+// nested, without changing the process-global session environment.
+func connectWithTrace(ctx context.Context, t *testctx.T, configs ...engineconn.Config) (*dagger.Client, *agentTraceSink) {
 	t.Helper()
-	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
-		t.Skip("needs its own CLI session to capture committed agent recipes")
+	require.LessOrEqual(t, len(configs), 1)
+	var cfg engineconn.Config
+	if len(configs) == 1 {
+		cfg = configs[0]
 	}
 	sink := newAgentTraceSink(t)
-	return connect(ctx, t, append(sink.clientOpts(), opts...)...), sink
+	cfg.UnsetEnv = append(slices.Clone(cfg.UnsetEnv), "DAGGER_SESSION_PORT", "DAGGER_SESSION_TOKEN")
+	cfg.ExtraEnv = append(slices.Clone(cfg.ExtraEnv),
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="+sink.base+"/v1/traces",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="+sink.base+"/v1/logs",
+		"OTEL_EXPORTER_OTLP_TRACES_LIVE=1",
+	)
+	conn, found, err := engineconn.FromLocalCLI(ctx, &cfg)
+	require.NoError(t, err)
+	require.True(t, found, "set _EXPERIMENTAL_DAGGER_CLI_BIN to the from-source CLI")
+	return connect(ctx, t, dagger.WithConn(conn)), sink
 }
 
 // captureLLMRecipe seeds an inert agent with the given conversation and waits for
@@ -137,6 +149,8 @@ func connectWithTrace(ctx context.Context, t *testctx.T, opts ...dagger.ClientOp
 // This is capture evidence, not archive finalization evidence.
 func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) (dagger.ID, error) {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 	seed, err := llm.ID(ctx)
 	if err != nil {
 		return "", err
@@ -146,6 +160,13 @@ func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, 
 	if err != nil {
 		return "", err
 	}
+	return sink.committedRecipe(ctx, name)
+}
+
+// committedRecipe also serves containerized shell fixtures: they spawn a named
+// inert agent instead of invoking a serialization API, then the enclosing client
+// observes that agent's committed recipe in forwarded telemetry.
+func (sink *agentTraceSink) committedRecipe(ctx context.Context, name string) (dagger.ID, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	ticker := time.NewTicker(100 * time.Millisecond)
