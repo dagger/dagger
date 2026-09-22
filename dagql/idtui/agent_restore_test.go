@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/tuist"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -149,6 +150,43 @@ func restorableFrontend(t *testing.T, withWorker bool) *frontendPretty {
 	require.NoError(t, imp.Seal(ctx))
 
 	return NewASCIIReporterWithDB(io.Discard, db)
+}
+
+func TestImportBarrierWaitsForApplication(t *testing.T) {
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(80, 24))
+	imp := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Logs: fe.LogExporter()})
+	require.NoError(t, imp.ImportLogs(t.Context(), cannedRestoreLogs(foreignTraceIDByte, false)))
+	require.Empty(t, fe.db.Calls, "export only queued the payloads")
+
+	// With the event loop blocked, enqueue success cannot satisfy the barrier.
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, fe.WaitForImport(ctx), context.DeadlineExceeded)
+	require.Empty(t, fe.db.Calls)
+	// The cancelled caller must not leave a callback blocking the UI.
+	fe.tui.Step()
+	require.Contains(t, fe.db.Calls, cannedAnchorDigest)
+
+	done := make(chan error, 1)
+	go func() { done <- fe.WaitForImport(t.Context()) }()
+	require.Eventually(t, func() bool {
+		fe.tui.Step()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+}
+
+func TestImportBarrierReportMode(t *testing.T) {
+	fe := restorableFrontend(t, false)
+	require.NoError(t, fe.WaitForImport(t.Context()))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, fe.WaitForImport(ctx), context.Canceled)
 }
 
 // TestAgentRestorePlanReadsTheFrontendsDB: the plan the CLI acts on is the

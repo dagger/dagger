@@ -93,6 +93,9 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	if err := fetchTraceIntoFrontend(ctx, req.traceID); err != nil {
 		return err
 	}
+	if err := restorer.WaitForImport(ctx); err != nil {
+		return fmt.Errorf("apply trace bootstrap: %w", err)
+	}
 
 	target := &sessionRestore{
 		dag:     handler.dag,
