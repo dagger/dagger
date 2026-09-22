@@ -10,9 +10,10 @@ import (
 
 // Dimension describes a schema axis, independent of its runtime keys.
 type Dimension struct {
-	Identifier    string `field:"true" doc:"Exact GraphQL ParentType.field identifier."`
-	Name          string `field:"true" doc:"Short name derived from the author item type."`
-	QualifiedName string `field:"true" doc:"Author parent type and field name, in CLI case."`
+	CollectionType string `field:"true" doc:"The schema type name of the collection that supplies this dimension."`
+	Identifier     string `field:"true" doc:"Exact GraphQL ParentType.field identifier."`
+	Name           string `field:"true" doc:"Short name derived from the author item type."`
+	QualifiedName  string `field:"true" doc:"Author parent type and field name, in CLI case."`
 }
 
 func (*Dimension) Type() *ast.Type {

@@ -344,9 +344,10 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			field = node.Name
 		}
 		dim := &ArtifactDimension{
-			Identifier:    parentName + "." + field,
-			Name:          ArtifactTypeName(members.Get.ReturnType.Self().AsObject.Value.Self().OriginalName),
-			QualifiedName: ArtifactTypeName(parentOriginal) + "-" + ArtifactTypeName(field),
+			CollectionType: obj.Name,
+			Identifier:     parentName + "." + field,
+			Name:           ArtifactTypeName(members.Get.ReturnType.Self().AsObject.Value.Self().OriginalName),
+			QualifiedName:  ArtifactTypeName(parentOriginal) + "-" + ArtifactTypeName(field),
 		}
 		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType,
 			Module: node.Module, OriginalModule: node.OriginalModule, DagqlServer: node.DagqlServer, CollectionDimension: dim, types: node.types}

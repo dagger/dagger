@@ -3,7 +3,6 @@ package daggercmd
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
@@ -140,15 +139,16 @@ func loadListCommands(ctx context.Context, ec *client.Client) error {
 	if err != nil {
 		return err
 	}
-	typeCommands := artifactTypeCommands(artifactTypeNames(types))
+	collectionTypes := map[string]bool{}
 	for _, dimension := range dimensions {
-		name := dimensions.DisplayName(dimension)
-		if typeName, exists := typeCommands[name]; exists {
-			return fmt.Errorf("list name %q matches both type %s and dimension %s", name, typeName, dimension.Identifier)
-		}
+		collectionTypes[dimension.CollectionType] = true
 	}
 	registerArtifactDimensionHelp(listCmd, dimensions)
-	for name, typeName := range typeCommands {
+	for name, typeName := range artifactTypeCommands(artifactTypeNames(types)) {
+		if collectionTypes[typeName] {
+			addListCommand(name, "List "+typeName+" keys", "dimensions", artifactListCollection, typeName)
+			continue
+		}
 		short := "List " + typeName + " artifacts"
 		for _, typ := range types {
 			if typ.Name == typeName && typ.Comment != "" {
@@ -157,10 +157,6 @@ func loadListCommands(ctx context.Context, ec *client.Client) error {
 			}
 		}
 		addListCommand(name, short, "types", artifactListType, typeName)
-	}
-	for _, dimension := range dimensions {
-		name := dimensions.DisplayName(dimension)
-		addListCommand(name, "List "+name+" values", "dimensions", artifactListDimension, dimension.Identifier)
 	}
 	return nil
 }

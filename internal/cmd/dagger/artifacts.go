@@ -18,7 +18,7 @@ const artifactDimensionFlag = "dagger.io/artifact-dimension"
 const artifactDimensionKeyUsage = "Select items with `DIMENSION=KEY` (repeat to select more)"
 
 const artifactListType = "dagger.io/list-type"
-const artifactListDimension = "dagger.io/list-dimension"
+const artifactListCollection = "dagger.io/list-collection"
 
 var listCmd = newListCommand()
 
@@ -222,7 +222,7 @@ func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]strin
 }
 
 func runArtifacts(cmd *cobra.Command, addresses []string) error {
-	dimension := cmd.Annotations[artifactListDimension]
+	collectionType := cmd.Annotations[artifactListCollection]
 	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
 		return err
@@ -237,7 +237,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 	}
 	return withEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
 		// Flags bind in the combined path scope; address queries bind in their own scope.
-		if len(flags) > 0 || dimension != "" {
+		if len(flags) > 0 {
 			defs, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}))
 			if err != nil {
 				return err
@@ -248,18 +248,13 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 			if err := bindArtifactDimensions(flags, defs); err != nil {
 				return err
 			}
-			if dimension != "" {
-				dimension, err = defs.Resolve(dimension)
-				if err != nil {
-					return err
-				}
-			}
 		}
 		var lines []commandListItem
 		for _, addr := range parsed {
 			artifacts := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})
-			if len(addr.Query) > 0 {
-				pathDefs, err := artifactDimensions(ctx, ec.Dagger(), artifacts)
+			var pathDefs artifact.Dimensions
+			if len(addr.Query) > 0 || collectionType != "" {
+				pathDefs, err = artifactDimensions(ctx, ec.Dagger(), artifacts)
 				if err != nil {
 					return err
 				}
@@ -272,8 +267,17 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 			}
 			artifacts = applyArtifactFilters(cmd, addr, flags, artifacts)
 			var selected []string
-			if dimension != "" {
-				selected, err = artifacts.DimensionKeys(ctx, dimension)
+			if collectionType != "" {
+				for _, dimension := range pathDefs {
+					if dimension.CollectionType != collectionType {
+						continue
+					}
+					keys, err := artifacts.DimensionKeys(ctx, dimension.Identifier)
+					if err != nil {
+						return err
+					}
+					selected = append(selected, keys...)
+				}
 			} else {
 				absolute, _ := cmd.Flags().GetBool("absolute")
 				var items []listedArtifact
