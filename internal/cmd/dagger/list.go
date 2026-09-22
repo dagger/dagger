@@ -177,6 +177,7 @@ func addListCommand(name, short, group, key, value string) {
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
 	registerArtifactListFlags(cmd)
+	cmd.Flags().StringP("format", "f", "table", "Output format: table, link, or cli")
 	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	listCmd.AddCommand(cmd)
 }
