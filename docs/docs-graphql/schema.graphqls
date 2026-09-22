@@ -19,11 +19,17 @@ directive @cache(
 """Indicates that this function is a check."""
 directive @check on FIELD_DEFINITION
 
+"""A dynamic collection with stored keys and an item lookup function."""
+directive @collection on OBJECT
+
 """Indicates that the argument defaults to a container address."""
 directive @defaultAddress(address: String!) on ARGUMENT_DEFINITION
 
 """Indicates that the argument defaults to a contextual path."""
 directive @defaultPath(path: String!) on ARGUMENT_DEFINITION
+
+"""Receives changes from the original collection."""
+directive @delta on FIELD_DEFINITION
 
 """Indicates the underlying value of an enum member."""
 directive @enumValue(value: String!) on ENUM_VALUE
@@ -49,8 +55,14 @@ directive @experimental(
 """Indicates that this function is a generate function."""
 directive @generate on FIELD_DEFINITION
 
+"""The item lookup function of a collection."""
+directive @get on FIELD_DEFINITION
+
 """Filter directory contents using .gitignore-style glob patterns."""
 directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
+
+"""The stored keys field of a collection."""
+directive @keys on FIELD_DEFINITION
 
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
@@ -459,6 +471,20 @@ type Artifact implements Node {
   ): Node!
 }
 
+type ArtifactDimension implements Node {
+  """A unique identifier for this ArtifactDimension."""
+  id: ID!
+
+  """Exact GraphQL ParentType.field identifier."""
+  identifier: String!
+
+  """Short name derived from the author item type."""
+  name: String!
+
+  """Author parent type and field name, in CLI case."""
+  qualifiedName: String!
+}
+
 type ArtifactDimensionKey implements Node {
   """The dimension identifier, fixed across the workspace schema."""
   dimension: String!
@@ -490,6 +516,11 @@ keys use OR; chained filters use AND. Empty alternatives and unknown names match
 nothing. Filters never change addresses or dimension identifiers.
 """
 type Artifacts implements Node {
+  """
+  List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+  """
+  dimensionDefinitions: [ArtifactDimension!]!
+
   """
   List keys represented in this selection for the given dimension, sorted with no duplicates.
   """
@@ -825,6 +856,31 @@ type Cloud implements Node {
 
   """The trace URL for the current session"""
   traceURL: String!
+}
+
+type CollectionDelta implements Node {
+  """Current keys absent from the original collection, in current order."""
+  addedKeys: [String!]!
+
+  """A unique identifier for this CollectionDelta."""
+  id: ID!
+
+  """Original keys absent from the current collection, in original order."""
+  removedKeys: [String!]!
+}
+
+type CollectionTypeDef implements Node {
+  """The type of batch operations, or null when there are none."""
+  batchType: TypeDef
+
+  """A unique identifier for this CollectionTypeDef."""
+  id: ID!
+
+  """The type of collection keys."""
+  keyType: TypeDef!
+
+  """The object type returned by get."""
+  valueType: TypeDef!
 }
 
 """An OCI-compatible container, also known as a Docker container."""
@@ -6116,6 +6172,9 @@ type Terminal implements Node & Syncer {
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef implements Node {
+  """Collection metadata, or null if this object is not a collection."""
+  asCollection: CollectionTypeDef
+
   """
   If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
   """
@@ -6157,6 +6216,18 @@ type TypeDef implements Node {
 
   """Whether this type can be set to null. Defaults to false."""
   optional: Boolean!
+
+  """Mark this object as a collection."""
+  withCollection: TypeDef!
+
+  """Select the field that receives changes from the original collection."""
+  withCollectionDelta(name: String!): TypeDef!
+
+  """Select the item lookup function for this collection."""
+  withCollectionGet(name: String!): TypeDef!
+
+  """Select the stored keys field for this collection."""
+  withCollectionKeys(name: String!): TypeDef!
 
   """
   Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
