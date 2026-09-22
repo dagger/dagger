@@ -677,6 +677,18 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 			}
 			return r, nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
+		// Only the field's own implicit inputs follow the rewritten args; the
+		// ones the hook set itself are kept as they are.
+		for _, input := range req.ImplicitInputs {
+			if input != nil && !slices.ContainsFunc(field.Spec.ImplicitInputs, func(declared ImplicitInput) bool {
+				return declared.Name == input.Name
+			}) {
+				implicitInputs = append(implicitInputs, input)
+			}
+		}
+		sort.Slice(implicitInputs, func(i, j int) bool {
+			return implicitInputs[i].Name < implicitInputs[j].Name
+		})
 		req.ImplicitInputs = implicitInputs
 	}
 
