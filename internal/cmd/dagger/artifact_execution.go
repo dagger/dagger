@@ -186,16 +186,20 @@ func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *dagg
 	return commandArtifacts(ctx, dag, ws, addresses, strict, keys...)
 }
 
-func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, artifacts *dagger.Artifacts) (*dagger.Artifacts, error) {
+func commandArtifactTargets(dag *dagger.Client, cmd *cobra.Command, artifacts *dagger.Artifacts) (*dagger.Artifacts, error) {
 	switch cmd.Name() {
 	case "check":
-		return selectCommandChecks(ctx, dag.CurrentWorkspace(), artifacts, cmd)
+		return selectCommandChecks(dag, artifacts, cmd)
 	case "shell":
 		return artifacts.FilterTypes([]string{"Container", "Directory"}), nil
 	case "agent":
-		return artifacts.FilterDirectives([]string{"agent"}).FilterTypes([]string{"LLM"}), nil
+		return artifacts.FilterAgent(), nil
+	case "generate":
+		return artifacts.FilterGenerate(), nil
+	case "up":
+		return artifacts.FilterUp(), nil
 	default:
-		return artifacts.FilterDirectives([]string{cmd.Name()}), nil
+		return nil, fmt.Errorf("command %q does not select artifacts", cmd.Name())
 	}
 }
 

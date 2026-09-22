@@ -665,7 +665,7 @@ func (CollectionsSuite) TestBatchReplacement(ctx context.Context, t *testctx.T) 
 		{"no matches", all.FilterURI("items/verify?item=missing"), 0},
 		{"empty filter", all.FilterURI("items/verify").FilterDimensionKeys("item", []string{}), 0},
 		{"batch only", all.FilterURI("items/only-batch?item=a&item=b"), 1},
-		{"combined checks", all.FilterURI("items/*?item=a&item=b").FilterDirectives([]string{"check"}).FilterParentTypes([]string{"Changeset"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true}), 4},
+		{"combined checks", all.FilterURI("items/*?item=a&item=b").FilterCheck().FilterParentTypes([]string{"Changeset"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true}), 4},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			results := evaluate(t, tc.selection)

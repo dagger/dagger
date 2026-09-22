@@ -70,7 +70,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		if err != nil {
 			return err
 		}
-		targets, err = commandArtifactTargets(ctx, dag, cmd, allArtifacts)
+		targets, err = commandArtifactTargets(dag, cmd, allArtifacts)
 		if err != nil {
 			return err
 		}
