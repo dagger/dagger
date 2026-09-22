@@ -3,23 +3,37 @@ package daggercmd
 import (
 	"context"
 	"errors"
-	"slices"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func collectionTypeCommands(types []string) map[string]string {
+func artifactTypeCommands(types []string, collectionTypes map[string]bool) map[string]string {
 	byName := map[string][]string{}
 	for _, typeName := range types {
 		name := cliName(typeName)
+		if !collectionTypes[typeName] {
+			name = inflection.Plural(name)
+		}
 		byName[name] = append(byName[name], typeName)
 	}
 	commands := map[string]string{}
 	for name, matches := range byName {
+		// A collection owns its declared name, even when an item type has
+		// the same plural: GoModules lists keys, not GoModule artifacts.
+		for _, typeName := range matches {
+			if collectionTypes[typeName] {
+				commands[name] = typeName
+				break
+			}
+		}
+		if commands[name] != "" {
+			continue
+		}
 		if len(matches) == 1 {
 			commands[name] = matches[0]
 		} else {
@@ -132,31 +146,44 @@ func loadListCommands(ctx context.Context, ec *client.Client) error {
 		return err
 	}
 	artifacts := dagger.Ref[*dagger.Artifacts](dag, id)
+	types, err := readArtifactTypes(ctx, dag, artifacts)
+	if err != nil {
+		return err
+	}
 	dimensions, err := artifactDimensions(ctx, dag, artifacts)
 	if err != nil {
 		return err
 	}
-	var collectionTypes []string
+	collectionTypes := map[string]bool{}
 	for _, dimension := range dimensions {
-		if !slices.Contains(collectionTypes, dimension.CollectionType) {
-			collectionTypes = append(collectionTypes, dimension.CollectionType)
-		}
+		collectionTypes[dimension.CollectionType] = true
 	}
 	registerArtifactDimensionHelp(listCmd, dimensions)
-	for name, typeName := range collectionTypeCommands(collectionTypes) {
-		addListCollectionCommand(name, typeName)
+	for name, typeName := range artifactTypeCommands(artifactTypeNames(types), collectionTypes) {
+		if collectionTypes[typeName] {
+			addListCommand(name, "List "+typeName+" keys", "collections", artifactListCollection, typeName)
+			continue
+		}
+		short := "List " + typeName + " artifacts"
+		for _, typ := range types {
+			if typ.Name == typeName && typ.Comment != "" {
+				short = typ.Comment
+				break
+			}
+		}
+		addListCommand(name, short, "types", artifactListType, typeName)
 	}
 	return nil
 }
 
-func addListCollectionCommand(name, typeName string) {
+func addListCommand(name, short, group, key, value string) {
 	cmd := &cobra.Command{
 		Use:               name + " [address...]",
-		Short:             "List " + typeName + " keys",
-		GroupID:           "collections",
+		Short:             short,
+		GroupID:           group,
 		Args:              cobra.ArbitraryArgs,
 		RunE:              runArtifacts,
-		Annotations:       map[string]string{artifactListCollection: typeName},
+		Annotations:       map[string]string{key: value},
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
 	registerArtifactListFlags(cmd)
