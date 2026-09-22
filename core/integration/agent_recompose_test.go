@@ -663,7 +663,11 @@ type Outer {
   }
 }
 `
-	initial := fmt.Sprintf(recomposeSource, "")
+	// Keep this module's implementation distinct from the concurrently running
+	// root-only Swapper fixtures: implementation cache aliases otherwise retain
+	// their different workspace provenance, before nested ownership is tested.
+	const fixtureState = `let nestedFixture: String! = "nested tool state"`
+	initial := fmt.Sprintf(recomposeSource, fixtureState)
 	fixture := recomposeFixture(c, initial).
 		WithNewFile("dagger.toml", "[modules.swapper]\nsource = \".dagger/modules/swapper\"\n[modules.outer]\nsource = \"outer\"\n").
 		WithNewFile("outer/dagger.json", `{"name":"outer","engineVersion":"v1.0.0-0","sdk":"dang"}`).
@@ -680,7 +684,7 @@ type Outer {
 	require.NoError(t, err)
 	require.Contains(t, transcript, "private counter: 1")
 
-	updated := fmt.Sprintf(recomposeSource, `
+	updated := fmt.Sprintf(recomposeSource, fixtureState+`
   let addedDefault: String! = "nested default"
   added: String! { addedDefault + "; counter: " + toString(state) }
 `)
