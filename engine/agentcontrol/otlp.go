@@ -15,6 +15,7 @@ const (
 	SessionAttr      = "dagger.io/agent.control.session"
 	TraceAttr        = "dagger.io/agent.control.trace"
 	IncarnationAttr  = "dagger.io/agent.control.incarnation"
+	RemovedAttr      = "dagger.io/agent.removed"
 	RevisionAttr     = "dagger.io/agent.control.revision"
 	ParentAttr       = "dagger.io/agent.parent"
 	CaptureErrorAttr = "dagger.io/agent.capture.error"
@@ -40,6 +41,7 @@ func record(ns Namespace, kind string, revision int64) log.Record {
 func (a Agent) Record() log.Record {
 	rec := record(a.Namespace, "agent", a.Revision)
 	rec.AddAttributes(
+		log.Bool(RemovedAttr, a.Removed),
 		log.String(telemetryattrs.AgentIDAttr, a.Handle),
 		log.String(telemetryattrs.AgentNameAttr, a.Name),
 		log.String(telemetryattrs.AgentCallDigestAttr, a.CallDigest),
@@ -115,7 +117,11 @@ func Decode(rec sdklog.Record) (*Agent, *Subscription, error) {
 	handle := str(telemetryattrs.AgentIDAttr)
 	switch kind := str(KindAttr); kind {
 	case "agent":
-		a := Agent{Key: Key{ns, handle}, Revision: revision,
+		removed, ok := attrs[RemovedAttr]
+		if !ok || removed.Kind() != log.KindBool {
+			return nil, nil, fmt.Errorf("missing or non-boolean %s", RemovedAttr)
+		}
+		a := Agent{Key: Key{ns, handle}, Revision: revision, Removed: removed.AsBool(),
 			Name: str(telemetryattrs.AgentNameAttr), CallDigest: str(telemetryattrs.AgentCallDigestAttr),
 			Digest: str(telemetryattrs.AgentSnapshotDigestAttr), State: str(telemetryattrs.AgentStateAttr),
 			WaitingOn: str(telemetryattrs.AgentWaitingOnAttr), StopReason: str(telemetryattrs.AgentStopReasonAttr),
