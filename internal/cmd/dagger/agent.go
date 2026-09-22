@@ -62,6 +62,12 @@ Examples:
 		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
 			return err
 		}
+		if agentPartial {
+			return fmt.Errorf("--partial is not supported: a complete verified agent graph is required")
+		}
+		if agentTrace != "" && agentListMode {
+			return fmt.Errorf("--trace cannot be combined with --list")
+		}
 		// The prompt is about to use the LLM, so renew an expired subscription
 		// login up front. The on-demand refresher hook exports the renewed
 		// token on the engine's first credential lookup.
@@ -162,8 +168,8 @@ func init() {
 		"Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
-	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
-		"With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not")
+	agentCmd.Flags().BoolVar(&agentPartial, "partial", false, "Unsupported: restore requires a complete verified agent graph")
+	_ = agentCmd.Flags().MarkHidden("partial")
 }
 
 // agentIncludeVars maps the positional agent names to the `include` variable of

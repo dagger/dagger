@@ -7,10 +7,12 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud"
@@ -74,6 +76,10 @@ type restoreTarget interface {
 	Adopt(ctx context.Context, entry dagui.AgentRestore, agentID string) error
 	// Focus points the prompt at one of the adopted conversations.
 	Focus(ctx context.Context, entry dagui.AgentRestore, agentID string) error
+	// Subscribe installs the filter without a current-state notification.
+	Subscribe(ctx context.Context, watchedID, subscriberID string, states []string) error
+	// Discard rolls back an inert runtime created by this restore attempt.
+	Discard(ctx context.Context, agentID string) error
 }
 
 // restoreFromTrace runs the whole of §5.3 against the live session.
@@ -93,7 +99,7 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	if err := fetchTraceIntoFrontend(ctx, req.traceID); err != nil {
 		return err
 	}
-	if err := restorer.WaitForImport(ctx); err != nil {
+	if err := restorer.WaitForEventLoop(ctx); err != nil {
 		return fmt.Errorf("apply trace bootstrap: %w", err)
 	}
 
@@ -145,45 +151,66 @@ type restoredAgent struct {
 }
 
 func executeRestorePlan(ctx context.Context, src agentRestoreSource, dst restoreTarget, req traceRestore) error {
+	return executeRestoreGraph(ctx, src, dst, req, nil)
+}
+
+func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restoreTarget, req traceRestore, subscriptions []agentcontrol.Subscription) (rerr error) {
+	if req.partial {
+		return errors.New("--partial is not supported: restoring an incomplete agent graph can leave tools addressing missing agents")
+	}
 	plan := src.AgentRestorePlan()
 	if len(plan) == 0 {
-		return fmt.Errorf("trace %s carries no agents to restore: "+
-			"either nothing in it published an agent loop, or its agents are already restored in this session",
-			req.traceID)
+		return fmt.Errorf("trace %s carries no agents to restore", req.traceID)
+	}
+	plan, err := parentFirst(plan)
+	if err != nil {
+		return err
 	}
 
-	// Phase 1: resolve every anchor, refusing before anything is created.
-	//
-	// Both refusals are the same kind and are reported the same way: the
-	// projection's (a stop with no reason, no anchor at all — §5.2) and the
-	// rebuild's (a frame whose payload never reached this client — §9's first
-	// row). Neither degrades to a partial restore unless asked, because a
-	// missing worker is exactly the hole a later tool dispatch falls into,
-	// and that error would arrive minutes later with none of this context.
-	var (
-		restoring []restoredAgent
-		skipped   []string
-	)
+	// Resolve every anchor, validate every edge and choose focus before creating
+	// any runtime. A late failure must not expose a half-restored graph.
+	restoring := make([]restoredAgent, 0, len(plan))
+	byHandle := map[string]int{}
 	for _, entry := range plan {
 		snapshotID, err := resolveAnchor(src, entry)
 		if err != nil {
-			if !req.partial {
-				return fmt.Errorf("%w\n\npass --partial to restore the rest of the trace without it", err)
-			}
-			skipped = append(skipped, fmt.Sprintf("%s (%s): %v", entry.Name, entry.ID, err))
-			continue
+			return err
 		}
+		byHandle[entry.ID] = len(restoring)
 		restoring = append(restoring, restoredAgent{entry: entry, snapshotID: snapshotID})
 	}
-	if len(restoring) == 0 {
-		return fmt.Errorf("no agent in trace %s could be restored:\n  %s",
-			req.traceID, strings.Join(skipped, "\n  "))
+	for _, edge := range subscriptions {
+		if err := edge.Validate(); err != nil {
+			return fmt.Errorf("invalid restored subscription: %w", err)
+		}
+		for _, handle := range []string{edge.Watched, edge.Subscriber} {
+			if _, ok := byHandle[handle]; !ok {
+				return fmt.Errorf("subscription endpoint %q is outside restore roster", handle)
+			}
+		}
 	}
-	for _, skip := range skipped {
-		restoreNotice(ctx, "skipped unrestorable agent "+skip)
+	focus, notice, err := selectFocus(restoring, req.agent)
+	if err != nil {
+		return err
 	}
+	defer func() {
+		if rerr == nil {
+			return
+		}
+		// Cleanup must survive cancellation of the original operation.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		for i := len(restoring) - 1; i >= 0; i-- {
+			if id := restoring[i].agentID; id != "" {
+				if err := dst.Discard(cleanupCtx, id); err != nil {
+					rerr = errors.Join(rerr, fmt.Errorf("discard restored agent %s: %w", restoring[i].entry.ID, err))
+				}
+			}
+		}
+	}()
 
-	// Phase 2: re-hydrate everything, before anything can address any of it.
+	// All runtimes are inert. Install the complete graph before attaching the
+	// prompt, using restoreNotify rather than notify's immediate level check.
 	for i, restored := range restoring {
 		agentID, err := dst.Rehydrate(ctx, restored.entry, restored.snapshotID)
 		if err != nil {
@@ -191,24 +218,65 @@ func executeRestorePlan(ctx context.Context, src agentRestoreSource, dst restore
 		}
 		restoring[i].agentID = agentID
 	}
-
-	// Phase 3: adopt them as this session's conversations.
-	for _, restored := range restoring {
-		if err := dst.Adopt(ctx, restored.entry, restored.agentID); err != nil {
-			return fmt.Errorf("attach to restored agent %q (%s): %w",
-				restored.entry.Name, restored.entry.ID, err)
+	for _, edge := range subscriptions {
+		if len(edge.States) == 0 {
+			continue // removal tombstone, not a historical edge to resurrect
+		}
+		if err := dst.Subscribe(ctx, restoring[byHandle[edge.Watched]].agentID, restoring[byHandle[edge.Subscriber]].agentID, edge.States); err != nil {
+			return fmt.Errorf("restore subscription %s -> %s: %w", edge.Watched, edge.Subscriber, err)
 		}
 	}
-
-	// Phase 4: point the prompt at one of them.
-	focus, notice, err := selectFocus(restoring, req.agent)
-	if err != nil {
-		return err
+	for _, restored := range restoring {
+		if err := dst.Adopt(ctx, restored.entry, restored.agentID); err != nil {
+			return fmt.Errorf("attach to restored agent %q (%s): %w", restored.entry.Name, restored.entry.ID, err)
+		}
 	}
 	if notice != "" {
 		restoreNotice(ctx, notice)
 	}
-	return dst.Focus(ctx, focus.entry, focus.agentID)
+	return dst.Focus(ctx, focus.entry, restoring[byHandle[focus.entry.ID]].agentID)
+}
+
+// parentFirst rejects ambiguous handles, missing parents and lineage cycles.
+// A stable DFS retains archive order among independent agents.
+func parentFirst(plan []dagui.AgentRestore) ([]dagui.AgentRestore, error) {
+	byID := make(map[string]dagui.AgentRestore, len(plan))
+	for _, entry := range plan {
+		if _, ok := byID[entry.ID]; ok || entry.ID == "" {
+			return nil, fmt.Errorf("duplicate or empty agent handle %q in restore roster", entry.ID)
+		}
+		byID[entry.ID] = entry
+	}
+	var ordered []dagui.AgentRestore
+	visiting, visited := map[string]bool{}, map[string]bool{}
+	var visit func(string) error
+	visit = func(id string) error {
+		if visited[id] {
+			return nil
+		}
+		entry, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("parent %q is outside restore roster", id)
+		}
+		if visiting[id] {
+			return fmt.Errorf("cycle in restored lineage at agent %q", id)
+		}
+		visiting[id] = true
+		if entry.ParentAgentID != "" {
+			if err := visit(entry.ParentAgentID); err != nil {
+				return err
+			}
+		}
+		visited[id] = true
+		ordered = append(ordered, entry)
+		return nil
+	}
+	for _, entry := range plan {
+		if err := visit(entry.ID); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
 }
 
 // resolveAnchor turns an entry's snapshot digest into the encoded ID of the
@@ -324,10 +392,10 @@ var _ restoreTarget = (*sessionRestore)(nil)
 // rather than driven through the generated client because the value needed
 // is the ENCODED handle spawn returns — the ID LLMSession.Attach adopts the
 // agent by — and the client would re-select it as a fresh chain.
-const rehydrateQuery = `query Rehydrate($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
+const rehydrateQuery = `query Rehydrate($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!, $parent: String!) {
   node(id: $llm) {
     ... on LLM {
-      spawn(handle: $id, name: $name, state: $state, error: $error)
+      spawn(handle: $id, name: $name, state: $state, error: $error, parentHandle: $parent)
     }
   }
 }`
@@ -342,11 +410,12 @@ func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore
 		Query:  rehydrateQuery,
 		OpName: "Rehydrate",
 		Variables: map[string]any{
-			"llm":   snapshotID,
-			"id":    entry.ID,
-			"name":  entry.Name,
-			"state": entry.State,
-			"error": entry.Error,
+			"llm":    snapshotID,
+			"id":     entry.ID,
+			"name":   entry.Name,
+			"state":  entry.State,
+			"error":  entry.Error,
+			"parent": entry.ParentAgentID,
 		},
 	}, &dagger.Response{Data: &res}); err != nil {
 		return "", err
@@ -355,6 +424,24 @@ func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore
 		return "", errors.New("the engine returned no handle on the restored agent")
 	}
 	return res.Node.Spawn, nil
+}
+
+func (r *sessionRestore) Subscribe(ctx context.Context, watchedID, subscriberID string, states []string) error {
+	return r.dag.Do(ctx, &dagger.Request{
+		Query: `query RestoreSubscription($watched: ID!, $subscriber: AgentID!, $states: [AgentState!]!) {
+  node(id: $watched) { ... on Agent { restoreNotify(subscriber: $subscriber, on: $states) } }
+}`,
+		Variables: map[string]any{"watched": watchedID, "subscriber": subscriberID, "states": states},
+	}, &dagger.Response{})
+}
+
+func (r *sessionRestore) Discard(ctx context.Context, agentID string) error {
+	return r.dag.Do(ctx, &dagger.Request{
+		Query: `query DiscardRestore($agent: ID!) {
+  node(id: $agent) { ... on Agent { discardRestore } }
+}`,
+		Variables: map[string]any{"agent": agentID},
+	}, &dagger.Response{})
 }
 
 func (r *sessionRestore) Adopt(ctx context.Context, entry dagui.AgentRestore, agentID string) error {
