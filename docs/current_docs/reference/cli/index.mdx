@@ -2234,10 +2234,21 @@ Open a terminal for a container or directory in your project
 
 Open a terminal for a container or directory in your project.
 
+Without a pattern, open the only container, or else the only container in the
+entrypoint module.
+
+As with sh: with -c, the command reads standard input. Without -c, if standard
+input is a pipe or a file, run it as a script.
+
 Examples:
-  dagger shell -l                   # List all available shells
-  dagger shell go:dev               # Open the go:dev shell
-  dagger sh go:dev                  # Use the short command alias
+  dagger shell                                # Open the default shell
+  dagger shell -l                             # List all available shells
+  dagger shell go:dev                         # Open the go:dev shell
+  dagger sh go:dev                            # Use the short command alias
+  dagger shell go:dev -c 'go test ./...'      # Run a command in the go:dev shell
+  echo 'go test ./...' | dagger shell go:dev  # Read the script from stdin
+  dagger shell --copy /src=. --init 'go mod download'
+                                              # Set up the shell before it opens
 
 
 ```
@@ -2247,7 +2258,10 @@ dagger shell [options] [pattern]
 ### Options
 
 ```
-  -l, --list   List available shells
+  -c, --command string     Run a command in the shell, and exit with its exit code
+      --copy stringArray   Copy a directory into the container: [PATH=]SOURCE, where SOURCE is a local path, Git URL, or other address (repeatable)
+      --init stringArray   Run a command in the shell before it opens. Only its changes to files are kept (repeatable)
+  -l, --list               List available shells
 ```
 
 ### Options inherited from parent commands
