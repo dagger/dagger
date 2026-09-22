@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
@@ -24,6 +25,10 @@ import (
 // spans) the engine published for it, the identity carried on them, and the
 // lifecycle state folded from its state records.
 type AgentNode struct {
+	// Control is the selected complete revision. Spans supply history and
+	// display context only when this authoritative projection exists.
+	Control *agentcontrol.Agent
+
 	// ID is the agent's spawn-minted runtime handle — the grouping key. It is
 	// deliberately NOT the span ID: a resume after a failure relaunches the
 	// loop under a fresh span, and both spans belong to the same agent.
@@ -85,6 +90,9 @@ func (node *AgentNode) Span() *Span {
 // state — a paused agent is still live, and a stopped one is not.
 func (node *AgentNode) Live() bool {
 	span := node.Span()
+	if node.Control != nil && (span == nil || span.TraceID.String() != node.Control.Trace) {
+		return false
+	}
 	return span != nil && span.IsRunning()
 }
 
@@ -162,8 +170,46 @@ func (db *DB) buildAgents() []*AgentNode {
 		}
 	}
 
+	// Fold canonical controls after diagnostic spans. Imported span/state
+	// history must never become a competing authority for a revised agent.
+	selected := map[string]agentcontrol.Agent{}
+	live := db.liveTraceID().String()
+	for _, projection := range db.agentControl.Agents() {
+		old, exists := selected[projection.Handle]
+		if exists {
+			if old.Trace == live && projection.Trace != live {
+				continue
+			}
+			if projection.Trace != live && !projection.Activity.After(old.Activity) {
+				continue
+			}
+		}
+		selected[projection.Handle] = projection
+	}
+	for handle, projection := range selected {
+		node := byID[handle]
+		if node == nil {
+			node = &AgentNode{ID: handle}
+			byID[handle] = node
+			order = append(order, node)
+		}
+		node.Control = &projection
+		node.Name, node.CallDigest = projection.Name, projection.CallDigest
+		node.State, node.WaitingOn, node.StopReason = projection.State, projection.WaitingOn, projection.StopReason
+		node.SnapshotDigest, node.PreTeardownState = projection.Digest, projection.PreTeardownState
+	}
+	visible := order[:0]
+	for _, node := range order {
+		if node.Control == nil || !node.Control.Removed {
+			visible = append(visible, node)
+		}
+	}
+	order = visible
 	sort.SliceStable(order, func(i, j int) bool {
 		a, b := order[i].Spans, order[j].Spans
+		if len(a) == 0 && len(b) == 0 {
+			return order[i].ID < order[j].ID
+		}
 		if len(a) == 0 || len(b) == 0 {
 			return len(a) > len(b)
 		}
@@ -175,6 +221,9 @@ func (db *DB) buildAgents() []*AgentNode {
 // AgentRestore is one entry of a restore plan: what a resuming client needs
 // to re-hydrate one agent instance from a trace it has ingested.
 type AgentRestore struct {
+	// Source identifies the control revision's ordering domain. Zero for
+	// historical split-protocol entries, which do not establish finality.
+	Source agentcontrol.Key
 	// ID is the agent's spawn-minted runtime handle — the identity it is
 	// restored UNDER, which is what makes the restored agent the same agent
 	// (its old loop spans and its new ones fold into one roster entry, and
@@ -299,6 +348,9 @@ func (node *AgentNode) publishedIn(traceID TraceID) bool {
 	if !traceID.IsValid() {
 		return false
 	}
+	if node.Control != nil && node.Control.Trace == traceID.String() {
+		return true
+	}
 	for _, span := range node.Spans {
 		if span.TraceID == traceID {
 			return true
@@ -308,6 +360,15 @@ func (node *AgentNode) publishedIn(traceID TraceID) bool {
 }
 
 func (node *AgentNode) restoreEntry() AgentRestore {
+	if a := node.Control; a != nil {
+		state, err := a.RestoreState()
+		failure := ""
+		if state == agentStateFailed {
+			failure = a.Failure
+		}
+		return AgentRestore{Source: a.Key, ID: a.Handle, Name: a.Name, State: state, Error: failure,
+			SnapshotDigest: a.Digest, ParentAgentID: a.Parent, LastActivity: a.Activity, Err: err}
+	}
 	entry := AgentRestore{
 		ID:             node.ID,
 		Name:           node.Name,
