@@ -185,55 +185,30 @@ type containerConnector struct {
 // connector closes tunnels no client claimed.
 const warmTunnelCount = 3
 
-// warmTunnels holds one slot per warm dial. A client takes a slot to wait on,
-// and gives it back if it stops waiting, so the tunnel goes to the next client.
-// Closing it releases every tunnel that was never claimed.
+// warmTunnels holds one result channel per warm dial. A canceled client
+// discards the tunnel it was waiting for; closing discards all unclaimed
+// tunnels.
 type warmTunnels struct {
-	once sync.Once
-
-	mu      sync.Mutex
-	pending []*warmTunnel
-	closed  bool
-	done    chan struct{}
-}
-
-type warmTunnel struct {
-	result chan net.Conn
+	startOnce sync.Once
+	closeOnce sync.Once
+	pending   chan chan net.Conn
+	done      chan struct{}
 }
 
 func newWarmTunnels() *warmTunnels {
-	return &warmTunnels{done: make(chan struct{})}
+	return &warmTunnels{
+		pending: make(chan chan net.Conn, warmTunnelCount),
+		done:    make(chan struct{}),
+	}
 }
 
 // start dials the warm tunnels in the background, the first time only.
 func (w *warmTunnels) start(dial func() net.Conn) {
-	w.once.Do(func() {
-		w.mu.Lock()
-		if w.closed {
-			w.mu.Unlock()
-			return
-		}
-		tunnels := make([]*warmTunnel, 0, warmTunnelCount)
+	w.startOnce.Do(func() {
 		for range warmTunnelCount {
-			tunnel := &warmTunnel{result: make(chan net.Conn, 1)}
-			tunnels = append(tunnels, tunnel)
-			w.pending = append(w.pending, tunnel)
-		}
-		w.mu.Unlock()
-
-		for _, tunnel := range tunnels {
-			go func() {
-				conn := dial()
-				w.mu.Lock()
-				closed := w.closed
-				if !closed {
-					tunnel.result <- conn
-				}
-				w.mu.Unlock()
-				if closed && conn != nil {
-					_ = conn.Close()
-				}
-			}()
+			result := make(chan net.Conn, 1)
+			w.pending <- result
+			go func() { result <- dial() }()
 		}
 	})
 }
@@ -241,79 +216,54 @@ func (w *warmTunnels) start(dial func() net.Conn) {
 var errContainerConnectorClosed = errors.New("container connector closed")
 
 func (w *warmTunnels) take(ctx context.Context) (net.Conn, bool, error) {
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return nil, true, errContainerConnectorClosed
-	}
-	if len(w.pending) == 0 {
-		w.mu.Unlock()
-		return nil, false, nil
-	}
-	tunnel := w.pending[0]
-	w.pending = w.pending[1:]
-	w.mu.Unlock()
-
 	select {
-	case conn := <-tunnel.result:
-		w.mu.Lock()
-		closed := w.closed
-		w.mu.Unlock()
-		if closed {
-			if conn != nil {
-				_ = conn.Close()
+	case <-w.done:
+		return nil, true, errContainerConnectorClosed
+	case result := <-w.pending:
+		select {
+		case conn := <-result:
+			select {
+			case <-w.done:
+				if conn != nil {
+					_ = conn.Close()
+				}
+				return nil, true, errContainerConnectorClosed
+			default:
 			}
+			return conn, true, nil
+		case <-ctx.Done():
+			go closeWarmTunnel(result)
+			return nil, true, ctx.Err()
+		case <-w.done:
+			go closeWarmTunnel(result)
 			return nil, true, errContainerConnectorClosed
 		}
-		return conn, true, nil
-	case <-ctx.Done():
-		w.restore(tunnel)
-		return nil, true, ctx.Err()
-	case <-w.done:
-		_ = closeReadyWarmTunnel(tunnel)
-		return nil, true, errContainerConnectorClosed
+	default:
+		return nil, false, nil
 	}
-}
-
-func (w *warmTunnels) restore(tunnel *warmTunnel) {
-	w.mu.Lock()
-	if !w.closed {
-		w.pending = append([]*warmTunnel{tunnel}, w.pending...)
-		w.mu.Unlock()
-		return
-	}
-	w.mu.Unlock()
-	_ = closeReadyWarmTunnel(tunnel)
 }
 
 func (w *warmTunnels) close() error {
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return nil
-	}
-	w.closed = true
-	close(w.done)
-	pending := w.pending
-	w.pending = nil
-	w.mu.Unlock()
-
-	var rerr error
-	for _, tunnel := range pending {
-		rerr = errors.Join(rerr, closeReadyWarmTunnel(tunnel))
-	}
-	return rerr
+	w.closeOnce.Do(func() {
+		// Either wait for start to finish or prevent it from starting later.
+		w.startOnce.Do(func() {})
+		close(w.done)
+		for {
+			select {
+			case result := <-w.pending:
+				go closeWarmTunnel(result)
+			default:
+				return
+			}
+		}
+	})
+	return nil
 }
 
-func closeReadyWarmTunnel(tunnel *warmTunnel) error {
-	select {
-	case conn := <-tunnel.result:
-		if conn != nil {
-			return conn.Close()
-		}
-	default:
+func closeWarmTunnel(result <-chan net.Conn) {
+	if conn := <-result; conn != nil {
+		_ = conn.Close()
 	}
-	return nil
 }
 
 // imageDriver connects to a container directly

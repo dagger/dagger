@@ -73,9 +73,9 @@ func TestContainerConnectorDoesNotWarmOnDeadTunnel(t *testing.T) {
 	require.Equal(t, 2, backend.dials(), "each retry dials fresh; nothing warm was started")
 }
 
-// A client that stops waiting for its warm tunnel leaves it to the next
-// client instead of leaking it.
-func TestContainerConnectorKeepsTunnelAClientStoppedWaitingFor(t *testing.T) {
+// A client that stops waiting discards that tunnel; the next client can use
+// another warm tunnel without dialing on demand.
+func TestContainerConnectorDiscardsTunnelAClientStoppedWaitingFor(t *testing.T) {
 	t.Parallel()
 
 	backend := &dialingBackend{holdWarmDials: make(chan struct{})}
@@ -95,10 +95,13 @@ func TestContainerConnectorKeepsTunnelAClientStoppedWaitingFor(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 
 	close(backend.holdWarmDials)
+	require.Eventually(t, func() bool {
+		return backend.closedDials() == 1
+	}, 5*time.Second, time.Millisecond, "the abandoned tunnel should be closed")
 	conn, err = connector.Connect(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, conn)
-	require.Equal(t, 1+warmTunnelCount, backend.dials(), "the abandoned tunnel should have been reused, not replaced")
+	require.Equal(t, 1+warmTunnelCount, backend.dials(), "another warm tunnel should serve the next client")
 }
 
 // Closing the connector releases warm tunnels no client claimed, including
