@@ -20,6 +20,15 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
+     * The schema type name of the collection that supplies this dimension.
+     */
+    public function collectionType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('collectionType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'collectionType');
+    }
+
+    /**
      * Exact GraphQL ParentType.field identifier.
      */
     public function identifier(): string
@@ -44,5 +53,32 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('qualifiedName');
         return (string)$this->queryLeaf($leafQueryBuilder, 'qualifiedName');
+    }
+
+    /**
+     * The author item type name.
+     */
+    public function itemType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('itemType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'itemType');
+    }
+
+    /**
+     * The name of the author get function's key argument.
+     */
+    public function keyName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('keyName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'keyName');
+    }
+
+    /**
+     * The description of the author get function's key argument.
+     */
+    public function keyDescription(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('keyDescription');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'keyDescription');
     }
 }

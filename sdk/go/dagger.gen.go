@@ -1193,16 +1193,33 @@ func (r *Artifact) AsNode() Node {
 type ArtifactDimension struct {
 	query *querybuilder.Selection
 
-	id            *ID
-	identifier    *string
-	name          *string
-	qualifiedName *string
+	collectionType *string
+	id             *ID
+	identifier     *string
+	itemType       *string
+	keyDescription *string
+	keyName        *string
+	name           *string
+	qualifiedName  *string
 }
 
 func (r *ArtifactDimension) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimension {
 	return &ArtifactDimension{
 		query: q,
 	}
+}
+
+// The schema type name of the collection that supplies this dimension.
+func (r *ArtifactDimension) CollectionType(ctx context.Context) (string, error) {
+	if r.collectionType != nil {
+		return *r.collectionType, nil
+	}
+	q := r.query.Select("collectionType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this ArtifactDimension.
@@ -1251,6 +1268,45 @@ func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
 		return *r.identifier, nil
 	}
 	q := r.query.Select("identifier")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The author item type name.
+func (r *ArtifactDimension) ItemType(ctx context.Context) (string, error) {
+	if r.itemType != nil {
+		return *r.itemType, nil
+	}
+	q := r.query.Select("itemType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The description of the author get function's key argument.
+func (r *ArtifactDimension) KeyDescription(ctx context.Context) (string, error) {
+	if r.keyDescription != nil {
+		return *r.keyDescription, nil
+	}
+	q := r.query.Select("keyDescription")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The name of the author get function's key argument.
+func (r *ArtifactDimension) KeyName(ctx context.Context) (string, error) {
+	if r.keyName != nil {
+		return *r.keyName, nil
+	}
+	q := r.query.Select("keyName")
 
 	var response string
 

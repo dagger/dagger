@@ -4952,7 +4952,11 @@ export class Artifact extends BaseClient {
 
 export class ArtifactDimension extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _collectionType?: string = undefined
   private readonly _identifier?: string = undefined
+  private readonly _itemType?: string = undefined
+  private readonly _keyDescription?: string = undefined
+  private readonly _keyName?: string = undefined
   private readonly _name?: string = undefined
   private readonly _qualifiedName?: string = undefined
 
@@ -4962,14 +4966,22 @@ export class ArtifactDimension extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _collectionType?: string,
     _identifier?: string,
+    _itemType?: string,
+    _keyDescription?: string,
+    _keyName?: string,
     _name?: string,
     _qualifiedName?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._collectionType = _collectionType
     this._identifier = _identifier
+    this._itemType = _itemType
+    this._keyDescription = _keyDescription
+    this._keyName = _keyName
     this._name = _name
     this._qualifiedName = _qualifiedName
   }
@@ -4990,6 +5002,21 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
+   * The schema type name of the collection that supplies this dimension.
+   */
+  collectionType = async (): Promise<string> => {
+    if (this._collectionType) {
+      return this._collectionType
+    }
+
+    const ctx = this._ctx.select("collectionType")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Exact GraphQL ParentType.field identifier.
    */
   identifier = async (): Promise<string> => {
@@ -4998,6 +5025,51 @@ export class ArtifactDimension extends BaseClient {
     }
 
     const ctx = this._ctx.select("identifier")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The author item type name.
+   */
+  itemType = async (): Promise<string> => {
+    if (this._itemType) {
+      return this._itemType
+    }
+
+    const ctx = this._ctx.select("itemType")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the author get function's key argument.
+   */
+  keyDescription = async (): Promise<string> => {
+    if (this._keyDescription) {
+      return this._keyDescription
+    }
+
+    const ctx = this._ctx.select("keyDescription")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The name of the author get function's key argument.
+   */
+  keyName = async (): Promise<string> => {
+    if (this._keyName) {
+      return this._keyName
+    }
+
+    const ctx = this._ctx.select("keyName")
 
     const response: Awaited<string> = await ctx.execute()
 

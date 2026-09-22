@@ -1614,6 +1614,27 @@ class Artifact(Type):
 
 @typecheck
 class ArtifactDimension(Type):
+    async def collection_type(self) -> str:
+        """The schema type name of the collection that supplies this dimension.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("collectionType", _args)
+        return await _ctx.execute(str)
+
     async def id(self) -> str:
         """A unique identifier for this ArtifactDimension.
 
@@ -1661,6 +1682,69 @@ class ArtifactDimension(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("identifier", _args)
+        return await _ctx.execute(str)
+
+    async def item_type(self) -> str:
+        """The author item type name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("itemType", _args)
+        return await _ctx.execute(str)
+
+    async def key_description(self) -> str:
+        """The description of the author get function's key argument.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("keyDescription", _args)
+        return await _ctx.execute(str)
+
+    async def key_name(self) -> str:
+        """The name of the author get function's key argument.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("keyName", _args)
         return await _ctx.execute(str)
 
     async def name(self) -> str:

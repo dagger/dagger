@@ -1178,6 +1178,11 @@ impl ArtifactDimension {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The schema type name of the collection that supplies this dimension.
+    pub async fn collection_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("collectionType");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Exact GraphQL ParentType.field identifier.
     pub async fn identifier(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("identifier");
@@ -1191,6 +1196,21 @@ impl ArtifactDimension {
     /// Author parent type and field name, in CLI case.
     pub async fn qualified_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("qualifiedName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The author item type name.
+    pub async fn item_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("itemType");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the author get function's key argument.
+    pub async fn key_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("keyName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The description of the author get function's key argument.
+    pub async fn key_description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("keyDescription");
         query.execute(self.graphql_client.clone()).await
     }
 }

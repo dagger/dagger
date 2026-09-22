@@ -16,6 +16,17 @@ defmodule Dagger.ArtifactDimension do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The schema type name of the collection that supplies this dimension.
+  """
+  @spec collection_type(t()) :: {:ok, String.t()} | {:error, term()}
+  def collection_type(%__MODULE__{} = artifact_dimension) do
+    query_builder =
+      artifact_dimension.query_builder |> QB.select("collectionType")
+
+    Client.execute(artifact_dimension.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this ArtifactDimension.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
@@ -33,6 +44,39 @@ defmodule Dagger.ArtifactDimension do
   def identifier(%__MODULE__{} = artifact_dimension) do
     query_builder =
       artifact_dimension.query_builder |> QB.select("identifier")
+
+    Client.execute(artifact_dimension.client, query_builder)
+  end
+
+  @doc """
+  The author item type name.
+  """
+  @spec item_type(t()) :: {:ok, String.t()} | {:error, term()}
+  def item_type(%__MODULE__{} = artifact_dimension) do
+    query_builder =
+      artifact_dimension.query_builder |> QB.select("itemType")
+
+    Client.execute(artifact_dimension.client, query_builder)
+  end
+
+  @doc """
+  The description of the author get function's key argument.
+  """
+  @spec key_description(t()) :: {:ok, String.t()} | {:error, term()}
+  def key_description(%__MODULE__{} = artifact_dimension) do
+    query_builder =
+      artifact_dimension.query_builder |> QB.select("keyDescription")
+
+    Client.execute(artifact_dimension.client, query_builder)
+  end
+
+  @doc """
+  The name of the author get function's key argument.
+  """
+  @spec key_name(t()) :: {:ok, String.t()} | {:error, term()}
+  def key_name(%__MODULE__{} = artifact_dimension) do
+    query_builder =
+      artifact_dimension.query_builder |> QB.select("keyName")
 
     Client.execute(artifact_dimension.client, query_builder)
   end

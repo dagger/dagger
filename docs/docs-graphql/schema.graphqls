@@ -475,6 +475,9 @@ type ArtifactDimension implements Node {
   """A unique identifier for this ArtifactDimension."""
   id: ID!
 
+  """The schema type name of the collection that supplies this dimension."""
+  collectionType: String!
+
   """Exact GraphQL ParentType.field identifier."""
   identifier: String!
 
@@ -483,6 +486,15 @@ type ArtifactDimension implements Node {
 
   """Author parent type and field name, in CLI case."""
   qualifiedName: String!
+
+  """The author item type name."""
+  itemType: String!
+
+  """The name of the author get function's key argument."""
+  keyName: String!
+
+  """The description of the author get function's key argument."""
+  keyDescription: String!
 }
 
 type ArtifactDimensionKey implements Node {
