@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"time"
@@ -90,6 +91,27 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 		go console.ExpectEOF()
 		require.NoError(t, cmd.Wait())
+	})
+
+	t.Run("top-level command with command argument", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-default")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		run := func() string {
+			// -c belongs to the command, not to dagger shell.
+			cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr", "sh", "-c",
+				`echo "$COOLENV in $PWD"; cat /proc/sys/kernel/random/uuid; exit 3`)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			out, err := cmd.Output()
+			var exitErr *exec.ExitError
+			require.ErrorAs(t, err, &exitErr, stderr.String())
+			require.Equal(t, 3, exitErr.ExitCode(), stderr.String())
+			require.Contains(t, string(out), "woo in /coolworkdir\n", stderr.String())
+			return string(out)
+		}
+		// Like a terminal, each call runs the command again.
+		require.NotEqual(t, run(), run())
 	})
 
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {

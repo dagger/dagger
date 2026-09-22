@@ -16563,6 +16563,16 @@ func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGro
 	}
 }
 
+// Run a command non-interactively in the selected terminal target, and return the container after execution. Any exit code is allowed.
+func (r *TerminalGroup) Exec(args []string) *Container {
+	q := r.query.Select("exec")
+	q = q.Arg("args", args)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // A unique identifier for this TerminalGroup.
 func (r *TerminalGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {

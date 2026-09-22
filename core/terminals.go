@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -59,23 +60,47 @@ func (r *TerminalGroup) List() []*TerminalTarget {
 // Run opens the selected terminal target. A terminal group must contain one
 // target because interactive terminals cannot run in parallel.
 func (r *TerminalGroup) Run(ctx context.Context) error {
+	target, err := r.selected()
+	if err != nil {
+		return err
+	}
+	return target.Node.RunTerminal(r.workspaceContext(ctx))
+}
+
+// Exec runs args non-interactively in the selected terminal target, and
+// returns the container after execution. Any exit code is allowed, so the
+// caller can inspect it.
+func (r *TerminalGroup) Exec(ctx context.Context, args []string) (dagql.ObjectResult[*Container], error) {
+	if len(args) == 0 {
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("no command to execute")
+	}
+	target, err := r.selected()
+	if err != nil {
+		return dagql.ObjectResult[*Container]{}, err
+	}
+	return target.Node.ExecTerminal(r.workspaceContext(ctx), args)
+}
+
+func (r *TerminalGroup) selected() (*TerminalTarget, error) {
 	switch len(r.Terminals) {
 	case 0:
-		return fmt.Errorf("no terminal targets selected")
+		return nil, fmt.Errorf("no terminal targets selected")
 	case 1:
-		// Continue below.
+		return r.Terminals[0], nil
 	default:
 		names := make([]string, 0, len(r.Terminals))
 		for _, terminal := range r.Terminals {
 			names = append(names, terminal.Name())
 		}
-		return fmt.Errorf("terminal selection matched %d targets: %s", len(names), strings.Join(names, ", "))
+		return nil, fmt.Errorf("terminal selection matched %d targets: %s", len(names), strings.Join(names, ", "))
 	}
+}
 
+func (r *TerminalGroup) workspaceContext(ctx context.Context) context.Context {
 	if r.BoundWorkspace.Self() != nil {
 		ctx = WorkspaceToContext(ctx, r.BoundWorkspace)
 	}
-	return r.Terminals[0].Node.RunTerminal(ctx)
+	return ctx
 }
 
 func (*TerminalTarget) Type() *ast.Type {
@@ -131,4 +156,80 @@ func (node *ModTreeNode) RunTerminal(ctx context.Context) error {
 	return node.DagqlServer.Select(dagql.WithNonInternalTelemetry(ctx), target, &result,
 		dagql.Selector{Field: "terminal"},
 	)
+}
+
+// ExecTerminal runs args in the container that RunTerminal would open, without
+// attaching a terminal. Like a terminal, each call runs the command again.
+func (node *ModTreeNode) ExecTerminal(ctx context.Context, args []string) (res dagql.ObjectResult[*Container], _ error) {
+	if !supportsTerminal(node) {
+		return res, fmt.Errorf("%q: unsupported terminal target type", node.PathString())
+	}
+	srv := node.DagqlServer
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	// Get a new synthetic container for each call, so the exec below is
+	// never a cache hit.
+	var ctr dagql.ObjectResult[*Container]
+	switch node.Type.Self().AsObject.Value.Self().Name {
+	case "Container":
+		if err := node.DagqlValue(ctx, &ctr); err != nil {
+			return res, err
+		}
+		// Evaluate first: the default terminal command can be set lazily.
+		if err := cache.Evaluate(ctx, ctr); err != nil {
+			return res, err
+		}
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return res, err
+		}
+		clone, err := cloneContainerForTerminal(ctx, query, ctr.Self())
+		if err != nil {
+			return res, err
+		}
+		ctr, err = newSyntheticTerminalContainerResult(srv, clone, "terminal_exec_container")
+		if err != nil {
+			return res, err
+		}
+	case "Directory":
+		var dir dagql.ObjectResult[*Directory]
+		if err := node.DagqlValue(ctx, &dir); err != nil {
+			return res, err
+		}
+		ctr, err = dir.Self().terminalContainer(ctx, dagql.ObjectResult[*Container]{}, dir)
+		if err != nil {
+			return res, err
+		}
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return res, err
+	}
+	attached, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, ctr)
+	if err != nil {
+		return res, err
+	}
+	ctr, ok := attached.(dagql.ObjectResult[*Container])
+	if !ok {
+		return res, fmt.Errorf("attach terminal container: expected %T, got %T", ctr, attached)
+	}
+
+	defaults := ctr.Self().DefaultTerminalCmd
+	ctx = dagql.WithNonInternalTelemetry(ctx)
+	if err := srv.Select(ctx, ctr, &res, dagql.Selector{
+		Field: "withExec",
+		Args: []dagql.NamedInput{
+			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args...))},
+			{Name: "expect", Value: ReturnAny},
+			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(defaults.ExperimentalPrivilegedNesting.Value.Bool())},
+			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(defaults.InsecureRootCapabilities.Value.Bool())},
+		},
+	}); err != nil {
+		return res, err
+	}
+	// Run the command now, in the context of the bound workspace.
+	return res, cache.Evaluate(ctx, res)
 }

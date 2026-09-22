@@ -6086,6 +6086,17 @@ type TerminalGroup implements Node {
 
   """Open the selected terminal target"""
   run: TerminalGroup!
+
+  """
+  Run a command non-interactively in the selected terminal target, and return
+  the container after execution. Any exit code is allowed.
+  """
+  exec(
+    """
+    Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "test", "./..."].
+    """
+    args: [String!]!
+  ): Container!
 }
 
 type TerminalTarget implements Node {

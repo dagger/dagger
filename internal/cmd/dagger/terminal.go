@@ -26,10 +26,13 @@ func init() {
 	legacyCommand.Hidden = true
 	// Accept a bare -c so it also gets the migration message.
 	legacyCommand.NoOptDefVal = "legacy"
+	// Stop parsing flags at NAME. All later values belong to the executed
+	// command, so arguments such as -v do not require a preceding --.
+	shellCmd.Flags().SetInterspersed(false)
 }
 
 var shellCmd = &cobra.Command{
-	Use:     "shell [options] [pattern]",
+	Use:     "shell [options] [NAME [COMMAND [ARGS...]]]",
 	Aliases: []string{"sh"},
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "sh",
@@ -37,17 +40,26 @@ var shellCmd = &cobra.Command{
 	Short: "Open a terminal for a container or directory in your project",
 	Long: `Open a terminal for a container or directory in your project.
 
+If a command is given, run it non-interactively in the shell, print its output,
+and exit with its exit code. The command and its arguments are executed
+directly. Use an explicit shell, such as sh -c, for shell syntax. All arguments
+after NAME belong to the command.
+
 Examples:
   dagger shell -l                   # List all available shells
   dagger shell go:dev               # Open the go:dev shell
   dagger sh go:dev                  # Use the short command alias
+  dagger shell go:dev go test ./... # Run a command in the go:dev shell
 `,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("command") {
 			cmd.SilenceUsage = true
 			return fmt.Errorf("'dagger shell -c' is no longer supported; use 'dagger -c' to run Dagger scripts")
 		}
-		return cobra.MaximumNArgs(1)(cmd, args)
+		if terminalListMode && len(args) > 1 {
+			return fmt.Errorf("--list does not accept a command")
+		}
+		return nil
 	},
 	RunE: runTerminalCommand,
 }
@@ -61,19 +73,58 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	include, command := args, []string(nil)
+	if len(args) > 1 {
+		include, command = args[:1], args[1:]
+	}
+
 	return withEngine(
 		cmd.Context(),
 		client.Params{LoadWorkspaceModules: true},
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			terminals := dag.CurrentWorkspace().Terminals(dagger.WorkspaceTerminalsOpts{Include: args})
-			if terminalListMode {
+			terminals := dag.CurrentWorkspace().Terminals(dagger.WorkspaceTerminalsOpts{Include: include})
+			switch {
+			case terminalListMode:
 				return listTerminalTargets(ctx, dag, terminals, cmd)
+			case command != nil:
+				return execTerminalCommand(ctx, cmd, terminals, command)
+			default:
+				_, err := terminals.Run().ID(ctx)
+				return err
 			}
-			_, err := terminals.Run().ID(ctx)
-			return err
 		},
 	)
+}
+
+func execTerminalCommand(ctx context.Context, cmd *cobra.Command, terminals *dagger.TerminalGroup, command []string) error {
+	// Sync once: each query of the exec field runs the command again.
+	executed, err := terminals.Exec(command).Sync(ctx)
+	if err != nil {
+		return err
+	}
+	exitCode, err := executed.ExitCode(ctx)
+	if err != nil {
+		return err
+	}
+	stdout, err := executed.Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	stderr, err := executed.Stderr(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), stdout); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(cmd.ErrOrStderr(), stderr); err != nil {
+		return err
+	}
+	if exitCode != 0 {
+		return idtui.ExitError{OriginalCode: exitCode}
+	}
+	return nil
 }
 
 func listTerminalTargets(ctx context.Context, dag *dagger.Client, terminals *dagger.TerminalGroup, cmd *cobra.Command) error {
