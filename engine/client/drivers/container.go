@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/adrg/xdg"
 	telemetry "github.com/dagger/otel-go"
@@ -180,31 +181,139 @@ type containerConnector struct {
 // is a runc exec, ~40ms. So once the engine has answered on the first
 // tunnel, the connector dials this many more at once and hands them out
 // as clients ask: a later client waits for its own dial only, not for
-// the ones before it. Anything past them dials on demand. Tunnels no
-// client asked for end with the process.
+// the ones before it. Anything past them dials on demand. Closing the
+// connector closes tunnels no client claimed.
 const warmTunnelCount = 3
 
-// warmTunnels holds one channel per warm dial; a dial that failed delivers
-// nil. A client takes a channel to wait on, and gives it back if it stops
-// waiting, so the tunnel goes to the next client instead of leaking.
+// warmTunnels holds one slot per warm dial. A client takes a slot to wait on,
+// and gives it back if it stops waiting, so the tunnel goes to the next client.
+// Closing it releases every tunnel that was never claimed.
 type warmTunnels struct {
-	once    sync.Once
-	pending chan chan net.Conn
+	once sync.Once
+
+	mu      sync.Mutex
+	pending []*warmTunnel
+	closed  bool
+	done    chan struct{}
+}
+
+type warmTunnel struct {
+	result chan net.Conn
 }
 
 func newWarmTunnels() *warmTunnels {
-	return &warmTunnels{pending: make(chan chan net.Conn, warmTunnelCount)}
+	return &warmTunnels{done: make(chan struct{})}
 }
 
 // start dials the warm tunnels in the background, the first time only.
 func (w *warmTunnels) start(dial func() net.Conn) {
 	w.once.Do(func() {
+		w.mu.Lock()
+		if w.closed {
+			w.mu.Unlock()
+			return
+		}
+		tunnels := make([]*warmTunnel, 0, warmTunnelCount)
 		for range warmTunnelCount {
-			ch := make(chan net.Conn, 1)
-			w.pending <- ch
-			go func() { ch <- dial() }()
+			tunnel := &warmTunnel{result: make(chan net.Conn, 1)}
+			tunnels = append(tunnels, tunnel)
+			w.pending = append(w.pending, tunnel)
+		}
+		w.mu.Unlock()
+
+		for _, tunnel := range tunnels {
+			go func() {
+				conn := dial()
+				w.mu.Lock()
+				closed := w.closed
+				if !closed {
+					tunnel.result <- conn
+				}
+				w.mu.Unlock()
+				if closed && conn != nil {
+					_ = conn.Close()
+				}
+			}()
 		}
 	})
+}
+
+var errContainerConnectorClosed = errors.New("container connector closed")
+
+func (w *warmTunnels) take(ctx context.Context) (net.Conn, bool, error) {
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return nil, true, errContainerConnectorClosed
+	}
+	if len(w.pending) == 0 {
+		w.mu.Unlock()
+		return nil, false, nil
+	}
+	tunnel := w.pending[0]
+	w.pending = w.pending[1:]
+	w.mu.Unlock()
+
+	select {
+	case conn := <-tunnel.result:
+		w.mu.Lock()
+		closed := w.closed
+		w.mu.Unlock()
+		if closed {
+			if conn != nil {
+				_ = conn.Close()
+			}
+			return nil, true, errContainerConnectorClosed
+		}
+		return conn, true, nil
+	case <-ctx.Done():
+		w.restore(tunnel)
+		return nil, true, ctx.Err()
+	case <-w.done:
+		_ = closeReadyWarmTunnel(tunnel)
+		return nil, true, errContainerConnectorClosed
+	}
+}
+
+func (w *warmTunnels) restore(tunnel *warmTunnel) {
+	w.mu.Lock()
+	if !w.closed {
+		w.pending = append([]*warmTunnel{tunnel}, w.pending...)
+		w.mu.Unlock()
+		return
+	}
+	w.mu.Unlock()
+	_ = closeReadyWarmTunnel(tunnel)
+}
+
+func (w *warmTunnels) close() error {
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return nil
+	}
+	w.closed = true
+	close(w.done)
+	pending := w.pending
+	w.pending = nil
+	w.mu.Unlock()
+
+	var rerr error
+	for _, tunnel := range pending {
+		rerr = errors.Join(rerr, closeReadyWarmTunnel(tunnel))
+	}
+	return rerr
+}
+
+func closeReadyWarmTunnel(tunnel *warmTunnel) error {
+	select {
+	case conn := <-tunnel.result:
+		if conn != nil {
+			return conn.Close()
+		}
+	default:
+	}
+	return nil
 }
 
 // imageDriver connects to a container directly
@@ -230,21 +339,15 @@ func (d *containerDriver) ImageLoader(ctx context.Context) imageload.Backend {
 }
 
 func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
-	select {
-	case ch := <-d.warm.pending:
-		select {
-		case conn := <-ch:
-			if conn != nil {
-				return conn, nil
-			}
-			// the warm dial failed: dial fresh below, which reports its own error
-		case <-ctx.Done():
-			d.warm.pending <- ch
-			return nil, ctx.Err()
-		}
-	default:
+	conn, warm, err := d.warm.take(ctx)
+	if err != nil {
+		return nil, err
 	}
-	conn, err := d.dial(ctx)
+	if warm && conn != nil {
+		return conn, nil
+	}
+	// The warm dial failed: dial fresh, which reports its own error.
+	conn, err = d.dial(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -258,6 +361,12 @@ func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
 			return conn
 		})
 	}}, nil
+}
+
+// Close releases tunnels dialed ahead of clients that never claimed them.
+// Connections already handed to clients remain owned by those clients.
+func (d containerConnector) Close() error {
+	return d.warm.close()
 }
 
 // answeredConn calls answered the first time a Read returns data.
@@ -294,9 +403,10 @@ func (d containerConnector) EngineID() string {
 
 const (
 	// trim image digests to 16 characters to makeoutput more readable
-	hashLen                     = 16
-	containerNamePrefix         = "dagger-engine-"
-	defaultDebugListenerAddress = "127.0.0.1:6060"
+	hashLen                      = 16
+	containerNamePrefix          = "dagger-engine-"
+	defaultDebugListenerAddress  = "127.0.0.1:6060"
+	leftoverEngineCleanupTimeout = 10 * time.Minute
 )
 
 const InstrumentationLibrary = "dagger.io/client.drivers"
@@ -337,19 +447,15 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		containerName = containerNamePrefix + id
 	}
 
-	// The common case is an engine that already exists: look it up by name
-	// and start it (a no-op when it already runs), instead of listing every
-	// container on the host first. The listing grows with the host and was
-	// most of a command's connect time. Leftovers from older versions are
-	// still swept, in the background. Only when the engine is missing does
-	// the command list before running a new one.
-	if exists, err := d.backend.ContainerExists(ctx, containerName); err == nil && exists {
-		if err := d.backend.ContainerStart(ctx, containerName); err != nil {
-			return nil, fmt.Errorf("failed to start container: %w", err)
+	// Starting an existing engine is a no-op when it is already running, so
+	// use start itself as the fast existence check. Only when it fails does
+	// the command list containers before creating a new engine.
+	if err := d.backend.ContainerStart(ctx, containerName); err == nil {
+		if opts.cleanup {
+			go d.sweepLeftoverEngines(ctx, containerName)
 		}
-		go d.sweepLeftoverEngines(context.WithoutCancel(ctx), opts.cleanup, containerName)
 		return &url.URL{Host: containerName}, nil
-	} else if errors.Is(err, context.Canceled) {
+	} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
 	}
 
@@ -445,10 +551,9 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 // It runs in the background once the engine is known to exist, so a command
 // does not wait for the listing; a sweep cut short by the process exiting
 // is finished by a later command.
-func (d *imageDriver) sweepLeftoverEngines(ctx context.Context, cleanup bool, current string) {
-	if !cleanup {
-		return
-	}
+func (d *imageDriver) sweepLeftoverEngines(ctx context.Context, current string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), leftoverEngineCleanupTimeout)
+	defer cancel()
 	leftoverEngines, err := d.collectLeftoverEngines(ctx)
 	if err != nil {
 		slog.SpanLogger(ctx, InstrumentationLibrary).Warn("failed to list containers", "error", err)
