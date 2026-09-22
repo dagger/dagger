@@ -562,7 +562,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
-			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs)
+			var dumpAfter []string
+			if inputArgs["dumpAfter"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dumpAfter"]), &dumpAfter)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dumpAfter", err))
+				}
+			}
+			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, dumpAfter)
 		case "TestTelemetry":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -872,41 +879,42 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run core engine tests").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("test.go", 22, 1)).
-							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 26, 2)}).
-							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 29, 2)}).
-							WithArg("pkg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 32, 2), DefaultValue: dagger.JSON("\"./...\"")}).
-							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 35, 2)}).
-							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How many tests to run in parallel - defaults to the number of CPUs", SourceMap: dag.SourceMap("test.go", 38, 2)}).
-							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How long before timing out the test run", SourceMap: dag.SourceMap("test.go", 41, 2)}).
-							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 43, 2)}).
-							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 46, 2), DefaultValue: dagger.JSON("1")}).
-							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 48, 2)}).
-							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable verbose output", SourceMap: dag.SourceMap("test.go", 51, 2)}).
-							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Update golden files", SourceMap: dag.SourceMap("test.go", 54, 2)}).
-							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 57, 2)})).
+							WithSourceMap(dag.SourceMap("test.go", 23, 1)).
+							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 27, 2)}).
+							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 30, 2)}).
+							WithArg("pkg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 33, 2), DefaultValue: dagger.JSON("\"./...\"")}).
+							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 36, 2)}).
+							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How many tests to run in parallel - defaults to the number of CPUs", SourceMap: dag.SourceMap("test.go", 39, 2)}).
+							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How long before timing out the test run", SourceMap: dag.SourceMap("test.go", 42, 2)}).
+							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 44, 2)}).
+							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 47, 2), DefaultValue: dagger.JSON("1")}).
+							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 49, 2)}).
+							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable verbose output", SourceMap: dag.SourceMap("test.go", 52, 2)}).
+							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Update golden files", SourceMap: dag.SourceMap("test.go", 55, 2)}).
+							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 58, 2)}).
+							WithArg("dumpAfter", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Elapsed times after the test runner starts at which to dump engine goroutines", SourceMap: dag.SourceMap("test.go", 61, 2)})).
 					WithFunction(
 						dag.Function("TestTelemetry",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Run telemetry tests").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("test.go", 84, 1)).
-							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 88, 2)}).
-							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 91, 2)}).
-							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 93, 2)}).
-							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 95, 2)}).
-							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 97, 2)}).
-							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 99, 2)}).
-							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 101, 2)}).
-							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 103, 2), DefaultValue: dagger.JSON("1")}).
-							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 105, 2)}).
-							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 107, 2)}).
-							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 110, 2)})).
+							WithSourceMap(dag.SourceMap("test.go", 97, 1)).
+							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 101, 2)}).
+							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 104, 2)}).
+							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 106, 2)}).
+							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 108, 2)}).
+							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 110, 2)}).
+							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 112, 2)}).
+							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 114, 2)}).
+							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 116, 2), DefaultValue: dagger.JSON("1")}).
+							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 118, 2)}).
+							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 120, 2)}).
+							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 123, 2)})).
 					WithFunction(
 						dag.Function("Tests",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("List all core engine tests").
-							WithSourceMap(dag.SourceMap("test.go", 16, 1))).
+							WithSourceMap(dag.SourceMap("test.go", 17, 1))).
 					WithFunction(
 						dag.Function("WithEBPFProgs",
 							dag.TypeDef().WithObject("EngineDev")).
