@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,4 +60,53 @@ func TestAgentClientScopeLifetime(t *testing.T) {
 	require.Equal(t, 1, held(engine.ClientLeaseAgentTombstone), "the stopped snapshot remains addressable")
 	require.NoError(t, registry.KillAll(t.Context(), nil))
 	require.Zero(t, held(engine.ClientLeaseAgentTombstone))
+}
+
+func TestAgentCreateLeaseOutsideRegistryLock(t *testing.T) {
+	registry := NewAgentRuntimes()
+	var acquired, released atomic.Int32
+	entered := make(chan struct{}, 2)
+	proceed := make(chan struct{})
+	request := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "request", nil,
+		func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			// Lifecycle callbacks must be able to inspect the registry, including
+			// while two constructors for the same handle are staging.
+			registry.mu.Lock()
+			registry.mu.Unlock()
+			entered <- struct{}{}
+			<-proceed
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, owner, func() { released.Add(1) }, nil), nil
+		})
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{ClientID: "client", SessionID: "session"}, request)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+	require.NoError(t, err)
+	ctx = testAgentContext(t, ctx, "raced-agent", "agent")
+	agent, ok := AgentFromContext(ctx)
+	require.True(t, ok)
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := registry.Create(ctx, agent, AgentStateIdle, "", false)
+			results <- err
+		}()
+	}
+	// Ensure both constructors acquired outside the lock before publishing.
+	for range 2 {
+		select {
+		case <-entered:
+		case err := <-results:
+			t.Fatalf("creation returned before lease barrier: %v", err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("lease acquisition blocked")
+		}
+	}
+	close(proceed)
+	first, second := <-results, <-results
+	require.NotEqual(t, first == nil, second == nil, "only one constructor may publish")
+	require.EqualValues(t, 2, acquired.Load())
+	require.EqualValues(t, 1, released.Load(), "losing constructor releases its lease")
+	require.NoError(t, registry.KillAll(t.Context(), nil))
+	require.EqualValues(t, 2, released.Load(), "teardown releases the winning lease")
 }
