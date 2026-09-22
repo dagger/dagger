@@ -2362,10 +2362,11 @@ func main() {
 	t.Run("binary files are skipped", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		dir := c.Container().
-			From(alpineImage).
-			WithExec([]string{"sh", "-c", "mkdir -p /testdir && echo 'text content' > /testdir/text.txt && dd if=/dev/urandom of=/testdir/binary.bin bs=1024 count=1 && echo 'text content' >> /testdir/binary.bin"}).
-			Directory("/testdir")
+		// Ripgrep detects binary files by NUL bytes; random data need not
+		// contain one. Keep matching text after a deterministic binary marker.
+		dir := c.Directory().
+			WithNewFile("text.txt", "text content\n").
+			WithNewFile("binary.bin", "\x00text content\n")
 
 		results, err := dir.Search(ctx, "content")
 		require.NoError(t, err)
