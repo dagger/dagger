@@ -64,12 +64,12 @@ func TestCorePseudoModuleUsesDefaultShellWorkdir(t *testing.T) {
 	require.Equal(t, moduleURLDefault, handler.moduleURL)
 }
 
-func TestAssignAgentUsesPortableID(t *testing.T) {
+func TestAssignAgentUsesSnapshotID(t *testing.T) {
 	handler := &shellCallHandler{shellEnv: newShellEnvironment()}
 	handler.state = NewStateStore(nil)
 
-	portableID := dagger.ID("portable-agent-id")
-	handler.assignAgent(portableID)
+	snapshotID := dagger.ID("portable-agent-id")
+	handler.assignAgent(snapshotID)
 
 	agentToken := handler.shellEnv.Get(agentVar).String()
 	agentState, err := handler.state.Load(GetStateKey(agentToken))
@@ -77,7 +77,7 @@ func TestAssignAgentUsesPortableID(t *testing.T) {
 	require.Len(t, agentState.Calls, 1)
 	require.Equal(t, "node", agentState.Calls[0].Name)
 	require.Equal(t, "LLM", agentState.Calls[0].ReturnObject)
-	require.Equal(t, string(portableID), agentState.Calls[0].Arguments["id"])
+	require.Equal(t, string(snapshotID), agentState.Calls[0].Arguments["id"])
 }
 
 func TestAgentDebugServerHotkey(t *testing.T) {

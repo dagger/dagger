@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -321,101 +320,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				return h.Print(ctx, url)
 			},
 		},
-		{
-			Use:         ".resume [session]",
-			Description: "Resume a saved session (interactive picker if no id given)",
-			GroupID:     "llm",
-			Args:        MaximumArgs(1),
-			State:       NoState,
-			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
-				if len(args) == 1 {
-					llm, err := h.llm(ctx)
-					if err != nil {
-						return err
-					}
-					// Emit the resumed conversation at the level above the
-					// ".resume" command span so it surfaces as the top-level
-					// transcript rather than nested under ".resume".
-					historyCtx := h.cmdParentCtx
-					if historyCtx == nil {
-						historyCtx = ctx
-					}
-					if err := llm.Target().LoadSession(ctx, historyCtx, args[0]); err != nil {
-						return err
-					}
-					// Start a fresh save file for subsequent prompts, leaving
-					// the resumed session intact.
-					h.resetSaveIdentity()
-					return nil
-				}
-				return h.resumeSessionInteractive(ctx)
-			},
-		},
 	}
-}
-
-// resumeSessionInteractive presents a picker of saved sessions and resumes the
-// selected one.
-func (h *shellCallHandler) resumeSessionInteractive(ctx context.Context) error {
-	sessions, err := ListSessions()
-	if err != nil {
-		return err
-	}
-	if len(sessions) == 0 {
-		return fmt.Errorf("no saved sessions")
-	}
-
-	var options []huh.Option[string]
-	for _, s := range sessions {
-		displayName := s.Name
-		if len(displayName) > 60 {
-			displayName = displayName[:57] + "..."
-		}
-		ts := s.CreatedAt
-		if t, err := time.Parse(time.RFC3339, s.CreatedAt); err == nil {
-			ts = t.Local().Format("Jan 2 15:04")
-		}
-		branchInfo := ""
-		if s.Branch != "" {
-			branchInfo = ", " + s.Branch
-		}
-		label := fmt.Sprintf("%s  (%s, %s%s)", displayName, s.Model, ts, branchInfo)
-		options = append(options, huh.NewOption(label, s.LLMID))
-	}
-
-	var selected string
-	form := idtui.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Resume session").
-				Options(options...).
-				Value(&selected),
-		),
-	)
-
-	if err := Frontend.HandleForm(ctx, form); err != nil {
-		return err
-	}
-
-	if selected == "" {
-		return nil // user aborted
-	}
-
-	llm, err := h.llm(ctx)
-	if err != nil {
-		return err
-	}
-	// Emit the resumed conversation above the ".resume" command span so it
-	// surfaces as the top-level transcript rather than nested under ".resume".
-	historyCtx := h.cmdParentCtx
-	if historyCtx == nil {
-		historyCtx = ctx
-	}
-	if err := llm.Target().LoadSession(ctx, historyCtx, selected); err != nil {
-		return err
-	}
-	h.resetSaveIdentity()
-	return nil
 }
 
 // selectModelInteractive presents a picker of the models offered by the

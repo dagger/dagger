@@ -80,7 +80,7 @@ var scriptCmd = &cobra.Command{
 }
 
 // shellEnvironment keeps the runner's initial process environment while letting
-// asynchronous agent saves refresh $agent without running the interpreter.
+// asynchronous snapshot refreshes update $agent without running the interpreter.
 type shellEnvironment struct {
 	base expand.Environ
 
@@ -199,13 +199,9 @@ type shellCallHandler struct {
 	mode      interpreterMode
 	savedMode interpreterMode // for coming back from history
 
-	// initialPrompt is the first prompt of the current session, used to name
-	// the auto-saved session file. sessionUUID is the file UUID being updated
-	// in-place; empty until the first save (or reset on branch/resume).
-	// promptL guards them (and llmModel) because prompt turns are no longer
-	// serialized: two focused-in-turn conversations can be stepping at once.
+	// initialPrompt seeds the trace's display title. promptL guards it and
+	// llmModel because multiple conversations can be stepping at once.
 	initialPrompt string
-	sessionUUID   string
 	promptL       sync.Mutex
 
 	// generateSessionTitle is set only by `dagger agent`. Generic shell prompt
@@ -325,8 +321,7 @@ func (h *shellCallHandler) AgentStepped(agentHandle string) {
 	s.AgentStepped(agentHandle)
 }
 
-// notePrompt records the session's first prompt, which names the auto-saved
-// session file.
+// notePrompt records the first prompt for trace title generation.
 func (h *shellCallHandler) notePrompt(line string) {
 	h.promptL.Lock()
 	defer h.promptL.Unlock()
@@ -343,19 +338,10 @@ func (h *shellCallHandler) noteModel(model string) {
 	h.llmModel = model
 }
 
-// saveIdentity returns the current auto-save name and file UUID.
-func (h *shellCallHandler) saveIdentity() (initialPrompt, sessionUUID string) {
-	h.promptL.Lock()
-	defer h.promptL.Unlock()
-	return h.initialPrompt, h.sessionUUID
-}
-
-// resetSaveIdentity forgets the current save file, so the next prompt starts a
-// fresh one (used after branching or resuming).
-func (h *shellCallHandler) resetSaveIdentity() {
+// resetPromptTitle lets a branch derive a new display title.
+func (h *shellCallHandler) resetPromptTitle() {
 	h.promptL.Lock()
 	h.initialPrompt = ""
-	h.sessionUUID = ""
 	h.promptL.Unlock()
 	if h.generateSessionTitle && h.llmSession != nil {
 		h.llmSession.resetTitle()
@@ -427,10 +413,8 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 			slog.Error("failed to update LLM for branch", "error", err)
 			return
 		}
-		// Branching creates a new session; clear the save identity so the next
-		// prompt generates a fresh save file rather than overwriting the
-		// original, and switch to prompt mode for a new prompt.
-		h.resetSaveIdentity()
+		// A branch may derive a new title from its next prompt.
+		h.resetPromptTitle()
 		h.mode = modePrompt
 	}
 }
@@ -997,26 +981,14 @@ func (h *shellCallHandler) initLLM(ctx context.Context, initial *dagger.LLM) (*L
 	}
 	h.llmSession = s
 	h.llmModel = s.Target().model
-	// Auto-save the session after each step (and after ctrl+s exports/resets the
-	// workspace), updating the same file in-place so a conversation maps to a
-	// single session file. Set here at init so it is available even before the
-	// first prompt (e.g. ctrl+s on a freshly loaded session).
-	s.onStep = func(a *sessionAgent) {
-		initialPrompt, sessionUUID := h.saveIdentity()
-		sessionName := initialPrompt
-		if h.generateSessionTitle {
-			if title := s.ensureTitle(a, initialPrompt); title != "" {
-				sessionName = title
-			}
+	// Title generation is presentation only; persistence belongs to the trace.
+	if h.generateSessionTitle {
+		s.onStep = func(a *sessionAgent) {
+			h.promptL.Lock()
+			initialPrompt := h.initialPrompt
+			h.promptL.Unlock()
+			s.ensureTitle(a, initialPrompt)
 		}
-		savedUUID, err := a.AutoSaveSession(ctx, sessionName, sessionUUID)
-		if err != nil {
-			slog.Warn("failed to auto-save session", "error", err)
-			return
-		}
-		h.promptL.Lock()
-		h.sessionUUID = savedUUID
-		h.promptL.Unlock()
 	}
 	return h.llmSession, h.llmErr
 }
