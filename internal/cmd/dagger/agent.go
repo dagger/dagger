@@ -20,32 +20,9 @@ var agentFocus string
 var agentPartial bool
 
 var agentCmd = &cobra.Command{
-	Use:   "agent [options] [address...]",
+	Use:   "agent [FILTERS] [OPTIONS]",
 	Short: "Compose your installed agent modules and drop into an interactive prompt.",
-	Long: `Compose your installed agent modules — their tools and system prompts — onto a base LLM, and drop into the interactive prompt with them all live.
-
-Each installed module that exposes an @agent function contributes its toolset and
-system prompt. With no arguments, every installed agent is composed, in
-alphabetical order. Name one or more agents to compose only those.
-
-With --trace, a past session is restored from the trace it published to Dagger
-Cloud: every agent it ran comes back under the same identity, with the
-conversation and lifecycle state it had, and the old session's whole progress
-view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
-agents are still running FORKS them — the restored instances are new runtimes
-in this session, not a hand-off of the live ones. And messages that were
-enqueued but never consumed are not in the trace at all, so they are not
-restored; anything a turn actually consumed is part of its conversation and is.
-
-Examples:
-  dagger agent                               # Compose all installed agents and start the prompt
-  dagger agent -l                            # List all available agents
-  dagger agent dag://editor dag://dagger-go  # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                            # Resume a saved session (interactive picker)
-  dagger agent -r=<session>                  # Resume a specific saved session
-  dagger agent --trace <id>                  # Restore a past session from its Dagger Cloud trace
-`,
-	Args: cobra.ArbitraryArgs,
+	Args:  cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		// Drop into the same interactive prompt mode as `dagger shell`, so keep
 		// completed conversation items in scrollback rather than GC'ing them

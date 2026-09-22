@@ -25,21 +25,21 @@ func TestArtifactDimensionFlags(t *testing.T) {
 	require.NoError(t, child.ParseFlags([]string{
 		"--type=container", "--type=Directory",
 		"--go-module=sdk/go", "--go-module=cmd/codegen",
-		"--dimension-key=go-module=lib,a=b",
-		"--go-test=TestConnect", "--dimension-key=type=app",
+		"--go-module=lib,a=b",
+		"--go-test=TestConnect",
 		"--env=dev",
 	}))
 
 	recorder := &artifactQueryRecorder{}
 	artifacts := (&dagger.Artifacts{}).WithGraphQLQuery(querybuilder.Query().Client(recorder).Select("artifacts"))
-	sel, err := parseArtifactAddresses(nil)
+	sel, err := parseArtifactAddresses([]string{"dag://?type=app"})
 	require.NoError(t, err)
 	selected, err := selectArtifactFilters(child, sel[0], artifacts)
 	require.NoError(t, err)
 	_, err = selected.Types(t.Context())
 	require.ErrorIs(t, err, errArtifactQueryCaptured)
 	require.Contains(t, recorder.query, `filterUri(uri:"dag+container+directory://")`)
-	require.Contains(t, recorder.query, `filterUri(uri:"dag://?go-module=lib,a%3Db&type=app&go-module=sdk/go&go-module=cmd/codegen&go-test=TestConnect")`)
+	require.Contains(t, recorder.query, `filterUri(uri:"dag://?type=app&go-module=sdk/go&go-module=cmd/codegen&go-module=lib,a%3Db&go-test=TestConnect")`)
 	require.NotContains(t, recorder.query, "env=")
 }
 

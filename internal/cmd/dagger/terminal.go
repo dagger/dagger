@@ -26,19 +26,12 @@ func init() {
 }
 
 var shellCmd = &cobra.Command{
-	Use:     "shell [options] [address]",
+	Use:     "shell [FILTERS] [OPTIONS]",
 	Aliases: []string{"sh"},
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "sh",
 	},
 	Short: "Open a terminal for a container or directory in your project",
-	Long: `Open a terminal for a container or directory in your project.
-
-Examples:
-  dagger shell -l            # List all available shells
-  dagger shell dag://go/dev  # Open the dag://go/dev shell
-  dagger sh dag://go/dev     # Use the short command alias
-`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("command") {
 			cmd.SilenceUsage = true

@@ -15,8 +15,6 @@ import (
 
 const artifactDimensionFlag = "dagger.io/artifact-dimension"
 
-const artifactDimensionKeyUsage = "Select items with `DIMENSION=KEY` (repeat to select more)"
-
 const artifactListType = "dagger.io/list-type"
 const artifactListDimension = "dagger.io/list-dimension"
 
@@ -43,7 +41,6 @@ func newListCommand() *cobra.Command {
 	cmd.AddGroup(&cobra.Group{ID: "types", Title: "Types:"}, &cobra.Group{ID: "dimensions", Title: "Dimensions:"})
 	cmd.Flags().BoolP("all", "a", false, "List all artifacts, optionally filtered by address")
 	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Select artifacts of this `TYPE` (repeat to select more)")
-	cmd.PersistentFlags().StringArray("dimension-key", nil, artifactDimensionKeyUsage)
 	registerArtifactListFlags(cmd)
 	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	return cmd
@@ -52,7 +49,7 @@ func newListCommand() *cobra.Command {
 // Both names share one value, including when either flag is explicitly false.
 func registerArtifactListFlags(cmd *cobra.Command) {
 	absolute := new(bool)
-	cmd.Flags().BoolVar(absolute, "absolute", false, "List absolute artifact addresses, including the workspace and revision (alias: --abs)")
+	cmd.Flags().BoolVar(absolute, "absolute", false, "Show absolute links (alias: --abs)")
 	cmd.Flags().BoolVar(absolute, "abs", false, "Alias for --absolute")
 	cmd.Flags().Lookup("abs").Hidden = true
 }
@@ -60,7 +57,7 @@ func registerArtifactListFlags(cmd *cobra.Command) {
 func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {
 	for _, dimension := range dimensions {
 		if cmd.Flag(dimension) != nil {
-			continue // --dimension-key still accepts this dimension.
+			continue // Keep the command flag; use another dimension name or a link query.
 		}
 		cmd.PersistentFlags().StringArray(dimension, nil, "Keep this "+dimension+" key (repeat for alternatives)")
 		cmd.PersistentFlags().Lookup(dimension).Annotations = map[string][]string{
@@ -141,14 +138,6 @@ func selectArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifac
 	filter.Path = ""
 	filter.Absolute = false
 	filter.Query = slices.Clone(addr.Query)
-	keys, _ := cmd.Flags().GetStringArray("dimension-key")
-	for _, key := range keys {
-		dimension, value, ok := strings.Cut(key, "=")
-		if !ok || dimension == "" {
-			return nil, fmt.Errorf("invalid dimension key %q: expected DIMENSION=KEY", key)
-		}
-		filter.Query = append(filter.Query, dagaddress.Pair{Dimension: dimension, Key: value, HasKey: true})
-	}
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		if dimension := flag.Annotations[artifactDimensionFlag]; len(dimension) > 0 {
 			values, _ := cmd.Flags().GetStringArray(flag.Name)

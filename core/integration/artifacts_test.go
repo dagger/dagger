@@ -711,7 +711,7 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		{[]string{"list", "-a", "base", "consumer/base"}, "dag://base\ndag://consumer/base\n"},
 		{[]string{"list", "-a", "dag+container://consumer"}, "dag://consumer/base\n"},
 		{[]string{"list", "-a", "dag://consumer?missing=anything"}, ""},
-		{[]string{"list", "-a", "--dimension-key", "go-module=sdk/go"}, ""},
+		{[]string{"list", "-a", "dag://?go-module=sdk/go"}, ""},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected"}, tc.args...)

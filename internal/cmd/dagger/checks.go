@@ -28,26 +28,17 @@ func init() {
 	registerArtifactListFlags(checksCmd)
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
-	checksCmd.Flags().BoolVar(&checksGenerated, "generated", true, "Check that generated files are up to date")
-	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching `pattern` (repeat for multiple patterns)")
+	checksCmd.Flags().BoolVar(&checksGenerated, "generated", true, "Include generated-file checks (default: workspace setting)")
+	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Exclude checks selected by this `link`")
 	checksCmd.Flags().BoolVar(&checksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	checksCmd.Flags().Lookup("scale-out").Hidden = true
 }
 
 var checksCmd = &cobra.Command{
-	Use:   "check [options] [address...]",
+	Use:   "check [--failfast] [FILTERS] [OPTIONS]",
 	Short: "Verify your project — tests, linters, type checks, security scans, etc.",
-	Long: `Verify your project — tests, linters, type checks, security scans, etc.
-
-Examples:
-  dagger check                                      # Run all checks
-  dagger check -l                                   # List all available checks
-  dagger check dag://go/lint                        # Run the dag://go/lint check and any subchecks
-  dagger check --skip '**e2e'                       # Run all checks except those matching '**e2e'
-  dagger -W github.com/acme/ws check dag://go/lint  # Run check(s) against explicit workspace
-`,
-	Args: cobra.ArbitraryArgs,
-	RunE: runChecksCommand,
+	Args:  cobra.ArbitraryArgs,
+	RunE:  runChecksCommand,
 }
 
 func runChecksCommand(cmd *cobra.Command, args []string) error {

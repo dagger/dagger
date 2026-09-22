@@ -35,18 +35,9 @@ func init() {
 }
 
 var generateCmd = &cobra.Command{
-	Use:   "generate [options] [address...]",
+	Use:   "generate [FILTERS] [OPTIONS]",
 	Short: "Generate derived files for your project — code, SDKs, types, docs, etc.",
-	Long: `Generate derived files for your project — code, SDKs, types, docs, etc.
-
-Examples:
-  dagger generate                                     # Generate all assets
-  dagger generate -l                                  # List all available generators
-  dagger generate --no-apply                          # Show generated changes without applying them
-  dagger generate dag://go/bin                        # Generate by selecting the generator function
-  dagger -W github.com/acme/ws generate dag://go/bin  # Generate against explicit workspace
-`,
-	Args: cobra.ArbitraryArgs,
+	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		disposition, err := generateChangesetDisposition(generateListMode, autoApply, generateNoApply, idtui.RunningInAgent())
 		if err != nil {

@@ -26,16 +26,9 @@ func init() {
 }
 
 var upCmd = &cobra.Command{
-	Use:   "up [options] [address...]",
+	Use:   "up [FILTERS] [OPTIONS]",
 	Short: "Run your project's services for local development — databases, APIs, dev servers, etc.",
-	Long: `Run your project's services for local development — databases, APIs, dev servers, etc.
-
-Examples:
-  dagger up            # Start all services
-  dagger up -l         # List all available services
-  dagger up dag://web  # Start only the 'web' service
-`,
-	Args: cobra.ArbitraryArgs,
+	Args:  cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		showFinalProgressKey: "true",
 	},
