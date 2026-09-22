@@ -16031,12 +16031,10 @@ class TerminalGroup(Type):
             Content to write to the command's standard input. Example: "go
             test ./..."
         copy:
-            Directories to copy into the container, in order, before the
-            command runs.
+            Directories to copy into the container, in order.
         init:
-            Commands to write, in order, to the standard input of the
-            terminal's command before the command runs.
-            Only their changes to the filesystem are kept.
+            Commands to run after copy, in order, with the same method as
+            exec. Only their changes to the filesystem are kept.
         """
         _args = [
             Arg("stdin", stdin),
@@ -16091,12 +16089,10 @@ class TerminalGroup(Type):
         Parameters
         ----------
         copy:
-            Directories to copy into the container, in order, before the
-            command runs.
+            Directories to copy into the container, in order.
         init:
-            Commands to write, in order, to the standard input of the
-            terminal's command before the command runs.
-            Only their changes to the filesystem are kept.
+            Commands to run after copy, in order, with the same method as
+            exec. Only their changes to the filesystem are kept.
         """
         _args = [
             Arg("copy", [] if copy is None else copy, []),

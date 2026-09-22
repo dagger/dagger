@@ -4735,22 +4735,7 @@ func (s *containerSchema) terminal(
 		return res, err
 	}
 
-	if len(args.Cmd) == 0 {
-		args.Cmd = ctr.Self().DefaultTerminalCmd.Args
-	}
-
-	if !args.ExperimentalPrivilegedNesting.Valid {
-		args.ExperimentalPrivilegedNesting = ctr.Self().DefaultTerminalCmd.ExperimentalPrivilegedNesting
-	}
-
-	if !args.InsecureRootCapabilities.Valid {
-		args.InsecureRootCapabilities = ctr.Self().DefaultTerminalCmd.InsecureRootCapabilities
-	}
-
-	// if still no args, default to sh
-	if len(args.Cmd) == 0 {
-		args.Cmd = []string{"sh"}
-	}
+	args.TerminalArgs = ctr.Self().WithTerminalDefaults(args.TerminalArgs)
 
 	ctrDig, err := ctr.ContentPreferredDigest(ctx)
 	if err != nil {

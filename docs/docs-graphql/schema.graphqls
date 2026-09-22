@@ -6096,15 +6096,11 @@ type TerminalGroup implements Node {
 
   """Open the selected terminal target"""
   run(
-    """
-    Directories to copy into the container, in order, before the command runs.
-    """
+    """Directories to copy into the container, in order."""
     copy: [TerminalCopy!] = []
 
     """
-    Commands to write, in order, to the standard input of the terminal's command before the command runs.
-
-    Only their changes to the filesystem are kept.
+    Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
     """
     init: [String!] = []
   ): TerminalGroup!
@@ -6119,15 +6115,11 @@ type TerminalGroup implements Node {
     """
     stdin: String!
 
-    """
-    Directories to copy into the container, in order, before the command runs.
-    """
+    """Directories to copy into the container, in order."""
     copy: [TerminalCopy!] = []
 
     """
-    Commands to write, in order, to the standard input of the terminal's command before the command runs.
-
-    Only their changes to the filesystem are kept.
+    Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
     """
     init: [String!] = []
   ): Container!

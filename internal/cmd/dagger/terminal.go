@@ -27,13 +27,13 @@ var loadTerminalsQuery string
 
 func init() {
 	shellCmd.Flags().BoolVarP(&terminalListMode, "list", "l", false, "List available shells")
-	shellCmd.Flags().StringVarP(&terminalCommand, "command", "c", "", "Run a command in the shell non-interactively, and exit with its exit code")
-	shellCmd.Flags().StringArrayVar(&terminalCopies, "copy", nil, "Copy a directory into the container, as [PATH=]SOURCE. SOURCE is a local path, Git URL, or other address. PATH defaults to the working directory (repeatable)")
-	shellCmd.Flags().StringArrayVar(&terminalInits, "init", nil, "Run a command in the shell before it opens, after --copy. Only its changes to files are kept (repeatable)")
+	shellCmd.Flags().StringVarP(&terminalCommand, "command", "c", "", "Run a command in the shell, and exit with its exit code")
+	shellCmd.Flags().StringArrayVar(&terminalCopies, "copy", nil, "Copy a directory into the container: [PATH=]SOURCE, where SOURCE is a local path, Git URL, or other address (repeatable)")
+	shellCmd.Flags().StringArrayVar(&terminalInits, "init", nil, "Run a command in the shell before it opens. Only its changes to files are kept (repeatable)")
 }
 
 var shellCmd = &cobra.Command{
-	Use:     "shell [options] [NAME]",
+	Use:     "shell [options] [pattern]",
 	Aliases: []string{"sh"},
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "sh",
@@ -41,17 +41,18 @@ var shellCmd = &cobra.Command{
 	Short: "Open a terminal for a container or directory in your project",
 	Long: `Open a terminal for a container or directory in your project.
 
-With -c, write the command to the shell's standard input instead of opening a
-terminal. Print its output, and exit with its exit code. If standard input is
-not a terminal, read the command from it, as if it was given with -c.
+Without a pattern, open the only container, or else the only container in the
+entrypoint module. If standard input is not a terminal, read the command to run
+from it, as with -c.
 
 Examples:
+  dagger shell                                # Open the default shell
   dagger shell -l                             # List all available shells
   dagger shell go:dev                         # Open the go:dev shell
   dagger sh go:dev                            # Use the short command alias
   dagger shell go:dev -c 'go test ./...'      # Run a command in the go:dev shell
   echo 'go test ./...' | dagger shell go:dev  # Read the command from stdin
-  dagger shell go:dev --copy /src=. --init 'go mod download'
+  dagger shell --copy /src=. --init 'go mod download'
                                               # Set up the shell before it opens
 `,
 	Args: func(cmd *cobra.Command, args []string) error {
@@ -62,27 +63,18 @@ Examples:
 				}
 			}
 		}
-		if cmd.Flags().Changed("command") && len(args) == 0 {
-			return fmt.Errorf("--command requires a shell NAME")
-		}
 		return cobra.MaximumNArgs(1)(cmd, args)
 	},
 	RunE: runTerminalCommand,
 }
 
 func runTerminalCommand(cmd *cobra.Command, args []string) error {
-	if !terminalListMode && len(args) == 0 {
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), `Choose a shell to open.
-
-  dagger shell -l       List available shells
-  dagger shell <NAME>   Open a shell from that list`)
-		return err
-	}
-
 	command, hasCommand := terminalCommand, cmd.Flags().Changed("command")
 	if !hasCommand && !terminalListMode && !stdinIsTTY {
-		// Tell the user why we wait, in case stdin never closes.
-		fmt.Fprintln(cmd.ErrOrStderr(), "reading commands from stdin")
+		if stderrIsTTY {
+			// Tell the user why we wait, in case stdin never closes.
+			fmt.Fprintln(cmd.ErrOrStderr(), "reading commands from stdin")
+		}
 		in, err := io.ReadAll(stdin)
 		if err != nil {
 			return fmt.Errorf("read commands from stdin: %w", err)

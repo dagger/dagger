@@ -15869,21 +15869,19 @@ pub struct TerminalGroup {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TerminalGroupRunOpts<'a> {
-    /// Directories to copy into the container, in order, before the command runs.
+    /// Directories to copy into the container, in order.
     #[builder(setter(into, strip_option), default)]
     pub copy: Option<Vec<TerminalCopy>>,
-    /// Commands to write, in order, to the standard input of the terminal's command before the command runs.
-    /// Only their changes to the filesystem are kept.
+    /// Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
     #[builder(setter(into, strip_option), default)]
     pub init: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TerminalGroupExecOpts<'a> {
-    /// Directories to copy into the container, in order, before the command runs.
+    /// Directories to copy into the container, in order.
     #[builder(setter(into, strip_option), default)]
     pub copy: Option<Vec<TerminalCopy>>,
-    /// Commands to write, in order, to the standard input of the terminal's command before the command runs.
-    /// Only their changes to the filesystem are kept.
+    /// Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
     #[builder(setter(into, strip_option), default)]
     pub init: Option<Vec<&'a str>>,
 }

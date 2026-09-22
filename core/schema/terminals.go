@@ -17,10 +17,8 @@ func (s terminalsSchema) Install(srv *dagql.Server) {
 	dagql.MustInputSpec(core.TerminalCopy{}).Install(srv, AfterVersion("v1.0.0-0"))
 
 	setupArgs := []dagql.Argument{
-		dagql.Arg("copy").Doc("Directories to copy into the container, in order, before the command runs."),
-		dagql.Arg("init").Doc(
-			"Commands to write, in order, to the standard input of the terminal's command before the command runs.",
-			"Only their changes to the filesystem are kept."),
+		dagql.Arg("copy").Doc("Directories to copy into the container, in order."),
+		dagql.Arg("init").Doc("Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept."),
 	}
 
 	dagql.Fields[*core.TerminalGroup]{
@@ -54,30 +52,17 @@ func (s terminalsSchema) list(_ context.Context, parent *core.TerminalGroup, _ s
 	return parent.List(), nil
 }
 
-type TerminalSetupArgs struct {
-	Copy []dagql.InputObject[core.TerminalCopy] `default:"[]"`
-	Init []string                               `default:"[]"`
-}
-
-func (args TerminalSetupArgs) setup() core.TerminalSetup {
-	setup := core.TerminalSetup{Inits: args.Init}
-	for _, cp := range args.Copy {
-		setup.Copies = append(setup.Copies, cp.Value)
-	}
-	return setup
-}
-
-func (s terminalsSchema) run(ctx context.Context, parent dagql.ObjectResult[*core.TerminalGroup], args TerminalSetupArgs) (dagql.ObjectResult[*core.TerminalGroup], error) {
-	return parent, parent.Self().Run(ctx, args.setup())
+func (s terminalsSchema) run(ctx context.Context, parent dagql.ObjectResult[*core.TerminalGroup], args core.TerminalSetupArgs) (dagql.ObjectResult[*core.TerminalGroup], error) {
+	return parent, parent.Self().Run(ctx, args)
 }
 
 type terminalExecArgs struct {
 	Stdin string
-	TerminalSetupArgs
+	core.TerminalSetupArgs
 }
 
 func (s terminalsSchema) exec(ctx context.Context, parent dagql.ObjectResult[*core.TerminalGroup], args terminalExecArgs) (dagql.ObjectResult[*core.Container], error) {
-	return parent.Self().Exec(ctx, args.Stdin, args.setup())
+	return parent.Self().Exec(ctx, args.Stdin, args.TerminalSetupArgs)
 }
 
 func (s terminalsSchema) name(_ context.Context, parent *core.TerminalTarget, _ struct{}) (string, error) {

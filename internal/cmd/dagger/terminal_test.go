@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"testing"
@@ -9,23 +8,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
-
-func TestShellCommandWithoutTargetShowsGuidance(t *testing.T) {
-	oldListMode := terminalListMode
-	t.Cleanup(func() { terminalListMode = oldListMode })
-	terminalListMode = false
-
-	var out bytes.Buffer
-	cmd := &cobra.Command{Use: shellCmd.Use}
-	cmd.SetOut(&out)
-	err := runTerminalCommand(cmd, nil)
-	require.NoError(t, err)
-	require.Equal(t, `Choose a shell to open.
-
-  dagger shell -l       List available shells
-  dagger shell <NAME>   Open a shell from that list
-`, out.String())
-}
 
 func TestShellCommandFlagValidation(t *testing.T) {
 	parent := shellCmd.Parent()
@@ -65,16 +47,13 @@ func TestShellCommandFlagValidation(t *testing.T) {
 		args []string
 		err  string
 	}{
-		{[]string{"-c", "ls"}, "--command requires a shell NAME"},
 		{[]string{"-l", "-c", "ls"}, "--list and --command cannot be used together"},
-		{[]string{"go:dev", "-l", "-c", "ls"}, "--list and --command cannot be used together"},
 		{[]string{"-l", "--copy", "src"}, "--list and --copy cannot be used together"},
 		{[]string{"go:dev", "ls"}, "accepts at most 1 arg(s), received 2"},
 	} {
 		t.Run(fmt.Sprint(tc.args), func(t *testing.T) {
 			resetFlags()
 			terminalListMode = false
-			terminalCopies = nil
 			setupCalled = false
 			root.SetArgs(append([]string{"shell"}, tc.args...))
 

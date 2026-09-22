@@ -16573,11 +16573,9 @@ func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGro
 
 // TerminalGroupExecOpts contains options for TerminalGroup.Exec
 type TerminalGroupExecOpts struct {
-	// Directories to copy into the container, in order, before the command runs.
+	// Directories to copy into the container, in order.
 	Copy []TerminalCopy
-	// Commands to write, in order, to the standard input of the terminal's command before the command runs.
-	//
-	// Only their changes to the filesystem are kept.
+	// Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
 	Init []string
 }
 
@@ -16676,11 +16674,9 @@ func (r *TerminalGroup) List(ctx context.Context) ([]TerminalTarget, error) {
 
 // TerminalGroupRunOpts contains options for TerminalGroup.Run
 type TerminalGroupRunOpts struct {
-	// Directories to copy into the container, in order, before the command runs.
+	// Directories to copy into the container, in order.
 	Copy []TerminalCopy
-	// Commands to write, in order, to the standard input of the terminal's command before the command runs.
-	//
-	// Only their changes to the filesystem are kept.
+	// Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
 	Init []string
 }
 

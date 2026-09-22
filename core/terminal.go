@@ -128,6 +128,25 @@ type TerminalArgs struct {
 	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
 
+// WithTerminalDefaults fills the unset args from the container's default
+// terminal command, with sh as the last fallback.
+func (container *Container) WithTerminalDefaults(args TerminalArgs) TerminalArgs {
+	defaults := container.DefaultTerminalCmd
+	if len(args.Cmd) == 0 {
+		args.Cmd = defaults.Args
+	}
+	if len(args.Cmd) == 0 {
+		args.Cmd = []string{"sh"}
+	}
+	if !args.ExperimentalPrivilegedNesting.Valid {
+		args.ExperimentalPrivilegedNesting = defaults.ExperimentalPrivilegedNesting
+	}
+	if !args.InsecureRootCapabilities.Valid {
+		args.InsecureRootCapabilities = defaults.InsecureRootCapabilities
+	}
+	return args
+}
+
 func (container *Container) Terminal(
 	ctx context.Context,
 	selectedID *call.ID,
@@ -294,63 +313,58 @@ func (dir *Directory) Terminal(
 	args *TerminalArgs,
 	parent dagql.ObjectResult[*Directory],
 ) error {
-	var err error
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get dagql server: %w", err)
-	}
-
-	if ctr.Self() == nil {
-		defaultCtr := NewContainer(dir.Platform)
-		ctr, err = defaultCtr.FromRefString(ctx, defaultTerminalImage)
-		if err != nil {
-			return fmt.Errorf("failed to create terminal container: %w", err)
-		}
-	}
-
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get cache for terminal container: %w", err)
-	}
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	if clientMetadata.SessionID == "" {
-		return fmt.Errorf("directory terminal attach container: empty session ID")
-	}
-	attachedAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, ctr)
-	if err != nil {
-		return fmt.Errorf("failed to attach terminal base container: %w", err)
-	}
-	attachedCtr, ok := attachedAny.(dagql.ObjectResult[*Container])
-	if !ok {
-		return fmt.Errorf("failed to attach terminal base container: expected %T, got %T", ctr, attachedAny)
-	}
-	ctr = attachedCtr
-	if err := cache.Evaluate(ctx, ctr); err != nil {
-		return fmt.Errorf("failed to evaluate terminal base container: %w", err)
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	termCtr, err := cloneContainerForTerminal(ctx, query, ctr.Self())
-	if err != nil {
-		return fmt.Errorf("failed to clone terminal base container: %w", err)
-	}
-	termCtr.Config.WorkingDir = "/src"
-	termCtr, err = termCtr.WithMountedDirectory(ctx, ctr, "/src", parent, "", true)
+	termCtr, err := dir.terminalContainer(ctx, ctr, parent)
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
-	termCtrRes, err := newSyntheticTerminalContainerResult(srv, termCtr, "directory_terminal_container")
+	return termCtr.Self().Terminal(ctx, selectedID, selectedDigest, termCtr, args)
+}
+
+// terminalContainer returns ctr, or the default terminal image, with the
+// directory mounted read-only at /src as its working directory.
+func (dir *Directory) terminalContainer(
+	ctx context.Context,
+	ctr dagql.ObjectResult[*Container],
+	parent dagql.ObjectResult[*Directory],
+) (res dagql.ObjectResult[*Container], _ error) {
+	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to attach terminal container: %w", err)
+		return res, err
 	}
-	return termCtr.Terminal(ctx, selectedID, selectedDigest, termCtrRes, args)
+	// Use the canonical server, so modules cannot shadow core fields.
+	srv = srv.Canonical()
+	dirID, err := parent.ID()
+	if err != nil {
+		return res, err
+	}
+	sels := []dagql.Selector{
+		{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/src")},
+				{Name: "source", Value: dagql.NewID[*Directory](dirID)},
+				{Name: "readOnly", Value: dagql.Boolean(true)},
+			},
+		},
+		{
+			Field: "withWorkdir",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/src")}},
+		},
+	}
+	if ctr.Self() != nil {
+		return res, srv.Select(ctx, ctr, &res, sels...)
+	}
+	sels = append([]dagql.Selector{
+		{
+			Field: "container",
+			Args:  []dagql.NamedInput{{Name: "platform", Value: dagql.Opt(dir.Platform)}},
+		},
+		{
+			Field: "from",
+			Args:  []dagql.NamedInput{{Name: "address", Value: dagql.String(defaultTerminalImage)}},
+		},
+	}, sels...)
+	return res, srv.Select(ctx, srv.Root(), &res, sels...)
 }
 
 func (*Service) Terminal(

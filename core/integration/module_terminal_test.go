@@ -11,6 +11,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -94,51 +95,46 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		require.NoError(t, cmd.Wait())
 	})
 
-	t.Run("top-level command with -c", func(ctx context.Context, t *testctx.T) {
-		modDir := terminalFixtureMod(ctx, t, "terminal-default")
-		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
-
-		run := func() string {
-			cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr", "-c",
-				`echo "$COOLENV in $PWD"; cat /proc/sys/kernel/random/uuid; exit 3`)
-			var stderr bytes.Buffer
-			cmd.Stderr = &stderr
-			out, err := cmd.Output()
-			var exitErr *exec.ExitError
-			require.ErrorAs(t, err, &exitErr, stderr.String())
-			require.Equal(t, 3, exitErr.ExitCode(), stderr.String())
-			require.Contains(t, string(out), "woo in /coolworkdir\n", stderr.String())
-			return string(out)
-		}
-		// Like a terminal, each call runs the command again.
-		require.NotEqual(t, run(), run())
-
-		// Without -c, read the command from stdin if it is not a terminal.
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr")
-		cmd.Stdin = strings.NewReader(`echo "$COOLENV from stdin"`)
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		out, err := cmd.Output()
-		require.NoError(t, err, stderr.String())
-		require.Contains(t, string(out), "woo from stdin\n", stderr.String())
-	})
-
-	t.Run("top-level command with --copy and --init", func(ctx context.Context, t *testctx.T) {
+	t.Run("top-level command without terminal", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
 		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "data"), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(modDir, "data", "hello.txt"), []byte("hello\n"), 0o644))
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr",
+		shell := func(stdin string, args ...string) (string, int) {
+			cmd := hostDaggerCommandRaw(ctx, t, modDir, append([]string{"shell"}, args...)...)
+			cmd.Stdin = strings.NewReader(stdin)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			out, err := cmd.Output()
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				return string(out), exitErr.ExitCode()
+			}
+			require.NoError(t, err, stderr.String())
+			return string(out), 0
+		}
+
+		// Without a pattern, select the only container. Like a terminal, each
+		// call runs the command again.
+		script := `echo "$COOLENV in $PWD"; cat /proc/sys/kernel/random/uuid; exit 3`
+		out1, code := shell("", "-c", script)
+		require.Equal(t, 3, code)
+		require.Contains(t, out1, "woo in /coolworkdir\n")
+		out2, _ := shell("", "-c", script)
+		require.NotEqual(t, out1, out2)
+
+		out, code := shell(`echo "$COOLENV from stdin"`, "ctr")
+		require.Equal(t, 0, code)
+		require.Equal(t, "woo from stdin\n", out)
+
+		out, code = shell("", "ctr",
 			"--copy", "data",
 			"--copy", "/opt/data=data",
 			"--init", `echo "$COOLENV" > /init.txt`,
 			"-c", "cat hello.txt /opt/data/hello.txt /init.txt")
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		out, err := cmd.Output()
-		require.NoError(t, err, stderr.String())
-		require.Equal(t, "hello\nhello\nwoo\n", string(out), stderr.String())
+		require.Equal(t, 0, code)
+		require.Equal(t, "hello\nhello\nwoo\n", out)
 	})
 
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {

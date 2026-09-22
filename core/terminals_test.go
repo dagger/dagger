@@ -10,7 +10,7 @@ import (
 
 func TestTerminalGroupRunRequiresOneTarget(t *testing.T) {
 	t.Run("no target", func(t *testing.T) {
-		err := (&TerminalGroup{}).Run(context.Background(), TerminalSetup{})
+		err := (&TerminalGroup{}).Run(context.Background(), TerminalSetupArgs{})
 		require.EqualError(t, err, "no terminal targets selected")
 	})
 
@@ -21,12 +21,46 @@ func TestTerminalGroupRunRequiresOneTarget(t *testing.T) {
 			{Node: &ModTreeNode{Parent: root, Name: "second"}},
 		}}
 
-		err := group.Run(context.Background(), TerminalSetup{})
+		err := group.Run(context.Background(), TerminalSetupArgs{})
 		require.EqualError(t, err, "terminal selection matched 2 targets: first, second")
 	})
 }
 
-func TestSupportsTerminal(t *testing.T) {
+func TestTerminalGroupSelectsDefault(t *testing.T) {
+	dag := newTypeDefTestDag(t)
+	objectType := func(name string) dagql.ObjectResult[*TypeDef] {
+		object := newTypeDefDetachedResult(t, dag, name+"Object", &ObjectTypeDef{Name: name})
+		return newTypeDefDetachedResult(t, dag, name+"Type", &TypeDef{Kind: TypeDefKindObject, AsObject: dagql.NonNull(object)})
+	}
+	ctr, dir := objectType("Container"), objectType("Directory")
+	root := &ModTreeNode{}
+	entrypoint := &ModTreeNode{Parent: root, Name: "entry", WorkspaceEntrypoint: true}
+	other := &ModTreeNode{Parent: root, Name: "other"}
+	target := func(parent *ModTreeNode, name string, typeDef dagql.ObjectResult[*TypeDef]) *TerminalTarget {
+		return &TerminalTarget{Node: &ModTreeNode{Parent: parent, Name: name, Type: typeDef}}
+	}
+
+	t.Run("only container", func(t *testing.T) {
+		want := target(other, "ctr", ctr)
+		got, err := (&TerminalGroup{Terminals: []*TerminalTarget{target(other, "src", dir), want}}).selected()
+		require.NoError(t, err)
+		require.Same(t, want, got)
+	})
+
+	t.Run("only container in entrypoint", func(t *testing.T) {
+		want := target(entrypoint, "ctr", ctr)
+		got, err := (&TerminalGroup{Terminals: []*TerminalTarget{target(other, "ctr", ctr), want}}).selected()
+		require.NoError(t, err)
+		require.Same(t, want, got)
+	})
+
+	t.Run("no default", func(t *testing.T) {
+		_, err := (&TerminalGroup{Terminals: []*TerminalTarget{target(entrypoint, "a", ctr), target(entrypoint, "b", ctr)}}).selected()
+		require.EqualError(t, err, "terminal selection matched 2 targets: a, b")
+	})
+}
+
+func TestTerminalType(t *testing.T) {
 	dag := newTypeDefTestDag(t)
 	objectType := func(name string, optional bool) dagql.ObjectResult[*TypeDef] {
 		object := newTypeDefDetachedResult(t, dag, name+"Object", &ObjectTypeDef{Name: name})
@@ -39,21 +73,21 @@ func TestSupportsTerminal(t *testing.T) {
 
 	tests := map[string]struct {
 		typeDef dagql.ObjectResult[*TypeDef]
-		want    bool
+		want    string
 	}{
-		"container":          {typeDef: objectType("Container", false), want: true},
-		"directory":          {typeDef: objectType("Directory", false), want: true},
-		"optional container": {typeDef: objectType("Container", true), want: false},
-		"other object":       {typeDef: objectType("File", false), want: false},
+		"container":          {typeDef: objectType("Container", false), want: "Container"},
+		"directory":          {typeDef: objectType("Directory", false), want: "Directory"},
+		"optional container": {typeDef: objectType("Container", true), want: ""},
+		"other object":       {typeDef: objectType("File", false), want: ""},
 		"non-object": {
 			typeDef: newTypeDefDetachedResult(t, dag, "stringType", &TypeDef{Kind: TypeDefKindString}),
-			want:    false,
+			want:    "",
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.want, supportsTerminal(&ModTreeNode{Type: test.typeDef}))
+			require.Equal(t, test.want, terminalType(&ModTreeNode{Type: test.typeDef}))
 		})
 	}
 }

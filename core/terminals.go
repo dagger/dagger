@@ -67,18 +67,14 @@ func (TerminalCopy) TypeName() string {
 	return "TerminalCopy"
 }
 
-// TerminalSetup changes a terminal container before its command runs.
-type TerminalSetup struct {
-	// Directories to copy into the container, in order.
-	Copies []TerminalCopy
-	// Commands to write, in order, to the standard input of the terminal's
-	// command. Only their changes to the filesystem are kept.
-	Inits []string
+// TerminalSetupArgs set up a terminal container before its command runs.
+type TerminalSetupArgs struct {
+	Copy []dagql.InputObject[TerminalCopy] `default:"[]"`
+	Init []string                          `default:"[]"`
 }
 
-// Run opens the selected terminal target. A terminal group must contain one
-// target because interactive terminals cannot run in parallel.
-func (r *TerminalGroup) Run(ctx context.Context, setup TerminalSetup) error {
+// Run opens the selected terminal target.
+func (r *TerminalGroup) Run(ctx context.Context, setup TerminalSetupArgs) error {
 	target, err := r.selected()
 	if err != nil {
 		return err
@@ -86,10 +82,9 @@ func (r *TerminalGroup) Run(ctx context.Context, setup TerminalSetup) error {
 	return target.Node.RunTerminal(r.workspaceContext(ctx), setup)
 }
 
-// Exec runs the selected terminal target's command non-interactively, with
-// stdin as its standard input, and returns the container after execution. Any
-// exit code is allowed, so the caller can inspect it.
-func (r *TerminalGroup) Exec(ctx context.Context, stdin string, setup TerminalSetup) (dagql.ObjectResult[*Container], error) {
+// Exec runs the selected terminal target's command with stdin as its
+// standard input, and returns the container after execution.
+func (r *TerminalGroup) Exec(ctx context.Context, stdin string, setup TerminalSetupArgs) (dagql.ObjectResult[*Container], error) {
 	target, err := r.selected()
 	if err != nil {
 		return dagql.ObjectResult[*Container]{}, err
@@ -97,19 +92,37 @@ func (r *TerminalGroup) Exec(ctx context.Context, stdin string, setup TerminalSe
 	return target.Node.ExecTerminal(r.workspaceContext(ctx), stdin, setup)
 }
 
+// selected returns the one target to open, because terminals cannot run in
+// parallel. If more than one target is selected, it is the only container, or
+// else the only container in the workspace entrypoint module.
 func (r *TerminalGroup) selected() (*TerminalTarget, error) {
-	switch len(r.Terminals) {
-	case 0:
+	if len(r.Terminals) == 0 {
 		return nil, fmt.Errorf("no terminal targets selected")
-	case 1:
-		return r.Terminals[0], nil
-	default:
-		names := make([]string, 0, len(r.Terminals))
-		for _, terminal := range r.Terminals {
-			names = append(names, terminal.Name())
-		}
-		return nil, fmt.Errorf("terminal selection matched %d targets: %s", len(names), strings.Join(names, ", "))
 	}
+	if len(r.Terminals) == 1 {
+		return r.Terminals[0], nil
+	}
+	var containers, entrypointContainers []*TerminalTarget
+	for _, terminal := range r.Terminals {
+		if terminalType(terminal.Node) != "Container" {
+			continue
+		}
+		containers = append(containers, terminal)
+		if terminal.Node.inWorkspaceEntrypoint() {
+			entrypointContainers = append(entrypointContainers, terminal)
+		}
+	}
+	if len(containers) == 1 {
+		return containers[0], nil
+	}
+	if len(entrypointContainers) == 1 {
+		return entrypointContainers[0], nil
+	}
+	names := make([]string, 0, len(r.Terminals))
+	for _, terminal := range r.Terminals {
+		names = append(names, terminal.Name())
+	}
+	return nil, fmt.Errorf("terminal selection matched %d targets: %s", len(names), strings.Join(names, ", "))
 }
 
 func (r *TerminalGroup) workspaceContext(ctx context.Context) context.Context {
@@ -142,24 +155,25 @@ func (t *TerminalTarget) OriginalModule() *Module {
 	return t.Node.OriginalModule.Self()
 }
 
-func supportsTerminal(node *ModTreeNode) bool {
+// terminalType returns the type name of a node that supports a terminal:
+// "Container" or "Directory". Otherwise, it returns "".
+func terminalType(node *ModTreeNode) string {
 	if node == nil || node.Type.Self() == nil {
-		return false
+		return ""
 	}
 	typeDef := node.Type.Self()
 	if typeDef.Optional || typeDef.Kind != TypeDefKindObject || !typeDef.AsObject.Valid || typeDef.AsObject.Value.Self() == nil {
-		return false
+		return ""
 	}
-
-	switch typeDef.AsObject.Value.Self().Name {
+	switch name := typeDef.AsObject.Value.Self().Name; name {
 	case "Container", "Directory":
-		return true
+		return name
 	default:
-		return false
+		return ""
 	}
 }
 
-func (node *ModTreeNode) RunTerminal(ctx context.Context, setup TerminalSetup) error {
+func (node *ModTreeNode) RunTerminal(ctx context.Context, setup TerminalSetupArgs) error {
 	ctr, err := node.terminalContainer(ctx, setup)
 	if err != nil {
 		return err
@@ -170,25 +184,16 @@ func (node *ModTreeNode) RunTerminal(ctx context.Context, setup TerminalSetup) e
 	)
 }
 
-// ExecTerminal runs the command that RunTerminal would open, in the same
-// container, with stdin as its standard input instead of a terminal. Like a
-// terminal, each call runs the command again.
-func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string, setup TerminalSetup) (res dagql.ObjectResult[*Container], _ error) {
+// ExecTerminal runs the command of the terminal that RunTerminal opens, with
+// stdin as its standard input.
+func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string, setup TerminalSetupArgs) (res dagql.ObjectResult[*Container], _ error) {
 	ctr, err := node.terminalContainer(ctx, setup)
 	if err != nil {
 		return res, err
 	}
 	srv := node.DagqlServer
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return res, err
-	}
-	if err := cache.Evaluate(ctx, ctr); err != nil {
-		return res, err
-	}
 
-	// Use a new synthetic copy of the container for each call, so the exec
-	// below is never a cache hit.
+	// Exec in a copy with a unique identity, so that it is never a cache hit.
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return res, err
@@ -198,6 +203,10 @@ func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string, setup T
 		return res, err
 	}
 	ctr, err = newSyntheticTerminalContainerResult(srv, clone, "terminal_exec_container")
+	if err != nil {
+		return res, err
+	}
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return res, err
 	}
@@ -222,60 +231,29 @@ func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string, setup T
 	return res, cache.Evaluate(ctx, res)
 }
 
-// terminalContainer returns the container in which the terminal for node
-// opens, after setup.
-func (node *ModTreeNode) terminalContainer(ctx context.Context, setup TerminalSetup) (ctr dagql.ObjectResult[*Container], _ error) {
-	if !supportsTerminal(node) {
-		return ctr, fmt.Errorf("%q: unsupported terminal target type", node.PathString())
-	}
-	srv := node.DagqlServer
-
-	switch node.Type.Self().AsObject.Value.Self().Name {
+// terminalContainer returns the evaluated container of the terminal for node,
+// after setup.
+func (node *ModTreeNode) terminalContainer(ctx context.Context, setup TerminalSetupArgs) (ctr dagql.ObjectResult[*Container], _ error) {
+	switch terminalType(node) {
 	case "Container":
 		if err := node.DagqlValue(ctx, &ctr); err != nil {
 			return ctr, err
 		}
 	case "Directory":
-		// Match Directory.terminal: the directory in the default image.
 		var dir dagql.ObjectResult[*Directory]
 		if err := node.DagqlValue(ctx, &dir); err != nil {
 			return ctr, err
 		}
-		dirID, err := dir.ID()
+		var err error
+		ctr, err = dir.Self().terminalContainer(ctx, dagql.ObjectResult[*Container]{}, dir)
 		if err != nil {
 			return ctr, err
 		}
-		coreSrv := srv.Canonical()
-		if err := coreSrv.Select(ctx, coreSrv.Root(), &ctr,
-			dagql.Selector{
-				Field: "container",
-				Args:  []dagql.NamedInput{{Name: "platform", Value: dagql.Opt(dir.Self().Platform)}},
-			},
-			dagql.Selector{
-				Field: "from",
-				Args:  []dagql.NamedInput{{Name: "address", Value: dagql.String(defaultTerminalImage)}},
-			},
-			dagql.Selector{
-				Field: "withMountedDirectory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String("/src")},
-					{Name: "source", Value: dagql.NewID[*Directory](dirID)},
-					{Name: "readOnly", Value: dagql.Boolean(true)},
-				},
-			},
-			dagql.Selector{
-				Field: "withWorkdir",
-				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/src")}},
-			},
-		); err != nil {
-			return ctr, err
-		}
-	}
-	if len(setup.Copies) == 0 && len(setup.Inits) == 0 {
-		return ctr, nil
+	default:
+		return ctr, fmt.Errorf("%q: unsupported terminal target type", node.PathString())
 	}
 
-	// Evaluate first: the default terminal command can be set lazily.
+	// Evaluate before setup: the default terminal command can be set lazily.
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return ctr, err
@@ -283,40 +261,41 @@ func (node *ModTreeNode) terminalContainer(ctx context.Context, setup TerminalSe
 	if err := cache.Evaluate(ctx, ctr); err != nil {
 		return ctr, err
 	}
-	sels := make([]dagql.Selector, 0, len(setup.Copies)+len(setup.Inits))
-	for _, cp := range setup.Copies {
+	var sels []dagql.Selector
+	for _, cp := range setup.Copy {
 		sels = append(sels, dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(cp.Path)},
-				{Name: "source", Value: cp.Source},
+				{Name: "path", Value: dagql.String(cp.Value.Path)},
+				{Name: "source", Value: cp.Value.Source},
 			},
 		})
 	}
-	for _, init := range setup.Inits {
+	for _, init := range setup.Init {
 		sels = append(sels, terminalStdinExec(ctr.Self(), init, ReturnSuccess))
 	}
-	err = srv.Select(dagql.WithNonInternalTelemetry(ctx), ctr, &ctr, sels...)
-	return ctr, err
+	if len(sels) == 0 {
+		return ctr, nil
+	}
+	ctx = dagql.WithNonInternalTelemetry(ctx)
+	if err := node.DagqlServer.Select(ctx, ctr, &ctr, sels...); err != nil {
+		return ctr, err
+	}
+	return ctr, cache.Evaluate(ctx, ctr)
 }
 
 // terminalStdinExec selects an exec of the terminal command of ctr, with
 // stdin as its standard input.
 func terminalStdinExec(ctr *Container, stdin string, expect ReturnTypes) dagql.Selector {
-	// Match the terminal's command, and its fallback to sh.
-	defaults := ctr.DefaultTerminalCmd
-	args := defaults.Args
-	if len(args) == 0 {
-		args = []string{"sh"}
-	}
+	args := ctr.WithTerminalDefaults(TerminalArgs{})
 	return dagql.Selector{
 		Field: "withExec",
 		Args: []dagql.NamedInput{
-			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args...))},
+			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Cmd...))},
 			{Name: "stdin", Value: dagql.String(stdin)},
 			{Name: "expect", Value: expect},
-			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(defaults.ExperimentalPrivilegedNesting.Value.Bool())},
-			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(defaults.InsecureRootCapabilities.Value.Bool())},
+			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(args.ExperimentalPrivilegedNesting.Value.Bool())},
+			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(args.InsecureRootCapabilities.Value.Bool())},
 		},
 	}
 }
