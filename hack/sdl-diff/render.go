@@ -43,6 +43,55 @@ func indent(s string) string {
 	return out.String()
 }
 
+// renderChangedDefinition renders the selected members and metadata, leaving
+// schema comparison and canonical detailed-diff construction to the caller.
+func renderChangedDefinition(before, after *ast.Definition, members string, headerChanged bool) string {
+	var fragment strings.Builder
+	removalsOnly := !headerChanged && len(after.Fields)+len(after.EnumValues)+len(after.Interfaces)+len(after.Types) == 0
+	if headerChanged {
+		fragment.WriteString(changeComment(definitionHeader(before), definitionHeader(after)))
+	}
+	for _, change := range []struct {
+		label          string
+		added, removed []string
+	}{
+		{"implements", after.Interfaces, before.Interfaces}, {"union member", after.Types, before.Types},
+	} {
+		for _, name := range change.added {
+			fragment.WriteString("# Added: " + change.label + " " + name + "\n")
+		}
+		for _, removed := range change.removed {
+			context := ""
+			if removalsOnly {
+				context = after.Name + " "
+			}
+			fragment.WriteString("# Removed: " + context + change.label + " " + removed + "\n")
+		}
+	}
+	// A fragment is an after declaration, not a migration. Removals exist
+	// only in comments, never as live SDL members or empty type bodies.
+	if removalsOnly {
+		for _, field := range before.Fields {
+			fragment.WriteString("# Removed: " + after.Name + "." + signature(renderField(field)) + "\n")
+		}
+		for _, value := range before.EnumValues {
+			fragment.WriteString("# Removed: " + after.Name + "." + signature(renderEnumValue(value)) + "\n")
+		}
+	} else {
+		header := *after
+		header.Fields, header.EnumValues = nil, nil
+		if !hasMemberBody(after.Kind) || len(after.Fields)+len(after.EnumValues) == 0 {
+			fragment.WriteString(members)
+		}
+		fragment.WriteString(strings.TrimSpace(renderDefinition(&header, !headerChanged)))
+		if len(after.Fields)+len(after.EnumValues) > 0 && hasMemberBody(after.Kind) {
+			fragment.WriteString(" {\n" + members + "}")
+		}
+		fragment.WriteString("\n")
+	}
+	return fragment.String()
+}
+
 func annotatedField(before, after *ast.FieldDefinition) string {
 	a, b := renderField(before), renderField(after)
 	comment := changeComment(a, b)
@@ -56,7 +105,7 @@ func annotatedField(before, after *ast.FieldDefinition) string {
 				changed = append(changed, "argument "+arg.Name)
 			}
 		}
-		if len(changed) > 0 && !(len(changed) == 1 && changed[0] == "field") {
+		if len(changed) > 0 && (len(changed) != 1 || changed[0] != "field") {
 			comment = "# Description changed: " + strings.Join(changed, ", ") + "\n"
 		}
 	}

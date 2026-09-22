@@ -179,7 +179,7 @@ func TestSemanticDiffChanges(t *testing.T) {
 				t.Fatalf("invalid after fragment: %v\n%s", err, got.summary)
 			}
 			if !strings.Contains(got.summary, "# Changed: previously ") ||
-				!(strings.HasPrefix(got.details, "-") || strings.Contains(got.details, "\n-")) ||
+				(!strings.HasPrefix(got.details, "-") && !strings.Contains(got.details, "\n-")) ||
 				!strings.Contains(got.details, "\n+") {
 				t.Fatalf("expected annotation and detailed replacement: %+v", got)
 			}

@@ -107,49 +107,7 @@ func compareSchemas(old, new *ast.SchemaDocument) schemaDiff {
 		if !headerChanged && members.Len() == 0 && len(a.Interfaces)+len(b.Interfaces)+len(a.Types)+len(b.Types) == 0 {
 			continue
 		}
-		var fragment strings.Builder
-		removalsOnly := !headerChanged && len(b.Fields)+len(b.EnumValues)+len(b.Interfaces)+len(b.Types) == 0
-		if headerChanged {
-			fragment.WriteString(changeComment(definitionHeader(before), definitionHeader(after)))
-		}
-		for _, change := range []struct {
-			label          string
-			added, removed []string
-		}{
-			{"implements", b.Interfaces, a.Interfaces}, {"union member", b.Types, a.Types},
-		} {
-			for _, name := range change.added {
-				fragment.WriteString("# Added: " + change.label + " " + name + "\n")
-			}
-			for _, removed := range change.removed {
-				context := ""
-				if removalsOnly {
-					context = name + " "
-				}
-				fragment.WriteString("# Removed: " + context + change.label + " " + removed + "\n")
-			}
-		}
-		// A fragment is an after declaration, not a migration. Removals exist
-		// only in comments, never as live SDL members or empty type bodies.
-		if removalsOnly {
-			for _, field := range a.Fields {
-				fragment.WriteString("# Removed: " + name + "." + signature(renderField(field)) + "\n")
-			}
-			for _, value := range a.EnumValues {
-				fragment.WriteString("# Removed: " + name + "." + signature(renderEnumValue(value)) + "\n")
-			}
-		} else {
-			header := b
-			header.Fields, header.EnumValues = nil, nil
-			if !hasMemberBody(after.Kind) || len(b.Fields)+len(b.EnumValues) == 0 {
-				fragment.WriteString(members.String())
-			}
-			fragment.WriteString(strings.TrimSpace(renderDefinition(&header, !headerChanged)))
-			if len(b.Fields)+len(b.EnumValues) > 0 && hasMemberBody(after.Kind) {
-				fragment.WriteString(" {\n" + members.String() + "}")
-			}
-			fragment.WriteString("\n")
-		}
+		fragment := renderChangedDefinition(&a, &b, members.String(), headerChanged)
 		sharedBody := hasMemberBody(a.Kind) && hasMemberBody(b.Kind) &&
 			len(a.Fields)+len(b.Fields)+len(a.EnumValues)+len(b.EnumValues) > 0
 		selected := func(d *ast.Definition) string {
@@ -162,7 +120,7 @@ func compareSchemas(old, new *ast.SchemaDocument) schemaDiff {
 			}
 			return s
 		}
-		emit(fragment.String(), selected(&a), selected(&b))
+		emit(fragment, selected(&a), selected(&b))
 	}
 	return schemaDiff{summary: summary.String(), details: details.String()}
 }
