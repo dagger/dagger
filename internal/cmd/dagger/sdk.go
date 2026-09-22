@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
@@ -102,7 +102,7 @@ type sdkWorkspaceConfig struct {
 	cwd        string
 }
 
-func loadSDKWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, required bool) (*sdkWorkspaceConfig, error) {
+func loadSDKWorkspaceConfig(ctx context.Context, ws *core.Workspace, required bool) (*sdkWorkspaceConfig, error) {
 	configFile, err := ws.ConfigFile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load workspace config file: %w", err)
@@ -142,7 +142,7 @@ func loadSDKWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, required 
 func withSDKWorkspaceConfig(
 	cmd *cobra.Command,
 	required bool,
-	fn func(context.Context, *dagger.Workspace, *sdkWorkspaceConfig) error,
+	fn func(context.Context, *core.Workspace, *sdkWorkspaceConfig) error,
 ) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("sdk commands do not support --env; SDKs and scopes live in the base workspace config")
@@ -151,7 +151,7 @@ func withSDKWorkspaceConfig(
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		ws := ec.Dagger().CurrentWorkspace()
+		ws := core.NewQuery(ec.Dagger()).CurrentWorkspace()
 		state, err := loadSDKWorkspaceConfig(ctx, ws, required)
 		if err != nil {
 			return err
@@ -161,7 +161,7 @@ func withSDKWorkspaceConfig(
 }
 
 func runSDKList(cmd *cobra.Command, _ []string) error {
-	return withSDKWorkspaceConfig(cmd, false, func(_ context.Context, _ *dagger.Workspace, state *sdkWorkspaceConfig) error {
+	return withSDKWorkspaceConfig(cmd, false, func(_ context.Context, _ *core.Workspace, state *sdkWorkspaceConfig) error {
 		if state == nil {
 			return nil
 		}
@@ -230,7 +230,7 @@ func runSDKScopeList(cmd *cobra.Command, _ []string) error {
 	}
 	filters.sdkSet = cmd.Flags().Changed("sdk")
 
-	return withSDKWorkspaceConfig(cmd, false, func(_ context.Context, _ *dagger.Workspace, state *sdkWorkspaceConfig) error {
+	return withSDKWorkspaceConfig(cmd, false, func(_ context.Context, _ *core.Workspace, state *sdkWorkspaceConfig) error {
 		if state == nil {
 			return nil
 		}
@@ -319,7 +319,7 @@ func runSDKScopeField(cmd *cobra.Command, field string, args []string) error {
 		return fmt.Errorf("--path must not be empty")
 	}
 
-	return withSDKWorkspaceConfig(cmd, true, func(ctx context.Context, ws *dagger.Workspace, state *sdkWorkspaceConfig) error {
+	return withSDKWorkspaceConfig(cmd, true, func(ctx context.Context, ws *core.Workspace, state *sdkWorkspaceConfig) error {
 		record, err := selectSDKScopeRecord(state, path)
 		if err != nil {
 			return err

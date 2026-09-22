@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/stretchr/testify/require"
 )
 
@@ -73,7 +74,7 @@ func TestModuleRecommendationsInspectContents(t *testing.T) {
 		"uv/uv.lock":            "version = 1",
 		"uv/uv.toml":            "offline = true",
 	}
-	dir := dag.Directory()
+	dir := core.NewQuery(dag).Directory()
 	for path, contents := range files {
 		dir = dir.WithNewFile(path, contents)
 	}
@@ -84,7 +85,7 @@ func TestModuleRecommendationsInspectContents(t *testing.T) {
 				WithNewFile(prefix+"/setup.cfg", "[mypy]\n[tool:pytest]")
 		}
 	}
-	ws := dir.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/python"})
+	ws := dir.AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/python"})
 	want := map[string][]string{
 		"mochajs": {"js/.mocharc.json", "package.json"},
 		"mypy":    {"mypy/.mypy.ini", "mypy/setup.cfg", "python/pyproject.toml"},

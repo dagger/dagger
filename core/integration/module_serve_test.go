@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -69,26 +70,26 @@ func requireServedHello(t *testctx.T, c *dagger.Client) {
 func (ModuleLoadingSuite) TestServeModuleLocalAddress(ctx context.Context, t *testctx.T) {
 	t.Run("absolute path resolves from the workspace root", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(serveModuleWorkdir(ctx, t)))
-		require.NoError(t, c.ServeModule(ctx, "/.dagger/modules/hello"))
+		require.NoError(t, core.NewQuery(c).ServeModule(ctx, "/.dagger/modules/hello"))
 		requireServedHello(t, c)
 	})
 
 	t.Run("relative path resolves from the workspace cwd", func(ctx context.Context, t *testctx.T) {
 		workdir := serveModuleWorkdir(ctx, t)
 		c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(workdir, "nested")))
-		require.NoError(t, c.ServeModule(ctx, "../.dagger/modules/hello"))
+		require.NoError(t, core.NewQuery(c).ServeModule(ctx, "../.dagger/modules/hello"))
 		requireServedHello(t, c)
 	})
 
 	t.Run("path without a module errors", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(serveModuleWorkdir(ctx, t)))
-		err := c.ServeModule(ctx, "/nested")
+		err := core.NewQuery(c).ServeModule(ctx, "/nested")
 		require.ErrorContains(t, err, "does not contain a dagger config file")
 	})
 
 	t.Run("installed module name is rejected", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(serveModuleWorkdir(ctx, t)))
-		err := c.ServeModule(ctx, "hello")
+		err := core.NewQuery(c).ServeModule(ctx, "hello")
 		require.ErrorContains(t, err, "installed module names are not accepted")
 	})
 }
@@ -97,7 +98,7 @@ func (ModuleLoadingSuite) TestServeModuleLocalAddress(ctx context.Context, t *te
 // workspace APIs are absent from a module's schema, so the module cannot
 // resolve a local address itself.
 func (ModuleLoadingSuite) TestServeModuleFromModule(ctx context.Context, t *testctx.T) {
-	callerModule := func(ctr *dagger.Container) *dagger.Container {
+	callerModule := func(ctr *core.Container) *core.Container {
 		return ctr.
 			WithNewFile("dagger.toml", `[modules.caller]
 source = ".dagger/modules/caller"
@@ -141,7 +142,7 @@ func (m *Caller) Message(ctx context.Context, address string) (string, error) {
 	t.Run("remote address resolves without a workspace lookup", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		served := c.Directory().
+		served := core.NewQuery(c).Directory().
 			WithNewFile("dagger-module.toml", serveModuleHelloManifest).
 			WithNewFile("main.dang", serveModuleHelloSource)
 		gitDaemon, repoURL := gitService(ctx, t, c, served)

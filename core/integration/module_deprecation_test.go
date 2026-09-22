@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -603,7 +603,7 @@ class Test:
 			require.Error(t, err)
 
 			errMsg := err.Error()
-			var execErr *dagger.ExecError
+			var execErr *core.ExecError
 			if errors.As(err, &execErr) {
 				errMsg = fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr)
 			}

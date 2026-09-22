@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -42,34 +43,34 @@ func TestWorkspaceCompat(t *testing.T) {
 // then exercise the migrated workspace through `dagger setup --auto-apply`
 // (migrate + recommended-module install).
 
-func compatDaggerExec(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+func compatDaggerExec(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func compatDaggerExecFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+func compatDaggerExecFail(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 	}
 }
 
-func compatDaggerCall(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+func compatDaggerCall(args ...string) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
 }
 
-func legacyDangModule(dir, name, typeName, message string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
+func legacyDangModule(dir, name, typeName, message string) core.WithContainerFunc {
+	return func(ctr *core.Container) *core.Container {
 		return ctr.
 			WithNewFile(dir+"/dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"}}`).
 			WithNewFile(dir+"/main.dang", `
@@ -82,14 +83,14 @@ type `+typeName+` {
 	}
 }
 
-func legacyCompatDangSource(t testing.TB, c *dagger.Client, message string) *dagger.Container {
+func legacyCompatDangSource(t testing.TB, c *dagger.Client, message string) *core.Container {
 	t.Helper()
 
 	return legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "sdk": {"source": "dang"},
   "source": "ci"
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 		return ctr.WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! {
@@ -100,13 +101,13 @@ type Myapp {
 	})
 }
 
-func legacySDKOnlyDangSource(t testing.TB, c *dagger.Client, message string) *dagger.Container {
+func legacySDKOnlyDangSource(t testing.TB, c *dagger.Client, message string) *core.Container {
 	t.Helper()
 
 	return legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "sdk": {"source": "dang"}
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 		return ctr.WithNewFile("main.dang", `
 type Myapp {
   pub greet: String! {
@@ -117,13 +118,13 @@ type Myapp {
 	})
 }
 
-func legacySDKOnlyGoSource(t testing.TB, c *dagger.Client, message string) *dagger.Container {
+func legacySDKOnlyGoSource(t testing.TB, c *dagger.Client, message string) *core.Container {
 	t.Helper()
 
 	return legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "sdk": {"source": "go"}
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 		return ctr.WithNewFile("main.go", `package main
 
 type Myapp struct{}
@@ -135,7 +136,7 @@ func (m *Myapp) Greet() string {
 	})
 }
 
-func legacyCompatRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) string {
+func legacyCompatRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, content *core.Directory) string {
 	t.Helper()
 
 	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, content, "main"), "", nil)
@@ -146,7 +147,7 @@ func legacyCompatRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, 
 	shortHost, err := gitSrv.Hostname(ctx)
 	require.NoError(t, err)
 
-	getentOut, err := c.Container().From(alpineImage).
+	getentOut, err := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"getent", "hosts", shortHost}).
 		Stdout(ctx)
 	require.NoError(t, err, "could not resolve git service hostname %q", shortHost)
@@ -156,14 +157,14 @@ func legacyCompatRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, 
 	return "http://" + fields[0] + "/repo.git@main"
 }
 
-func legacyBlueprintTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
-	return c.Container().
+func legacyBlueprintTestEnv(t *testctx.T, c *dagger.Client) *core.Container {
+	return core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "init"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithDirectory(".", c.Host().Directory("./testdata/test-blueprint")).
-		WithDirectory("app", c.Directory())
+		WithDirectory(".", core.NewQuery(c).Host().Directory("./testdata/test-blueprint")).
+		WithDirectory("app", core.NewQuery(c).Directory())
 }
 
 func (WorkspaceCompatSuite) TestLegacyBlueprintConfig(ctx context.Context, t *testctx.T) {
@@ -305,7 +306,7 @@ func (WorkspaceCompatSuite) TestCompatEntrypointWithLocalDepsGenerate(ctx contex
   "sdk": {"source": "go"},
   "source": ".dagger",
   "dependencies": [{"name": "dep", "source": ".dagger/dep"}]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 		return ctr.
 			WithNewFile(".dagger/main.go", `package main
 
@@ -632,7 +633,7 @@ source = "legacy"
 
 	t.Run("remote workspace module source requires a migrated upstream", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		remoteRef := legacyCompatRemoteRef(ctx, t, c, c.Directory().
+		remoteRef := legacyCompatRemoteRef(ctx, t, c, core.NewQuery(c).Directory().
 			WithNewFile("dagger.json", `{
   "name": "legacy",
   "blueprint": {
@@ -666,7 +667,7 @@ source = "`+remoteRef+`"
 		c := connect(ctx, t)
 		ctr := legacyCompatDangSource(t, c, "hello from explicit workspace")
 
-		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "-W", ".", "call", "greet"}, dagger.ContainerWithExecOpts{
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "-W", ".", "call", "greet"}, core.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		}).Stdout(ctx)
@@ -678,7 +679,7 @@ source = "`+remoteRef+`"
 func (WorkspaceCompatSuite) TestGenericAsModuleIgnoresLegacyWorkspaceFields(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	src := c.Directory().
+	src := core.NewQuery(c).Directory().
 		WithNewFile("dagger.json", `{
   "name": "app",
   "toolchains": [
@@ -986,7 +987,7 @@ func (WorkspaceCompatSuite) TestCompatAndMigratedWorkspaceMatch(ctx context.Cont
       "source": "./helper"
     }
   ]
-}`, func(ctr *dagger.Container) *dagger.Container {
+}`, func(ctr *core.Container) *core.Container {
 		return ctr.
 			WithNewFile("ci/main.dang", `
 type Myapp {

@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -155,9 +156,9 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 			}
 			depsJSON = string(data)
 		}
-		merged, err := g.Config.Dag.
-			Schema(dagger.JSON(depsJSON)).
-			Merge(dagger.JSON(moduleTypesJSON), moduleName).
+		merged, err := core.NewQuery(g.Config.Dag).
+			Schema(core.JSON(depsJSON)).
+			Merge(core.JSON(moduleTypesJSON), moduleName).
 			Contents(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("merge module types into schema: %w", err)
@@ -177,13 +178,32 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	staleBindings, err := findStaleDependencyBindings(
 		g.Config.OutputDir,
-		filepath.Join(outDir, internalDaggerDir),
+		filepath.Join(outDir, internalDaggerCoreDir),
+		CoreGenFile,
 		genSt.Overlay,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find stale dependency bindings: %w", err)
 	}
 	genSt.RemovePaths = append(genSt.RemovePaths, staleBindings...)
+
+	// A dependency's binding file used to hold its full definitions directly
+	// under internal/dagger/ (package dagger); it now only holds an alias
+	// for any brand new type it contributes (see _dep-alias.gen.go.tmpl),
+	// written there only when it has one. Modules generated before that
+	// split can have leftover files at this location for dependencies that
+	// no longer write one (e.g. because they only extend existing core
+	// types), so check the overlay here too to find those.
+	oldStaleBindings, err := findStaleDependencyBindings(
+		g.Config.OutputDir,
+		filepath.Join(outDir, internalDaggerDir),
+		ClientGenFile,
+		genSt.Overlay,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find stale pre-split dependency bindings: %w", err)
+	}
+	genSt.RemovePaths = append(genSt.RemovePaths, oldStaleBindings...)
 
 	return genSt, nil
 }

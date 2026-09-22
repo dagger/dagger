@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 )
@@ -66,7 +67,7 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 		client.Params{LoadWorkspaceModules: true},
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			terminals := dag.CurrentWorkspace().Terminals(dagger.WorkspaceTerminalsOpts{Include: args})
+			terminals := core.NewQuery(dag).CurrentWorkspace().Terminals(core.WorkspaceTerminalsOpts{Include: args})
 			if terminalListMode {
 				return listTerminalTargets(ctx, dag, terminals, cmd)
 			}
@@ -76,7 +77,7 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 	)
 }
 
-func listTerminalTargets(ctx context.Context, dag *dagger.Client, terminals *dagger.TerminalGroup, cmd *cobra.Command) error {
+func listTerminalTargets(ctx context.Context, dag *dagger.Client, terminals *core.TerminalGroup, cmd *cobra.Command) error {
 	list, err := loadGroupListDetails(ctx, dag, "fetch terminal information",
 		func(ctx context.Context) (any, error) { return terminals.ID(ctx) },
 		loadTerminalsQuery, "TerminalGroupListDetails",

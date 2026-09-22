@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -58,10 +59,10 @@ Examples:
 			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				ws := dag.CurrentWorkspace()
-				var generators *dagger.GeneratorGroup
+				ws := core.NewQuery(dag).CurrentWorkspace()
+				var generators *core.GeneratorGroup
 				if len(args) > 0 {
-					generators = ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: args})
+					generators = ws.Generators(core.WorkspaceGeneratorsOpts{Include: args})
 				} else {
 					generators = ws.Generators()
 				}
@@ -145,7 +146,7 @@ func generatorGroupLoadFailures(ctx context.Context, dag *dagger.Client, include
 	return res.CurrentWorkspace.Generators.LoadFailures, nil
 }
 
-func loadGeneratorGroupInfo(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup) (*GeneratorGroupInfo, error) {
+func loadGeneratorGroupInfo(ctx context.Context, dag *dagger.Client, generatorGroup *core.GeneratorGroup) (*GeneratorGroupInfo, error) {
 	items, err := loadGroupListDetails(ctx, dag, "fetch generator information",
 		func(ctx context.Context) (any, error) { return generatorGroup.ID(ctx) },
 		loadGeneratorsQuery, "GeneratorGroupListDetails",
@@ -173,7 +174,7 @@ type GeneratorInfo struct {
 }
 
 // 'dagger generators -l'
-func listGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup, cmd *cobra.Command) error {
+func listGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *core.GeneratorGroup, cmd *cobra.Command) error {
 	info, err := loadGeneratorGroupInfo(ctx, dag, generatorGroup)
 	if err != nil {
 		return err
@@ -189,7 +190,7 @@ func listGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dag
 }
 
 // 'dagger generators' (runs by default)
-func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup, cmd *cobra.Command, disposition changesetDisposition) (rerr error) {
+func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *core.GeneratorGroup, cmd *cobra.Command, disposition changesetDisposition) (rerr error) {
 	ctx, zoomSpan := Tracer().Start(ctx, "generators", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
@@ -209,11 +210,11 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagg
 	generated := generatorGroup.
 		Run().
 		Workspace(
-			dagger.GeneratorGroupWorkspaceOpts{
-				OnConflict: dagger.ChangesetsMergeConflictFailEarly,
+			core.GeneratorGroupWorkspaceOpts{
+				OnConflict: core.ChangesetsMergeConflictFailEarly,
 			},
 		)
-	_, err := handleWorkspaceResponseWithDisposition(ctx, dag, dag.CurrentWorkspace(), generated, disposition, previewOut)
+	_, err := handleWorkspaceResponseWithDisposition(ctx, dag, core.NewQuery(dag).CurrentWorkspace(), generated, disposition, previewOut)
 	if errors.Is(err, idtui.ErrNonInteractive) {
 		return fmt.Errorf("%w; pass -y/--auto-apply to apply changes, or --no-apply to show them without applying", idtui.ErrNonInteractive)
 	}

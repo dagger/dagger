@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -41,7 +42,7 @@ type mediaMessage struct {
 	Content []mediaBlock `json:"content"`
 }
 
-func mediaHistory(t *testctx.T, c *dagger.Client, llm *dagger.LLM) []mediaMessage {
+func mediaHistory(t *testctx.T, c *dagger.Client, llm *core.LLM) []mediaMessage {
 	t.Helper()
 	id, err := llm.ID(t.Context())
 	require.NoError(t, err)
@@ -57,20 +58,20 @@ func mediaHistory(t *testctx.T, c *dagger.Client, llm *dagger.LLM) []mediaMessag
 
 func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	png := c.Container().From(alpineImage).
+	png := core.NewQuery(c).Container().From(alpineImage).
 		WithNewFile("/image.b64", mediaPNG).
 		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
-	pdf := c.Directory().WithNewFile("document.pdf", mediaPDF).File("document.pdf")
+	pdf := core.NewQuery(c).Directory().WithNewFile("document.pdf", mediaPDF).File("document.pdf")
 
 	for _, tc := range []struct {
 		name, kind, mime, data string
-		file                   *dagger.File
+		file                   *core.File
 	}{
 		{"image", "IMAGE", "image/png", mediaPNG, png},
 		{"document", "DOCUMENT", "application/pdf", base64.StdEncoding.EncodeToString([]byte(mediaPDF)), pdf},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			llm := c.LLM().WithContentFile(tc.file)
+			llm := core.NewQuery(c).LLM().WithContentFile(tc.file)
 			messages := mediaHistory(t, c, llm)
 			require.Len(t, messages, 1)
 			require.Equal(t, "USER", messages[0].Role)
@@ -79,8 +80,8 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.kind, block.Kind)
 			require.Equal(t, tc.mime, block.MIMEType)
 			require.Equal(t, tc.data, block.Data)
-			fromBlock := c.LLM().WithContent([]dagger.LLMContentBlockInput{{
-				Kind: dagger.LLMContentBlockKind(tc.kind), File: tc.file,
+			fromBlock := core.NewQuery(c).LLM().WithContent([]core.LLMContentBlockInput{{
+				Kind: core.LLMContentBlockKind(tc.kind), File: tc.file,
 			}})
 			require.Equal(t, messages, mediaHistory(t, c, fromBlock))
 
@@ -98,14 +99,14 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 			for cur := recipe; cur != nil; cur = cur.Receiver() {
 				require.NotEqual(t, "withContentFile", cur.Field(), "portable media must not retain the file-producing recipe")
 			}
-			reloaded := dagger.Ref[*dagger.LLM](c, id)
+			reloaded := core.Ref[*core.LLM](core.NewQuery(c), id)
 			require.Equal(t, messages, mediaHistory(t, c, reloaded))
 		})
 	}
 
 	// The existing text API must not start interpreting PDF-looking prompts as
 	// documents. Binary media is explicitly opt-in through withContentFile.
-	messages := mediaHistory(t, c, c.LLM().WithPromptFile(pdf))
+	messages := mediaHistory(t, c, core.NewQuery(c).LLM().WithPromptFile(pdf))
 	require.Len(t, messages, 1)
 	require.Len(t, messages[0].Content, 1)
 	require.Equal(t, "TEXT", messages[0].Content[0].Kind)
@@ -116,12 +117,12 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	pdf := base64.StdEncoding.EncodeToString([]byte(mediaPDF))
-	llm := c.LLM().WithContent([]dagger.LLMContentBlockInput{
-		{Kind: dagger.LLMContentBlockKindText, Text: "Compare these:"},
-		{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
-		{Kind: dagger.LLMContentBlockKindText, Text: "with this document"},
-		{Kind: dagger.LLMContentBlockKindDocument, Data: pdf, MimeType: "application/pdf"},
-		{Kind: dagger.LLMContentBlockKindAudio, Data: mediaWAV, MimeType: "audio/wav"},
+	llm := core.NewQuery(c).LLM().WithContent([]core.LLMContentBlockInput{
+		{Kind: core.LLMContentBlockKindText, Text: "Compare these:"},
+		{Kind: core.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+		{Kind: core.LLMContentBlockKindText, Text: "with this document"},
+		{Kind: core.LLMContentBlockKindDocument, Data: pdf, MimeType: "application/pdf"},
+		{Kind: core.LLMContentBlockKindAudio, Data: mediaWAV, MimeType: "audio/wav"},
 	})
 	messages := mediaHistory(t, c, llm)
 	require.Len(t, messages, 1)
@@ -147,12 +148,12 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 
 	id, err := llm.PortableID(ctx)
 	require.NoError(t, err)
-	require.Equal(t, messages, mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, id)))
+	require.Equal(t, messages, mediaHistory(t, c, core.Ref[*core.LLM](core.NewQuery(c), id)))
 
 	// withResponse accepts the same recursive input type, so exported assistant
 	// media can be reconstructed without a model request as well.
-	response := c.LLM().WithResponse([]dagger.LLMContentBlockInput{
-		{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+	response := core.NewQuery(c).LLM().WithResponse([]core.LLMContentBlockInput{
+		{Kind: core.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
 	})
 	responseMessages := mediaHistory(t, c, response)
 	require.Len(t, responseMessages, 1)
@@ -162,10 +163,10 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 
 func (LLMSuite) TestMediaToolResultBlocks(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	llm := c.LLM().WithToolResult("media-call", "legacy text", false, dagger.LLMWithToolResultOpts{
-		Blocks: []dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "caption"},
-			{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+	llm := core.NewQuery(c).LLM().WithToolResult("media-call", "legacy text", false, core.LLMWithToolResultOpts{
+		Blocks: []core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "caption"},
+			{Kind: core.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
 		},
 	})
 	messages := mediaHistory(t, c, llm)
@@ -182,12 +183,12 @@ func (LLMSuite) TestMediaToolResultBlocks(ctx context.Context, t *testctx.T) {
 
 	id, err := llm.PortableID(ctx)
 	require.NoError(t, err)
-	require.Equal(t, messages, mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, id)))
+	require.Equal(t, messages, mediaHistory(t, c, core.Ref[*core.LLM](core.NewQuery(c), id)))
 
 	// Exercise recursive input decoding directly, not just the blocks argument.
-	reconstructed := c.LLM().WithResponse([]dagger.LLMContentBlockInput{
-		{Kind: dagger.LLMContentBlockKindToolResult, CallID: "media-call", Content: []dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+	reconstructed := core.NewQuery(c).LLM().WithResponse([]core.LLMContentBlockInput{
+		{Kind: core.LLMContentBlockKindToolResult, CallID: "media-call", Content: []core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
 		}},
 	})
 	rebuilt := mediaHistory(t, c, reconstructed)
@@ -199,17 +200,17 @@ func (LLMSuite) TestMediaReturnedConversationDisplay(ctx context.Context, t *tes
 	c := connect(ctx, t)
 	const prompt = "show the screenshot"
 	const caption = "Screenshot from the browser"
-	conversation := c.LLM().
+	conversation := core.NewQuery(c).LLM().
 		WithPrompt(prompt).
-		WithResponse([]dagger.LLMContentBlockInput{{
-			Kind: dagger.LLMContentBlockKindToolCall, CallID: "screenshot", ToolName: "viewScreenshot",
+		WithResponse([]core.LLMContentBlockInput{{
+			Kind: core.LLMContentBlockKindToolCall, CallID: "screenshot", ToolName: "viewScreenshot",
 		}}).
-		WithContent([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: caption},
-			{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+		WithContent([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: caption},
+			{Kind: core.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
 		}).
 		WithToolResult("screenshot", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}})
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "done"}})
 	id, err := conversation.ID(ctx)
 	require.NoError(t, err)
 	// Unlike the text-only cannedRecordingModel helper, preserve media bytes in
@@ -239,7 +240,7 @@ type Browser {
   }
 }
 `, caption, mediaPNG)).
-		WithExec([]string{"dagger", "--progress=plain", "-vv", "script"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"dagger", "--progress=plain", "-vv", "script"}, core.ContainerWithExecOpts{
 			Stdin:                         fmt.Sprintf(`llm --model=%q | with-tools $(browser) | with-prompt %q | loop | last-reply`, model, prompt),
 			ExperimentalPrivilegedNesting: true,
 		})
@@ -274,7 +275,7 @@ func (LLMSuite) TestMediaInvalidContent(ctx context.Context, t *testctx.T) {
 		})
 	}
 
-	fileID, err := c.Directory().WithNewFile("document.pdf", mediaPDF).File("document.pdf").ID(ctx)
+	fileID, err := core.NewQuery(c).Directory().WithNewFile("document.pdf", mediaPDF).File("document.pdf").ID(ctx)
 	require.NoError(t, err)
 	_, err = testutil.QueryWithClient[map[string]any](c, t,
 		`query($file: ID!) { llm { withContent(content: [{kind: DOCUMENT, file: $file, data: "cGRm", mimeType: "application/pdf"}]) { id } } }`,
@@ -293,7 +294,7 @@ func (LLMSuite) TestMediaContentSizeLimit(ctx context.Context, t *testctx.T) {
 		{"aggregate message limit", 11 * 1024 * 1024, 2},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			file := c.Container().From(alpineImage).
+			file := core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"sh", "-c", fmt.Sprintf("printf '%%%%PDF-1.4\\n' > /large.pdf; head -c %d /dev/zero >> /large.pdf", tc.size)}).
 				File("/large.pdf")
 			id, err := file.ID(ctx)

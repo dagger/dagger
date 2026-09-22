@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -13,12 +14,12 @@ import (
 // created by callers that still set keepGitDir to false.
 func (WorkspaceSuite) TestWorkspaceLegacyKeepGitDirFalse(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("src/a.txt", "old-a").WithNewFile("src/b.txt", "old-b"))
 	serviceID, err := daemon.ID(ctx)
 	require.NoError(t, err)
 	var result struct {
-		Git struct{ ID dagger.ID }
+		Git struct{ ID core.ID }
 	}
 	// Raw GraphQL is required only for this deprecated constructor argument:
 	// the generated Go SDK omits optional false values, while its default is true.
@@ -28,7 +29,7 @@ func (WorkspaceSuite) TestWorkspaceLegacyKeepGitDirFalse(ctx context.Context, t 
   }`,
 		Variables: map[string]any{"url": url, "service": serviceID},
 	}, &dagger.Response{Data: &result}))
-	repo := dagger.Ref[*dagger.GitRepository](c, result.Git.ID)
+	repo := core.Ref[*core.GitRepository](core.NewQuery(c), result.Git.ID)
 	baseSHA, err := repo.Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	entries, err := repo.Head().Tree().Entries(ctx)
@@ -51,12 +52,12 @@ func (WorkspaceSuite) TestWorkspaceLegacyKeepGitDirFalse(ctx context.Context, t 
 	})
 
 	t.Run("scoped commits preserve history and pending edits", func(ctx context.Context, t *testctx.T) {
-		ws := repo.Branch("main").AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "src"}).
+		ws := repo.Branch("main").AsWorkspace(core.GitRefAsWorkspaceOpts{Cwd: "src"}).
 			WithNewFile("a.txt", "new-a").WithNewFile("b.txt", "new-b")
-		id, err := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"src/a.txt"}}), "selected edit", workspaceCommitDate).ID(ctx)
+		id, err := ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: []string{"src/a.txt"}}), "selected edit", workspaceCommitDate).ID(ctx)
 		require.NoError(t, err)
-		committed := dagger.Ref[*dagger.Workspace](c, id)
-		tree := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		committed := core.Ref[*core.Workspace](core.NewQuery(c), id)
+		tree := committed.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 		for file, want := range map[string]string{"src/a.txt": "new-a", "src/b.txt": "old-b"} {
 			got, err := tree.File(file).Contents(ctx)
 			require.NoError(t, err)

@@ -145,6 +145,10 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsPartial":               funcs.isPartial,
 		"IsModuleCode":            funcs.isModuleCode,
 		"IsStandaloneClient":      funcs.isStandaloneClient,
+		"IsCoreLibrary":           funcs.isCoreLibrary,
+		"CoreConstructorName":     funcs.coreConstructorName,
+		"IsCoreType":              funcs.isCoreType,
+		"HasNonCoreTypes":         funcs.hasNonCoreTypes,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 		"ModuleRelPath":           funcs.moduleRelPath,
 		"Dependencies":            funcs.Dependencies,
@@ -408,7 +412,17 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	if !topLevel {
 		signature += `(r *` + structName + `) `
 	}
-	signature += formatName(f.Name)
+	if topLevel && funcs.isCoreLibrary() && !hasTypeScope(scopes) {
+		// In the core library package, top-level Query fields and generated
+		// types share one namespace. Fields that would otherwise redeclare
+		// their own return type (e.g. "container" -> Container, *Container)
+		// get a "New" prefix instead. A package that refers to the types
+		// through a scope (e.g. dag, with "core") has no collision, so it
+		// keeps the plain name.
+		signature += funcs.coreConstructorName(f)
+	} else {
+		signature += formatName(f.Name)
+	}
 
 	// Generate arguments
 	args := []string{}
@@ -891,4 +905,15 @@ func (funcs goTemplateFuncs) FormatFieldOutputType(f introspection.Field, scopes
 		}
 	}
 	return funcs.CommonFunctions.FormatOutputType(f.TypeRef, scopes...)
+}
+
+// hasTypeScope reports whether generated types are referenced through a
+// package scope (e.g. "core"), not declared in the current package.
+func hasTypeScope(scopes []string) bool {
+	for _, scope := range scopes {
+		if scope != "" {
+			return true
+		}
+	}
+	return false
 }

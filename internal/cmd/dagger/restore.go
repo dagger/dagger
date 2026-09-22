@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
@@ -315,7 +316,7 @@ type sessionRestore struct {
 	// base is the composed agent group `dagger agent` started with, kept as
 	// each restored conversation's reset target so .clear returns to the
 	// selected agents rather than a blank workspace-bound LLM.
-	base *dagger.LLM
+	base *core.LLM
 }
 
 var _ restoreTarget = (*sessionRestore)(nil)

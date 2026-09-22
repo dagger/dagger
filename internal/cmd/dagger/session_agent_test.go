@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
@@ -33,8 +33,8 @@ type fakeRuntime struct {
 	stops      int
 	reseeds    int
 	reseedErr  error
-	snapshot   dagger.ID
-	state      dagger.AgentState
+	snapshot   core.ID
+	state      core.AgentState
 	delivered  chan string
 }
 
@@ -42,7 +42,7 @@ var _ agentRuntime = (*fakeRuntime)(nil)
 
 func newFakeRuntime() *fakeRuntime {
 	return &fakeRuntime{
-		state:     dagger.AgentStateRunning,
+		state:     core.AgentStateRunning,
 		delivered: make(chan string, 8),
 	}
 }
@@ -66,23 +66,23 @@ func (f *fakeRuntime) Interrupt(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.interrupts++
-	f.state = dagger.AgentStatePaused
+	f.state = core.AgentStatePaused
 	return nil
 }
 
-func (f *fakeRuntime) State(context.Context) (dagger.AgentState, error) {
+func (f *fakeRuntime) State(context.Context) (core.AgentState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.state, nil
 }
 
-func (f *fakeRuntime) setState(state dagger.AgentState) {
+func (f *fakeRuntime) setState(state core.AgentState) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.state = state
 }
 
-func (f *fakeRuntime) SnapshotID(context.Context) (dagger.ID, error) {
+func (f *fakeRuntime) SnapshotID(context.Context) (core.ID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.snapshot, nil
@@ -95,7 +95,7 @@ func (f *fakeRuntime) Stop(context.Context) error {
 	return nil
 }
 
-func (f *fakeRuntime) Reseed(context.Context, *dagger.LLM) error {
+func (f *fakeRuntime) Reseed(context.Context, *core.LLM) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.reseedErr != nil {
@@ -142,8 +142,8 @@ func (f *fakeRuntime) awaitNoSend(t *testing.T) {
 
 type fakeMessage struct{}
 
-func (fakeMessage) Delivery(context.Context) (dagger.AgentMessageDelivery, error) {
-	return dagger.AgentMessageDeliverySteered, nil
+func (fakeMessage) Delivery(context.Context) (core.AgentMessageDelivery, error) {
+	return core.AgentMessageDeliverySteered, nil
 }
 
 func (fakeMessage) Response(context.Context) (string, error) { return "", nil }
@@ -427,7 +427,7 @@ func TestInterruptSkipsAnIdleRuntime(t *testing.T) {
 	s, agents := testSession(t, "chief")
 	chief := agents[0]
 	rt := runtimeOf(t, chief)
-	rt.setState(dagger.AgentStateIdle)
+	rt.setState(core.AgentStateIdle)
 
 	require.True(t, s.InterruptTarget())
 	require.Never(t, func() bool {
@@ -436,7 +436,7 @@ func TestInterruptSkipsAnIdleRuntime(t *testing.T) {
 	}, 200*time.Millisecond, 10*time.Millisecond)
 
 	// Once it is genuinely working, the same keypress preempts it.
-	rt.setState(dagger.AgentStateRunning)
+	rt.setState(core.AgentStateRunning)
 	require.True(t, s.InterruptTarget())
 	require.Eventually(t, func() bool {
 		_, interrupts, _ := rt.counts()

@@ -206,7 +206,7 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  *r = {{ $.Name | FormatName }}{query: selectNode(dag.query, id, "{{ $.Name }}")}
+  *r = {{ $.Name | FormatName }}{query: selectNode(dag.QueryBuilder(), id, "{{ $.Name }}")}
   return nil
 }
 {{- end }}

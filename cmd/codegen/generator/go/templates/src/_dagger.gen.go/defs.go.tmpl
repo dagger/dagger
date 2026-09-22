@@ -1,7 +1,9 @@
 import (
 	"context"
 	"encoding/json"
+	{{- if not IsCoreLibrary }}
 	"errors"
+	{{- end }}
 	"fmt"
 	"net"
 	"net/http"
@@ -10,8 +12,11 @@ import (
 	"strconv"
 	"strings"
 
+
+	{{- if not IsCoreLibrary }}
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	{{- end }}
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -23,6 +28,10 @@ import (
 {{ end }}
 
 {{- if IsStandaloneClient }}
+	"dagger.io/dagger"
+{{ end }}
+
+{{- if IsCoreLibrary }}
 	"dagger.io/dagger"
 {{ end }}
 )
@@ -59,6 +68,14 @@ type DaggerObject interface {
 	ID(ctx context.Context) (ID, error)
 }
 
+{{ if IsCoreLibrary }}
+// ExecError is an API error from an exec operation. It lives in
+// dagger.io/dagger, not here, because classifying transport-level errors
+// doesn't need any generated type, and dagger.io/dagger can't import this
+// package (this package imports dagger.io/dagger). Aliased here so existing
+// code can keep writing core.ExecError.
+type ExecError = dagger.ExecError
+{{ else }}
 type gqlExtendedError struct {
 	inner *gqlerror.Error
 }
@@ -152,6 +169,7 @@ func (e *ExecError) Message() string {
 func (e *ExecError) Unwrap() error {
 	return e.original
 }
+{{ end }}
 {{ range .Types }}
 {{ if eq .Kind "SCALAR" }}{{ template "_types/scalar.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "OBJECT" }}{{ template "_types/object.go.tmpl" . }}{{ end }}
@@ -161,38 +179,50 @@ func (e *ExecError) Unwrap() error {
 {{ end }}
 
 {{ if IsModuleCode }}
-type Client struct {
-	*Query
-	client graphql.Client
-}
-
-var dag *Client
-
-func init() {
-	gqlClient, q := getClientParams()
-	dag = &Client{
-		Query: &Query{
-			query: q.Client(gqlClient),
-		},
-		client: gqlClient,
+// NewQuery builds the root of the Dagger API query tree for an existing
+// engine connection. It lives here, not in the connect-layer package
+// (internal/dagger), because that package imports this one for the
+// generated types — the reverse import would be a cycle.
+func NewQuery(gqlClient graphql.Client) *Query {
+	return &Query{
+		query: querybuilder.Query().Client(errorWrappedClient{gqlClient}),
 	}
 }
 
-func Connect() *Client {
-	return dag
-}
-
-// GraphQLClient returns the underlying graphql.Client
-func (c *Client) GraphQLClient() graphql.Client {
-	return c.client
-}
-
 // QueryBuilder returns the underlying query builder.
-func (c *Client) QueryBuilder() *querybuilder.Selection {
-	return c.Query.query
+func (r *Query) QueryBuilder() *querybuilder.Selection {
+	return r.query
 }
 
-func getClientParams() (graphql.Client, *querybuilder.Selection) {
+type errorWrappedClient struct {
+	graphql.Client
+}
+
+func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	err := c.Client.MakeRequest(ctx, req, resp)
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+		return err
+	}
+	return nil
+}
+
+// dag is this package's own connection, used only by the generated
+// UnmarshalJSON methods above to build a query root when deserializing an
+// object from its ID. It lives here, self-contained, rather than reusing
+// the connect-layer package's dag (internal/dagger.dag), because this
+// package can't import that one without creating a cycle. It talks to the
+// same underlying engine session either way, since both read it from the
+// same environment variables.
+var dag *Query
+
+func init() {
+	dag = NewQuery(getClientParams())
+}
+
+func getClientParams() graphql.Client {
 	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
 	if !ok {
 		panic("DAGGER_SESSION_PORT is not set")
@@ -227,9 +257,7 @@ func getClientParams() (graphql.Client, *querybuilder.Selection) {
 			return dialTransport.RoundTrip(r)
 		}),
 	}
-	gqlClient := errorWrappedClient{graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)}
-
-	return gqlClient, querybuilder.Query()
+	return graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)
 }
 
 func fallbackSpanContext(ctx context.Context) context.Context {
@@ -239,26 +267,10 @@ func fallbackSpanContext(ctx context.Context) context.Context {
 	return telemetry.Propagator.Extract(ctx, telemetry.NewEnvCarrier(true))
 }
 
-// TODO: pollutes namespace, move to non internal package in dagger.io/dagger
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
-}
-
-type errorWrappedClient struct {
-	graphql.Client
-}
-
-func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
-	err := c.Client.MakeRequest(ctx, req, resp)
-	if err != nil {
-		if e := getCustomError(err); e != nil {
-			return e
-		}
-		return err
-	}
-	return nil
 }
 {{ end }}
 
@@ -279,6 +291,41 @@ type Loadable[T any] interface {
 	WithGraphQLQuery(*querybuilder.Selection) T
 }
 
+{{ if not IsStandaloneClient }}
+// Ref returns a lazy reference to a node by its ID without making a
+// network call. The returned value can be used to chain further queries.
+func Ref[T Loadable[T]](root *Query, id ID) T {
+	var zero T
+	return zero.WithGraphQLQuery(selectNode(root.query, id, zero.XXX_GraphQLType()))
+}
+
+// Load loads a node by its ID with type safety. It verifies that the
+// node exists and matches the expected type before returning.
+//
+// The type parameter can be a concrete type or an interface. The
+// __typename check is done through the inline fragment so that
+// interface loads succeed when the concrete type (e.g. "Impl")
+// implements the expected interface (e.g. "CustomIface").
+func Load[T Loadable[T]](ctx context.Context, root *Query, id ID) (T, error) {
+	var zero T
+	expectedType := zero.XXX_GraphQLType()
+
+	// Query __typename through the inline fragment. For concrete types
+	// this is equivalent to a direct check. For interfaces, the fragment
+	// only matches if the concrete type implements the interface — an
+	// empty result means the ID doesn't satisfy the expected type.
+	q := selectNode(root.query, id, expectedType)
+	var typeName string
+	if err := q.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
+		return zero, fmt.Errorf("load %s: %w", expectedType, err)
+	}
+	if typeName == "" {
+		return zero, fmt.Errorf("load %s: node not found or does not implement %s", expectedType, expectedType)
+	}
+
+	return zero.WithGraphQLQuery(selectNode(root.query, id, expectedType)), nil
+}
+{{ else }}
 // Ref returns a lazy reference to a node by its ID without making a
 // network call. The returned value can be used to chain further queries.
 func Ref[T Loadable[T]](c *Client, id ID) T {
@@ -312,3 +359,4 @@ func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
 
 	return zero.WithGraphQLQuery(selectNode(c.query, id, expectedType)), nil
 }
+{{ end }}

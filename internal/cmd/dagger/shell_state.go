@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/querybuilder"
 	"golang.org/x/sync/errgroup"
@@ -327,7 +328,7 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 
 // assignAgent exposes a portable conversation recipe as an LLM-valued shell
 // variable, ready to continue through an ordinary Dagger Shell pipeline.
-func (h *shellCallHandler) assignAgent(id dagger.ID) {
+func (h *shellCallHandler) assignAgent(id core.ID) {
 	if h == nil || h.shellEnv == nil || h.state == nil {
 		return
 	}

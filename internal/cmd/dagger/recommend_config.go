@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	toml "github.com/pelletier/go-toml"
 )
 
 // recommendConfigFiles checks the contents of files in the recommendation scan.
 // The predicate decides whether the contents match. Read errors stop the scan.
-func recommendConfigFiles(ctx context.Context, ws *dagger.Workspace, pattern string, match func(string) bool) ([]string, error) {
+func recommendConfigFiles(ctx context.Context, ws *core.Workspace, pattern string, match func(string) bool) ([]string, error) {
 	paths, err := SimpleRecommend(pattern)(ctx, ws)
 	if err != nil {
 		return nil, err

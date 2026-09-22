@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -11,8 +11,8 @@ import (
 
 func (DirectorySuite) TestWithNewDirectoryNoop(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	parent := c.Directory().
-		WithNewDirectory("scope/existing", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o750}).
+	parent := core.NewQuery(c).Directory().
+		WithNewDirectory("scope/existing", core.DirectoryWithNewDirectoryOpts{Permissions: 0o750}).
 		WithNewFile("scope/existing/keep.txt", "keep").
 		Directory("scope")
 
@@ -20,7 +20,7 @@ func (DirectorySuite) TestWithNewDirectoryNoop(ctx context.Context, t *testctx.T
 	// to exceed overlay mount limits before this chain could be read.
 	result := parent
 	for range 600 {
-		result = result.WithNewDirectory("existing", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700})
+		result = result.WithNewDirectory("existing", core.DirectoryWithNewDirectoryOpts{Permissions: 0o700})
 	}
 	contents, err := result.File("existing/keep.txt").Contents(ctx)
 	require.NoError(t, err)
@@ -33,7 +33,7 @@ func (DirectorySuite) TestWithNewDirectoryNoop(ctx context.Context, t *testctx.T
 	require.Equal(t, 0o750, permissions)
 
 	// Reusing the snapshot must leave both branches usable for later writes.
-	for _, branch := range []*dagger.Directory{parent, result} {
+	for _, branch := range []*core.Directory{parent, result} {
 		contents, err := branch.WithNewFile("existing/next.txt", "next").File("existing/next.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "next", contents)
@@ -42,7 +42,7 @@ func (DirectorySuite) TestWithNewDirectoryNoop(ctx context.Context, t *testctx.T
 
 func (DirectorySuite) TestWithNewDirectoryPaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	parent := c.Directory().
+	parent := core.NewQuery(c).Directory().
 		WithNewFile("scope/existing/keep.txt", "keep").
 		WithSymlink("existing", "scope/link").
 		WithSymlink("missing", "scope/dangling").
@@ -59,7 +59,7 @@ func (DirectorySuite) TestWithNewDirectoryPaths(ctx context.Context, t *testctx.
 
 	t.Run("creates through symlinks", func(ctx context.Context, t *testctx.T) {
 		for target, created := range map[string]string{"link/new": "existing/new", "dangling": "missing"} {
-			result := parent.WithNewDirectory(target, dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700})
+			result := parent.WithNewDirectory(target, core.DirectoryWithNewDirectoryOpts{Permissions: 0o700})
 			stat, err := result.Stat(ctx, created)
 			require.NoError(t, err)
 			permissions, err := stat.Permissions(ctx)
@@ -76,7 +76,7 @@ func (DirectorySuite) TestWithNewDirectoryPaths(ctx context.Context, t *testctx.
 	})
 
 	t.Run("scratch root", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Directory().WithNewDirectory(".").Entries(ctx)
+		entries, err := core.NewQuery(c).Directory().WithNewDirectory(".").Entries(ctx)
 		require.NoError(t, err)
 		require.Empty(t, entries)
 	})
@@ -84,9 +84,9 @@ func (DirectorySuite) TestWithNewDirectoryPaths(ctx context.Context, t *testctx.
 
 func (DirectorySuite) TestWithNewDirectoryNoopCache(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	parent := c.Directory().WithNewFile("existing/keep.txt", identity.NewID())
-	run := func(dir *dagger.Directory) string {
-		out, err := c.Container().From(alpineImage).
+	parent := core.NewQuery(c).Directory().WithNewFile("existing/keep.txt", identity.NewID())
+	run := func(dir *core.Directory) string {
+		out, err := core.NewQuery(c).Container().From(alpineImage).
 			WithMountedDirectory("/input", dir).
 			WithExec([]string{"sh", "-c", "head -c 32 /dev/urandom | base64"}).
 			Stdout(ctx)

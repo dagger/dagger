@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -128,12 +128,12 @@ func (WorkspaceSuite) TestWorkspaceEntrypointWithoutConfig(ctx context.Context, 
 
 func (WorkspaceSuite) TestWorkspaceEntrypointAPI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.a]\nsource = './a'\nentrypoint = true\n[modules.b]\nsource = './b'\n").
 		AsWorkspace()
 	for _, tc := range []struct {
 		name string
-		ws   *dagger.Workspace
+		ws   *core.Workspace
 		want string
 	}{
 		{"select", ws.WithEntrypoint("b"), "b"},
@@ -151,7 +151,7 @@ func (WorkspaceSuite) TestWorkspaceEntrypointAPI(ctx context.Context, t *testctx
 		require.NoError(t, err, tc.name)
 		require.Equal(t, tc.want, name, tc.name)
 	}
-	_, err := c.Directory().
+	_, err := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.a]\nsource = './a'\nentrypoint = true\n[modules.b]\nsource = './b'\nentrypoint = true\n").
 		AsWorkspace().
 		Entrypoint(ctx)

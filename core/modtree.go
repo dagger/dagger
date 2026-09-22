@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	sdkcore "dagger.io/dagger/core"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -220,7 +221,7 @@ func (node *ModTreeNode) tryRunGeneratorAsCheckScaleOut(ctx context.Context) (_ 
 		rerr = errors.Join(rerr, cloudClient.Close())
 	}()
 
-	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
+	query, err := node.buildScaleOutModuleQuery(sdkcore.NewQuery(cloudClient.Dagger()).QueryBuilder())
 	if err != nil {
 		return true, err
 	}
@@ -287,7 +288,7 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 		rerr = errors.Join(rerr, cloudClient.Close())
 	}()
 
-	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
+	query, err := node.buildScaleOutModuleQuery(sdkcore.NewQuery(cloudClient.Dagger()).QueryBuilder())
 	if err != nil {
 		return true, err
 	}

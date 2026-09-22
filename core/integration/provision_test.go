@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
@@ -38,7 +39,7 @@ func TestProvision(t *testing.T) {
 var driverTestCases = []struct {
 	name      string
 	driver    string
-	provision func(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *dagger.Container
+	provision func(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *core.Container
 }{
 	{
 		name:      "docker",
@@ -109,7 +110,7 @@ func (ProvisionSuite) TestImageDriverConfig(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			configContents := `{"gc":{"reservedSpace": 1000, "maxUsedSpace": 2000, "minFreeSpace": 3000}}`
-			middleware := func(ctr *dagger.Container) *dagger.Container {
+			middleware := func(ctr *core.Container) *core.Container {
 				// this mounts the file into both the client+server containers
 				return ctr.WithNewFile("/root/.config/dagger/engine.json", configContents)
 			}
@@ -122,7 +123,7 @@ func (ProvisionSuite) TestImageDriverConfig(ctx context.Context, t *testctx.T) {
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:dev")
 
 			// check that the config was used by the engine
-			out, err := dockerc.WithExec([]string{"dagger", "query", "-M"}, dagger.ContainerWithExecOpts{Stdin: "{engine{localCache{reservedSpace,maxUsedSpace,minFreeSpace}}}", InsecureRootCapabilities: true}).Stdout(ctx)
+			out, err := dockerc.WithExec([]string{"dagger", "query", "-M"}, core.ContainerWithExecOpts{Stdin: "{engine{localCache{reservedSpace,maxUsedSpace,minFreeSpace}}}", InsecureRootCapabilities: true}).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"engine": {"localCache": {"reservedSpace": 1000, "maxUsedSpace": 2000, "minFreeSpace": 3000}}}`, out)
 
@@ -148,7 +149,7 @@ func (ProvisionSuite) TestImageDriverCACerts(ctx context.Context, t *testctx.T) 
 FAKE CERTIFICATE DATA
 -----END CERTIFICATE-----`
 
-			middleware := func(ctr *dagger.Container) *dagger.Container {
+			middleware := func(ctr *core.Container) *core.Container {
 				// this mounts the file into both the client+server containers
 				return ctr.WithNewFile("/root/.config/dagger/ca-certificates/fake-ca.crt", fakeCACert)
 			}
@@ -161,7 +162,7 @@ FAKE CERTIFICATE DATA
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:dev")
 
 			// check that the ca-cert was used by the engine
-			out, err := dockerc.WithExec([]string{"dagger", "query", "-M"}, dagger.ContainerWithExecOpts{Stdin: `
+			out, err := dockerc.WithExec([]string{"dagger", "query", "-M"}, core.ContainerWithExecOpts{Stdin: `
 				query {
 					container {
 						from(address: "alpine:latest") {
@@ -183,7 +184,7 @@ FAKE CERTIFICATE DATA
 }
 
 func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, t *testctx.T) {
-	dockerPs := func(ctx context.Context, t *testctx.T, dockerc *dagger.Container, cli string) []string {
+	dockerPs := func(ctx context.Context, t *testctx.T, dockerc *core.Container, cli string) []string {
 		out, err := dockerc.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			WithExec([]string{cli, "ps", "-q"}).
@@ -255,7 +256,7 @@ func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, 
 	}
 }
 
-func defaultCLIEngineImage(ctx context.Context, t *testctx.T, ctr *dagger.Container) string {
+func defaultCLIEngineImage(ctx context.Context, t *testctx.T, ctr *core.Container) string {
 	out, err := ctr.WithExec([]string{"dagger", "version"}).Stdout(ctx)
 	require.NoError(t, err)
 	match := regexp.MustCompile(`runner-host:\s+\S+?://([^?\s]+)`).FindStringSubmatch(out)
@@ -263,11 +264,11 @@ func defaultCLIEngineImage(ctx context.Context, t *testctx.T, ctr *dagger.Contai
 	return match[1]
 }
 
-func detectEngineVersion(ctx context.Context, t *testctx.T, ctr *dagger.Container) string {
+func detectEngineVersion(ctx context.Context, t *testctx.T, ctr *core.Container) string {
 	out, err := ctr.
 		// NOTE: we don't use any interesting functionality, so disable this check
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.0.0").
-		WithExec([]string{"dagger", "query", "-M"}, dagger.ContainerWithExecOpts{Stdin: "{version}", InsecureRootCapabilities: true}).
+		WithExec([]string{"dagger", "query", "-M"}, core.ContainerWithExecOpts{Stdin: "{version}", InsecureRootCapabilities: true}).
 		Stdout(ctx)
 	require.NoError(t, err)
 
@@ -284,7 +285,7 @@ type containerSetupOpts struct {
 	name    string
 	version string
 
-	middleware func(*dagger.Container) *dagger.Container
+	middleware func(*core.Container) *core.Container
 }
 
 const dockerdKernelCompatEntrypoint = `#!/bin/sh
@@ -362,10 +363,10 @@ fi
 exec /usr/local/bin/dagger-entrypoint.sh "$@"
 `
 
-func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *dagger.Container {
+func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *core.Container {
 	middleware := opts.middleware
 	if middleware == nil {
-		middleware = func(ctr *dagger.Container) *dagger.Container {
+		middleware = func(ctr *core.Container) *core.Container {
 			return ctr
 		}
 	}
@@ -378,17 +379,17 @@ func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 	}
 
 	port := 4000
-	dockerd := dag.Container().From("docker:"+dockerdTag).
-		WithNewFile("/usr/local/bin/dagger-dockerd-entrypoint.sh", dockerdKernelCompatEntrypoint, dagger.ContainerWithNewFileOpts{
+	dockerd := core.NewQuery(dag).Container().From("docker:"+dockerdTag).
+		WithNewFile("/usr/local/bin/dagger-dockerd-entrypoint.sh", dockerdKernelCompatEntrypoint, core.ContainerWithNewFileOpts{
 			Permissions: 0o755,
 		}).
 		With(middleware).
-		WithMountedCache("/var/lib/docker", dag.CacheVolume(opts.name+"-"+opts.version+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
-			Sharing: dagger.CacheSharingModePrivate,
+		WithMountedCache("/var/lib/docker", core.NewQuery(dag).CacheVolume(opts.name+"-"+opts.version+"-docker-lib"), core.ContainerWithMountedCacheOpts{
+			Sharing: core.CacheSharingModePrivate,
 		}).
 		WithExposedPort(port).
 		AsService(
-			dagger.ContainerAsServiceOpts{
+			core.ContainerAsServiceOpts{
 				Args: []string{
 					"/usr/local/bin/dagger-dockerd-entrypoint.sh",
 					"dockerd",
@@ -400,10 +401,10 @@ func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 		)
 	dockerd, err := dockerd.Start(ctx)
 	require.NoError(t, err)
-	dockerHost, err := dockerd.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	dockerHost, err := dockerd.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
-	dockerc := dag.Container().From("docker:"+dockercTag).
+	dockerc := core.NewQuery(dag).Container().From("docker:"+dockercTag).
 		With(middleware).
 		With(mountDockerConfig(dag)).
 		WithServiceBinding("docker", dockerd).
@@ -422,32 +423,32 @@ func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 	return dockerc
 }
 
-func podmanSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *dagger.Container {
+func podmanSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *core.Container {
 	middleware := opts.middleware
 	if middleware == nil {
-		middleware = func(ctr *dagger.Container) *dagger.Container {
+		middleware = func(ctr *core.Container) *core.Container {
 			return ctr
 		}
 	}
 
 	port := 4000
-	base := dag.Container().
+	base := core.NewQuery(dag).Container().
 		From("quay.io/podman/stable:" + cmp.Or(opts.version, "latest")).
 		With(middleware)
 	podman := base.
-		WithMountedCache("/var/lib/containers", dag.CacheVolume(opts.name+"-"+opts.version+"-podman-lib"), dagger.ContainerWithMountedCacheOpts{
-			Sharing: dagger.CacheSharingModePrivate,
+		WithMountedCache("/var/lib/containers", core.NewQuery(dag).CacheVolume(opts.name+"-"+opts.version+"-podman-lib"), core.ContainerWithMountedCacheOpts{
+			Sharing: core.CacheSharingModePrivate,
 		}).
 		WithExposedPort(port).
 		AsService(
-			dagger.ContainerAsServiceOpts{
+			core.ContainerAsServiceOpts{
 				Args:                     []string{"podman", "system", "service", fmt.Sprintf("tcp://0.0.0.0:%d", port), "--time=0"},
 				InsecureRootCapabilities: true,
 			},
 		)
 	podman, err := podman.Start(ctx)
 	require.NoError(t, err)
-	podmanHost, err := podman.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	podmanHost, err := podman.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	dockerc := base.
@@ -468,9 +469,9 @@ func podmanSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 	return dockerc
 }
 
-func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *dagger.Container {
-	repo := dag.Git("https://github.com/containerd/nerdctl.git")
-	var ref *dagger.GitRef
+func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *core.Container {
+	repo := core.NewQuery(dag).Git("https://github.com/containerd/nerdctl.git")
+	var ref *core.GitRef
 	if opts.version == "" {
 		ref = repo.Tag("v2.1.2")
 	} else {
@@ -480,17 +481,17 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 	// build nerdctl from scratch (annoying, but there *is no upstream package*)
 	base := ref.Tree().
 		DockerBuild().
-		WithMountedCache("/run/containerd", dag.CacheVolume(opts.name+"-run-containerd")).
-		WithMountedCache("/var/lib/containerd", dag.CacheVolume(opts.name+"-containerd")).
-		WithMountedCache("/var/lib/buildkit", dag.CacheVolume(opts.name+"-buildkit")).
-		WithMountedCache("/var/lib/containerd-stargz-grpc", dag.CacheVolume(opts.name+"-containerd-stargz-grpc")).
-		WithMountedCache("/var/lib/nerdctl", dag.CacheVolume(opts.name+"-nerdctl")).
+		WithMountedCache("/run/containerd", core.NewQuery(dag).CacheVolume(opts.name+"-run-containerd")).
+		WithMountedCache("/var/lib/containerd", core.NewQuery(dag).CacheVolume(opts.name+"-containerd")).
+		WithMountedCache("/var/lib/buildkit", core.NewQuery(dag).CacheVolume(opts.name+"-buildkit")).
+		WithMountedCache("/var/lib/containerd-stargz-grpc", core.NewQuery(dag).CacheVolume(opts.name+"-containerd-stargz-grpc")).
+		WithMountedCache("/var/lib/nerdctl", core.NewQuery(dag).CacheVolume(opts.name+"-nerdctl")).
 		WithEnvVariable("CACHEBUST", rand.Text()) // use a new service every test run
 	if opts.middleware != nil {
 		base = base.With(opts.middleware)
 	}
 
-	svc := base.AsService(dagger.ContainerAsServiceOpts{
+	svc := base.AsService(core.ContainerAsServiceOpts{
 		Args:                     []string{"containerd"},
 		InsecureRootCapabilities: true,
 	})
@@ -519,7 +520,7 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		opts := dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny, InsecureRootCapabilities: true}
+		opts := core.ContainerWithExecOpts{Expect: core.ReturnTypeAny, InsecureRootCapabilities: true}
 		_, err := ctr.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			WithExec([]string{"sh", "-c", "nerdctl rm -f $(nerdctl ps -aq)"}, opts).
@@ -535,36 +536,36 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 	return ctr
 }
 
-func dockerLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, engineTag string) (*dagger.Container, error) {
+func dockerLoadEngine(ctx context.Context, dag *dagger.Client, ctr *core.Container, engineTag string) (*core.Container, error) {
 	return doLoadEngine(ctx, dag, ctr, "docker", engineTag)
 }
 
-func nerdctlLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, engineTag string) (*dagger.Container, error) {
+func nerdctlLoadEngine(ctx context.Context, dag *dagger.Client, ctr *core.Container, engineTag string) (*core.Container, error) {
 	return doLoadEngine(ctx, dag, ctr, "nerdctl", engineTag)
 }
 
-func doLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, cli string, engineTag string) (*dagger.Container, error) {
+func doLoadEngine(ctx context.Context, dag *dagger.Client, ctr *core.Container, cli string, engineTag string) (*core.Container, error) {
 	var tarPath string
 	if v, ok := os.LookupEnv("_DAGGER_TESTS_ENGINE_TAR"); ok {
 		tarPath = v
 	} else {
 		tarPath = "./bin/engine.tar"
 	}
-	return loadEngineTar(ctx, ctr, cli, engineTag, dag.Host().File(tarPath))
+	return loadEngineTar(ctx, ctr, cli, engineTag, core.NewQuery(dag).Host().File(tarPath))
 }
 
-func loadKernelCompatEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, cli string, version string) (*dagger.Container, string, error) {
+func loadKernelCompatEngine(ctx context.Context, dag *dagger.Client, ctr *core.Container, cli string, version string) (*core.Container, string, error) {
 	engineTag := "registry.dagger.io/engine:" + version
 	compatTag := engineTag + "-kernel-compat"
-	engineTar := dag.Container().
+	engineTar := core.NewQuery(dag).Container().
 		From(engineTag).
-		WithNewFile("/usr/local/bin/dagger-engine-kernel-compat-entrypoint.sh", engineKernelCompatEntrypoint, dagger.ContainerWithNewFileOpts{
+		WithNewFile("/usr/local/bin/dagger-engine-kernel-compat-entrypoint.sh", engineKernelCompatEntrypoint, core.ContainerWithNewFileOpts{
 			Permissions: 0o755,
 		}).
 		WithEntrypoint([]string{"/usr/local/bin/dagger-engine-kernel-compat-entrypoint.sh"}).
-		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.ImageLayerCompressionGzip,
-			MediaTypes:        dagger.ImageMediaTypesDockerMediaTypes,
+		AsTarball(core.ContainerAsTarballOpts{
+			ForcedCompression: core.ImageLayerCompressionGzip,
+			MediaTypes:        core.ImageMediaTypesDockerMediaTypes,
 		})
 
 	ctr, err := loadEngineTar(ctx, ctr, cli, compatTag, engineTar)
@@ -574,7 +575,7 @@ func loadKernelCompatEngine(ctx context.Context, dag *dagger.Client, ctr *dagger
 	return ctr, compatTag, nil
 }
 
-func loadEngineTar(ctx context.Context, ctr *dagger.Container, cli string, engineTag string, engineTar *dagger.File) (*dagger.Container, error) {
+func loadEngineTar(ctx context.Context, ctr *core.Container, cli string, engineTag string, engineTar *core.File) (*core.Container, error) {
 	out, err := ctr.
 		WithMountedFile("engine.tar", engineTar).
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
@@ -597,8 +598,8 @@ func loadEngineTar(ctx context.Context, ctr *dagger.Container, cli string, engin
 }
 
 // mountDockerConfig is a helper for mounting the host's docker config if it exists
-func mountDockerConfig(dag *dagger.Client) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
+func mountDockerConfig(dag *dagger.Client) core.WithContainerFunc {
+	return func(ctr *core.Container) *core.Container {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return ctr
@@ -609,8 +610,7 @@ func mountDockerConfig(dag *dagger.Client) dagger.WithContainerFunc {
 		}
 
 		return ctr.WithMountedSecret(
-			"/root/.docker/config.json",
-			dag.SetSecret("docker-config-"+identity.NewID(), string(content)),
+			"/root/.docker/config.json", core.NewQuery(dag).SetSecret("docker-config-"+identity.NewID(), string(content)),
 		)
 	}
 }

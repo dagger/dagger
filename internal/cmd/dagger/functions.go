@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -213,7 +214,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 						// twice on main().
 
 						// Return the same ExecError exit code.
-						var ex *dagger.ExecError
+						var ex *core.ExecError
 						if errors.As(err, &ex) {
 							tty := !silent && (hasTTY && progress == "auto" || progress == "tty")
 							// Only the pretty frontend prints the stderr of
@@ -748,7 +749,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	}
 
 	if len(workspaceArgs) > 0 {
-		wsID, err := fc.c.Dagger().CurrentWorkspace().ID(fc.ctx)
+		wsID, err := core.NewQuery(fc.c.Dagger()).CurrentWorkspace().ID(fc.ctx)
 		if err != nil {
 			return fmt.Errorf("resolve current workspace for %q: %w", fn.Name, err)
 		}
@@ -858,7 +859,7 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 }
 
 func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modTypeDef, response any, o, e io.Writer, autoApply bool) error {
-	if returnType.Kind == dagger.TypeDefKindVoidKind {
+	if returnType.Kind == core.TypeDefKindVoidKind {
 		return nil
 	}
 
@@ -920,19 +921,19 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 	return err
 }
 
-func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
+func toChangeset(dag *dagger.Client, item any) (*core.Changeset, error) {
 	switch v := item.(type) {
 	case string:
-		return dagger.Ref[*dagger.Changeset](dag, dagger.ID(v)), nil
+		return core.Ref[*core.Changeset](core.NewQuery(dag), core.ID(v)), nil
 	case map[string]interface{}:
 		if id, ok := v["id"]; ok {
 			return toChangeset(dag, id)
 		}
 		return nil, fmt.Errorf("unexpected response type for changeset: %T", v)
-	case *dagger.Changeset:
+	case *core.Changeset:
 		return v, nil
 	case []interface{}:
-		css := make([]*dagger.Changeset, len(v))
+		css := make([]*core.Changeset, len(v))
 		for i, el := range v {
 			if cs, err := toChangeset(dag, el); err != nil {
 				return nil, err
@@ -940,14 +941,14 @@ func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 				css[i] = cs
 			}
 		}
-		return dag.Changeset().WithChangesets(css), nil
+		return core.NewQuery(dag).Changeset().WithChangesets(css), nil
 	default:
 		return nil, fmt.Errorf("unexpected response type for changeset: %T", v)
 	}
 }
 
 func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) error {
-	_, err := handleChangesetResponseWithApply(ctx, dag, response, changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, changeset *dagger.Changeset) error {
+	_, err := handleChangesetResponseWithApply(ctx, dag, response, changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, changeset *core.Changeset) error {
 		_, err := changeset.Export(ctx, ".")
 		return err
 	})
@@ -981,24 +982,24 @@ func changesetDispositionForAutoApply(autoApply bool) changesetDisposition {
 	return changesetDispositionPrompt
 }
 
-func handleWorkspaceResponseWithDisposition(ctx context.Context, dag *dagger.Client, before, workspace *dagger.Workspace, disposition changesetDisposition, previewOut io.Writer) (bool, error) {
+func handleWorkspaceResponseWithDisposition(ctx context.Context, dag *dagger.Client, before, workspace *core.Workspace, disposition changesetDisposition, previewOut io.Writer) (bool, error) {
 	workspace, err := materializeWorkspace(ctx, dag, workspace)
 	if err != nil {
 		return false, err
 	}
 	// Preview root-relative paths, including writes above the command directory.
 	// Export keeps the Workspace's client and host-root information.
-	return handleChangesetResponseWithApply(ctx, dag, workspace.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: before}), disposition, previewOut, func(ctx context.Context, _ *dagger.Changeset) error {
-		return workspace.Export(ctx, dagger.WorkspaceExportOpts{From: before})
+	return handleChangesetResponseWithApply(ctx, dag, workspace.WithWorkdir(".").Changes(core.WorkspaceChangesOpts{From: before}), disposition, previewOut, func(ctx context.Context, _ *core.Changeset) error {
+		return workspace.Export(ctx, core.WorkspaceExportOpts{From: before})
 	})
 }
 
-func materializeWorkspace(ctx context.Context, dag *dagger.Client, workspace *dagger.Workspace) (*dagger.Workspace, error) {
+func materializeWorkspace(ctx context.Context, dag *dagger.Client, workspace *core.Workspace) (*core.Workspace, error) {
 	id, err := workspace.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return dagger.Ref[*dagger.Workspace](dag, id), nil
+	return core.Ref[*core.Workspace](core.NewQuery(dag), id), nil
 }
 
 func handleChangesetResponseWithApply(
@@ -1007,7 +1008,7 @@ func handleChangesetResponseWithApply(
 	response any,
 	disposition changesetDisposition,
 	previewOut io.Writer,
-	apply func(context.Context, *dagger.Changeset) error,
+	apply func(context.Context, *core.Changeset) error,
 ) (applied bool, rerr error) {
 	changeset, err := toChangeset(dag, response)
 	if err != nil {
@@ -1128,7 +1129,7 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	}
 
 	// Load the LLM from the ID and assign it as $agent
-	llm := dagger.Ref[*dagger.LLM](dag, dagger.ID(llmID))
+	llm := core.Ref[*core.LLM](core.NewQuery(dag), core.ID(llmID))
 	if _, err := handler.initLLM(ctx, llm); err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ import (
 	"fmt"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -32,11 +33,11 @@ const (
 // poke(caller: Agent!, note: String!): String!, which fire-and-forgets note
 // to the MCP-supplied caller and confirms the send — into the
 // client's session and returns the Poker object's ID for llm.withTools.
-func servePokerModule(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID {
+func servePokerModule(ctx context.Context, t *testctx.T, c *dagger.Client) core.ID {
 	t.Helper()
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "go", "agent-poker")
-	require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+	require.NoError(t, core.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx))
 	res, err := testutil.QueryWithClient[struct {
 		Poker struct {
 			ID string
@@ -44,7 +45,7 @@ func servePokerModule(ctx context.Context, t *testctx.T, c *dagger.Client) dagge
 	}](c, t, `{ poker { id } }`, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Poker.ID)
-	return dagger.ID(res.Poker.ID)
+	return core.ID(res.Poker.ID)
 }
 
 // TestAgentArgInjection covers the happy path end to end: a recorded tool
@@ -57,12 +58,12 @@ func (AgentRuntimeSuite) TestAgentArgInjection(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 	pokerID := servePokerModule(ctx, t, c)
 
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt(pokePrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Poking the parent."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "poke",
-				Arguments: dagger.JSON(fmt.Sprintf(`{"note":%q}`, pokeNote))},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Poking the parent."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "poke",
+				Arguments: core.JSON(fmt.Sprintf(`{"note":%q}`, pokeNote))},
 		}).
 		// Placeholder result: the real module tool runs during replay (tool
 		// results are excluded from the replayer's history matching), so its
@@ -72,11 +73,11 @@ func (AgentRuntimeSuite) TestAgentArgInjection(ctx context.Context, t *testctx.T
 		// boundary right after the tool result lands — the loop records it
 		// as a prompt exactly here.
 		WithPrompt(pokeNote).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: pokeReply},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: pokeReply},
 		}))
 
-	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "poked", toolIDs: []dagger.ID{pokerID}})
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "poked", toolIDs: []core.ID{pokerID}})
 
 	delivery, reply, err := h.sendAndWait(ctx, t, pokePrompt)
 	require.NoError(t, err)
@@ -140,15 +141,15 @@ func (AgentRuntimeSuite) TestAgentArgRequiresAgentLoop(ctx context.Context, t *t
 		// The tool call fails (no agent in context under a sync loop); the
 		// error becomes the tool's errored result and the recorded turn
 		// still closes, so the message is asserted from the transcript.
-		model := cannedRecordingModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 			WithPrompt(pokePrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "poke",
-					Arguments: dagger.JSON(fmt.Sprintf(`{"note":%q}`, pokeNote))},
+			WithResponse([]core.LLMContentBlockInput{
+				{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "poke",
+					Arguments: core.JSON(fmt.Sprintf(`{"note":%q}`, pokeNote))},
 			}).
 			WithToolResult("call_1", "", true).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: pokeReply},
+			WithResponse([]core.LLMContentBlockInput{
+				{Kind: core.LLMContentBlockKindText, Text: pokeReply},
 			}))
 
 		res, err := testutil.QueryWithClient[struct {

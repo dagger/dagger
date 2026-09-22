@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 // Give a clean shutdown time to write its persistence checkpoint under load.
@@ -35,7 +36,7 @@ func closeClientBounded(ctx context.Context, client *dagger.Client) error {
 // stopNestedEngine attempts every shutdown step under its own deadline and
 // reports each failed step by name. Services are forgotten only after a
 // successful stop, so cleanup can retry; a client's Close is called only once.
-func stopNestedEngine(ctx context.Context, client **dagger.Client, upstream, tunnel **dagger.Service) error {
+func stopNestedEngine(ctx context.Context, client **dagger.Client, upstream, tunnel **core.Service) error {
 	step := func(name string, run func(context.Context) error) error {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fixtureEngineStopTimeout)
 		defer cancel()
@@ -64,7 +65,7 @@ func stopNestedEngine(ctx context.Context, client **dagger.Client, upstream, tun
 	if tunnel != nil && *tunnel != nil {
 		svc := *tunnel
 		err := step("nested tunnel stop", func(ctx context.Context) error {
-			_, err := svc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+			_, err := svc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 			return err
 		})
 		if err == nil {

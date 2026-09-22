@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
@@ -49,10 +50,10 @@ Examples:
 			},
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				ws := dag.CurrentWorkspace()
-				var services *dagger.UpGroup
+				ws := core.NewQuery(dag).CurrentWorkspace()
+				var services *core.UpGroup
 				if len(args) > 0 {
-					services = ws.Services(dagger.WorkspaceServicesOpts{Include: args})
+					services = ws.Services(core.WorkspaceServicesOpts{Include: args})
 				} else {
 					services = ws.Services()
 				}
@@ -65,7 +66,7 @@ Examples:
 	},
 }
 
-func loadUpGroupInfo(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGroup) (*UpGroupInfo, error) {
+func loadUpGroupInfo(ctx context.Context, dag *dagger.Client, upGroup *core.UpGroup) (*UpGroupInfo, error) {
 	items, err := loadGroupListDetails(ctx, dag, "fetch service information",
 		func(ctx context.Context) (any, error) { return upGroup.ID(ctx) },
 		loadUpQuery, "UpGroupListDetails",
@@ -92,7 +93,7 @@ type UpInfo struct {
 	Description string
 }
 
-func listServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGroup, cmd *cobra.Command) error {
+func listServices(ctx context.Context, dag *dagger.Client, upGroup *core.UpGroup, cmd *cobra.Command) error {
 	info, err := loadUpGroupInfo(ctx, dag, upGroup)
 	if err != nil {
 		return err
@@ -107,7 +108,7 @@ func listServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGro
 	return writeCommandList(cmd.OutOrStdout(), items)
 }
 
-func runServices(ctx context.Context, upGroup *dagger.UpGroup, _ *cobra.Command) (rerr error) {
+func runServices(ctx context.Context, upGroup *core.UpGroup, _ *cobra.Command) (rerr error) {
 	ctx, zoomSpan := Tracer().Start(ctx, "services", telemetry.Passthrough())
 	// The report uses this span's failure to include the cause and its logs.
 	defer telemetry.EndWithCause(zoomSpan, &rerr)

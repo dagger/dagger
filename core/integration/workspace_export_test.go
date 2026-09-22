@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
-func saveWorkspaceTo(ctx context.Context, c *dagger.Client, source, from *dagger.Workspace, path string) error {
+func saveWorkspaceTo(ctx context.Context, c *dagger.Client, source, from *core.Workspace, path string) error {
 	id, err := source.ID(ctx)
 	if err != nil {
 		return err
@@ -38,7 +39,7 @@ func (WorkspaceSuite) TestWorkspaceExportReusesOriginBase(ctx context.Context, t
 		t.Run(scenario, func(ctx context.Context, t *testctx.T) {
 			sink := newAgentTraceSink(t)
 			c := connect(ctx, t, sink.clientOpts()...)
-			origin, originURL := gitService(ctx, t, c, c.Directory().
+			origin, originURL := gitService(ctx, t, c, core.NewQuery(c).Directory().
 				WithNewFile("source.txt", "base source\n").
 				WithNewFile("destination.txt", "base destination\n"))
 			_, err := origin.Start(ctx)
@@ -50,7 +51,7 @@ func (WorkspaceSuite) TestWorkspaceExportReusesOriginBase(ctx context.Context, t
 			if scenario == "changed push routing" {
 				destinationPush = originURL
 			}
-			checkout := c.Container().From(golangImage).
+			checkout := core.NewQuery(c).Container().From(golangImage).
 				WithExec([]string{"apk", "add", "git"}).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithServiceBinding("origin", origin).
@@ -130,7 +131,7 @@ func workspaceExportOperationCounts(sink *agentTraceSink) map[string]int {
 
 func (WorkspaceSuite) TestWorkspaceExportBaseReadinessCacheIsolation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	checkout := c.Container().From(alpineImage).
+	checkout := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/repo").
 		WithExec([]string{"sh", "-ec", `
@@ -150,7 +151,7 @@ func (WorkspaceSuite) TestWorkspaceExportBaseReadinessCacheIsolation(ctx context
 	complete := checkout.Directory("/repo")
 	incomplete := complete.WithoutFile(".git/objects/" + blob[:2] + "/" + blob[2:])
 	for _, tc := range []struct {
-		directory *dagger.Directory
+		directory *core.Directory
 		ready     bool
 	}{{complete, true}, {incomplete, false}, {complete, true}} {
 		id, err := tc.directory.AsGit().Ref(head).ID(ctx)
@@ -182,10 +183,10 @@ func (WorkspaceSuite) TestWorkspaceExportReusesCapturedBase(ctx context.Context,
 	git("commit", "-m", "Git edge fixtures")
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout))...)
-	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 	baseID, err := base.ID(ctx)
 	require.NoError(t, err)
-	base = dagger.Ref[*dagger.Workspace](c, baseID)
+	base = core.Ref[*core.Workspace](core.NewQuery(c), baseID)
 	// Destination edits are newer than the frozen source. Reuse must borrow
 	// only committed history, never replace captured dirt with the source tree.
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("destination dirt"), 0o644))
@@ -201,7 +202,7 @@ func (WorkspaceSuite) TestWorkspaceExportReusesCapturedBase(ctx context.Context,
 	first := base.WithNewFile("pending.txt", "first save")
 	firstID, err := first.ID(ctx)
 	require.NoError(t, err)
-	first = dagger.Ref[*dagger.Workspace](c, firstID)
+	first = core.Ref[*core.Workspace](core.NewQuery(c), firstID)
 	require.NoError(t, saveWorkspaceTo(ctx, c, first, base, checkout))
 	second := first.WithNewFile("pending.txt", "second save")
 	require.NoError(t, saveWorkspaceTo(ctx, c, second, first, checkout))
@@ -237,7 +238,7 @@ func (WorkspaceSuite) TestWorkspaceExportReusesCapturedBase(ctx context.Context,
 func (WorkspaceSuite) TestWorkspaceExportToCheckoutIncrementally(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 	original := git("rev-parse", "HEAD")
 	destination := filepath.Join(t.TempDir(), "destination")
 	git("clone", checkout, destination)
@@ -253,16 +254,16 @@ func (WorkspaceSuite) TestWorkspaceExportToCheckoutIncrementally(ctx context.Con
 	require.NoError(t, os.WriteFile(filepath.Join(destination, "private.txt"), []byte("untracked host file"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(destination, "staged.txt"), []byte("staged host file"), 0o644))
 	targetGit("add", "staged.txt")
-	pin := func(ws *dagger.Workspace) *dagger.Workspace {
+	pin := func(ws *core.Workspace) *core.Workspace {
 		id, err := ws.ID(ctx)
 		require.NoError(t, err)
-		return dagger.Ref[*dagger.Workspace](c, id)
+		return core.Ref[*core.Workspace](core.NewQuery(c), id)
 	}
-	first := pin(base.WithNewFile("agent.txt", "agent").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	first := pin(base.WithNewFile("agent.txt", "agent").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "agent first", workspaceCommitDate)
 	}).
 		WithNewFile("pending.txt", "first pending").
-		WithMountedDirectory("mount", c.Directory().WithNewFile("private", "not exported")))
+		WithMountedDirectory("mount", core.NewQuery(c).Directory().WithNewFile("private", "not exported")))
 	require.NoError(t, saveWorkspaceTo(ctx, c, first, base, destination))
 	require.NoError(t, saveWorkspaceTo(ctx, c, first, base, destination), "retry with the old source baseline")
 	require.NoError(t, saveWorkspaceTo(ctx, c, first, first, filepath.Join(t.TempDir(), "absent")), "identical source and comparator need no destination capture")
@@ -300,11 +301,11 @@ func (WorkspaceSuite) TestWorkspaceExportToCheckoutPendingSafety(ctx context.Con
 		t.Run(operation, func(ctx context.Context, t *testctx.T) {
 			checkout, git := workspaceExportCheckout(ctx, t)
 			c := connect(ctx, t, dagger.WithWorkdir(checkout))
-			base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+			base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 			first := base.WithNewFile("pending.txt", "saved pending")
 			id, err := first.ID(ctx)
 			require.NoError(t, err)
-			first = dagger.Ref[*dagger.Workspace](c, id)
+			first = core.Ref[*core.Workspace](core.NewQuery(c), id)
 			require.NoError(t, saveWorkspaceTo(ctx, c, first, nil, checkout))
 			next := first.WithoutFile("pending.txt")
 			if operation == "rename" {
@@ -354,20 +355,20 @@ func workspaceExportCheckout(ctx context.Context, t *testctx.T) (string, func(..
 func (WorkspaceSuite) TestWorkspaceExportIndependentAgents(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	baseID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).ID(ctx)
+	baseID, err := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()).ID(ctx)
 	require.NoError(t, err)
-	base := dagger.Ref[*dagger.Workspace](c, baseID)
-	a := base.WithNewFile("agent-a.txt", "a").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	base := core.Ref[*core.Workspace](core.NewQuery(c), baseID)
+	a := base.WithNewFile("agent-a.txt", "a").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "agent A", workspaceCommitDate)
 	})
-	b := base.WithNewFile("agent-b.txt", "b").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	b := base.WithNewFile("agent-b.txt", "b").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "agent B", workspaceCommitDate)
 	})
 	aID, err := a.ID(ctx)
 	require.NoError(t, err)
 	bID, err := b.ID(ctx)
 	require.NoError(t, err)
-	a, b = dagger.Ref[*dagger.Workspace](c, aID), dagger.Ref[*dagger.Workspace](c, bID)
+	a, b = core.Ref[*core.Workspace](core.NewQuery(c), aID), core.Ref[*core.Workspace](core.NewQuery(c), bID)
 	// Both sources were frozen before either export. Each export captures the
 	// current checkout and integrates the other agent's work.
 	require.NoError(t, saveWorkspaceTo(ctx, c, a, nil, checkout))
@@ -392,11 +393,11 @@ func (WorkspaceSuite) TestWorkspaceExportCapturedDirt(ctx context.Context, t *te
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("captured dirt"), 0o644))
-	agentID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).With(func(ws *dagger.Workspace) *dagger.Workspace {
+	agentID, err := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()).With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "commit captured cleanup", workspaceCommitDate)
 	}).ID(ctx)
 	require.NoError(t, err)
-	agent := dagger.Ref[*dagger.Workspace](c, agentID)
+	agent := core.Ref[*core.Workspace](core.NewQuery(c), agentID)
 	require.NoError(t, saveWorkspaceTo(ctx, c, agent, nil, checkout))
 	require.Empty(t, git("status", "--porcelain"))
 	require.Equal(t, "captured dirt", git("show", "HEAD:base.txt"))
@@ -411,14 +412,14 @@ func (WorkspaceSuite) TestWorkspaceExportCapturedDirt(ctx context.Context, t *te
 func (WorkspaceSuite) TestWorkspaceExportIntegrationConflicts(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	agentID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).WithNewFile("base.txt", "agent").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	agentID, err := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()).WithNewFile("base.txt", "agent").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "agent", workspaceCommitDate)
 	}).ID(ctx)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("user"), 0o644))
 	git("commit", "-am", "user")
 	head := git("rev-parse", "HEAD")
-	require.Error(t, saveWorkspaceTo(ctx, c, dagger.Ref[*dagger.Workspace](c, agentID), nil, checkout))
+	require.Error(t, saveWorkspaceTo(ctx, c, core.Ref[*core.Workspace](core.NewQuery(c), agentID), nil, checkout))
 	require.Equal(t, head, git("rev-parse", "HEAD"))
 	require.Empty(t, git("status", "--porcelain"))
 }
@@ -429,9 +430,9 @@ func (WorkspaceSuite) TestWorkspaceExportPendingGitEdges(ctx context.Context, t 
 	git("add", ".gitignore")
 	git("commit", "-m", "ignore file")
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	baseID, err := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).ID(ctx)
+	baseID, err := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()).ID(ctx)
 	require.NoError(t, err)
-	base := dagger.Ref[*dagger.Workspace](c, baseID)
+	base := core.Ref[*core.Workspace](core.NewQuery(c), baseID)
 	head := git("rev-parse", "HEAD")
 	require.NoError(t, saveWorkspaceTo(ctx, c, base.WithNewFile("ignored.txt", "intentional edit"), nil, checkout))
 	contents, err := os.ReadFile(filepath.Join(checkout, "ignored.txt"))
@@ -439,7 +440,7 @@ func (WorkspaceSuite) TestWorkspaceExportPendingGitEdges(ctx context.Context, t 
 	require.Equal(t, "intentional edit", string(contents))
 	require.Equal(t, head, git("rev-parse", "HEAD"))
 	require.Empty(t, git("status", "--porcelain"))
-	empty := c.Directory().WithNewDirectory("empty").Changes(c.Directory())
+	empty := core.NewQuery(c).Directory().WithNewDirectory("empty").Changes(core.NewQuery(c).Directory())
 	err = saveWorkspaceTo(ctx, c, base.WithChanges(empty), nil, checkout)
 	require.ErrorContains(t, err, "cannot export empty directories")
 	_, err = os.Stat(filepath.Join(checkout, "empty"))
@@ -450,7 +451,7 @@ func (WorkspaceSuite) TestWorkspaceExportPendingGitEdges(ctx context.Context, t 
 func (WorkspaceSuite) TestWorkspaceExportCommitsAndOverlay(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	target := c.CurrentWorkspace()
+	target := core.NewQuery(c).CurrentWorkspace()
 	base, err := target.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	// Prime host reads before export; verify the actual disk writes below.
@@ -458,10 +459,10 @@ func (WorkspaceSuite) TestWorkspaceExportCommitsAndOverlay(ctx context.Context, 
 	require.NoError(t, err)
 	ws := snapshotWorkspace(ctx, t, c, target).WithNewFile("base.txt", "committed").
 		WithNewFile("pending.txt", "pending").
-		WithMountedDirectory("mounted", c.Directory().WithNewFile("private.txt", "mount"))
+		WithMountedDirectory("mounted", core.NewQuery(c).Directory().WithNewFile("private.txt", "mount"))
 	committed, err := commitWorkspace(ctx, c, ws, "engine commit", []string{"base.txt"})
 	require.NoError(t, err)
-	frozen := dagger.Ref[*dagger.Workspace](c, committed.ID)
+	frozen := core.Ref[*core.Workspace](core.NewQuery(c), committed.ID)
 	require.Equal(t, base, git("rev-parse", "HEAD"))
 	require.NoError(t, saveWorkspaceTo(ctx, c, frozen, nil, checkout))
 	require.Equal(t, committed.Git.Head.Commit, git("rev-parse", "HEAD"))
@@ -496,12 +497,12 @@ func (WorkspaceSuite) TestWorkspaceExportExplicitTargetAndCwd(ctx context.Contex
 	linked := filepath.Join(t.TempDir(), "linked")
 	git("worktree", "add", "-b", "linked", linked)
 	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(checkout, "sub")))
-	committed, err := commitWorkspace(ctx, c, c.CurrentWorkspace().WithNewFile("a.txt", "a").WithNewFile("b.txt", "b"), "nested", []string{"sub/a.txt"})
+	committed, err := commitWorkspace(ctx, c, core.NewQuery(c).CurrentWorkspace().WithNewFile("a.txt", "a").WithNewFile("b.txt", "b"), "nested", []string{"sub/a.txt"})
 	require.NoError(t, err)
-	frozen := dagger.Ref[*dagger.Workspace](c, committed.ID)
+	frozen := core.Ref[*core.Workspace](core.NewQuery(c), committed.ID)
 	// Destination is another checkout; cwd must not shift repo-root paths.
 	destination := connect(ctx, t, dagger.WithWorkdir(linked))
-	require.NoError(t, saveWorkspaceTo(ctx, destination, dagger.Ref[*dagger.Workspace](destination, committed.ID), nil, "."))
+	require.NoError(t, saveWorkspaceTo(ctx, destination, core.Ref[*core.Workspace](core.NewQuery(destination), committed.ID), nil, "."))
 	for _, name := range []string{"a.txt", "b.txt"} {
 		data, err := os.ReadFile(filepath.Join(linked, "sub", name))
 		require.NoError(t, err)
@@ -518,7 +519,7 @@ func (WorkspaceSuite) TestWorkspaceExportExplicitTargetAndCwd(ctx context.Contex
 func (WorkspaceSuite) TestWorkspaceExportCheckpointWithoutCommits(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	target := c.CurrentWorkspace()
+	target := core.NewQuery(c).CurrentWorkspace()
 	frozen := snapshotWorkspace(ctx, t, c, target).WithNewFile("base.txt", "pending")
 	_, err := frozen.ID(ctx)
 	require.NoError(t, err)
@@ -542,7 +543,7 @@ func (WorkspaceSuite) TestWorkspaceExportUnrelatedAndUnborn(ctx context.Context,
 			sourceGit("add", ".")
 			sourceGit("commit", "-m", "independent history")
 			c := connect(ctx, t, dagger.WithWorkdir(sourcePath))
-			frozen := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).WithNewFile("pending.txt", "must not export")
+			frozen := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()).WithNewFile("pending.txt", "must not export")
 			sourceID, err := frozen.ID(ctx)
 			require.NoError(t, err)
 			targetPath := t.TempDir()
@@ -552,7 +553,7 @@ func (WorkspaceSuite) TestWorkspaceExportUnrelatedAndUnborn(ctx context.Context,
 				targetPath, _ = workspaceExportCheckout(ctx, t)
 			}
 			destination := connect(ctx, t, dagger.WithWorkdir(targetPath))
-			err = saveWorkspaceTo(ctx, destination, dagger.Ref[*dagger.Workspace](destination, sourceID), nil, ".")
+			err = saveWorkspaceTo(ctx, destination, core.Ref[*core.Workspace](core.NewQuery(destination), sourceID), nil, ".")
 			require.Error(t, err)
 			_, err = os.Stat(filepath.Join(targetPath, "pending.txt"))
 			require.ErrorIs(t, err, os.ErrNotExist)
@@ -562,16 +563,16 @@ func (WorkspaceSuite) TestWorkspaceExportUnrelatedAndUnborn(ctx context.Context,
 
 func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.broken]\nsource = \"does-not-exist\"\n").
 		WithNewFile("root.txt", "from root\n").
 		WithNewFile("items/.hidden", "hidden\n").
 		WithNewFile("items/a.txt", "a\n").
 		WithNewFile("items/skip.txt", "skip\n").
 		WithNewFile("items/file with spaces.txt", "spaces\n").
-		WithNewFile("items/bin/tool", "#!/bin/sh\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
+		WithNewFile("items/bin/tool", "#!/bin/sh\n", core.DirectoryWithNewFileOpts{Permissions: 0o755}).
 		WithNewFile("items/sub/deep.txt", "deep\n")
-	base := c.Container().From(alpineImage).
+	base := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithDirectory("/selected", source.WithNewDirectory(".git")).
 		WithNewFile("/caller/merge/unrelated.txt", "unrelated\n").
@@ -670,9 +671,9 @@ func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 	t.Run("file rejects filters", func(ctx context.Context, t *testctx.T) {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "export", "a.txt", "-o", "/caller/rejected", "--include=*.txt",
-		}, dagger.ContainerWithExecOpts{
+		}, core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 		stderr, err := result.Stderr(ctx)
 		require.NoError(t, err)
@@ -682,9 +683,9 @@ func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 	t.Run("missing path", func(ctx context.Context, t *testctx.T) {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "export", "missing", "-o", "/caller/missing",
-		}, dagger.ContainerWithExecOpts{
+		}, core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 		stderr, err := result.Stderr(ctx)
 		require.NoError(t, err)
@@ -694,9 +695,9 @@ func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 	t.Run("output is required", func(ctx context.Context, t *testctx.T) {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "export", "a.txt",
-		}, dagger.ContainerWithExecOpts{
+		}, core.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect:                        core.ReturnTypeFailure,
 		})
 		stderr, err := result.Stderr(ctx)
 		require.NoError(t, err)
@@ -732,30 +733,30 @@ func (WorkspaceSuite) TestWorkspaceExportLocalWorkdirAndFrom(ctx context.Context
 			git("commit", "-m", "module files")
 			head := git("rev-parse", "HEAD")
 			c := connect(ctx, t, dagger.WithWorkdir(moduleDir))
-			baseline := c.CurrentWorkspace().WithNewFile("prior.txt", "earlier overlay")
+			baseline := core.NewQuery(c).CurrentWorkspace().WithNewFile("prior.txt", "earlier overlay")
 			baselineID, err := baseline.ID(ctx)
 			require.NoError(t, err)
-			baseline = dagger.Ref[*dagger.Workspace](c, baselineID)
+			baseline = core.Ref[*core.Workspace](core.NewQuery(c), baselineID)
 			after := baseline.WithNewFile("generated.txt", "generated").
 				WithNewFile("modified.txt", "after").WithoutFile("removed.txt").
 				WithNewFile("/root-generated.txt", "root generated").
-				WithMountedDirectory("mount", c.Directory().WithNewFile("private.txt", "private"))
+				WithMountedDirectory("mount", core.NewQuery(c).Directory().WithNewFile("private.txt", "private"))
 			if name == "from baseline with timestamp changes" {
 				// Content-equivalent cached trees can carry different timestamps.
 				// Force that difference without changing the comparator's bytes.
 				after = after.WithFile("prior.txt", baseline.File("prior.txt").WithTimestamps(1700000000)).
-					WithNewDirectory("literal[1]", c.Directory().WithNewDirectory("empty").WithNewFile("file*.txt", "literal"))
-				for _, ws := range []*dagger.Workspace{baseline.WithWorkdir("."), after.WithWorkdir(".")} {
+					WithNewDirectory("literal[1]", core.NewQuery(c).Directory().WithNewDirectory("empty").WithNewFile("file*.txt", "literal"))
+				for _, ws := range []*core.Workspace{baseline.WithWorkdir("."), after.WithWorkdir(".")} {
 					contents, err := ws.File(filepath.ToSlash(filepath.Join(modulePath, "prior.txt"))).Contents(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "earlier overlay", contents)
 				}
-				modified, err := after.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: baseline.WithWorkdir(".")}).ModifiedPaths(ctx)
+				modified, err := after.WithWorkdir(".").Changes(core.WorkspaceChangesOpts{From: baseline.WithWorkdir(".")}).ModifiedPaths(ctx)
 				require.NoError(t, err)
 				require.NotContains(t, modified, filepath.ToSlash(filepath.Join(modulePath, "prior.txt")))
 				t.Logf("baseline and after contain earlier overlay; declared modified paths: %v", modified)
 			}
-			opts := dagger.WorkspaceExportOpts{}
+			opts := core.WorkspaceExportOpts{}
 			if incremental {
 				// The comparator's cwd does not change the coordinate system used
 				// to export this workspace's changes.
@@ -781,7 +782,7 @@ func (WorkspaceSuite) TestWorkspaceExportLocalWorkdirAndFrom(ctx context.Context
 			require.Equal(t, head, git("rev-parse", "HEAD"))
 			require.Empty(t, git("diff", "--cached"))
 			if incremental {
-				require.NoError(t, after.Export(ctx, dagger.WorkspaceExportOpts{From: after}), "equal source and baseline are a no-op")
+				require.NoError(t, after.Export(ctx, core.WorkspaceExportOpts{From: after}), "equal source and baseline are a no-op")
 			}
 			if name == "from baseline with timestamp changes" {
 				contents, err := os.ReadFile(filepath.Join(moduleDir, "literal[1]", "file*.txt"))
@@ -791,7 +792,7 @@ func (WorkspaceSuite) TestWorkspaceExportLocalWorkdirAndFrom(ctx context.Context
 				require.NoError(t, err)
 				require.Empty(t, entries)
 				// A deletion-only export must not send any unchanged source files.
-				require.NoError(t, after.WithoutFile("generated.txt").Export(ctx, dagger.WorkspaceExportOpts{From: after}))
+				require.NoError(t, after.WithoutFile("generated.txt").Export(ctx, core.WorkspaceExportOpts{From: after}))
 				_, err = os.Stat(filepath.Join(moduleDir, "generated.txt"))
 				require.ErrorIs(t, err, os.ErrNotExist)
 				contents, err = os.ReadFile(filepath.Join(moduleDir, "prior.txt"))
@@ -817,28 +818,28 @@ func (WorkspaceSuite) TestWorkspaceExportRereadsHost(ctx context.Context, t *tes
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
 
 	// Prime the per-client host cache, as an agent reading before editing does.
-	contents, err := c.CurrentWorkspace().File("VERSION").Contents(ctx)
+	contents, err := core.NewQuery(c).CurrentWorkspace().File("VERSION").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "1", contents)
 
-	require.NoError(t, c.CurrentWorkspace().WithNewFile("VERSION", "2").Export(ctx))
+	require.NoError(t, core.NewQuery(c).CurrentWorkspace().WithNewFile("VERSION", "2").Export(ctx))
 	onDisk, err := os.ReadFile(versionPath)
 	require.NoError(t, err)
 	require.Equal(t, "2", string(onDisk))
 
 	// Reads after the export observe the exported contents, not the snapshot
 	// cached by the earlier read.
-	contents, err = c.CurrentWorkspace().File("VERSION").Contents(ctx)
+	contents, err = core.NewQuery(c).CurrentWorkspace().File("VERSION").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "2", contents)
 
 	// A second export diffs against what is on disk now, so reverting to the
 	// original contents is a real change and is written.
-	require.NoError(t, c.CurrentWorkspace().WithNewFile("VERSION", "1").Export(ctx))
+	require.NoError(t, core.NewQuery(c).CurrentWorkspace().WithNewFile("VERSION", "1").Export(ctx))
 	onDisk, err = os.ReadFile(versionPath)
 	require.NoError(t, err)
 	require.Equal(t, "1", string(onDisk))
-	contents, err = c.CurrentWorkspace().File("VERSION").Contents(ctx)
+	contents, err = core.NewQuery(c).CurrentWorkspace().File("VERSION").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "1", contents)
 }

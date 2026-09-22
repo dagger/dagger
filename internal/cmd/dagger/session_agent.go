@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
@@ -43,29 +44,29 @@ type agentRuntime interface {
 	// and parks the runtime PAUSED.
 	Interrupt(ctx context.Context) error
 	// State is the runtime's projected lifecycle state.
-	State(ctx context.Context) (dagger.AgentState, error)
+	State(ctx context.Context) (core.AgentState, error)
 	// SnapshotID is the ID of the runtime's last committed conversation --
 	// the honest chain the client re-roots on.
-	SnapshotID(ctx context.Context) (dagger.ID, error)
+	SnapshotID(ctx context.Context) (core.ID, error)
 	// Stop releases the runtime, leaving a readable tombstone.
 	Stop(ctx context.Context) error
 	// Reseed replaces the runtime's committed conversation in place,
 	// keeping the instance -- the continuity path for wholesale LLM
 	// replacements (compaction, workspace rebind, model change).
-	Reseed(ctx context.Context, llm *dagger.LLM) error
+	Reseed(ctx context.Context, llm *core.LLM) error
 }
 
 // agentMessage is a handle on one enqueued message: its delivery evidence,
 // and the reply of the turn that consumed it.
 type agentMessage interface {
-	Delivery(ctx context.Context) (dagger.AgentMessageDelivery, error)
+	Delivery(ctx context.Context) (core.AgentMessageDelivery, error)
 	Response(ctx context.Context) (string, error)
 }
 
 // liveAgent binds a real engine Agent to the agentRuntime interface.
 type liveAgent struct {
 	dag   *dagger.Client
-	agent *dagger.Agent
+	agent *core.Agent
 }
 
 var _ agentRuntime = liveAgent{}
@@ -88,18 +89,18 @@ func (l liveAgent) Resume(ctx context.Context) error {
 }
 
 func (l liveAgent) Interrupt(ctx context.Context) error {
-	_, err := l.agent.Pause(ctx, dagger.AgentPauseOpts{Interrupt: true})
+	_, err := l.agent.Pause(ctx, core.AgentPauseOpts{Interrupt: true})
 	return err
 }
 
-func (l liveAgent) State(ctx context.Context) (dagger.AgentState, error) {
+func (l liveAgent) State(ctx context.Context) (core.AgentState, error) {
 	return l.agent.State(ctx)
 }
 
 // waitForAgentState is CLI plumbing for the exact PAUSED transition needed
 // after an interrupt. Exact-state waiting is intentionally not public Agent
 // API: it is easy for callers to wait forever when an agent settles elsewhere.
-func waitForAgentState(ctx context.Context, rt agentRuntime, want dagger.AgentState) error {
+func waitForAgentState(ctx context.Context, rt agentRuntime, want core.AgentState) error {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -118,7 +119,7 @@ func waitForAgentState(ctx context.Context, rt agentRuntime, want dagger.AgentSt
 	}
 }
 
-func (l liveAgent) SnapshotID(ctx context.Context) (dagger.ID, error) {
+func (l liveAgent) SnapshotID(ctx context.Context) (core.ID, error) {
 	return l.agent.Snapshot().ID(ctx)
 }
 
@@ -127,7 +128,7 @@ func (l liveAgent) Stop(ctx context.Context) error {
 	return err
 }
 
-func (l liveAgent) Reseed(ctx context.Context, llm *dagger.LLM) error {
+func (l liveAgent) Reseed(ctx context.Context, llm *core.LLM) error {
 	_, err := l.agent.Reseed(ctx, llm)
 	return err
 }
@@ -144,7 +145,7 @@ type sessionAgent struct {
 	// llm is the conversation as an immutable value: the last committed
 	// snapshot while a runtime drives it, and the seed before one exists.
 	llmL  sync.RWMutex
-	llm   *dagger.LLM
+	llm   *core.LLM
 	model string
 
 	// name is the display label the roster shows. It carries no identity.
@@ -208,14 +209,14 @@ type sessionAgent struct {
 	// .clear resets to a plain workspace-bound LLM. Its original workspace is
 	// replaced with lastSyncedWorkspace on reset, preserving the composition
 	// without resurrecting a stale checkpoint.
-	initialLLM *dagger.LLM
+	initialLLM *core.LLM
 
 	// lastSyncedWorkspace is the immutable save/reload boundary in this
 	// conversation's own history, not a mirror of the live checkout. Export
 	// advances it without rebinding the LLM; reload captures the host instead.
 	// Reset/clear/session persistence reuse it. UI refreshes run asynchronously,
 	// so every access is guarded by lastSyncedWorkspaceL.
-	lastSyncedWorkspace  *dagger.Workspace
+	lastSyncedWorkspace  *core.Workspace
 	lastSyncedWorkspaceL sync.RWMutex
 
 	// syncOpL serializes explicit host synchronization (ExportChanges,
@@ -288,7 +289,7 @@ with no quotation marks, label, explanation, or punctuation. Do not call tools.
 	return titleLLM.
 		WithSystemPrompt("You name coding-agent sessions. Follow the requested output format exactly.").
 		WithPrompt(prompt).
-		Loop(dagger.LLMLoopOpts{MaxSteps: 1, MaxTokens: 32}).
+		Loop(core.LLMLoopOpts{MaxSteps: 1, MaxTokens: 32}).
 		LastReply(ctx)
 }
 
@@ -338,13 +339,13 @@ func (a *sessionAgent) ToggleAutocompact() {
 	}
 }
 
-func (a *sessionAgent) lastSynced() *dagger.Workspace {
+func (a *sessionAgent) lastSynced() *core.Workspace {
 	a.lastSyncedWorkspaceL.RLock()
 	defer a.lastSyncedWorkspaceL.RUnlock()
 	return a.lastSyncedWorkspace
 }
 
-func (a *sessionAgent) setLastSynced(workspace *dagger.Workspace) {
+func (a *sessionAgent) setLastSynced(workspace *core.Workspace) {
 	a.lastSyncedWorkspaceL.Lock()
 	a.lastSyncedWorkspace = workspace
 	a.lastSyncedWorkspaceL.Unlock()
@@ -353,7 +354,7 @@ func (a *sessionAgent) setLastSynced(workspace *dagger.Workspace) {
 // setInitialLLM installs the composition selected when prompt mode starts and
 // records its workspace as the conversation's first synchronization baseline.
 // Install it before any status reads, without capturing a temporary workspace.
-func (a *sessionAgent) setInitialLLM(llm *dagger.LLM) error {
+func (a *sessionAgent) setInitialLLM(llm *core.LLM) error {
 	a.initialLLM = llm
 	workspace := llm.Workspace()
 	if id, err := workspace.ID(a.session.plumbingCtx); err != nil {
@@ -363,7 +364,7 @@ func (a *sessionAgent) setInitialLLM(llm *dagger.LLM) error {
 		slog.Debug("starting LLM has no workspace synchronization baseline", "error", err)
 		workspace = nil
 	} else {
-		workspace = dagger.Ref[*dagger.Workspace](a.session.dag, id)
+		workspace = core.Ref[*core.Workspace](core.NewQuery(a.session.dag), id)
 	}
 	return a.updateSyncedLLM(llm, workspace)
 }
@@ -372,7 +373,7 @@ func (a *sessionAgent) setInitialLLM(llm *dagger.LLM) error {
 // baseline under the same lock used by asynchronous UI refreshes. The lock is
 // held across updateLLM because it schedules a refresh before returning; that
 // refresh must not race the baseline pointer update.
-func (a *sessionAgent) updateSyncedLLM(llm *dagger.LLM, workspace *dagger.Workspace) error {
+func (a *sessionAgent) updateSyncedLLM(llm *core.LLM, workspace *core.Workspace) error {
 	a.lastSyncedWorkspaceL.Lock()
 	defer a.lastSyncedWorkspaceL.Unlock()
 	if err := a.updateLLM(llm); err != nil {
@@ -404,16 +405,16 @@ func (a *sessionAgent) reset() {
 		// A truly unbound trace anchor has no checkpoint to recover. Keep .clear
 		// usable by binding the destination workspace; the next explicit reset
 		// replaces it with a portable checkpoint.
-		baseline = dag.CurrentWorkspace()
+		baseline = core.NewQuery(dag).CurrentWorkspace()
 	}
-	var llm *dagger.LLM
+	var llm *core.LLM
 	if a.initialLLM != nil {
 		llm = a.initialLLM.WithWorkspace(baseline)
 		if a.model != "" {
 			llm = llm.WithModel(a.model)
 		}
 	} else {
-		llm = dag.LLM(dagger.LLMOpts{Model: a.model}).
+		llm = core.NewQuery(dag).LLM(core.LLMOpts{Model: a.model}).
 			WithWorkspace(baseline)
 	}
 	a.updateLLM(llm) //nolint:errcheck
@@ -436,7 +437,7 @@ func (a *sessionAgent) currentAgent(ctx context.Context) (agentRuntime, error) {
 	if rt := a.runtime(); rt != nil {
 		return rt, nil
 	}
-	handle, err := a.llm.Spawn(ctx, dagger.LLMSpawnOpts{Name: a.name})
+	handle, err := a.llm.Spawn(ctx, core.LLMSpawnOpts{Name: a.name})
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +648,7 @@ func (a *sessionAgent) Interrupt() bool {
 // attached runtime is detached rather than mutating somebody else's agent.
 // Submitting the edited text therefore cannot join the old turn, and no
 // background conversation is touched.
-func (a *sessionAgent) Rewind(ctx context.Context, base *dagger.LLM) error {
+func (a *sessionAgent) Rewind(ctx context.Context, base *core.LLM) error {
 	if err := a.rewindRuntime(ctx, base); err != nil {
 		return err
 	}
@@ -657,7 +658,7 @@ func (a *sessionAgent) Rewind(ctx context.Context, base *dagger.LLM) error {
 // rewindRuntime synchronizes with the client turn and swaps the engine runtime;
 // split from Rewind so routing and turn-ordering policy can be tested without a
 // live dagger client.
-func (a *sessionAgent) rewindRuntime(ctx context.Context, base *dagger.LLM) error {
+func (a *sessionAgent) rewindRuntime(ctx context.Context, base *core.LLM) error {
 	a.turnL.Lock()
 	cancel := a.turnCancel
 	done := a.turnDone
@@ -684,11 +685,11 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *dagger.LLM) erro
 			return err
 		}
 		switch state {
-		case dagger.AgentStateRunning, dagger.AgentStateWaitingInput:
+		case core.AgentStateRunning, core.AgentStateWaitingInput:
 			if err := rt.Interrupt(ctx); err != nil {
 				return err
 			}
-			if err := waitForAgentState(ctx, rt, dagger.AgentStatePaused); err != nil {
+			if err := waitForAgentState(ctx, rt, core.AgentStatePaused); err != nil {
 				return err
 			}
 		}
@@ -725,7 +726,7 @@ func (a *sessionAgent) interruptIfBusy(rt agentRuntime) {
 		return
 	}
 	switch state {
-	case dagger.AgentStateRunning, dagger.AgentStateWaitingInput:
+	case core.AgentStateRunning, core.AgentStateWaitingInput:
 		a.interruptAgent(rt)
 	default:
 		slog.Debug("nothing to interrupt", "state", state)
@@ -746,7 +747,7 @@ func (a *sessionAgent) interruptAgent(rt agentRuntime) {
 		slog.Warn("failed to interrupt agent", "error", err)
 		return
 	}
-	if err := waitForAgentState(ctx, rt, dagger.AgentStatePaused); err != nil {
+	if err := waitForAgentState(ctx, rt, core.AgentStatePaused); err != nil {
 		slog.Debug("interrupted agent did not park in time", "error", err)
 	}
 }
@@ -761,7 +762,7 @@ func (a *sessionAgent) syncFromAgent(rt agentRuntime) error {
 	if err != nil {
 		return err
 	}
-	return a.setLLM(dagger.Ref[*dagger.LLM](a.session.dag, snapID))
+	return a.setLLM(core.Ref[*core.LLM](core.NewQuery(a.session.dag), snapID))
 }
 
 // WithPrompt submits one prompt-mode message and blocks until the turn it
@@ -885,7 +886,7 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 // conversation across identically-named roster entries. Dropping the runtime
 // survives as the fallback when the swap is refused; the next prompt submit
 // then packages the new value as a fresh agent.
-func (a *sessionAgent) updateLLM(llm *dagger.LLM) error {
+func (a *sessionAgent) updateLLM(llm *core.LLM) error {
 	if err := a.reseedAgent(llm); err != nil {
 		slog.Debug("could not reseed the agent; dropping the runtime instead", "error", err)
 		a.dropAgent()
@@ -905,7 +906,7 @@ func (a *sessionAgent) updateLLM(llm *dagger.LLM) error {
 // else's agent (a module's worker, say), and replacing its conversation is
 // not this session's call -- detaching is the most this session may do, the
 // same ownership rule detachAgent applies to stopping.
-func (a *sessionAgent) reseedAgent(llm *dagger.LLM) error {
+func (a *sessionAgent) reseedAgent(llm *core.LLM) error {
 	a.agentL.Lock()
 	rt, owned := a.agent, a.owned
 	a.agentL.Unlock()
@@ -918,7 +919,7 @@ func (a *sessionAgent) reseedAgent(llm *dagger.LLM) error {
 	return rt.Reseed(a.session.plumbingCtx, llm)
 }
 
-func (a *sessionAgent) setLLM(llm *dagger.LLM) error {
+func (a *sessionAgent) setLLM(llm *core.LLM) error {
 	a.llmL.Lock()
 	a.llm = llm
 	a.llmL.Unlock()
@@ -950,7 +951,7 @@ func (a *sessionAgent) setLLM(llm *dagger.LLM) error {
 // since the previous turn is this turn's own prompt growth. Compaction resets
 // the history (WithoutMessageHistory), dropping the cumulative total; a drop is
 // treated as a fresh baseline rather than negative growth.
-func (a *sessionAgent) reportContextUsage(ctx context.Context, llm *dagger.LLM) {
+func (a *sessionAgent) reportContextUsage(ctx context.Context, llm *core.LLM) {
 	if !debugFlag {
 		return
 	}
@@ -996,7 +997,7 @@ func (a *sessionAgent) reportContextUsage(ctx context.Context, llm *dagger.LLM) 
 // It describes ONE conversation, so it no-ops unless this conversation is the
 // one the prompt is pointed at: a status line following a background agent
 // would be a status line lying about what the user is typing into.
-func (a *sessionAgent) updateStatusLine(llm *dagger.LLM) error {
+func (a *sessionAgent) updateStatusLine(llm *core.LLM) error {
 	if !a.uiActive() {
 		return nil
 	}
@@ -1060,7 +1061,7 @@ func (a *sessionAgent) updateStatusLine(llm *dagger.LLM) error {
 // the checkpoint so pre-existing or already-saved dirt is not reported as new
 // work. Pressing ctrl+s exports edits and commits to the local Git workspace
 // (see ExportChanges). When neither remains, the bubble is cleared.
-func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
+func (a *sessionAgent) updateChangesPreview(llm *core.LLM) error {
 	if !a.uiActive() || llm == nil {
 		return nil
 	}
@@ -1164,7 +1165,7 @@ func (a *sessionAgent) refreshUIFromRuntime() {
 		if err != nil {
 			slog.Debug("could not read agent snapshot for UI refresh", "error", err)
 		} else {
-			llm = dagger.Ref[*dagger.LLM](a.session.dag, snapID)
+			llm = core.Ref[*core.LLM](core.NewQuery(a.session.dag), snapID)
 		}
 	}
 	if llm == nil {
@@ -1212,8 +1213,8 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 	if err != nil {
 		return err
 	}
-	source := dagger.Ref[*dagger.Workspace](a.session.dag, sourceID)
-	if err := source.Export(ctx, dagger.WorkspaceExportOpts{
+	source := core.Ref[*core.Workspace](core.NewQuery(a.session.dag), sourceID)
+	if err := source.Export(ctx, core.WorkspaceExportOpts{
 		Path: root,
 		From: a.lastSynced(),
 	}); err != nil {
@@ -1267,7 +1268,7 @@ const autoCompactReserveTokens = 16_384
 
 // maybeAutoCompact checks whether the current context is inside the response
 // reserve and automatically compacts if so.
-func (a *sessionAgent) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr error) {
+func (a *sessionAgent) maybeAutoCompact(ctx context.Context) (_ *core.LLM, rerr error) {
 	if !a.ShouldAutocompact() {
 		return a.llm, nil
 	}
@@ -1315,7 +1316,7 @@ func (a *sessionAgent) Clear() {
 	a.updateReferencesPreview()
 }
 
-func (a *sessionAgent) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
+func (a *sessionAgent) Compact(ctx context.Context) (_ *core.LLM, rerr error) {
 	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -1410,7 +1411,7 @@ func (a *sessionAgent) BranchSummary(ctx context.Context, customInstructions str
 		WithoutSystemPrompts().
 		WithSystemPrompt("You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified. Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.").
 		WithPrompt(prompt).
-		Loop(dagger.LLMLoopOpts{MaxSteps: 1, MaxTokens: 2048}).
+		Loop(core.LLMLoopOpts{MaxSteps: 1, MaxTokens: 2048}).
 		LastReply(ctx)
 	if err != nil {
 		return "", err
