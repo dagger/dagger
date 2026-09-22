@@ -186,6 +186,85 @@ type Extra {
 	require.Len(t, mapPattern.FindAllString(transcript, -1), 5)
 }
 
+func (LLMSuite) TestRecomposeRemoteToLocalStateAndReplay(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const remotePrompt = "The remote swapper prompt."
+	const localPrompt = "The locally installed swapper prompt."
+	initial := strings.ReplaceAll(fmt.Sprintf(recomposeSource, `
+  remoteOnly: String! { "remote implementation" }
+`), "base.withTools(currentNode)", fmt.Sprintf("base.withSystemPrompt(%q).withTools(currentNode)", remotePrompt))
+	updated := strings.ReplaceAll(fmt.Sprintf(recomposeSource, `
+  let addedDefault: String! = "local field default"
+
+  """A tool from the local installation."""
+  added: String! { addedDefault + "; local counter: " + toString(state) }
+`), "base.withTools(currentNode)", fmt.Sprintf("base.withSystemPrompt(%q).withTools(currentNode)", localPrompt))
+	updated = strings.ReplaceAll(updated, "Read the original private state.", "Read the locally installed private state.")
+
+	// Serve a real remote module without depending on an external repository.
+	// Replacing its installation must not make source identity part of state
+	// compatibility or ownership of the middleware's tools and prompts.
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, recomposeFixture(c, initial).Directory(".dagger/modules/swapper"))
+	ws := c.Directory().WithNewFile("dagger.toml", fmt.Sprintf("[modules.swapper]\nsource = %q\n", remoteRef)).AsWorkspace()
+	llm := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{
+		Base: c.LLM().WithWorkspace(ws).WithSystemPrompt(remotePrompt),
+	})
+	require.ElementsMatch(t, []string{remotePrompt, remotePrompt}, recomposeSystemPrompts(ctx, t, c, llm))
+	model := cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(llm, "mutate remote", "advance", "readState"))
+	llm = llm.WithModel(model).WithPrompt("mutate remote").Loop()
+	transcript, err := llm.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "private counter: 1")
+	mapPattern := regexp.MustCompile(`"memo"\s*:\s*"kept"`)
+	require.Len(t, mapPattern.FindAllString(transcript, -1), 1)
+
+	// Keep the installed name and object type, but switch from a git source
+	// to local code. This is not just an edit within the original origin.
+	ws = ws.WithNewFile("dagger.toml", "[modules.swapper]\nsource = \".dagger/modules/swapper\"\n").
+		WithNewFile(".dagger/modules/swapper/dagger.json", `{"name":"swapper","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile(recomposeModulePath, updated)
+	llm, err = recomposeLLM(ctx, c, ws, llm, "swapper")
+	require.NoError(t, err)
+	// The caller's identical prompt survives, while the remote-owned prompt
+	// is replaced rather than left behind or duplicated.
+	expectedPrompts := []string{remotePrompt, localPrompt}
+	require.ElementsMatch(t, expectedPrompts, recomposeSystemPrompts(ctx, t, c, llm))
+	tools, err := llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## added\n")
+	require.Contains(t, tools, "A tool from the local installation.")
+	require.Contains(t, tools, "Read the locally installed private state.")
+	require.NotContains(t, tools, "Read the original private state.")
+	require.NotContains(t, tools, "## remoteOnly\n")
+
+	model = cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(llm, "use local", "added", "advance", "added", "readState"))
+	llm = llm.WithModel(model).WithPrompt("use local").Loop()
+	transcript, err = llm.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "local field default; local counter: 1")
+	require.Contains(t, transcript, "local field default; local counter: 2")
+	require.Contains(t, transcript, "private counter: 2")
+	require.Len(t, mapPattern.FindAllString(transcript, -1), 2)
+
+	// A same-type state return and a repeated recompose must keep local code
+	// and ownership, including when the portable recipe is loaded elsewhere.
+	llm, err = recomposeLLM(ctx, c, ws, llm, "swapper")
+	require.NoError(t, err)
+	require.ElementsMatch(t, expectedPrompts, recomposeSystemPrompts(ctx, t, c, llm))
+	model = cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(llm, "replay local", "advance", "added", "readState"))
+	portable, err := llm.WithModel(model).PortableID(ctx)
+	require.NoError(t, err)
+	target := connect(ctx, t)
+	llm = dagger.Ref[*dagger.LLM](target, portable)
+	require.ElementsMatch(t, expectedPrompts, recomposeSystemPrompts(ctx, t, target, llm))
+	transcript, err = llm.WithPrompt("replay local").Loop().Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "local field default; local counter: 3")
+	require.Contains(t, transcript, "private counter: 3")
+	require.Len(t, mapPattern.FindAllString(transcript, -1), 3)
+	require.NotContains(t, transcript, "is not available")
+}
+
 func (LLMSuite) TestRecomposeFailureKeepsOldState(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct{ name, source string }{
 		{"broken source", "this is not a Dang module"},
