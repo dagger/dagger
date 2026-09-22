@@ -32,43 +32,12 @@ func upTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
 	return specificTestEnv(t, c, "services")
 }
 
-// daggerUpVerify starts "dagger up" with the given args in the background,
-// polls the given URL until it responds, verifies the body matches the
-// expected content (case-insensitive grep), then stops the process.
-// Returns a WithContainerFunc suitable for use with Container.WithExec.
+// daggerUpVerify prepares module definitions before timing service readiness.
 func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"sh", "-c", fmt.Sprintf(`
-			dagger up %s &
-			DAGGER_PID=$!
-
-			TIMEOUT=%d
-			ELAPSED=0
-			while ! wget -q --spider %s 2>/dev/null; do
-				sleep 2
-				ELAPSED=$((ELAPSED + 2))
-				if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-					echo "TIMEOUT: service did not become ready within ${TIMEOUT}s"
-					kill $DAGGER_PID 2>/dev/null
-					exit 1
-				fi
-			done
-
-			BODY=$(wget -qO- %s 2>/dev/null)
-			echo "$BODY" | grep -qi "%s" || {
-				echo "FAIL: expected %s in response, got: $BODY"
-				kill $DAGGER_PID 2>/dev/null
-				exit 1
-			}
-
-			echo "%s"
-			kill $DAGGER_PID 2>/dev/null
-			wait $DAGGER_PID 2>/dev/null
-			exit 0
-		`, upArgs, timeoutSecs, url, url, expectBodyContains, expectBodyContains, okMsg,
-		)}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec([]string{"sh", "-c", upVerifyScript(upArgs, url, expectBodyContains, okMsg, upVerifyBounds{
+			prepare: 300, ready: timeoutSecs, probe: 5, shutdown: 30,
+		})}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	}
 }
 
