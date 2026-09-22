@@ -161,14 +161,14 @@ func TestImportBarrierWaitsForApplication(t *testing.T) {
 	// With the event loop blocked, enqueue success cannot satisfy the barrier.
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
-	require.ErrorIs(t, fe.WaitForImport(ctx), context.DeadlineExceeded)
+	require.ErrorIs(t, fe.WaitForEventLoop(ctx), context.DeadlineExceeded)
 	require.Empty(t, fe.db.Calls)
 	// The cancelled caller must not leave a callback blocking the UI.
 	fe.tui.Step()
 	require.Contains(t, fe.db.Calls, cannedAnchorDigest)
 
 	done := make(chan error, 1)
-	go func() { done <- fe.WaitForImport(t.Context()) }()
+	go func() { done <- fe.WaitForEventLoop(t.Context()) }()
 	require.Eventually(t, func() bool {
 		fe.tui.Step()
 		select {
@@ -183,10 +183,10 @@ func TestImportBarrierWaitsForApplication(t *testing.T) {
 
 func TestImportBarrierReportMode(t *testing.T) {
 	fe := restorableFrontend(t, false)
-	require.NoError(t, fe.WaitForImport(t.Context()))
+	require.NoError(t, fe.WaitForEventLoop(t.Context()))
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	require.ErrorIs(t, fe.WaitForImport(ctx), context.Canceled)
+	require.ErrorIs(t, fe.WaitForEventLoop(ctx), context.Canceled)
 }
 
 // TestAgentRestorePlanReadsTheFrontendsDB: the plan the CLI acts on is the
