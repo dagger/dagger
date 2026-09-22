@@ -56,11 +56,11 @@ source = "other"
 				args []string
 				want []string
 			}{
-				{want: []string{"dag://" + test.target, "dag://other/" + test.target}},
-				{args: []string{test.target}, want: []string{"dag://" + test.target}},
-				{args: []string{"app:" + test.target}, want: []string{"dag://" + test.target}},
-				{args: []string{"other:" + test.target}, want: []string{"dag://other/" + test.target}},
-				{args: []string{"*:" + test.target}, want: []string{"dag://" + test.target, "dag://other/" + test.target}},
+				{want: []string{test.target, "other/" + test.target}},
+				{args: []string{test.target}, want: []string{test.target}},
+				{args: []string{"app:" + test.target}, want: []string{test.target}},
+				{args: []string{"other:" + test.target}, want: []string{"other/" + test.target}},
+				{args: []string{"*:" + test.target}, want: []string{test.target, "other/" + test.target}},
 			} {
 				args := append([]string{test.command, "-l"}, selection.args...)
 				if test.command == "check" {
