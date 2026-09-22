@@ -23,6 +23,8 @@ import (
 type artifactsSchema struct{}
 
 func (s *artifactsSchema) Install(srv *dagql.Server) {
+	srv.InstallObject(dagql.NewClass[*core.ArtifactPath](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.ArtifactPath]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.ArtifactDimension](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.ArtifactDimension]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.ArtifactDimensionKey](srv).View(AfterVersion("v1.0.0-0")))
@@ -40,6 +42,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
 		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
+		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit.")),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
@@ -217,6 +220,38 @@ func checkArtifactAddressWorkspace(entries []*core.Artifact, addr *dagaddress.Ad
 
 func (*artifactsSchema) dimensionDefinitions(_ context.Context, parent *core.Artifacts, _ struct{}) ([]*core.ArtifactDimension, error) {
 	return parent.DimensionDefinitions(), nil
+}
+
+func (s *artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Artifacts, args struct {
+	Absolute bool `default:"false"`
+}) ([]*core.ArtifactPath, error) {
+	paths := map[string]*core.ArtifactPath{}
+	for _, entry := range parent.Entries {
+		uri, err := entry.URI(core.ArtifactURIOpts{Absolute: args.Absolute})
+		if err != nil {
+			return nil, err
+		}
+		path := paths[uri]
+		if path == nil {
+			description, err := s.description(ctx, entry, struct{}{})
+			if err != nil {
+				return nil, err
+			}
+			path = &core.ArtifactPath{URI: uri, Description: description, Dimensions: []string{}}
+			paths[uri] = path
+		}
+		for _, dimension := range entry.DimensionDefinitions() {
+			if !slices.Contains(path.Dimensions, dimension.Identifier) {
+				path.Dimensions = append(path.Dimensions, dimension.Identifier)
+			}
+		}
+	}
+	result := make([]*core.ArtifactPath, 0, len(paths))
+	for _, path := range paths {
+		result = append(result, path)
+	}
+	slices.SortFunc(result, func(a, b *core.ArtifactPath) int { return strings.Compare(a.URI, b.URI) })
+	return result, nil
 }
 func (*artifactsSchema) dimensions(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
 	expanded, err := expandArtifacts(ctx, parent)

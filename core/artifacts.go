@@ -28,6 +28,21 @@ func (*ArtifactDimensionKey) Type() *ast.Type {
 	return &ast.Type{NamedType: "ArtifactDimensionKey", NonNull: true}
 }
 
+// ArtifactPath describes a schema path without constructing its collections.
+type ArtifactPath struct {
+	URI         string   `field:"true" doc:"The DAG address of this path, without dimension keys."`
+	Description string   `field:"true" doc:"The description of the field at this path."`
+	Dimensions  []string `field:"true" doc:"The dimension identifiers required by this path."`
+}
+
+func (*ArtifactPath) Type() *ast.Type {
+	return &ast.Type{NamedType: "ArtifactPath", NonNull: true}
+}
+
+func (*ArtifactPath) TypeDescription() string {
+	return "A schema path and its dimensions. The path can exist even when its collections have no runtime items."
+}
+
 // Artifact holds a complete address and its deferred object value. The module
 // tree and workspace are retained so evaluation does not depend on the caller.
 type Artifact struct {

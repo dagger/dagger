@@ -48,11 +48,14 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	defer span.End()
 	absolute, _ := cmd.Flags().GetBool("absolute")
 	all, _ := cmd.Flags().GetBool("all")
-	items, err := readListedArtifacts(ctx, dag, selection, absolute)
+	filtered, err := artifactListHasKeyFilters(cmd)
 	if err != nil {
 		return err
 	}
-	filtered, err := artifactListHasKeyFilters(cmd)
+	if !all && !filtered {
+		return listArtifactPaths(ctx, dag, selection, cmd, absolute)
+	}
+	items, err := readListedArtifacts(ctx, dag, selection, absolute)
 	if err != nil {
 		return err
 	}
@@ -126,9 +129,6 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		omitPath := !absolute && len(keys) > 0 && matches("", keys, group)
 		for _, row := range rows {
 			keys := listedArtifactKeys(row)
-			if !all && !filtered && len(keys) > 0 && matches(path, nil, row) {
-				keys = nil
-			}
 			rowPath, rowDefs := path, pathDefs
 			if !absolute && len(keys) > 0 && (omitPath || matches("", keys, row)) {
 				rowPath, rowDefs = "", defs
@@ -147,6 +147,44 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		return err
 	}
 	if len(lines) < len(items) {
+		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to list each key combination.")
+	}
+	return err
+}
+
+func listArtifactPaths(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, cmd *cobra.Command, absolute bool) error {
+	id, err := selection.ID(ctx)
+	if err != nil {
+		return err
+	}
+	var response struct {
+		Node struct {
+			PathDefinitions []struct {
+				URI, Description string
+				Dimensions       []string
+			}
+		}
+	}
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
+  node(id: $id) { ... on Artifacts { pathDefinitions(absolute: $absolute) { uri description dimensions } } }
+ }`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
+	if err != nil {
+		return err
+	}
+	var lines []commandListItem
+	hasDimensions := false
+	for _, path := range response.Node.PathDefinitions {
+		args, err := artifactListArguments(cmd, strings.TrimPrefix(path.URI, "dag://"), nil, nil)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, commandListItem{Name: args, Comment: firstDescriptionLine(path.Description)})
+		hasDimensions = hasDimensions || len(path.Dimensions) > 0
+	}
+	if err := writeCommandList(cmd.OutOrStdout(), lines); err != nil {
+		return err
+	}
+	if hasDimensions {
 		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to list each key combination.")
 	}
 	return err

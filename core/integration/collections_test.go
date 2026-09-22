@@ -303,6 +303,54 @@ func (*Part) Verify() error { return nil }
 	})
 }
 
+func (CollectionsSuite) TestCommandListSchemaPaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := collectionGoSource + `
+func (*Collections) Deferred() *Items { panic("collection keys evaluated") }
+// Verify this item.
+// +check
+func (*Item) Verify() error { panic("check evaluated") }
+// +generate
+func (*Item) Write() *dagger.Changeset { panic("generator evaluated") }
+// +up
+func (*Item) Serve() *dagger.Service { panic("service evaluated") }
+// +agent
+func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") }
+`
+	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
+	for _, tc := range []struct{ command, field string }{
+		{"check", "verify"}, {"generate", "write"}, {"up", "serve"}, {"shell", "broken"}, {"agent", "assistant"},
+	} {
+		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
+			path := "deferred/" + tc.field
+			out, err := base.With(daggerExec(tc.command, "-l", path)).CombinedOutput(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, path)
+			require.Equal(t, 1, strings.Count(out, "# Use --all to list each key combination."))
+			if tc.command == "check" {
+				require.Contains(t, out, "# Verify this item.")
+			}
+			_, err = base.With(daggerExec(tc.command, "-l", "--all", path)).Stdout(ctx)
+			requireErrOut(t, err, "collection keys evaluated")
+		})
+	}
+	t.Run("empty collection", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "empty/verify")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "empty/verify")
+		out, err = base.With(daggerExec("check", "-l", "--all", "empty/verify")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, out)
+		out, err = base.With(daggerExec("artifact", "list", "empty/verify")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, out)
+	})
+	t.Run("key filters still resolve keys", func(ctx context.Context, t *testctx.T) {
+		_, err := base.With(daggerExec("check", "-l", "deferred/verify", "--item=a")).Stdout(ctx)
+		requireErrOut(t, err, "collection keys evaluated")
+	})
+}
+
 func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ws, err := goGitBase(t, c).

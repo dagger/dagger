@@ -233,6 +233,10 @@ type ArtifactDimension implements Node {
 
 `dimensionDefinitions` lists dimensions on the selected schema paths. It does not read collection values. Empty collections still appear here. The CLI uses this metadata to register dimension flags.
 
+`pathDefinitions(absolute: Boolean = false): [ArtifactPath!]!` lists schema paths with their addresses, descriptions, and dimension identifiers. It does not construct collections or resolve dimension-key filters. Empty collections still have paths. Each path appears once, sorted by address.
+
+Command lists such as `check -l`, `up -l`, and `shell -l` use these paths by default. They show one hint when dimensions are present: `Use --all to list each key combination.` With `--all` or an explicit key filter, they enumerate runtime items. `artifact list` always enumerates runtime items.
+
 The container for one test has this address:
 
 ```json
