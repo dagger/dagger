@@ -1118,6 +1118,28 @@ impl AgentMiddlewareGroup {
             })
             .collect())
     }
+    /// Recompose the selected agent middlewares onto an existing LLM, replacing their owned system prompts and tool bindings while preserving tool object state.
+    /// Caller-added prompts and unrelated middleware contributions are retained. Prompts from older conversations without ownership metadata are never removed automatically. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+    /// Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or a changed module origin are errors regardless of version. The base workspace is preserved.
+    ///
+    /// # Arguments
+    ///
+    /// * `base` - The existing conversation whose tool state should be preserved.
+    pub fn recompose(&self, base: impl IntoID<Id>) -> Llm {
+        let mut query = self.selection.select("recompose");
+        query = query.arg_lazy(
+            "base",
+            Box::new(move || {
+                let base = base.clone();
+                Box::pin(async move { base.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
     ///
     /// # Arguments
@@ -11181,6 +11203,9 @@ pub struct LlmWithToolsOpts<'a> {
     /// Method names to exclude from the toolset (e.g. constructors, entrypoints).
     #[builder(setter(into, strip_option), default)]
     pub except: Option<Vec<&'a str>>,
+    /// Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module origin and ownership checks still apply.
+    #[builder(setter(into, strip_option), default)]
+    pub version: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmLoopOpts {
@@ -11684,6 +11709,9 @@ impl Llm {
         );
         if let Some(except) = opts.except {
             query = query.arg("except", except);
+        }
+        if let Some(version) = opts.version {
+            query = query.arg("version", version);
         }
         Llm {
             proc: self.proc.clone(),

@@ -34,6 +34,20 @@ class AgentMiddlewareGroup extends Client\AbstractObject implements Client\IdAbl
     }
 
     /**
+     * Recompose the selected agent middlewares onto an existing LLM, replacing their owned system prompts and tool bindings while preserving tool object state.
+     *
+     * Caller-added prompts and unrelated middleware contributions are retained. Prompts from older conversations without ownership metadata are never removed automatically. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+     *
+     * Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or a changed module origin are errors regardless of version. The base workspace is preserved.
+     */
+    public function recompose(LLM $base): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('recompose');
+        $innerQueryBuilder->setArgument('base', $base);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
      */
     public function compose(?LLM $base = null): LLM

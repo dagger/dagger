@@ -77,6 +77,30 @@ defmodule Dagger.AgentMiddlewareGroup do
        end}
     end
   end
+
+  @doc """
+  Recompose the selected agent middlewares onto an existing LLM, replacing their owned system prompts and tool bindings while preserving tool object state.
+
+  Caller-added prompts and unrelated middleware contributions are retained. Prompts from older conversations without ownership metadata are never removed automatically. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+
+  Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or a changed module origin are errors regardless of version. The base workspace is preserved.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
+  """
+  @spec recompose(t(), Dagger.LLM.t()) :: Dagger.LLM.t()
+  def recompose(%__MODULE__{} = agent_middleware_group, base) do
+    query_builder =
+      agent_middleware_group.query_builder
+      |> QB.select("recompose")
+      |> QB.put_arg("base", Dagger.ID.id!(base))
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: agent_middleware_group.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.AgentMiddlewareGroup do
