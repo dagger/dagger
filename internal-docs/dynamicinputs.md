@@ -102,6 +102,8 @@ It means dynamic input hooks can rewrite explicit args, and any implicit inputs 
 
 There is a dedicated test for this behavior: `TestImplicitInputRecomputedAfterCacheConfigIDRewrite`.
 
+Only the field's declared implicit inputs are recomputed. An implicit input the hook set itself with `CallRequest.SetImplicitInput` is kept as is. This is how a hook adds engine-computed identity that the resolver never receives and call displays omit, such as the digest of a module's declared clients (`TestImplicitInputSetByDynamicInputHook`).
+
 ## What implicit inputs are for
 
 The most common use of implicit inputs is scoping.
