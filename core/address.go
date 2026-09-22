@@ -37,14 +37,14 @@ func (*Address) TypeDescription() string {
 	return `A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.`
 }
 
-func (addr *Address) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (addr *Address) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if addr == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted address: nil address")
 	}
 	payload := persistedAddressPayload{Value: addr.Value, ExternalOnly: addr.ExternalOnly}
 	if addr.BoundWorkspace.Self() != nil {
-		wsID, err := encodePersistedObjectRef(cache, addr.BoundWorkspace, "address workspace")
+		wsID, err := encodePersistedObjectRef(enc, addr.BoundWorkspace, "address workspace")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -53,14 +53,14 @@ func (addr *Address) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*Address) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Address) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedAddressPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted address payload: %w", err)
 	}
 	addr := &Address{Value: persisted.Value, ExternalOnly: persisted.ExternalOnly}
 	if persisted.BoundWorkspaceResultID != 0 {
-		ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.BoundWorkspaceResultID, "address workspace")
+		ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dec, persisted.BoundWorkspaceResultID, "address workspace")
 		if err != nil {
 			return nil, err
 		}

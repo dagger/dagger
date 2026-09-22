@@ -651,8 +651,8 @@ type persistedArtifacts struct {
 	Selector ArtifactSelector
 }
 
-func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact, selector ArtifactSelector) (dagql.PersistedObjectEncoding, error) {
-	tree := newPersistedModTreeEncoder(cache)
+func encodeArtifacts(enc *dagql.PersistEncodeContext, entries []*Artifact, selector ArtifactSelector) (dagql.PersistedObjectEncoding, error) {
+	tree := newPersistedModTreeEncoder(enc)
 	payload := persistedArtifacts{Selector: selector}
 	for _, a := range entries {
 		p := persistedArtifact{LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, Directives: a.Directives}
@@ -662,7 +662,7 @@ func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact, sele
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		if a.Workspace.Self() != nil {
-			p.Workspace, err = encodePersistedObjectRef(cache, a.Workspace, "artifact workspace")
+			p.Workspace, err = encodePersistedObjectRef(enc, a.Workspace, "artifact workspace")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
@@ -672,12 +672,12 @@ func encodeArtifacts(cache dagql.PersistedObjectCache, entries []*Artifact, sele
 	payload.Tree = tree.tree
 	return encodePersistedObjectPayload(payload)
 }
-func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage) (*Artifacts, error) {
+func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (*Artifacts, error) {
 	var payload persistedArtifacts
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
 	}
-	nodes, err := decodePersistedModTree(ctx, srv, payload.Tree)
+	nodes, err := decodePersistedModTree(ctx, dec, payload.Tree)
 	if err != nil {
 		return nil, err
 	}
@@ -690,7 +690,7 @@ func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage
 		if a.Node == nil && a.LoadFailure == nil {
 			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
 		}
-		a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, srv, p.Workspace, "artifact workspace")
+		a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.Workspace, "artifact workspace")
 		if err != nil {
 			return nil, err
 		}
@@ -698,11 +698,11 @@ func decodeArtifacts(ctx context.Context, srv *dagql.Server, raw json.RawMessage
 	}
 	return result, nil
 }
-func (a *Artifact) EncodePersistedObject(_ context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(cache, []*Artifact{a}, ArtifactSelector{})
+func (a *Artifact) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	return encodeArtifacts(enc, []*Artifact{a}, ArtifactSelector{})
 }
-func (*Artifact) DecodePersistedObject(ctx context.Context, srv *dagql.Server, _ uint64, _ *dagql.ResultCall, raw json.RawMessage) (dagql.Typed, error) {
-	result, err := decodeArtifacts(ctx, srv, raw)
+func (*Artifact) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
+	result, err := decodeArtifacts(ctx, dec, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -711,11 +711,11 @@ func (*Artifact) DecodePersistedObject(ctx context.Context, srv *dagql.Server, _
 	}
 	return result.Entries[0], nil
 }
-func (a *Artifacts) EncodePersistedObject(_ context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(cache, a.Entries, a.Selector)
+func (a *Artifacts) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	return encodeArtifacts(enc, a.Entries, a.Selector)
 }
-func (*Artifacts) DecodePersistedObject(ctx context.Context, srv *dagql.Server, _ uint64, _ *dagql.ResultCall, raw json.RawMessage) (dagql.Typed, error) {
-	return decodeArtifacts(ctx, srv, raw)
+func (*Artifacts) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
+	return decodeArtifacts(ctx, dec, raw)
 }
 func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	owned, err := attachModTreeNodeDependencyResults(a.Node, attach)

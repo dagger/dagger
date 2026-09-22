@@ -31,18 +31,18 @@ func (*WorkspaceModule) TypeDescription() string {
 	return "A module entry in the workspace configuration."
 }
 
-func (m *WorkspaceModule) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (m *WorkspaceModule) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if m == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted workspace module: nil workspace module")
 	}
 	return encodePersistedObjectPayload(m)
 }
 
-func (*WorkspaceModule) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*WorkspaceModule) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var m WorkspaceModule
 	if err := json.Unmarshal(payload, &m); err != nil {
 		return nil, fmt.Errorf("decode persisted workspace module payload: %w", err)
@@ -75,18 +75,18 @@ func (*WorkspaceModuleSetting) TypeDescription() string {
 	return "A constructor-backed module setting."
 }
 
-func (s *WorkspaceModuleSetting) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (s *WorkspaceModuleSetting) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if s == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted workspace module setting: nil workspace module setting")
 	}
 	return encodePersistedObjectPayload(s)
 }
 
-func (*WorkspaceModuleSetting) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*WorkspaceModuleSetting) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var s WorkspaceModuleSetting
 	if err := json.Unmarshal(payload, &s); err != nil {
 		return nil, fmt.Errorf("decode persisted workspace module setting payload: %w", err)
@@ -131,11 +131,11 @@ type persistedWorkspaceSDK struct {
 	WorkspaceResultID uint64
 }
 
-func (s *WorkspaceSDK) EncodePersistedObject(_ context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (s *WorkspaceSDK) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	var id uint64
 	var err error
 	if s.Workspace.Self() != nil {
-		id, err = encodePersistedObjectRef(cache, s.Workspace, "SDK workspace")
+		id, err = encodePersistedObjectRef(enc, s.Workspace, "SDK workspace")
 	}
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
@@ -143,14 +143,14 @@ func (s *WorkspaceSDK) EncodePersistedObject(_ context.Context, cache dagql.Pers
 	return encodePersistedObjectPayload(persistedWorkspaceSDK{WorkspaceSDK: s, WorkspaceResultID: id})
 }
 
-func (*WorkspaceSDK) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*WorkspaceSDK) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var saved persistedWorkspaceSDK
 	if err := json.Unmarshal(payload, &saved); err != nil {
 		return nil, err
 	}
 	var err error
 	if saved.WorkspaceResultID != 0 {
-		saved.WorkspaceSDK.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dag, saved.WorkspaceResultID, "SDK workspace")
+		saved.WorkspaceSDK.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, saved.WorkspaceResultID, "SDK workspace")
 	}
 	return saved.WorkspaceSDK, err
 }

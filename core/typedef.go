@@ -2941,7 +2941,7 @@ func encodePersistedFunction(enc *dagql.PersistEncodeContext, fn *Function) (*pe
 	}
 	payload.ReturnTypeResultID = returnTypeID
 	if fn.CheckReturnType.Self() != nil {
-		payload.CheckReturnTypeResultID, err = encodePersistedObjectRef(cache, fn.CheckReturnType, "check return type")
+		payload.CheckReturnTypeResultID, err = encodePersistedObjectRef(enc, fn.CheckReturnType, "check return type")
 		if err != nil {
 			return nil, err
 		}
@@ -2991,7 +2991,7 @@ func decodePersistedFunction(ctx context.Context, dec *dagql.PersistDecodeContex
 		OriginalName:       fn.OriginalName,
 	}
 	if fn.CheckReturnTypeResultID != 0 {
-		decoded.CheckReturnType, err = loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, fn.CheckReturnTypeResultID, "check return type")
+		decoded.CheckReturnType, err = loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, fn.CheckReturnTypeResultID, "check return type")
 		if err != nil {
 			return nil, err
 		}

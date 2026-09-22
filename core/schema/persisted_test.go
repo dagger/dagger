@@ -87,7 +87,7 @@ func TestCoreSchemaObjectsHavePersistedFamilies(t *testing.T) {
 		families[name] = family.Name
 	}
 	require.Equal(t, persistedSchemaExpectedWithoutCodec, missing, "every installed core object either has a codec pair with a registered family or is one of the documented exceptions")
-	for _, name := range []string{"EnvVariable", "Port", "Label", "HealthcheckConfig", "SDKConfig", "ModuleConfigClient", "Schema", "GitBundleRef", "CurrentModule", "WorkspaceMigration", "WorkspaceMigrationStep", "Cloud", "Terminal", "Check", "CheckGroup", "Up", "UpGroup", "TerminalTarget", "TerminalGroup", "Container", "Directory", "GitRepository"} {
+	for _, name := range []string{"EnvVariable", "Port", "Label", "HealthcheckConfig", "SDKConfig", "ModuleConfigClient", "Schema", "GitBundleRef", "CurrentModule", "WorkspaceMigration", "WorkspaceMigrationStep", "Cloud", "Terminal", "Artifact", "Artifacts", "Address", "WorkspaceSDK", "Container", "Directory", "GitRepository"} {
 		require.Contains(t, families, name, "%s is an installed core object with a family", name)
 	}
 }
@@ -100,8 +100,11 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	// These runtime and middleware values have no persisted representation.
 	"Agent(*core.Agent encode=false decode=false family=false)",
 	"AgentMessage(*core.AgentMessage encode=false decode=false family=false)",
-	"AgentMiddleware(*core.AgentMiddleware encode=false decode=false family=false)",
-	"AgentMiddlewareGroup(*core.AgentMiddlewareGroup encode=false decode=false family=false)",
+	// Artifact metadata and evaluation wrappers have no persisted representation.
+	"ArtifactDimensionKey(*core.ArtifactDimensionKey encode=false decode=false family=false)",
+	"ArtifactResult(*core.ArtifactResult encode=false decode=false family=false)",
+	// Check constructors and projected functions explicitly disable persistence.
+	"Check(*core.Check encode=false decode=false family=false)",
 	// Engine inspection values are hidden from module SDKs
 	// (core.TypesHiddenFromModuleSDKs), so no module-return route exists;
 	// they remain a reachability question, not a permanent exclusion.

@@ -581,6 +581,9 @@ var persistedWorkspaceGitVisitor = persistedStructVisitor("", func(p *persistedW
 func visitPersistedModTreeRefs(w *persistedRefWalker, tree *persistedModTree) error {
 	for i := range tree.Nodes {
 		node := w.at("nodes").index(i)
+		if err := node.child("rootValueResultID", &tree.Nodes[i].RootValueResultID); err != nil {
+			return err
+		}
 		if err := node.child("moduleResultID", &tree.Nodes[i].ModuleResultID); err != nil {
 			return err
 		}
@@ -594,33 +597,24 @@ func visitPersistedModTreeRefs(w *persistedRefWalker, tree *persistedModTree) er
 	return nil
 }
 
-func visitPersistedGeneratorRefs(w *persistedRefWalker, g *persistedGeneratorPayload) error {
-	if err := w.child("changesResultID", &g.ChangesResultID); err != nil {
+var persistedArtifactsVisitor = persistedStructVisitor("", func(p *persistedArtifacts, w *persistedRefWalker) error {
+	if err := visitPersistedModTreeRefs(w.at("Tree"), &p.Tree); err != nil {
 		return err
 	}
-	if err := w.child("workspaceBaseResultID", &g.WorkspaceBaseResultID); err != nil {
-		return err
-	}
-	return w.child("workspaceResultID", &g.WorkspaceResultID)
-}
-
-var persistedGeneratorVisitor = persistedStructVisitor("", func(p *persistedGeneratorObjectPayload, w *persistedRefWalker) error {
-	if err := visitPersistedModTreeRefs(w.at("tree"), &p.Tree); err != nil {
-		return err
-	}
-	return visitPersistedGeneratorRefs(w.at("generator"), &p.Generator)
-})
-
-var persistedGeneratorGroupVisitor = persistedStructVisitor("", func(p *persistedGeneratorGroupPayload, w *persistedRefWalker) error {
-	if err := visitPersistedModTreeRefs(w.at("tree"), &p.Tree); err != nil {
-		return err
-	}
-	for i := range p.Generators {
-		if err := visitPersistedGeneratorRefs(w.at("generators").index(i), &p.Generators[i]); err != nil {
+	for i := range p.Entries {
+		if err := w.at("Entries").index(i).child("Workspace", &p.Entries[i].Workspace); err != nil {
 			return err
 		}
 	}
+	return nil
+})
+
+var persistedAddressVisitor = persistedStructVisitor("", func(p *persistedAddressPayload, w *persistedRefWalker) error {
 	return w.child("boundWorkspaceResultID", &p.BoundWorkspaceResultID)
+})
+
+var persistedWorkspaceSDKVisitor = persistedStructVisitor("", func(p *persistedWorkspaceSDK, w *persistedRefWalker) error {
+	return w.child("WorkspaceResultID", &p.WorkspaceResultID)
 })
 
 // visitPersistedModuleObjectValue walks the tagged field forms of a module
@@ -666,6 +660,9 @@ var persistedFunctionVisitor = persistedStructVisitor("", func(p *persistedFunct
 		return err
 	}
 	if err := w.child("returnTypeResultID", &p.ReturnTypeResultID); err != nil {
+		return err
+	}
+	if err := w.child("checkReturnTypeResultID", &p.CheckReturnTypeResultID); err != nil {
 		return err
 	}
 	return w.child("sourceMapResultID", &p.SourceMapResultID)
