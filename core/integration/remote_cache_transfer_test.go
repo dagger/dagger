@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	enginecore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -133,6 +134,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	type running struct {
 		upstream, tunnel *dagger.Service
 		client           *dagger.Client
+		sink             *agentTraceSink
 		endpoint         string
 	}
 	stop := func(t *testctx.T, e *running) {
@@ -154,8 +156,14 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, err)
 		e.endpoint, err = e.tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
-		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithWorkdir(checkout), dagger.WithLogOutput(testutil.NewTWriter(t)))
-		require.NoError(t, err)
+		// Start an independent CLI session on this exact engine, with telemetry
+		// attached before construction; an inherited nested session cannot supply
+		// the committed anchor or exercise this engine's transferred cache.
+		e.client, e.sink = connectWithTrace(ctx, t, engineconn.Config{
+			RunnerHost: e.endpoint,
+			Workdir:    checkout,
+			LogOutput:  testutil.NewTWriter(t),
+		})
 		return e
 	}
 	callReport := func(t *testctx.T, client *dagger.Client, seed string) (reportID, artifactID string) {
@@ -317,7 +325,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				require.Equal(t, "READY", data.Node["status"])
 			}
 			loadNotes("noteFile", "consumer file notes")
-			transferBoundToolControl(ctx, t, b.client, saved)
+			transferBoundToolControl(ctx, t, b.client, b.sink, saved)
 			var checkpoint transferFixtureReport
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{saved}, &checkpoint))
 			require.Len(t, checkpoint.Rows, 1)
@@ -699,14 +707,18 @@ func transferContextTool(ctx context.Context, t *testctx.T, client *dagger.Clien
 	return result.LLM.WithTools.WithPrompt.Loop.Transcript
 }
 
-func transferBoundToolControl(ctx context.Context, t *testctx.T, client *dagger.Client, saved string) {
+func transferBoundToolControl(ctx context.Context, t *testctx.T, client *dagger.Client, sink *agentTraceSink, saved string) {
 	t.Helper()
 	var binding struct {
-		LLM struct{ WithTools struct{ PortableID string } }
+		LLM struct{ WithTools struct{ ID string } }
 	}
-	require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($id:ID!){llm{withTools(object:$id){portableID}}}`, Variables: map[string]any{"id": saved}}, &dagger.Response{Data: &binding}))
+	require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($id:ID!){llm{withTools(object:$id){id}}}`, Variables: map[string]any{"id": saved}}, &dagger.Response{Data: &binding}))
+	// The local handle only seeds an inert agent. Reconstruction uses the
+	// committed control digest and complete payload closure observed by the sink.
+	recipe, err := sink.captureLLMRecipe(ctx, t, client, dagger.Ref[*dagger.LLM](client, dagger.ID(binding.LLM.WithTools.ID)))
+	require.NoError(t, err)
 	bound := new(call.ID)
-	require.NoError(t, bound.Decode(binding.LLM.WithTools.PortableID))
+	require.NoError(t, bound.Decode(string(recipe)))
 	var objectID string
 	for cur := bound; cur != nil; cur = cur.Receiver() {
 		if cur.Field() != "withTools" {
@@ -715,7 +727,7 @@ func transferBoundToolControl(ctx context.Context, t *testctx.T, client *dagger.
 		for _, arg := range cur.Args() {
 			if arg.Name() == "object" {
 				id := arg.Value().(*call.LiteralID).Value()
-				require.False(t, id.IsHandle(), "portable binding carries a recipe for lazy loading")
+				require.False(t, id.IsHandle(), "traced tool binding carries a recipe for lazy loading")
 				var err error
 				objectID, err = id.Encode()
 				require.NoError(t, err)
