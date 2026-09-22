@@ -281,7 +281,8 @@ func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{
 	if err != nil {
 		return "", err
 	}
-	for _, group := range bound.Selector.DimensionAlternatives {
+	if len(bound.Selector.DimensionAlternatives) > 0 {
+		group := bound.Selector.DimensionAlternatives[0]
 		if len(group) == 0 {
 			return "dag://{}", nil
 		}
@@ -606,12 +607,20 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		})
 	}
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
-	for i := 1; i < len(result.Entries); i++ {
-		if slices.Equal(result.Entries[i-1].Path, result.Entries[i].Path) && len(result.Entries[i-1].DimensionDefinitions()) == len(result.Entries[i].DimensionDefinitions()) {
-			return nil, fmt.Errorf("ambiguous artifact path %q", strings.Join(result.Entries[i].Path, "/"))
-		}
+	if err := validateArtifactPaths(result.Entries); err != nil {
+		return nil, err
 	}
 	return result, nil
+}
+
+// Entries must be sorted by path before checking for duplicate paths.
+func validateArtifactPaths(entries []*core.Artifact) error {
+	for i := 1; i < len(entries); i++ {
+		if slices.Equal(entries[i-1].Path, entries[i].Path) && len(entries[i-1].DimensionDefinitions()) == len(entries[i].DimensionDefinitions()) {
+			return fmt.Errorf("ambiguous artifact path %q", strings.Join(entries[i].Path, "/"))
+		}
+	}
+	return nil
 }
 
 func artifactGeneratorNode(node *core.ModTreeNode) *core.ModTreeNode {
