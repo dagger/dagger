@@ -150,7 +150,7 @@ func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *da
 // Command list output uses the same dimension flags as command execution.
 func registerCommandArtifactFlags(cmd *cobra.Command) {
 	registerArtifactListFlags(cmd)
-	cmd.Flags().BoolP("all", "a", false, "List each dimension key combination")
+	cmd.Flags().BoolP("all", "a", false, "Expand collections and list each item")
 }
 
 func isArtifactCommand(cmd *cobra.Command) bool {
