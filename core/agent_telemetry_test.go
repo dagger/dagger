@@ -22,6 +22,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -40,6 +41,7 @@ type recordedState struct {
 type stateRecorder struct {
 	mu      sync.Mutex
 	records []recordedState
+	control []sdklog.Record
 }
 
 func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
@@ -62,6 +64,9 @@ func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.records = append(r.records, got)
+	if agentcontrol.IsRecord(*rec) {
+		r.control = append(r.control, rec.Clone())
+	}
 	return nil
 }
 
@@ -97,11 +102,25 @@ func stateRecorderCtx(t *testing.T) (*stateRecorder, context.Context) {
 // testRuntime builds a bare runtime entry wired to a recording context — the
 // facts and the publication plumbing only, since that is all the state
 // projection reads.
-func testRuntime(ctx context.Context) *AgentRuntime {
+func testRuntime(t *testing.T, ctx context.Context) *AgentRuntime {
+	t.Helper()
+	p := newAgentControlPublisher(ctx)
+	t.Cleanup(func() { require.NoError(t, p.close(context.Background())) })
+	capture := &agentCapture{digest: "xxh3:committed"}
+	capture.once.Do(func() {})
 	return &AgentRuntime{
-		name:         "test",
-		stateChanged: make(chan struct{}),
-		spanCtx:      ctx,
+		key: "test", name: "test", stateChanged: make(chan struct{}), spanCtx: ctx,
+		control: p, controlCapture: capture,
+		controlNamespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "registry"},
+	}
+}
+
+func (rt *AgentRuntime) flushControl() {
+	ack := make(chan struct{})
+	select {
+	case rt.control.flush <- ack:
+		<-ack
+	case <-rt.control.done:
 	}
 }
 
@@ -122,8 +141,9 @@ func testAgentContext(t *testing.T, ctx context.Context, id, name string) contex
 
 func (rt *AgentRuntime) testTransition(mut func()) {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	rt.transitionLocked(mut)
+	rt.mu.Unlock()
+	rt.flushControl()
 }
 
 // TestPublishStateEdgeTriggered covers the core contract: one record per
@@ -131,12 +151,13 @@ func (rt *AgentRuntime) testTransition(mut func()) {
 // the projection where it was.
 func TestPublishStateEdgeTriggered(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 
 	// Seed, as loop() does on start.
 	rt.mu.Lock()
 	rt.publishStateLocked()
 	rt.mu.Unlock()
+	rt.flushControl()
 	require.Equal(t, []string{string(AgentStateIdle)}, rec.states())
 
 	// Mail arrives: IDLE -> RUNNING.
@@ -161,16 +182,14 @@ func TestPublishStateEdgeTriggered(t *testing.T) {
 	require.Equal(t, []string{"IDLE", "RUNNING", "IDLE", "PAUSED", "IDLE"}, rec.states())
 }
 
-// TestPublishStateBeforeStartIsSilent covers the inert entry: an agent
-// created but never started has no span to attribute records to, and its
-// absence of records is exactly what a client projects as IDLE anyway.
-func TestPublishStateBeforeStartIsSilent(t *testing.T) {
+// A dormant entry publishes without waiting for a loop/identity span.
+func TestPublishStateBeforeStart(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 	rt.spanCtx = nil
 
 	rt.testTransition(func() { rt.mailbox = append(rt.mailbox, "msg-1") })
-	require.Empty(t, rec.states(), "an unstarted runtime must publish nothing")
+	require.Equal(t, []string{"RUNNING"}, rec.states(), "publication does not depend on a loop span")
 
 	// Once the loop starts, the first publication reports the state as it
 	// stands — including the mail that arrived while it was inert.
@@ -178,6 +197,7 @@ func TestPublishStateBeforeStartIsSilent(t *testing.T) {
 	rt.spanCtx = ctx
 	rt.publishStateLocked()
 	rt.mu.Unlock()
+	rt.flushControl()
 	require.Equal(t, []string{"RUNNING"}, rec.states())
 }
 
@@ -187,7 +207,7 @@ func TestPublishStateBeforeStartIsSilent(t *testing.T) {
 // forever.
 func TestPublishStateSealedTombstone(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 
 	rt.testTransition(func() {
 		rt.done = true
@@ -414,13 +434,14 @@ func TestReseedPublishesRewindMarker(t *testing.T) {
 // refusing to restore the second loses a cleanly closed session entirely.
 func TestStopReasonRidesTerminalRecord(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 
 	// A non-terminal transition carries no reason, so a consumer folding
 	// records latest-wins never attributes a stale reason to a later stop.
 	rt.testTransition(func() { rt.paused = true })
 
 	require.NoError(t, rt.Stop(context.Background(), false, nil, AgentStopExplicit))
+	rt.flushControl()
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
@@ -436,7 +457,7 @@ func TestStopReasonRidesTerminalRecord(t *testing.T) {
 // trace in which every agent looks deliberately dismissed.
 func TestKillAllStopsWithSessionReason(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 	rt.key = "instance-1"
 
 	ars := NewAgentRuntimes()
