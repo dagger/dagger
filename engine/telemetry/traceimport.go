@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"sync"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -68,7 +69,13 @@ import (
 // TraceImportSinks are the exporters an imported trace lands in — the live
 // frontend's own (Frontend.SpanExporter, LogExporter, MetricExporter), which
 // is the whole point: one DB, both sessions. A nil sink drops its stream.
+// TraceImportBarrier acknowledges application, not exporter enqueue completion.
+type TraceImportBarrier interface {
+	WaitForEventLoop(context.Context) error
+}
+
 type TraceImportSinks struct {
+	Barrier TraceImportBarrier
 	Spans   sdktrace.SpanExporter
 	Logs    sdklog.Exporter
 	Metrics sdkmetric.Exporter
@@ -227,6 +234,15 @@ func (imp *TraceImporter) ImportMetrics(ctx context.Context, req *colmetricspb.E
 //
 // Idempotent: a second call has nothing left to seal.
 func (imp *TraceImporter) Seal(ctx context.Context) error {
+	return imp.seal(ctx, 0)
+}
+
+// SealAt ends historical spans at the verified archive close time.
+func (imp *TraceImporter) SealAt(ctx context.Context, at time.Time) error {
+	return imp.seal(ctx, uint64(at.UnixNano()))
+}
+
+func (imp *TraceImporter) seal(ctx context.Context, fixed uint64) error {
 	if imp.sinks.Spans == nil {
 		return nil
 	}
@@ -235,6 +251,9 @@ func (imp *TraceImporter) Seal(ctx context.Context) error {
 	sealAt := imp.rootEnd
 	if sealAt == 0 {
 		sealAt = imp.newest
+	}
+	if fixed != 0 {
+		sealAt = fixed
 	}
 	order, unfinished := imp.order, imp.unfinished
 	imp.order, imp.unfinished = nil, map[string]*unfinishedSpan{}
