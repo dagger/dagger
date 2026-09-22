@@ -5228,14 +5228,20 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List concrete GraphQL types represented in this selection, sorted with no duplicates.
+   * List concrete type definitions represented in this selection, sorted by name with no duplicates.
    */
-  types = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("types")
+  types = async (): Promise<TypeDef[]> => {
+    type types = {
+      id: ID
+    }
 
-    const response: Awaited<string[]> = await ctx.execute()
+    const ctx = this._ctx.select("types").select("id")
 
-    return response
+    const response: Awaited<types[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")),
+    )
   }
 
   /**

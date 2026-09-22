@@ -155,7 +155,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * List concrete GraphQL types represented in this selection, sorted with no duplicates.
+     * List concrete type definitions represented in this selection, sorted by name with no duplicates.
      */
     public function types(): array
     {

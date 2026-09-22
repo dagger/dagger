@@ -570,9 +570,9 @@ type Artifacts implements Node {
   one: Artifact!
 
   """
-  List concrete GraphQL types represented in this selection, sorted with no duplicates.
+  List concrete type definitions represented in this selection, sorted by name with no duplicates.
   """
-  types: [String!]!
+  types: [TypeDef!]!
 
   """
   The DAG address that selects this whole selection: filterUri(uri) selects the same set.

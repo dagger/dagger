@@ -220,14 +220,26 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  List concrete GraphQL types represented in this selection, sorted with no duplicates.
+  List concrete type definitions represented in this selection, sorted by name with no duplicates.
   """
-  @spec types(t()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec types(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
   def types(%__MODULE__{} = artifacts) do
     query_builder =
-      artifacts.query_builder |> QB.select("types")
+      artifacts.query_builder |> QB.select("types") |> QB.select("id")
 
-    Client.execute(artifacts.client, query_builder)
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.TypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
+           client: artifacts.client
+         }
+       end}
+    end
   end
 
   @doc """

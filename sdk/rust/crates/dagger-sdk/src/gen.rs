@@ -1629,10 +1629,22 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// List concrete GraphQL types represented in this selection, sorted with no duplicates.
-    pub async fn types(&self) -> Result<Vec<String>, DaggerError> {
+    /// List concrete type definitions represented in this selection, sorted by name with no duplicates.
+    pub async fn types(&self) -> Result<Vec<TypeDef>, DaggerError> {
         let query = self.selection.select("types");
-        query.execute(self.graphql_client.clone()).await
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| TypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// The DAG address that selects this whole selection: filterUri(uri) selects the same set.
     pub async fn uri(&self) -> Result<String, DaggerError> {

@@ -1960,27 +1960,13 @@ class Artifacts(Type):
         _ctx = self._select("one", _args)
         return Artifact(_ctx)
 
-    async def types(self) -> list[str]:
-        """List concrete GraphQL types represented in this selection, sorted with
-        no duplicates.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+    async def types(self) -> list["TypeDef"]:
+        """List concrete type definitions represented in this selection, sorted
+        by name with no duplicates.
         """
         _args: list[Arg] = []
         _ctx = self._select("types", _args)
-        return await _ctx.execute(list[str])
+        return await _ctx.execute_object_list(TypeDef)
 
     async def uri(self) -> str:
         """The DAG address that selects this whole selection: filterUri(uri)

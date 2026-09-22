@@ -1637,14 +1637,37 @@ func (r *Artifacts) One() *Artifact {
 	}
 }
 
-// List concrete GraphQL types represented in this selection, sorted with no duplicates.
-func (r *Artifacts) Types(ctx context.Context) ([]string, error) {
+// List concrete type definitions represented in this selection, sorted by name with no duplicates.
+func (r *Artifacts) Types(ctx context.Context) ([]TypeDef, error) {
 	q := r.query.Select("types")
 
-	var response []string
+	q = q.Select("id")
+
+	type types struct {
+		Id ID
+	}
+
+	convert := func(fields []types) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "TypeDef")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []types
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // The DAG address that selects this whole selection: filterUri(uri) selects the same set.
