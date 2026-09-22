@@ -74,7 +74,8 @@ func TestArtifactDimensionHelp(t *testing.T) {
 			defs: artifact.Dimensions{
 				{Identifier: "Go.all", Name: "all", QualifiedName: "go-all"},
 			},
-			hidden: []string{"go-all", "Go.all"},
+			visible: []string{"go-all"},
+			hidden:  []string{"Go.all"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -83,16 +84,16 @@ func TestArtifactDimensionHelp(t *testing.T) {
 			registerCommandArtifactFlags(cmd)
 			registerArtifactDimensionHelp(cmd, tc.defs)
 			require.NoError(t, cmd.ParseFlags(nil))
-			help := cmd.Flags().FlagUsages()
+			help := artifactCommandFlags(cmd)
 			for _, name := range tc.visible {
-				require.Contains(t, help, "--"+name+" key ")
+				require.Contains(t, help, "--"+name+" KEY ")
 			}
 			for _, name := range tc.hidden {
 				require.NotContains(t, help, "--"+name+" ")
 				// Hidden aliases still parse, including alongside --help.
 				require.NoError(t, cmd.ParseFlags([]string{"--" + name + "=./app", "--help"}))
 			}
-			require.Contains(t, help, "--dimension-key DIMENSION=KEY")
+			require.NotContains(t, help, "--dimension-key")
 			require.NotContains(t, help, "stringArray")
 			require.False(t, cmd.Flag("all").Hidden)
 		})
@@ -100,7 +101,7 @@ func TestArtifactDimensionHelp(t *testing.T) {
 }
 
 func TestArtifactEmptyDimensionKey(t *testing.T) {
-	for _, arg := range []string{"--part=", "--dimension-key=part="} {
+	for _, arg := range []string{"--part="} {
 		t.Run(arg, func(t *testing.T) {
 			cmd := newListCommand()
 			registerArtifactDimensionFlags(cmd, []string{"part"})
@@ -124,7 +125,7 @@ func TestArtifactDimensionFlagPreparation(t *testing.T) {
 		err  string
 	}{
 		{name: "list"},
-		{name: "static flags", args: []string{"--type", "Container", "--env=dev", "--dimension-key", "go-module=sdk/go"}},
+		{name: "static flags", args: []string{"--type", "Container", "--env=dev"}},
 		{name: "dimensions", args: []string{"--go-module=sdk/go", "--go-test", "TestOne", "--go-test=TestTwo"}, want: []string{"go-module", "go-test"}},
 		{name: "flag value", args: []string{"--go-test", "--literal-key"}, want: []string{"go-test"}},
 		{name: "after separator", args: []string{"--", "--literal-path"}},

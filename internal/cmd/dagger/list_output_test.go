@@ -48,7 +48,7 @@ func TestArtifactListArguments(t *testing.T) {
 		{Dimension: "Go.all", Key: "./app/bar"},
 	}, defs)
 	require.NoError(t, err)
-	require.Equal(t, "--go-test=TestFoo --dimension-key=all=./app/bar", args)
+	require.Equal(t, "--go-test=TestFoo --go-all=./app/bar", args)
 	for _, key := range []string{"a b", "$(echo injected)", "x; echo injected", "a'b", "a\nb", "!history", "a'b!c", "", "*.go"} {
 		t.Run(key, func(t *testing.T) {
 			args, err := artifactListArguments(cmd, "dag+check://go/tests", []dagaddress.Pair{{Dimension: "Go.tests", Key: key}}, defs)

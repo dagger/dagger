@@ -16,7 +16,6 @@ import (
 )
 
 const artifactDimensionFlag = "dagger.io/artifact-dimension"
-const artifactDimensionKeyUsage = "Select items with `DIMENSION=KEY` (repeat to select more)"
 
 const artifactListType = "dagger.io/list-type"
 const artifactListCollection = "dagger.io/list-collection"
@@ -75,10 +74,8 @@ func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions artifact.Dimen
 	visible := map[string]bool{}
 	for _, dimension := range dimensions {
 		registerArtifactDimensionFlags(cmd, []string{dimension.Name, dimension.QualifiedName, dimension.Identifier})
-		name := dimensions.DisplayName(dimension)
-		if name != dimension.Identifier {
-			visible[name] = true
-		}
+		name := artifactDimensionFlagName(cmd, dimensions, dimension)
+		visible[name] = true
 		flag := cmd.Flag(name)
 		if flag == nil || len(flag.Annotations[artifactDimensionFlag]) == 0 {
 			continue
@@ -98,13 +95,20 @@ func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions artifact.Dimen
 			flag.Hidden = !visible[flag.Name]
 		}
 	})
-	const selectionHelp = "Repeat a flag to select multiple keys. Different flags must all match."
-	if len(visible) > 0 && !strings.Contains(cmd.Long, selectionHelp) {
-		if cmd.Long == "" {
-			cmd.Long = cmd.Short
+
+}
+
+// Choose a dimension alias that is unambiguous and does not hide a command flag.
+func artifactDimensionFlagName(cmd *cobra.Command, dimensions artifact.Dimensions, dimension *artifact.Dimension) string {
+	for _, name := range []string{dimension.Name, dimension.QualifiedName} {
+		if flag := cmd.Flag(name); flag != nil && len(flag.Annotations[artifactDimensionFlag]) == 0 {
+			continue
 		}
-		cmd.Long += "\n\n" + selectionHelp
+		if id, err := dimensions.Resolve(name); err == nil && id == dimension.Identifier {
+			return name
+		}
 	}
+	return dimension.Identifier
 }
 
 func artifactItemLabel(typeName string) string {
@@ -206,17 +210,6 @@ func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, flags []
 
 func artifactKeyFlags(cmd *cobra.Command) ([]dagaddress.Pair, error) {
 	var pairs []dagaddress.Pair
-	var keys []string
-	if flag := cmd.Flag("dimension-key"); flag != nil {
-		keys = flag.Value.(pflag.SliceValue).GetSlice()
-	}
-	for _, key := range keys {
-		dimension, value, ok := strings.Cut(key, "=")
-		if !ok || dimension == "" {
-			return nil, fmt.Errorf("invalid dimension key %q: expected DIMENSION=KEY", key)
-		}
-		pairs = append(pairs, dagaddress.Pair{Dimension: dimension, Key: value, HasKey: true})
-	}
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		if dimension := flag.Annotations[artifactDimensionFlag]; len(dimension) > 0 {
 			// GetStringArray serializes through CSV and loses a single empty key.

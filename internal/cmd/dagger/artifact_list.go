@@ -219,14 +219,11 @@ func artifactListArguments(cmd *cobra.Command, path string, keys []dagaddress.Pa
 		name := key.Dimension
 		for _, def := range defs {
 			if def.Identifier == name {
-				name = defs.DisplayName(def)
+				name = artifactDimensionFlagName(cmd, defs, def)
 				break
 			}
 		}
 		prefix := "--" + name + "="
-		if flag := cmd.Flag(name); flag != nil && len(flag.Annotations[artifactDimensionFlag]) == 0 {
-			prefix = "--dimension-key=" + name + "="
-		}
 		value, err := quoteArtifactArgument(key.Key)
 		if err != nil {
 			return "", err

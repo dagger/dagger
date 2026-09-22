@@ -190,7 +190,7 @@ func (item *Item) Verify() error {
 	}{
 		{"query", []string{"dag://items/verify?item=a&item=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
 		{"dimension flag", []string{"items/verify", "--item=a", "--item=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
-		{"generic flag", []string{"items/verify", "--dimension-key=item=a", "--dimension-key=item=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
+		{"qualified flag", []string{"items/verify", "--collections-items=a", "--collections-items=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
 		{"query and flag", []string{"items/verify?item=a", "--collections-items=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
 		{"separate addresses", []string{"items/verify?item=a", "other/verify?item=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://other/verify\n"},
 	} {
@@ -208,7 +208,7 @@ func (item *Item) Verify() error {
 		want string
 	}{
 		{[]string{"check", "items/verify", "--unknown=a"}, "unknown flag: --unknown"},
-		{[]string{"check", "items/verify", "--dimension-key=invalid"}, "expected DIMENSION=KEY"},
+		{[]string{"check", "items/verify", "--dimension-key=invalid"}, "unknown flag: --dimension-key"},
 		{[]string{"check", "--item=a"}, "ambiguous dimension"},
 	} {
 		_, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
@@ -247,7 +247,7 @@ func (item *Item) Verify() error {
 	out, err := base.With(daggerExec("check", "items/verify", "--help")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "--item")
-	require.Contains(t, out, "--dimension-key")
+	require.NotContains(t, out, "--dimension-key")
 	require.Contains(t, out, "--all")
 }
 

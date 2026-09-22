@@ -53,6 +53,7 @@ dagger agent [FILTERS] [OPTIONS]
 ```
       --absolute                  Show absolute links (alias: --abs)
       --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
+  -a, --all                       List each dimension key combination
   -l, --list                      List available agents
       --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
   -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)
@@ -330,6 +331,7 @@ dagger check [--failfast] [FILTERS] [OPTIONS]
 
 ```
       --absolute             Show absolute links (alias: --abs)
+  -a, --all                  List each dimension key combination
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --failfast             Cancel remaining checks on first failure
       --generated            Include staleness checks for 'dagger generate' (default true)
@@ -1028,6 +1030,7 @@ dagger generate [FILTERS] [OPTIONS]
 
 ```
       --absolute       Show absolute links (alias: --abs)
+  -a, --all            List each dimension key combination
   -l, --list           List available generators
       --no-apply       Compute and show a summary of generated changes without applying them
       --require-load   Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)
@@ -2268,6 +2271,7 @@ dagger shell [FILTERS] [OPTIONS]
 
 ```
       --absolute   Show absolute links (alias: --abs)
+  -a, --all        List each dimension key combination
   -l, --list       List available shells
 ```
 
@@ -2347,6 +2351,7 @@ dagger up [FILTERS] [OPTIONS]
 
 ```
       --absolute   Show absolute links (alias: --abs)
+  -a, --all        List each dimension key combination
   -l, --list       List available services
 ```
 

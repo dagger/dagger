@@ -151,7 +151,6 @@ func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *da
 func registerCommandArtifactFlags(cmd *cobra.Command) {
 	registerArtifactListFlags(cmd)
 	cmd.Flags().BoolP("all", "a", false, "List each dimension key combination")
-	cmd.Flags().StringArray("dimension-key", nil, artifactDimensionKeyUsage)
 }
 
 func isArtifactCommand(cmd *cobra.Command) bool {

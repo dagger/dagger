@@ -326,7 +326,7 @@ $ dagger list -a golang/modules/tests/container --go-module=sdk/go --go-test=Tes
 dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 ```
 
-Use the Artifacts flags `--<dimension>=<key>` and `--dimension-key=DIMENSION=KEY`. Both accept exact identifiers, short names, or qualified names, unambiguous on the selected paths. The generic form also works when a name conflicts with a command flag. Repeat flags for alternatives; do not split values on commas. Use schema metadata to register flags, including for empty collections.
+Use the Artifacts flags `--<dimension>=<key>`. They accept exact identifiers, short names, or qualified names, unambiguous on the selected paths. If a short name conflicts with a command flag, help and runnable lists use the qualified name. A DAG link query also accepts dimension names that conflict with flags. Repeat flags for alternatives; do not split values on commas. Use schema metadata to register flags, including for empty collections.
 
 A flag has the same meaning as one query pair, and the two combine. Quote an address that contains `&`:
 
